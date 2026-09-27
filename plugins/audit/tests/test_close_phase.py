@@ -1563,10 +1563,11 @@ def _backfill_cases(check):
         rows = _backfill_rows(root)
         det = (rows[-1].get("details") or {}) if rows else {}
         check("bf1b the backfill row, as the trail holds it, names the field, the "
-              "head written, the untouched mergedAt and that it was recovered: %r"
-              % (det,),
+              "head written, the untouched mergedAt, the parent whose chain it came "
+              "from and that it was recovered: %r" % (det,),
               det.get("field") == "mergedHead" and det.get("to") == stamped
               and det.get("mergedAt") == merged_at and det.get("phaseId") == "P1"
+              and det.get("parent") == "main"
               and "recovered" in (det.get("reason") or ""))
         again = _commit_on_main(root, git, "later2.txt")
         code = M.main([mpath, "P1", "--project", root], out=(lambda line: None))
@@ -1762,18 +1763,21 @@ def _backfill_cases(check):
               and _merged_head(mpath) == merge
               and _merged_head_at(mpath) == "<absent>"
               and not _backfill_rows(root))
-        # The merge row as the trail HOLDS it, which is what the journal reference
-        # documents: the allow-list keeps the phase and the branch, and the parent
-        # survives only in the summary.
+        # The merge row as the trail HOLDS it - read back through the journal, never
+        # the dict the writer handed over. The allow-list drops a key it does not
+        # hold in silence, so the handover and the trail can disagree and only a
+        # read-back sees it: the parent was handed over and dropped for as long as
+        # this case pinned the two-key shape.
         import _journal_io
         merged = [r for r in _journal_io.read_all(root)
                   if r.get("action") == M.ACTION_PHASE_MERGED]
-        check("bf6b ...and exactly one merge row, whose details are the phase and the "
-              "branch and whose summary names the parent: %r"
+        check("bf6b ...and exactly one merge row, whose details are the phase, the "
+              "branch AND the parent it reached, read back from the trail: %r"
               % ([(r.get("details"), r.get("summary")) for r in merged],),
               len(merged) == 1
               and merged[0].get("details") == {"phaseId": "P1",
-                                               "branch": "audit/p1-demo"}
+                                               "branch": "audit/p1-demo",
+                                               "parent": "main"}
               and merged[0].get("summary") == "audit/p1-demo reached main")
     finally:
         _harness.remove_tree(root)

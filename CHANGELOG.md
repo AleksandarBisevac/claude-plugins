@@ -551,6 +551,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **A `phase.merged` trail row names the parent the phase reached.** `close-phase.py` handed
+  the parent over in the row's details, and the journal kept only the keys on its allow-list and
+  dropped the rest without a word, so the row read `{phaseId, branch}`. `parent` is now on the
+  allow-list, and `phase.mergedHead.recorded` carries it too. Rows written earlier name the parent
+  in their summary only. A new check reads every writer's details by AST and names, file and
+  line, any literal key the allow-list would drop. It found three more rows losing a field the
+  reference documents. `ado.link` lost its work-item id, `phase.gateDerived` lost its `mode`
+  and `basis`, and `task.blocked` handed over `attempts` where the trail keeps `attempt`.
+  All three are kept now. Because the trail lost the attempt and the work-item id, the hook's
+  check for a `task.blocked` or `ado.link` row the trail already holds never matched, so such
+  a row could be written twice. It is now withheld. A row written before this change has no
+  such key, so it matches nothing and may be written once more.
 - **Re-rendering a published page no longer fails the pre-commit sweep.**
   `tools/check-rendered-artifacts.py --selftest` compared every published page with what `HEAD`
   carries, and the sweep runs before the commit exists — so a change that re-rendered a page with

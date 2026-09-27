@@ -77,7 +77,7 @@
     {
       "id": "P87.2",
       "title": "a journal row keeps every detail its writer passed: phase.merged carries its parent, and an unlisted detail key at any append site fails the build",
-      "status": "pending",
+      "status": "in_progress",
       "description": "F522 (quality-gates-internal PLAN.md). close-phase builds phase.merged's details with parent, but _journal_io keeps only DETAILS_KEYS and drops the rest silently, so the trail row is {phaseId, branch} and bf6b pins that. Add parent to DETAILS_KEYS (COMPATIBILITY.md: adding a detail key is free; say so if the row shape is promised), update bf6b and the manifest-conventions.md phase.merged bullet (which now says the parent is only in the summary) together with the writer. Then the class: a case in test__journal_io.py walks every .py under hooks/ and scripts/ by AST and fails on a literal details key at a journal append site that DETAILS_KEYS does not hold, naming file:line - so the next writer that believes it recorded a field it did not goes red. Red-first: the merged row names its parent (fails now); the lint goes red on a planted unlisted key and on the current close-phase before parent is added; allow: rows whose keys are all listed are byte-identical.",
       "files": [
         "plugins/audit/scripts/governance/_journal_io.py",
@@ -86,7 +86,9 @@
         "plugins/audit/tests/test_close_phase.py",
         "plugins/audit/reference/manifest-conventions.md",
         "COMPATIBILITY.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/tests/test_journal_writes.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -111,14 +113,14 @@
       "dependsOn": [
         "P87.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T14:26:35Z",
       "completedAt": null,
       "verifiedBy": []
     }

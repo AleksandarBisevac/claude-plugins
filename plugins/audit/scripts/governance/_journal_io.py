@@ -255,6 +255,20 @@ DETAILS_VERSION = 2
 # on (`proposal.add`). A phase belongs on the development branch, and the one-time
 # warning a side branch gets is read back from these rows - so the fact the
 # warning is about is the record itself, not a second flag beside it.
+# `parent` is the branch a merged phase reached (`phase.merged`), beside the
+# `branch` that reached it. A branch name, like `branch`: it names no machine and no
+# person, and it is bounded like any value. It was handed over from the first
+# merge row and dropped here in silence, so the trail said which branch merged and
+# never into what - `test__journal_io.py`'s handover lint is what fails the next
+# writer that hands over a key this list does not hold.
+# `adoId` is the tracker work-item id an `ado.link` row records (journal-writes).
+# `mode` is the gate mode a `phase.gateDerived` row records (derive-phase-gate).
+# `basis` is `phase.testGateBasis`'s word on that same row (derive-phase-gate).
+# Each was handed over and dropped here until the handover lint read them, and
+# each passes the three tests: a plan fact or a fixed vocabulary word, bounded like
+# any value, naming no machine and no person. `adoId` is also half of the key
+# journal-writes reads BACK to withhold a link the trail already holds, so while it
+# was dropped every recorded link read keyless and that withholding never fired.
 # `commitNonce` joins a row to the commit that CARRIES it. A row inside a commit
 # cannot name that commit's SHA - the SHA is a hash over the row - so a scoped
 # commit writes its row first, keyed by a random nonce, and its message carries
@@ -265,8 +279,13 @@ DETAILS_KEYS = ("changes", "taskId", "phaseId", "field", "from", "to", "commit",
                 "completedAt", "mergedAt", "fromId", "toId", "fromPhase",
                 "toPhase", "reason", "truncated", "commandSha256", "commandBytes",
                 "program", "cwd", "runId", "attempt", "branch", "commitNonce",
-                "relinkedAfter", "relinkedThrough")
+                "relinkedAfter", "relinkedThrough", "parent", "adoId", "mode",
+                "basis")
 CHANGE_KEYS = ("id", "field", "from", "to")
+# The one key a writer may hand over that is NOT kept: `normalise_details` turns
+# it into `command_facts()` and drops the text. Named so the handover lint in
+# `test__journal_io.py` accepts exactly this key and no spelling of it.
+_COMMAND_DETAILS_KEY = "command"
 MAX_CHANGES = 12            # a diff bigger than this is a rewrite, not an edit
 MAX_VALUE_CHARS = 120       # a value is evidence, not a payload
 MAX_DETAILS_BYTES = 4096    # the whole block, canonically spelled
@@ -1309,12 +1328,12 @@ def normalise_details(details, project=None):
             out["cwd"] = _clip(repo_relative_or_token(project, val))
         else:
             out[key] = _clip(val)
-    if "command" in details:
+    if _COMMAND_DETAILS_KEY in details:
         # `command` is no longer in DETAILS_KEYS, so the loop above dropped it;
         # these are what a row carries in its place. Derived from the value AS
         # GIVEN -- the loop never saw it, so the digest is of the whole command
         # rather than of what a clip would have left.
-        out.update(command_facts(details["command"]))
+        out.update(command_facts(details[_COMMAND_DETAILS_KEY]))
     if not out:
         return None
     try:

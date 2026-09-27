@@ -609,7 +609,7 @@ def _cases(check):
               "symmetric with task.complete",
               len(blk) == 1 and blk[0]["details"] == {
                   "taskId": "P1.1", "phaseId": "P1",
-                  "from": "in_progress", "attempts": 3},
+                  "from": "in_progress", "attempt": 3},
               repr(d_i1 and d_i1.get("events")))
         d_i2 = M.semantic_diff(i_blocked, i_base)
         check("i2 LEAVING blocked is a change row only, never a task.blocked "
@@ -645,6 +645,85 @@ def _cases(check):
         i_garbage["phases"][0]["tasks"][0]["ado"] = "WI-7"
         check("i6 a non-dict ado never crashes the diff and never links",
               M.semantic_diff(i_base, i_garbage) is None)
+
+        # --- ir: a blocked or link row, read back OUT OF THE TRAIL -------------
+        # hm1 builds its held keys from details written in the case, which proves
+        # the key rule and nothing about the trail. These append the rows the hook
+        # itself derives through the real journal, read the keys back the way the
+        # sweep lane does, and derive again. The journal keeps only allow-listed
+        # detail keys, so a key field it drops makes every recorded row keyless -
+        # and a keyless row matches nothing, so the dedup never fires.
+        _ir_entry = {"action": "manifest.edit", "target": "m.json",
+                     "summary": "x", "actor": {"author": "a"}}
+        _ir_blocked = manifest_doc(status="blocked")
+        _ir_blocked["phases"][0]["tasks"][0]["attempts"] = 3
+        _ir_linked = manifest_doc(status="in_progress")
+        _ir_linked["phases"][0]["tasks"][0]["ado"] = {"id": 7, "url": "u"}
+        _ir_linked["phases"][0]["ado"] = {"id": 9, "url": "u"}
+
+        def _derived(old, new, recorded=None):
+            _row, rows = M._manifest_rows(dict(_ir_entry), "m.json", old, new,
+                                          recorded=recorded)
+            return rows
+
+        def _actions(rows):
+            # A phase link carries no task id, so None sorts as the empty string.
+            return sorted(((r["action"], r["details"].get("taskId"),
+                            r["details"].get("phaseId")) for r in rows),
+                          key=lambda t: tuple("" if v is None else v for v in t))
+
+        _ir_root = _harness.fixture_root("jw-recorded-roundtrip")
+        _ir_old_root = _harness.fixture_root("jw-recorded-oldrow")
+        try:
+            for row in (_derived(i_base, _ir_blocked)
+                        + _derived(i_base, _ir_linked)):
+                _journal_io.append(_ir_root, row)
+            _ir_held = M.recorded_keys(_ir_root)
+            _ir_blk_again = _derived(i_base, _ir_blocked, recorded=_ir_held)
+            _ir_lnk_again = _derived(i_base, _ir_linked, recorded=_ir_held)
+            _ir_next = json.loads(json.dumps(_ir_blocked))
+            _ir_next["phases"][0]["tasks"][0]["attempts"] = 4
+            _ir_blk_new = _derived(i_base, _ir_next, recorded=_ir_held)
+            _ir_relink = json.loads(json.dumps(_ir_linked))
+            _ir_relink["phases"][0]["tasks"][0]["ado"]["id"] = 8
+            _ir_relink["phases"][0]["ado"]["id"] = 10
+            _ir_lnk_new = _derived(i_base, _ir_relink, recorded=_ir_held)
+            # A row written BEFORE the trail kept these keys: it holds the task
+            # and phase and no attempt. Nothing is guessed from its summary.
+            _journal_io.append(_ir_old_root, {
+                "action": "task.blocked", "target": "m.json",
+                "summary": "P1.1 blocked", "actor": {"author": "a"},
+                "details": {"taskId": "P1.1", "phaseId": "P1",
+                            "from": "in_progress"}})
+            _ir_old_held = M.recorded_keys(_ir_old_root)
+            _ir_old_again = _derived(i_base, _ir_blocked, recorded=_ir_old_held)
+        finally:
+            _harness.remove_tree(_ir_root)
+            _harness.remove_tree(_ir_old_root)
+        check("ir1 a task.blocked row the trail already holds is NOT derived again: "
+              "the attempt it was keyed by survives the journal, so the key read "
+              "back matches: %r" % (_actions(_ir_blk_again),),
+              _actions(_ir_blk_again) == [])
+        check("ir2 ...and neither is an ado.link row, for the task or the phase - "
+              "the work-item id survives the journal too: %r"
+              % (_actions(_ir_lnk_again),),
+              _actions(_ir_lnk_again) == [])
+        # THE OTHER DIRECTION: a dedup that withheld every blocked or link row
+        # would pass ir1 and ir2 for ever.
+        check("ir3 ALLOW: a NEW blocked attempt of the same task is written - "
+              "another attempt is another record: %r" % (_actions(_ir_blk_new),),
+              _actions(_ir_blk_new) == [("task.blocked", "P1.1", "P1")])
+        check("ir4 ALLOW: a NEW link - a different work-item id - is written, for "
+              "the task and for the phase: %r" % (_actions(_ir_lnk_new),),
+              _actions(_ir_lnk_new) == [("ado.link", None, "P1"),
+                                        ("ado.link", "P1.1", "P1")])
+        check("ir5 a row recorded before the trail kept the attempt has no key, "
+              "matches nothing, and the blocked row is written once more - a "
+              "repeated row, never a lost one, and no key is read out of a "
+              "summary: keys %r, derived %r"
+              % (sorted(_ir_old_held or ()), _actions(_ir_old_again)),
+              not any(k[0] == "task.blocked" for k in (_ir_old_held or ()))
+              and _actions(_ir_old_again) == [("task.blocked", "P1.1", "P1")])
 
         write_manifest(manifest_doc())
         entries = M.post_entries(payload("Edit", man_rel, sid="pp-5"), cfg=cfg,

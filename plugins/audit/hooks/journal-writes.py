@@ -632,7 +632,10 @@ def semantic_diff(old_obj, new_obj):
                                        "taskId": tid,
                                        "phaseId": new_owner.get(tid),
                                        "from": ov,
-                                       "attempts":
+                                       # The trail's spelling: singular, the
+                                       # key `_journal_io` keeps and the
+                                       # evidence ledger joins on.
+                                       "attempt":
                                        new_task.get("attempts")}})
                 if (field == "commit" and ov is None
                         and isinstance(nv, str) and nv):
@@ -834,7 +837,7 @@ def unsandboxed_entries(data, *, cfg=None, root=None):
 _RECORD_KEYS = {
     "task.complete": ("taskId", "completedAt"),
     "task.commit": ("taskId", "commit"),
-    "task.blocked": ("taskId", "attempts"),
+    "task.blocked": ("taskId", "attempt"),
     "phase.signoff": ("phaseId", "mergedAt"),
     "ado.link": ("taskId", "phaseId", "adoId"),
 }

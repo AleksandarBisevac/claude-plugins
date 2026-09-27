@@ -2740,6 +2740,7 @@ def _gone_cases(check):
           in _gw12)
 
     _worktree_writer_cases(check)
+    _details_key_cases(check)
 
 
 def _worktree_writer_cases(check):
@@ -2917,6 +2918,232 @@ def _worktree_writer_cases(check):
           _none_first is None and bool(_then), repr((_none_first, _then)))
     check("wk7 ...and the merged trail verifies",
           M.verify(main)["ok"], repr(M.verify(main).get("findings")))
+
+
+# --- the details keys a writer hands over, read by AST ------------------------
+# WHY THIS IS A CASE AND NOT A RULE ABOUT ONE WRITER. `normalise_details` keeps only
+# the keys `DETAILS_KEYS` holds and drops the rest WITHOUT A WORD - on purpose, so an
+# inventive writer cannot decide the row format for every reader after it. The cost
+# of that silence is that a writer can believe it recorded a field the trail never
+# holds: `phase.merged` handed over its `parent`, the reference said so, and the row
+# read back as `{phaseId, branch}`. Nothing at the write site can see that. So this
+# reads every writer's HANDOVER and compares its literal keys with the allow-list.
+#
+# THE SHAPES IT READS, each a literal key written at the site:
+#   1. a dict literal carrying both an `"action"` key and a `"details"` key whose
+#      value is a dict literal - the entry every append site builds inline;
+#   2. `x["details"] = {...}` and `x["details"]["key"] = ...`;
+#   3. a same-module WRAPPER: a function with a parameter that its body passes as
+#      the value of an entry's `"details"`, called with a dict literal there;
+#   4. in a module that holds any of the above, a local named `details` assigned a
+#      dict literal, or stored into as `details["key"] = ...`.
+# WHAT IT CANNOT SEE, so a clean run is about those shapes and nothing wider: a key
+# computed at run time (`details[field] = ...`), a block built under another name or
+# by `dict(...)` or `**` spread, a wrapper called from another module, and a block
+# that arrives as data (`audit-journal.py --details` parses JSON). Those are the
+# quiet direction; widening to them would need a data-flow reader.
+def _str_const(node):
+    """The value of a string literal node, or None."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _subscript_key(node):
+    """The literal key of `x["key"]`, on every supported interpreter, or None.
+
+    Python 3.8 wraps a subscript's key in `ast.Index`; 3.9 and later do not.
+    """
+    key = node.slice
+    if hasattr(ast, "Index") and isinstance(key, ast.Index):
+        key = key.value
+    return _str_const(key)
+
+
+def _dict_keys(node):
+    """[(lineno, key)] for every literal string key of a dict literal."""
+    return [(k.lineno, _str_const(k)) for k in node.keys
+            if k is not None and _str_const(k) is not None]
+
+
+def _entry_details(node):
+    """The value node of a row entry's `"details"`, or None.
+
+    An ENTRY is a dict literal that carries an `"action"` key too. The pairing is
+    what separates a trail row from every other dict here with a `details` field -
+    a validator finding, a vocabulary table - whose keys are not the trail's.
+    """
+    if not isinstance(node, ast.Dict):
+        return None
+    keys = [_str_const(k) if k is not None else None for k in node.keys]
+    if "action" not in keys or "details" not in keys:
+        return None
+    return node.values[keys.index("details")]
+
+
+def _wrapper_params(tree):
+    """{function name: (position, parameter name)} for shape 3's wrappers."""
+    out = {}
+    for fn in ast.walk(tree):
+        if not isinstance(fn, ast.FunctionDef):
+            continue
+        params = [a.arg for a in fn.args.args]
+        for node in ast.walk(fn):
+            value = _entry_details(node)
+            if isinstance(value, ast.Name) and value.id in params:
+                out[fn.name] = (params.index(value.id), value.id)
+    return out
+
+
+def details_handovers(tree):
+    """[(lineno, key)] for every literal key this module hands to a `details`."""
+    found, writes = [], False
+    wrappers = _wrapper_params(tree)
+    for node in ast.walk(tree):
+        value = _entry_details(node)
+        if value is not None:
+            writes = True
+            if isinstance(value, ast.Dict):
+                found.extend(_dict_keys(value))
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
+                and node.func.id in wrappers:
+            writes = True
+            pos, name = wrappers[node.func.id]
+            given = [kw.value for kw in node.keywords if kw.arg == name]
+            if len(node.args) > pos:
+                given.append(node.args[pos])
+            for arg in given:
+                if isinstance(arg, ast.Dict):
+                    found.extend(_dict_keys(arg))
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if not isinstance(target, ast.Subscript):
+                continue
+            if _subscript_key(target) == "details" \
+                    and isinstance(node.value, ast.Dict):
+                writes = True
+                found.extend(_dict_keys(node.value))
+            inner = target.value
+            if isinstance(inner, ast.Subscript) \
+                    and _subscript_key(inner) == "details" \
+                    and _subscript_key(target) is not None:
+                writes = True
+                found.append((target.lineno, _subscript_key(target)))
+    if not writes:
+        return found
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id == "details" \
+                    and isinstance(node.value, ast.Dict):
+                found.extend(_dict_keys(node.value))
+            if isinstance(target, ast.Subscript) \
+                    and isinstance(target.value, ast.Name) \
+                    and target.value.id == "details" \
+                    and _subscript_key(target) is not None:
+                found.append((target.lineno, _subscript_key(target)))
+    return found
+
+
+def accepted_details_keys():
+    """Every key a handover may carry: the allow-list, plus the one key
+    `normalise_details` converts rather than keeps."""
+    return set(M.DETAILS_KEYS) | {M._COMMAND_DETAILS_KEY}
+
+
+def unlisted_details_keys(sources=None):
+    """["<file>:<line> <key>", ...] - a literal details key the allow-list drops.
+
+    `sources` is `[(label, text)]`; None walks every `.py` under hooks/ and
+    scripts/ through the shared walk. A file that does not parse is a finding in
+    its own right: a reader that skipped it would clear a writer nobody read.
+    """
+    if sources is None:
+        sources = []
+        for base, label in ((_harness.HOOKS_DIR, "hooks"),
+                            (_harness.SCRIPTS_DIR, "scripts")):
+            for rel, path in _output.lint_py_files(base):
+                with open(path, encoding="utf-8") as fh:
+                    sources.append(("%s/%s" % (label, rel), fh.read()))
+    accepted = accepted_details_keys()
+    out = []
+    for label, text in sources:
+        try:
+            tree = ast.parse(text)
+        except SyntaxError as exc:
+            out.append("%s:%s does not parse, so its handovers were not read"
+                       % (label, exc.lineno))
+            continue
+        for lineno, key in details_handovers(tree):
+            if key not in accepted:
+                out.append("%s:%d %s" % (label, lineno, key))
+    return sorted(out)
+
+
+def _details_key_cases(check):
+    """The allow-list against every writer's handover - and the row it keeps."""
+    _live = unlisted_details_keys()
+    check("dk1 every literal key a writer under hooks/ or scripts/ hands to a "
+          "journal `details` block is one DETAILS_KEYS holds - an unlisted key is "
+          "dropped in silence, so the writer believes it recorded a field the "
+          "trail never has: %r" % (_live,), _live == [])
+    # A key this module has never listed, built rather than written: this file
+    # holds the lint, and a literal here would be a key some later reader greps.
+    _unlisted = "".join(("never", "Listed", "Key"))
+    _planted = [
+        ("fx/entry.py",
+         "append(p, {'action': 'x.y', 'details': {'phaseId': 'P1', '%s': 1}})\n"
+         % (_unlisted,)),
+        ("fx/wrapper.py",
+         "def _row(project, action, details):\n"
+         "    return append(project, {'action': action, 'details': details})\n"
+         "_row(p, 'x.y', {'taskId': 'T', '%s': 2})\n" % (_unlisted,)),
+        ("fx/store.py",
+         "row = {'action': 'x.y'}\n"
+         "row['details'] = {'reason': 'r'}\n"
+         "row['details']['%s'] = 3\n" % (_unlisted,)),
+        ("fx/local.py",
+         "def f(p):\n"
+         "    details = {'phaseId': 'P1'}\n"
+         "    details['%s'] = 4\n"
+         "    return append(p, {'action': 'x.y', 'details': details})\n"
+         % (_unlisted,)),
+    ]
+    _got = unlisted_details_keys(_planted)
+    check("dk2 a planted unlisted key is named file:line in EVERY shape the lint "
+          "reads - an entry literal, a same-module wrapper, a subscript store and "
+          "a local `details` - once each: %r" % (_got,),
+          _got == ["fx/entry.py:1 %s" % (_unlisted,),
+                   "fx/local.py:3 %s" % (_unlisted,),
+                   "fx/store.py:3 %s" % (_unlisted,),
+                   "fx/wrapper.py:3 %s" % (_unlisted,)])
+    # THE OTHER DIRECTION, and it is the one that looks vacuous: a lint that named
+    # every key it read would pass dk2 for ever. The same four shapes carrying only
+    # listed keys - and a dict with a `details` but no `action`, which is not a row.
+    _clean = [(label, text.replace(_unlisted, "commit"))
+              for label, text in _planted]
+    _clean.append(("fx/finding.py",
+                   "x = {'details': {'%s': 1}, 'severity': 'low'}\n" % (_unlisted,)))
+    _quiet = unlisted_details_keys(_clean)
+    check("dk3 ALLOW: the same shapes carrying only listed keys are silent, and a "
+          "dict with a `details` field but no `action` is not a trail row: %r"
+          % (_quiet,), _quiet == [])
+
+    # The row itself. A block whose keys are all listed normalises to exactly the
+    # bytes it was handed; the new key changes no row that never carried it.
+    _listed = {"phaseId": "P1", "branch": "audit/p1-demo"}
+    _merged = dict(_listed, parent="main")
+    check("dk4 ALLOW: a details block whose keys are all listed is kept byte for "
+          "byte - the merge row's two old keys, and with `parent` beside them: "
+          "%r / %r" % (M.normalise_details(_listed), M.normalise_details(_merged)),
+          M.canonical(M.normalise_details(_listed)) == M.canonical(_listed)
+          and M.canonical(M.normalise_details(_merged)) == M.canonical(_merged))
+    _invented = M.normalise_details({"phaseId": "P1", _unlisted: "x"})
+    check("dk5 ...and the allow-list is still an allow-list: a key it does not "
+          "hold is dropped, so listing one key did not turn the filter off: %r"
+          % (_invented,), _invented == {"phaseId": "P1"})
 
 
 def _selftest():
