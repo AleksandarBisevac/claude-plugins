@@ -674,7 +674,8 @@
       "P74.7-qq5",
       "P74.8-qq5",
       "P74.9-qq5",
-      "P74.10-qq5"
+      "P74.10-qq5",
+      "P74.11-qq5"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1836,7 +1837,8 @@
       "P74.3-qq5",
       "P74.8-qq5",
       "P74.9-qq5",
-      "P74.10-qq5"
+      "P74.10-qq5",
+      "P74.11-qq5"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -2813,7 +2815,8 @@
       "P78.13-msc",
       "P74.8-qq5",
       "P74.9-qq5",
-      "P74.10-qq5"
+      "P74.10-qq5",
+      "P74.11-qq5"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
       "P32.7",
