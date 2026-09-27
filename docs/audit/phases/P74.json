@@ -21,7 +21,7 @@
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P74-R1",
@@ -380,9 +380,10 @@
         "issue": "The already-contained arm of the new writes predicate has no test. I mutated a git-archive export of HEAD to `writes = the_plan[\"auto\"]` (anchor matched once, __pycache__ purged). test_close_phase still printed 88/88 and exited 0, so the mutation SURVIVED. Its live effect is F514 on the pull-request landing path, which is the reason meta.merge.auto:false exists. Setup: auto:false, the PR merged so",
         "resolution": "fix task P74.10-qq5"
       }
-    ]
+    ],
+    "outcome": "matches; nine review passes, every finding fixed in P74.3-P74.11"
   },
-  "summary": null,
+  "summary": "Landing a phase says what happened and what is left. A group of phases signs off and lands together. A verdict is bound to evidence by one rule.\n\nLanding and sign-off:\n- close-phase follows up on a main-tree holder without removing the main tree.\n- A composed branch name is refused when it would resolve to an ancestry.\n- The landing stamp is written to the copy that survives, whatever manifest path is given. When no such copy exists, close-phase refuses before any merge.\n- signoff takes a group of phases on one branch. The group is accounted for commit by commit: a merge counts only when its tree equals git merge-tree of its parents. A merge carrying its own content is listed with a review command that shows it. --accept takes only a real SHA.\n- One _verdict_binding rule grades task commits and both sign-off paths. A group run is never a reused solo run.\n- A pointer to evidence copied from another phase renders as graded by the carrier. A reason recorded instead of evidence is shown where the badge's basis goes.\n\nEvidence overlap:\n- Whole-second evidence windows are compared half-open, and a boundary second two writers cannot order is reported as not knowable.\n- Chain order counts only when the runs really were sequential. It is never trusted across a recorded ledger-merge seam, and each seam is walked on its own.\n\nReview and gate:\n- Reviewed nine times; every finding was fixed in P74.3 through P74.11.\n- The fixes include F514 (the landing stamp written into the doomed worktree copy) and F515 (back-to-back runs reported as a crowd).\n- Main was merged in twice before the gate; P79's --own path and this phase's group runs are both kept.\n- The phase gate is green with the tree unchanged, and the invariant check found no breach.",
   "tasks": [
     {
       "id": "P74.1",
@@ -1061,5 +1062,10 @@
       ]
     }
   ],
-  "startedAt": "2026-09-25T18:00:38Z"
+  "startedAt": "2026-09-25T18:00:38Z",
+  "testEvidence": {
+    "runId": "2026-09-27T04:16:44Z.7549af",
+    "status": "passed",
+    "at": "2026-09-27T04:16:44Z"
+  }
 }
