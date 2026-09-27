@@ -29,7 +29,7 @@
     {
       "id": "P84.1",
       "title": "a verb records a sign-off finding and its resolution, and the outcome's tally is derived from the findings",
-      "status": "in_progress",
+      "status": "done",
       "description": "F516 (quality-gates-internal PLAN.md). Add a verb that appends a finding in the schema's shape (id, severity low|med|high, file, issue, resolution) under the index lock, revalidating or rolling back, with a review.finding journal row; a way to set a finding's resolution to its fix task and commit when the fix lands; and derive the severity tally in review.outcome from review.findings when the verb writes it, so no one types it. A text-only correction of review.outcome or summary goes through a verb with its own journal row and never re-decides the verdict. phase-signoff.md step 1 names the verb. Red-first: a malformed finding (missing severity, severity outside the vocabulary) is refused before any write; allow: a well-formed one is appended and journaled; a correction leaves the verdict and its row untouched.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -65,14 +65,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7c0972b7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "finding, resolve-finding and correct verbs under the index lock with journal rows; outcome_with_tally on every review.outcome write.",
+        "descriptive": "Sign-off findings and their fixes are recorded by a command instead of a hand edit, and the outcome's tally can no longer disagree with the list."
       },
       "startedAt": "2026-09-27T04:18:45Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T06:32:40Z",
+      "verifiedBy": [
+        "test_audit_task rv1",
+        "test_audit_task rv3",
+        "test_audit_task rv5",
+        "test_audit_task rv8",
+        "test_audit_task rv9",
+        "test_audit_task rv11"
+      ]
     },
     {
       "id": "P84.2",
