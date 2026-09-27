@@ -447,8 +447,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   nothing inside the stretch it re-chained: the `evidence.merge` journal row now records where
   that stretch begins and ends (`details.relinkedAfter`, `details.relinkedThrough`), the chain
   there being the timestamp order the merge chose between two branches; rows appended after the
-  merge are ordered again, and when the journal cannot be read no chain is trusted and the line
-  says why. The chain is read only for a pair the windows leave undecided, with its lookups built
+  merge are ordered again, and each merge's stretch is walked on its own, so an earlier merge's
+  row cannot cut a later one short. When the journal cannot be read, or is disabled
+  (`journal.enabled` false, so no merge could have been recorded), no chain is trusted and the
+  line says why. The chain is read only for a pair the windows leave undecided, with its lookups built
   once per reader pass, so the machine line stays linear in the ledger's size.
 - **`close-phase.py` stamps the landing in the tree the merge lands in, whatever manifest path it
   was given.** Run from the main checkout with the WORKTREE's manifest - the command its own

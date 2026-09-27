@@ -2312,6 +2312,65 @@ def _chain_order_cases(check):
           and _seamed(M.chain_ordered, flat["rows"], flat["rows"][2],
                       flat["rows"][1], seams=[]) is True)
 
+    # A second merge over a file an earlier merge re-chained: main appended Z
+    # after merge one, and a second branch forked at the original prefix.
+    main1 = M.chain_file(base + [_gate("Y", 12, 20)], name)
+    b1 = M.chain_file(base + [_gate("X", 5, 12)], name)
+    b2 = M.chain_file(base + [_gate("W", 30, 40)], name)
+    m1 = M.merge_rows(main1, b1, name, aliases={})
+    s1 = (m1.get("relinkedAfter"), m1.get("relinkedThrough"))
+    main2 = list(m1["rows"])
+    main2.append(M.chain_onto(_gate("Z", 20, 30), main2, name))
+    m2 = M.merge_rows(main2, b2, name, aliases={})
+    twice = m2["rows"]
+    s2 = (m2.get("relinkedAfter"), m2.get("relinkedThrough"))
+    by = dict((r.get("runId"), r) for r in twice)
+    answers = [(_ids(_seamed(M.undecided_neighbours, twice, by.get("W", {}),
+                             M.RUNNER_GATE, seams=order)),
+                _seamed(M.chain_ordered, twice, by.get("W", {}), by.get("Z", {}),
+                        seams=order))
+               for order in ([s1, s2], [s2, s1])]
+    check("co11 after TWO successive real merges, a run the second merge "
+          "re-chained is undecided against the run it meets - in either order "
+          "the journal lists the two stretches, so an earlier stretch cannot "
+          "cut a later one short: %r over %r" % (answers, _ids(twice)),
+          m2["ok"] and _ids(twice) == ["R", "X", "Y", "Z", "W"]
+          and answers == [(["Z"], False), (["Z"], False)])
+    _one = M.chain_index(twice, [s1])["relinked"] or set()
+    _covered = sorted(r.get("runId") for r in twice if r.get("hash") in _one)
+    check("co12 SECOND DIRECTION: one merge's stretch alone still covers only "
+          "its own rows - X and Y, not R before it nor Z and W appended after "
+          "it: %r" % (_covered,), _covered == ["X", "Y"])
+
+    # Where no merge could be recorded, or none could be read, nobody can say
+    # whether one happened - which is not "no merge happened".
+    root = _harness.fixture_root("audit-evidence-seams-")
+    try:
+        off = _project(os.path.join(root, "off"), {"journal": {"enabled": False}})
+        got = M.merge_seams(off)
+        check("co13 a DISABLED journal could have recorded no ledger merge, so "
+              "the answer is None with that reason, never the claim that none "
+              "happened: %r" % (got,),
+              got[0] is None and "disabled" in got[1])
+        on = _project(os.path.join(root, "on"), {})
+        real = _journal_io.read_all
+
+        def broken(*args, **kwargs):
+            raise IOError("JOURNAL-UNREADABLE")
+        _journal_io.read_all = broken
+        try:
+            got = M.merge_seams(on)
+        finally:
+            _journal_io.read_all = real
+        check("co14 a journal read that raises answers None, carrying the "
+              "exception's text: %r" % (got,),
+              got[0] is None and "JOURNAL-UNREADABLE" in got[1])
+        got = M.merge_seams(on)
+        check("co15 SECOND DIRECTION: a readable journal recording no merge "
+              "answers [] with no reason: %r" % (got,), got == ([], ""))
+    finally:
+        _harness.remove_tree(root)
+
     # The chain is read only for a pair the windows leave undecided.
     big = M.chain_file(
         [{"runId": "r%d" % i,

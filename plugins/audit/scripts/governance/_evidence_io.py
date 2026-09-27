@@ -994,7 +994,14 @@ def merge_seams(project, config=None):
     `[]` is an answer - no merge re-chained this ledger - and None is not one,
     which is why they are kept apart: `chain_ordered` reads no chain as a
     writer's order under None. A merge whose journal row was never written
-    (`record_merge` is fail-soft, and says so) leaves no stretch here."""
+    (`record_merge` is fail-soft, and says so) leaves no stretch here.
+
+    A DISABLED JOURNAL IS None AND NOT []: with `journal.enabled` false no
+    merge could have been recorded, so the absence of one proves nothing."""
+    if not _journal_io.enabled(
+            _journal_io.load_config(project) if config is None else config):
+        return None, ("the journal is disabled (journal.enabled false), so no "
+                      "ledger merge could have been recorded")
     try:
         journal = _journal_io.read_all(project, config)
     except Exception as exc:
@@ -1687,7 +1694,11 @@ def chain_index(rows, seams):
     from the row after `relinkedAfter` through `relinkedThrough`. A stretch
     whose end is no longer in the rows (a later merge re-chained it again) runs
     to the end of its chain, so an unlocatable end widens the refusal rather
-    than narrowing it. `seams` None means nobody could say whether the ledger
+    than narrowing it. EACH STRETCH IS WALKED ON ITS OWN, with its own record
+    of where it has been: a later merge's stretch routinely starts inside an
+    earlier one whose hashes survived it, and stopping at a row another
+    stretch already holds would let an earlier merge row - real or forged -
+    cut a later one short. `seams` None means nobody could say whether the ledger
     was ever merged, and then `relinked` is None too."""
     rows = [r for r in (rows or []) if isinstance(r, dict)]
     by_id = dict((str(r.get("runId")), r) for r in rows if r.get("runId"))
@@ -1697,8 +1708,9 @@ def chain_index(rows, seams):
         after_of = dict((r.get("prev"), r) for r in rows if r.get("prev"))
         relinked = set()
         for after, through in seams:
-            cur = after_of.get(after)
-            while isinstance(cur, dict) and cur.get("hash") not in relinked:
+            seen, cur = set(), after_of.get(after)
+            while isinstance(cur, dict) and cur.get("hash") not in seen:
+                seen.add(cur.get("hash"))
                 relinked.add(cur.get("hash"))
                 if cur.get("hash") == through:
                     break
