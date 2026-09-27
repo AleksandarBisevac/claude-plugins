@@ -217,9 +217,15 @@ describe('the silences are three sentences, never one grey blob', () => {
     expect(new Set(words).size).toBe(3);
   });
 
-  it('a block present but naming no run is a pointer, not a silence', () => {
+  it('a block naming no run points at nothing, so it reads as no block at all', () => {
+    // `_report_html.tev_pointer`'s reading, which the report renders: the panel
+    // used to call this a dangling pointer while the report called it no
+    // evidence, two words for one subject. evidence-read-error.test.mjs drives
+    // both surfaces over the same block and holds them to one word.
     expect(wordFor({ testEvidence: {}, gateSource: 'task' }, ev))
-      .toBe('Pointer without evidence');
+      .toBe('No evidence');
+    expect(wordFor({ testEvidence: { runId: '' }, gateSource: 'task' }, ev))
+      .toBe('No evidence');
   });
 });
 

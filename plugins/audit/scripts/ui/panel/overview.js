@@ -292,7 +292,7 @@ function ovExcerpt(text,term,width){
 // than a verdict somebody rendered, so the three-valued observations stay
 // three-valued all the way to the pixel.
 /**
- * @type {Object<string, string>} the word for each verdict, and for the three
+ * @type {Object<string, string>} the word for each verdict, and for the
  * silences no run ever answers. NOT exhaustive on purpose: the manifest schema
  * leaves the status enum open, so `evWord` names an unrecognised verdict instead
  * of folding it into 'failed'.
@@ -302,7 +302,7 @@ const EVWORD={passed:'Passed',failed:'Failed',
  'timed-out':'Timed out',cancelled:'Cancelled','could-not-run':'Could not run',
  'empty-gate':'Empty gate',none:'No evidence','no-gate':'No gate configured',
  'before-recording':'Before recording',undated:'Completion undated',
- dangling:'Pointer without evidence'};
+ dangling:'Pointer without evidence','ledger-unreadable':'Ledger unreadable'};
 /**
  * @type {string} the class `_status_facts.evidence_gap` answers with for work
  * that finished before this plan could record anything. Spelled here because
@@ -331,8 +331,8 @@ const EVGAP_UNDATED='undated';
  * most urgent thing on this page after a red suite.
  */
 const EVORDER=['failed','gate-mutated','could-not-run','timed-out','cancelled',
- 'no-checks','dangling','undated','empty-gate','none','before-recording',
- 'no-gate','passed'];
+ 'no-checks','ledger-unreadable','dangling','undated','empty-gate','none',
+ 'before-recording','no-gate','passed'];
 /**
  * The word for a verdict.
  * @param {string} k - a verdict key, from the ledger or from evState
@@ -368,15 +368,32 @@ function evRow(row,fields){
  // column the ledger never had.
  const out=Object.create(null);(fields||[]).forEach((f,i)=>{out[f]=row[i];});return out;}
 /**
+ * What the page says about a ledger the server could not read.
+ *
+ * A FAILED READ IS NOT AN EMPTY ONE. The server ships no runs and no counts for
+ * it, so the ledger may well hold the run a pointer names; the sentence says the
+ * question could not be asked rather than answering it.
+ * @param {{readError: ({error: string, basis: (string|undefined)}|null|undefined)}} ev
+ *   - `STATE.evidence`
+ * @returns {string} the sentence, or '' when the ledger was read
+ */
+function evReadNote(ev){
+ const re=ev&&ev.readError;
+ if(!re)return '';
+ return (re.basis||'the evidence ledger could not be read, and no reason for it '
+   +'reached this page')+' - whether it holds this run is unknown, so this is not '
+   +'a missing record.';}
+/**
  * What one subject's test evidence amounts to — as facts, not as a rendered cell.
  *
- * SIX ANSWERS, AND THEY ARE NOT ONE GREY BLOB. No gate declared anywhere is a
+ * SEVERAL ANSWERS, AND THEY ARE NOT ONE GREY BLOB. No gate declared anywhere is a
  * fact about the PLAN: nothing could have run. No pointer is a fact about the
  * LEDGER — and it is three facts, not one, because a subject finished BEFORE
  * this plan could record anything is excused, one finished after it is not, and
  * one the plan calls done without saying when cannot be placed at all. A pointer
- * whose run the ledger does not hold says the record itself is wrong. Only the
- * last reads a verdict.
+ * whose run the ledger does not hold says the record itself is wrong — unless
+ * the ledger could not be READ, which says nothing about the record and wears
+ * its own word. Only a run that was found reads a verdict.
  *
  * THE CLASS IS THE SERVER'S. `node.evidenceGap` is what
  * `_status_facts.evidence_gap` answered, which is the same function the
@@ -388,8 +405,9 @@ function evRow(row,fields){
  *   evidenceGap: (string|null|undefined)}} node - the composition row for a
  *   task or a phase
  * @param {{runs: (Object<string, Array<*>>|undefined), fields: (string[]|undefined),
- *   files: (number|undefined), unreadable: (number|undefined)}} ev -
- *   `STATE.evidence`
+ *   files: (number|null|undefined), unreadable: (number|null|undefined),
+ *   readError: (object|null|undefined)}} ev - `STATE.evidence`; the counts are
+ *   null exactly when `readError` is set
  * @param {string} [basis] - the sentence the evidence boundary carries about
  *   itself, from `STATE.rollup.evidenceBoundary.basis`. Passed in rather than
  *   read here so this stays a function of its arguments
@@ -398,7 +416,11 @@ function evRow(row,fields){
  *   impossible: an observation needs a run that made it
  */
 function evState(node,ev,basis){
- const row=node||{},pointer=row.testEvidence,src=row.gateSource;
+ const row=node||{},src=row.gateSource;
+ // A block with no runId points at nothing, so it is read as no block at all -
+ // `_report_html.tev_pointer`'s reading, so the two surfaces give one word.
+ const block=row.testEvidence,pointer=(block&&typeof block==='object'
+   &&typeof block.runId==='string'&&block.runId)?block:null;
  if(pointer==null&&row.noEvidenceReason){
   // Signed off with no gate run, and the operator's reason recorded: the badge's
   // basis is that reason, not the silence every other absence shares.
@@ -431,11 +453,17 @@ function evState(node,ev,basis){
     why:'no run has been recorded for this subject. The '+src+"'s gate is what "
       +'would grade it — an absent record is not a failure.'};
  }
- const rid=(typeof pointer==='object'&&typeof pointer.runId==='string')
-   ?pointer.runId:'';
- const run=rid?evRow(((ev||{}).runs||{})[rid],(ev||{}).fields):null;
+ const rid=pointer.runId;
+ const run=evRow(((ev||{}).runs||{})[rid],(ev||{}).fields);
+ // Asked BEFORE the empty-ledger sentence: a read that failed ships no runs and
+ // no counts, and read as an empty ledger it would claim the record is wrong.
+ const unread=evReadNote(ev);
+ if(!run&&unread)return {key:'ledger-unreadable',run:null,
+   why:'the plan points at run '+rid+', but '
+     +unread+' The plan caches the verdict "'
+     +((pointer&&pointer.status)||'not recorded')+'".'};
  if(!run)return {key:'dangling',run:null,
-   why:'the plan points at '+(rid?'run '+rid:'a block naming no run')
+   why:'the plan points at run '+rid
      +' and the evidence ledger does not hold it — '
      +plural((ev&&ev.files)||0,'file read','files read')+', '
      +plural((ev&&ev.unreadable)||0,'line unreadable','lines unreadable')

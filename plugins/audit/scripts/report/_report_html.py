@@ -392,13 +392,14 @@ POINTER_KEY = "testEvidence"
 TEV_RUN_STATUSES = ("passed", "failed", "gate-mutated", "no-checks",
                     "timed-out", "cancelled", "could-not-run", "empty-gate")
 
-# ...and the FIVE ways a subject has no run to show. FIVE SENTENCES, NEVER ONE
+# ...and the ways a subject has no run to show. ONE SENTENCE EACH, NEVER ONE
 # GREY BLOB: "nothing here can be measured" (no gate is declared at either
 # level), "it can be and never was" (a gate is declared and no run is recorded),
 # "it finished before this plan could record anything", "we cannot tell when it
-# finished" and "the plan points at a run this checkout does not hold" are five
-# different states with five different repairs, and rendering them alike would
-# tell a reader to go looking in the wrong place four times out of five.
+# finished", "the plan points at a run this checkout does not hold" and "the
+# plan points at a run and the ledger could not be read to look for it" are
+# different states with different repairs, and rendering them alike would tell
+# a reader to go looking in the wrong place almost every time.
 #
 # THE LAST TWO ARRIVED WITH THE EVIDENCE BOUNDARY, and they are the reason it is
 # visible at all. A plan adopted mid-flight carries hundreds of subjects the gate
@@ -425,6 +426,11 @@ TEV_LABELS = {
     "undated": "Completion undated",
     "no-gate": "No gate configured",
     "dangling": "Pointer without evidence",
+    # NOT `dangling`, and the difference is the word a reader sees. The plan
+    # points at a run and the read that would have looked it up FAILED, so
+    # whether the ledger holds that run is unknown - "without evidence" would be
+    # a claim about a ledger nobody managed to read.
+    "ledger-unreadable": "Ledger unreadable",
 }
 
 # Which badge key each of `_status_facts.evidence_gap`'s classes renders as.
@@ -474,9 +480,12 @@ TEV_FLAG_LABELS = {
 # (`no-evidence`), then nothing COULD have been recorded yet (`before-recording`),
 # then nothing can ever be (`no-gate`). Each step down is one less thing a reader
 # has to do about it.
+#
+# `ledger-unreadable` HEADS THE TAIL, ahead of `dangling`: the read failing is
+# what a reader has to repair before any pointer below it can be judged at all.
 TEV_ORDER = ("passed", "failed", "gate-mutated", "no-checks", "timed-out",
-             "cancelled", "could-not-run", "empty-gate", "dangling", "undated",
-             "no-evidence", "before-recording", "no-gate")
+             "cancelled", "could-not-run", "empty-gate", "ledger-unreadable",
+             "dangling", "undated", "no-evidence", "before-recording", "no-gate")
 
 _TEV_WHY = {
     "no-gate": "this task declares no tests.gate and its phase declares no "
@@ -517,6 +526,27 @@ _TEV_NO_BASIS = ("no basis for the boundary reached this render, so the moment "
                  "it was placed against cannot be shown here")
 
 
+def ledger_read_basis(error):
+    """`_manifest_vocab.LEDGER_READ_FAILED`, filled with `error`.
+
+    The words are the vocabulary's, not this module's: the panel and both
+    full-run blocks fill the same template, so a reader who meets the failure on
+    more than one surface meets one sentence. This is only the report's spelling
+    of the call.
+    """
+    return _vocab.LEDGER_READ_FAILED % (error,)
+
+
+def tev_read_error(error):
+    """`{error, basis}` - the payload shape a failed ledger read travels in.
+
+    The report's builder of it. The panel builds the same two keys itself, since
+    the layer graph does not let it import this module, and
+    `test__panel_composition` holds the two shapes equal.
+    """
+    return {"error": "%s" % (error,), "basis": ledger_read_basis(error)}
+
+
 def tev_pointer(holder):
     """The `testEvidence` block a task or a phase carries, or None.
 
@@ -528,9 +558,14 @@ def tev_pointer(holder):
     A block with no `runId` points at nothing, so it is read as no block at all -
     the same reading `_doctor_completions.check_evidence_pointers` takes of the
     same field, rather than a second opinion about what half a pointer means.
+    A `runId` that is not a non-empty STRING points at nothing too: the schema
+    types it as a string, and the panel's `evState` and
+    `_doctor_completions.check_evidence_pointers` read it by the same rule, so a
+    number or a boolean cannot be a pointer on one surface and none on another.
     """
     block = holder.get(POINTER_KEY) if isinstance(holder, dict) else None
-    return block if isinstance(block, dict) and block.get("runId") else None
+    return (block if isinstance(block, dict) and isinstance(block.get("runId"), str)
+            and block.get("runId") else None)
 
 
 def tev_configured(task, phase):
@@ -620,7 +655,7 @@ def _tev_gap_view(gap, basis):
                                 else _TEV_NO_BASIS)}
 
 
-def tev_view(pointer, row, configured, gap=None, basis=None):
+def tev_view(pointer, row, configured, gap=None, basis=None, read_error=None):
     """What one subject's test evidence says: one status, and the marks beside it.
 
     `pointer` is the manifest's cached block or None, `row` the ledger row that
@@ -636,6 +671,12 @@ def tev_view(pointer, row, configured, gap=None, basis=None):
     rendered is the ROW's. The pointer's own `status` is never read for the badge:
     a cache that disagreed with the record it names would otherwise decide what
     the report says, and the schema is explicit that the block is disposable.
+
+    `read_error` IS THE CALLER'S FAILED LEDGER READ, or None when the read
+    succeeded. It decides only the pointer whose row is missing: with no read,
+    "the ledger does not carry this run" is a claim nobody could check, so that
+    subject is `ledger-unreadable` rather than `dangling`. A row in hand wins -
+    it was read - and a subject with no pointer is a fact about the plan.
 
     AN UNRECOGNISED WORD IS NAMED, NOT FOLDED INTO `failed`. The schema promises
     the enum may gain members and deliberately does not promise the list is
@@ -659,6 +700,13 @@ def tev_view(pointer, row, configured, gap=None, basis=None):
         return {"key": found["key"], "label": found["label"],
                 "known": found["known"], "flags": [], "pointer": None,
                 "row": None, "history": [], "why": found["why"]}
+    if row is None and read_error is not None:
+        return {"key": "ledger-unreadable",
+                "label": TEV_LABELS["ledger-unreadable"], "known": True,
+                "flags": [], "pointer": pointer, "row": None, "history": [],
+                "why": "%s - the plan names run %s, and whether the ledger "
+                       "holds it is unknown" % (ledger_read_basis(read_error),
+                                                pointer.get("runId"))}
     if row is None:
         return {"key": "dangling", "label": TEV_LABELS["dangling"], "known": True,
                 "flags": [], "pointer": pointer, "row": None, "history": [],
@@ -1002,8 +1050,13 @@ def _verified_line(fr):
     THE THREE ANSWERS THIS PLUGIN CAN MAKE, and never a fourth invented here:
       WHOLE       "sign-off: <derived|wide>, <listed> of <full> suites, <status>
                   <ts>; whole at <sha>" - the phase's own sign-off counts, and
-                  the commit a green, measured, clean, verbatim full run's head
-                  was found to contain.
+                  <sha> is that full run's OWN head (`head`): the commit the
+                  green, measured, clean, verbatim run tested, whose ancestry
+                  was found to contain this phase's `mergedHead`. The count
+                  clause is DROPPED when neither count was recorded, which is
+                  every sign-off without a `meta.phaseGate` - two question marks
+                  would be a placeholder where a claim goes. A half-recorded
+                  pair keeps its "?", because that one is an anomaly.
       PROVISIONAL "whole: pending - record a full run at <mergedHead> (pre-push,
                   CI, or /audit:review <P> --full)" - the repair, not just the gap.
       UNKNOWN     "unknown - <basis>" - `full_status`'s own sentence, verbatim,
@@ -1024,9 +1077,12 @@ def _verified_line(fr):
         full_n = fr.get("full")
         status = fr.get("signOffStatus") or "?"
         ts = fr.get("signOffTs") or "?"
-        return ("sign-off: %s, %s of %s suites, %s %s; whole at %s"
-                % (mode, listed if listed is not None else "?",
-                   full_n if full_n is not None else "?", status, ts, sha))
+        counts = ("" if listed is None and full_n is None
+                  else ", %s of %s suites"
+                  % (listed if listed is not None else "?",
+                     full_n if full_n is not None else "?"))
+        return ("sign-off: %s%s, %s %s; whole at %s"
+                % (mode, counts, status, ts, sha))
     if answer == _vocab.FULL_STATUS_PROVISIONAL:
         merged_head = str(fr.get("mergedHead") or "")[:9] or "?"
         return ("whole: pending - record a full run at %s (pre-push, CI, or "

@@ -573,8 +573,9 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 :where(.chip,.tevn)[data-tev="failed"]{--st:var(--st-blocked);--st-ink:var(--st-blocked-ink)}
 /* Amber is "this is not a verdict", and it covers the states that are all exit 0
    or no exit at all: nothing ran, the run was killed, the runner never started,
-   the plan points at a run this checkout does not hold, and the plan calls work
-   done without saying when, so nothing can place it against the moment recording
+   the plan points at a run this checkout does not hold, the plan points at a run
+   and the ledger could not be read to look for it, and the plan calls work done
+   without saying when, so nothing can place it against the moment recording
    began. None of them is a failing test and none of them can sign anything off —
    and every one of them is something a person has to go and do.
    `gate-mutated` JOINS THEM AND IS NEITHER RED NOR GREY (F280). Every command
@@ -589,6 +590,7 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
 :where(.chip,.tevn)[data-tev="timed-out"],
 :where(.chip,.tevn)[data-tev="could-not-run"],
 :where(.chip,.tevn)[data-tev="undated"],
+:where(.chip,.tevn)[data-tev="ledger-unreadable"],
 :where(.chip,.tevn)[data-tev="dangling"]{--st:var(--st-prog);--st-ink:var(--st-prog-ink)}
 :where(.chip,.tevn)[data-tev="cancelled"]{--st:var(--st-cancelled);
   --st-ink:var(--st-cancelled-ink)}
@@ -620,6 +622,10 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
    "sign-off" and "tasks" — because they are two measurements, and this only has
    to keep them from running together. */
 .ptev{margin-left:var(--sp-2);font-size:.76rem;color:var(--muted);white-space:nowrap}
+/* The full-run mark is one whole sentence, and on one unbreakable line it set the
+   phase cell's narrowest width to that sentence - so a narrow window scrolled the
+   page sideways. It alone may wrap; the short marks above stay on one line. */
+.ptev[data-fullrun]{white-space:normal}
 .tevcell{line-height:1.8}
 /* ---- tables -------------------------------------------------------------- */
 .tablewrap{margin:.5rem 0 1rem}

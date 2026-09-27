@@ -489,6 +489,115 @@ def _cases(check):
           "missing rows and not about the pointers",
           T["P1.1"]["key"] == "passed" and eev["tasks"]["P1.1"]["key"] == "dangling")
 
+    # --- a ledger that could not be READ ---------------------------------------
+    # NOT THE STATE ABOVE. A ledger that is not there answers "the plan names a
+    # run this checkout does not hold"; a read that raised answers nothing about
+    # what the ledger holds, and rendering it as `dangling` with zero counts is
+    # the fabricated clean read this pins against. The pointer-less subjects keep
+    # their own words: they are facts about the plan, which no read decides.
+    _real_read_rows = _evidence_io.read_rows
+
+    def _boom(project, config=None):
+        raise OSError("permission denied (fixture)")
+    _evidence_io.read_rows = _boom
+    try:
+        uev = M.load_evidence(plan, path, project_dir=root)
+    finally:
+        _evidence_io.read_rows = _real_read_rows
+    _ukeys = set(v["key"] for v in uev["tasks"].values())
+    check("ev10c a ledger read that RAISES answers `ledger-unreadable` for every "
+          "pointer - task and phase - carries the read error with its basis, and "
+          "reports the counts UNKNOWN rather than zero: %r"
+          % ((sorted(_ukeys), uev.get("readError"), uev.get("files"),
+              uev.get("unreadable")),),
+          _ukeys == {"ledger-unreadable", "no-evidence", "no-gate"}
+          and uev["phases"]["P1"]["own"]["key"] == "ledger-unreadable"
+          and uev["tasks"]["P1.1"]["label"] == "Ledger unreadable"
+          and "permission denied (fixture)" in uev["tasks"]["P1.1"]["why"]
+          and (uev.get("readError") or {}).get("basis")
+          == _report_html.ledger_read_basis("permission denied (fixture)")
+          and uev["files"] is None and uev["unreadable"] is None)
+    check("ev10d ALLOW: a ledger that was read - empty or not - carries "
+          "readError None and real counts, so an empty ledger still reads "
+          "as dangling and never as unreadable",
+          eev.get("readError", "absent") is None
+          and ev.get("readError", "absent") is None
+          # `_write_project` writes one ledger file even with no rows in it, so
+          # the read counts that file: a real count, where a failed read has None.
+          and eev["files"] == 1 and eev["unreadable"] == 0
+          and "ledger-unreadable" not in set(v["key"] for v in eev["tasks"].values()))
+
+    # --- ...and the THIRD PLACE, when that same read fails ---------------------
+    # The report and the CLI each ask the full-run question in their own process.
+    # A read that raised used to come back as `{"error": ...}`, which no phase id
+    # is a key of - so every merged phase rendered NO full-run line, the silence a
+    # plan with no `meta.fullGate` gets. The panel already answers UNKNOWN with
+    # the read's basis; these two must say the same thing about the same failure.
+    import copy
+    import _loader
+    import _manifest_vocab
+    fplan = copy.deepcopy(plan)
+    fplan["meta"]["fullGate"] = ["full"]
+    fplan["meta"]["buildCommands"] = {"full": "echo x"}
+    fplan["phases"][0]["mergedAt"] = "2026-08-02T00:00:00Z"
+    fplan["phases"][0]["mergedHead"] = "a" * 40
+    froot = _harness.fixture_root("evidence-view-fullrun-unread")
+    fpath = _write_project(froot, fplan, rows)
+    _report_mod = _loader.load_script("render-report.py", modname="ev_render_report")
+    _status_mod = _loader.load_script("audit-status.py", modname="ev_audit_status")
+    _fr_basis = _manifest_vocab.LEDGER_READ_FAILED % ("permission denied (fixture)",)
+    _evidence_io.read_rows = _boom
+    try:
+        _rep_block = _report_mod._full_run_block(fplan, fpath, froot)
+        _cli_block = _status_mod.full_run_block(fplan, fpath, froot)
+        _fev = M.load_evidence(fplan, fpath, project_dir=froot,
+                               full_run=_rep_block)
+    finally:
+        _evidence_io.read_rows = _real_read_rows
+    _fev_row = (((_fev or {}).get("phases") or {}).get("P1") or {}).get("fullRun") or {}
+    check("ev10e a full-run ledger read that RAISES gives every merged phase an "
+          "UNKNOWN answer carrying the read's basis - in the report's block, in "
+          "the row the report renders from, and in the CLI's block - never a "
+          "block no phase is a key of: report %r, rendered %r, cli %r"
+          % (_rep_block, _fev_row, _cli_block),
+          sorted(_rep_block) == ["P1"] and sorted(_cli_block) == ["P1"]
+          and _rep_block["P1"].get("answer") == _manifest_vocab.FULL_STATUS_UNKNOWN
+          and _rep_block["P1"].get("basis") == _fr_basis
+          and _cli_block["P1"].get("answer") == _manifest_vocab.FULL_STATUS_UNKNOWN
+          and _cli_block["P1"].get("basis") == _fr_basis
+          and _fev_row.get("answer") == _manifest_vocab.FULL_STATUS_UNKNOWN
+          and _fev_row.get("basis") == _fr_basis
+          and _report_html._verified_line(_fev_row) == "unknown - " + _fr_basis)
+    # ...and the OTHER step the same function takes before any read: finding
+    # WHERE the ledger lives. A failure there is its own sentence, because the
+    # repair is the config or the project path, not the ledger's files - and one
+    # `try` around both steps would word it as a read that never happened.
+    _loc_basis = _manifest_vocab.LEDGER_LOCATION_FAILED % ("no such project (fixture)",)
+    _real_locate = _evidence_io.project_config_for
+
+    def _no_project(*_a, **_k):
+        raise OSError("no such project (fixture)")
+    _evidence_io.project_config_for = _no_project
+    try:
+        _rep_loc = _report_mod._full_run_block(fplan, fpath, froot)
+        _cli_loc = _status_mod.full_run_block(fplan, fpath, froot)
+    finally:
+        _evidence_io.project_config_for = _real_locate
+    check("ev10g a ledger nobody could LOCATE gives every merged phase an "
+          "UNKNOWN answer carrying the LOCATION template - in the report's "
+          "block and the CLI's - never the read template: report %r, cli %r"
+          % (_rep_loc, _cli_loc),
+          sorted(_rep_loc) == ["P1"] and sorted(_cli_loc) == ["P1"]
+          and all(b["P1"].get("answer") == _manifest_vocab.FULL_STATUS_UNKNOWN
+                  and b["P1"].get("basis") == _loc_basis
+                  for b in (_rep_loc, _cli_loc)))
+    _ok_block = _report_mod._full_run_block(fplan, fpath, froot)
+    check("ev10f ALLOW: with the ledger readable the same plan's merged phase "
+          "carries no ledger-read basis - the UNKNOWN above is the read's, not "
+          "the fixture's: %r" % (_ok_block,),
+          sorted(_ok_block) == ["P1"]
+          and _ok_block["P1"].get("basis") != _fr_basis)
+
     # --- which manifest's record ------------------------------------------------
     proj, cfg = M._project_and_config(path, root)
     check("ev11 the record is resolved from the manifest actually being "

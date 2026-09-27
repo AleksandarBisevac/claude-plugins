@@ -816,14 +816,16 @@ def empty_evidence():
 
     `files` and `unreadable` are zero here rather than absent because no pointer
     exists on this path, so nothing reads them; the moment a pointer does exist,
-    `evidence_view` replaces both with what the ledger actually answered.
+    `evidence_view` replaces both with what the ledger actually answered - or
+    with None beside a filled `readError` when the ledger could not be read.
     """
     return {"fields": list(EVIDENCE_FIELDS),
             "stepFields": list(EVIDENCE_STEP_FIELDS),
-            "runs": {}, "files": 0, "unreadable": 0}
+            "runs": {}, "files": 0, "unreadable": 0, "readError": None}
 
 
-def evidence_view(project, composition, config=None, read=None):
+def evidence_view(project, composition, config=None, read=None,
+                  read_error=None):
     """The recorded runs the plan POINTS AT, as facts the browser re-aggregates.
 
     Keyed by `runId` and cut to the pointers the composition rows already carry,
@@ -852,7 +854,23 @@ def evidence_view(project, composition, config=None, read=None):
     between is how they would come to disagree, and a read that failed would
     otherwise fail twice, in two different shapes, for one cause. `None` (the
     default) asks `read_rows` itself, which is every caller before this one.
+
+    `read_error`, WHEN GIVEN, IS THE CALLER'S OWN FAILED READ, and it wins over
+    `read`. A failed read is not an empty one: the ledger may hold every run the
+    plan points at, so the counts are None (UNKNOWN), never the zeros an empty
+    directory answers, and the ledger is not asked a second time.
     """
+    if read_error is not None:
+        out = empty_evidence()
+        out["files"], out["unreadable"] = None, None
+        # The report's shape (`_report_html.tev_read_error`) built here, because
+        # the layer graph refuses that import; the words are the vocabulary's
+        # template, which both fill. `test__panel_composition` holds the two
+        # shapes equal.
+        out["readError"] = {"error": "%s" % (read_error,),
+                            "basis": _manifest_vocab.LEDGER_READ_FAILED
+                            % (read_error,)}
+        return out
     wanted = set()
     for group in ("phases", "tasks"):
         for row in (composition.get(group) or []):
@@ -986,7 +1004,7 @@ def _phase_full_run(ph, full_commands, rows, git_root, run=None, cache=None,
         return None
     if error is not None:
         return {"answer": _manifest_vocab.FULL_STATUS_UNKNOWN,
-                "basis": "the evidence ledger could not be read: %s" % (error,),
+                "basis": _manifest_vocab.LEDGER_READ_FAILED % (error,),
                 "runId": None}
     asked = _memoizing_runner(cache, run) if isinstance(cache, dict) else run
     return _ev.full_status(rows, ph, git_root, full_commands, run=asked)

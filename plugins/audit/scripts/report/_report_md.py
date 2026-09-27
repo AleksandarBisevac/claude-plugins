@@ -109,6 +109,15 @@ def render_md(manifest, summary, usage=None, evidence=None):
     out += ["**Overall:** %d/%d tasks done · %d/%d phases signed off · %d open bug(s) · %d ready now"
             % (tdone, summary["tasks"]["total"], phdone, len(summary["phases"]),
                summary["bugs"]["open"], len(summary["ready"])), ""]
+    # THE ONE SENTENCE THE COLUMN CANNOT CARRY. The HTML badge holds the read
+    # error as its detail; this table has no title to put it in, so it is said
+    # once here, above every phase, and only when the read failed - a readable
+    # ledger renders the twin it always did.
+    read_error = (evidence or {}).get("readError")
+    if isinstance(read_error, dict) and read_error.get("basis"):
+        out += ["**Test evidence:** %s - so a task whose tests cell reads "
+                "`ledger-unreadable` names a run nobody could look up."
+                % cell(read_error["basis"]), ""]
     for ph, psum in zip(
             [p for p in (manifest.get("phases") or []) if isinstance(p, dict)],
             summary["phases"]):

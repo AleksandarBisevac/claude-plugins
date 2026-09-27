@@ -679,6 +679,45 @@ def _cases(check):
           "clean plan: %r" % (_levels(rep, "evidence"),),
           _levels(rep, "evidence") == ["WARNING"]
           and "not checked" in _detail(rep, "evidence"))
+
+    # THE ONE SENTENCE. A read that raised is worded by the vocabulary's
+    # template - the words every other surface uses for the same failure - and
+    # this check adds only what it could not do because of it.
+    import _manifest_vocab
+    rep = base.Report()
+    proj = _ledger_project("dcev-unread", [ROW])
+    _real_read = _ev.read_rows
+
+    def _boom(*_a, **_k):
+        raise OSError("permission denied (fixture)")
+    _ev.read_rows = _boom
+    try:
+        M.check_evidence_pointers(rep, proj, _plan(
+            {"runId": "R1", "status": "failed", "at": ROW["ts"]}))
+    finally:
+        _ev.read_rows = _real_read
+    check("dc40 a ledger read that raises is the vocabulary's read sentence, "
+          "then what went unchecked because of it - never a wording of its "
+          "own: %r" % (_detail(rep, "evidence"),),
+          _levels(rep, "evidence") == ["WARNING"]
+          and _detail(rep, "evidence")
+          == (_manifest_vocab.LEDGER_READ_FAILED % ("permission denied (fixture)",)
+              + " - so the plan's pointers were not checked"))
+
+    # A runId that is not a non-empty STRING points at nothing - the schema's
+    # type, and the rule the report's `tev_pointer` and the panel's `evState`
+    # read the same field by. Read as a pointer, `7` became a dangling run id
+    # beside the real finding (the run is ahead of the plan).
+    rep = base.Report()
+    proj = _ledger_project("dcev-numeric", [ROW])
+    M.check_evidence_pointers(rep, proj, _plan({"runId": 7, "status": "failed",
+                                                "at": ROW["ts"]}))
+    check("dc41 a runId that is not a string is no pointer: the one finding is "
+          "the recorded run the plan does not name, and no run id `7` is "
+          "reported missing: %r" % (_detail(rep, "evidence"),),
+          _levels(rep, "evidence") == ["WARNING"]
+          and "reconcile" in _detail(rep, "evidence")
+          and " 7" not in _detail(rep, "evidence"))
     _shutil.rmtree(os.path.join(tmp, "dcev-ok"), ignore_errors=True)
 
 

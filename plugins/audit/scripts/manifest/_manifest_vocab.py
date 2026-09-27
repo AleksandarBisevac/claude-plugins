@@ -262,6 +262,20 @@ FULL_STATUS_NOT_DECLARED = "not_declared"
 FULL_STATUS = (FULL_STATUS_WHOLE, FULL_STATUS_PROVISIONAL,
               FULL_STATUS_UNKNOWN, FULL_STATUS_NOT_DECLARED)
 
+# The one sentence for an evidence-ledger read that failed, as a `%s` template
+# the caller fills with the error. It sits beside UNKNOWN because that is the
+# answer it most often explains: a merged phase whose full run nobody could look
+# up. Held here, at the floor, so every surface that reports the failure - the
+# report's badges, the panel's payload, both full-run blocks, the doctor's
+# ledger checks - fills one template instead of wording it again. A failure to
+# RESOLVE where the ledger lives is a different fact, so it has a template of
+# its own just below.
+LEDGER_READ_FAILED = "the evidence ledger could not be read: %s"
+# ...and the one for failing to find WHERE that ledger lives - the project, its
+# config or its git root - before any read was tried. A separate sentence,
+# because the repair is a different one.
+LEDGER_LOCATION_FAILED = "where the evidence ledger lives could not be resolved: %s"
+
 
 # Known keys per level. Unknown keys are WARNINGS (typo catcher), never findings
 # — additionalProperties stays permissive for forward/backward compatibility.

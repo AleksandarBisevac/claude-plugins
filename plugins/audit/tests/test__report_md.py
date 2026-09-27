@@ -184,6 +184,36 @@ def _cases(check):
           and "| passed |" in _partial
           and [ln for ln in _partial.splitlines()
                if ln.startswith("| P2.1 ")][0].endswith("| — | — |"))
+    # THE TWIN HAS NO TITLE ATTRIBUTE, so the sentence the HTML badge carries as
+    # its detail needs a line of its own here - once, above the phases - while
+    # the column keeps its one machine value. Absent for a readable ledger, which
+    # is what keeps every committed twin byte-identical.
+    _ur_basis = "the evidence ledger could not be read: disk gone (fixture)"
+    _ur = M.render_md(manifest, summary, None,
+                      {"tasks": {"P1.1": {"key": "ledger-unreadable"}},
+                       "readError": {"error": "disk gone (fixture)",
+                                     "basis": _ur_basis}})
+    check("md16 a ledger that could not be read is SAID in the twin, once, with "
+          "its basis, and the column carries the machine key the HTML filters "
+          "by",
+          _ur.count(_ur_basis) == 1
+          and "| ledger-unreadable |" in _ur
+          and _ur.index(_ur_basis) < _ur.index("## "))
+    # The generation stamp is wall-clock unless SOURCE_DATE_EPOCH is set, so the
+    # comparison drops that one line rather than racing a minute boundary.
+
+    def _unstamped(text):
+        return [ln for ln in text.splitlines() if not ln.startswith("repo: ")]
+    check("md17 ALLOW: a readable ledger adds no such line - the twin is the "
+          "one it always was",
+          # The line's own marker, not its wording: an over-firing line would
+          # carry whatever basis it was handed, so the words cannot be the test.
+          "**Test evidence:**" not in _tev
+          and "**Test evidence:**" not in _partial
+          and _unstamped(M.render_md(manifest, summary, None,
+                                     {"tasks": {"P1.1": {"key": "passed"}},
+                                      "readError": None}))
+          == _unstamped(_partial))
 
 
 def _signoff_cases(check):

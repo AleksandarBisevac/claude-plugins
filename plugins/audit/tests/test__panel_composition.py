@@ -1086,6 +1086,48 @@ def _cases(check):
               "and never a raise: no runs, no files, nothing unreadable",
               M.evidence_view(os.path.join(_evproj, "nope"), _ev_view)
               == M.empty_evidence())
+        # A READ THAT FAILED IS NOT AN EMPTY READ. The caller hands the error
+        # in; the view must neither ask the ledger again (that would be a
+        # second read, failing a second time in a second shape) nor answer
+        # zero counts for a read nobody made.
+        _ev_err = M.evidence_view(_evproj, _ev_view,
+                                  read_error="disk exploded (fixture)")
+        _ev_err_basis = (_ev_err.get("readError") or {}).get("basis")
+        _fr_err = M._composition_view(
+            {"meta": {"version": 2, "fullGate": ["full"],
+                      "buildCommands": {"full": "echo x"}},
+             "phases": [{"id": "P1", "title": "m", "status": "done",
+                         "mergedAt": "2026-09-02T00:00:00Z",
+                         "mergedHead": "a" * 40}]},
+            full_run_error="disk exploded (fixture)")["phases"][0]
+        check("ev16 a read error reaches the evidence payload as `readError` "
+              "with the error AND the same basis sentence the full-run UNKNOWN "
+              "carries, the counts UNKNOWN rather than zero, and no runs even "
+              "though the directory holds some - the error wins over a second "
+              "read: %r" % (_ev_err,),
+              (_ev_err.get("readError") or {}).get("error")
+              == "disk exploded (fixture)"
+              and _ev_err_basis
+              == (_fr_err.get("fullRun") or {}).get("basis")
+              and _ev_err["files"] is None and _ev_err["unreadable"] is None
+              and _ev_err["runs"] == {}
+              and sorted(_ev_err) == sorted(M.empty_evidence()))
+        # ONE SHAPE, ONE SENTENCE, TWO SURFACES. The panel builds its payload
+        # without importing the report (the layer graph refuses that edge), so
+        # what keeps the two from drifting is this comparison, not a shared
+        # function: the report's builder and the vocabulary's template.
+        import _report_html
+        check("ev16b the panel's `readError` is the report's own shape, and its "
+              "basis is `_manifest_vocab`'s template filled: %r"
+              % (_ev_err.get("readError"),),
+              _ev_err.get("readError")
+              == _report_html.tev_read_error("disk exploded (fixture)")
+              and _ev_err_basis == _manifest_vocab.LEDGER_READ_FAILED
+              % ("disk exploded (fixture)",))
+        check("ev17 ALLOW: an empty read and a successful one carry readError "
+              "None - the key is always there, and only a failed read fills it",
+              M.empty_evidence().get("readError", "absent") is None
+              and _ev_out.get("readError", "absent") is None)
     finally:
         shutil.rmtree(_evproj, ignore_errors=True)
 

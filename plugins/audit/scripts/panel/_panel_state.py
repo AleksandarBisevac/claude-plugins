@@ -484,13 +484,15 @@ def build_state(project, run=None, full_run_cache=None):
             # shapes, for one cause. This read is unconditional because
             # `evidence_view` already needed it before the third place
             # existed; caught here rather than left to raise, because an
-            # unreadable ledger must not break the payload.
+            # unreadable ledger must not break the payload. A failed read
+            # leaves NO read behind - never an empty one standing in for it,
+            # which both consumers would render as a ledger that holds nothing.
+            # The error travels instead, to both of them.
             try:
                 ledger_read = _evidence_io.read_rows(project, config=config)
                 ledger_error = None
             except Exception as exc:
-                ledger_read = {"rows": [], "files": 0, "unreadable": 0,
-                              "unreadableFiles": []}
+                ledger_read = None
                 ledger_error = "%s" % (exc,)
             # THE THIRD PLACE'S OWN INPUTS, GATED ON WHETHER THERE IS ONE TO
             # ASK ABOUT AT ALL. `full_gate_commands` is the SAME resolution
@@ -518,7 +520,8 @@ def build_state(project, run=None, full_run_cache=None):
             # pointers are already on those rows, and the runs worth shipping are
             # exactly the ones they name.
             evidence = _evidence_view(project, composition, config=config,
-                                      read=ledger_read)
+                                      read=ledger_read,
+                                      read_error=ledger_error)
             bugs = _bugs_view(manifest)
             proposals = _proposals_view(manifest)
     return {

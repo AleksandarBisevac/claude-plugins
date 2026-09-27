@@ -472,6 +472,29 @@ def _full_run_cases(check):
               phases_err["P1"].get("fullRun", {}).get("answer")
               == _manifest_vocab.FULL_STATUS_UNKNOWN
               and "permission denied" in phases_err["P1"]["fullRun"]["basis"])
+        # THE SAME FAILURE, ONE PAYLOAD KEY OVER. The evidence tab reads
+        # `evidence`, not the phase row, and a read that raised used to reach
+        # it as a clean empty read: no runs, nothing read, nothing unreadable -
+        # the exact answer a ledger nobody ever wrote gives. The counts are
+        # asserted UNKNOWN (None) rather than merely non-zero, because a zero
+        # here is the fabricated claim itself.
+        ev_err = st_err["evidence"]
+        rerr = ev_err.get("readError")
+        check("bs3b ...and the EVIDENCE payload carries that same read error, "
+              "never zero files and zero unreadable lines standing in for a "
+              "read nobody made: %r" % (ev_err,),
+              isinstance(rerr, dict)
+              and "permission denied" in str(rerr.get("error"))
+              and "permission denied" in str(rerr.get("basis"))
+              and ev_err["files"] is None and ev_err["unreadable"] is None
+              and ev_err["runs"] == {})
+        # ALLOW, for the mutation that always reports an error: a ledger that
+        # WAS read carries no read error and its real counts.
+        ev_ok = st["evidence"]
+        check("bs3c ALLOW: a ledger that was read carries readError None and "
+              "the counts the read answered: %r" % (ev_ok,),
+              ev_ok.get("readError", "absent") is None
+              and ev_ok["files"] == 1 and ev_ok["unreadable"] == 0)
 
         # --- COST: with and without the process-local memo ---------------------
         # `full_run_cache` held ACROSS two build_state calls (two simulated

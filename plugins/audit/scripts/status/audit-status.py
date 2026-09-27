@@ -357,11 +357,16 @@ def full_run_block(manifest, manifest_path, project):
     WHICH PHASES ARE ASKED is `_evidence_io.merged_phase`, the one predicate
     the report, the panel and the doctor call too.
 
-    AN EXCEPTION COMES BACK AS A BLOCK WITH NO PHASE KEYS AT ALL, the same shape
-    `invariants_block` and `portability_block` answer with for the reason their
-    own docstrings give: `provisional_phases` and `stale_full_runs` both read an
-    unreadable block as "nothing was verified" and trip, rather than as a clean
-    plan a crash produced.
+    A FAILURE COMES BACK AS EVERY MERGED PHASE ANSWERING UNKNOWN, with the
+    failure as its basis, and never as a block no phase id is a key of: that
+    shape rendered no full-run word for any phase, the silence a plan with no
+    `meta.fullGate` gets, over a question that was asked and could not be
+    answered. The read's own failure is `_manifest_vocab.LEDGER_READ_FAILED`, the
+    sentence every surface fills; failing to resolve WHERE the ledger lives is a
+    different fact and keeps a wording of its own. UNKNOWN is what the panel
+    answers for the same failure. `provisional_phases` and `stale_full_runs`
+    count neither UNKNOWN nor a failure, so neither condition fails a gate on an
+    unreadable ledger - the answer is visible per phase, not a gate verdict.
     """
     meta = (manifest.get("meta") if isinstance(manifest, dict) else None) or {}
     full_commands = [c for _n, c in _evidence_io.resolved_commands(
@@ -372,9 +377,13 @@ def full_run_block(manifest, manifest_path, project):
         project_root, config = _evidence_io.project_config_for(
             manifest_path, project)
         git_root = _invariants.git_root_for(manifest, project_root)
+    except Exception as exc:                       # defensive; see the docstring
+        return _full_run_unknown(manifest,
+                                 _vocab.LEDGER_LOCATION_FAILED % (exc,))
+    try:
         rows = _evidence_io.read_rows(project_root, config=config)["rows"]
     except Exception as exc:                       # defensive; see the docstring
-        return {"error": "the full-gate ledger could not be read: %s" % (exc,)}
+        return _full_run_unknown(manifest, _vocab.LEDGER_READ_FAILED % (exc,))
     out = {}
     for p in (manifest.get("phases") or []):
         if not _evidence_io.merged_phase(p):
@@ -382,6 +391,16 @@ def full_run_block(manifest, manifest_path, project):
         out[p["id"]] = _evidence_io.full_status(rows, p, git_root,
                                                  full_commands)
     return out
+
+
+def _full_run_unknown(manifest, basis):
+    """Every MERGED phase answering UNKNOWN for `basis` - `full_status`'s own
+    keys, so a reader of the block cannot tell a failed read from an ancestry
+    question git could not answer by its SHAPE, only by the sentence."""
+    return dict((p["id"], {"answer": _vocab.FULL_STATUS_UNKNOWN, "basis": basis,
+                           "runId": None, "wholeRunId": None, "wholeRunTs": None})
+                for p in (manifest.get("phases") or [])
+                if _evidence_io.merged_phase(p))
 
 
 def _provisional_detail(summary):

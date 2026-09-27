@@ -126,6 +126,47 @@ def _cases(check):
         check("pg8 no --command at all is a usage error, not a silent empty "
               "report - a caller that forgot the flag learns that immediately",
               rc == M.E_USAGE and "--command" in err.getvalue())
+
+        # TWO STEPS, TWO SENTENCES, and anything else as ITSELF. Finding where
+        # the ledger lives and reading it fail for different reasons with
+        # different repairs; both are the vocabulary's templates. An error that
+        # is neither must not be labelled a ledger read at all.
+        import _manifest_vocab
+        err_text = "permission denied (fixture)"
+
+        def _boom(*_a, **_k):
+            raise OSError(err_text)
+
+        def _main_err(patch_mod, attr, replacement):
+            real = getattr(patch_mod, attr)
+            setattr(patch_mod, attr, replacement)
+            buf = io.StringIO()
+            try:
+                with contextlib.redirect_stderr(buf):
+                    code = M.main([manifest_path, "--command", "npm test"])
+            finally:
+                setattr(patch_mod, attr, real)
+            return code, buf.getvalue()
+
+        rc9, err9 = _main_err(_evidence_io, "project_config_for", _boom)
+        check("pg9 a ledger nobody could LOCATE is the location sentence, never "
+              "the read sentence: %r" % (err9,),
+              rc9 == M.E_USAGE
+              and (_manifest_vocab.LEDGER_LOCATION_FAILED % (err_text,)) in err9
+              and (_manifest_vocab.LEDGER_READ_FAILED % (err_text,)) not in err9)
+        rc10, err10 = _main_err(_evidence_io, "read_rows", _boom)
+        check("pg10 a ledger READ that raises is the vocabulary's read sentence: %r"
+              % (err10,),
+              rc10 == M.E_USAGE
+              and (_manifest_vocab.LEDGER_READ_FAILED % (err_text,)) in err10)
+
+        def _classify_broke(*_a, **_k):
+            raise ValueError("classify broke (fixture)")
+        rc11, err11 = _main_err(M, "classify", _classify_broke)
+        check("pg11 an error that is neither step is printed as ITSELF - never "
+              "labelled a ledger read it was not: %r" % (err11,),
+              rc11 == M.E_USAGE and "classify broke (fixture)" in err11
+              and "evidence ledger" not in err11)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

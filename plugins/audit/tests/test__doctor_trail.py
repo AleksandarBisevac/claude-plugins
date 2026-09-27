@@ -1444,12 +1444,12 @@ def _cases(check):
         M.check_shadow_recall(rep, unread, manifest_rel,
                               {"meta": {"phaseGate": {"mode": "shadow"}}})
         check("dsr5 RED-FIRST: an unparseable ledger line is a WARNING that "
-              "the evidence ledger could not be read, never folded into "
+              "the evidence ledger was only partly readable, never folded into "
               "'no shadow runs recorded' - no recall figure is printed "
               "over a ledger this check could not fully read: %r"
               % (_detail(rep, "shadow recall"),),
               _levels(rep, "shadow recall") == ["WARNING"]
-              and "could not read the evidence ledger"
+              and "the evidence ledger was only partly readable"
                   in _detail(rep, "shadow recall")
               and "none recorded" not in _detail(rep, "shadow recall")
               and "%" not in _detail(rep, "shadow recall"))
@@ -1592,12 +1592,13 @@ def _cases(check):
                                      "mergedHead": "c" * 40}]},
                          full_unread)
         check("dfr5 RED-FIRST: an unparseable ledger line is a WARNING that "
-              "the evidence ledger could not be read, never folded into a "
+              "the evidence ledger was only partly readable, never folded into a "
               "phase verdict - no PROVISIONAL/UNKNOWN row is printed over a "
               "ledger this check could not fully read: %r"
               % (_detail(rep, "full run"),),
               _levels(rep, "full run") == ["WARNING"]
-              and "could not read the evidence ledger" in _detail(rep, "full run")
+              and "the evidence ledger was only partly readable"
+                  in _detail(rep, "full run")
               and "P1" not in _detail(rep, "full run"))
     finally:
         shutil.rmtree(full_unread, ignore_errors=True)
@@ -1724,8 +1725,68 @@ def _cases(check):
         shutil.rmtree(full_same, ignore_errors=True)
 
 
+def _ledger_failure_cases(check):
+    """A ledger read that FAILED, and a ledger nobody could LOCATE, each worded
+    once - by `_manifest_vocab`'s templates, on every check that reads it.
+
+    Two facts with two repairs, which one `try` around both steps used to fold
+    into one sentence. The manifest below reaches the read in all four checks:
+    a budget for the economy, a shadow mode for recall, a third place and one
+    merged phase for the full run."""
+    import _manifest_vocab
+    root = _harness.fixture_root("doctor-trail-ledger-failures-")
+    manifest = {"meta": {"gateBudgetMs": 60000,
+                         "phaseGate": {"mode": "shadow"},
+                         "fullGate": ["echo x"]},
+                "phases": [{"id": "P1", "status": "done",
+                            "mergedAt": "2026-01-01T00:00:00Z",
+                            "mergedHead": "d" * 40}]}
+    mrel = "docs/audit/audit-plan.json"
+    names = ("gate patterns", "gate economy", "shadow recall", "full run")
+
+    def _all_four():
+        rep = base.Report()
+        M.check_gate_patterns(rep, root, mrel)
+        M.check_gate_economy(rep, root, mrel, manifest)
+        M.check_shadow_recall(rep, root, mrel, manifest)
+        M.check_full_run(rep, root, mrel, manifest, root)
+        return dict((n, (_levels(rep, n), _detail(rep, n))) for n in names)
+
+    def _boom(*_a, **_k):
+        raise OSError("permission denied (fixture)")
+    err = "permission denied (fixture)"
+    try:
+        os.makedirs(os.path.join(root, "docs", "audit"))
+        real_read, real_locate = _evidence_io.read_rows, _evidence_io.project_config_for
+        _evidence_io.read_rows = _boom
+        try:
+            unread = _all_four()
+        finally:
+            _evidence_io.read_rows = real_read
+        _evidence_io.project_config_for = _boom
+        try:
+            unlocated = _all_four()
+        finally:
+            _evidence_io.project_config_for = real_locate
+        want_read = _manifest_vocab.LEDGER_READ_FAILED % (err,)
+        want_locate = _manifest_vocab.LEDGER_LOCATION_FAILED % (err,)
+        check("dlf1 a ledger read that RAISES is one WARNING on each of the "
+              "four checks, worded by the vocabulary's read template and "
+              "nothing else: %r" % (unread,),
+              all(unread[n] == (["WARNING"], want_read) for n in names))
+        check("dlf2 a ledger nobody could LOCATE is the location template on "
+              "each of the four, never the read template - the repair is a "
+              "different one: %r" % (unlocated,),
+              all(unlocated[n] == (["WARNING"], want_locate) for n in names))
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _ledger_failure_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

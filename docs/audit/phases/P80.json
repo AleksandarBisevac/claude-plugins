@@ -1090,7 +1090,35 @@
         "docs/screenshots/panel-policy.png",
         "docs/screenshots/panel-proposals.png",
         "docs/screenshots/panel-usage.png",
-        "docs/screenshots/captured-at.json"
+        "docs/screenshots/captured-at.json",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/report/render-report.py",
+        "plugins/audit/tests/test_render_report.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/scripts/ui/report-css/badges.css",
+        "plugins/audit/scripts/ui/panel-css/status-colours.css",
+        "examples/acme-store/acme-store-audit.html",
+        "examples/acme-store/acme-store-audit.md",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "tools/check-report-interactive.mjs",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/mobile.png",
+        "docs/screenshots/overview.png",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/ui-tests/evidence-badge.test.mjs",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/scripts/status/_doctor_completions.py",
+        "plugins/audit/tests/test__doctor_completions.py",
+        "plugins/audit/scripts/governance/propose-gates.py",
+        "plugins/audit/tests/test_propose_gates.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1126,7 +1154,12 @@
       },
       "startedAt": "2026-09-27T11:21:50Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T13:15:38Z.1cf137",
+        "status": "failed",
+        "at": "2026-09-27T13:15:38Z"
+      }
     },
     {
       "id": "P80.16-rtb",
@@ -1467,7 +1500,8 @@
       "files": [
         "CHANGELOG.md",
         "COMPATIBILITY.md",
-        "plugins/audit/scripts/governance/_evidence_io.py"
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "gate-only",
@@ -1502,6 +1536,50 @@
         "descriptive": null
       },
       "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P80.23-rtb",
+      "title": "the panel screenshot capture keeps its demo identity and its fixture skills now that the fixture is a git repository",
+      "status": "in_progress",
+      "description": "A full 'node tools/capture-screenshots.mjs' run on the P80 branch fails two panel preconditions it passed before the demo fixture became a git repository: 'these shots would be captured as null rather than the demo identity dev@example.com - GIT_CONFIG_GLOBAL did not take', and 'the fixture manifest spells [clean-typescript, pragmatic-testing, safe-incremental-refactor, structured-code-review, web-security], which the fixture home does not declare'. --check passes, so the gap is in what only a full capture asserts. Find the root cause (the fixture's hand-written .git/config, the panel's identity and discovery lookups, the tool's environment) and fix it where it lives; if it lives in a file outside this task, stop and name it. Prove it with a full capture of the panel leg exiting 0 and a regression case that fails on the current code.",
+      "files": [
+        "tools/capture-screenshots.mjs",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_gen_demo_manifest.py: the regression the root cause calls for, named after it is found"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T12:48:08Z",
       "completedAt": null,
       "verifiedBy": []
     }

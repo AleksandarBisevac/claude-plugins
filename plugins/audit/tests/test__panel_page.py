@@ -719,15 +719,29 @@ def _cases(check):
     _ev_uncovered = [w for w in _ev_enum
                      if ("'%s':" % w) not in _evword_block
                      and ("%s:" % w) not in _evword_block]
-    # The three the PLAN answers rather than a run. They must NOT be schema
-    # statuses: a manifest carrying `status: "no-gate"` would be a run claiming
-    # to be a silence.
-    _ev_plan_only = [k for k in ("none", "no-gate", "dangling") if k in _ev_enum]
+    # The keys the PLAN or the READ answers rather than a run. They must NOT be
+    # schema statuses: a manifest carrying `status: "no-gate"` would be a run
+    # claiming to be a silence, and one carrying `ledger-unreadable` would be a
+    # run claiming the read that looked for it failed.
+    _ev_plan_only = [k for k in ("none", "no-gate", "dangling",
+                                 "ledger-unreadable") if k in _ev_enum]
     check("ev2 the badge table covers every status the SCHEMA lets a manifest "
-          "cache (%r uncovered), and the three keys the page adds are the ones "
+          "cache (%r uncovered), and the keys the page adds are the ones "
           "no run can report (%r wrongly in the enum) - a comment claiming two "
           "vocabularies agree is not a check" % (_ev_uncovered, _ev_plan_only),
           bool(_ev_enum) and not _ev_uncovered and not _ev_plan_only)
+    # CONSTRUCT, and labelled as one: the painted hue belongs to the browser
+    # gates. The unreadable-ledger badge wears the WARN ink of the states a person
+    # has to act on, beside `dangling`, and never the muted ink of a silence.
+    _ev_warn_from = M.UI_HTML.find('[data-evstatus="gate-mutated"],')
+    _ev_warn_to = M.UI_HTML.find("{--st:var(--warn)}", max(_ev_warn_from, 0))
+    _ev_warn = (M.UI_HTML[_ev_warn_from:_ev_warn_to]
+                if 0 <= _ev_warn_from < _ev_warn_to else "")
+    check("ev2b CONSTRUCT: the panel paints `ledger-unreadable` in the warn "
+          "group beside `dangling`, and names it once: %r" % (_ev_warn,),
+          '[data-evstatus="ledger-unreadable"]' in _ev_warn
+          and '[data-evstatus="dangling"]' in _ev_warn
+          and M.UI_HTML.count('[data-evstatus="ledger-unreadable"]') == 1)
     check("ev3 an unrecognised verdict is NAMED rather than folded into "
           "'failed' - the schema leaves the enum open and says so, so the "
           "default arm humanises the word it did not recognise, and a run that "
@@ -816,6 +830,11 @@ def _cases(check):
           and "{key:'before-recording',run:null," in _evsrc
           and "{key:'undated',run:null," in _evsrc
           and "if(!run)return {key:'dangling',run:null," in _evsrc
+          # ...and a pointer whose run could not be looked up because the READ
+          # failed wears its own key, asked before the dangling one.
+          and "if(!run&&unread)return {key:'ledger-unreadable',run:null," in _evsrc
+          and 0 <= _evsrc.find("if(!run&&unread)return")
+          < _evsrc.find("if(!run)return {key:'dangling'")
           and "an absent record is not a failure." in _evsrc
           and "no test gate is declared here or on the phase" in _evsrc
           and "excused, not missing" in _evsrc

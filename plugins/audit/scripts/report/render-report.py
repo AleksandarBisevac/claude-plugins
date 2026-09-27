@@ -98,6 +98,7 @@ import _report_usage          # noqa: E402  (the Usage section: ledger load, cha
 import _evidence_view         # noqa: E402  (the test-execution record: the only read of it)
 import _evidence_io           # noqa: E402  (WHEN this plan could first have recorded, at layer 2)
 import _invariants            # noqa: E402  (git_root_for: where the third place asks ancestry)
+import _manifest_vocab        # noqa: E402  (FULL_STATUS_UNKNOWN and the one ledger-read sentence, at layer 1)
 import _report_md             # noqa: E402  (the Markdown twin)
 import _report_page           # noqa: E402  (the whole document: vocab, table, render_html)
 import _areas                 # noqa: E402  (plan_skill_refs: which names this plan uses)
@@ -191,6 +192,10 @@ def _full_run_block(manifest, manifest_path, project):
     the commit a whole-bearing run's head resolved to without reading the
     ledger itself; `mergedHead`, `phaseId` and `testGateBasis` are added on
     every entry so the renderer needs nothing from `manifest` either.
+
+    A FAILURE IS AN UNKNOWN ON EVERY MERGED PHASE, never a block no phase id is
+    a key of - `_full_run_unknown` below, and `audit-status.py`'s own
+    `full_run_block` docstring for why.
     """
     meta = (manifest.get("meta") if isinstance(manifest, dict) else None) or {}
     full_commands = [c for _name, c in _evidence_io.resolved_commands(
@@ -201,9 +206,14 @@ def _full_run_block(manifest, manifest_path, project):
         project_root, config = _evidence_io.project_config_for(
             manifest_path, project)
         git_root = _invariants.git_root_for(manifest, project_root)
+    except Exception as exc:                       # defensive; see the docstring
+        return _full_run_unknown(manifest,
+                                 _manifest_vocab.LEDGER_LOCATION_FAILED % (exc,))
+    try:
         rows = _evidence_io.read_rows(project_root, config=config)["rows"]
     except Exception as exc:                       # defensive; see the docstring
-        return {"error": "the full-gate ledger could not be read: %s" % (exc,)}
+        return _full_run_unknown(manifest,
+                                 _manifest_vocab.LEDGER_READ_FAILED % (exc,))
     out = {}
     for p in (manifest.get("phases") or []):
         if not _evidence_io.merged_phase(p):
@@ -221,6 +231,21 @@ def _full_run_block(manifest, manifest_path, project):
                     res["head"] = str(head)
         out[p["id"]] = res
     return out
+
+
+def _full_run_unknown(manifest, basis):
+    """Every MERGED phase answering UNKNOWN for `basis`, carrying the keys
+    `_report_html._verified_line` reads, so a failure renders as
+    "unknown - <basis>" on each merged phase rather than as no line at all -
+    the silence a plan with no `meta.fullGate` gets. The panel answers the same
+    failure the same way."""
+    return dict((p["id"], {"answer": _manifest_vocab.FULL_STATUS_UNKNOWN,
+                           "basis": basis, "runId": None,
+                           "mergedHead": p.get("mergedHead"),
+                           "phaseId": p.get("id"),
+                           "testGateBasis": p.get("testGateBasis")})
+                for p in (manifest.get("phases") or [])
+                if _evidence_io.merged_phase(p))
 
 # The document itself lives in _report_page.py (P13.3) and its Markdown twin in
 # _report_md.py — this file kept `main()`, the theme resolve and the suite that

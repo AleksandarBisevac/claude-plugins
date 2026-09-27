@@ -2329,7 +2329,9 @@ const FULLRUN_REQUIRED = {
 // sha is the prefix `_verified_line` cuts, and the whole line's counts may be
 // `?` - the renderer's honest "not recorded" - so they are not pinned.
 const FULLRUN_SHAPES = {
-  whole: /^sign-off: (derived|wide), \S+ of \S+ suites, \S+ \S+; whole at [0-9a-f]{9}$/,
+  // The count clause is present only when a count was recorded, and never as
+  // two question marks: that is the placeholder `_verified_line` drops.
+  whole: /^sign-off: (derived|wide)(, (?!\? of \?)(\d+|\?) of (\d+|\?) suites)?, \S+ \S+; whole at [0-9a-f]{9}$/,
   provisional: /^whole: pending - record a full run at [0-9a-f]{9} \(pre-push, CI, or \/audit:review \S+ --full\)$/,
   unknown: /^unknown - \S/,
 };

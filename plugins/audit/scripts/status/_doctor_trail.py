@@ -918,16 +918,21 @@ def check_task_restarts(rep, project, config=None):
 
 
 def _read_gate_rows(project, manifest_rel):
-    """`(eproject, econfig, rows, exc, unreadable)` off the evidence ledger
+    """`(eproject, econfig, rows, failure, unreadable)` off the evidence ledger
     the manifest at `manifest_rel` points to - the ONE read
     `check_gate_patterns`, `check_gate_economy` and `check_shadow_recall`
     all open with, so none of the three can resolve the ledger a different
     way the day `project_config_for` learns a new rule.
 
-    `exc` is the raised exception, or `None` when the read itself succeeded
-    - `eproject`/`econfig`/`rows` are `None` exactly when `exc` is not.
-    `unreadable` is `_evidence_io.read_rows`'s own count of rows or files it
-    could not parse, always `0` when `exc` is set (nothing was read at all)
+    `failure` is the sentence to warn with, or `None` when the read
+    succeeded - `eproject`/`econfig`/`rows` are `None` exactly when it is not.
+    TWO STEPS, TWO SENTENCES: failing to find where the ledger lives is
+    `_manifest_vocab.LEDGER_LOCATION_FAILED`, failing to read it once found is
+    `LEDGER_READ_FAILED`. Every surface fills those same templates, and one
+    `try` around both steps would word a location failure as a read nobody
+    made. `unreadable` is `_evidence_io.read_rows`'s own count of rows or
+    files it could not parse, always `0` when `failure` is set (nothing was
+    read at all)
     and NEVER folded into an empty `rows`: a caller that only checked
     `rows` for zero would read a torn ledger as a clean one that simply has
     no history yet, which is the exact silence `check_shadow_recall` is
@@ -937,11 +942,15 @@ def _read_gate_rows(project, manifest_rel):
     try:
         eproject, econfig = _evidence_io.project_config_for(
             manifest_path, project_dir=project)
-        read = _evidence_io.read_rows(eproject, econfig)
-        return (eproject, econfig, read.get("rows") or [], None,
-               read.get("unreadable") or 0)
     except Exception as exc:
-        return None, None, None, exc, 0
+        return (None, None, None,
+                _manifest_vocab.LEDGER_LOCATION_FAILED % (exc,), 0)
+    try:
+        read = _evidence_io.read_rows(eproject, econfig)
+    except Exception as exc:
+        return None, None, None, _manifest_vocab.LEDGER_READ_FAILED % (exc,), 0
+    return (eproject, econfig, read.get("rows") or [], None,
+            read.get("unreadable") or 0)
 
 
 def _gate_tally_classes(rows, names):
@@ -983,11 +992,10 @@ def check_gate_patterns(rep, project, manifest_rel, config=None):
     here either - a gate that has run fewer times than the floor a verdict
     needs is NOT ESTABLISHED, named as such, and never folded into either the
     clean OK or the never-failed warning."""
-    eproject, econfig, rows, exc, _unreadable = _read_gate_rows(
+    eproject, econfig, rows, failure, _unreadable = _read_gate_rows(
         project, manifest_rel)
-    if exc is not None:
-        rep.warn("gate patterns", "could not read the evidence ledger: %s"
-                 % (exc,))
+    if failure is not None:
+        rep.warn("gate patterns", failure)
         return
     names = _evidence_io.gate_names_seen(rows)
     if not names:
@@ -1104,11 +1112,10 @@ def check_gate_economy(rep, project, manifest_rel, manifest, config=None):
                "no budget declared (meta.gateBudgetMs), so no gate entry is "
                "graded on cost")
         return
-    eproject, econfig, rows, exc, _unreadable = _read_gate_rows(
+    eproject, econfig, rows, failure, _unreadable = _read_gate_rows(
         project, manifest_rel)
-    if exc is not None:
-        rep.warn("gate economy", "could not read the evidence ledger: %s"
-                 % (exc,))
+    if failure is not None:
+        rep.warn("gate economy", failure)
         return
     names = _evidence_io.gate_names_seen(rows)
     if not names:
@@ -1225,13 +1232,14 @@ def check_shadow_recall(rep, project, manifest_rel, manifest, config=None):
     same evidence read, because folding "could not open the file" into "the
     file has nothing in it" tells an operator their coverage is thin when
     the true problem is that this check could not look. TWO WAYS A LEDGER
-    CAN BE UNREADABLE, and both are said the same way: `_read_gate_rows`
-    itself raising (a directory it cannot even list) is one, and
+    CAN BE UNREADABLE, and both are WARNINGS that print no recall: a read
+    that failed outright (a directory it cannot even list), worded by
+    `_read_gate_rows` through the vocabulary's templates, is one, and
     `_evidence_io.read_rows`'s own `unreadable` count on an otherwise
     successful read - a torn line, a file that would not decode - is the
-    other. A row lost to the second is not a row that never existed, and
-    folding it into "none recorded" is the same overclaim the first branch
-    exists to refuse.
+    other, worded as the partial read it is. A row lost to the second is not
+    a row that never existed, and folding it into "none recorded" is the same
+    overclaim the first branch exists to refuse.
 
     ADVISORY, ALWAYS, LIKE EVERY CHECK IN THIS MODULE'S SECOND HALF - the row
     carries the same remedy sentence whatever the two numbers say, because
@@ -1248,15 +1256,16 @@ def check_shadow_recall(rep, project, manifest_rel, manifest, config=None):
                "no meta.phaseGate.mode declared, so no derivation is "
                "declared and there is nothing to grade recall over")
         return
-    eproject, econfig, rows, exc, unreadable = _read_gate_rows(
+    eproject, econfig, rows, failure, unreadable = _read_gate_rows(
         project, manifest_rel)
-    if exc is not None:
-        rep.warn("shadow recall", "could not read the evidence ledger: %s"
-                 % (exc,))
+    if failure is not None:
+        rep.warn("shadow recall", failure)
         return
+    # A DIFFERENT FACT FROM THE FAILURE ABOVE, so its own words: the ledger
+    # WAS read, and some of it could not be parsed.
     if unreadable:
         rep.warn("shadow recall",
-                 "could not read the evidence ledger: %d row(s) or file(s) "
+                 "the evidence ledger was only partly readable: %d row(s) or file(s) "
                  "could not be parsed - recall is not printed over a "
                  "ledger this check could not fully read"
                  % (unreadable,))
@@ -1366,15 +1375,16 @@ def check_full_run(rep, project, manifest_rel, manifest, git_root, config=None):
     if not full_commands:
         rep.ok(FULL_RUN_CHECK, "no third place declared (meta.fullGate)")
         return
-    _eproject, _econfig, rows, exc, unreadable = _read_gate_rows(
+    _eproject, _econfig, rows, failure, unreadable = _read_gate_rows(
         project, manifest_rel)
-    if exc is not None:
-        rep.warn(FULL_RUN_CHECK, "could not read the evidence ledger: %s"
-                 % (exc,))
+    if failure is not None:
+        rep.warn(FULL_RUN_CHECK, failure)
         return
+    # A DIFFERENT FACT FROM THE FAILURE ABOVE, so its own words: the ledger
+    # WAS read, and some of it could not be parsed.
     if unreadable:
         rep.warn(FULL_RUN_CHECK,
-                 "could not read the evidence ledger: %d row(s) or file(s) "
+                 "the evidence ledger was only partly readable: %d row(s) or file(s) "
                  "could not be parsed - the third place is not graded over "
                  "a ledger this check could not fully read" % (unreadable,))
         return

@@ -65,6 +65,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _evidence_io as _evio  # noqa: E402  (layer 2: the ledger, and the tally)
+import _manifest_vocab  # noqa: E402  (layer 1: the sentences for a ledger that could not be found or read)
 
 E_OK = 0
 E_USAGE = 2
@@ -116,8 +117,18 @@ def propose(manifest_path, commands, project_dir=None):
     entry below is `basis: "tree"` regardless of what it claims about itself -
     stated once here rather than left for a reader to infer from re-scanning
     every entry's own basis."""
-    project, config = _evio.project_config_for(manifest_path, project_dir)
-    read = _evio.read_rows(project, config)
+    # TWO STEPS, TWO SENTENCES: not finding where the ledger lives and not
+    # reading it once found have different repairs, and every surface words
+    # them with the same two templates. Each is raised with its sentence, so
+    # `main()` prints what failed instead of labelling it.
+    try:
+        project, config = _evio.project_config_for(manifest_path, project_dir)
+    except Exception as exc:
+        raise RuntimeError(_manifest_vocab.LEDGER_LOCATION_FAILED % (exc,))
+    try:
+        read = _evio.read_rows(project, config)
+    except Exception as exc:
+        raise RuntimeError(_manifest_vocab.LEDGER_READ_FAILED % (exc,))
     rows = read.get("rows") or []
     entries = [classify(rows, c) for c in commands]
     return {"manifestPath": manifest_path,
@@ -171,8 +182,10 @@ def main(argv):
     try:
         result = propose(args.manifest, args.commands, project_dir=args.project)
     except Exception as exc:
-        sys.stderr.write("propose-gates.py: could not read the evidence ledger: "
-                         "%s\n" % (exc,))
+        # The exception's OWN text. A ledger failure already carries its
+        # sentence from `propose()`; anything else is printed as what it is,
+        # never labelled a ledger read it was not.
+        sys.stderr.write("propose-gates.py: %s\n" % (exc,))
         return E_USAGE
     if args.as_json:
         print(json.dumps(result, indent=2, sort_keys=True))
