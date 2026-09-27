@@ -467,9 +467,21 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
       that branch, and only then start the new phases. The list is read from the copy the merge
       landed in, so it is the parent's truth, not this branch's.
 
-      **The same write also stamped `phase.mergedHead`** — the parent's commit right after this
-      merge — which is what lets the third place ask whether a later full run's own head
-      contains this phase. Until such a run does, the phase reads `provisional`, and
+      **The same write also stamped `phase.mergedHead`** — the oldest commit on the parent's
+      first-parent chain that contains the tip: the commit on that chain that brought the tip in -
+      the tip itself for a fast-forward, the merge commit for a direct merge, the parent's merge of
+      an intermediate branch for a nested one - and, when the phase records task commits, only
+      if it contains every one of them. Right after this run's own merge
+      that is the parent's head; for a branch merged by hand and closed later it is recovered from
+      the parent's history — which is what lets the third
+      place ask whether a later full run's own head contains this phase. A merge recorded before
+      the field existed gets it on a re-run: the same recovered commit while the branch still
+      resolves; once the branch is gone, the parent's head at that moment, written only when every
+      task commit the phase records is contained in it, and marked with `phase.mergedHeadAt` - a
+      parent that does not hold every recorded task commit (a rewound one, a squash merge, a wrong
+      one lacking the work) gets no head.
+      That head is stricter than the merge commit (a run containing the merge but not it reads
+      provisional), and a full run counts as "after" it from `mergedHeadAt`, not `mergedAt`. Until such a run does, the phase reads `provisional`, and
       `/audit:status`, the report and the panel all say so in the same word; this repository's
       own release guard refuses a release while it does. With no `meta.fullGate` declared, none
       of this applies — no phase is ever provisional for a third place this plan never named.

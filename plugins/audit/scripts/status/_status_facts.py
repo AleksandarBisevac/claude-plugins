@@ -901,6 +901,10 @@ def rollup(manifest, findings, warnings, usage=None, boundary=None):
         # say which — `status` alone cannot, since `close-phase.py` stamps
         # this without ever touching `status`.
         "mergedAt": p.get("mergedAt"),
+        # Passed through verbatim for `stale_full_runs`: present only when the
+        # phase's `mergedHead` was recorded after the fact, and then the moment a
+        # full run has to postdate to have had that head to contain.
+        "mergedHeadAt": p.get("mergedHeadAt"),
         # The tier as `_priority` reads it, not the raw field: `priority: "1"`
         # orders nothing, so a badge rendered off the raw value would advertise
         # a pin the run does not honour. `None` means unprioritised.
@@ -1173,6 +1177,13 @@ def stale_full_runs(summary):
     run and printing the other's id would describe a run nobody recorded, so
     the message names `wholeRunId` beside `wholeRunTs` and never `runId`.
 
+    MEASURED FROM `mergedHeadAt` WHEN THE PHASE CARRIES ONE, from `mergedAt`
+    otherwise. A head recorded after the fact is the parent's head at that later
+    moment, not the merge's own commit, so a whole-bearing run recorded between
+    the merge and that moment contains the merge and not the head - and "ran
+    after and still does not contain it" would be false about it. The sentence
+    names which of the two moments it measured against.
+
     THE STAMPS ARE PARSED, NOT COMPARED AS TEXT, for `_gap_of`'s own reason:
     `mergedAt` and `wholeRunTs` are both written by this plugin's own commands in
     one UTC spelling today, but a hand-edited `mergedAt` need not agree, and a
@@ -1195,13 +1206,18 @@ def stale_full_runs(summary):
         run_when = _usage_core.parse_ts(row.get("wholeRunTs"))
         if run_when is None:
             continue
-        merge_when = _usage_core.parse_ts((by_id.get(pid) or {}).get("mergedAt"))
+        phase = by_id.get(pid) or {}
+        head_at = phase.get("mergedHeadAt")
+        since = head_at if head_at else phase.get("mergedAt")
+        merge_when = _usage_core.parse_ts(since)
         if merge_when is None or merge_when >= run_when:
             continue
-        out.append("phase %s: merged %s, but full run %s (%s) ran after and "
+        what = ("merged %s, its mergedHead recorded after the fact "
+                "(mergedHeadAt %s)" % (phase.get("mergedAt"), head_at)
+                if head_at else "merged %s" % (since,))
+        out.append("phase %s: %s, but full run %s (%s) ran after and "
                    "still does not contain it"
-                   % (pid, (by_id.get(pid) or {}).get("mergedAt"),
-                      row.get("wholeRunId"), row.get("wholeRunTs")))
+                   % (pid, what, row.get("wholeRunId"), row.get("wholeRunTs")))
     return out or None
 
 

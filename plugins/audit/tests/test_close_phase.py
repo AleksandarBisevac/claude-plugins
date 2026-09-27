@@ -861,7 +861,8 @@ def _landed_cases(check):
         check("lg2 SECOND DIRECTION: with the branch NAMED (an argument, as a recorded "
               "phase.branch would be) and absent, it is landed and gone, exit 0: %r"
               % ("\n".join(lines)[:160],),
-              code == M.E_OK and "nothing left to do" in "\n".join(lines))
+              code == M.E_OK and "landed at" in "\n".join(lines)
+              and "is gone" in "\n".join(lines))
     finally:
         _harness.remove_tree(root)
 
@@ -1243,8 +1244,9 @@ def _merged_head(path):
 
 def _merged_head_cases(check):
     """`phase.mergedHead` is the PARENT's commit right after the merge, stamped in
-    the same write as `mergedAt` - never a second write, never the branch tip, and
-    never re-derived once a merge is already recorded."""
+    the same write as `mergedAt` - never a second write, the branch tip only for a
+    fast-forward, and a recorded `mergedHead` is never replaced. A merge recorded WITHOUT one is
+    `_backfill_cases`' subject."""
     # --- THE REPRO: a fast-forward landing carries mergedAt and no mergedHead ----
     root = _harness.fixture_root("closephase-mergedhead-ff")
     wt = None
@@ -1260,7 +1262,8 @@ def _merged_head_cases(check):
               "mergedHead %r, parent head %r"
               % (code, _merged_at(mpath), merged_head, head),
               code == M.E_OK and bool(_merged_at(mpath))
-              and merged_head == head and len(merged_head or "") == 40)
+              and merged_head == head and len(merged_head or "") == 40
+              and "mergedHeadAt" not in open(mpath).read())
     finally:
         _harness.remove_tree(root)
         if wt and os.path.isdir(wt):
@@ -1315,7 +1318,517 @@ def _merged_head_cases(check):
               % (code, first_head, second_head,
                  [ln for ln in lines if ln.startswith("[close-phase]")][:1]),
               code == M.E_OK and second_head == first_head and bool(first_head)
-              and "nothing left to do" not in text)
+              and "is gone" not in text)
+    finally:
+        _harness.remove_tree(root)
+        if wt and os.path.isdir(wt):
+            _harness.remove_tree(wt)
+
+
+# The journal action a backfilled head is recorded under. Spelled here rather than
+# read off the module: it is what a reader of the trail filters on, so a rename is
+# a change to the trail's vocabulary and should turn this suite red.
+BACKFILL_ACTION = "phase.mergedHead.recorded"
+
+
+def _drop_merged_head(path):
+    """Rewrite the plan at `path` as a merge recorded before `mergedHead` existed:
+    `mergedAt` kept, the head key absent."""
+    with open(path) as fh:
+        body = json.load(fh)
+    for ph in body["phases"]:
+        if ph.get("id") == "P1":
+            ph.pop("mergedHead", None)
+    with open(path, "w") as fh:
+        json.dump(body, fh, indent=2)
+
+
+def _journal_actions(project, action):
+    """How many journal rows under `project` carry `action` - counted, so a second
+    row for one backfill is as visible as a missing one."""
+    import _journal_io
+    return len([r for r in _journal_io.read_all(project)
+                if r.get("action") == action])
+
+
+def _commit_on_main(root, git, name):
+    """Move the parent past the merge, so its current head is a different commit
+    than the one the first stamp recorded - the value that tells an overwrite from
+    a keep."""
+    with open(os.path.join(root, name), "w") as fh:
+        fh.write("more\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", name)
+    return git("rev-parse", "refs/heads/main").stdout.decode().strip()
+
+
+def _set_task_commit(path, sha):
+    """Record `sha` as P1.1's commit in the plan at `path` - the evidence a
+    branch-gone backfill asks git about."""
+    with open(path) as fh:
+        body = json.load(fh)
+    for ph in body["phases"]:
+        if ph.get("id") == "P1":
+            for t in ph.get("tasks") or []:
+                if t.get("id") == "P1.1":
+                    t["commit"] = sha
+    with open(path, "w") as fh:
+        json.dump(body, fh, indent=2)
+
+
+def _merged_head_at(path):
+    with open(path) as fh:
+        phase = [p for p in json.load(fh)["phases"] if p.get("id") == "P1"][0]
+    return phase.get("mergedHeadAt", "<absent>")
+
+
+def _backfill_rows(project):
+    import _journal_io
+    return [r for r in _journal_io.read_all(project)
+            if r.get("action") == BACKFILL_ACTION]
+
+
+def _recovery_cases(check):
+    """`merge_commit` recovers the commit a merge produced from the parent's
+    first-parent history - both spellings, against real git: the tip itself for a
+    fast-forward, the oldest first-parent descendant of the tip for a true merge
+    commit, and either one unchanged once the parent has moved on."""
+    root = _harness.fixture_root("closephase-recovery")
+    try:
+        git = _fixture_git(root)
+
+        def commit(name):
+            with open(os.path.join(root, name), "w") as fh:
+                fh.write(name + "\n")
+            git("add", "-A")
+            git("commit", "-q", "-m", name)
+            return git("rev-parse", "HEAD").stdout.decode().strip()
+
+        def head(ref):
+            return git("rev-parse", "refs/heads/" + ref).stdout.decode().strip()
+        git("init", "-q", "-b", "main")
+        commit("base")
+        git("checkout", "-q", "-b", "ff")
+        tip = commit("f1")
+        git("checkout", "-q", "main")
+        git("merge", "-q", "--ff-only", "ff")
+        got = M.merge_commit(root, "ff", "main")
+        check("rc1 a FAST-FORWARD the parent has not moved past: the merge commit is "
+              "the tip, which is also the parent's head: %r (tip %r)" % (got, tip),
+              got["sha"] == tip == head("main"))
+        moved = commit("m1")
+        got = M.merge_commit(root, "ff", "main")
+        check("rc2 ...and after the parent MOVED ON it is still the tip, never the "
+              "parent's current head: %r (tip %r, parent now %r)"
+              % (got, tip, moved),
+              got["sha"] == tip and got["sha"] != moved)
+        git("checkout", "-q", "-b", "true")
+        branch_tip = commit("t1")
+        git("checkout", "-q", "main")
+        commit("m2")
+        git("merge", "-q", "--no-ff", "-m", "merge true", "true")
+        merge = head("main")
+        got = M.merge_commit(root, "true", "main")
+        check("rc3 a TRUE MERGE COMMIT over a parent that had diverged: the merge "
+              "commit, not the branch tip: %r (merge %r, tip %r)"
+              % (got, merge, branch_tip),
+              got["sha"] == merge and merge != branch_tip)
+        moved = commit("m3")
+        got = M.merge_commit(root, "true", "main")
+        check("rc4 ...and after the parent moved on, still the merge commit and not "
+              "the parent's current head: %r (merge %r, parent now %r)"
+              % (got, merge, moved),
+              got["sha"] == merge and got["sha"] != moved)
+        git("checkout", "-q", "-b", "open")
+        commit("o1")
+        git("checkout", "-q", "main")
+        got = M.merge_commit(root, "open", "main")
+        check("rc5 a branch the parent does NOT hold recovers nothing, and says "
+              "why - never a guess: %r" % (got,),
+              got["sha"] == "" and bool(got["basis"]))
+
+        # --- NESTED: merged --no-ff into an intermediate branch, that one into main
+        git("checkout", "-q", "-b", "nested")
+        commit("n1")
+        git("checkout", "-q", "main")
+        git("checkout", "-q", "-b", "integration")
+        commit("i0")
+        git("merge", "-q", "--no-ff", "-m", "nested into integration", "nested")
+        git("checkout", "-q", "main")
+        commit("m4")
+        git("merge", "-q", "--no-ff", "-m", "integration into main", "integration")
+        outer = head("main")
+        moved = commit("m5")
+        held = git("merge-base", "--is-ancestor", "refs/heads/nested",
+                   "refs/heads/main").returncode == 0
+        got = M.merge_commit(root, "nested", "main")
+        check("rc6 a tip the parent holds through a NESTED merge (into an "
+              "intermediate branch, that one into the parent), the parent moved on: "
+              "the parent's own merge of the intermediate branch - the first-parent "
+              "walk alone never meets the inner merge, so it must not come back "
+              "empty: %r (held %r, outer merge %r, parent now %r)"
+              % (got, held, outer, moved),
+              held and got["sha"] == outer and got["sha"] != moved)
+
+        # --- THE PARENT MERGED INTO THE BRANCH, then fast-forwarded and moved on --
+        git("checkout", "-q", "-b", "synced")
+        commit("s1")
+        git("checkout", "-q", "main")
+        commit("m6")
+        git("checkout", "-q", "synced")
+        git("merge", "-q", "--no-ff", "-m", "main into synced", "main")
+        tip = head("synced")
+        git("checkout", "-q", "main")
+        git("merge", "-q", "--ff-only", "synced")
+        moved = commit("m7")
+        got = M.merge_commit(root, "synced", "main")
+        check("rc7 the parent merged INTO the branch, then fast-forwarded to it and "
+              "moved on: the tip, which that fast-forward put on the parent's "
+              "first-parent chain: %r (tip %r, parent now %r)" % (got, tip, moved),
+              got["sha"] == tip and got["sha"] != moved)
+
+        # --- MERGED TWICE: the second merge is the one that brought the tip in ----
+        git("checkout", "-q", "-b", "twice")
+        commit("w1")
+        git("checkout", "-q", "main")
+        git("merge", "-q", "--no-ff", "-m", "twice, first", "twice")
+        first = head("main")
+        git("checkout", "-q", "twice")
+        commit("w2")
+        git("checkout", "-q", "main")
+        git("merge", "-q", "--no-ff", "-m", "twice, second", "twice")
+        second = head("main")
+        moved = commit("m8")
+        got = M.merge_commit(root, "twice", "main")
+        check("rc8 a branch merged TWICE: the second merge, which brought the tip "
+              "in - not the first, which holds only an older commit of it: %r "
+              "(first %r, second %r, parent now %r)" % (got, first, second, moved),
+              got["sha"] == second and second != first and got["sha"] != moved)
+    finally:
+        _harness.remove_tree(root)
+
+
+def _backfill_cases(check):
+    """A merge recorded before `mergedHead` existed gets one on a re-run, once, and
+    `mergedAt` never moves; a recorded head is never replaced. With the branch
+    still there the head is recovered from the parent's first-parent chain - in
+    these fixtures, fast-forwards, the tip itself; with
+    it gone it is
+    the parent's head, written only over evidence the plan holds - every recorded
+    task commit contained - and marked `mergedHeadAt`."""
+    # --- BACKFILL THROUGH close(): the branch survives, the merge is recorded -----
+    root = _harness.fixture_root("closephase-backfill-kept")
+    wt = None
+    try:
+        mpath, wt, wt_mpath, git = _worktree_fixture(root, meta_extra={
+            "merge": {"deleteBranch": False}})
+        M.main([wt_mpath, "P1", "--project", root], out=(lambda line: None))
+        stamped = _merged_head(mpath)
+        _drop_merged_head(mpath)
+        merged_at = _merged_at(mpath)
+        now = _commit_on_main(root, git, "later.txt")
+        rows_before = len(_backfill_rows(root))
+        with open(mpath, "rb") as fh:
+            before = fh.read()
+        lines = []
+        code = M.main([mpath, "P1", "--project", root, "--dry-run"],
+                      out=lines.append)
+        with open(mpath, "rb") as fh:
+            after = fh.read()
+        check("bf0 --dry-run with the branch KEPT (the re-run goes through close()) "
+              "names the merge commit it would record and writes nothing: exit %r, "
+              "bytes unchanged %r, rows %r, %r"
+              % (code, before == after, len(_backfill_rows(root)), lines[-4:]),
+              code == M.E_OK and before == after
+              and "  would write mergedHead = %s (the merge is recorded without "
+                  "one)" % (stamped,) in lines
+              and len(_backfill_rows(root)) == rows_before)
+        lines = []
+        code = M.main([mpath, "P1", "--project", root], out=lines.append)
+        check("bf1 a recorded merge with NO mergedHead, re-run with its branch kept, "
+              "gets the merge's OWN commit - not the parent's current head - with "
+              "mergedAt unchanged, no mergedHeadAt, and one journal row: exit %r, "
+              "mergedAt %r -> %r, mergedHead %r (merge %r, parent now %r), "
+              "mergedHeadAt %r, rows %r -> %r"
+              % (code, merged_at, _merged_at(mpath), _merged_head(mpath), stamped,
+                 now, _merged_head_at(mpath), rows_before,
+                 len(_backfill_rows(root))),
+              code == M.E_OK and bool(merged_at) and stamped != now
+              and _merged_at(mpath) == merged_at
+              and _merged_head(mpath) == stamped
+              and _merged_head_at(mpath) == "<absent>"
+              and len(_backfill_rows(root)) == rows_before + 1)
+        # READ BACK OUT OF THE TRAIL, not off the dict the writer built: the journal
+        # keeps only allow-listed detail keys and drops the rest in silence.
+        rows = _backfill_rows(root)
+        det = (rows[-1].get("details") or {}) if rows else {}
+        check("bf1b the backfill row, as the trail holds it, names the field, the "
+              "head written, the untouched mergedAt and that it was recovered: %r"
+              % (det,),
+              det.get("field") == "mergedHead" and det.get("to") == stamped
+              and det.get("mergedAt") == merged_at and det.get("phaseId") == "P1"
+              and "recovered" in (det.get("reason") or ""))
+        again = _commit_on_main(root, git, "later2.txt")
+        code = M.main([mpath, "P1", "--project", root], out=(lambda line: None))
+        check("bf2 ALLOW: once backfilled, a further re-run keeps the head it has "
+              "and writes no second row: exit %r, mergedHead %r (parent now %r), "
+              "rows %r" % (code, _merged_head(mpath), again,
+                           len(_backfill_rows(root))),
+              code == M.E_OK and _merged_head(mpath) == stamped
+              and _merged_at(mpath) == merged_at
+              and len(_backfill_rows(root)) == rows_before + 1)
+    finally:
+        _harness.remove_tree(root)
+        if wt and os.path.isdir(wt):
+            _harness.remove_tree(wt)
+
+    # --- BRANCH KEPT BUT ITS REF MOVED BACK: the recovery must not trust it -------
+    # `git branch -f` onto an older commit the parent's chain holds makes the moved
+    # tip look like a fast-forward, and recovering from it records a commit that
+    # predates the phase's own work - a head a run could contain without that work.
+    root = _harness.fixture_root("closephase-backfill-moved")
+    wt = None
+    try:
+        mpath, wt, wt_mpath, git = _worktree_fixture(root, meta_extra={
+            "merge": {"deleteBranch": False, "removeWorktree": False}})
+        base = git("rev-parse", "refs/heads/main").stdout.decode().strip()
+        tip = git("rev-parse", "refs/heads/audit/p1-demo").stdout.decode().strip()
+        M.main([wt_mpath, "P1", "--project", root], out=(lambda line: None))
+        _drop_merged_head(mpath)
+        _set_task_commit(mpath, tip)
+        _commit_on_main(root, git, "later.txt")
+        if os.path.isdir(wt):
+            git("worktree", "remove", "--force", wt)
+        git("branch", "-f", "audit/p1-demo", base)
+        with open(mpath, "rb") as fh:
+            before = fh.read()
+        lines = []
+        code = M.main([mpath, "P1", "--project", root], out=lines.append)
+        with open(mpath, "rb") as fh:
+            after = fh.read()
+        text = "\n".join(lines)
+        check("bk1 the branch ref MOVED BACK onto an older commit of the parent "
+              "(`git branch -f`): the recovered commit does not hold the recorded "
+              "task commit, so no head is written and the reason says which: exit "
+              "%r, mergedHead %r (moved-to %r, task commit %r), bytes unchanged %r, "
+              "rows %r, %r"
+              % (code, _merged_head(mpath), base, tip, before == after,
+                 len(_backfill_rows(root)), text[-300:]),
+              _merged_head(mpath) is None and before == after
+              and not _backfill_rows(root)
+              and "mergedHead NOT recorded: " in text and tip in text)
+        git("branch", "-f", "audit/p1-demo", tip)
+        code = M.main([mpath, "P1", "--project", root], out=(lambda line: None))
+        check("bk2 ALLOW: with the ref back on the phase's tip, the recorded task "
+              "commit is held and the recovered commit is written: exit %r, "
+              "mergedHead %r, tip %r" % (code, _merged_head(mpath), tip),
+              code == M.E_OK and _merged_head(mpath) == tip
+              and len(_backfill_rows(root)) == 1)
+    finally:
+        _harness.remove_tree(root)
+        if wt and os.path.isdir(wt):
+            _harness.remove_tree(wt)
+
+    # --- THE DEFAULT RE-RUN, BRANCH GONE, NO EVIDENCE: refused -------------------
+    root = _harness.fixture_root("closephase-backfill-noevidence")
+    wt = None
+    try:
+        mpath, wt, wt_mpath, git = _worktree_fixture(root)
+        M.main([wt_mpath, "P1", "--project", root], out=(lambda line: None))
+        _drop_merged_head(mpath)
+        _commit_on_main(root, git, "later.txt")
+        with open(mpath, "rb") as fh:
+            before = fh.read()
+        lines = []
+        code = M.main([mpath, "P1", "--project", root], out=lines.append)
+        with open(mpath, "rb") as fh:
+            after = fh.read()
+        text = "\n".join(lines)
+        check("bg1 branch gone and NO task commit recorded: the backfill is refused "
+              "with the reason printed, nothing written, no row - the phase stays "
+              "unknown: exit %r, bytes unchanged %r, rows %r, %r"
+              % (code, before == after, len(_backfill_rows(root)), text[-300:]),
+              code == M.E_OK and before == after and not _backfill_rows(root)
+              and "mergedHead NOT recorded: " in text
+              and "no task commit" in text)
+        _set_task_commit(mpath, _fixture_git(root)(
+            "commit-tree", "HEAD^{tree}", "-m", "elsewhere").stdout.decode().strip())
+        with open(mpath, "rb") as fh:
+            before = fh.read()
+        lines = []
+        code = M.main([mpath, "P1", "--project", root], out=lines.append)
+        with open(mpath, "rb") as fh:
+            after = fh.read()
+        text = "\n".join(lines)
+        check("bg2 branch gone and a recorded task commit the parent does NOT "
+              "contain (a wrong parent, a rewound one, a squash): refused, nothing "
+              "written: exit %r, bytes unchanged %r, rows %r, %r"
+              % (code, before == after, len(_backfill_rows(root)), text[-300:]),
+              code == M.E_OK and before == after and not _backfill_rows(root)
+              and "mergedHead NOT recorded: " in text
+              and "not-contained" in text)
+    finally:
+        _harness.remove_tree(root)
+        if wt and os.path.isdir(wt):
+            _harness.remove_tree(wt)
+
+    # --- THE DEFAULT RE-RUN, BRANCH GONE, EVERY TASK COMMIT CONTAINED ------------
+    root = _harness.fixture_root("closephase-backfill-gone")
+    wt = None
+    try:
+        mpath, wt, wt_mpath, git = _worktree_fixture(root)
+        tip = git("rev-parse", "refs/heads/audit/p1-demo").stdout.decode().strip()
+        M.main([wt_mpath, "P1", "--project", root], out=(lambda line: None))
+        gone = git("rev-parse", "--verify", "--quiet",
+                   "refs/heads/audit/p1-demo").returncode != 0
+        _drop_merged_head(mpath)
+        _set_task_commit(mpath, tip)
+        merged_at = _merged_at(mpath)
+        now = _commit_on_main(root, git, "later.txt")
+        with open(mpath, "rb") as fh:
+            before = fh.read()
+        lines = []
+        code = M.main([mpath, "P1", "--project", root, "--dry-run"],
+                      out=lines.append)
+        with open(mpath, "rb") as fh:
+            after = fh.read()
+        check("bf3 --dry-run on the default re-run says it would record the head "
+              "and writes nothing: exit %r, bytes unchanged %r, %r"
+              % (code, before == after, "\n".join(lines)[-300:]),
+              code == M.E_OK and before == after
+              and "  would write mergedHead = %s (the merge is recorded without "
+                  "one)" % (now,) in lines
+              and "nothing left to do" not in "\n".join(lines))
+        lines = []
+        code = M.main([mpath, "P1", "--project", root], out=lines.append)
+        check("bf4 ALLOW: the DEFAULT re-run (branch deleted), every recorded task "
+              "commit contained, backfills the parent's current head AND stamps "
+              "mergedHeadAt, mergedAt unchanged: branch gone %r, exit %r, mergedAt "
+              "%r -> %r, mergedHead %r, parent %r, mergedHeadAt %r, %r"
+              % (gone, code, merged_at, _merged_at(mpath), _merged_head(mpath), now,
+                 _merged_head_at(mpath), "\n".join(lines)[-300:]),
+              gone and code == M.E_OK and _merged_at(mpath) == merged_at
+              and _merged_head(mpath) == now
+              and _merged_head_at(mpath) not in ("<absent>", None)
+              and _merged_head_at(mpath) >= merged_at
+              and "nothing left to do" not in "\n".join(lines)
+              and "nothing left to merge or clean up" in "\n".join(lines)
+              and any(ln.startswith("  mergedHead = %s written to" % (now,))
+                      for ln in lines)
+              and len(_backfill_rows(root)) == 1)
+        det = _backfill_rows(root)[-1].get("details") or {}
+        check("bf4b ...and its row carries the head and the evidence it rests on - "
+              "the task commits, not a re-verified merge: %r" % (det,),
+              det.get("to") == now and "task commit" in (det.get("reason") or ""))
+        _commit_on_main(root, git, "later2.txt")
+        with open(mpath, "rb") as fh:
+            before = fh.read()
+        rows = len(_backfill_rows(root))
+        lines = []
+        code = M.main([mpath, "P1", "--project", root], out=lines.append)
+        with open(mpath, "rb") as fh:
+            after = fh.read()
+        check("bf5 ALLOW: the default re-run with BOTH fields present, the parent "
+              "moved on, writes nothing - the plan's bytes and the row count are "
+              "unchanged: exit %r, bytes unchanged %r, rows %r -> %r"
+              % (code, before == after, rows, len(_backfill_rows(root))),
+              code == M.E_OK and before == after
+              and len(_backfill_rows(root)) == rows
+              and "nothing left to do" in "\n".join(lines)
+              and M.MERGED_HEAD_FIELD not in "\n".join(lines))
+    finally:
+        _harness.remove_tree(root)
+        if wt and os.path.isdir(wt):
+            _harness.remove_tree(wt)
+
+    # --- A FIRST STAMP AFTER A HAND MERGE: the already-contained mode ------------
+    root = _harness.fixture_root("closephase-backfill-hand")
+    wt = None
+    try:
+        mpath, wt, wt_mpath, git = _worktree_fixture(root)
+        git("merge", "-q", "--ff-only", "audit/p1-demo")
+        merge = git("rev-parse", "refs/heads/main").stdout.decode().strip()
+        now = _commit_on_main(root, git, "after-hand-merge.txt")
+        lines = []
+        code = M.main([wt_mpath, "P1", "--project", root], out=lines.append)
+        check("bf6 a branch merged BY HAND, the parent moved on, then closed "
+              "(already-contained): the first write stamps mergedAt AND the merge's "
+              "OWN commit, not the parent's current head, and no mergedHeadAt: exit "
+              "%r, mergedAt %r, mergedHead %r (merge %r, parent now %r), "
+              "mergedHeadAt %r, backfill rows %r"
+              % (code, _merged_at(mpath), _merged_head(mpath), merge, now,
+                 _merged_head_at(mpath), len(_backfill_rows(root))),
+              code == M.E_OK and bool(_merged_at(mpath)) and merge != now
+              and _merged_head(mpath) == merge
+              and _merged_head_at(mpath) == "<absent>"
+              and not _backfill_rows(root))
+        # The merge row as the trail HOLDS it, which is what the journal reference
+        # documents: the allow-list keeps the phase and the branch, and the parent
+        # survives only in the summary.
+        import _journal_io
+        merged = [r for r in _journal_io.read_all(root)
+                  if r.get("action") == M.ACTION_PHASE_MERGED]
+        check("bf6b ...and exactly one merge row, whose details are the phase and the "
+              "branch and whose summary names the parent: %r"
+              % ([(r.get("details"), r.get("summary")) for r in merged],),
+              len(merged) == 1
+              and merged[0].get("details") == {"phaseId": "P1",
+                                               "branch": "audit/p1-demo"}
+              and merged[0].get("summary") == "audit/p1-demo reached main")
+    finally:
+        _harness.remove_tree(root)
+        if wt and os.path.isdir(wt):
+            _harness.remove_tree(wt)
+
+
+def _full_row(run_id, head):
+    """One scope-full ledger row that bears whole on every rule but ancestry: green,
+    measured, timed, counted with a basis, clean, and running the one declared
+    command - so the only question `full_status` has left to ask is git's."""
+    import _evidence_io as E
+    return {"v": E.ROW_VERSION, "runId": run_id, "ts": "2026-01-02T00:00:00Z",
+            "scope": E.FULL_SCOPE, "status": "passed",
+            "steps": [{"name": "gate", "command": "echo x", "exit": 0,
+                       "durationMs": 1000}],
+            "testedState": {"head": head},
+            "observations": {"ranTotal": 3, "countsBasis": "three checks",
+                             "dirtyOutside": []}}
+
+
+def _backfill_direction_cases(check):
+    """A backfilled head sits AT OR AFTER the merge, and every reader asks whether
+    `mergedHead` is an ancestor of a run's head - so it is STRICTER than the merge's
+    own commit, never more generous. A full run on the merge commit reads WHOLE
+    against the stamped head and PROVISIONAL against a later backfilled one: a
+    false provisional, the fail-safe direction."""
+    import _evidence_io as E
+    import _manifest_vocab as V
+    root = _harness.fixture_root("closephase-backfill-direction")
+    wt = None
+    try:
+        mpath, wt, wt_mpath, git = _worktree_fixture(root)
+        tip = git("rev-parse", "refs/heads/audit/p1-demo").stdout.decode().strip()
+        M.main([wt_mpath, "P1", "--project", root], out=(lambda line: None))
+        stamped = _merged_head(mpath)
+        _drop_merged_head(mpath)
+        _set_task_commit(mpath, tip)
+        later = _commit_on_main(root, git, "later.txt")
+        M.main([mpath, "P1", "--project", root], out=(lambda line: None))
+        backfilled = _merged_head(mpath)
+        row = _full_row("run-at-merge", stamped)
+        against_stamp = E.full_status([row], {"id": "P1", "mergedHead": stamped},
+                                      root, ["echo x"])
+        against_backfill = E.full_status(
+            [row], {"id": "P1", "mergedHead": backfilled}, root, ["echo x"])
+        check("bd1 SECOND DIRECTION: a full run on the merge commit reads WHOLE "
+              "against the head the merge stamped: %r" % (against_stamp,),
+              bool(stamped) and against_stamp["answer"] == V.FULL_STATUS_WHOLE)
+        check("bd2 ...and PROVISIONAL against the later head a backfill records - "
+              "stricter than the merge commit, never more generous: stamped %r, "
+              "backfilled %r (parent then %r), %r"
+              % (stamped, backfilled, later, against_backfill),
+              backfilled == later and backfilled != stamped
+              and against_backfill["answer"] == V.FULL_STATUS_PROVISIONAL)
     finally:
         _harness.remove_tree(root)
         if wt and os.path.isdir(wt):
@@ -1333,6 +1846,9 @@ def _selftest():
         _composed_cases(check)
         _surviving_copy_cases(check)
         _merged_head_cases(check)
+        _backfill_cases(check)
+        _backfill_direction_cases(check)
+        _recovery_cases(check)
     return _harness.run(body)
 
 

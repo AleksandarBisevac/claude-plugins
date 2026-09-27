@@ -450,6 +450,32 @@ The journal's **completion-record actions**:
   phaseId, mode, changes — which of `testGateDerived`/`testGateBasis`/`testGate` this run wrote,
   `testGate` only in `enforce` mode — and basis, `phase.testGateBasis`'s own word). Written **only
   after the write lands**, the same rule every completion row here follows
+- `phase.merged` — `close-phase.py` recorded that a phase reached its parent (details: phaseId,
+  branch; the parent is named in the summary, `<branch> reached <parent>`, and nowhere in the
+  details). Written **only after `phase.mergedAt` lands** - the stamp follows a verified
+  containment, and a stamp that failed leaves no row - and before the cleanup, so a removal that
+  fails afterwards cannot take the row with it. A re-run that finds `mergedAt` already recorded
+  writes none, which is what keeps one merge to one row
+- `phase.mergedHead.recorded` — `close-phase.py` added `phase.mergedHead` to a merge that was
+  recorded without one (details: phaseId, field = `mergedHead`, from = null, to = the head written,
+  mergedAt = the recorded moment it did not move, reason = the basis for the head). Which head
+  depends on whether the branch still resolves. With the branch there, it is the oldest commit on
+  the parent's first-parent chain that contains the tip: the commit on that chain that brought the
+  tip in - the tip itself for a fast-forward, the merge commit for a direct merge, the parent's
+  merge of an intermediate branch for a nested one. When the phase records task commits, that
+  commit must contain every one of them, or nothing is written - a branch ref moved back onto an
+  older commit fails it. `reason` then starts `recovered:` and no `mergedHeadAt` is written. With the branch gone, it is the parent's head at that moment, written only when every
+  task commit the phase records is contained in it, beside `phase.mergedHeadAt` in the same write;
+  `reason` names that evidence and the summary says the head is stricter than the merge commit:
+  readers ask whether `mergedHead` is an ancestor of a run's head, so a run that contains the merge
+  but predates this head reads provisional, never whole by accident. The evidence proves the
+  parent holds the phase's recorded work, not work no task recorded; a phase recording no task
+  commit fails it, and so does a parent that does not hold every recorded task commit (a rewound
+  one, a squash merge, a wrong one lacking the work), and the backfill is refused
+  with the reason printed - no row, and the phase stays unknown. Written **only after the head
+  lands**, and never over a head already recorded. It is a row of its OWN rather than a second
+  `phase.merged`: nothing merged on the run that writes it, and a reader counting merges by that
+  action must not count this one
 
 **Each action has exactly ONE writer**, and which one differs — never append any of them by hand,
 because two writers means duplicate rows and a doctor that can no longer trust the count.
@@ -470,7 +496,9 @@ a lost one.
 `task.move`, `task.block`, `task.note`, `coupling.learned` and `coupling.dropped` are written **in
 process** by `audit-task.py`, the same way its `task.done`, `task.reopen` and `plan.settle` rows
 are. `phase.gateDerived` is written **in process** by `derive-phase-gate.py`, its own entry point,
-for the identical reason. The evidence actions are written **in process** by `_evidence_io` and
+for the identical reason. `phase.merged` and `phase.mergedHead.recorded` are written **in process** by
+`close-phase.py`, for the same reason again: it writes the plan with `os.replace` from a script
+the hook never sees, and its merges are `git` commands, not edit tools. The evidence actions are written **in process** by `_evidence_io` and
 `commit-audit-state.py`, because the hook sees edit *tools* and those writers use `os.replace` and
 `git commit` — the same blindness `audit-task.py` already works around.
 Tokens are deliberately absent from these rows (metering lands on Stop/SessionEnd);

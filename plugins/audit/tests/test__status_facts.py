@@ -396,6 +396,48 @@ def _cases(check):
           "`provisional`'s claim already and not a sharper one",
           M.evaluate_gate(_fr_before, ("stale-full-run",)) == []
           and M.stale_full_runs(_fr_before) is None)
+    # A HEAD RECORDED AFTER THE FACT is the parent's head at `mergedHeadAt`, not the
+    # merge's own commit, so a whole-bearing run recorded between the merge and
+    # that moment contains the merge but not the head - and "ran after and still
+    # does not contain it" would be false about it. Measured from `mergedHeadAt`.
+    _fr_between = {
+        "fullRun": {"P1": {"answer": "provisional", "basis": "does not contain X",
+                           "runId": "r1", "wholeRunId": "r1",
+                           "wholeRunTs": "2026-04-01T00:00:00Z"}},
+        "phases": [{"id": "P1", "mergedAt": "2026-03-01T00:00:00Z",
+                    "mergedHeadAt": "2026-05-01T00:00:00Z"}],
+    }
+    check("fr7b a whole-bearing run recorded BETWEEN the merge and a head recorded "
+          "after the fact is never stale - it ran before the head it is measured "
+          "against existed: %r" % (M.stale_full_runs(_fr_between),),
+          M.evaluate_gate(_fr_between, ("stale-full-run",)) == []
+          and M.stale_full_runs(_fr_between) is None)
+    _fr_after_head = {
+        "fullRun": {"P1": {"answer": "provisional", "basis": "does not contain X",
+                           "runId": "r3", "wholeRunId": "r3",
+                           "wholeRunTs": "2026-06-01T00:00:00Z"}},
+        "phases": [{"id": "P1", "mergedAt": "2026-03-01T00:00:00Z",
+                    "mergedHeadAt": "2026-05-01T00:00:00Z"}],
+    }
+    stale_after = " ".join(M.stale_full_runs(_fr_after_head) or [])
+    check("fr7c SECOND DIRECTION: a run recorded AFTER that head was recorded and "
+          "still not containing it IS stale, and the sentence names the moment it "
+          "was measured against - the head's, not the merge's: %r" % (stale_after,),
+          M.evaluate_gate(_fr_after_head, ("stale-full-run",)) == ["stale-full-run"]
+          and "r3" in stale_after and "2026-05-01T00:00:00Z" in stale_after
+          and "mergedHeadAt" in stale_after)
+    _fr_rows = M.rollup({"phases": [
+        {"id": "P1", "title": "t", "status": "done", "tasks": [],
+         "mergedAt": "2026-03-01T00:00:00Z",
+         "mergedHeadAt": "2026-05-01T00:00:00Z"},
+        {"id": "P2", "title": "t", "status": "done", "tasks": [],
+         "mergedAt": "2026-03-01T00:00:00Z"}]}, [], [])["phases"]
+    check("fr7d the rollup's phase rows CARRY mergedHeadAt verbatim - absent as "
+          "None - so the comparison above is reachable from a real plan and not "
+          "only from a hand-built summary: %r"
+          % ([(r.get("id"), r.get("mergedHeadAt")) for r in _fr_rows],),
+          [(r.get("id"), r.get("mergedHeadAt")) for r in _fr_rows]
+          == [("P1", "2026-05-01T00:00:00Z"), ("P2", None)])
     check("fr8 DEFAULT_GATE PINNED WHOLE, so widening it to include either "
           "condition is a deliberate edit that goes red first rather than a "
           "merge that quietly starts failing other people's builds",

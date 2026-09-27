@@ -1220,9 +1220,9 @@
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-09-27T11:07:22Z.0271ae",
+        "runId": "2026-09-27T12:21:06Z.e2927f",
         "status": "passed",
-        "at": "2026-09-27T11:07:22Z"
+        "at": "2026-09-27T12:21:06Z"
       }
     },
     {
@@ -1327,7 +1327,7 @@
     {
       "id": "P80.20-rtb",
       "title": "the demo shows whole, provisional and unknown, and a browser check sees the full-run line",
-      "status": "in_progress",
+      "status": "done",
       "description": "Sign-off findings P80-R7 and P80-R8. The demo is rendered in a directory with no git repository, so it can never show whole. Make the demo fixture a git repository with deterministic commits (fixed author, committer and dates, so the SHAs and the rendered page stay byte-identical run to run), stamp one merged phase's mergedHead with a real commit and record one whole-making full row on a head containing it, so docs/demo-large.html shows whole, provisional and unknown; regenerate it with the recipe. Then make the browser checks look: check-report-interactive.mjs asserts the rendered full-run line for each answer on the demo page, and capture-screenshots.mjs --check asserts the panel renders the full-run line on the panel fixture. Show both checks red before the render exists. Deterministic output is the load-bearing property: run the regeneration twice and compare bytes.",
       "files": [
         "tools/check-rendered-artifacts.py",
@@ -1364,18 +1364,23 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9dbbf6998f8c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "committed with --override-verdict over the only red, ra23 (fault F521); re-gated green on the committed tree, 2026-09-27T12:19:02Z.df4b68 (all eight entries). The description's 'show both checks red' was run by the orchestrator under the capture lock: check-report-interactive on docs/demo-large.html exit 0 with whole 1/provisional 12/unknown 1, and on HEAD's page red on 'this page carries every full-run answer' (got whole missing); capture-screenshots --check exit 0 painting all three panel answers with the server's basis.",
+        "descriptive": "the scale demo is a git repository with deterministic history, so the committed page shows whole, provisional and unknown; the report and panel browser checks assert the full-run line"
       },
       "startedAt": "2026-09-27T11:21:50Z",
-      "completedAt": null,
+      "completedAt": "2026-09-27T12:19:12Z",
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-09-27T12:12:38Z.2f35c8",
-        "status": "failed",
-        "at": "2026-09-27T12:12:38Z"
+        "runId": "2026-09-27T12:19:02Z.df4b68",
+        "status": "passed",
+        "at": "2026-09-27T12:19:02Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9dbbf6998f8c",
+        "at": "2026-09-27T12:19:12Z"
       }
     },
     {

@@ -225,10 +225,16 @@ carries the same word where a task has one, and a phase's own verdict is a `test
 `meta.fullGate` names a THIRD gate beyond a task's own and a phase's sign-off
 gate — the full suite, coverage, an end-to-end pass. `phase.mergedHead` is what
 lets a **merged** phase be asked whether that third gate ran clean on exactly
-its own work: the parent branch's commit right after the merge, so a full
-run's own head containing it is the one fact that makes "this phase's tests
-passed" a claim about *this* phase rather than about whatever else has landed
-since. The `tests` column names it the same way it names a task's or phase's
+its own work: the oldest commit on the parent's first-parent chain that
+contains the phase branch's tip - the commit on that chain that brought the tip
+in: the tip itself for a fast-forward, the merge commit for a direct merge, the
+parent's merge of an intermediate branch for a nested one - so a full run's own
+head containing it is the one fact that makes "this phase's tests passed" a claim about *this*
+phase rather than about whatever else has landed since. A phase that also
+carries `phase.mergedHeadAt` had its head recorded after the fact, with its
+branch gone: it is then the parent's head at that moment, which contains the
+merge and is stricter than it, so a run that contains the merge but not that
+head reads `provisional`. The `tests` column names it the same way it names a task's or phase's
 own gate — `whole`, `provisional (since <mergedAt>)`, or `unknown - <basis>` —
 and it is the **same word** `whole` that a task's own gate and a phase's
 sign-off gate use for "tests passed", never a second spelling invented for
@@ -241,10 +247,12 @@ been certified whole by the third place. That covers every reason short of a
 containing green run — nothing has ever been recorded, the newest recorded run
 does not measure this plan's declared gate, or it does but its head does not
 (yet) contain this phase's merge. `stale-full-run` is the sharper claim inside
-it: a full run was recorded **after** this phase merged and **still** does not
-contain it — the plan is not merely unmeasured, a chance to measure it has
+it: a full run was recorded **after** this phase merged - after
+`mergedHeadAt` when the phase carries one, because a run recorded between the
+merge and that moment can contain the merge and not the later head - and **still** does not contain it — the plan is not merely unmeasured, a chance to measure it has
 already come and gone. `unknown` never counts as either: it means ancestry
-could not be asked at all (no `mergedHead` recorded), which is a narrower gap
+could not be answered - no `mergedHead` is recorded, or one is and git could
+not say whether a run's head contains it - which is a narrower gap
 than either condition claims.
 
 **Both are opt-in and out of the `--gate` default, for `no-test-evidence`'s own

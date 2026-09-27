@@ -225,9 +225,11 @@ PHASE_GATE_BASIS = ("derived", "derived-empty",
 # `meta.fullGate` names a THIRD gate beyond a task's own and a phase's sign-off
 # gate - the full suite, coverage, an e2e pass - and `phase.mergedHead` is what
 # lets a MERGED phase be asked whether that third gate ran clean on exactly its
-# own work: the parent branch's commit right after the merge, so a full run's
-# own HEAD containing it is the one fact that makes "this phase's tests passed"
-# a claim about THIS phase rather than about whatever else has landed since.
+# own work: the commit the merge brought the phase in with, so a full run's own
+# HEAD containing it is the one fact that makes "this phase's tests passed" a
+# claim about THIS phase rather than about whatever else has landed since. It
+# has two readings, told apart by `mergedHeadAt` - see the `KNOWN_PHASE` entries
+# for `mergedHead` and `mergedHeadAt` below.
 #
 # `VERIFIED` IS THE WORD, NOT THE SENTENCE. Every surface (status, report,
 # panel, doctor) needs one word for "tests passed" AT EACH PLACE a gate can
@@ -483,11 +485,22 @@ KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                # Absent means "meta.phaseGate.mode has never derived for this
                # phase", the same reading `testEvidence`'s absence gets.
                "testGateDerived",
-               # The parent branch's commit right after THIS phase merged,
-               # written only by close-phase.py. Absent means ancestry cannot
-               # be asked at all, so the phase reads `unknown` rather than
-               # `provisional` - see `FULL_STATUS` below.
+               # The commit ancestry is asked about for THIS phase's merge,
+               # written only by close-phase.py: the oldest commit on the
+               # parent's first-parent chain that contains the tip (the commit on
+               # that chain that brought the tip in - the tip itself for a
+               # fast-forward, the merge commit for a direct merge, the parent's
+               # merge of an intermediate branch for a nested one), or - when
+               # `mergedHeadAt` is present
+               # - the parent's head when it was recorded after the fact. Absent means ancestry cannot be asked
+               # at all, so the phase reads `unknown` rather than `provisional` -
+               # see `FULL_STATUS` below.
                "mergedHead",
+               # The moment close-phase.py recorded `mergedHead` AFTER the fact,
+               # with the branch gone: `mergedHead` is then the parent's head at
+               # that moment. Absent means it is the recovered commit described
+               # on `mergedHead` above.
+               "mergedHeadAt",
                # not in the schema; reason in `OFF_SCHEMA` below:
                "signOff"}
 # Recommended keys on a parallel-run claim — soft: a claim that omits one draws a
