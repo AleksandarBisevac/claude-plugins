@@ -718,23 +718,68 @@ def _opener(lines, index):
     return None
 
 
+# What a line may end in to carry the NEXT command line on with it. The order
+# matters only so `||` is named as itself rather than as `|`.
+_CONTINUES = ("\\", "&&", "||", "|")
+
+
+def _continues_with(line):
+    """The token `line` ends in that continues its command onto a later line, or
+    None. A full-line comment continues nothing, whatever it ends in."""
+    code = line.rstrip()
+    if not code.strip() or code.strip().startswith("#"):
+        return None
+    for token in _CONTINUES:
+        if code.endswith(token):
+            return token
+    return None
+
+
+def _code_above(lines, index):
+    """The index of the nearest earlier line that is neither blank nor a full-line
+    comment, or None."""
+    for k in range(index - 1, -1, -1):
+        if lines[k].strip() and not lines[k].strip().startswith("#"):
+            return k
+    return None
+
+
 def _context_problem(lines, index, yaml):
     """Why the exact call line at `index` is not what runs there, or None.
 
-    The line may be the real call with its flag somewhere else. In YAML it is read
-    only (a) as a one-line `run: <call>` whose next value line is indented no deeper
-    than the key, or (b) as a line whose nearest less-indented line is a plain
-    `run: |` (`|-`, `|+`) opener. In either mode, a line continued from the line
-    above by a trailing backslash is read only when that line is exactly the
-    runner's wrapper, `run "<label>" \`.
+    The line may be the real call with its flag somewhere else, or with something
+    in front of it that stops it running. The call's own command starts at the
+    runner's wrapper, `run "<label>"` ended by a backslash, when the line above is
+    that, and at the call line otherwise; any other line above ending in a
+    backslash is refused. Then the chain is walked one step further: the code line
+    before the command's start must not end in a backslash (on the line directly
+    above), `&&`, `||` or `|`, or the command is continued from it - in YAML only
+    within the block's own shell text, since the opener ends in `|`. In YAML the call
+    is also read only (a) as a one-line `run: <call>` whose next value line is
+    indented no deeper than the key, or (b) as a line whose nearest less-indented
+    line is a plain `run: |`, `|-` or `|+` opener.
     """
     number = index + 1
+    first = index
     above = lines[index - 1] if index > 0 else ""
-    if above.rstrip().endswith("\\") and not _RUNNER_WRAPPER.match(above.strip()):
-        return ("lines %d and %d: the call on line %d is continued from line %d, "
-                "which is not the runner's `run \"<label>\" \\` wrapper, so the "
-                "tool does not run as that line reads" % (number - 1, number,
-                                                          number, number - 1))
+    if _continues_with(above) == "\\":
+        if not _RUNNER_WRAPPER.match(above.strip()):
+            return ("lines %d and %d: the call on line %d is continued from line %d, "
+                    "which is not the runner's `run \"<label>\"` wrapper, so the "
+                    "tool does not run as that line reads"
+                    % (number - 1, number, number, number - 1))
+        first = index - 1
+    before = _code_above(lines, first)
+    if yaml and before is not None and _indent(lines[before]) < _indent(lines[first]):
+        # Less indented than the call is not the block's shell text: it is the
+        # `run: |` opener, or other YAML, and a `|` there opens the block.
+        before = None
+    token = _continues_with(lines[before]) if before is not None else None
+    if token is not None and not (token == "\\" and before != first - 1):
+        return ("lines %d to %d: line %d ends in `%s`, so the command that starts on "
+                "line %d and carries the call on line %d is continued from it, and "
+                "the tool does not run as that line reads"
+                % (before + 1, number, before + 1, token, first + 1, number))
     if not yaml:
         return None
     one = _YAML_ONE_LINE.match(lines[index])
@@ -1341,6 +1386,19 @@ def _arm_cases(check):
                     yaml=True), [BEFORE_COMMIT_ARMS]),
         "runner wrapper": (_pinned('run "x" \\\n  python3 %s --before-commit\n'
                                    % (_t,)), [BEFORE_COMMIT_ARMS]),
+        "comments ending in a continuation": (_pinned(
+            "# a note that ends in a backslash \\\n# and one that ends in &&\n"
+            'run "x" \\\n  python3 %s --before-commit\n' % (_t,)),
+            [BEFORE_COMMIT_ARMS]),
+        "a comment ending in a backslash right above": (_pinned(
+            "# a note that ends in a backslash \\\n  python3 %s --against-commit\n"
+            % (_t,)), [AGAINST_COMMIT_ARMS]),
+        "a call right under `run: |`": (_pinned(
+            "      - run: |\n          python3 %s --against-commit\n" % (_t,),
+            yaml=True), [AGAINST_COMMIT_ARMS]),
+        "a finished command above": (_pinned(
+            "set -e\n\n  python3 %s --against-commit\n" % (_t,)),
+            [AGAINST_COMMIT_ARMS]),
     }
     _wrong = dict((k, got) for k, (got, want) in _read_ok.items() if got != want)
     check("ra29g each exact call line the tool knows is read as its arms - no "
@@ -1384,6 +1442,29 @@ def _arm_cases(check):
         "echo \\": _pinned('echo "x" \\\n  python3 %s --against-commit\n' % (_t,)),
         ": \\": _pinned(': \\\n  python3 %s --against-commit\n' % (_t,)),
     }
+    # THE CHAIN, NOT ONE LINE: whatever the call's command is continued FROM - the
+    # wrapper's own line, or the call's when there is none - must not end in a
+    # backslash, `&&`, `||` or `|`, or the call does not run as its line reads.
+    # (line the refusal must name, fixture)
+    _chained = {
+        "echo \\ above the wrapper": (1, _pinned(
+            'echo "x" \\\nrun "y" \\\n  python3 %s --against-commit\n' % (_t,))),
+        ": \\ above the wrapper": (1, _pinned(
+            ': \\\nrun "y" \\\n  python3 %s --against-commit\n' % (_t,))),
+        "true || above the wrapper": (1, _pinned(
+            'true ||\nrun "y" \\\n  python3 %s --against-commit\n' % (_t,))),
+        "true || above the call": (1, _pinned(
+            "true ||\n  python3 %s --against-commit\n" % (_t,))),
+        "echo x | above the call": (1, _pinned(
+            "echo x |\n\n  python3 %s --against-commit\n" % (_t,))),
+        "false && in a run: | body": (2, _pinned(
+            "      - run: |\n          false &&\n          python3 %s\n" % (_t,),
+            yaml=True)),
+    }
+    _chain_read = dict((k, got) for k, (_n, got) in _chained.items()
+                       if not (len(got) == 1 and isinstance(got[0], str)))
+    _chain_unnamed = [k for k, (n, got) in _chained.items()
+                      if ("line %d " % (n,)) not in str(got)]
     _read_anyway = dict((k, got) for k, got in _continued.items()
                         if not (len(got) == 1 and isinstance(got[0], str)))
     _both_named = [k for k in ("echo \\", ": \\")
@@ -1393,8 +1474,12 @@ def _arm_cases(check):
           "`run: >`/`>-` or a plain `run:` continued onto a deeper line (the flag "
           "sits on the continuation), and a shell call continued from a line that "
           "is not the runner's `run \"<label>\" \\` wrapper, naming both lines: "
-          "read anyway %r, both lines not named %r" % (_read_anyway, _both_named),
-          _read_anyway == {} and _both_named == [])
+          "read anyway %r, both lines not named %r; and when a line up the "
+          "chain ends in `\\`, `&&`, `||` or `|` - above the wrapper or the call - "
+          "naming that line: read anyway %r, line not named %r"
+          % (_read_anyway, _both_named, _chain_read, _chain_unnamed),
+          _read_anyway == {} and _both_named == []
+          and _chain_read == {} and _chain_unnamed == [])
 
 
 # --- no case asks git about this checkout, measured while the cases run --------

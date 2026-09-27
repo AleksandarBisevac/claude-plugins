@@ -465,6 +465,50 @@
         "full sweep",
         "gate-parity"
       ]
+    },
+    {
+      "id": "P87.10-bpl",
+      "title": "the tool compiles clean under -W error, invalid escapes fail the lint, and a call's whole continuation chain is checked",
+      "status": "in_progress",
+      "description": "Phase review round 8 (review-P87h.json). (F1) P87.9 put an invalid escape (a backslash before a backtick) in _context_problem's docstring: every run on 3.12+ prints a SyntaxWarning and the file does not compile under -W error; default ruff (E9, F) cannot see it. Fix the docstring, and close the class: add W605 to [tool.ruff.lint] select in pyproject.toml so an invalid escape fails the lint gate; run ruff over plugins/audit and tools to confirm nothing else is red. (F2) The continuation check looks one line up only: `echo \"x\" \\` or `: \\` above the `run \"<label>\" \\` wrapper, `true ||` above the wrapper or a call, and `false &&` above a call in a run: | body leave the real call read while it never runs. Walk the continuation chain: the wrapper's previous line, and the call's previous line when there is no wrapper, must not end in a backslash, `&&`, `||` or `|` (after stripping a trailing comment is not needed - a line ending in those is a continuation); otherwise refuse, naming the lines. The real tree's preceding lines do not, so ra29 stays green. Add ra29i rows for each shape. Red first for both (F1: compile under -W error::SyntaxWarning fails on the current file).",
+      "files": [
+        "tools/check-rendered-artifacts.py",
+        "pyproject.toml",
+        "CHANGELOG.md",
+        "CONTRIBUTING.md",
+        ".github/workflows/ci.yml"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-rendered-artifacts.py: repro that FAILS on current code - an echo continuation above the runner wrapper leaves the real call read"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T16:52:02Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-27T14:08:20Z"

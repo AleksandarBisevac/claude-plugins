@@ -938,7 +938,7 @@ jobs:
             3.12
       - name: Install pinned lint tools (dev/CI-only, not a runtime dependency)
         run: pip install ruff==0.16.2 vermin==1.8.0
-      - name: ruff (E9+F, py38 target from pyproject.toml)
+      - name: ruff (rules and py38 target from pyproject.toml)
         run: ruff check plugins/audit tools
       - name: Every description of the gate set names the same gates
         run: |

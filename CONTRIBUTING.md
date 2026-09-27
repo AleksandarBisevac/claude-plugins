@@ -177,9 +177,10 @@ npx --yes ajv-cli validate --spec=draft2020 -s plugins/audit/schema/audit-plan.s
 claude plugin validate .
 claude plugin validate plugins/audit
 
-# the dialect and the 3.8 floor. `ruff` selects E9+F only (pyproject.toml); the AST
-# lint in `_output.house_style_violations()` is what enforces the bans vermin cannot
-# see — annotations, walrus, `typing`, `dataclasses`, `from __future__`.
+# the dialect and the 3.8 floor. `ruff` selects the rules in pyproject.toml (syntax
+# errors, pyflakes, invalid escapes); the AST lint in
+# `_output.house_style_violations()` is what enforces the bans vermin cannot see —
+# annotations, walrus, `typing`, `dataclasses`, `from __future__`.
 ruff check plugins/audit tools
 vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks plugins/audit/tests
 

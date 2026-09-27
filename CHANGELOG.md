@@ -377,6 +377,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   unchanged.
 
 ### Changed
+- **`ruff` also selects W605, an invalid escape sequence in a string.** Python 3.12
+  and later warn about one on every run of the file, and the file then fails to
+  compile under `-W error`; the build now refuses it by name.
 - **`signoff --verdict passed` needs the gate run it rests on**, on the single-phase path and the
   group's alike, graded by the SAME rule a task commit is bound by - now one module,
   `_verdict_binding`, that `commit-task-work.py` and the sign-off both call. The phase's newest
@@ -579,13 +582,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `--against-commit` - and each run must carry its own line exactly once. The line around each
   call is pinned too: a `ci.yml` call is read only as a one-line `run:` with no deeper
   continuation or as a line in a plain `run: |` block, and a call continued from the line above
-  only from the runner's `run "<label>" \` wrapper. So a flag moved, dropped or put on a
-  continuation line fails a case, and any other line naming the tool is refused by line. It is a
-  text check, not an interpreter: an exact call line inside a heredoc, a quoted string or another
-  key's block text is not told apart, which matters only if the real call is also removed. While
-  it runs, it records every git call the tool makes against the checkout, and fails naming the
-  function that made one, including a call against a directory inside the checkout. An unknown
-  flag, or both flags together, is now a usage error (exit 2) instead of running both comparisons.
+  only from the runner's `run "<label>" \` wrapper. The line the call's command is continued from
+  - the one above the wrapper, or above the call when there is none - must not end in a backslash,
+  `&&`, `||` or `|`, since then the call does not run as its line reads. So a flag moved, dropped
+  or put on a continuation line fails a case, and any other line naming the tool is refused by
+  line. It is a text check, not an interpreter: an exact call line inside a heredoc, a quoted
+  string or another key's block text is not told apart, which matters only if the real call is
+  also removed. While it runs, it records every git call the tool makes against the checkout, and
+  fails naming the function that made one, including a call against a directory inside the
+  checkout. An unknown flag, or both flags together, is now a usage error (exit 2) instead of
+  running both comparisons.
 - **An evidence ledger that cannot be read says so instead of reading as an empty one.** The
   report and the panel each turned a failed read into a clean read of nothing, so a task or
   phase pointing at a run read `Pointer without evidence` — a claim that the ledger does not
