@@ -855,7 +855,8 @@
       "P80.19-rtb",
       "P80.22-rtb",
       "P80.15-rtb",
-      "P81.2"
+      "P81.2",
+      "P81.5"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -4012,12 +4013,14 @@
       "P79.3",
       "P79.8-5bh",
       "P85.4",
-      "P81.3"
+      "P81.3",
+      "P81.4"
     ],
     "plugins/audit/tests/test_derive_phase_gate.py": [
       "P79.3",
       "P79.8-5bh",
-      "P81.3"
+      "P81.3",
+      "P81.4"
     ],
     "plugins/audit/scripts/governance/import-evidence.py": [
       "P80.5",
