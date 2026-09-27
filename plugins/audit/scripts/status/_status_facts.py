@@ -63,6 +63,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
+import _manifest_vocab  # noqa: E402  (the FULL_STATUS words - the third place's answers)
 import _areas  # noqa: E402  (meta.areas registry + the resolution every surface shares)
 import _priority  # noqa: E402  (the ONE expression of execution order, and the skip note)
 import _usage_core  # noqa: E402  (parse_ts — the tree's one ISO reader, at layer 1)
@@ -71,7 +72,7 @@ import _usage_core  # noqa: E402  (parse_ts — the tree's one ISO reader, at la
 CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
               "in-progress", "over-budget", "budget-80", "invariant-breach",
               "failing-tests", "no-test-evidence", "stranded-skills",
-              "unfinished-run")
+              "unfinished-run", "provisional", "stale-full-run")
 # Neither budget condition is in the default gate. Spend is a signal, not a defect:
 # a phase at 105% may be entirely justified, and failing someone's merge over it
 # without them asking would make the whole gate something to switch off. Opt in with
@@ -98,6 +99,18 @@ CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
 # answer, while on the machine that IS running a phase it would trip on every
 # invocation made during the run. It is for the surface that can see the lock -
 # the operator's terminal, and a runner that keeps its clone between jobs.
+#
+# `provisional` AND `stale-full-run` ARE OUT FOR `no-test-evidence`'s OWN
+# REASON, restated at the third place rather than borrowed by inference. A plan
+# that has never recorded a FULL run - or has never declared `meta.fullGate` at
+# all - carries no whole-bearing row anywhere, so a default holding either
+# condition would fail every build the day this feature shipped, on every plan
+# that had not yet adopted the third place. `provisional` trips on a merged
+# phase this ledger has not yet certified whole; `stale-full-run` is the
+# sharper claim inside it - a full run happened AFTER the phase landed and
+# STILL does not contain it, which is a plan actively falling behind its own
+# gate rather than merely not having reached it yet. Both stay something a team
+# types on purpose.
 DEFAULT_GATE = ("invalid", "open-high-bugs", "blocked-tasks")
 # Warn threshold for the interactive path and the `budget-80` condition. 80% is far
 # enough in to be real and early enough to act on.
@@ -625,7 +638,19 @@ def evidence_row(holder, scope):
             # looked up again later: the boundary comparison and the walk that
             # finds the gaps are the same pass, and a second read of the plan is
             # a second chance to read a different field.
-            "finishedAt": finished_at(holder, scope)}
+            "finishedAt": finished_at(holder, scope),
+            # WHOSE RUN THE POINTER IS, when it is not the subject's own: a member
+            # of a group sign-off carries the carrier's pointer, and a surface
+            # rendering it as the member's run would claim a gate nobody ran.
+            "gradedBy": graded_by(holder)}
+
+
+def graded_by(holder):
+    """The phase whose gate run a pointer is, when a group sign-off copied it onto
+    another member - or None for a pointer that is the subject's own."""
+    block = holder.get("testEvidence") if isinstance(holder, dict) else None
+    value = block.get("gradedBy") if isinstance(block, dict) else None
+    return str(value) if isinstance(value, str) and value else None
 
 
 def evidence_rows(manifest):
@@ -876,6 +901,10 @@ def rollup(manifest, findings, warnings, usage=None, boundary=None):
         # say which — `status` alone cannot, since `close-phase.py` stamps
         # this without ever touching `status`.
         "mergedAt": p.get("mergedAt"),
+        # Passed through verbatim for `stale_full_runs`: present only when the
+        # phase's `mergedHead` was recorded after the fact, and then the moment a
+        # full run has to postdate to have had that head to contain.
+        "mergedHeadAt": p.get("mergedHeadAt"),
         # The tier as `_priority` reads it, not the raw field: `priority: "1"`
         # orders nothing, so a badge rendered off the raw value would advertise
         # a pin the run does not honour. `None` means unprioritised.
@@ -1085,7 +1114,111 @@ def evaluate_gate(summary, conditions):
         # over its result would not.
         elif c == "unfinished-run" and unfinished_runs(summary) is not None:
             failed.append(c)
+        # `is not None` again, for `invariant_breach`'s reason: the only spelling
+        # under which a summary nobody asked `full_run_block` for fails rather
+        # than reading as a plan with nothing provisional in it.
+        elif c == "provisional" and provisional_phases(summary) is not None:
+            failed.append(c)
+        elif c == "stale-full-run" and stale_full_runs(summary) is not None:
+            failed.append(c)
     return failed
+
+
+def provisional_phases(summary):
+    """Merged phases the third place has not yet certified WHOLE, or None when
+    `summary['fullRun']` was never computed. Never [].
+
+    THE SAME THREE STATES `invariant_breaches` AND `stranded_skills` HAVE, for
+    the same reason: `fullRun` is INJECTED by `audit-status.py` (this module is
+    a layer-mate of `_evidence_io` and may not read the ledger or ask git), so
+    an ABSENT block means nobody asked - and a gate reading that as clean would
+    pass every repository where the injection silently failed. A phase whose
+    plan declares no `meta.fullGate` at all, or that has not yet merged, is
+    simply not a key in the block - `full_run_block` only ever enters a MERGED
+    phase, and `full_status` only ever answers WHOLE, PROVISIONAL or UNKNOWN
+    once a third place exists to ask. UNKNOWN never counts here: it is "ancestry
+    could not be asked at all", which is a specific gap this condition does not
+    claim.
+    """
+    block = (summary or {}).get("fullRun")
+    if not isinstance(block, dict):
+        return ["the full-gate ledger was never read, so whether a merged "
+                "phase's tests are WHOLE was never asked - this is not a pass"]
+    out = []
+    for pid in sorted(block, key=str):
+        row = block[pid]
+        if isinstance(row, dict) and row.get(
+                "answer") == _manifest_vocab.FULL_STATUS_PROVISIONAL:
+            out.append("phase %s: %s"
+                       % (pid, row.get("basis") or "no basis was recorded"))
+    return out or None
+
+
+def stale_full_runs(summary):
+    """Provisional phases a full run has already run PAST, or None when
+    `summary['fullRun']` was never computed. Never [].
+
+    THE SHARPER CLAIM INSIDE `provisional`: not merely "not yet certified
+    whole" but "a full run happened AFTER this phase merged and STILL does not
+    contain it" - a plan actively falling behind its own third place rather
+    than one that has not reached it yet. `full_run_block` carries the ONLY
+    evidence this needs beside the phase's own `mergedAt` (already on the
+    rollup): `wholeRunTs`, the moment of the newest full run
+    `_full_disqualification` accepts, and `wholeRunId`, that same run's id -
+    both `full_status`'s own keys, carried through `full_run_block` untouched,
+    and both None when the ledger holds no such run. A run that passed but ran
+    on a dirty tree, counted nothing or ran other commands is not "a full run
+    happened", so it never supplies the moment, and no rule here re-decides
+    which run counts.
+
+    THE MOMENT AND THE RUN IT NAMES COME FROM ONE PAIR OF KEYS. `runId` is
+    the run `full_status`'s answer is about, which on a WHOLE answer can be
+    an older run than the newest accepted one; reading the moment from one
+    run and printing the other's id would describe a run nobody recorded, so
+    the message names `wholeRunId` beside `wholeRunTs` and never `runId`.
+
+    MEASURED FROM `mergedHeadAt` WHEN THE PHASE CARRIES ONE, from `mergedAt`
+    otherwise. A head recorded after the fact is the parent's head at that later
+    moment, not the merge's own commit, so a whole-bearing run recorded between
+    the merge and that moment contains the merge and not the head - and "ran
+    after and still does not contain it" would be false about it. The sentence
+    names which of the two moments it measured against.
+
+    THE STAMPS ARE PARSED, NOT COMPARED AS TEXT, for `_gap_of`'s own reason:
+    `mergedAt` and `wholeRunTs` are both written by this plugin's own commands in
+    one UTC spelling today, but a hand-edited `mergedAt` need not agree, and a
+    stamp neither side can parse dates nothing rather than being read for or
+    against staleness.
+    """
+    block = (summary or {}).get("fullRun")
+    if not isinstance(block, dict):
+        return ["the full-gate ledger was never read, so whether a full run "
+                "outran a provisional phase's merge was never asked - this is "
+                "not a pass"]
+    by_id = dict((p.get("id"), p) for p in (summary or {}).get("phases") or []
+                if isinstance(p, dict))
+    out = []
+    for pid in sorted(block, key=str):
+        row = block[pid]
+        if not (isinstance(row, dict)
+                and row.get("answer") == _manifest_vocab.FULL_STATUS_PROVISIONAL):
+            continue
+        run_when = _usage_core.parse_ts(row.get("wholeRunTs"))
+        if run_when is None:
+            continue
+        phase = by_id.get(pid) or {}
+        head_at = phase.get("mergedHeadAt")
+        since = head_at if head_at else phase.get("mergedAt")
+        merge_when = _usage_core.parse_ts(since)
+        if merge_when is None or merge_when >= run_when:
+            continue
+        what = ("merged %s, its mergedHead recorded after the fact "
+                "(mergedHeadAt %s)" % (phase.get("mergedAt"), head_at)
+                if head_at else "merged %s" % (since,))
+        out.append("phase %s: %s, but full run %s (%s) ran after and "
+                   "still does not contain it"
+                   % (pid, what, row.get("wholeRunId"), row.get("wholeRunTs")))
+    return out or None
 
 
 def invariant_breaches(summary):

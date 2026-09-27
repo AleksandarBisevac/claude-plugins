@@ -129,6 +129,19 @@ _unknown_keys = _vocab._unknown_keys
 TERMINAL = _mio.TERMINAL
 
 _check_claim = _phases._check_claim
+# The one phase-gate default, and the two rules that read it: what a NEW
+# phase's gate starts as (`phase_gate_default`), whether that default runs no
+# suite at all (`phase_gate_suite_gap`), and the shape warnings for
+# `meta.phaseGate` — `always`/`exclude` plus `mode`/`derived`/`smoke` now —
+# and for `meta.coupling` beside it (`_check_phase_gate`, called from
+# `_check_meta` below).
+phase_gate_default = _phases.phase_gate_default
+phase_gate_suite_gap = _phases.phase_gate_suite_gap
+_check_phase_gate = _phases._check_phase_gate
+# `meta.fullGate` - the third place a change can pass at, beyond a task's own
+# gate and a phase's sign-off gate. Sits beside `_check_phase_gate` for the
+# same reason: neither needs the phase walk, so both run from `_check_meta`.
+_check_full_gate = _phases._check_full_gate
 # The review record's shape and its severity words, re-exported for the reason
 # every alias here is: this module is the import a consumer already spells, and a
 # reader that wanted to render or grade a finding would otherwise have to learn
@@ -223,6 +236,15 @@ def _check_meta(manifest):
         af, aw = check_ado_meta(meta.get("ado"))
         f.extend(af)
         w.extend(aw)
+    w.extend(_check_phase_gate(manifest))
+    _check_full_gate(manifest, w)
+    # `phase_gate_suite_gap` is asked directly here, with NO evidence
+    # (`suite_keys=None`): `_check_meta` is the pure validator, and only the
+    # certain arm - a default left empty after `meta.phaseGate.exclude` - can
+    # be answered from the plan alone.
+    gap = phase_gate_suite_gap(manifest)
+    if gap is not None:
+        w.append(gap)
     return (f, w)
 
 

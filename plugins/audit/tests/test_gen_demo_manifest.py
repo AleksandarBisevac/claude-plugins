@@ -20,14 +20,16 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import ast
+import datetime
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
-from _output import safe_stdio                     # noqa: E402
+from _output import REPO_ROOT, safe_stdio          # noqa: E402
 import _evidence_view                              # noqa: E402
 import _loader                                     # noqa: E402
 
@@ -172,6 +174,67 @@ def _covered_prefixes(manifest, phase):
     return prefixes, unreadable
 
 
+# --- the screenshot tool's panel boot wait ------------------------------------
+# The tab strip is static markup in panel.html, so waiting for `.tab` proves the
+# page parsed and nothing about whether boot() has adopted /api/state and
+# /api/registry yet. The panel preconditions read `STATE.viewer` and `REG.skills`
+# right after that wait; read too early they see `null` and an empty registry and
+# report a foreign identity and every manifest skill as undeclared, when
+# neither is true.
+_TAB_WAIT = "waitForSelector('.tab'"
+_BOOT_WAIT = "await waitForPanelBoot("
+
+
+def _tab_waits_without_boot(src):
+    """Line numbers of every static-tab wait NOT followed by the boot wait.
+
+    The next statement is what is read: blank lines and `//` comments between the
+    two are skipped, anything else there is a read that could land before boot."""
+    lines = src.splitlines()
+    bare = []
+    for i, line in enumerate(lines):
+        if _TAB_WAIT not in line or line.strip().startswith(("//", "*")):
+            continue
+        following = [ln.strip() for ln in lines[i + 1:]
+                     if ln.strip() and not ln.strip().startswith("//")]
+        if not following or not following[0].startswith(_BOOT_WAIT):
+            bare.append(i + 1)
+    return bare
+
+
+def _boot_wait_cases(check):
+    check("bw1 the boot-wait scanner flags a static-tab wait followed by a "
+          "fixed sleep, and passes one followed by the boot wait or named in a "
+          "comment",
+          _tab_waits_without_boot(
+              "await p.waitForSelector('.tab', { timeout: 1 });\n"
+              "await p.waitForTimeout(400);\n") == [1]
+          and _tab_waits_without_boot(
+              "await p.waitForSelector('.tab', { timeout: 1 });\n"
+              "// why\n\n"
+              "await waitForPanelBoot(p, 'x');\n") == []
+          and _tab_waits_without_boot(
+              "// a comment naming waitForSelector('.tab') is not a wait\n")
+          == [])
+    src = open(os.path.join(REPO_ROOT, "tools", "capture-screenshots.mjs"),
+               encoding="utf-8").read()
+    waits = src.count(_TAB_WAIT)
+    bare = _tab_waits_without_boot(src)
+    check("bw2 every panel page the screenshot tool opens waits for boot() to "
+          "adopt the server's state before it reads STATE or REG - a static-tab "
+          "wait plus a fixed sleep let the identity and skills preconditions "
+          "read the page's initial null and empty registry on a loaded machine "
+          "(%d static-tab wait(s), bare at lines %r)" % (waits, bare),
+          waits > 0 and bare == [])
+    body = src[src.find("async function waitForPanelBoot("):]
+    body = body[:body.find("\n}\n")]
+    check("bw3 ...and the boot wait asks for what boot() delivers - the "
+          "server's state adopted and the Settings view rendered from it - "
+          "rather than for more time",
+          "STATE" in body and "#guards" in body
+          and "waitForTimeout" not in body)
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     m = M.generate(n_phases=12, n_tasks=6, seed=11)
@@ -191,6 +254,26 @@ def _cases(check):
     check("phase ids unique", len(ids) == len(set(ids)))
     tids = [t["id"] for p in m["phases"] for t in p["tasks"]]
     check("task ids unique", len(tids) == len(set(tids)))
+
+    # A REVIEW'S FINDINGS IN BOTH SHAPES: one resolved - its fixTask a task of
+    # the same phase and its commit that task's own - and one still open. A
+    # fixture carrying only one shape documents only one.
+    _rv = [(p, f) for p in m["phases"]
+           for f in ((p.get("review") or {}).get("findings") or [])]
+    _tasks = dict((t["id"], t) for p in m["phases"] for t in p["tasks"])
+    _resolved = [(p, f) for p, f in _rv if f.get("fixTask")]
+    _open = [(p, f) for p, f in _rv if not f.get("fixTask")]
+    check("the demo's review findings carry a RESOLVED one - fixTask a task of its "
+          "own phase, commit that task's recorded commit - and an unresolved one "
+          "with neither field: %d resolved, %d open" % (len(_resolved), len(_open)),
+          _resolved != [] and _open != []
+          and all(f["fixTask"] in [t["id"] for t in p["tasks"]]
+                  and f.get("commit") == _tasks[f["fixTask"]].get("commit")
+                  and f.get("commit")
+                  and f.get("resolution", "").startswith(
+                      "fixed in %s (%s)" % (f["fixTask"], f["commit"][:12]))
+                  for p, f in _resolved)
+          and all("commit" not in f for _p, f in _open))
 
     # every status represented — the whole point of the fixture
     pst = {p["status"] for p in m["phases"]}
@@ -1106,8 +1189,255 @@ def _cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# --- the fixture's git history -------------------------------------------------
+def _isolated_git_env():
+    """The environment this suite asks git in: the caller's, minus every `GIT_*`
+    variable (a hook exports `GIT_DIR`, and a `GIT_DIR` inherited here would
+    point every question at somebody else's repository), with no global and no
+    system configuration - so no user setting can answer in the fixture's place.
+    """
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("GIT_"))
+    env["GIT_CONFIG_GLOBAL"] = os.devnull
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    return env
+
+
+def _git_out(root, args):
+    """(returncode, stdout text) from the REAL git, or (None, why) when it could
+    not be started - which a case reports as a failure, never as agreement."""
+    try:
+        proc = subprocess.Popen(["git", "-C", root] + list(args),
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                env=_isolated_git_env())
+    except OSError as exc:
+        return None, "git could not be run: %s" % (exc,)
+    out, err = proc.communicate()
+    text = out.decode("utf-8", "replace")
+    if proc.returncode != 0:
+        text += err.decode("utf-8", "replace")
+    return proc.returncode, text
+
+
+def _commit_header(root, sha):
+    """`{"author": line, "committer": line, "parents": [sha]}` read by git."""
+    code, text = _git_out(root, ["cat-file", "commit", sha])
+    if code != 0:
+        return None
+    head = text.split("\n\n", 1)[0].splitlines()
+    out = {"parents": []}
+    for line in head:
+        key, _sp, rest = line.partition(" ")
+        if key == "parent":
+            out["parents"].append(rest)
+        elif key in ("author", "committer", "tree"):
+            out[key] = rest
+    return out
+
+
+def _epoch_of(iso):
+    moment = datetime.datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ")
+    return int((moment - datetime.datetime(1970, 1, 1)).total_seconds())
+
+
+def _history_cases(check):
+    """The demo fixture is a git repository, so `full_status` can answer WHOLE.
+
+    Every question here goes to the REAL git binary, never to the generator's
+    own reading of what it wrote: a history that only this file believes in is
+    the defect the fixture exists to retire.
+    """
+    m = M.generate(n_phases=12, n_tasks=6, seed=11)
+    tmp = tempfile.mkdtemp(prefix="gen-demo-history-selftest-")
+    try:
+        one, two = os.path.join(tmp, "one"), os.path.join(tmp, "two")
+        M.write_manifest(m, one)
+        M.write_manifest(json.loads(json.dumps(m)), two)
+        back = M._load_manifest_io().load_manifest(
+            os.path.join(one, "audit-plan.json"))
+        merged = [p for p in back["phases"] if p.get("mergedAt")]
+        heads = [p["mergedHead"] for p in merged if p.get("mergedHead")]
+        code, head_out = _git_out(one, ["rev-parse", "--verify", "-q",
+                                        "HEAD^{commit}"])
+        kinds = [_git_out(one, ["cat-file", "-t", h]) for h in heads]
+        check("tg1 the written fixture is a git repository the real git "
+              "resolves, and every mergedHead it stamps is a commit in it",
+              code == 0 and bool(heads)
+              and all(k == (0, "commit\n") for k in kinds),
+              repr((code, head_out.strip()[:120], kinds[:3])))
+        fsck = _git_out(one, ["fsck", "--strict", "--no-dangling"])
+        check("tg2 ...and git's own integrity check passes over every object "
+              "the generator wrote by hand", fsck[0] == 0, fsck[1][:200])
+
+        # DETERMINISM, TWO WAYS. The two trees must agree - but two writes a
+        # few milliseconds apart would agree on a wall-clock date too, so the
+        # second half pins WHERE each date comes from: the phase's own
+        # `mergedAt`, which no clock and no machine can move.
+        code2, head_two = _git_out(two, ["rev-parse", "--verify", "-q",
+                                         "HEAD^{commit}"])
+        objects = []
+        for root in (one, two):
+            base = os.path.join(root, ".git", "objects")
+            objects.append(sorted(
+                os.path.join(d, f)[len(base):]
+                for d, _dirs, files in os.walk(base) for f in files))
+        check("tg3 two writes of one plan build the SAME history: one HEAD, "
+              "one set of objects", code2 == 0 and head_out == head_two
+              and objects[0] == objects[1] and bool(objects[0]),
+              repr((head_out.strip(), head_two.strip())))
+        headers = dict((p["id"], _commit_header(one, p["mergedHead"]))
+                       for p in merged if p.get("mergedHead"))
+        _dates = [(pid, h and h.get("committer"), p["mergedAt"])
+                  for pid, h, p in ((p["id"], headers[p["id"]], p)
+                                    for p in merged if p.get("mergedHead"))]
+        _wrong = [(pid, line, at) for pid, line, at in _dates
+                  if not line or not line.endswith(
+                      "> %d +0000" % (_epoch_of(at),))]
+        check("tg4 every merge commit is dated at its phase's own mergedAt, "
+              "author and committer alike - no clock reaches the history: %r"
+              % (_wrong[:3],),
+              bool(_dates) and not _wrong
+              and all(h["author"] == h["committer"]
+                      for h in headers.values() if h))
+        _who = sorted(set(h["author"].rsplit(" ", 2)[0]
+                          for h in headers.values() if h))
+        check("tg5 ...and authored by the fixture's one fixed identity, so no "
+              "machine's user reaches a published page: %r" % (_who,),
+              _who == [getattr(M, "HISTORY_IDENTITY", None)])
+
+        # THE THREE ANSWERS, asked the way every surface asks them: the real
+        # ledger reader, the real gate resolution, the real `full_status`
+        # putting the real git to work.
+        ev = M._evidence_io
+        rows = ev.read_rows(one, config={"manifestPath": "audit-plan.json"}
+                            )["rows"]
+        declared = [c for _n, c in ev.resolved_commands(
+            back, back["meta"].get("fullGate"))]
+        answers = dict((p["id"], ev.full_status(rows, p, one, declared))
+                       for p in merged)
+        words = [answers[p["id"]]["answer"] for p in merged]
+        vocab = _loader.load_script("_manifest_vocab.py",
+                                    modname="manifest_vocab_history")
+        check("tg6 the fixture shows one phase WHOLE, the rest of the recorded "
+              "merges PROVISIONAL, and the merge that recorded no head "
+              "UNKNOWN: %r" % (words,),
+              words.count(vocab.FULL_STATUS_WHOLE) == 1
+              and words.count(vocab.FULL_STATUS_UNKNOWN) == 1
+              and words.count(vocab.FULL_STATUS_PROVISIONAL)
+              == len(words) - 2 and len(words) >= 3)
+        full_rows = [r for r in rows if r.get("scope") == ev.FULL_SCOPE]
+        whole = [p for p in merged if answers[p["id"]]["answer"]
+                 == vocab.FULL_STATUS_WHOLE]
+        why = [ev._full_disqualification(r, declared) for r in full_rows]
+        check("tg7 the one full-scope row is whole-making BY THE RULES - "
+              "passed, measured, counted with a basis, every step timed, a "
+              "tree measured clean, and the commands meta.fullGate resolves "
+              "to, verbatim and in order: %r" % (why,),
+              len(full_rows) == 1 and why == [None]
+              and full_rows[0]["observations"]["ranTotal"] > 0
+              and full_rows[0]["observations"]["dirtyOutside"] == []
+              and [s["command"] for s in full_rows[0]["steps"]] == declared,
+              repr(full_rows[:1])[:300])
+        run_head = (full_rows[0].get("testedState") or {}).get("head") \
+            if full_rows else None
+        check("tg8 ...and its head CONTAINS the whole phase's merge without "
+              "equalling it, so WHOLE is reached by ancestry and not by a "
+              "string match", bool(whole) and run_head is not None
+              and run_head != whole[0]["mergedHead"]
+              and _git_out(one, ["merge-base", "--is-ancestor",
+                                 whole[0]["mergedHead"], run_head])[0] == 0
+              and answers[whole[0]["id"]]["runId"] == full_rows[0]["runId"],
+              repr((run_head, whole[:1] and whole[0].get("mergedHead"))))
+        _gate = _loader.load_script("run-test-gate.py",
+                                    modname="run_test_gate_history")
+        check("tg9 the row's countsBasis is the sentence the REAL runner "
+              "writes for those steps - the generator spells it and this is "
+              "what stops the copy drifting",
+              bool(full_rows) and full_rows[0]["observations"]["countsBasis"]
+              == _gate.counts_basis(full_rows[0]["steps"], ()),
+              repr(full_rows[0]["observations"]["countsBasis"]
+                   if full_rows else None))
+        # Along the one line of history, a commit is never older than its
+        # parent: the run sits after the merge it measured and before the next.
+        _chain, _sha = [], head_out.strip()
+        while _sha:
+            h = _commit_header(one, _sha)
+            if h is None:
+                _chain.append(None)
+                break
+            _chain.append(int(h["committer"].rsplit(" ", 2)[1]))
+            _sha = h["parents"][0] if h["parents"] else ""
+        check("tg10 the history reads forward in time: every commit is dated "
+              "no earlier than its parent",
+              None not in _chain and len(_chain) > 2
+              and _chain == sorted(_chain, reverse=True), repr(_chain))
+
+        # NEVER OVER A REPOSITORY IT DID NOT MAKE. A real one, built by the real
+        # git with a remote in its config and a branch at a commit of its own,
+        # is refused - exit 2, its config and ref bytes untouched, and no plan
+        # or ledger left behind, which a refusal arriving after those writes
+        # would have left.
+        real = os.path.join(tmp, "real")
+        os.makedirs(real)
+        _made = [_git_out(real, ["-c", "init.defaultBranch=main", "init", "-q",
+                                 "--template="]),
+                 _git_out(real, ["remote", "add", "origin",
+                                 "https://example.invalid/somebody.git"]),
+                 _git_out(real, ["-c", "user.name=Somebody",
+                                 "-c", "user.email=somebody@example.invalid",
+                                 "-c", "commit.gpgSign=false", "commit", "-q",
+                                 "--allow-empty", "--no-verify", "-m", "theirs"])]
+        _cfg = os.path.join(real, ".git", "config")
+        _ref = os.path.join(real, ".git", "refs", "heads", "main")
+
+        def _bytes(path):
+            try:
+                with open(path, "rb") as fh:
+                    return fh.read()
+            except OSError:
+                return None
+
+        _before = (_bytes(_cfg), _bytes(_ref))
+        _code = M.main([real, "--phases", "5", "--tasks", "2"])
+        check("tg11 a directory already holding a REAL repository is refused "
+              "with exit 2, its config and branch ref left byte for byte as "
+              "they were, and no plan or ledger written beside them: %r"
+              % (_code,),
+              [c for c, _o in _made] == [0, 0, 0]
+              and None not in _before and _code == 2
+              and (_bytes(_cfg), _bytes(_ref)) == _before
+              and not os.path.exists(os.path.join(real, "audit-plan.json"))
+              and not os.path.exists(os.path.join(real, "evidence")),
+              repr([o[:80] for _c, o in _made]))
+        linked = os.path.join(tmp, "linked")
+        os.makedirs(linked)
+        with open(os.path.join(linked, ".git"), "w") as fh:
+            fh.write("gitdir: %s\n" % (os.path.join(real, ".git"),))
+        _code = M.main([linked, "--phases", "5", "--tasks", "2"])
+        check("tg12 a `.git` FILE - a linked worktree's pointer - is refused "
+              "the same way, before anything is written, rather than crashing "
+              "half way: %r" % (_code,),
+              _code == 2 and os.path.isfile(os.path.join(linked, ".git"))
+              and os.listdir(linked) == [".git"])
+        again = os.path.join(tmp, "again")
+        _codes = [M.main([again, "--phases", "5", "--tasks", "2"])
+                  for _i in range(2)]
+        check("tg13 ...while a re-run over the generator's OWN output is "
+              "allowed, because what is there is byte for byte what it would "
+              "write: %r" % (_codes,), _codes == [0, 0]
+              and _git_out(again, ["fsck", "--strict", "--no-dangling"])[0] == 0)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _all_cases(check):
+    _cases(check)
+    _history_cases(check)
+    _boot_wait_cases(check)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    return _harness.run(_all_cases)
 
 
 if __name__ == "__main__":

@@ -102,11 +102,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -150,11 +148,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "opus",
       "skills": [],
@@ -198,11 +194,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -244,11 +238,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -292,11 +284,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -337,11 +327,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -387,11 +375,9 @@
           "plugin-validate",
           "gate",
           "report",
-          "lint",
-          "shots",
-          "interactive"
+          "lint"
         ],
-        "gateBasis": "phase-no-spelling"
+        "gateBasis": "declared"
       },
       "model": "sonnet",
       "skills": [],
@@ -404,7 +390,184 @@
         "P81.4",
         "P81.5",
         "P81.6",
-        "P81.7"
+        "P81.7",
+        "P81.9",
+        "P81.10",
+        "P81.11",
+        "P81.12"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P81.9",
+      "title": "status tests read only the locks their own fixture holds",
+      "status": "pending",
+      "description": "Fault F520. test_audit_status.py cv2 and sh0 compare the CLI's bare output with a hand-built render_status() call; run directly inside a checkout that holds a live phase-<id> lock (.git/audit-locks, shared by every worktree of the clone), the CLI side prints an unfinished-work block naming that real lock, so both fail - the isolated sweep hides it. Point the lock lookup at the fixture's own git directory (or inject it through a seam audit-status already has), so a real lock elsewhere cannot reach the render. Red-first: run the two cases while a real lock is held and see them fail before the fix. Allow: a lock planted in the fixture's own git directory is still rendered.",
+      "files": [
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/scripts/status/audit-status.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_status.py: cv2 and sh0 pass while a real phase lock is held in the checkout that runs them"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P81.10",
+      "title": "the evidence ledger's readers decode through one function, and a byte that does not decode is a finding everywhere",
+      "status": "pending",
+      "description": "Fault F523. read_rows opens ledger files with errors='replace' and reports them fully read, while verify opens them strictly and grades them unreadable; every consumer of read_rows (status, doctor, panel, report, the release guard's full-run answer, import-evidence) can compare a value a replaced byte silently changed. Both readers (and any sibling that opens a ledger file) decode through ONE function; a non-UTF-8 byte is a finding on every surface - read_rows counts the file as lost (unreadableFiles), never returns its rows as clean. Red-first as above; allow: a clean UTF-8 file with non-ASCII text reads as before.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__evidence_io.py: one invalid byte planted inside a runId - read_rows and verify grade that file the same (unreadable), and no row with a replaced character is returned as clean"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P81.4"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P81.11",
+      "title": "a full-scope row that names no tested head cannot bear whole",
+      "status": "pending",
+      "description": "Fault F526. _full_disqualification checks status, verdict source, scope, counts, durations, the dirty tree and the commands, but never that the row names testedState.head; a head-less row then reaches merged_into with no head and full_status answers UNKNOWN while an older head-carrying whole run might have answered WHOLE. Add 'the row names no tested head' as a disqualification reason so the walk skips it and a basis names it. Allow: rows with a head are unaffected.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__evidence_io.py: a head-less whole-bearing row newer than a head-carrying one no longer makes the phase unknown, and its disqualification names the missing head"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P81.10"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P81.12",
+      "title": "the status gate can fail on a merged phase whose full-run answer is unknown",
+      "status": "pending",
+      "description": "Fault F527. provisional_phases and stale_full_runs count PROVISIONAL rows only and no condition in _status_facts.CONDITIONS names UNKNOWN, so '--gate --fail-on provisional,stale-full-run' is green over a plan whose third place cannot be answered at all (no mergedHead, git could not answer, or an unreadable ledger), while this repository's release guard refuses over the same phase. Add a new OPT-IN condition 'unknown-full-run' (additive, outside DEFAULT_GATE like its siblings) that names each such phase with full_status's basis; do not change what 'provisional' covers. commands/status.md lists it with the others. COMPATIBILITY and CHANGELOG lines go to the docs task. Allow: WHOLE and NOT_DECLARED pass.",
+      "files": [
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/commands/status.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__status_facts.py: a merged phase reading unknown fails --fail-on unknown-full-run; whole and not_declared pass"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P81.9"
       ],
       "attempts": 0,
       "maxAttempts": 3,

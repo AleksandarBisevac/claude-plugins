@@ -33,6 +33,7 @@ reported.
 | `redFirst` | task | its own word for whether a new test was proved able to fail — when it sent one |
 | `tests.gate` | task | the task's own gate commands — the set that bounds the inherited-test question below |
 | review skill | phase | the resolved skill name, when the project sets one |
+| derived gate basis | phase | `derive-phase-gate.py --brief`'s one line plus the runId the gate was recorded under — handed only when a derivation is already recorded for this phase (`phase.testGateDerived` present, e.g. a re-review after a gate). At a first sign-off nothing is recorded yet, so this input is absent; read it, never re-derive it |
 
 ## The intent question
 
@@ -164,6 +165,13 @@ Must not:
   gate once, on a quiet tree, and records the evidence row; a second run either writes a
   row the phase never asked for or spends minutes on a measurement nobody reads. **You
   are not the gate** — the gate already ran and its result is an input to you.
+- `derive-phase-gate.py`, for the identical reason one level up: when a derivation is
+  already recorded for this phase (`phase.testGateDerived` present), the orchestrator
+  hands you its `--brief` line and the runId it was computed alongside — never the
+  listing it ran or the runner's own output. At a first sign-off, before that derivation
+  has run, this input is absent and you read it as absent rather than assuming one. You
+  read what it says a narrower gate was measured against; you never re-run the
+  derivation or the suite it names.
 - the project's whole suite, a build, an install, a formatter or any fix-in-place hook:
   several of those REWRITE the tree you are reviewing.
 - anything that writes — no edits, no manifest writes, no commits, and never `git stash`

@@ -1673,6 +1673,14 @@ def _cases(check):
                   "actually moved, so it is smaller than the tail: %d re-linked "
                   "of %d rows" % (res["relinked"], len(res["rows"])),
                   res["relinked"] == 2, repr(res["relinked"]))
+            _stretch = [res.get("relinkedAfter"), res.get("relinkedThrough")]
+            check("mu4b ...and the result says WHERE the re-chained stretch "
+                  "lies - after the last row both copies held, through the last "
+                  "re-chained row, the marker added after it not counted: %r"
+                  % (_stretch,),
+                  _stretch == [ours[1]["hash"], res["rows"][-2]["hash"]]
+                  and all(key in M.DETAILS_KEYS
+                          for key in ("relinkedAfter", "relinkedThrough")))
             # `.get` and a guarded index THROUGHOUT this group, because a case
             # that raises is a case that took every case after it down with it
             # and named none of them: proving these red means deleting the
@@ -1805,6 +1813,13 @@ def _cases(check):
                   and _res_ff["rows"][-1]["action"] != M.MERGE_ACTION
                   and any("no divergence" in n for n in _res_ff["notes"]),
                   repr((_res_ff["notes"], _res_ff["relinked"])))
+            check("mu13b ...and a merge that re-chained nothing names no "
+                  "re-chained stretch: %r"
+                  % ([_res_ff.get("relinkedAfter"),
+                      _res_ff.get("relinkedThrough")],),
+                  "relinkedAfter" in _res_ff
+                  and _res_ff.get("relinkedAfter") is None
+                  and _res_ff.get("relinkedThrough") is None)
             # A row both sides recorded IDENTICALLY right after the split folds
             # into the common prefix instead (same content, same `prev`, so the
             # same hash) - which is why the tie has to be built one row DEEPER,
@@ -2375,6 +2390,204 @@ def _cases(check):
 
     with_env(None, lambda: _merge_cases(check))
     _gone_cases(check)
+    _tie_order_cases(check)
+    _anchor_tie_cases(check)
+
+
+# --- at: which anchor row a same-second tie leaves, in any read order ------------
+def _anchor_project(tmp, name):
+    root = os.path.join(tmp, name)
+    os.makedirs(os.path.join(root, ".claude"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({}, fh)
+    return root
+
+
+def _anchor(root, target, action, session, stamp):
+    """A row naming `target`, its `stateHash` the file's bytes now, filed in
+    the journal file named for `session` - which is how a case picks the
+    order two files are read in."""
+    return M.append(root, {"action": action, "target": target, "ts": stamp,
+                           "summary": "%s by %s" % (action, session),
+                           "actor": {"sessionId": session, "via": "fixture"}})
+
+
+def _put(root, target, text):
+    path = os.path.join(root, *target.split("/"))
+    if not os.path.isdir(os.path.dirname(path)):
+        os.makedirs(os.path.dirname(path))
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+def _drift(root, target):
+    return [w for w in M.verify(root)["warnings"]
+            if target in w and "changed since" in w]
+
+
+def _both_orders(root, target):
+    """`_drift` with the journal directory listed in its own order and then
+    REVERSED - the two read orders two machines can list one directory in."""
+    held = M.journal_files
+    try:
+        forward = _drift(root, target)
+        M.journal_files = lambda directory: list(reversed(held(directory)))
+        backward = _drift(root, target)
+    finally:
+        M.journal_files = held
+    return forward, backward
+
+
+# The action's spelling, read off the module when it has one: a build that
+# predates it still runs every case below to its assertion instead of raising.
+_MERGED = getattr(M, "EVIDENCE_MERGE_ACTION", "evidence.merge")
+
+
+def _anchor_tie_cases(check):
+    tmp = _harness.fixture_root("journal-anchor-tie-")
+    target = "docs/audit/evidence/2026-06.s.jsonl"
+    stamp = "2026-06-02T10:00:00Z"
+    record = "test.evidence.recorded"
+    try:
+        # A RECORD, THEN THE MERGE THAT RE-CHAINED THE FILE, in one second and
+        # in two journal files.
+        root = _anchor_project(tmp, "merge-and-record")
+        _put(root, target, "one side's bytes\n")
+        _anchor(root, target, record, "s-record", stamp)
+        _put(root, target, "the merged bytes\n")
+        _anchor(root, target, _MERGED, "s-merge", stamp)
+        seen = _both_orders(root, target)
+        check("at1 a merge row and a record row for one file in ONE second give "
+              "no drift in EITHER read order - the merge's `stateHash` covers "
+              "bytes that already include that run, so it is the anchor, "
+              "whichever journal file is read last: %r" % (seen,),
+              seen == ([], []))
+
+        # TWO UNRELATED ANCHORS in one second, one matching the file, one not.
+        root = _anchor_project(tmp, "two-records")
+        _put(root, target, "older bytes\n")
+        _anchor(root, target, record, "s-one", stamp)
+        _put(root, target, "newer bytes\n")
+        _anchor(root, target, record, "s-two", stamp)
+        forward, backward = _both_orders(root, target)
+        check("at2 two unrelated same-second anchors give ONE verdict in both "
+              "read orders - the tie is settled by what the rows say, never by "
+              "which file was listed last: %r" % ((forward, backward),),
+              forward == backward)
+
+        # THE OVER-FIRE DIRECTION: a merge row wins the tie, and is still graded.
+        root = _anchor_project(tmp, "stale-merge")
+        _put(root, target, "one side's bytes\n")
+        _anchor(root, target, record, "s-record", stamp)
+        _put(root, target, "the merged bytes\n")
+        _anchor(root, target, _MERGED, "s-merge", stamp)
+        _put(root, target, "edited after the merge\n")
+        forward, backward = _both_orders(root, target)
+        check("at3 ...and a merge row whose `stateHash` does NOT match the file "
+              "is drift in both read orders - winning the tie makes it the "
+              "anchor, not an exemption: %r" % ((forward, backward),),
+              len(forward) == 1 and len(backward) == 1
+              and _MERGED == M.EVIDENCE_MERGE_ACTION)
+
+        # TWO ROWS FOR ONE FILE IN ONE JOURNAL FILE, one second: the chain
+        # records which came later. A row in another journal file, naming
+        # something else, is what makes the two read orders differ.
+        root = _anchor_project(tmp, "one-file-twice")
+        _put(root, target, "older bytes\n")
+        _anchor(root, target, record, "s-same", stamp)
+        _put(root, target, "newer bytes\n")
+        _anchor(root, target, record, "s-same", stamp)
+        _anchor(root, "docs/audit/other.json", record, "s-other", stamp)
+        rows = [r for r in M.read_all(root) if r.get("target") == target]
+        forward, backward = _both_orders(root, target)
+        check("at4 two rows for one file in ONE journal file at one second: the "
+              "LATER row wins in both read orders, so a file matching the later "
+              "row reports no drift - chain order is a recorded order: %r / %r"
+              % ((forward, backward), [r.get("_file") for r in rows]),
+              len(rows) == 2 and rows[0].get("_file") == rows[1].get("_file")
+              and rows[0].get("stateHash") != rows[1].get("stateHash")
+              and forward == [] and backward == [])
+        _put(root, target, "older bytes\n")
+        forward, backward = _both_orders(root, target)
+        check("at5 ...and the reverse: with the file back at the EARLIER row's "
+              "bytes it is drift in both read orders - the earlier row of the "
+              "tie is not the anchor: %r" % ((forward, backward),),
+              len(forward) == 1 and len(backward) == 1)
+    finally:
+        _harness.remove_tree(tmp)
+
+
+# --- mt: a same-second tie over disjoint targets is ordered, not refused ---------
+def _chained(name, rows):
+    """`rows` as one chained file named `name` - both sides of a divergence are
+    whole files, so each is chained from the genesis on its own."""
+    return M._rechain([dict(r) for r in rows], name)[0]
+
+
+def _row(ts, action, target, summary):
+    return {"v": 1, "ts": ts, "action": action, "target": target,
+            "summary": summary, "actor": {"via": "hook"}, "stateHash": None}
+
+
+def _tie_order_cases(check):
+    name = "2026-05.s-tie.jsonl"
+    base = [_row("2026-05-01T00:00:00Z", "manifest.edit", "docs/a.json", "b1")]
+    stamp = "2026-05-02T00:00:00Z"
+    ours = _chained(name, base + [_row(stamp, "manifest.edit", "docs/a.json",
+                                       "ours at the second")])
+    theirs = _chained(name, base + [_row(stamp, "config.edit", "docs/c.json",
+                                         "theirs at the second")])
+    res = M.merge_rows(ours, theirs, name)
+    swapped = M.merge_rows(theirs, ours, name)
+    order = [r.get("summary") for r in res["rows"][:-1]]
+    check("mt1 a same-second tie whose rows touch DISJOINT targets is ordered "
+          "rather than refused, and every row EXCEPT THE MARKER comes out in the "
+          "same order whichever side is called ours - the marker itself differs "
+          "between the two resolutions (its time, its actor, which input it "
+          "calls which), so the claim is the order of rows and not the bytes: "
+          "%r / %r" % (order, res["refusals"]),
+          res["ok"] and swapped["ok"] and len(order) == 3
+          and order == [r.get("summary") for r in swapped["rows"][:-1]])
+    marker = (res["rows"] or [{}])[-1]
+    check("mt2 ...and the order it chose is WRITTEN in the marker row, naming "
+          "the timestamp and which rows went first: %r"
+          % (marker.get("summary"),),
+          marker.get("action") == M.MERGE_ACTION
+          and stamp in (marker.get("summary") or "")
+          and "1 same-second tie(s)" in (marker.get("summary") or "")
+          and res["ordered"] and res["ordered"][0]["ts"] == stamp)
+
+    same = _chained(name, base + [_row(stamp, "task.cancel", "docs/a.json",
+                                       "theirs on the same target")])
+    refused = M.merge_rows(ours, same, name)
+    check("mt3 the ALLOW direction is narrow: a tie on ONE target is still "
+          "refused, because there the order is what the file says happened: "
+          "%r" % (refused["refusals"],),
+          not refused["ok"] and not refused["rows"]
+          and len(refused["refusals"]) == 1
+          and stamp in refused["refusals"][0])
+
+    x = _row(stamp, "task.note", "docs/x.json", "x")
+    y = _row(stamp, "task.note", "docs/y.json", "y")
+    one = _chained(name, base + [x, y])
+    two = _chained(name, base + [y, x])
+    both = M.merge_rows(one, two, name)
+    back = M.merge_rows(two, one, name)
+    check("mt5 an IDENTICAL tie whose rows each side holds in a different chain "
+          "order is ordered by content too, so every row but the marker lands "
+          "in one order whichever side is ours: %r"
+          % ([r.get("summary") for r in both["rows"][:-1]],),
+          both["ok"] and back["ok"]
+          and [M.row_content(r) for r in both["rows"][:-1]]
+          == [M.row_content(r) for r in back["rows"][:-1]])
+
+    blank = _chained(name, base + [_row(stamp, "config.edit", "",
+                                        "theirs names no target")])
+    unknown = M.merge_rows(ours, blank, name)
+    check("mt4 ...and so is a tie where either row names NO target: an "
+          "unknown target is never proven disjoint: %r" % (unknown["refusals"],),
+          not unknown["ok"] and len(unknown["refusals"]) == 1)
 
 
 def _gone_cases(check):
@@ -2527,6 +2740,7 @@ def _gone_cases(check):
           in _gw12)
 
     _worktree_writer_cases(check)
+    _details_key_cases(check)
 
 
 def _worktree_writer_cases(check):
@@ -2704,6 +2918,232 @@ def _worktree_writer_cases(check):
           _none_first is None and bool(_then), repr((_none_first, _then)))
     check("wk7 ...and the merged trail verifies",
           M.verify(main)["ok"], repr(M.verify(main).get("findings")))
+
+
+# --- the details keys a writer hands over, read by AST ------------------------
+# WHY THIS IS A CASE AND NOT A RULE ABOUT ONE WRITER. `normalise_details` keeps only
+# the keys `DETAILS_KEYS` holds and drops the rest WITHOUT A WORD - on purpose, so an
+# inventive writer cannot decide the row format for every reader after it. The cost
+# of that silence is that a writer can believe it recorded a field the trail never
+# holds: `phase.merged` handed over its `parent`, the reference said so, and the row
+# read back as `{phaseId, branch}`. Nothing at the write site can see that. So this
+# reads every writer's HANDOVER and compares its literal keys with the allow-list.
+#
+# THE SHAPES IT READS, each a literal key written at the site:
+#   1. a dict literal carrying both an `"action"` key and a `"details"` key whose
+#      value is a dict literal - the entry every append site builds inline;
+#   2. `x["details"] = {...}` and `x["details"]["key"] = ...`;
+#   3. a same-module WRAPPER: a function with a parameter that its body passes as
+#      the value of an entry's `"details"`, called with a dict literal there;
+#   4. in a module that holds any of the above, a local named `details` assigned a
+#      dict literal, or stored into as `details["key"] = ...`.
+# WHAT IT CANNOT SEE, so a clean run is about those shapes and nothing wider: a key
+# computed at run time (`details[field] = ...`), a block built under another name or
+# by `dict(...)` or `**` spread, a wrapper called from another module, and a block
+# that arrives as data (`audit-journal.py --details` parses JSON). Those are the
+# quiet direction; widening to them would need a data-flow reader.
+def _str_const(node):
+    """The value of a string literal node, or None."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _subscript_key(node):
+    """The literal key of `x["key"]`, on every supported interpreter, or None.
+
+    Python 3.8 wraps a subscript's key in `ast.Index`; 3.9 and later do not.
+    """
+    key = node.slice
+    if hasattr(ast, "Index") and isinstance(key, ast.Index):
+        key = key.value
+    return _str_const(key)
+
+
+def _dict_keys(node):
+    """[(lineno, key)] for every literal string key of a dict literal."""
+    return [(k.lineno, _str_const(k)) for k in node.keys
+            if k is not None and _str_const(k) is not None]
+
+
+def _entry_details(node):
+    """The value node of a row entry's `"details"`, or None.
+
+    An ENTRY is a dict literal that carries an `"action"` key too. The pairing is
+    what separates a trail row from every other dict here with a `details` field -
+    a validator finding, a vocabulary table - whose keys are not the trail's.
+    """
+    if not isinstance(node, ast.Dict):
+        return None
+    keys = [_str_const(k) if k is not None else None for k in node.keys]
+    if "action" not in keys or "details" not in keys:
+        return None
+    return node.values[keys.index("details")]
+
+
+def _wrapper_params(tree):
+    """{function name: (position, parameter name)} for shape 3's wrappers."""
+    out = {}
+    for fn in ast.walk(tree):
+        if not isinstance(fn, ast.FunctionDef):
+            continue
+        params = [a.arg for a in fn.args.args]
+        for node in ast.walk(fn):
+            value = _entry_details(node)
+            if isinstance(value, ast.Name) and value.id in params:
+                out[fn.name] = (params.index(value.id), value.id)
+    return out
+
+
+def details_handovers(tree):
+    """[(lineno, key)] for every literal key this module hands to a `details`."""
+    found, writes = [], False
+    wrappers = _wrapper_params(tree)
+    for node in ast.walk(tree):
+        value = _entry_details(node)
+        if value is not None:
+            writes = True
+            if isinstance(value, ast.Dict):
+                found.extend(_dict_keys(value))
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
+                and node.func.id in wrappers:
+            writes = True
+            pos, name = wrappers[node.func.id]
+            given = [kw.value for kw in node.keywords if kw.arg == name]
+            if len(node.args) > pos:
+                given.append(node.args[pos])
+            for arg in given:
+                if isinstance(arg, ast.Dict):
+                    found.extend(_dict_keys(arg))
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if not isinstance(target, ast.Subscript):
+                continue
+            if _subscript_key(target) == "details" \
+                    and isinstance(node.value, ast.Dict):
+                writes = True
+                found.extend(_dict_keys(node.value))
+            inner = target.value
+            if isinstance(inner, ast.Subscript) \
+                    and _subscript_key(inner) == "details" \
+                    and _subscript_key(target) is not None:
+                writes = True
+                found.append((target.lineno, _subscript_key(target)))
+    if not writes:
+        return found
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id == "details" \
+                    and isinstance(node.value, ast.Dict):
+                found.extend(_dict_keys(node.value))
+            if isinstance(target, ast.Subscript) \
+                    and isinstance(target.value, ast.Name) \
+                    and target.value.id == "details" \
+                    and _subscript_key(target) is not None:
+                found.append((target.lineno, _subscript_key(target)))
+    return found
+
+
+def accepted_details_keys():
+    """Every key a handover may carry: the allow-list, plus the one key
+    `normalise_details` converts rather than keeps."""
+    return set(M.DETAILS_KEYS) | {M._COMMAND_DETAILS_KEY}
+
+
+def unlisted_details_keys(sources=None):
+    """["<file>:<line> <key>", ...] - a literal details key the allow-list drops.
+
+    `sources` is `[(label, text)]`; None walks every `.py` under hooks/ and
+    scripts/ through the shared walk. A file that does not parse is a finding in
+    its own right: a reader that skipped it would clear a writer nobody read.
+    """
+    if sources is None:
+        sources = []
+        for base, label in ((_harness.HOOKS_DIR, "hooks"),
+                            (_harness.SCRIPTS_DIR, "scripts")):
+            for rel, path in _output.lint_py_files(base):
+                with open(path, encoding="utf-8") as fh:
+                    sources.append(("%s/%s" % (label, rel), fh.read()))
+    accepted = accepted_details_keys()
+    out = []
+    for label, text in sources:
+        try:
+            tree = ast.parse(text)
+        except SyntaxError as exc:
+            out.append("%s:%s does not parse, so its handovers were not read"
+                       % (label, exc.lineno))
+            continue
+        for lineno, key in details_handovers(tree):
+            if key not in accepted:
+                out.append("%s:%d %s" % (label, lineno, key))
+    return sorted(out)
+
+
+def _details_key_cases(check):
+    """The allow-list against every writer's handover - and the row it keeps."""
+    _live = unlisted_details_keys()
+    check("dk1 every literal key a writer under hooks/ or scripts/ hands to a "
+          "journal `details` block is one DETAILS_KEYS holds - an unlisted key is "
+          "dropped in silence, so the writer believes it recorded a field the "
+          "trail never has: %r" % (_live,), _live == [])
+    # A key this module has never listed, built rather than written: this file
+    # holds the lint, and a literal here would be a key some later reader greps.
+    _unlisted = "".join(("never", "Listed", "Key"))
+    _planted = [
+        ("fx/entry.py",
+         "append(p, {'action': 'x.y', 'details': {'phaseId': 'P1', '%s': 1}})\n"
+         % (_unlisted,)),
+        ("fx/wrapper.py",
+         "def _row(project, action, details):\n"
+         "    return append(project, {'action': action, 'details': details})\n"
+         "_row(p, 'x.y', {'taskId': 'T', '%s': 2})\n" % (_unlisted,)),
+        ("fx/store.py",
+         "row = {'action': 'x.y'}\n"
+         "row['details'] = {'reason': 'r'}\n"
+         "row['details']['%s'] = 3\n" % (_unlisted,)),
+        ("fx/local.py",
+         "def f(p):\n"
+         "    details = {'phaseId': 'P1'}\n"
+         "    details['%s'] = 4\n"
+         "    return append(p, {'action': 'x.y', 'details': details})\n"
+         % (_unlisted,)),
+    ]
+    _got = unlisted_details_keys(_planted)
+    check("dk2 a planted unlisted key is named file:line in EVERY shape the lint "
+          "reads - an entry literal, a same-module wrapper, a subscript store and "
+          "a local `details` - once each: %r" % (_got,),
+          _got == ["fx/entry.py:1 %s" % (_unlisted,),
+                   "fx/local.py:3 %s" % (_unlisted,),
+                   "fx/store.py:3 %s" % (_unlisted,),
+                   "fx/wrapper.py:3 %s" % (_unlisted,)])
+    # THE OTHER DIRECTION, and it is the one that looks vacuous: a lint that named
+    # every key it read would pass dk2 for ever. The same shapes carrying only
+    # listed keys - and a dict with a `details` but no `action`, which is not a row.
+    _clean = [(label, text.replace(_unlisted, "commit"))
+              for label, text in _planted]
+    _clean.append(("fx/finding.py",
+                   "x = {'details': {'%s': 1}, 'severity': 'low'}\n" % (_unlisted,)))
+    _quiet = unlisted_details_keys(_clean)
+    check("dk3 ALLOW: the same shapes carrying only listed keys are silent, and a "
+          "dict with a `details` field but no `action` is not a trail row: %r"
+          % (_quiet,), _quiet == [])
+
+    # The row itself. A block whose keys are all listed normalises to exactly the
+    # bytes it was handed; the new key changes no row that never carried it.
+    _listed = {"phaseId": "P1", "branch": "audit/p1-demo"}
+    _merged = dict(_listed, parent="main")
+    check("dk4 ALLOW: a details block whose keys are all listed is kept byte for "
+          "byte - the merge row's two old keys, and with `parent` beside them: "
+          "%r / %r" % (M.normalise_details(_listed), M.normalise_details(_merged)),
+          M.canonical(M.normalise_details(_listed)) == M.canonical(_listed)
+          and M.canonical(M.normalise_details(_merged)) == M.canonical(_merged))
+    _invented = M.normalise_details({"phaseId": "P1", _unlisted: "x"})
+    check("dk5 ...and the allow-list is still an allow-list: a key it does not "
+          "hold is dropped, so listing one key did not turn the filter off: %r"
+          % (_invented,), _invented == {"phaseId": "P1"})
 
 
 def _selftest():

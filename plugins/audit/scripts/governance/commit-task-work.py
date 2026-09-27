@@ -16,7 +16,8 @@ Prose cannot refuse. This can.
 
 THE THIRD SCOPED COMMIT, AND THE SHAPE IS ITS SIBLINGS'. `commit-audit-state.py`
 carries the RECORD of a run and never the work; `commit-manifest-index.py`
-carries the shared index and nothing else; this one carries the WORK. Each
+carries the shared index and the one journal file holding the row that names
+the commit, and nothing else; this one carries the WORK. Each
 derives its own allow-list and none of them shares a builder, because a shared
 builder taking a flag would be one function holding three safety properties -
 the shape in which a widened list stops being noticed. What they do share is
@@ -91,6 +92,14 @@ printed instead and `/audit:task done <taskId> --commit <sha>` records it, ridin
 along with the next commit exactly as step 4c already says. Two verbs, one each
 for the thing git owns and the thing the plan owns.
 
+THE ROW NAMING THE COMMIT IS INSIDE IT. `audit.task.committed` - and, for an
+override, the row recording it - is written before the commit, keyed by the
+nonce the commit message carries as its `Audit-Row` trailer, and carried by the
+commit through the journal directory on the allow-list
+(`_scoped_commit.commit_with_rows`). An override whose row cannot be written is
+refused before anything is staged, so no commit goes over its gate unrecorded;
+a commit refused after the rows were written leaves a row withdrawing them.
+
 NEVER AN EMPTY COMMIT. Nothing staged means no commit and a line saying so,
 because a stream of empty commits is how a record stops being read.
 
@@ -121,7 +130,6 @@ Stdlib only, Python 3.8 compatible.
 import argparse
 import json
 import os
-import re
 import shutil
 import sys
 
@@ -153,7 +161,7 @@ import _journal_io  # noqa: E402  (where the trail lives, and the append)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR shards)
 import _manifest_vocab as _vocab  # noqa: E402  (one reading of a `files` entry's line suffix)
 import _scoped_commit  # noqa: E402  (the staging discipline and the answer shape, shared with the other two scoped commits)
-import _tree_stamp  # noqa: E402  (the declared-work digest a gate row records, recomputed here)
+import _verdict_binding as _vb  # noqa: E402  (the one rule for whether a recorded verdict binds the work)
 
 E_OK, E_FAIL, E_USAGE = 0, 1, 2
 
@@ -221,14 +229,12 @@ INDEX_RESTORED = _scoped_commit.INDEX_RESTORED
 # Local for `ACTION_TASK_COMMITTED`'s reason: nothing outside this file reads it.
 ACTION_VERDICT_OVERRIDDEN = "audit.task.verdict-overridden"
 
-# The one status a commit is bound to without an override.
-VERDICT_PASSED = "passed"
-
-# The status `run-test-gate.py --record` writes for a gate that declares no
-# command (its `EMPTY_GATE`; an entry point cannot be imported, and a case pins
-# the two spellings equal). It is the recorded answer for a gate that is empty
-# NOW, and binds nothing under a gate that has entries.
-VERDICT_EMPTY_GATE = "empty-gate"
+# The one status a commit is bound to without an override, and the status
+# `run-test-gate.py --record` writes for a gate that declares no command (its
+# `EMPTY_GATE`; a case pins the two spellings equal) - the binding rule's own
+# words, re-exported so a reader of this command's output finds them here.
+VERDICT_PASSED = _vb.VERDICT_PASSED
+VERDICT_EMPTY_GATE = _vb.VERDICT_EMPTY_GATE
 
 # A task with nothing to measure it. Said on every such commit, because a silent
 # commit here reads exactly like one a green gate stood behind.
@@ -244,11 +250,7 @@ CLEARED_GATE = ("its task gate was cleared on purpose (`gateBasis: cleared`), "
                 "no verdict; %s")
 
 # The command that shows an unreadable ledger line for what it is.
-VERIFY_COMMAND = "audit-journal.py verify"
-
-# A `taskId` value spelled out WHOLE on a line - its closing quote included - is
-# proof of whose row the line was even when the rest of it will not parse.
-_TASK_ID_VALUE = re.compile(r'"taskId"\s*:\s*"((?:[^"\\]|\\.)*)"')
+VERIFY_COMMAND = _vb.VERIFY_COMMAND
 
 
 # --- what this commit may carry -----------------------------------------------
@@ -307,8 +309,11 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
                            "committed - proceeding without it" % (label,))
             continue
         if not os.path.exists(absolute):
-            skipped.append("%s does not exist yet, so there is nothing of it to "
-                           "stage" % (label,))
+            # A journal that does not exist yet is created by the row this
+            # commit writes and carried from there, so it is not a skip.
+            if not (label == JOURNAL_LABEL and _journal_io.enabled(config)):
+                skipped.append("%s does not exist yet, so there is nothing of it "
+                               "to stage" % (label,))
             continue
         if rel not in [c[0] for c in candidates]:
             candidates.append((rel, label, True, False))
@@ -415,312 +420,59 @@ def ignored_refusal(ignored, ignored_records):
 
 
 # --- the verdict the work was measured under ------------------------------------
-def _newest(rows):
-    """The newest row by `ts`, a later row winning a tie, or None.
-
-    BY `ts` AND NOT BY FILE ORDER, `_evidence_io.latest_by_subject`'s rule: rows
-    land in one file per writer per month, so the concatenation of the ledger is
-    in no meaningful order. A tie goes to the row read later, which within one
-    writer's file is the row appended later.
-    """
-    best = None
-    for row in rows:
-        if best is None or str(row.get("ts") or "") >= str(best.get("ts") or ""):
-            best = row
-    return best
-
-
-def unreadable_lines(project, task_id, config=None):
-    """`(blocking, excused)` - the ledger lines that will not parse, as
-    `"<file>:<line>"`, split by whether they could be this task's row.
-
-    A LINE IS EXCUSED ONLY WHEN IT PROVES WHOSE IT IS: a whole `taskId` value
-    naming another task. Everything else might be this task's newest verdict -
-    a torn line can end before its `taskId`, and a phase row carries none - so
-    it blocks. One torn row elsewhere in the project therefore no longer refuses
-    every task commit in it, and a line that could be this task's still does.
-    """
-    config = _journal_io.load_config(project) if config is None else config
-    blocking, excused = [], []
-    for path in _evidence_io.ledger_files(project, config):
-        where = _journal_io.repo_relative_or_token(project, path)
-        try:
-            with open(path, "r", encoding="utf-8", errors="replace") as fh:
-                text = fh.read()
-        except Exception:
-            blocking.append("%s (unreadable)" % (where,))
-            continue
-        raw = text.splitlines()
-        parsed, torn = _journal_io.rows_from_text(text)
-        numbers = [r.get("_line") for r in parsed if r.get("_unparseable")]
-        if torn:
-            numbers.append(len(raw))
-        for number in numbers:
-            line = raw[number - 1] if number and number <= len(raw) else ""
-            found = _TASK_ID_VALUE.search(line)
-            label = "%s:%s" % (where, number)
-            if found and found.group(1) != str(task_id):
-                excused.append(label)
-            else:
-                blocking.append(label)
-    return blocking, excused
-
-
-def _gate_mismatch(measured, entries, source, build=None):
-    """The sentence a verdict measured under a different gate earns, or None.
-
-    THE ROW'S STEPS ARE ITS GATE: `run-test-gate` runs every declared entry in
-    order and records one step per entry under the entry's name, so the names in
-    order are the declaration it was measured under. A row that dropped steps for
-    length is compared on the steps it kept AND on the count it dropped, so a
-    gate widened past the kept steps is still a different gate. `gateSource` is
-    compared when the row has one - the same names measured as a task gate and
-    as its phase's fallback are different claims - and so is `gateDigest`, the
-    entries beside what `meta.buildCommands` resolves each to: a name that held
-    still while its command changed is a different gate too.
-    """
-    recorded = [str(s.get("name")) for s in (measured.get("steps") or [])
-                if isinstance(s, dict)]
-    now = list(entries)
-    dropped = measured.get("stepsDropped")
-    dropped = dropped if isinstance(dropped, int) and dropped > 0 else 0
-    same_steps = (recorded == now[:len(recorded)]
-                  and len(recorded) + dropped == len(now))
-    was_source = measured.get("gateSource")
-    was_digest = measured.get(_evidence_io.GATE_DIGEST_KEY)
-    same_digest = (was_digest is None
-                   or was_digest == _evidence_io.gate_digest(entries, build))
-    if same_steps and same_digest and (was_source is None
-                                       or was_source == source):
-        return None
-    if same_steps and not same_digest:
-        return ("it was measured under the gate [%s] as `meta.buildCommands` "
-                "resolved it then, and the same entries resolve to different "
-                "commands now - a verdict about a different gate is not this "
-                "gate's verdict" % (", ".join(recorded),))
-    return ("it was measured under the gate [%s]%s, and the task declares "
-            "[%s] (%s gate) now - a verdict about a different gate is not this "
-            "gate's verdict"
-            % (", ".join(recorded),
-               " (%s gate)" % (was_source,) if was_source else "",
-               ", ".join(entries), source))
-
-
-def _red_after_green(rows):
-    """The newest row measured under entries that is not `passed`, recorded
-    after the last `passed` one - or None when every such red was retired.
-
-    `rows` are one task's rows; an `empty-gate` row is not measured under
-    entries and retires nothing. With no green at all, every red counts.
-    """
-    ordered = sorted(rows, key=lambda r: str(r.get("ts") or ""))
-    greens = [i for i, r in enumerate(ordered)
-              if r.get("status") == VERDICT_PASSED]
-    tail = ordered[greens[-1] + 1:] if greens else ordered
-    reds = [r for r in tail
-            if r.get("status") not in (VERDICT_PASSED, VERDICT_EMPTY_GATE)]
-    return reds[-1] if reds else None
-
-
-def _empty_gate_binding(task, phase, rows, newest, run, notes):
-    """`verdict_binding`'s answer for a task no gate measures NOW.
-
-    WHICH EMPTY GATE IS SAID IN ITS OWN WORDS: a task gate cleared on purpose
-    (`gateBasis: cleared`) is graded at sign-off by its phase's `testGate` when
-    that has entries, so `NO_GATE`'s "nor its phase's" would be false for it.
-
-    A RED RECORDED UNDER ENTRIES AFTER THE LAST GREEN IS NOT RETIRED by emptying
-    the gate, nor by the `empty-gate` row `--record` writes once it is empty:
-    that row says the gate is empty, not that the red was answered. Only a green,
-    or an override with its reason, retires it. With no such red, the newest row
-    - a green or the empty-gate record - is named beside the sentence.
-    """
-    task_id = str(task.get("id"))
-    red = _red_after_green(rows)
-    if red is not None:
-        return {"state": "refused", "row": red, "notes": notes, "sentence": (
-            "%s declares no gate now, and a red was recorded under its gate "
-            "after the last green - `%s`, run %s at %s. Neither emptying the "
-            "gate nor the `%s` row recording it retires that red: record a "
-            "green on a gate, or commit over it with a reason"
-            % (task_id, red.get("status"), red.get("runId"), red.get("ts"),
-               VERDICT_EMPTY_GATE))}
-    if _mio.gate_cleared(task.get("tests")):
-        phase_gate = _mio.declared_gate_entries(
-            (phase or {}).get("testGate"))
-        sentence = CLEARED_GATE % (
-            "the phase's `testGate` grades it at sign-off" if phase_gate else
-            "the phase's `testGate` is empty too, so sign-off rests on review "
-            "alone",)
-    else:
-        sentence = NO_GATE
-    if newest is not None:
-        sentence = "%s (the newest verdict recorded for it is %s, `%s`)" % (
-            sentence, run, newest.get("status"))
-    return {"state": "no-gate", "sentence": sentence, "row": newest,
-            "notes": notes}
-
-
 def verdict_binding(manifest_path, phase, task, project, config=None,
                     manifest=None):
     """`{"state", "sentence", "row", "notes"}` - whether the task's newest verdict
-    binds this commit.
-
-    `state` is `"bound"` (a `passed` row measured under the gate declared now,
-    whose declared-work digest matches the declared files now), `"no-gate"`
-    (nothing declares a gate, and no red was recorded under it after the last
-    green - `_empty_gate_binding`) or `"refused"`;
-    `sentence` says which, naming the run; `row` is the newest row for the task
-    when there is one, so an override can name it; `notes` are ledger lines that
-    will not parse and were passed over, said rather than absorbed.
+    binds this commit: `_verdict_binding.binding` over the task's ids, the gate
+    that measures it and its declared files. The rule is that module's and is
+    shared with `audit-task.py signoff`; what is this command's own is the task's
+    words - which gate measures it, the run that would supply a verdict, and the
+    sentence for a task no gate measures.
 
     THE TASK'S ROWS ARE THE ONES CARRYING ITS ID, whatever their `scope`. A task
     with no gate of its own is measured by its phase's under `--task`, and that
     row reads `scope: phase` beside the task id; a sign-off run carries no task
-    id and is not this task's verdict. `_evidence_io._same_subject` is that rule.
+    id and is not this task's verdict.
 
-    THE LEDGER IS READ BEFORE THE GATE IS: a task whose gate was emptied after it
-    went red still has that red on the record, and "nothing measures this task"
-    would be false while it sits there unanswered.
-
-    A REPEATED VERDICT IS GRADED AGAINST THE RUN THAT MEASURED IT. A row the
-    recorder repeated carries no `testedState` of its own and names its source
-    in `reusedFrom`; the repeat was only made because the tree's content matched
-    that run's, so the source's digest is the one that describes these bytes.
+    WHICH EMPTY GATE IS SAID IN ITS OWN WORDS: a task gate cleared on purpose
+    (`gateBasis: cleared`) is graded at sign-off by its phase's `testGate` when
+    that has entries, so `NO_GATE`'s "nor its phase's" would be false for it.
     """
-    config = _journal_io.load_config(project) if config is None else config
     entries, source = _mio.gate_entries(phase, task)
     build = ((manifest or {}).get("meta") or {}).get("buildCommands")
     task_id, phase_id = str(task.get("id")), str(phase.get("id"))
     record = ("run `run-test-gate.py %s %s --task %s --record` on the work, then "
               "commit" % (manifest_path, phase_id, task_id))
-    blocking, excused = unreadable_lines(project, task_id, config)
-    notes = []
-    if excused:
-        notes.append("%d evidence ledger line(s) will not parse and each names "
-                     "another task, so they were passed over: %s (`%s` shows "
-                     "them)" % (len(excused), _output.some_of(excused),
-                                VERIFY_COMMAND))
-    if blocking:
-        return {"state": "refused", "row": None, "notes": notes, "sentence": (
-            "the evidence ledger holds line(s) that will not parse and could be "
-            "%s's newest verdict - %s - so the verdict this commit stands under "
-            "is not established. `%s` shows each; repair or remove it, then "
-            "commit" % (task_id, ", ".join(blocking), VERIFY_COMMAND))}
-    ledger = _evidence_io.read_rows(project, config)
-    ids = {"taskId": task_id, "phaseId": phase_id}
-    rows = [r for r in ledger["rows"]
-            if isinstance(r, dict) and _evidence_io._same_subject(r, ids)]
-    newest = _newest(rows)
-    run = ("run %s at %s" % (newest.get("runId"), newest.get("ts"))
-           if newest else "")
-    if not entries:
-        return _empty_gate_binding(task, phase, rows, newest, run, notes)
-    if newest is None:
-        return {"state": "refused", "row": None, "notes": notes, "sentence": (
-            "no gate verdict is recorded for %s, and its gate declares entries "
-            "- %s" % (task_id, record))}
-    if newest.get("status") == VERDICT_EMPTY_GATE:
-        # Recorded while the gate was empty, and the gate declares entries now:
-        # a gate changed after the measurement, which is the mismatch sentence.
-        return {"state": "refused", "row": newest, "notes": notes, "sentence": (
-            "%s's newest verdict is `%s` (%s), but %s; %s"
-            % (task_id, VERDICT_EMPTY_GATE, run,
-               _gate_mismatch(newest, entries, source, build), record))}
-    if newest.get("status") != VERDICT_PASSED:
-        return {"state": "refused", "row": newest, "notes": notes, "sentence": (
-            "%s's newest gate verdict is `%s` (%s), and a task commit is bound "
-            "to `%s` - the gate is what decides the task is done. Fix the work "
-            "and %s" % (task_id, newest.get("status"), run, VERDICT_PASSED,
-                        record))}
-    measured = newest
-    if newest.get(_evidence_io.VERDICT_SOURCE) == _evidence_io.REUSED:
-        origin = (newest.get("reusedFrom") or {}).get("runId")
-        found = [r for r in ledger["rows"]
-                 if isinstance(r, dict) and origin and r.get("runId") == origin]
-        measured = found[-1] if found else None
-        if measured is None:
-            return {"state": "refused", "row": newest, "notes": notes,
-                    "sentence": (
-                        "%s's newest verdict (%s) repeats run %s, which is not "
-                        "in the ledger, so the tree it was measured on is not "
-                        "established - %s" % (task_id, run, origin, record))}
-    mismatch = _gate_mismatch(measured, entries, source, build)
-    if mismatch:
-        return {"state": "refused", "row": newest, "notes": notes, "sentence": (
-            "%s's newest verdict is `%s` (%s), but %s; %s"
-            % (task_id, VERDICT_PASSED, run, mismatch, record))}
-    return _digest_binding(manifest_path, task, project, config, newest,
-                           measured, run, record, notes)
+    if _mio.gate_cleared(task.get("tests")):
+        phase_gate = _mio.declared_gate_entries((phase or {}).get("testGate"))
+        no_gate = CLEARED_GATE % (
+            "the phase's `testGate` grades it at sign-off" if phase_gate else
+            "the phase's `testGate` is empty too, so sign-off rests on review "
+            "alone",)
+    else:
+        no_gate = NO_GATE
+    answer = _vb.binding(project, {"taskId": task_id, "phaseId": phase_id},
+                         entries, source, list(task.get("files") or []),
+                         manifest_path, record, no_gate, config=config,
+                         build=build)
+    if answer["state"] == "refused" and answer["row"] is not None \
+            and not entries:
+        answer["sentence"] += ", or commit over it with a reason"
+    return answer
 
 
-def _digest_binding(manifest_path, task, project, config, newest, measured, run,
-                    record, notes):
-    """The declared-work half of `verdict_binding`: the row's digest against now.
-
-    The record paths are left out on this side exactly as the recorder left
-    them out (`_evidence_io.recorded_paths`), which is what lets a task declare
-    its own manifest file and still be graded on the rest of its work.
-    """
-    task_id = str(task.get("id"))
-    excluded, _dropped = _evidence_io.recorded_paths(project, manifest_path,
-                                                     config)
-    owns = list(task.get("files") or [])
-    state = measured.get("testedState") or {}
-    was = state.get("scopeDigest")
-    now, basis = _tree_stamp.scope_digest(project, owns, excluded=excluded)
-    list_now = _tree_stamp.scope_list_digest(owns, excluded=excluded)
-    field = _tree_stamp.field_state("scopeDigest", was, now,
-                                    list_now is not None)
-    out = {"state": "refused", "row": newest, "notes": notes}
-    if field == _tree_stamp.MOVED:
-        list_was = state.get("scopeListDigest")
-        if list_was is not None and list_was != list_now:
-            what = ("the task's declared file LIST has changed since it was "
-                    "measured - a scope change is a change to what the gate "
-                    "covered, so the gate owes a new run on the new scope")
-        elif list_was is not None:
-            what = ("the declared files' CONTENTS have changed since it was "
-                    "measured")
-        else:
-            what = ("the declared files, or the list of them, have changed "
-                    "since it was measured (the row predates the list digest, "
-                    "so which is not recorded)")
-        out["sentence"] = ("%s's newest verdict is `%s` (%s), but %s - "
-                           "scopeDigest was %s and is %s now (%s); %s"
-                           % (task_id, VERDICT_PASSED, run, what, was, now,
-                              basis, record))
-        return out
-    if field == _tree_stamp.UNANSWERABLE:
-        out["sentence"] = ("%s's newest verdict is `%s` (%s), and whether it was "
-                           "measured on the declared files as they stand is not "
-                           "established - scopeDigest was %s and is %s now "
-                           "(%s); %s" % (task_id, VERDICT_PASSED, run, was, now,
-                                         basis, record))
-        return out
-    out["state"] = "bound"
-    if field == _tree_stamp.NOT_DECLARED:
-        out["sentence"] = ("bound to %s (`%s`); the task declares no files the "
-                           "recorder does not write itself, so the verdict word "
-                           "is bound and no declared-work digest could be"
-                           % (run, VERDICT_PASSED))
-        return out
-    out["sentence"] = ("bound to %s (`%s`) - measured under the gate declared "
-                       "now, and the declared-work digest it recorded matches "
-                       "the declared files being committed. %s"
-                       % (run, VERDICT_PASSED, _tree_stamp.SCOPE_LIMIT))
-    return out
-
-
-def override_row(project, task_id, phase_id, sha, verdict, reason, config=None):
+def override_row(project, task_id, phase_id, nonce, verdict, reason,
+                 config=None):
     """The trail row a commit made over its verdict leaves. Returns the file, or False.
 
-    It names the commit, the run it went over (when there was one) and the
-    operator's reason, so the override is findable by any of the three.
+    It names the commit - by `nonce`, the commit's `Audit-Row` trailer, since it
+    is written before the commit and carried by it - the run it went over (when
+    there was one) and the operator's reason, so the override is findable by
+    any of them.
     """
     config = _journal_io.load_config(project) if config is None else config
-    details = {"commit": sha, "taskId": str(task_id), "phaseId": str(phase_id),
-               "reason": reason}
+    details = {_invariants.NONCE_KEY: nonce, "taskId": str(task_id),
+               "phaseId": str(phase_id), "reason": reason}
     row = verdict.get("row") or {}
     if row.get("runId"):
         details["runId"] = str(row["runId"])
@@ -729,8 +481,10 @@ def override_row(project, task_id, phase_id, sha, verdict, reason, config=None):
         "actor": {"sessionId": _journal_io.env_session_id(),
                   "via": "commit-task-work"},
         "target": str(task_id),
-        "summary": "%s was committed as %s over the verdict that refused it: %s"
-                   % (task_id, sha[:12], verdict.get("sentence")),
+        "summary": "%s was committed as the commit carrying `%s` over the "
+                   "verdict that refused it: %s"
+                   % (task_id, _scoped_commit.row_trailer(nonce),
+                      verdict.get("sentence")),
         "details": details,
     }, config=config)
 
@@ -763,8 +517,12 @@ def commit_message(task_id, subject, manifest):
     return paragraphs
 
 
-def record_row(project, task_id, phase_id, sha, config=None):
+def record_row(project, task_id, phase_id, nonce, config=None):
     """Anchor the commit in the trail. Returns the file the row landed in, or False.
+
+    WRITTEN BEFORE THE COMMIT AND CARRIED BY IT, so it names the commit by
+    `nonce`, the value of the commit's `Audit-Row` trailer: the SHA does not
+    exist yet, and a row inside a commit cannot hold the hash of that commit.
 
     A ROW BEFORE `/audit:task done` RUNS, which is what it is for. The durable
     record of a task commit is `task.commit` in the plan, written by that verb
@@ -786,10 +544,11 @@ def record_row(project, task_id, phase_id, sha, config=None):
         "actor": {"sessionId": _journal_io.env_session_id(),
                   "via": "commit-task-work"},
         "target": str(task_id),
-        "summary": "%s's work was committed as %s - the files the task declares, "
-                   "the phase's manifest file and the records beside them"
-                   % (task_id, sha[:12]),
-        "details": {"commit": sha, "taskId": str(task_id),
+        "summary": "%s's work was committed as the commit carrying `%s` - the "
+                   "files the task declares, the phase's manifest file and the "
+                   "records beside them"
+                   % (task_id, _scoped_commit.row_trailer(nonce)),
+        "details": {_invariants.NONCE_KEY: nonce, "taskId": str(task_id),
                     "phaseId": str(phase_id)},
     }, config=config)
 
@@ -893,14 +652,35 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
     if verdict["state"] == "no-gate":
         skipped = skipped + [verdict["sentence"]]
 
-    done = _scoped_commit.stage_and_commit(
+    def rows(nonce):
+        """The rows naming this commit, written before it: the anchor, and the
+        override's when there is one - which the commit REQUIRES, so a failed
+        one refuses before anything is staged."""
+        anchor = record_row(project, task_id, phase_id, nonce, config=config)
+        files = [anchor] if anchor else []
+        if not overriding:
+            return files, ""
+        recorded = override_row(project, task_id, phase_id, nonce, verdict,
+                                override, config=config)
+        if not recorded:
+            return files, (
+                "the journal row recording the override could NOT be written, "
+                "so this commit would go over its gate with nothing in the "
+                "trail saying so - nothing was committed. The verdict: %s"
+                % (verdict["sentence"],))
+        return files + [recorded], ""
+
+    done = _scoped_commit.commit_with_rows(
         git_root, allowed, targets["kinds"],
         commit_message(task_id, subject, manifest),
-        lambda paths: foreign_refusal(paths, targets))
+        lambda paths: foreign_refusal(paths, targets), rows,
+        lambda nonce, why: _scoped_commit.withdraw(
+            project, config, nonce, "commit-task-work",
+            {"taskId": task_id, "phaseId": phase_id}, why))
     if not done["committed"]:
         answer = _scoped_commit.answer(skipped, staged=done["staged"],
                                        foreign=done["foreign"],
-                                       refused=done["refused"])
+                                       refused=done["refused"], done=done)
         answer["verdict"] = verdict
         return E_FAIL, answer
     sha = done["sha"]
@@ -909,8 +689,10 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
         # nothing is undone, with the exit code saying it needs a look.
         answer = _scoped_commit.answer(skipped, committed=True, commit=sha,
                                        staged=done["staged"],
-                                       refused=done["refused"])
+                                       refused=done["refused"],
+                                       journalled=done["journalled"], done=done)
         answer["verdict"] = verdict
+        answer["overridden"] = overriding
         return E_FAIL, answer
     if not sha:
         # The commit exists and this process cannot name it. A failure rather than
@@ -919,29 +701,16 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
         # against no commit at all.
         return E_FAIL, _scoped_commit.answer(
             skipped, committed=True, staged=done["staged"],
+            journalled=done["journalled"], done=done,
             refused="%s, so nothing can name it to `/audit:task done`"
                     % (done["refused"],))
 
-    journalled = bool(record_row(project, task_id, phase_id, sha, config=config))
     answer = _scoped_commit.answer(skipped, committed=True, commit=sha,
-                                   staged=done["staged"], journalled=journalled)
+                                   staged=done["staged"],
+                                   journalled=done["journalled"], done=done)
     answer["verdict"] = verdict
-    if not overriding:
-        return E_OK, answer
-    answer["overridden"] = True
-    if override_row(project, task_id, phase_id, sha, verdict, override,
-                    config=config):
-        return E_OK, answer
-    # THE COMMIT HAPPENED AND ITS OVERRIDE IS ON NO RECORD. Exit 1 with the SHA
-    # still reported, the unnamed-SHA arm's reason: the operator is owed the one
-    # fact the flag promised, and a success here would be a commit over a red
-    # verdict that nothing points at.
-    answer["refused"] = ("committed %s over the verdict that refused it, and the "
-                         "journal row recording the override could NOT be "
-                         "written - nothing in the trail says this commit went "
-                         "over its gate. The verdict: %s"
-                         % (sha[:12], verdict["sentence"]))
-    return E_FAIL, answer
+    answer["overridden"] = overriding
+    return E_OK, answer
 
 
 def main(argv, out=print):

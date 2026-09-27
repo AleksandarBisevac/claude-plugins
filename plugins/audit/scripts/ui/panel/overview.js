@@ -292,7 +292,7 @@ function ovExcerpt(text,term,width){
 // than a verdict somebody rendered, so the three-valued observations stay
 // three-valued all the way to the pixel.
 /**
- * @type {Object<string, string>} the word for each verdict, and for the three
+ * @type {Object<string, string>} the word for each verdict, and for the
  * silences no run ever answers. NOT exhaustive on purpose: the manifest schema
  * leaves the status enum open, so `evWord` names an unrecognised verdict instead
  * of folding it into 'failed'.
@@ -302,7 +302,7 @@ const EVWORD={passed:'Passed',failed:'Failed',
  'timed-out':'Timed out',cancelled:'Cancelled','could-not-run':'Could not run',
  'empty-gate':'Empty gate',none:'No evidence','no-gate':'No gate configured',
  'before-recording':'Before recording',undated:'Completion undated',
- dangling:'Pointer without evidence'};
+ dangling:'Pointer without evidence','ledger-unreadable':'Ledger unreadable'};
 /**
  * @type {string} the class `_status_facts.evidence_gap` answers with for work
  * that finished before this plan could record anything. Spelled here because
@@ -331,8 +331,8 @@ const EVGAP_UNDATED='undated';
  * most urgent thing on this page after a red suite.
  */
 const EVORDER=['failed','gate-mutated','could-not-run','timed-out','cancelled',
- 'no-checks','dangling','undated','empty-gate','none','before-recording',
- 'no-gate','passed'];
+ 'no-checks','ledger-unreadable','dangling','undated','empty-gate','none',
+ 'before-recording','no-gate','passed'];
 /**
  * The word for a verdict.
  * @param {string} k - a verdict key, from the ledger or from evState
@@ -368,15 +368,32 @@ function evRow(row,fields){
  // column the ledger never had.
  const out=Object.create(null);(fields||[]).forEach((f,i)=>{out[f]=row[i];});return out;}
 /**
+ * What the page says about a ledger the server could not read.
+ *
+ * A FAILED READ IS NOT AN EMPTY ONE. The server ships no runs and no counts for
+ * it, so the ledger may well hold the run a pointer names; the sentence says the
+ * question could not be asked rather than answering it.
+ * @param {{readError: ({error: string, basis: (string|undefined)}|null|undefined)}} ev
+ *   - `STATE.evidence`
+ * @returns {string} the sentence, or '' when the ledger was read
+ */
+function evReadNote(ev){
+ const re=ev&&ev.readError;
+ if(!re)return '';
+ return (re.basis||'the evidence ledger could not be read, and no reason for it '
+   +'reached this page')+' - whether it holds this run is unknown, so this is not '
+   +'a missing record.';}
+/**
  * What one subject's test evidence amounts to — as facts, not as a rendered cell.
  *
- * SIX ANSWERS, AND THEY ARE NOT ONE GREY BLOB. No gate declared anywhere is a
+ * SEVERAL ANSWERS, AND THEY ARE NOT ONE GREY BLOB. No gate declared anywhere is a
  * fact about the PLAN: nothing could have run. No pointer is a fact about the
  * LEDGER — and it is three facts, not one, because a subject finished BEFORE
  * this plan could record anything is excused, one finished after it is not, and
  * one the plan calls done without saying when cannot be placed at all. A pointer
- * whose run the ledger does not hold says the record itself is wrong. Only the
- * last reads a verdict.
+ * whose run the ledger does not hold says the record itself is wrong — unless
+ * the ledger could not be READ, which says nothing about the record and wears
+ * its own word. Only a run that was found reads a verdict.
  *
  * THE CLASS IS THE SERVER'S. `node.evidenceGap` is what
  * `_status_facts.evidence_gap` answered, which is the same function the
@@ -388,8 +405,9 @@ function evRow(row,fields){
  *   evidenceGap: (string|null|undefined)}} node - the composition row for a
  *   task or a phase
  * @param {{runs: (Object<string, Array<*>>|undefined), fields: (string[]|undefined),
- *   files: (number|undefined), unreadable: (number|undefined)}} ev -
- *   `STATE.evidence`
+ *   files: (number|null|undefined), unreadable: (number|null|undefined),
+ *   readError: (object|null|undefined)}} ev - `STATE.evidence`; the counts are
+ *   null exactly when `readError` is set
  * @param {string} [basis] - the sentence the evidence boundary carries about
  *   itself, from `STATE.rollup.evidenceBoundary.basis`. Passed in rather than
  *   read here so this stays a function of its arguments
@@ -398,7 +416,17 @@ function evRow(row,fields){
  *   impossible: an observation needs a run that made it
  */
 function evState(node,ev,basis){
- const row=node||{},pointer=row.testEvidence,src=row.gateSource;
+ const row=node||{},src=row.gateSource;
+ // A block with no runId points at nothing, so it is read as no block at all -
+ // `_report_html.tev_pointer`'s reading, so the two surfaces give one word.
+ const block=row.testEvidence,pointer=(block&&typeof block==='object'
+   &&typeof block.runId==='string'&&block.runId)?block:null;
+ if(pointer==null&&row.noEvidenceReason){
+  // Signed off with no gate run, and the operator's reason recorded: the badge's
+  // basis is that reason, not the silence every other absence shares.
+  const why='signed off with no gate run, and the reason recorded: '
+    +row.noEvidenceReason+'.';
+  return {key:'none',run:null,why:why};}
  if(pointer==null){
   // Answered BEFORE the boundary is consulted: `no-gate` is a fact about the
   // plan, and a gate that was never declared could not have run either side of
@@ -425,18 +453,29 @@ function evState(node,ev,basis){
     why:'no run has been recorded for this subject. The '+src+"'s gate is what "
       +'would grade it — an absent record is not a failure.'};
  }
- const rid=(typeof pointer==='object'&&typeof pointer.runId==='string')
-   ?pointer.runId:'';
- const run=rid?evRow(((ev||{}).runs||{})[rid],(ev||{}).fields):null;
+ const rid=pointer.runId;
+ const run=evRow(((ev||{}).runs||{})[rid],(ev||{}).fields);
+ // Asked BEFORE the empty-ledger sentence: a read that failed ships no runs and
+ // no counts, and read as an empty ledger it would claim the record is wrong.
+ const unread=evReadNote(ev);
+ if(!run&&unread)return {key:'ledger-unreadable',run:null,
+   why:'the plan points at run '+rid+', but '
+     +unread+' The plan caches the verdict "'
+     +((pointer&&pointer.status)||'not recorded')+'".'};
  if(!run)return {key:'dangling',run:null,
-   why:'the plan points at '+(rid?'run '+rid:'a block naming no run')
+   why:'the plan points at run '+rid
      +' and the evidence ledger does not hold it — '
      +plural((ev&&ev.files)||0,'file read','files read')+', '
      +plural((ev&&ev.unreadable)||0,'line unreadable','lines unreadable')
      +'. The plan caches the verdict "'
      +((pointer&&pointer.status)||'not recorded')+'".'};
+ // A group member's pointer is its carrier's run, named as the carrier's: bare,
+ // it would read as a sign-off run this phase made.
+ const carrier=(typeof pointer==='object'&&typeof pointer.gradedBy==='string'
+   &&pointer.gradedBy)?pointer.gradedBy:'';
  return {key:(typeof run.status==='string')?run.status:'',run:run,
-   why:'run '+(run.runId||'?')+(run.at?', recorded '+ovStamp(run.at)+' UTC':'')};}
+   why:(carrier?'graded by '+carrier+"'s run "+(run.runId||'?')+' - ':'')
+     +'run '+(run.runId||'?')+(run.at?', recorded '+ovStamp(run.at)+' UTC':'')};}
 /**
  * The observations that sit beside a badge — never inside it.
  *
@@ -612,6 +651,62 @@ function evRollCells(tasks,ev,basis){
 const evLine=(lbl,...parts)=>el('div',{class:'evline','data-evline':lbl},
  el('span',{class:'evlbl'},lbl),parts);
 /**
+ * @type {Object<string,string>} the word for the third place's own verdict —
+ * `_evidence_io.full_status`'s four answers, spelled for a reader. These are
+ * NOT `EVWORD`'s vocabulary: a task's own gate and a phase's sign-off gate are
+ * PASSED or FAILED, but the third place asks a different question — whether a
+ * green, measured run's HEAD contains this phase's merge at all — so it needs
+ * its own four words rather than a fifth meaning borrowed from `passed`.
+ */
+const FULLWORD={whole:'Verified — full run',provisional:'Provisional',
+ unknown:'Unknown',not_declared:'Not declared'};
+/**
+ * The word for one `fullRun.answer`.
+ * @param {string} a - `_manifest_vocab.FULL_STATUS_*`, or anything unfamiliar
+ * @returns {string} the table's word; an answer this build does not recognise
+ *   is shown as itself rather than as a blank, the same rule `evWord` keeps
+ */
+function fullRunWord(a){
+ if(Object.prototype.hasOwnProperty.call(FULLWORD,a))return FULLWORD[a];
+ return a||'Unknown';}
+/**
+ * `{key, word, basis}` for one phase's `fullRun` payload, or null when the
+ * row carries none at all — the FACTS the line paints, kept apart from the
+ * painting itself for `evState`'s own reason: a DOM tree cannot be asked what
+ * it says, only a plain object can.
+ * @param {{fullRun: *}} cph - the composition phase row
+ * @returns {{key: string, word: string, basis: string}|null} null for a plan
+ *   naming no third place, or a phase that has not merged - `_phase_full_run`
+ *   already refused those, so this only has to notice the key's absence
+ */
+function evFullRunFacts(cph){
+ const fr=(cph||{}).fullRun;
+ if(!fr||typeof fr!=='object')return null;
+ return {key:fr.answer||'',word:fullRunWord(fr.answer),basis:fr.basis||''};}
+/**
+ * The full-run line beside a merged phase's evidence — the word and the basis
+ * sentence the SERVER computed (`_panel_composition._phase_full_run`), never
+ * recomputed here: this file asks no git and reads no ledger.
+ *
+ * NOT BUILT THROUGH `evLine`: that helper is pinned to exactly two calls
+ * inside `ovDetail`, one per measurement the composition ships regardless of
+ * `meta.fullGate`. This is a THIRD, present only when the plan names a third
+ * place at all and this phase has merged — which is why it is its own line
+ * rather than a third argument squeezed into one of the other two.
+ * @param {{fullRun: *}} cph - the composition phase row
+ * @returns {Node|null} null when the row carries no `fullRun` key
+ */
+function evFullRunLine(cph){
+ try{
+  const facts=evFullRunFacts(cph);
+  if(!facts)return null;
+  return el('div',{class:'evline','data-evline':'full run'},
+    el('span',{class:'evlbl'},'full run'),
+    el('span',{class:'st','data-fullrun':facts.key,title:facts.basis},facts.word),
+    facts.basis?el('div',{class:'mut small'},facts.basis):null);
+ }catch(cause){console.error('full-run line failed',cause);
+  return el('span',{class:'mut small'},'full run unavailable');}}
+/**
  * A phase's tasks, in the columns the report's table uses and in ITS order — id,
  * title, status, risk (coloured TEXT, not a pill), commit, when it finished, and
  * then `tests` — led by what the phase is FOR.
@@ -652,6 +747,11 @@ function ovDetail(p){
  const pcell=evCell(p.id,cph,ev,evbas);
  box.append(evLine('phase sign-off',pcell.badge));
  if(pcell.detail)box.append(pcell.detail);
+ // THE THIRD MEASUREMENT, beside the two above rather than folded into
+ // either: the sign-off gate and the full run answer different questions,
+ // and this line is absent whenever the payload carries no `fullRun` at all.
+ const frl=evFullRunLine(cph);
+ if(frl)box.append(frl);
  box.append(evLine('tasks',evRollCells(tasks,ev,evbas)));
  if(!tasks.length)box.append(el('div',{class:'mut small'},'This phase has no tasks.'));
  else{

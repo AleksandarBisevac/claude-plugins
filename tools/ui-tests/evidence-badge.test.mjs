@@ -49,6 +49,7 @@ const pointed = { testEvidence: { runId: 'r1', status: 'passed', at: 'x' },
 const wordFor = (node, ev) => P.evWord(P.evState(node, ev).key);
 const marksFor = (node, ev) => P.evMarks(P.evState(node, ev).run).map((m) => m.text);
 
+// --- the verdict word and its markers ---------------------------------------
 describe('a verdict is one word, and it claims nothing else', () => {
   it('Passed is the word alone — no check count rides on it', () => {
     const ev = ledger();
@@ -216,9 +217,15 @@ describe('the silences are three sentences, never one grey blob', () => {
     expect(new Set(words).size).toBe(3);
   });
 
-  it('a block present but naming no run is a pointer, not a silence', () => {
+  it('a block naming no run points at nothing, so it reads as no block at all', () => {
+    // `_report_html.tev_pointer`'s reading, which the report renders: the panel
+    // used to call this a dangling pointer while the report called it no
+    // evidence, two words for one subject. evidence-read-error.test.mjs drives
+    // both surfaces over the same block and holds them to one word.
     expect(wordFor({ testEvidence: {}, gateSource: 'task' }, ev))
-      .toBe('Pointer without evidence');
+      .toBe('No evidence');
+    expect(wordFor({ testEvidence: { runId: '' }, gateSource: 'task' }, ev))
+      .toBe('No evidence');
   });
 });
 
@@ -377,3 +384,26 @@ describe('a phase counts its tasks apart from its own sign-off run', () => {
       .toEqual(['1 Completion undated', '1 No evidence', '2 Before recording']);
   });
 });
+
+// --- whose run it is, and a sign-off with no run -----------------------------
+describe('a group member graded by another phase\'s run says whose run it is', () => {
+  it('a copied pointer names the carrier, and the verdict word is the run\'s', () => {
+    const node = { testEvidence: { runId: 'r1', status: 'passed', at: 'x',
+      gradedBy: 'P1' }, gateSource: 'phase' };
+    const st = P.evState(node, ledger());
+    expect(P.evWord(st.key)).toBe('Passed');
+    expect(st.why.startsWith("graded by P1's run r1")).toBe(true);
+  });
+
+  it('the carrier\'s own pointer names nobody', () => {
+    const st = P.evState(pointed, ledger());
+    expect(st.why.startsWith('graded by')).toBe(false);
+  });
+
+  it('a phase signed off with a recorded reason and no run says the reason', () => {
+    const st = P.evState({ testEvidence: null, gateSource: 'phase',
+      noEvidenceReason: 'no runner here' }, ledger());
+    expect(st.why).toContain('no runner here');
+  });
+});
+

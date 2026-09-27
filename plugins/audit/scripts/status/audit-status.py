@@ -132,6 +132,8 @@ evaluate_gate = _status_facts.evaluate_gate
 budget_breaches = _status_facts.budget_breaches
 invariant_breaches = _status_facts.invariant_breaches
 unfinished_runs = _status_facts.unfinished_runs
+provisional_phases = _status_facts.provisional_phases
+stale_full_runs = _status_facts.stale_full_runs
 NO_SIGN_OFF_EVIDENCE = _status_facts.NO_SIGN_OFF_EVIDENCE
 KNOWN_EVIDENCE = _status_facts.KNOWN_EVIDENCE
 evidence_status = _status_facts.evidence_status
@@ -324,6 +326,93 @@ def _unfinished_detail(summary):
     """
     found = unfinished_runs(summary) or []
     return "%d run(s): %s" % (len(found), _output.some_of(found, sep="; "))
+
+
+def full_run_block(manifest, manifest_path, project):
+    """`{phaseId: full_status(...)}` — `full_status`'s own dict, unchanged
+    (`answer`, `basis`, `runId`, `wholeRunId`, `wholeRunTs`) — the third
+    place's own answer for every MERGED phase, or `{}` when this plan names no
+    `meta.fullGate` at all (there is nothing to ask, and reading the ledger to
+    say so would be a cost paid for a silence — the reading `provisional` and
+    `stale-full-run` refuse the same way `no-test-evidence` refuses a plan that
+    never adopted the recorder).
+
+    ONE RESOLUTION OF THE GATE (`_evidence_io.resolved_commands`, `full_commands`
+    is EXACTLY its bare-command half, never a second reading of
+    `meta.buildCommands`) and ONE READ OF THE LEDGER
+    (`project_config_for` + `read_rows`, the SAME pair `boundary_for` uses) — so
+    a plan whose config points its evidence somewhere unusual is read from the
+    one place its report and its gate already agree on.
+
+    NOTHING IS ADDED TO THAT DICT. Which run counts as "a full run happened"
+    is `_full_disqualification`'s question and nobody else's, and
+    `full_status` already names that run and its moment together as
+    `wholeRunId` and `wholeRunTs`. A moment copied here under a key of its
+    own would sit beside `runId`, which on a WHOLE answer can be an older
+    run than the one the moment belongs to, and a reader would pair the two
+    as one run. A second reading of the run here, checking only its status
+    and scope, is also how a run on a dirty tree once made a phase read
+    stale.
+
+    WHICH PHASES ARE ASKED is `_evidence_io.merged_phase`, the one predicate
+    the report, the panel and the doctor call too.
+
+    A FAILURE COMES BACK AS EVERY MERGED PHASE ANSWERING UNKNOWN, with the
+    failure as its basis, and never as a block no phase id is a key of: that
+    shape rendered no full-run word for any phase, the silence a plan with no
+    `meta.fullGate` gets, over a question that was asked and could not be
+    answered. The read's own failure is `_manifest_vocab.LEDGER_READ_FAILED`, the
+    sentence every surface fills; failing to resolve WHERE the ledger lives is a
+    different fact and keeps a wording of its own. UNKNOWN is what the panel
+    answers for the same failure. `provisional_phases` and `stale_full_runs`
+    count neither UNKNOWN nor a failure, so neither condition fails a gate on an
+    unreadable ledger - the answer is visible per phase, not a gate verdict.
+    """
+    meta = (manifest.get("meta") if isinstance(manifest, dict) else None) or {}
+    full_commands = [c for _n, c in _evidence_io.resolved_commands(
+        manifest, meta.get("fullGate"))]
+    if not full_commands:
+        return {}
+    try:
+        project_root, config = _evidence_io.project_config_for(
+            manifest_path, project)
+        git_root = _invariants.git_root_for(manifest, project_root)
+    except Exception as exc:                       # defensive; see the docstring
+        return _full_run_unknown(manifest,
+                                 _vocab.LEDGER_LOCATION_FAILED % (exc,))
+    try:
+        rows = _evidence_io.read_rows(project_root, config=config)["rows"]
+    except Exception as exc:                       # defensive; see the docstring
+        return _full_run_unknown(manifest, _vocab.LEDGER_READ_FAILED % (exc,))
+    out = {}
+    for p in (manifest.get("phases") or []):
+        if not _evidence_io.merged_phase(p):
+            continue
+        out[p["id"]] = _evidence_io.full_status(rows, p, git_root,
+                                                 full_commands)
+    return out
+
+
+def _full_run_unknown(manifest, basis):
+    """Every MERGED phase answering UNKNOWN for `basis` - `full_status`'s own
+    keys, so a reader of the block cannot tell a failed read from an ancestry
+    question git could not answer by its SHAPE, only by the sentence."""
+    return dict((p["id"], {"answer": _vocab.FULL_STATUS_UNKNOWN, "basis": basis,
+                           "runId": None, "wholeRunId": None, "wholeRunTs": None})
+                for p in (manifest.get("phases") or [])
+                if _evidence_io.merged_phase(p))
+
+
+def _provisional_detail(summary):
+    """What `GATE FAILED: provisional (...)` says after the name."""
+    found = provisional_phases(summary) or []
+    return "%d phase(s): %s" % (len(found), _output.some_of(found, sep="; "))
+
+
+def _stale_full_run_detail(summary):
+    """What `GATE FAILED: stale-full-run (...)` says after the name."""
+    found = stale_full_runs(summary) or []
+    return "%d phase(s): %s" % (len(found), _output.some_of(found, sep="; "))
 
 
 def _stranded_detail(summary):
@@ -971,6 +1060,28 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None):
         phase_tests = evidence_status(ph)
         if phase_tests:
             head += "  tests %s" % _clip(phase_tests, EVIDENCE_CELL_MAX)
+        # THE THIRD PLACE'S OWN WORD, beside the sign-off gate's above and never
+        # in place of it - a phase can be `passed` on its own gate and still
+        # unwritten by the full run. A basis with no claim is noise: with no
+        # `meta.fullGate` at all `full_run_block` returns `{}`, this phase is
+        # never a key in it, and the column renders exactly as it always has -
+        # no `full: not_declared` text anywhere.
+        full_row = (summary.get("fullRun") or {}).get(pe.get("id"))
+        if isinstance(full_row, dict):
+            answer = full_row.get("answer")
+            if answer == _vocab.FULL_STATUS_WHOLE:
+                # The SAME word `_manifest_vocab.VERIFIED` spells for this
+                # place, on purpose - one vocabulary rather than a rendering
+                # that invents a second spelling of "whole".
+                word = _vocab.VERIFIED[2]
+            elif answer == _vocab.FULL_STATUS_PROVISIONAL:
+                word = "provisional (since %s)" % (ph.get("mergedAt") or "?")
+            elif answer == _vocab.FULL_STATUS_UNKNOWN:
+                word = "unknown - %s" % (full_row.get("basis") or "?")
+            else:
+                word = None
+            if word:
+                head += "  full %s" % _clip(word, 88)
         out.append(head)
         if pe.get("desiredOutcome"):
             out.append("       desired: %s"
@@ -1507,6 +1618,24 @@ CONDITION_HELP = {
                       "default: a lock lives in the shared git dir rather than "
                       "in the tree, so it is never cloned and a fresh CI "
                       "checkout holds none)",
+    # The lead sentence stays SHORT on purpose, for `stranded-skills`' reason -
+    # ap9 asserts the part before the first bracket survives textwrap on one line.
+    "provisional": "a MERGED phase not yet certified WHOLE "
+                   "(no green, measured, clean, verbatim full run's head is yet "
+                   "known to contain this phase's merge - see VERIFIED and "
+                   "FULL_STATUS in _manifest_vocab.py. Opt-in and out of the "
+                   "--gate default, for `no-test-evidence`'s own reason: a plan "
+                   "that has never recorded a full run, or names no "
+                   "`meta.fullGate` at all, carries no whole-bearing row "
+                   "anywhere, and a default holding this would fail every such "
+                   "build the day the plugin adds it)",
+    "stale-full-run": "a `provisional` phase a full run has already run past "
+                      "(not merely unwritten - a full run that happened AFTER "
+                      "this phase merged and STILL does not contain it, which "
+                      "is a plan actively falling behind its own third place "
+                      "rather than one that has not reached it yet. Opt-in and "
+                      "out of the --gate default for the same reason "
+                      "`provisional` is)",
 }
 # What `--help` says about a condition CONDITION_HELP has no entry for. It is a
 # `.get` default rather than a KeyError because the caller is `--help`: a condition
@@ -1778,6 +1907,20 @@ def main(argv):
         summary["locks"] = locks_block(
             manifest, os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 
+    # THE THIRD PLACE'S OWN ANSWER, injected on the SAME asymmetry as `locks`
+    # above and for a sibling reason: the human render's `tests` column names it
+    # on every merged phase (see `_phase_table_lines`), so the surface a person
+    # actually reads has to carry it whether or not a gate was asked - while
+    # `--gate --json` only pays for it when `provisional` or `stale-full-run`
+    # was named. A plan naming no `meta.fullGate` costs nothing here either way:
+    # `full_run_block` returns `{}` before touching the ledger.
+    if ((want_gate and ("provisional" in conditions
+                        or "stale-full-run" in conditions))
+            or not (want_json or want_gate)):
+        summary["fullRun"] = full_run_block(
+            manifest, manifest_path,
+            os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+
     if want_gate:
         failed = evaluate_gate(summary, conditions)
         summary["gate"] = {
@@ -1879,6 +2022,8 @@ def main(argv):
                     "no-test-evidence": _no_evidence_detail(summary),
                     "stranded-skills": _stranded_detail(summary),
                     "unfinished-run": _unfinished_detail(summary),
+                    "provisional": _provisional_detail(summary),
+                    "stale-full-run": _stale_full_run_detail(summary),
                 }.get(c, "")
                 say("GATE FAILED: %s (%s)" % (c, detail))
             return 1

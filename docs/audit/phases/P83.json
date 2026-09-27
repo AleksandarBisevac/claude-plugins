@@ -1,0 +1,462 @@
+{
+  "id": "P83",
+  "title": "the history and secrets guards close the residuals SECURITY.md states as open",
+  "status": "done",
+  "description": "",
+  "desiredOutcome": "Every shape SECURITY.md lists as an open residual of the history guard and guard-secrets-read, other than a program's own subprocess calls, is refused or graded, each with a deny case beside an allow case, and SECURITY.md's list shrinks to what remains.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": "feda644acc4054f02a51a3baedd00b1c880c74b3",
+  "branch": "audit/p83-the-history-and-secrets-guards",
+  "mergedAt": "2026-09-26T22:02:53Z",
+  "review": {
+    "tool": "audit:audit-reviewer",
+    "model": "sonnet",
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P83-R1",
+        "severity": "high",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "_stages reads a `>` or `|` that came from inside a QUOTED word as a real operator. _shell_pieces splits every shlex token at _SEP_SPLIT, quoted ones included. Until now a split-out separator only ended an argument list, which is harmless. _stages gives it a new meaning: the rest of the quoted word becomes a redirect target. If that rest holds a `$`, _output_runs counts it as an unresolvable target",
+        "resolution": "fix task P83.3-wkm"
+      },
+      {
+        "id": "P83-R2",
+        "severity": "high",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "The phrase pass assumes that every argument of a stage is what the stage PRINTS. That holds for echo and printf. It does not hold for grep, git log or sed, which print file content or history, not their argv. Joined with the unresolvable-target arm (`$` in the target), this refuses read-only commands. Measured, main allows and the branch DENIES: `git log --grep '<git stash>' > \"$TMPDIR/hits.txt\"`,",
+        "resolution": "fix task P83.3-wkm"
+      },
+      {
+        "id": "P83-R3",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "_open_case is not the shell's grammar. `case` is a keyword only in command position, but _CASE_WORD matches the bare word anywhere in the body. Checked by calling the function: git_calls on `echo \"$(echo worst case)\"; git log` returns None, so the whole command is unreadable. Two costs follow. (a) A VALID command is routed to the raw-text reading. Before this change, the substitution door to None ",
+        "resolution": "fix task P83.3-wkm"
+      },
+      {
+        "id": "P83-R4",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "The stage model has structural gaps. All of them are described here by shape and none was run. (1) The clobber-override redirect (a greater-than immediately followed by a pipe) contains '|', so it is classed as a PIPE: its target becomes the next stage's program word and is never checked as a hook path. (2) A subshell or brace group whose closing token is a separate word from the pipe or redirect ",
+        "resolution": "fix task P83.3-wkm"
+      },
+      {
+        "id": "P83-R5",
+        "severity": "med",
+        "file": "SECURITY.md",
+        "issue": "The desired outcome is that the list 'shrinks to what remains'. The new residual names only a file run by a later command and a hook directory holding a file not named as a hook. It leaves out residuals visible in this diff. A file can be written by a program that copies stdin to a named file argument (the tee shape) rather than by a redirect. The phrase can be split across several arguments that ",
+        "resolution": "fix task P83.3-wkm"
+      },
+      {
+        "id": "P83-R6",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-secrets-read.py",
+        "issue": "The grammar is wrong when the interpreter already has a program operand. When an interpreter runs a script file, `-c`/`-e` text or awk program text, the here-string is STDIN DATA, not the program. The heredoc arm this function says it mirrors exempts a plain script run through _config._plain_script_run. This arm does not, and _ANY_INTERPRETER includes awk and gawk, whose here-string is never their",
+        "resolution": "fix task P83.3-wkm"
+      },
+      {
+        "id": "P83-R7",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-secrets-read.py",
+        "issue": "_clause_words splits on blanks only. A here-string operator written with no blank between it and the interpreter's name makes a single word that does not start with `<<<`, so this arm never sees it. (Described by shape, not run.) The history guard's lexer splits `<` as a separator and is not affected.",
+        "resolution": "fix task P83.3-wkm"
+      },
+      {
+        "id": "P83-R8",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_guard_history_rewrite.py",
+        "issue": "gs18 is listed among the allow cases that show the reading follows the grammar. It cannot go red if _open_case over-fires: an unreadable body goes to the raw-text reading, which also allows a body with no git in it. So it passes with the rule deleted or with the rule firing on everything. The other allow cases (gp37, gp39, gp40, gs14) were mutated over-fire; gs18 was not.",
+        "resolution": "fix task P83.3-wkm"
+      },
+      {
+        "id": "P83-R9",
+        "severity": "low",
+        "file": "CHANGELOG.md",
+        "issue": "'The history guard reads four shapes the way the shell does' is a present-tense count in prose, the author-enforced class CLAUDE.md names. The list right after it already enumerates the shapes. The P83.1 commit claim '7 no number written into prose' is therefore not accurate for this line.",
+        "resolution": "fix task P83.3-wkm"
+      },
+      {
+        "id": "P83-S1",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "_prints_phrases treats a stage as an emitter only when echo or printf is its program word. _stages leaves a reserved word at the head of the stage's words. For `if true; then echo hello > out.txt; fi` the stage is ['then','echo','hello'] with target out.txt, and _prints_phrases returns [] (checked on benign text through _stages/_op_tokens). So consider this shape: an emitter inside a then/else/do ",
+        "resolution": "fix task P83.4-wkm"
+      },
+      {
+        "id": "P83-S2",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "_op_tokens does not know comments. An unquoted `#` at a word start is an ordinary character, so a comment's `>`, `|`, `(` and `)` become operators. Measured with an allow-side command: `echo 'never git stash' # see > $X` is allowed on main and DENIED on the branch, because the comment's `>` is read as a redirect to an unresolvable target. The other direction was checked on benign text: in `( echo ",
+        "resolution": "fix task P83.4-wkm"
+      },
+      {
+        "id": "P83-S3",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "On the receiving side of a pipe, only the FIRST stage of a group is asked whether it runs its stdin. In `echo hello | (cd x && cat)` the receiver is stage ['cd','x']; the `cat` stage after `&&` is never looked at (checked on benign text). A shell inside a receiving group or brace group, placed after any other command in it, reads the pipe, and the phrase is not read. R4's resolution asked for the ",
+        "resolution": "fix task P83.4-wkm"
+      },
+      {
+        "id": "P83-S4",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "The case tracking is one counter, checked only at depth 1. A `case` inside a nested `$(` or `( )` has its pattern `)` read as a close. After a parenthesised pattern `(x)`, the arm's first word is not in command position. Measured on benign bodies (index returned vs the real close): `echo $(case x in a) echo y;; esac) end) tail` gives 33 vs 38; `( case x in a) echo y;; esac ) ) tail` gives 29 vs 31",
+        "resolution": "fix task P83.4-wkm"
+      },
+      {
+        "id": "P83-S5",
+        "severity": "med",
+        "file": "plugins/audit/hooks/_config.py",
+        "issue": "The exemption flag list is interpreter-blind and too broad. For python, `-E` means 'ignore PYTHON* env', not a program. For ruby, `-E` sets the encoding. For ruby and perl, `-p` on its own is a loop flag, and the program is still read from stdin. perl's -c compiles its stdin program, and that runs BEGIN blocks. Any of these words before a here-string exempts a here-string that IS the program. Shap",
+        "resolution": "fix task P83.4-wkm"
+      },
+      {
+        "id": "P83-S6",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "New over-refusals compared with main, all measured on allow-side commands with the same fixture repo (in_progress plan). (a) Behind a wrapper, every word is a candidate, and a `$` in ANY candidate counts as a runner. So `echo 'git stash' | sudo grep -c x \"$F\"`, `echo 'never git stash' | timeout 5 grep -c stash \"$F\"` and `echo 'never git stash' | xargs -0 printf '%s' \"$X\"` are allowed on main and d",
+        "resolution": "fix task P83.4-wkm"
+      },
+      {
+        "id": "P83-S7",
+        "severity": "low",
+        "file": "SECURITY.md",
+        "issue": "The 'Not followed' list still reads as complete, and it is not. Missing: a phrase split across several quoted emitter arguments that the emitter joins (_prints_phrases reads each word separately; named in R5 and still absent); a here-string printed by cat or another non-emitter into a shell (followed under P83.1 through words[1:], dropped by the emitter-only rule, with no case pinning either side;",
+        "resolution": "fix task P83.4-wkm"
+      },
+      {
+        "id": "P83-T1",
+        "severity": "med",
+        "file": "plugins/audit/hooks/_config.py",
+        "issue": "The per-interpreter rewrite skips any word that starts with '-' as an option. It then treats the first operand ending in a script extension as the script. Three shapes now return True (exempt), although the interpreter still reads its program from stdin. (a) A bare '-' stdin marker followed by a script-named argument, or followed by an inline flag given as argv. (b) An option this table does not l",
+        "resolution": "fix task P83.5-wkm"
+      },
+      {
+        "id": "P83-T2",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "Pattern mode is re-entered on ANY word 'in' while the innermost open compound is a case. That includes an ordinary argument inside an arm body. From that point, the arm's '(' is dropped and its ')' is read as the end of a pattern, so a subshell loses its group. A pipe after the subshell then lands on an empty stage. Measured on benign text: in `case x in a) echo in; ( echo hello ) | sh ;; esac`, _",
+        "resolution": "fix task P83.5-wkm"
+      },
+      {
+        "id": "P83-T3",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py",
+        "issue": "Each of the three over-refusal narrowings from round-2 finding 6 dropped a shape that P83.3 read, and SECURITY.md names none of them. Each was measured on benign text as _output_runs True on P83.3 and False on HEAD. (a) A process substitution whose own command writes, through tee or a redirect, into a hook or an unresolvable target: `echo hello > >(tee .git/hooks/pre-commit)` and `echo hello > >(c",
+        "resolution": "fix task P83.5-wkm"
+      },
+      {
+        "id": "P83-T4",
+        "severity": "low",
+        "file": "SECURITY.md",
+        "issue": "The restated Not-followed list still omits two shapes, both unchanged since P83.3 and measured on benign text as not read on either tree. (1) A pass-through filter's own redirect after the pipe, e.g. `echo hello | cat > .git/hooks/pre-commit`. _output_runs follows a receiver's targets only when the receiver is tee, so 'written ... through tee' reads as the whole rule, while 'a file written by anot",
+        "resolution": "fix task P83.5-wkm"
+      },
+      {
+        "id": "P83-T5",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-secrets-read.py",
+        "issue": "The CHANGELOG says 'three-argument with '<'' is a read. The alternatives require parentheses and an exact '<' mode. So idiomatic Perl, `open my $fh, '<', PATH` with no parentheses, and a mode with a layer ('<:raw', '<:encoding(UTF-8)'), yield no read target. Measured with a benign path: _eval_read_targets returns [] for both on HEAD. This is not a regression, because main read neither. It is a cla",
+        "resolution": "fix task P83.5-wkm"
+      },
+      {
+        "id": "P83-T6",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_guard_history_rewrite.py",
+        "issue": "The resolution of round-2 finding 1 asked for allow twins: the same compound shapes written into notes.md. None was added for gp61 (a then-branch emitter), gp62 (a loop piped after done), gp64 (a receiving group) or gp68-gp71. The allow rows that were added (gp63, gp65-gp67) pin the three narrowings and the comment rule, not the new group reading. So an over-firing mutation would stay green on eve",
+        "resolution": "fix task P83.5-wkm"
+      }
+    ],
+    "outcome": "matches with a stated residual; three review passes, the first two fixed in P83.3-P83.4, the third's findings filed as BUG-12 for a human maintainer"
+  },
+  "summary": "The history guard and guard-secrets-read now read the command shapes that SECURITY.md listed as open the way the shell reads them.\n\nChanges to the join, the history guard and guard-secrets-read:\n- The line-continuation join follows the word the shell assembles.\n- A here-string's reader is found past its wrapper.\n- A case body is read to its real esac, at any nesting.\n- A git command quoted as one phrase is read as a command wherever a text emitter prints it and that output is run: piped into a program that runs its stdin, or written by a redirect or tee into a git hook, an unresolvable target, or a file the same command runs. Operators count only outside quotes and comments, and a compound command carries its pipe or redirect to every stage inside it.\n- guard-secrets-read joins continuations before reading a path. It grades a here-string fed to an interpreter as inline evaluation, exempting only an interpreter that already runs a program of its own, which is decided per interpreter. It reads Perl's open() shapes.\n\nReview and verification:\n- Three phase reviews; the findings of the first two were fixed in P83.3 and P83.4.\n- The third review measured that nothing main refuses now passes, and that the branch over-refuses nothing main allows.\n- The third review's remaining findings are gaps inside the new, wider reading. They are filed as BUG-12 and handed to a human maintainer, because a safety classifier stopped the automated session on this work. P83.5 is cancelled with that reason, and its red tests are kept for the maintainer.\n- Main was merged in before the gate. The phase gate was green with the tree unchanged, bench-hooks passed, and the invariant check found no breach.",
+  "tasks": [
+    {
+      "id": "P83.1",
+      "title": "the history guard reads a comment, a here-string, a case body and an emitted hook the way the shell does",
+      "status": "done",
+      "description": "Close four residuals of the history guard and the shared line-continuation join. (1) join_continuations decides whether `#` starts a comment from the raw previous character; carry a word-start flag instead (an unescaped blank, newline or operator sets it; any other character or an escaped pair clears it; a removed backslash-newline leaves it) and treat `#` as a comment only while it is set. (2) A here-string's reader is recognised only as the first word of its command; find it past the same wrapper list the heredoc reader uses. (3) A `case` pattern's `)` inside a double-quoted substitution closes it early; a body holding a `case` with no `esac` before the close is unreadable (the command goes to the raw-text reading). (4) An emitter whose output is written to a redirect target that carries a quote or expansion, lies under a git hooks directory (.git/hooks/, .husky/, core.hooksPath), or is run later in the same command (sh/bash/source/./path/make) stays graded as the git it spells. Each with a deny case red first and an allow case beside it; SECURITY.md's residual list and CHANGELOG updated.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/tests/test_guard_history_rewrite.py",
+        "SECURITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_history_rewrite.py: repro that FAILS on current code - a stash after a comment that follows an escaped blank is allowed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "9bc082a4",
+      "outcome": {
+        "technical": "Word-start flag in join_continuations; shared program_candidates for here-strings; unbalanced case makes a substitution unreadable; quoted phrases re-read where their output runs.",
+        "descriptive": "The history guard now reads four command spellings the way the shell does, so a history rewrite hidden in them is refused."
+      },
+      "startedAt": "2026-09-26T10:59:58Z",
+      "completedAt": "2026-09-26T11:10:31Z",
+      "verifiedBy": [
+        "test__config jc5",
+        "test__config jc8",
+        "test_guard_history_rewrite gc9",
+        "test_guard_history_rewrite gs10",
+        "test_guard_history_rewrite gs16",
+        "test_guard_history_rewrite gp31",
+        "test_guard_history_rewrite gp33"
+      ]
+    },
+    {
+      "id": "P83.2",
+      "title": "guard-secrets-read joins continuations before reading a path and grades an interpreter's here-string",
+      "status": "done",
+      "description": "Close the guard-secrets-read residuals: its secret-read arm joins line continuations before reading a path, and a here-string fed to an interpreter is graded as inline evaluation, the way -c/-e already are. Deny cases red first with an allow case beside each; SECURITY.md's list and CHANGELOG updated.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/hooks/_config.py",
+        "SECURITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: repro that FAILS on current code - a secret path split by a line continuation is read"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P83.1"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "9f15607d",
+      "outcome": {
+        "technical": "_shell_text joins continuations; interpreter here-strings found via _clause_words and program_candidates are graded as inline eval.",
+        "descriptive": "The secrets guard now refuses a secret read split across a line continuation, or hidden in a here-string handed to an interpreter."
+      },
+      "startedAt": "2026-09-26T11:10:32Z",
+      "completedAt": "2026-09-26T11:16:37Z",
+      "verifiedBy": [
+        "test_guard_secrets_read b5j1",
+        "test_guard_secrets_read b5j2",
+        "test_guard_secrets_read b5h1",
+        "test_guard_secrets_read b5h3",
+        "test_guard_secrets_read b5h5"
+      ]
+    },
+    {
+      "id": "P83.3-wkm",
+      "title": "Review findings: the guards lex operators outside quotes, read only an emitter's phrase, and read a case body instead of giving up",
+      "status": "done",
+      "description": "Phase review findings, all to be fixed. Decisions: (R1) the stage model lexes its own operators, recognising `|`, `>` and the rest only OUTSIDE quotes, so a quoted `>` in a commit message is text. (R2) the phrase pass applies only to a stage whose program is a text emitter (echo, printf), the one program whose arguments are what it prints. (R3) `_substitution_end` tracks `case`/`esac` in command position and treats a `)` inside an open case as a pattern's, so the body is READ rather than handed to the raw-text reading; `_open_case` goes. (R4) the stage model covers a clobber redirect, a group `( )`/`{ }` whose output is piped or redirected, every shell program _config knows plus eval, source of stdin, a program named by a variable, and tee's file operands; a process substitution, a glob or an expansion in a target is unresolvable; hook paths are matched case-insensitively and `.husky/` anywhere. (R5) SECURITY.md names what stays open (a file written by another program such as dd or cp, a phrase assembled at run time) and says here-strings to interpreters are graded. (R6) a here-string to an interpreter that already runs a program (a script file, -c/-e) is data, as the heredoc arm treats it. (R7) a here-string operator glued to the interpreter's name is read. (R8) a unit case pins that a non-keyword `case` leaves a substitution readable. (R9) the CHANGELOG count is removed.\nR1 (high) plugins/audit/hooks/guard-history-rewrite.py:406-431 (_stages), fed by _shell_pieces:256-260: _stages reads a `>` or `|` that came from inside a QUOTED word as a real operator. _shell_pieces splits every shlex token at _SEP_SPLIT, quoted ones included. Until now a split-out separator only ended an argument list, which is harmless. _stages gives it a new meaning: the rest of the quoted word becomes a redirect target. If that rest holds a `$`, _output_runs counts it as an unresolvable target, and every argument of the stage is re-read as a command line. Measured with the same fixture repo on main and on this branch: a commit message holding a forbidden git phrase next to `-> $VAR` or `output>$TMPDIR`, for example `git commit -m \"guards: <git stash drop> -> $HOOK now denied\"`, is allowed on main and DENIED here. This refuses a commit message, the shape the guard's own docstrings say must never be refused. Commit messages about this guard hold exactly these pieces. -> Build the stages from a quote-aware scan, so that only an UNQUOTED `>`, `>>`, `|` or `|&` is an operator. One way is to carry an 'unquoted' flag per piece out of _shell_pieces. Another is to derive stage boundaries with the quote tracking _quoted_substitutions already does. Add allow cases: a commit message holding a forbidden phrase plus `-> $X`, and one holding `>$TMPDIR`.\nR2 (high) plugins/audit/hooks/guard-history-rewrite.py:451-469 (_output_runs), 572-584 (phrase pass in git_calls): The phrase pass assumes that every argument of a stage is what the stage PRINTS. That holds for echo and printf. It does not hold for grep, git log or sed, which print file content or history, not their argv. Joined with the unresolvable-target arm (`$` in the target), this refuses read-only commands. Measured, main allows and the branch DENIES: `git log --grep '<git stash>' > \"$TMPDIR/hits.txt\"`, `grep -n '<git stash drop>' SECURITY.md > \"$TMPDIR/g.txt\"` and `grep -rn '<git push --force>' docs > \"$TMPDIR/g.txt\"`. The same commands with a literal `/tmp/...` target are allowed. Writing a read's output to a `$TMPDIR` path is an ordinary shape, and a guard that refuses a READ gets routed around. -> Re-read as a command line only what the stage emits verbatim: the arguments of an echo or printf stage (past wrappers, via program_candidates), and a here-string or heredoc body fed to a cat-like printer. Leave every other program's arguments alone. Add allow cases for grep and git log redirected to a `$`-target. Keep gp36 and gp43 as the deny side.\nR3 (med) plugins/audit/hooks/guard-history-rewrite.py:495, 500-513 (_open_case); consequence at decide():1132 and the text fallback: _open_case is not the shell's grammar. `case` is a keyword only in command position, but _CASE_WORD matches the bare word anywhere in the body. Checked by calling the function: git_calls on `echo \"$(echo worst case)\"; git log` returns None, so the whole command is unreadable. Two costs follow. (a) A VALID command is routed to the raw-text reading. Before this change, the substitution door to None was (almost) only an unclosed substitution, which the shell also rejects. (b) The raw-text reading is weaker than the parse for shapes that only the parse catches. decide() reads `calls or []`, so the verb that `xargs git` takes from stdin (STDIN_VERB) is never seen. A program name spliced from quoted pieces is also invisible to the `\\bgit\\b` patterns. So consider this shape: any double-quoted substitution holding the bare word `case` and no `esac`, placed in front of a spelling that only the parse refuses. It may now pass where main refused it. I did not run this, per your constraint; please verify. If it holds, SECURITY.md's line 'none of them lets through a command the 036e98e base refused' is at risk. -> Do this in _substitution_end rather than mark the body unreadable. Track `case` and `esac` only at command-word positions. While a case is open, a depth-0 `)` closes a pattern, so keep scanning to the `esac` and then to the real close. That reads the body the shell runs. Also consider refusing while a plan exists, rather than grading the raw text, when git_calls is None ONLY because of this rule. Add a regression case: a bare `case` argument in a substitution, followed by an xargs-stdin verb, stays denied.\nR4 (med) plugins/audit/hooks/guard-history-rewrite.py:403, 406-431, 451-469: The stage model has structural gaps. All of them are described here by shape and none was run. (1) The clobber-override redirect (a greater-than immediately followed by a pipe) contains '|', so it is classed as a PIPE: its target becomes the next stage's program word and is never checked as a hook path. (2) A subshell or brace group whose closing token is a separate word from the pipe or redirect after it ends up as an EMPTY stage, so the phrase is unread. The glued spelling is caught, so the two spellings are graded differently. The same is true of a group on the receiving side of the pipe. (3) The receiving program is recognised only by the SHELLS tuple, which has five names. That misses the wider _config._SHELL_PROGRAMS (fish, mksh, ash), a shell named by a parameter expansion, and eval or source of a substitution that reads stdin. Yet _FILE_RUNNERS does include source and `.`. (4) A process-substitution target whose body is a shell is taken as a plain file name. (5) Hook-path matching is case-sensitive, but the filesystems of both the dev machine (macOS) and CI (Windows) are case-insensitive by default. program_name already folds case for exactly that reason. (6) `.husky/` is matched only as a leading prefix, not as a path segment, so a `./` or absolute spelling of a non-hook-named file under it is missed. (7) A glob character in the redirect target is not treated as unresolvable. -> Classify an operator by its whole spelling: a pipe is `|` or `|&`, and a run that starts with `>` is a redirect. Treat a group's closing token as passing its inner stage's words to the pipe or redirect that follows it. Use _config._SHELL_PROGRAMS, count an expansion in the receiver's program position as unresolvable (as the target arm already does), and add eval and source. Lower-case the hook basename and path before matching, and match `.husky` and `.git/hooks` as segments. Add glob metacharacters to the unresolvable test. Anything left unclosed goes into SECURITY.md (finding 5).\nR5 (med) SECURITY.md:242-247: The desired outcome is that the list 'shrinks to what remains'. The new residual names only a file run by a later command and a hook directory holding a file not named as a hook. It leaves out residuals visible in this diff. A file can be written by a program that copies stdin to a named file argument (the tee shape) rather than by a redirect. The phrase can be split across several arguments that the printer joins. The finding-4 operator and group shapes are also missing. The document now reads as more closed than the code is. -> After findings 1-4 are settled, list every shape the phrase reading does not follow, one bullet per shape. Also state in the heredoc paragraph (around line 227, which still says only that a here-string is not read as a heredoc) that guard-secrets-read now grades a here-string fed to an interpreter as inline eval.\nR6 (low) plugins/audit/hooks/guard-secrets-read.py:1085-1105 (_interpreter_herestrings): The grammar is wrong when the interpreter already has a program operand. When an interpreter runs a script file, `-c`/`-e` text or awk program text, the here-string is STDIN DATA, not the program. The heredoc arm this function says it mirrors exempts a plain script run through _config._plain_script_run. This arm does not, and _ANY_INTERPRETER includes awk and gawk, whose here-string is never their program. Measured: `python3 tools/redact.py <<< \"<code-shaped text naming the env file>\"` and `node scripts/lint.js <<< \"...\"` are allowed on main and BLOCKED on the branch, with the here-string refusal. The b5h5 allow case uses tr, so nothing pins this. -> Grade the here-string as the program only when the reader has no program operand. Reuse _plain_script_run for script runs, and treat a -c/-e option, or awk's first operand, as making the here-string data. Add allow cases for a script-file run and for awk.\nR7 (low) plugins/audit/hooks/guard-secrets-read.py:1097-1100: _clause_words splits on blanks only. A here-string operator written with no blank between it and the interpreter's name makes a single word that does not start with `<<<`, so this arm never sees it. (Described by shape, not run.) The history guard's lexer splits `<` as a separator and is not affected. -> Find `<<<` inside a word, not only at a word's start: split the word at the operator and treat the left part as a reader word. Add a deny case beside b5h1.\nR8 (low) plugins/audit/tests/test_guard_history_rewrite.py:926 (gs18): gs18 is listed among the allow cases that show the reading follows the grammar. It cannot go red if _open_case over-fires: an unreadable body goes to the raw-text reading, which also allows a body with no git in it. So it passes with the rule deleted or with the rule firing on everything. The other allow cases (gp37, gp39, gp40, gs14) were mutated over-fire; gs18 was not. -> Replace or supplement gs18 with a case where the parse and the raw-text reading disagree. For example, a bare `case` argument in a substitution alongside a spelling that only the parse refuses should stay denied, and a correctly closed case arm with git text quoted as data should stay allowed. Prove it red with _open_case forced to True.\nR9 (low) CHANGELOG.md:301: 'The history guard reads four shapes the way the shell does' is a present-tense count in prose, the author-enforced class CLAUDE.md names. The list right after it already enumerates the shapes. The P83.1 commit claim '7 no number written into prose' is therefore not accurate for this line. -> Drop the number: 'reads these shapes the way the shell does'.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/tests/test_guard_history_rewrite.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "SECURITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_history_rewrite.py: repro that FAILS on current code - a commit message holding a quoted > and an expansion is refused"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "221926e3",
+      "outcome": {
+        "technical": "Own quote-aware stage lexer; phrase pass only for text emitters; case tracked in command position; groups, tee, clobber, all shells, stdin runners covered.",
+        "descriptive": "The guards no longer refuse an ordinary commit message or search that names a forbidden command, and they read a wider set of real ways to run one."
+      },
+      "startedAt": "2026-09-26T11:28:58Z",
+      "completedAt": "2026-09-26T11:37:07Z",
+      "verifiedBy": [
+        "test_guard_history_rewrite gp44",
+        "test_guard_history_rewrite gp45",
+        "test_guard_history_rewrite gp60",
+        "test_guard_history_rewrite se1",
+        "test_guard_history_rewrite gs19",
+        "test_guard_secrets_read b5h6"
+      ]
+    },
+    {
+      "id": "P83.4-wkm",
+      "title": "Round-2 review findings: the stage model reads compound commands, comments, receiving groups and nested cases, and over-refuses nothing main allows",
+      "status": "done",
+      "description": "Round-2 review findings, all to be fixed. Decisions: (S1) reserved words are stepped over when finding a stage's program, and if/while/until/for/case ... fi/done/esac form a group whose pipe or redirect reaches every stage inside. (S2) the stage lexer skips a comment (an unquoted `#` at a word start) to the end of its line. (S3) a pipe into a group asks every stage of the receiving group whether it runs its stdin. (S4) case tracking is per nesting level (a stack of the depths where a case opened), so a nested case or one after a parenthesised pattern reads to its real close. (S5) whether an interpreter already runs a program is decided per interpreter: its own inline-program flags (python -c; node -e/-p/--eval/--print; ruby -e; perl -e/-E; php -r) or a script operand with a script extension after its options. (S6) the variable-as-program rule reads only the program word, not a wrapper's operands; a hook-named file counts only in a directory whose name holds 'hook' or under .git/hooks or .husky; a process substitution target runs only when its own command runs its input; ruby/perl script runs and node with options before the script are script runs. (S7) what an emitter prints is its words joined as one line (so a phrase split across arguments is read whole), a cat fed a here-string prints that string, `builtin` is a wrapper, and an inner emitter's substitution contributes what it prints; SECURITY.md's not-followed list is restated from the code.\nR1 (med) plugins/audit/hooks/guard-history-rewrite.py:553-559 (_prints_phrases), 493-550 (_stages): _prints_phrases treats a stage as an emitter only when echo or printf is its program word. _stages leaves a reserved word at the head of the stage's words. For `if true; then echo hello > out.txt; fi` the stage is ['then','echo','hello'] with target out.txt, and _prints_phrases returns [] (checked on benign text through _stages/_op_tokens). So consider this shape: an emitter inside a then/else/do body whose own redirect names a hook, or whose output is piped into a shell. The phrase is not read. P83.1 read words[1:] and so did read it; P83.3 dropped it. A second, related case: a compound command (for/while/until/if/case) whose output is piped or redirected after its closing `done`/`fi`/`esac` is not treated as a group. Only the closing-word stage receives `to` or the targets, and the body stages do not. SECURITY.md names neither shape. Not run as an evasion, per the constraint. -> Before program_candidates in _prints_phrases, _runs_input and _tee_targets, strip the leading reserved words (then, do, else, elif, !, the words in _OPENS_COMMAND). In _stages, open a group at if/for/while/until/case and close it at fi/done/esac, the way `{`/`}` are handled, so that a pipe or redirect after the close applies to every member. Add deny cases (an emitter in a then-branch redirected into .git/hooks/, and a loop body piped into a shell) and allow twins (the same written into notes.md).\nR2 (med) plugins/audit/hooks/guard-history-rewrite.py:417-491 (_op_tokens): _op_tokens does not know comments. An unquoted `#` at a word start is an ordinary character, so a comment's `>`, `|`, `(` and `)` become operators. Measured with an allow-side command: `echo 'never git stash' # see > $X` is allowed on main and DENIED on the branch, because the comment's `>` is read as a redirect to an unresolvable target. The other direction was checked on benign text: in `( echo hello # )<newline>) | cat`, the comment's `)` closes the group, the pipe lands on an empty stage, and the echo stage's `to` stays None. So a group whose inner line ends in a comment holding a close paren (or brace), followed by the real close and a pipe into a shell, leaves the phrase unread. P83.1's change to join_continuations exists exactly to read a comment the way the shell does. This second lexer does not use that rule. -> In _op_tokens, when `#` is unquoted and starts a word (`has` is False, the at_start rule of join_continuations), skip to the end of the line. Add an allow case (an emitter with a comment holding `> $X`) and a deny case (a group whose comment holds `)`, then piped into a shell).\nR3 (med) plugins/audit/hooks/guard-history-rewrite.py:613-631 (_output_runs), 562-573 (_runs_input): On the receiving side of a pipe, only the FIRST stage of a group is asked whether it runs its stdin. In `echo hello | (cd x && cat)` the receiver is stage ['cd','x']; the `cat` stage after `&&` is never looked at (checked on benign text). A shell inside a receiving group or brace group, placed after any other command in it, reads the pipe, and the phrase is not read. R4's resolution asked for the receiving side too. gp48/gp49/gp60 cover only the sending side. -> When `to` points at a stage that opens a group, test _runs_input (and _tee_targets) over every member of that group, not just the first. Record group spans in _stages so that _output_runs can find them. Add a deny case: a receiving group whose shell follows a `cd`.\nR4 (med) plugins/audit/hooks/guard-history-rewrite.py:633-690 (_substitution_end): The case tracking is one counter, checked only at depth 1. A `case` inside a nested `$(` or `( )` has its pattern `)` read as a close. After a parenthesised pattern `(x)`, the arm's first word is not in command position. Measured on benign bodies (index returned vs the real close): `echo $(case x in a) echo y;; esac) end) tail` gives 33 vs 38; `( case x in a) echo y;; esac ) ) tail` gives 29 vs 31; a nested case after an `(a)` pattern gives 42 vs 57. The first two miss on main as well, so they are not a regression against main. The third was unreadable (raw-text) under P83.1 and is now cut short. The docstring, the CHANGELOG ('a case in command position carries the read past its patterns to its esac') and commit claim 6 all say more than the code does. In a double-quoted substitution, a close taken too early turns the rest of the real body into quoted text that nothing reads. -> Keep a stack of the depths at which a case is open. A `)` ends a pattern exactly when the innermost open case sits at the current depth. Set cmd_pos after any pattern close, parenthesised or not. Add se cases for a case in a nested substitution, a case in a subshell, and a nested case after an `(x)` pattern.\nR5 (med) plugins/audit/hooks/_config.py:1441-1444 (runs_own_program), used by guard-secrets-read.py:1115-1118: The exemption flag list is interpreter-blind and too broad. For python, `-E` means 'ignore PYTHON* env', not a program. For ruby, `-E` sets the encoding. For ruby and perl, `-p` on its own is a loop flag, and the program is still read from stdin. perl's -c compiles its stdin program, and that runs BEGIN blocks. Any of these words before a here-string exempts a here-string that IS the program. Shape: an interpreter option from that list that does not supply program text for THAT interpreter, followed by a here-string holding code that reads a secret path. Not run, per the constraint; please verify. This is not a regression against main, where no here-string arm existed, but it is a hole in the new arm. -> Make the program options per interpreter: python -c; node -e/-p/--eval/--print; ruby -e; perl -e/-E and clusters ending in e. Treat a bare loop, syntax-check or env flag as leaving stdin as the program. Add deny cases for python -E and ruby/perl -p with a here-string, beside b5h6/b5h7.\nR6 (low) plugins/audit/hooks/guard-history-rewrite.py:562-573 (_runs_input), 602-611 (_target_runs); plugins/audit/hooks/guard-secrets-read.py:1115-1118: New over-refusals compared with main, all measured on allow-side commands with the same fixture repo (in_progress plan). (a) Behind a wrapper, every word is a candidate, and a `$` in ANY candidate counts as a runner. So `echo 'git stash' | sudo grep -c x \"$F\"`, `echo 'never git stash' | timeout 5 grep -c stash \"$F\"` and `echo 'never git stash' | xargs -0 printf '%s' \"$X\"` are allowed on main and denied here. (b) Hook names are case-folded and matched in any directory, so `echo 'never git stash' > docs/Update` is denied. (c) `> >(cat)` is denied whatever the body of the process substitution. (d) guard-secrets-read exempts only a plain python/node script run. `ruby tools/x.rb <<< ...`, `perl tools/x.pl <<< ...` and `node --no-warnings tools/x.mjs <<< ...` are allowed on main and blocked here. (The awk case is blocked on main too, so it is not charged here.) -> (a) Stop at the first candidate that names a known program that does not run its stdin; its operands are not programs. Count an expansion only in a program position. (b)/(c) are deliberate conservative choices: state them in SECURITY.md or narrow them (for example, require a hook name to have no extension AND sit under a hooks-like directory, or read the process-substitution body with _runs_input). (d) Extend the script-run exemption to ruby (.rb) and perl (.pl), and allow an option before the script, or document the refusal. Add allow cases for each shape you keep allowed.\nR7 (low) SECURITY.md:245-253: The 'Not followed' list still reads as complete, and it is not. Missing: a phrase split across several quoted emitter arguments that the emitter joins (_prints_phrases reads each word separately; named in R5 and still absent); a here-string printed by cat or another non-emitter into a shell (followed under P83.1 through words[1:], dropped by the emitter-only rule, with no case pinning either side; checked on benign text: `cat <<< hello | cat` yields no printed words); an emitter reached through `builtin`; an emitter's substitution output inside another emitter; and the shapes of findings 1-4. The paragraph opens with 'stated rather than left to be found'. -> After findings 1-5 are settled, add one bullet per shape still open, or close each shape. At minimum name the split-argument, non-emitter here-string, reserved-word/compound, receiving-group and nested-case shapes.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/tests/test_guard_history_rewrite.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "SECURITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_history_rewrite.py: repro that FAILS on current code - an emitter with a comment holding > and an expansion is refused"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "39e6bf7f",
+      "outcome": {
+        "technical": "Compound commands as groups on both pipe sides; comment-aware lexer; case stack; emitter output as one line; per-interpreter runs_own_program; perl open reads.",
+        "descriptive": "The guards now read loops, conditionals, comments and nested cases the way the shell does, and stop refusing several ordinary commands."
+      },
+      "startedAt": "2026-09-26T11:48:33Z",
+      "completedAt": "2026-09-26T12:07:26Z",
+      "verifiedBy": [
+        "test_guard_history_rewrite gp61",
+        "test_guard_history_rewrite gp64",
+        "test_guard_history_rewrite gp68",
+        "test_guard_history_rewrite se7",
+        "test__config ro1",
+        "test_guard_secrets_read b5p1"
+      ]
+    },
+    {
+      "id": "P83.5-wkm",
+      "title": "Round-3 review findings: wrappers are parsed by their own options, an interpreter is exempt only in its unambiguous shape, and the dropped shapes are read again",
+      "status": "cancelled",
+      "description": "Round-3 review findings, all to be fixed. Decisions: (T1) runs_own_program exempts only the unambiguous shape - the interpreter, options it is known to take with no value (or known to take one, value skipped), then a script operand or its inline flag; an unknown option, a `-` operand or any expansion means not exempt. (T2) pattern mode starts only at the `in` that follows `case WORD`. (T3) a process substitution whose own command tees or redirects into a running target counts as running; a relative target is joined to a preceding `cd` in the same command; program_candidates parses each wrapper's own options from a table, so behind a known wrapper the program is exact (a variable there is the program), and only an unknown wrapper option falls back to every word. (T4) a pass-through `cat` receiving the pipe carries its own redirect, and a receiving loop that reads lines and evals or runs a variable runs its input. (T5) perl open reads cover the unparenthesised form and a layered read mode; a unit case pins the write-mode exclusion. (T6) allow twins for gp61, gp62, gp64 and gp68-gp71.\nR1 (med) plugins/audit/hooks/_config.py:1457-1480 (runs_own_program): The per-interpreter rewrite skips any word that starts with '-' as an option. It then treats the first operand ending in a script extension as the script. Three shapes now return True (exempt), although the interpreter still reads its program from stdin. (a) A bare '-' stdin marker followed by a script-named argument, or followed by an inline flag given as argv. (b) An option this table does not list as taking a value, whose separate value is script-named; node's --title and -C are examples. (c) An operand that carries an expansion; unquoted, it can word-split into the stdin marker plus a script name. Measured on word lists: runs_own_program returns True on HEAD for ['python3','-','x.py'], ['node','-','x.js'], ['perl','-','x.pl'], ['ruby','-','x.rb'], ['node','--title','x.js'] and ['python3','$S.py']. The same lists return False on the P83.3 tree (221926e3), whose _plain_script_run refused a '-' operand and any word carrying '$'. So this is a regression inside the phase. It is not a regression against main, which had no here-string arm. The case the '-' shape shares with P83.3 is ['python3','-','-c'], which is True on both. Not run as an evasion; the check is at word-list level only. -> In the option walk, return False on a bare '-'. Treat '--' as the end of options, so the next word is the script. Return False for an operand that carries '$', a backquote, a quote or a glob, which is the rule _plain_script_run applied. Better still, list per interpreter the options that take NO value and grade anything unknown, instead of assuming an unknown option takes none. Add ro1 rows for each shape, plus a deny case beside b5h11/b5h12: a here-string fed to an interpreter given the stdin marker and a script-named argument.\nR2 (med) plugins/audit/hooks/guard-history-rewrite.py:_stages (the `elif top == \"case\" and text == \"in\": pattern = True` branch): Pattern mode is re-entered on ANY word 'in' while the innermost open compound is a case. That includes an ordinary argument inside an arm body. From that point, the arm's '(' is dropped and its ')' is read as the end of a pattern, so a subshell loses its group. A pipe after the subshell then lands on an empty stage. Measured on benign text: in `case x in a) echo in; ( echo hello ) | sh ;; esac`, _output_runs is False for the `echo hello` stage on HEAD and True on P83.3. The shape is an arm body that contains the word 'in' before a parenthesised group whose output is piped into a shell. That phrase is not read. This is a new defect in P83.4's case tracking in the stage model; _substitution_end tracks by command position and does not have it. -> Enter pattern mode on 'in' only when it is the case stage's own third word (cur[\"words\"] is exactly ['case', <subject>]), and after ';;' as now. Add a deny case (an arm with an 'in' argument, then a subshell piped into a shell) and its allow twin (the same piped into cat).\nR3 (med) plugins/audit/hooks/guard-history-rewrite.py:_redirect_target, _is_hook_path, _runs_input (the rest[0] expansion test); SECURITY.md:245-259: Each of the three over-refusal narrowings from round-2 finding 6 dropped a shape that P83.3 read, and SECURITY.md names none of them. Each was measured on benign text as _output_runs True on P83.3 and False on HEAD. (a) A process substitution whose own command writes, through tee or a redirect, into a hook or an unresolvable target: `echo hello > >(tee .git/hooks/pre-commit)` and `echo hello > >(cat > .git/hooks/pre-commit)`. _redirect_target asks only _runs_input of the inner stages. (b) A bare hook name written after a cd into the hooks directory: `cd .git/hooks && echo hello > pre-commit`. _is_hook_path needs a parent directory named '*hook*' in the target text itself. (c) An expanded program behind a wrapper option that takes a separate value: `echo hello | sudo -u root \"$SH\"` and `echo hello | xargs -I {} \"$SH\"`. program_candidates leaves the option's value as rest[0]. SECURITY.md says a program named by a variable is followed, and that a process substitution counts when it runs its input. (c) contradicts the first statement, and (a) is not a run of its input but a write into a hook, which the list says is followed at top level. -> (a) Grade the inner stages of a process substitution with the same _output_runs/_target_runs question used at top level (tee targets and redirect targets), not only _runs_input. (b) Count a target with no directory part and a hook name as a hook when an earlier stage of the command is a cd. (c) Count a '$'/backquote candidate as the program unless an earlier candidate names a known program. This keeps gp65 allowed and reads the wrapper-value shape. Otherwise, name each shape in the Not-followed list. Add a deny case for each, next to gp65-gp67.\nR4 (low) SECURITY.md:245-259: The restated Not-followed list still omits two shapes, both unchanged since P83.3 and measured on benign text as not read on either tree. (1) A pass-through filter's own redirect after the pipe, e.g. `echo hello | cat > .git/hooks/pre-commit`. _output_runs follows a receiver's targets only when the receiver is tee, so 'written ... through tee' reads as the whole rule, while 'a file written by another program (dd, cp, an editor)' reads as a different case. (2) A receiving loop that reads lines and evals the variable, e.g. `echo hello | while read l; do eval \"$l\"; done`. eval with an argument is not a stdin runner, even inside the receiving group P83.4 now walks. Commit claim 3 says the list 'is restated from what the code now reads'. -> Either follow both: treat a receiver that passes its stdin through (cat and the like) as carrying its own redirect targets, the way tee does; inside a receiving group, treat eval/source of a variable set by read as running the input. Or add both to the Not-followed list, together with the shapes in findings 1-3 that stay open.\nR5 (low) plugins/audit/hooks/guard-secrets-read.py:608-615 (perl open alternatives); CHANGELOG.md (the 'Perl's own open shapes' sentence): The CHANGELOG says 'three-argument with '<'' is a read. The alternatives require parentheses and an exact '<' mode. So idiomatic Perl, `open my $fh, '<', PATH` with no parentheses, and a mode with a layer ('<:raw', '<:encoding(UTF-8)'), yield no read target. Measured with a benign path: _eval_read_targets returns [] for both on HEAD. This is not a regression, because main read neither. It is a claim broader than the code, and SECURITY.md says nothing about Perl. Separately, the two-argument alternative also matches a Python two-argument open whose second argument is a quoted mode, and reports the mode as a read target: open(p, 'w') gives ['w'], open(p, 'a') gives ['a'], webbrowser.open(url, 'new') gives ['new']. This changed no verdict in any command I measured on main and HEAD: Python writes, a webbrowser call, window.open, and a Perl open of an ordinary file all allowed on both. It cannot turn a Python or Node write into a secret read, because a quoted first argument fails the handle pattern and a mode string is never a secret name. No case pins the Perl write-mode exclusion ([^'\"<>|+\\s]). -> Make the parentheses optional (`open\\s*\\(?\\s*(?:my\\s+)?...`) and accept a layered mode (`'<(?::[^'\"]*)?'`). Otherwise, narrow the CHANGELOG sentence and add the residual to SECURITY.md. To stop mode strings being reported as paths, require a Perl-shaped handle ('my $x', '$x' or an uppercase bareword) in the two-argument form. Add helper-level cases: a Perl '>'/'+<'/'|' open yields no read target, and a Python open(p, 'w') yields none.\nR6 (low) plugins/audit/tests/test_guard_history_rewrite.py:743-770 (gp61-gp71): The resolution of round-2 finding 1 asked for allow twins: the same compound shapes written into notes.md. None was added for gp61 (a then-branch emitter), gp62 (a loop piped after done), gp64 (a receiving group) or gp68-gp71. The allow rows that were added (gp63, gp65-gp67) pin the three narrowings and the comment rule, not the new group reading. So an over-firing mutation would stay green on every case, for example treating every member of any receiving group as a runner, or giving a compound's redirect to stages outside it. I measured the corresponding commands as allowed on HEAD, so the code is right today; what is missing is the pin. Commit claim 3 says every finding is addressed. -> Add allow twins: `if true; then echo '<phrase>'; fi > notes.md`, `for x in 1; do echo '<phrase>'; done | cat`, `echo '<phrase>' | (cd /tmp && cat)`, and `echo 'git push' '--force' > notes.md`. Prove each red against the over-fire mutation it guards.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/tests/test_guard_history_rewrite.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "SECURITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_history_rewrite.py: repro that FAILS on current code - a variable program behind sudo -u is not asked whether it runs its stdin"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: The automated session was stopped by a safety classifier while writing this guard-hardening code; per the user's decision the phase lands with P83.1-P83.4 and the round-3 findings go to a human maintainer as an open bug. The red tests written for it are kept in quality-gates-internal/probes/fr15-16/p83-handoff/p83.5-red-tests.patch."
+      },
+      "startedAt": "2026-09-26T12:20:27Z",
+      "completedAt": "2026-09-26T21:53:28Z",
+      "verifiedBy": []
+    }
+  ],
+  "startedAt": "2026-09-26T10:59:58Z",
+  "testEvidence": {
+    "runId": "2026-09-26T22:02:10Z.74b27f",
+    "status": "passed",
+    "at": "2026-09-26T22:02:10Z"
+  }
+}

@@ -7,6 +7,77 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 ## [Unreleased]
 
 ### Added
+- **A sign-off's review findings are recorded by a verb: `audit-task.py finding`,
+  `resolve-finding` and `correct`.** The findings sign-off step 1 records were a hand edit of
+  the phase shard: no lock, no journal row, and a severity outside the vocabulary written with
+  nothing to refuse it. `finding <phaseId> --findings-file PATH|-` records a review's whole
+  findings array in one write, and `--severity low|med|high --file <path> --issue TEXT
+  --resolution TEXT` records one; each finding takes the schema's shape with the id allocated
+  as `<phaseId>-R<n>`, a missing field or an unknown severity is refused before any write (a
+  batch whole), each finding journals `review.finding`, and a phase that has already landed is
+  refused. `resolve-finding <findingId> --fix-task <taskId> [--commit <sha>]` records the task
+  and commit that fixed it - the fix task must be done, and its own recorded commit is the one
+  written - and journals `review.resolve`; `reopen` of that task takes the commit back off the
+  finding. `correct <phaseId> [--review-outcome TEXT] [--summary TEXT]` rewrites a signed-off
+  phase's text with a `review.correct` row and reads no `--verdict`. Every writer of
+  `review.outcome`, `signoff --review-outcome` on both paths included, ends it with a
+  `[findings: ...]` severity tally derived from `review.findings`, whose last clause counts the
+  findings with a recorded fix commit and nothing else, so a typed count cannot disagree with
+  the list. A journal row shortens a long outcome from the middle, so the tally stays visible.
+  `reference/phase-signoff.md` step 1 names the verbs.
+- **Phases built on one branch sign off as a group: `audit-task.py signoff P1,P2 --branch <name>`.**
+  Phases whose work sits on one combined branch record no `branch` or `baseRef`, so the single
+  sign-off had no diff to review and `close-phase.py` no name to land. `--plan` prints the whole
+  sign-off with the command each step runs; `--bind` records each member's branch and the point it
+  left the parent as `baseRef` first, so the sign-off's invariants run grades them; the review is
+  scoped by the tasks' commits, and every commit the branch carries past its fork must be one of
+  them or a member's journaled audit-state or index commit; one gate run owns every member's files;
+  the record writes every member in one write, all or nothing, and gives the non-carrier members the
+  carrier's evidence pointer with `gradedBy`, which `--fail-on no-test-evidence` and the evidence
+  rows read; and one `close-phase.py --branch` per phase lands it, every one but the last keeping
+  the branch. A `--branch` that is the members' parent is refused.
+- **`run-test-gate.py --also <phase,...>`** makes one phase-scope run own the union of the named
+  phases' files, so a rewrite of a file only another member declares reads `gate-mutated` instead of
+  passing beside it. Additive: without it nothing changes.
+- **A phase's gate has a declared default and a declared way to narrow it: `meta.phaseGate`.**
+  `/audit:phase add` (and a task's own derivation) used to default to every `meta.buildCommands`
+  key with no way to keep one out short of retargeting every phase by hand afterward.
+  `{always, exclude}` fixes the DEFAULT rather than one phase's gate: `always` puts named keys
+  first, `exclude` leaves named keys out (an entry in both stays IN — `always` outranks
+  `exclude`), and absence is today's behaviour exactly. `meta.gateBudgetMs` is the matching
+  advisory cost budget, read by `/audit:doctor`'s new gate-economy row against a gate that has
+  never failed, naming the entries costing more than the budget and the retarget/exclude/always
+  remedy for each.
+- **`/audit:doctor`'s gate-economy row**, printed after `gate patterns`: a gate `gate patterns`
+  already calls a candidate to drop, graded on its recorded cost against `meta.gateBudgetMs`. No
+  budget declared is an OK row saying so; an unmeasured step is named on its own line rather than
+  folded into a passing count.
+- **`/audit:phase retarget --gate-drop <entry>` and `--gate-set <entry> ...`.** `--gate-set`
+  replaces a phase's gate with an explicit list and refuses the empty one (`--gate-clear` is the
+  declared route to that); `--gate-drop` removes one named entry from the current gate rather than
+  restating the rest of it. `--gate` still REPLACES the gate outright, as it always has.
+- **`PHASE GATE RAN NO SUITE` and the `excluded:` line.** A phase-scope gate run now says when
+  none of the steps it actually ran carries a recognised test runner's summary
+  (`suiteReader`), and names only the `meta.buildCommands` keys `meta.phaseGate.exclude` left out
+  of THIS run — never the whole declared list, so a phase whose `testGate` still runs a
+  since-excluded key is not told it skipped a suite it in fact ran. Neither line moves the exit
+  code; `validate-manifest.py` gains the matching 'phase gate runs no suite' warning.
+  `tests.gateBasis` gains `gate-only-no-suite`, for a `gate-only` task whose own files name no
+  suite path to narrow to.
+- **`/audit:task add --failing-from <runId>`** gates a fix task on the suite(s) a red run's own
+  steps NAMED as failing, unioned with whatever the task also declares in `--tests-add`, in the
+  phase's path-scoped spelling. `tests.gateBasis` records `failing-from-run:<runId>`; a run that
+  named no suite falls through to the ordinary derivation, with the reason printed first.
+- **`run-test-gate.py <m> <P> --task <T> --own [--quiet]`** runs a task's own tests through the
+  same bracket and coverage answer as the recorded run, writes no row and no pointer, ever, and
+  keeps its whole output on disk at `<logsDir>/gate-raw/<runId>.log` (printed as `raw log:`)
+  rather than spending a subagent's context on it. `--record` and `--reconcile` are refused
+  alongside it — there is nothing here for either to act on.
+- **`audit-lookup.py <manifest> run <runId|latest> [--phase <id> | --task <id>] [--json]`** —
+  the bounded evidence-ledger row a background gate's verdict is read back from, never re-derived
+  from a truncated terminal. A gate expected to outlast the Bash tool's foreground bound runs
+  under `run_in_background`; the row is written before the run's own banner prints
+  (`evidence: recorded <runId>`), so the verdict is durable the moment that line exists.
 - **`stamp-verification.py red` proves a red-first without touching the shared tree.** The executor
   brief used to prove a red by undoing the fix in the working tree for the length of the run, which a
   host refused beside a sibling's uncommitted work. `red --manifest M --task T -- <cmd>` checks HEAD
@@ -152,8 +223,193 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   POSIX-shell recipe that runs under sh, bash and zsh - a test runs it under each where installed,
   and skips Git Bash on Windows, whose `$$` is not the pid the lock probes - and `/audit:doctor`
   advises an abandoned user lock by its own `--takeover` path.
+- **A phase's sign-off gate can be DERIVED from what its own tasks already declare, rather than
+  running the wide gate every time: `meta.phaseGate.mode` and `derive-phase-gate.py`.** With
+  `mode` set to `"shadow"` or `"enforce"`, `derive-phase-gate.py <manifestPath> <phaseId>` narrows
+  a path-scoped sibling task's own gate to a test-file set built from that task's `tests.add`, any
+  `meta.coupling` entry whose sources overlap the phase's touched files, an import-graph listing
+  (verified against the runner's own version answer, so a listing checked on one machine is never
+  trusted on another), the paths changed since `phase.baseRef`, and the newest recorded failure's
+  named suites — writing the result on `phase.testGateDerived` and `phase.testGateBasis`.
+  **`shadow` records the derived gate beside the wide one and changes nothing about what signs a
+  phase off; `enforce` runs the derived gate instead.** `run-test-gate.py` reads what
+  `derive-phase-gate.py` wrote: an `enforce`-mode run prints a `NARROWED sign-off` line reporting
+  the measured narrower set; when the derived step's own output did not name every suite the
+  phase recorded, that step reads `could-not-run` with a `DERIVED RUN NAMED k OF N LISTED SUITES`
+  basis rather than trusting its exit code, and the `NARROWED sign-off` line changes with it —
+  it says the run certifies nothing about the derived gate, in place of the measured wording,
+  never beside it; a `shadow`-mode run over a real failure prints how many of the failing suites
+  the derived set would have listed. `meta.coupling` is learned and dropped by
+  `audit-task.py couple --test <path> --sources <path,path> --basis-run <runId> --basis-head <sha>`
+  and `uncouple --test <path>`, journaled as `coupling.learned`/`coupling.dropped`; a derivation
+  run is journaled as `phase.gateDerived`. `/audit:doctor`'s new shadow-recall row reads the
+  evidence ledger for two recall figures over every shadow run — suite-weighted test recall and
+  run-weighted change recall — as the basis for deciding when a shadow phase is ready for
+  `"enforce"`; nothing switches the mode for you.
+- **The derived gate's own observations are configured under `meta.phaseGate.derived`, beside
+  `spelling` (covered in its own bullet below).** `derived.listing.related` is a command carrying
+  `{paths}`, filled with the shell-quoted union of the phase's own tasks' `files`, that lists —
+  never runs — the suites related to those paths; `derived.listing.all` lists every suite the
+  runner would collect, with no path filter, which is what "the full suite" means for this
+  runner. Neither listing executes a test, and both are timed: the cost of each is recorded on
+  `phase.testGateDerived`. `derived.runner` names a `meta.buildCommands` key, carried through
+  only as the display label the printed `DERIVED` line and `testGateDerived` name the gate under
+  — never resolved or run for a listing itself.
+- **`audit-task.py couple` refuses a `--basis-head` git does not have and a `--phases` id the plan
+  does not hold.** A SHA git cannot be asked about at all is written anyway and reported
+  unverified, rather than refused, since a refusal there would be a claim about the SHA that
+  nothing checked.
+- **`meta.phaseGate.derived.spelling` is a second shape source for the narrowed gate, read only
+  when no task in the phase carries a path-scoped gate entry of its own.** A sibling task's own
+  entry is preferred over it — the runner has already accepted that one — so `spelling` is read
+  second, never in its place. The template must carry a literal `{paths}` placeholder; one that
+  does not is ignored, with the reason printed. Once read, `{paths}` is filled with the resolved
+  test paths. A spelling shape left with no test path to substitute turns the gate wide under
+  basis `derived-empty` too, with its own reason printed — a spelling carries no task gate behind
+  it the way a sibling entry does, so an empty substitution is never narrowed to nothing silently.
+  The printed `DERIVED` line and `testGateDerived` both name which of the two sources — the
+  sibling task or the spelling — supplied the shape.
+- **An ALL-listing naming no suite turns the derived gate wide, with `phase.testGateBasis:
+  derived-empty`.** When the ALL listing ran, exited clean and named no suite, the derivation
+  widens to the phase's ordinary wide gate before anything else runs — coupling, the related
+  (import-graph) listing, changed-since and last-failed are none of them consulted in that case,
+  since a listing that already said "nothing" is not evidence for a narrower guess; the basis
+  line says why. This is one of two ways `derived-empty` is reached — the other is the
+  spelling-sourced shape left with nothing to substitute, in the bullet above.
+- **`meta.fullGate`, `phase.mergedHead` and `phase.mergedHeadAt`: a third gate beyond a task's
+  own and a phase's sign-off gate, and the commit ancestry is asked about for a phase's merge.**
+  `meta.fullGate` names the `meta.buildCommands` keys the whole product is measured against —
+  the full suite, coverage, an e2e pass — never narrowed to one phase's or one task's files.
+  `phase.mergedHead` is written into a plan only by `close-phase.py` (the demo generator stamps
+  its own fixture) and has two readings, which
+  `phase.mergedHeadAt` tells apart: without it, the commit on the parent's first-parent chain
+  that brought the phase branch's tip in — the tip for a fast-forward, the merge commit for a
+  direct merge, the parent's merge of an intermediate branch for a nested one — recovered from
+  git rather than read off the parent's head, so a hand merge closed later records the same
+  commit a close at the merge would have; with it, the parent's head at that moment, recorded
+  after the fact with the branch gone. All three are additive: absent means today's behaviour
+  exactly, and nothing is ever provisional for lack of any of them. `_manifest_vocab.VERIFIED`
+  is the one word every surface renders for "tests passed" at each place a gate can mean that —
+  a task's own gate, a phase's sign-off gate, and the full run — and `FULL_STATUS` is the
+  vocabulary a merged phase's full-gate status answers with.
+- **`close-phase.py` records the `mergedHead` a merge was recorded without.** A re-run over a
+  phase whose `mergedAt` is set and whose `mergedHead` is not writes the head once, journals
+  `phase.mergedHead.recorded`, and never replaces a head already recorded. With the branch still
+  there it is the recovered commit above. With the branch gone it is the parent's head, written
+  with `mergedHeadAt` and only when every task commit the phase records is contained in it — a
+  rewound parent, a squash merge or a phase recording no task commit is refused, and the phase
+  stays unknown. That check proves the parent's head holds the phase's recorded work and nothing
+  more: a wrong parent holding every recorded task commit passes it, and work no task recorded
+  is not asked about. A recovered commit is held to every
+  recorded task commit too, so a branch ref moved onto an older commit cannot record a head
+  that predates the phase's work.
+- **`run-test-gate.py --full [--record] [--writer NAME]` runs the declared `meta.fullGate`
+  against the whole product and records a `scope: "full"` row with no phase or task subject.**
+  The row is written before the summary prints, so a run cut off after measuring still leaves
+  its evidence behind; `--writer` names a CI shard's own ledger file, winning over a session
+  id. The commands come from `_evidence_io.resolved_commands`, the one resolver every reader of
+  `meta.fullGate` shares, so a row is judged against the identical list it was measured against.
+  The NARROWED sign-off line a derived-gate run prints now names `meta.fullGate` as what it
+  still owes.
+- **`_evidence_io.full_status` answers whether a merged phase is whole, provisional, unknown,
+  or has no third place declared, from the evidence ledger alone.** Whole needs a green,
+  measured, clean, verbatim full run whose head contains the phase's `mergedHead`, asked of git
+  through ancestry rather than a string match; `/audit:status`, the report, the panel and
+  `/audit:doctor` all read the identical answer and basis off this one function. Which phases
+  are asked is one predicate too, `_evidence_io.merged_phase` — a phase carrying `mergedAt` and
+  an id, never read off its status, so a done phase that never merged is not asked and a merged
+  one is asked whatever it reads — so no two surfaces grade different sets.
+  Full runs are walked newest first by the moment their `ts` parses to, never by comparing the
+  stamps as text, and a run whose `ts` will not parse is walked last and never called the
+  newest. Every answer also carries `wholeRunId` and `wholeRunTs`, naming the newest run that
+  could bear whole at all, so a caller asking whether a run that counts has happened since a
+  merge never re-derives which run counts. The panel's ancestry memo keeps an answer only when
+  both commits are full SHA-1 or SHA-256 ids, because a branch, a tag or an abbreviated SHA can
+  move, and never keeps a could-not-ask.
+- **`scripts/governance/import-evidence.py` brings a CI-recorded ledger shard into the evidence
+  directory whole, after its hash chain verifies.** A same-named file with different bytes is
+  refused; an identical re-import is a no-op; a shard is committed evidence, never
+  authentication of who wrote it. A run is one run whichever file carries it, so a shard
+  carrying a `runId` another ledger file already holds, or repeating one among its own rows,
+  is refused with nothing written, naming each id and the file holding it (`duplicates` in
+  `--json`). So is any import of a new file while the existing ledger cannot be read in full,
+  since a run lost there could be one the shard carries again: the refusal names each file and
+  the step
+  that clears each cause. `_evidence_io.read_rows` gains `rowFiles`, the file each row was
+  read from, at the row's own index — additive, every other key unchanged.
+- **`scripts/governance/full-gate.py` is the one command a pre-push hook or a CI step reaches
+  for.** It runs `run-test-gate.py --full --record` as a subprocess and exits with its code,
+  exiting clean with a sentence when no `meta.fullGate` is declared so an undeclared third
+  place never blocks a push; `/audit:review <phaseId> --full` and
+  `docs/examples/azure-pipelines.yml` both reach for it.
+- **`/audit:status --fail-on provisional` and `--fail-on stale-full-run`, opt-in conditions
+  beside the existing test-evidence ones.** `provisional` trips on a merged phase the ledger
+  has not yet certified whole; `stale-full-run` is the sharper claim that a run that could bear
+  whole — the one `wholeRunId` and `wholeRunTs` name — was recorded after the phase landed and
+  still does not contain it. A run that was red, repeated a verdict, counted nothing, ran on a
+  dirty tree or ran other commands never makes a phase stale. "Landed" is `mergedHeadAt` when
+  the phase carries one, since a head recorded after the fact is not the merge's own commit,
+  and `mergedAt` otherwise; the sentence names which. The default gate is unchanged; the
+  status table's tests column now says whether a merged phase is whole, provisional (naming
+  when it merged) or unknown (naming why), and renders exactly as before for a plan with no
+  `meta.fullGate`.
+- **The report and the control panel each carry the VERIFIED line for a merged phase.** The
+  report prints the phase's own sign-off alongside the third place's answer under each merged
+  phase — its suite counts only when the sign-off recorded them — and the line wraps rather than
+  widening the phase cell; the panel renders the same word and basis beside a merged phase's
+  evidence, reading the identical `full_status` answer rather than recomputing it. When the
+  ledger cannot be read, every merged phase reads unknown with the read failure as its basis,
+  on both surfaces and in `/audit:status`, rather than carrying no line at all.
+- **The scale demo shows whole, provisional and unknown.** `gen-demo-manifest.py` writes its
+  fixture as a git repository, deterministic from the plan, so the demo's whole and provisional
+  answers come from git's ancestry rather than from the fixture's say-so, and the earliest done
+  phase records no `mergedHead` and reads unknown. `docs/demo-large.html` carries all three;
+  `check-report-interactive.mjs` fails a page its fixture is built to show them on when one is
+  missing, and `capture-screenshots.mjs --check` fails when any of the three is missing from the
+  panel's payload, or is sent but painted without its full-run line.
+- **`/audit:doctor`'s full-run row.** No `meta.fullGate` declared reads as an OK row saying so;
+  a provisional merged phase is a warning naming the command that would settle it, an unknown
+  one a warning naming why ancestry could not be asked, and every merged phase reading whole is
+  one OK row naming the newest whole-bearing full run.
+- **A committed evidence row keeps `outcomeBasis` and `derivedGap` for a step that could not
+  run**, so a derived run that skipped a listed suite reads apart from a missing interpreter or
+  a no-verdict signature; `audit-lookup.py run` shows both, and a passed step's row is
+  unchanged.
 
 ### Changed
+- **`ruff` also selects W605, an invalid escape sequence in a string.** Python 3.12
+  and later warn about one on every run of the file, and the file then fails to
+  compile under `-W error`; the build now refuses it by name.
+- **`signoff --verdict passed` needs the gate run it rests on**, on the single-phase path and the
+  group's alike, graded by the SAME rule a task commit is bound by - now one module,
+  `_verdict_binding`, that `commit-task-work.py` and the sign-off both call. The phase's newest
+  ledger row must be `passed`, under the gate it declares now, over its declared files as they
+  stand with the recorder's own writes left out; a verdict the gate repeated is graded against the
+  run it repeats, so a re-run on an unchanged tree signs off. Otherwise the verb refuses naming
+  the run and the gate call, or takes `--no-evidence-reason "<why>"`, recorded on
+  `review.noEvidenceReason` and shown on the evidence badge. `--verdict skipped` needs neither.
+- **A group sign-off accounts for merges and takes an accepted commit.** A merge commit is
+  accounted when its parents are all accounted for, or on the parent side, and its tree is exactly
+  the automatic merge of those parents; a merge carrying content of its own is refused, naming
+  `git diff <recomputed tree> <sha>`, which shows a dropped change `git show --cc` hides. A merge
+  that cannot be recomputed (an octopus merge, or a git before 2.38) is refused as not asked, never
+  as an edit, and its review command is `git show -m <sha>`. A merge above a refused one is judged
+  as if that one were accounted: a clean one is named as waiting on it, any other is refused with
+  its own reason. `--accept` refuses a hex-spelled name that resolves through a ref.
+  Any other unrecorded commit can be taken into the review with `--accept <sha> --reason "<why>"`,
+  which takes a hex SHA or unique hex prefix (never a ref) resolving to exactly one commit, is recorded on every member and is shown beside the
+  sign-off in the report and the panel. The group-only flags are refused on a single phase's
+  sign-off, a group gate run never repeats a solo run over the same files, a carrier whose gate
+  declares no entry copies no run onto the members, and a group run's coverage basis names the
+  files it owned for each other member.
+  A journal that cannot be read is said as that; a task commit missing from the branch names
+  `repair-commits.py`. `--bind` and the copied pointer each leave a journal row, the group run's
+  ledger row names the members it owned (`groupWith`), and the report and panel render a copied
+  pointer as the carrier's run.
+- **`close-phase.py`'s refusal for a phase with no recorded branch whose composed name is not a
+  branch exits 1**, not the 4 an unanswerable ancestry gave before: git answered, and the command
+  is what has to change (`--branch`).
+
 - **A task commit is bound to the task's newest gate verdict.** `commit-task-work.py` ignored the
   evidence the orchestrator records one step earlier, so a task whose last gate went red, or whose
   declared files were edited after a green one, committed as if it had passed. It now refuses
@@ -357,6 +613,250 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   transcript it echoed - is no longer a unittest case, and a line opening with `FAIL ` inside a
   unittest or pytest run is no longer a house one. A real unittest `ERROR:` is still named and
   still not credited as an assertion.
+- **A `phase.merged` trail row names the parent the phase reached.** `close-phase.py` handed
+  the parent over in the row's details, and the journal kept only the keys on its allow-list and
+  dropped the rest without a word, so the row read `{phaseId, branch}`. `parent` is now on the
+  allow-list, and `phase.mergedHead.recorded` carries it too. Rows written earlier name the parent
+  in their summary only. A new check reads every writer's details by AST and names, file and
+  line, any literal key the allow-list would drop. It found three more rows losing a field the
+  reference documents. `ado.link` lost its work-item id, `phase.gateDerived` lost its `mode`
+  and `basis`, and `task.blocked` handed over `attempts` where the trail keeps `attempt`.
+  All three are kept now. The hook had keyed `task.blocked` and `ado.link` rows by that
+  attempt and work-item id to withhold a row the trail already holds, but neither names one
+  record: `reopen` sets attempts back to 0, and an unlink followed by a re-link keeps the same
+  id. So neither row is withheld any more. A merge may repeat one, and none is lost.
+- **Re-rendering a published page no longer fails the pre-commit sweep.**
+  `tools/check-rendered-artifacts.py --selftest` compared every published page with what `HEAD`
+  carries, and the sweep runs before the commit exists — so a change that re-rendered a page with
+  the repository's own recipe was red until its own commit was made. The selftest and the new
+  `--before-commit` flag now compare with a fresh render only, and say in their output that the
+  commit was not asked. `--against-commit` compares with `HEAD` only; `tools/verify.sh` runs
+  `--before-commit`, and so does the check `--affected` selects; `--release` adds
+  `--against-commit`. A run with no flag compares both, as before. After a commit, that run and
+  `--release` are where a page committed without its re-render is found. CI also runs it with no
+  flag, but there the checkout is the commit, so only the fresh-render comparison can fail. The
+  tool's selftest pins the calls in `tools/verify.sh` and `ci.yml` by exact line: every
+  non-comment line that names the tool must, once its indentation (and in `ci.yml` a leading `- `
+  and `run:`) is stripped, equal one of its call lines - no flag, `--before-commit` or
+  `--against-commit` - and each run must carry its own line exactly once. The line around each
+  call is pinned too: a `ci.yml` call is read only as a one-line `run:` with no deeper
+  continuation or as a line in a plain `run: |` block, and a call continued from the line above
+  only from the runner's `run "<label>" \` wrapper. The nearest code line before the call's
+  command - above the wrapper, or above the call when there is none, skipping blank lines and
+  full-line comments - may not contain `&`, `|`, a backslash or `#` anywhere (a plain `run: |`
+  opener is exempt). The rule is deliberately strict: it reads no shell, so a correct but unusual
+  line above a call is refused loudly rather than read. So a flag moved, dropped or put on a
+  continuation line fails a case, and any other line naming the tool is refused by line. It is a
+  text check, not an interpreter. It does not decide whether the line is reached at all - control
+  flow above it, such as an `exit 0` or an `if false; then`, is not read. And it does not tell a
+  call from an exact call line that some construct makes data rather than a command - a heredoc, a
+  string opened on an earlier line, an array literal, arithmetic or another key's block text -
+  which matters only if the real call is also removed. Both files are read with their line endings
+  as written and split at a newline only, and only space and tab count as blanks anywhere in the
+  check: a line is not indentation, a comment or the runner's wrapper because of a leading NBSP,
+  form feed, Unicode separator or carriage return, since the shell treats none of those as a blank
+  or a line break. While it runs, it records every git call the tool makes against the checkout,
+  and fails naming the function that made one, including a call against a directory inside the
+  checkout. An unknown flag, or both flags together, is now a usage error (exit 2) instead of
+  running both comparisons.
+- **An evidence ledger that cannot be read says so instead of reading as an empty one.** The
+  report and the panel each turned a failed read into a clean read of nothing, so a task or
+  phase pointing at a run read `Pointer without evidence` — a claim that the ledger does not
+  hold the run, which only a read can make. Such a pointer now reads `Ledger unreadable`, amber
+  on both surfaces like the other answers that measured nothing, naming the run the plan points
+  at; the file and line counts beside it are unknown rather than zero. The sentence is one
+  template, `_manifest_vocab.LEDGER_READ_FAILED`, which the report, the panel, the report's and
+  `/audit:status`'s full-run blocks, the doctor's ledger checks and `propose-gates.py` all fill,
+  with
+  `LEDGER_LOCATION_FAILED` for failing to find where the ledger lives.
+- **`capture-screenshots.mjs` waits for the panel to boot before it reads the panel's state.**
+  It read the viewer's identity and the skill registry once the static tab strip appeared plus
+  a fixed sleep, which a loaded machine could outrun: the page had not yet answered from
+  `/api/state` and `/api/registry`, and the capture failed its identity and fixture-skill
+  preconditions against the page's initial placeholders. It now waits until boot has rendered from the
+  server's state, and fails naming that wait when it never does.
+- **Parallel lock takers of one session are serialised.** The lock let any process of the
+  session holding it back in as "already yours", so parallel tool calls of one run each wrote
+  over the others' manifest write and every one reported success. A claim a process takes for
+  its own write now records a token that the process and its children carry
+  (`AUDIT_LOCK_TOKENS`), and only a carrier re-enters; any other process waits, session or not.
+  A lock taken by hand with `audit-lock.py acquire` is recorded `handedOff`, and its session
+  still works under it, as the documented take-then-run-the-verbs flow needs - so parallel calls
+  under a hand-held hold are still not serialised, which `reference/manifest-conventions.md`
+  and `reference/orchestrator.md` now say where they prescribe that hold. Two consequences to
+  expect: exit 3 can now be a parallel call of your own session, and a claim of the new kind
+  left by a verb that was killed answers stale (exit 4, `--takeover`) to its own session, where
+  it used to answer "already yours". The panel's writes take a claim per request (`per_call`),
+  so two saves on the server's threads wait for each other instead of one borrowing the other's
+  claim, and `_evidence_io.lock_state` - which the gate recorder asks before writing a pointer
+  or the evidence boundary - asks the same `held_by_us` rule instead of its own session test.
+- **Two panel saves at once both land.** Serialising the writes was not enough: every save built
+  its document from a read taken before it took the lock, so the second of two saves wrote a
+  copy predating the first and that change was lost while both answered ok. A composition save
+  now reads the manifest again with the lock held, and the policy, theme and `ui.theme` saves
+  hand `write_config` a change it applies to the config read under the lock. `POST
+  /api/proposal` holds the panel's per-call lock around the proposal run, which takes the lock
+  before it reads the manifest - `materialize-proposal.py`'s run included - and no longer
+  takes an ordinary claim whose token the whole server process would carry.
+- **The recovery line the panel prints for a crashed panel works.** `audit-lock.py release`
+  refused a claim whose holder had died, counting the dead pid as another run's, so the printed
+  `release index` command always exited 3; a claim whose holder ran on this host and is gone is
+  now released. The "this lock records taking over from you" note no longer prints when neither
+  side names a session.
+- **A review finding's `fixTask` follows its task through a move.** It is an id, so it is in
+  `_id_refs.SCALAR_REFS` now and rewritten in both of a review's finding lists; the schema
+  declares `fixTask` and `commit` on a finding, `validate-manifest` warns
+  (`crossrefs.fix_task.unresolved`) on a `fixTask` that names no task, and the demo fixture
+  carries a resolved finding beside an open one, so both shapes are documented.
+- **The stable-code lint reaches every warning the phase-gate checks emit.** `_check_phase_gate`
+  appended to the validator's `warnings` argument, a shape the walk behind `fc2` never followed,
+  so that whole family could ship a warning with no code and stay green. It now returns its
+  warnings and the caller extends, which is the shape the walk follows; the validator's output is
+  unchanged.
+- **`check-example-ledgers.py` judges pointers and ledgers over the same set, the working
+  tree's.** It read the `testEvidence` pointers off the working-tree manifests while counting only
+  the git-tracked ledgers, so a phase's second task gate in a fresh worktree went red on the first
+  gate's pointer into an evidence file not yet committed. Every manifest and every ledger the
+  working tree holds, tracked or not, is now read as it stands on disk: a pointer into an
+  uncommitted ledger resolves, a pointer naming a run no ledger holds still fails, and an
+  uncommitted edit - or a shard nothing has committed yet - caching a status its run denies or
+  naming a commit git does not have is reported before the commit.
+- **run-test-gate's machine line no longer calls runs recorded one after another a crowd.**
+  Overlap was inclusive at both ends over whole-second stamps, so a run that started in the second
+  the previous row was written always "shared this window". Windows now compare half-open at the
+  end: a run ending in second t and one starting in t are sequential, windows sharing a second or
+  more still overlap. Two windows meeting in one second are sequential only when one gate writer's
+  chain records them one after the other and the later-written run started at or after the earlier
+  one ended - so a long run written after a sub-second one is not called sequential; across
+  writers - a gate run and an outside suite, or two sessions - that second is not knowable, and
+  the machine line, the attribution of a red and `record-outside-run.py`'s contests line each say
+  so rather than claiming nobody else ran. A ledger re-chained by `audit-journal.py merge` orders
+  nothing inside the stretch it re-chained: the `evidence.merge` journal row now records where
+  that stretch begins and ends (`details.relinkedAfter`, `details.relinkedThrough`), the chain
+  there being the timestamp order the merge chose between two branches; rows appended after the
+  merge are ordered again, and each merge's stretch is walked on its own, so an earlier merge's
+  row cannot cut a later one short. When the journal cannot be read, or is disabled
+  (`journal.enabled` false, so no merge could have been recorded), no chain is trusted and the
+  line says why. The chain is read only for a pair the windows leave undecided, with its lookups built
+  once per reader pass, so the machine line stays linear in the ledger's size.
+- **`close-phase.py` stamps the landing in the tree the merge lands in, whatever manifest path it
+  was given.** Run from the main checkout with the WORKTREE's manifest - the command its own
+  dry-run printed - it merged, then wrote `mergedAt`, the derived status and the index stub into
+  the worktree's copy, so the worktree removal refused on those writes while the journal row went
+  to main. The stamp now goes to the parent branch's checkout the merge landed in, and the
+  printed follow-up names that manifest. With the parent checked out in no worktree and the
+  manifest inside the phase's own worktree there is no surviving copy, so it refuses before the
+  ref-only fast-forward (exit 2), naming the branch to check out. A branch that already landed - a
+  re-run, or a merge made by hand - is stamped in the same surviving copy, and a run with
+  `meta.merge.auto` false, which writes nothing, is not refused - unless the branch is already in
+  the parent (a pull request landed it): that run stamps, so with no surviving copy it is refused
+  too, and neither copy is written.
+- **`close-phase.py` run from the main worktree standing on the phase branch** lands it, and now
+  prints the two commands that free the branch there - `git switch <parent>` (or `--detach` when
+  another worktree holds the parent, saying it leaves a detached HEAD), then `git branch -d
+  <branch>` - instead of telling the operator to `git worktree remove` the main tree. `--dry-run`
+  words them as what the cleanup will need after the merge. `manage-worktrees.py remove` refuses
+  the main tree the same way, where it used to attempt the removal, and `add` for a branch the main
+  tree holds names that switch instead of telling the operator to remove the main tree.
+- **A branch that is its own parent is refused by `close-phase.py`** (exit 1), recorded or passed:
+  landing it lands nothing, and the cleanup planned deleting the parent branch.
+- **The history guard reads the shapes SECURITY.md listed as open the way the shell does.**
+  The line-continuation join decided whether `#` opens a comment from the raw character before it,
+  so a `#` that a removed continuation or an escaped blank had made mid-word was read as a comment
+  and the command after it went unread; it now follows the word the shell assembles, in both
+  guards that share the join. A here-string's reader is found past a wrapper that runs its argument
+  (`env sh <<<...`), by the step the heredoc head already used, now one shared function. A `case`
+  pattern's `)` inside a double-quoted substitution no longer closes it: a `case` in command
+  position carries the read past its patterns to its `esac`. A git command quoted as one phrase is
+  read as a command where a text emitter prints it and that output is run - piped into a program
+  that runs its stdin, written by a redirect or `tee` into a git hook, into a target the reading
+  cannot resolve, or into a file the same command runs. Operators for that reading are recognised
+  only outside quotes and outside comments, so a `>` inside a commit message stays text; what an
+  emitter prints is read as one line; and a group, a loop, `if` or `case` carries its pipe or
+  redirect to every stage inside it, on the sending side and the receiving one. A `case` is
+  tracked at every nesting level. `builtin` is a wrapper.
+- **`guard-secrets-read` reads a secret path split by a line continuation, and a here-string fed to
+  an interpreter.** Its shell-read arm now joins continuations before it reads a verb and a path, as
+  the shell does, and a here-string handed to python or node - behind a wrapper too - is graded by
+  the inline-eval arm, the same capability as `-c`, with a refusal that names the here-string; one
+  fed to an interpreter already running a script file, or its own inline program, is that
+  script's input, decided per interpreter (`perl -c` compiles stdin and `python -E` names no
+  program, so neither exempts it). Perl's `open` is a read the inline-eval arm names in its
+  parenthesised forms only - two-argument, with or without a `<` mode, and three-argument with a
+  mode of exactly `'<'`; the call without parentheses and a mode carrying a layer are not read,
+  a residual `SECURITY.md` names.
+- **A squash merge of a phase branch no longer reads as a scope breach.** A `git merge --squash`
+  keeps the squashed messages, `Audit-Row` trailers included, so the row naming an index or
+  audit-state commit resolved to the squash commit, and `index-scope` / `audit-state-scope` graded
+  that commit's whole file list - work included - as the scoped commit's, a breach nothing made. A
+  commit carrying a row's trailer is now graded as the scoped commit only when its subject opens
+  with the class's header (`_invariants.INDEX_HEADER` / `STATE_HEADER`, pinned equal to each
+  writer's own type and scope) and the trailer is a line of its last paragraph, indented or not.
+  Any other carrier is a gap naming it and the test it failed - the header, or the trailer's
+  place - never graded, and never a pass. A carrier without the header is read as a commit that
+  absorbed the scoped one (a squash), and the named commit is then not in this history as a commit
+  of its own unless another carrier was graded, which the gap names; a carrier with the header
+  whose trailer is not last is a copy of the scoped commit (a cherry-pick or a rebase) when that
+  commit was graded, and otherwise may be the scoped commit with a paragraph added after its
+  trailer or a squash that kept its subject - no absence is claimed for it either way. This
+  holds for a squash whose message ends with the index commit's trailer (the index commit made
+  before the work), where only the subject header tells the two apart. The
+  index commit's breach sentence and the docs now say it carries the index and the journal file
+  holding its row; the ledger merge names the shard that would not parse, when it is a shard.
+- **`audit-journal.py merge` resolves the evidence ledger too.** The ledger is hash-chained with
+  the journal's own chain and, before the per-worktree writer key, was appended on two branches
+  under one name, but `merge --file` accepted only a journal file, so every ledger conflict was
+  resolved by hand - interleaved by timestamp and re-chained with the journal's `row_hash`. A
+  `--file` in the evidence directory is now merged by the same `_journal_io.merge_rows`, with the
+  same refusals (a same-second tie that disagrees, a torn tail, a row that no longer hashes to
+  its contents, no shared prefix) and the same re-chain. No marker row is written into the
+  ledger, whose every row is read as a recorded run; the merge is recorded by an `evidence.merge`
+  journal row naming the file, whose `stateHash` also anchors the re-chained bytes. For both
+  records, a same-second tie whose rows touch disjoint targets is now ordered by content instead of
+  refused, and the order is written in the merge's record; a tie on one target, or on a row that
+  names none, is still refused. A journal row's target is its `target`; a run's targets are the
+  keys every ledger reader files it under - `latest_by_subject`'s `(scope, id)` key, now one
+  function (`_evidence_io.subject_key`), and the `taskId`/`phaseId` pair a verdict is matched by -
+  with the plan's moved task ids mapped onto the ids held now, so a `--task` run measured under
+  its phase's gate ties with that phase's sign-off run, and a moved task's old-id run ties with
+  its new-id run; a plan that cannot be read orders no ledger tie at all. The rule does not depend
+  on which side is ours, and an identical tie is ordered by content too, so both branches
+  resolving a conflict get the same order of rows - byte for byte the same file for the ledger,
+  which takes no marker row; a journal file's marker row still records its own time, actor and
+  inputs. The merge output names the journal file holding the `evidence.merge` row, which has to
+  be committed with the ledger it anchors.
+- **`audit-journal.py verify` chose between same-second anchor rows by file read order.** The row
+  that anchors a file was whichever row naming it was read last among those at the newest second,
+  so an `evidence.merge` row and a `record()` row written in one second reported the merged
+  ledger as drift or not depending on how the journal directory was listed. The choice is now
+  `_journal_io.newest_anchor`: the later row within one file, then an `evidence.merge` row over any
+  other (its hash covers bytes that already include the runs), then the greatest row content - a
+  total order the rows define. The winner is still graded, so a merge row whose hash does not
+  match the file is drift as before.
+- **A scoped commit carries the journal row that names it, so a phase can end with a clean tree.**
+  `commit-task-work`, `commit-audit-state` and `commit-manifest-index` each appended the row naming
+  their commit AFTER making it, so the row was never inside it: every run left the trail dirty on a
+  tree it had just reported as committed, and the last commit of every phase left one for somebody
+  to commit by hand. The row is now written first, keyed by a random nonce in a new `commitNonce`
+  detail, the commit message ends with an `Audit-Row: <nonce>` trailer, and the row's file is
+  staged into the same commit (`_scoped_commit.commit_with_rows`) - for the index commit, the one
+  journal file the row landed in joins the index on its allow-list, and `index-scope` allows the
+  journal beside the index. Readers resolve the SHA from the trailer with `git log --grep`
+  (`_invariants.commits_carrying`), which an amend, a rebase, a cherry-pick (both copies are read)
+  or a squash merge (whose indented bodies are read too) does not break - a fixup or reword that
+  drops the trailer leaves the row naming no commit, which is a gap, never a pass; a row still
+  carrying `commit` is read as before. A commit refused after its row was written - a hook, or git -
+  leaves an `audit.commit.withdrawn` row naming the nonce, so no row claims a commit that does not
+  exist; one whose nonce no commit carries and nobody withdrew is a gap in `audit-state-scope` and
+  `index-scope`, never a pass. `commit-audit-state` now commits a journal holding only other
+  writers' rows instead of declining it, since a row inside its commit ends the loop that declining
+  existed to prevent. An `--override-verdict` whose row cannot be written is refused before
+  anything is staged, where it used to commit and then report the missing row.
+- **A correction to the `1.4.1` entry below: `/audit:phase retarget --gate` has always REPLACED
+  a phase's gate, never appended to it.** That released entry said `--gate` appends; it did not,
+  then or now — `--gate-clear` is the load-bearing half precisely because `--gate` replaces, so an
+  emptied gate needed its own spelling. History stays as written; this line is the correction, not
+  an edit of it.
 - **`commit-task-work` committed a staged rename as a copy and skipped staged deletions.** It asked
   the index alone whether a declared path existed, and after `git mv` or `git rm` the old path is
   only in HEAD - so it was passed over, and the commit added the new file beside the old one. A path

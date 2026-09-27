@@ -195,8 +195,8 @@ An exemption for the arguments of text emitters was tried and removed — each f
 opened another way through (a later pipe, a comment ending in a backslash, a file run
 by name or by git itself), and a fail-loud guard keeps only what it can prove. Write
 the rule into a file with an editor. A shell's `-c` argument, `eval`'s argument, a
-here-string fed to a shell or an interpreter as the first word of its command
-(`sh <<<'…'`), and a `$(…)` or backquote — including one inside double quotes, which
+here-string fed to a shell or an interpreter, found past a wrapper that runs its
+argument (`sh <<<'…'`, `env sh <<<'…'`), and a `$(…)` or backquote — including one inside double quotes, which
 the lexer returns as a single word, with quotes tracked inside it — are read as
 commands of their own; a substitution this cannot read makes the whole command
 unreadable, which sends it to the raw-text patterns rather than to a reading that
@@ -223,7 +223,10 @@ allow-list of it missed a spelling that runs the body. So `cat <<'EOF' | python3
 x.py -` naming these rules in its body is refused; feed the heredoc to the script
 directly instead. A heredoc line that continues with a backslash is graded as shell.
 The rest of the heredoc's own line after the marker is command text and is graded,
-and a here-string (`<<<`) is not read as a heredoc. **An unquoted delimiter keeps the
+and a here-string (`<<<`) is not read as a heredoc - in `guard-secrets-read` a
+here-string handed to an interpreter that runs no program of its own is graded as
+inline evaluation, the same capability as `-c`, while one fed to a script run is that
+script's input. **An unquoted delimiter keeps the
 shell in the body**: with `<<EOF` the shell performs `$(…)` and backquote
 substitution inside the body before any consumer reads it, so such a body is graded
 whatever its destination. And a command that cannot be tokenized at all (an
@@ -239,19 +242,49 @@ base refused:
 - an interpreter program that starts git from inside its own code (a Python or
   Node body that runs a subprocess) is read as code, not searched for git — the
   guard reads shell text, and a program's own calls are the general residual above;
-- the line-continuation join decides whether a `#` starts a comment from the raw
-  character before it, not from the word the shell has assembled, so a `#` that
-  follows an escape can be misjudged as a comment - in the history guard, and in
-  `guard-secrets-read`'s text-emitter reading, which uses the same join;
-- a here-string's reader is recognised only as the first word of its command, not
-  behind a wrapper that runs its argument, which the heredoc reader already handles;
-- a `case` pattern's `)` inside a double-quoted substitution ends the substitution
-  early, so the rest of its body is read as quoted text;
-- a git command quoted as one phrase and sent to a shell or into a git hook file is
-  one word, and is not read as git;
-- the secret-read arm of `guard-secrets-read` does not join line continuations
-  before reading a path, and a here-string fed to an interpreter is not graded as
-  inline evaluation there.
+- a git command quoted as one phrase is read as a command only where a text
+  emitter (`echo`, `printf`, or `cat` fed a here-string) prints it and that output
+  is run: piped into a program that runs its stdin (a shell, `eval`, `source` of
+  stdin, a program named by a variable), written by a redirect or through `tee`
+  into anything under `.git/hooks/` or `.husky/`, into a file named as a git hook
+  in a directory whose name says it holds hooks, into a target the reading cannot
+  resolve (an expansion, a glob, a process substitution that runs its input), or
+  into a file a later stage of the same command runs. What an emitter prints is
+  its words as one line, a substitution inside them contributing what an emitter
+  within it prints, and a compound command (a group, a loop, `if`, `case`) carries
+  its pipe or redirect to every stage inside it. Not followed: a file run by a
+  LATER command; a `core.hooksPath` directory whose name does not say it holds
+  hooks; a file written by another program (`dd`, `cp`, an editor), and that
+  includes a pass-through filter other than `tee` (`cat`) writing what it was piped
+  through its own redirect after the pipe; a receiving group or loop that reads a
+  line into a variable and `eval`s it; a phrase assembled at run time (a `printf`
+  format, a variable's value); and output that reaches a shell through a
+  descriptor or a named pipe;
+- inside a double-quoted `$(…)`, a `)` in a comment is read as the substitution's
+  close, and so is one in a heredoc body the heredoc reading leaves in place (a
+  backslash-quoted delimiter, the second of two heredocs on one line); the rest of
+  the body is not read as commands;
+- open and tracked as BUG-12 — shapes the widened reading's own review measured as
+  not read, each waiting on a fix rather than accepted:
+  - an interpreter handed the stdin marker `-` whose first operand after it is
+    script-named or spelled as its own inline flag, an option this reading does not know
+    to take a value whose separate value is script-named, or an operand carrying an
+    expansion that ends in a script extension, is read as running a script file, so
+    a here-string fed to it is graded as that script's input although the
+    interpreter still reads its program from stdin (`guard-secrets-read`);
+  - a `case` arm whose body holds the word `in` as an ordinary argument before a
+    parenthesised group: the group is lost, so its pipe or redirect is not
+    followed;
+  - the shapes the narrowings of this reading dropped: a process substitution
+    whose own command writes, through `tee` or a redirect, into a hook or an
+    unresolvable target; a bare hook name written after a `cd` into the hooks
+    directory; and a program named by a variable behind a wrapper option that
+    takes a separate value, the exception to the variable-program rule above;
+- in `guard-secrets-read`, Perl's `open` is read as a read only in its
+  parenthesised forms: two-argument, the path string carrying an optional `<`, and
+  three-argument with a mode of exactly `'<'`; the idiomatic call without
+  parentheses, and a three-argument mode carrying a layer (`'<:raw'`, an
+  encoding), name no read target.
 
 **The plan a git command answers to is the one of the tree it runs in.** `git -C
 <dir>`, a `cd` before it, or the payload's own directory names each invocation's
@@ -464,6 +497,62 @@ the writes no static reading of a command can find; `guard-bash-writes` reports 
 Both `_config.manifest_state` and `_config.plan_gate_mode` degrade to the **least** aggressive
 verdict on any internal error, in keeping with the fail-open posture above: a crash in the
 evidence check can only relax the gate, never manufacture a denial.
+
+### The one guard that fails loud (`.claude/hooks/guard-release.py`)
+
+Everything above is **this plugin's product**, registered through `plugins/audit/hooks/hooks.json`
+and read fail-open by design: a hook that cannot decide must not stop legitimate work.
+`.claude/hooks/guard-release.py` and `.claude/hooks/arm-release-bypass.py` are **not the product** —
+they are this repository's own release discipline, wired outside that table, and they invert the
+posture on purpose. What they protect is irreversible: a pushed tag or a published GitHub Release
+cannot be taken back, so a guard that cannot read the plan must **refuse** the publishing commands
+(`git tag`, a tag push, `gh release create`) rather than wave one through on its own malfunction.
+An ordinary `git push origin main` is never touched by either state below — pushing code is not
+releasing it.
+
+The guard refuses over **a list of open bugs and a list of held phases**, each read from the plan's
+own evidence rather than restated: every bug the plugin's `effective_bug_status` still calls open,
+and every phase the plugin's `merged_phase` selects whose `full_status` answer holds it. A
+phase is held by PROVISIONAL — no full run yet recorded whose head contains what it merged
+into — and by UNKNOWN — a phase whose ancestry the evidence cannot ask at all, such as one with no
+`mergedHead`. A guard that cannot answer refuses, so an unknown phase holds the release exactly as a
+provisional one does, named with the basis `full_status` gave. A plan naming no third place
+(`meta.fullGate` absent) has no phase to hold, and the guard judges the bugs alone.
+
+Each list is read and reported on its own. A list the guard could not read is named UNKNOWN with the
+reason; the list it did read is still named by what it holds, so an unreadable bug list never hides
+a phase that holds the release, nor the reverse.
+
+The refusal names an UNKNOWN phase as **unanswerable**, beside the bugs and the provisional phases,
+with the remedy for its cause, told apart by whether the phase records a `mergedHead`. A phase with
+none is repaired by the command that records it (a `close-phase.py` re-run); a phase that re-run
+refuses to backfill stays unanswerable, and only the bypass releases over it. A phase that records a
+`mergedHead` git could not answer about — an unreachable commit, a shallow clone, a run row that
+records no head, git missing or timing out; the basis names which — is repaired by making both
+commits present or by recording a full run whose row carries its head. A re-run cannot help it,
+since a head is already recorded, and until git can answer, only the bypass releases over it. The
+refusal lists the first few phases of each kind and points at `/audit:status` for the rest; the
+arming message names every one.
+
+| What the guard is asked | Manifest and ledger read clean | Manifest cannot be read | Ledger cannot be read/verified |
+|---|---|---|---|
+| An open bug, or a provisional phase | **deny** | **deny — UNKNOWN, not "nothing to refuse"** | **deny — UNKNOWN, not "nothing to refuse"** |
+| A merged phase whose full-run answer is unknown | **deny — named unanswerable, with its basis** | **deny — UNKNOWN, not "nothing to refuse"** | **deny — UNKNOWN, not "nothing to refuse"** |
+| None of these | **allow** | **deny — UNKNOWN, not "nothing to refuse"** | **deny — UNKNOWN** when `meta.fullGate` is declared; with none the ledger is never read, so **allow** |
+
+The way past it is `arm-release-bypass.py`: typing `#release-with-bugs` in the maintainer's own
+prompt arms a single-use, time-limited slot that the guard alone can read — nothing the model
+writes can arm it, because a guard the caller can satisfy by writing the right words is not a
+guard. The arming message names every open bug, provisional phase and unanswerable phase it is
+authorising a release over, each apart, and names a list the guard could not read as UNKNOWN, through the same reading the guard itself refuses on, so a
+blanket phrase never understates what is being shipped. When the guard itself cannot be loaded, the
+message says that instead: a guard that cannot load as a hook refuses nothing, bypass or not, so
+the guard file needs fixing before any release.
+
+The tree the guard judges is resolved through `plugins/audit/hooks/_config.tree_for`, asked about
+the release command's own effective working directory — never `CLAUDE_PROJECT_DIR` read a second
+time. A release typed from a linked worktree is judged against that worktree's own plan, which may
+carry a bug or a held phase the project's copy does not.
 
 ## What the usage ledger records
 

@@ -1,6 +1,6 @@
 ---
 description: 'Audit pipeline: re-run Phase sign-off for a phase on demand (e.g. after fixes) — review, test gate, invariant check, optional runtime boot, merge.'
-argument-hint: '<phaseId>'
+argument-hint: '<phaseId> [--full]'
 allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 ---
 
@@ -57,3 +57,10 @@ The reviewer is **`phase.reviewSkill ?? meta.areas[tag].reviewSkill ?? meta.revi
 first level that is **present** answers, an explicit `null` **is** an answer (skip review; tests are
 the signer), and with several `area` tags written order decides. `/audit:status --phase <phaseId>`
 prints the resolved skill and the basis it came from; read that rather than re-deriving it.
+
+**`--full`** runs the third place after the ordinary sign-off completes: `run-test-gate.py
+<manifest> --full --record`, measured against the whole product rather than this one phase. Read
+the **full-status** line it prints — the same word (`whole`, `provisional` or `unknown`, with the
+reason) `/audit:status`, the report, the panel and the doctor all read off the same row. A plan
+with no `meta.fullGate` declared answers that the plan names no third place at all; that is not a
+failure of this command, it is the plan's own state.

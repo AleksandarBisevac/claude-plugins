@@ -594,6 +594,7 @@ def _cases(check):
     _harness.stage(check, "rw-block", _row_cases)
     _harness.stage(check, "re-block", _reentry_cases)
     _harness.stage(check, "wt-block", _wait_cases)
+    _harness.stage(check, "rk-block", _token_cases)
 
 
 # --- what a caller may do with the answer -------------------------------------
@@ -1033,6 +1034,184 @@ def _wait_cases(check):
               "gone, and a bound spent on it is a delay bought for nothing",
               code == M.E_STALE and gone < 1.0,
               "exit %s after %.3fs" % (code, gone))
+    finally:
+        shutil.rmtree(proj, ignore_errors=True)
+
+
+# --- re-entry by the holder's token, not by the session ------------------------
+# A child process run by the holder: it acquires the named lock with a zero wait,
+# prints the answer, then - when told to hold - keeps the claim until its stdin
+# closes. Spawned rather than simulated, because the question is what ANOTHER
+# PROCESS of one session is told, and a claim written by hand is not one.
+_CHILD = r"""
+import os, sys
+sys.path.insert(0, sys.argv[1])
+import _locks
+code = _locks.acquire(sys.argv[2], "index", note="child", wait=0,
+                      out=lambda _l: None)
+sys.stdout.write("%d\n" % code)
+sys.stdout.flush()
+if sys.argv[3] == "hold":
+    sys.stdin.read()
+    if _locks.took(code):
+        _locks.release(sys.argv[2], "index", out=lambda _l: None)
+"""
+
+
+# The variable a holder's token travels to its children in. Read off the module;
+# the default is only what lets this block reach its asserts against a build that
+# has no token at all, where rk1 must go red rather than the block raise.
+_TOKEN_ENV = getattr(M, "TOKEN_ENV", "AUDIT_LOCK_TOKENS")
+
+
+def _child(proj, env, hold):
+    return subprocess.Popen(
+        [sys.executable, "-c", _CHILD, os.path.dirname(os.path.abspath(M.__file__)),
+         proj, "hold" if hold else "ask"],
+        env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL)
+
+
+def _child_answer(proc):
+    line = proc.stdout.readline().decode("utf-8", "replace").strip()
+    return int(line) if line.lstrip("-").isdigit() else line
+
+
+def _token_cases(check):
+    """Another process of one session is serialised; only a carrier of the
+    holder's token, or the session behind a HAND-HELD claim, is let back in."""
+    if not shutil.which("git"):
+        _harness.skip(check, "rk1 re-entry is decided against a real claim",
+                      "git provides the shared directory a lock lives in", True)
+        return
+    proj = tempfile.mkdtemp(prefix="audit-locks-token-")
+    quiet = lambda *_a, **_k: None                      # noqa: E731
+    try:
+        subprocess.call(["git", "init", "-q", proj])
+        env = dict(os.environ, CLAUDE_CODE_SESSION_ID="s-ONE",
+                   CLAUDE_PID=str(os.getpid()))
+        env.pop(_TOKEN_ENV, None)
+        holder = _child(proj, env, hold=True)
+        try:
+            took = _child_answer(holder)
+            lines = []
+            code = M.acquire(proj, "index", session="s-ONE", pid=os.getpid(),
+                             wait=0, out=lines.append)
+            check("rk1 RED-FIRST: a claim another PROCESS of this session took for "
+                  "its own write is not re-entered - it is waited for like any "
+                  "holder, which is what keeps two parallel verbs of one session "
+                  "from writing over each other: %r" % ((took, code, lines[:1]),),
+                  took == 0 and code == M.E_LIVE)
+            peer = _child(proj, env, hold=False)
+            peer_code = _child_answer(peer)
+            peer.communicate()
+            check("rk1b ...and so is a second child of the same session that does "
+                  "not carry the holder's token: %r" % (peer_code,),
+                  peer_code == M.E_LIVE)
+        finally:
+            holder.communicate()
+
+        mine = M.acquire(proj, "index", note="parent", session="s-TWO",
+                         pid=os.getpid(), out=quiet)
+        claim = M.read_lock(os.path.join(M.lock_dir(proj), "index.lock"))
+        carried = dict(os.environ, CLAUDE_CODE_SESSION_ID="s-TWO")
+        child = _child(proj, carried, hold=False)
+        child_code = _child_answer(child)
+        child.communicate()
+        stripped = dict(carried)
+        stripped.pop(_TOKEN_ENV, None)
+        bare = _child(proj, stripped, hold=False)
+        bare_code = _child_answer(bare)
+        bare.communicate()
+        check("rk2 ALLOW: a child of the holder CARRIES its token in the "
+              "environment and is let back in - a verb's own subprocess still "
+              "gets the lock its parent holds: %r" % ((mine, child_code),),
+              mine == 0 and child_code == M.E_OURS and claim.get("token")
+              and claim.get("token") in os.environ.get(_TOKEN_ENV, "").split())
+        check("rk2b ...and the same child with the token stripped is refused, so "
+              "it is the token and not the session that let it in: %r"
+              % (bare_code,), bare_code == M.E_LIVE)
+        M.release(proj, "index", session="s-TWO", pid=os.getpid(), out=quiet)
+        check("rk3 releasing the claim takes its token out of the environment, so "
+              "a child spawned afterwards carries nothing that names a gone hold",
+              claim.get("token") not in os.environ.get(_TOKEN_ENV, "").split())
+
+        hand = M.acquire(proj, "index", note="by hand", session="s-HAND",
+                         pid=os.getppid(), handed_off=True, out=quiet)
+        hand_env = dict(os.environ, CLAUDE_CODE_SESSION_ID="s-HAND")
+        hand_env.pop(_TOKEN_ENV, None)
+        later = _child(proj, hand_env, hold=False)
+        later_code = _child_answer(later)
+        later.communicate()
+        check("rk4 ALLOW: a claim taken BY HAND (`audit-lock.py acquire`, which "
+              "exits holding it) is still this session's to work under - the "
+              "documented take-then-run-the-verbs flow - so a later process of "
+              "that session is answered as its own: %r" % ((hand, later_code),),
+              hand == 0 and later_code == M.E_OURS
+              and M.read_lock(os.path.join(M.lock_dir(proj), "index.lock"))
+              .get("handedOff") is True)
+        M.release(proj, "index", session="s-HAND", pid=os.getppid(), out=quiet)
+
+        # A CLAIM FOR ONE CALL - a server's request - is re-entered by nobody,
+        # not even another call in the same process: its token is not put where
+        # a thread beside it would find it.
+        call = M.acquire(proj, "index", note="one request", session="s-CALL",
+                         pid=os.getpid(), per_call=True, out=quiet)
+        call_claim = M.read_lock(os.path.join(M.lock_dir(proj), "index.lock"))
+        again = M.acquire(proj, "index", session="s-CALL", pid=os.getpid(),
+                          per_call=True, wait=0, out=quiet)
+        check("rk5 RED-FIRST: a per-call claim is refused to a second call of the "
+              "SAME process and session, and its token never reaches the "
+              "environment: %r" % ((call, again, call_claim.get("perCall")),),
+              call == 0 and again == M.E_LIVE and call_claim.get("perCall") is True
+              and call_claim.get("token")
+              not in os.environ.get(_TOKEN_ENV, "").split())
+        M.release(proj, "index", session="s-CALL", pid=os.getpid(), out=quiet)
+        own = M.acquire(proj, "index", session="s-OWN", pid=os.getpid(), out=quiet)
+        own2 = M.acquire(proj, "index", session="s-OWN", pid=os.getpid(), wait=0,
+                         out=quiet)
+        check("rk6 ALLOW: an ordinary claim is still this process's own - a second "
+              "acquire in it is answered as re-entry: %r" % ((own, own2),),
+              own == 0 and own2 == M.E_OURS)
+        M.release(proj, "index", session="s-OWN", pid=os.getpid(), out=quiet)
+
+        # THE TAKEOVER NOTE NEEDS A SESSION TO COMPARE. A claim recording a
+        # takeover from a holder that named no session, released by a caller that
+        # names none either, is not a takeover FROM this caller - None equals None.
+        path = os.path.join(M.lock_dir(proj), "index.lock")
+        M._write_lock(path, {"pid": os.getppid(), "hostname": platform.node(),
+                             "sessionId": "s-HOLDER", "note": "took it over",
+                             "takenOverFrom": {"pid": 12345}})
+        env_sid = os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+        try:
+            lines = []
+            code = M.release(proj, "index", pid=os.getpid(), out=lines.append)
+        finally:
+            if env_sid is not None:
+                os.environ["CLAUDE_CODE_SESSION_ID"] = env_sid
+        check("rk7 RED-FIRST: a refused release with no session on either side does "
+              "not claim the lock records taking over FROM this caller: %r"
+              % ((code, lines),),
+              code == M.E_LIVE
+              and not any("taking over from you" in x for x in lines))
+        os.unlink(path)
+
+        # A DEAD PID MEANS NOTHING ON ANOTHER HOST. The pid is probed here, where
+        # the remote holder never ran, so the host check is the whole boundary
+        # between releasing a crashed local holder and deleting a live remote one.
+        reaped = subprocess.Popen([sys.executable, "-c", "pass"])
+        reaped.wait()
+        M._write_lock(path, {"pid": reaped.pid, "hostname": "another-host",
+                             "sessionId": "s-REMOTE", "note": "remote write",
+                             "token": "t-remote", "handedOff": False})
+        lines = []
+        code = M.release(proj, "index", session="s-ME", pid=os.getpid(),
+                         out=lines.append)
+        check("rk8 ALLOW: a claim recorded on ANOTHER host is refused on release "
+              "even when its pid is not running here - liveness asked on the wrong "
+              "machine is no answer, and the claim stays: %r" % ((code, lines[:1]),),
+              code == M.E_LIVE and os.path.exists(path))
+        os.unlink(path)
     finally:
         shutil.rmtree(proj, ignore_errors=True)
 

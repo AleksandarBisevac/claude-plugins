@@ -97,6 +97,8 @@ import _report_html           # noqa: E402  (HTML fragment builders: escaping, c
 import _report_usage          # noqa: E402  (the Usage section: ledger load, charts, markdown twin)
 import _evidence_view         # noqa: E402  (the test-execution record: the only read of it)
 import _evidence_io           # noqa: E402  (WHEN this plan could first have recorded, at layer 2)
+import _invariants            # noqa: E402  (git_root_for: where the third place asks ancestry)
+import _manifest_vocab        # noqa: E402  (FULL_STATUS_UNKNOWN and the one ledger-read sentence, at layer 1)
 import _report_md             # noqa: E402  (the Markdown twin)
 import _report_page           # noqa: E402  (the whole document: vocab, table, render_html)
 import _areas                 # noqa: E402  (plan_skill_refs: which names this plan uses)
@@ -168,6 +170,82 @@ load_evidence = _evidence_view.load_evidence
 # at nothing, which is why the boundary cannot be taken off it - a plan with no
 # pointers anywhere is precisely the plan whose boundary matters most.
 boundary_for = _evidence_io.boundary_for
+
+
+def _full_run_block(manifest, manifest_path, project):
+    """Per-MERGED-phase third-place verdict, or `{}` when this plan names no
+    `meta.fullGate` at all - the report's own read of the SAME question
+    `audit-status.py`'s `full_run_block` and `_panel_composition._phase_full_run`
+    ask, so the word a reader sees here cannot disagree with the one they see
+    on the CLI or the panel.
+
+    MERGED IS `_evidence_io.merged_phase` - `mergedAt` set and an id - the one
+    predicate the status, the panel and the doctor call too. An effective
+    status of done is NOT this: a phase can be done without ever having
+    merged, and a phase reads merged before its status catches up to done.
+
+    THE ONE RESOLUTION OF THE GATE and THE ONE READ OF THE LEDGER, exactly as
+    `audit-status.py`'s docstring states them - this file re-derives neither, it
+    only asks the SAME two questions a second time because the report is a
+    second process. `head` is added beside `full_status`'s own `answer`/`basis`/
+    `runId` for a WHOLE answer only, so `_report_html._verified_line` can name
+    the commit a whole-bearing run's head resolved to without reading the
+    ledger itself; `mergedHead`, `phaseId` and `testGateBasis` are added on
+    every entry so the renderer needs nothing from `manifest` either.
+
+    A FAILURE IS AN UNKNOWN ON EVERY MERGED PHASE, never a block no phase id is
+    a key of - `_full_run_unknown` below, and `audit-status.py`'s own
+    `full_run_block` docstring for why.
+    """
+    meta = (manifest.get("meta") if isinstance(manifest, dict) else None) or {}
+    full_commands = [c for _name, c in _evidence_io.resolved_commands(
+        manifest, meta.get("fullGate"))]
+    if not full_commands:
+        return {}
+    try:
+        project_root, config = _evidence_io.project_config_for(
+            manifest_path, project)
+        git_root = _invariants.git_root_for(manifest, project_root)
+    except Exception as exc:                       # defensive; see the docstring
+        return _full_run_unknown(manifest,
+                                 _manifest_vocab.LEDGER_LOCATION_FAILED % (exc,))
+    try:
+        rows = _evidence_io.read_rows(project_root, config=config)["rows"]
+    except Exception as exc:                       # defensive; see the docstring
+        return _full_run_unknown(manifest,
+                                 _manifest_vocab.LEDGER_READ_FAILED % (exc,))
+    out = {}
+    for p in (manifest.get("phases") or []):
+        if not _evidence_io.merged_phase(p):
+            continue
+        res = dict(_evidence_io.full_status(rows, p, git_root, full_commands))
+        res["mergedHead"] = p.get("mergedHead")
+        res["phaseId"] = p.get("id")
+        res["testGateBasis"] = p.get("testGateBasis")
+        run_id = res.get("runId")
+        if run_id:
+            run_row = _evidence_io.row_by_run(rows, run_id)
+            if isinstance(run_row, dict):
+                head = (run_row.get("testedState") or {}).get("head")
+                if head:
+                    res["head"] = str(head)
+        out[p["id"]] = res
+    return out
+
+
+def _full_run_unknown(manifest, basis):
+    """Every MERGED phase answering UNKNOWN for `basis`, carrying the keys
+    `_report_html._verified_line` reads, so a failure renders as
+    "unknown - <basis>" on each merged phase rather than as no line at all -
+    the silence a plan with no `meta.fullGate` gets. The panel answers the same
+    failure the same way."""
+    return dict((p["id"], {"answer": _manifest_vocab.FULL_STATUS_UNKNOWN,
+                           "basis": basis, "runId": None,
+                           "mergedHead": p.get("mergedHead"),
+                           "phaseId": p.get("id"),
+                           "testGateBasis": p.get("testGateBasis")})
+                for p in (manifest.get("phases") or [])
+                if _evidence_io.merged_phase(p))
 
 # The document itself lives in _report_page.py (P13.3) and its Markdown twin in
 # _report_md.py — this file kept `main()`, the theme resolve and the suite that
@@ -354,14 +432,20 @@ def main(argv):
     boundary = boundary_for(manifest_path)
     summary = lib.rollup(manifest, findings, warnings, boundary=boundary)
     usage = load_usage(manifest, manifest_path)
-    evidence = load_evidence(manifest, manifest_path, boundary=boundary)
+    # The project root every disk read below resolves against - the theme, the
+    # third place's own ledger read, and (a few lines down) the panel config.
+    # One read rather than a second guess of CLAUDE_PROJECT_DIR that could
+    # answer differently.
+    _proj = os.environ.get("CLAUDE_PROJECT_DIR") or os.path.dirname(
+        os.path.abspath(manifest_path)) or "."
+    full_run = _full_run_block(manifest, manifest_path, _proj)
+    evidence = load_evidence(manifest, manifest_path, boundary=boundary,
+                             full_run=full_run)
 
     # th: resolve the look once — project theme, then the user's, then
     # the built-in — and hand the compiled sheet to every writer below. A theme
     # that failed to load says so on stderr and the report still renders: a
     # look is decoration, and decoration never takes the document down.
-    _proj = os.environ.get("CLAUDE_PROJECT_DIR") or os.path.dirname(
-        os.path.abspath(manifest_path)) or "."
     try:
         _cfg = _panel_cfg(_proj)
     except Exception:

@@ -36,11 +36,13 @@ Hard rules (non-negotiable):
   and no less than that one word.** It resolved the config for you, once, before
   spawning you; your own judgement about what "thorough" means here is not the input.
   - `full` — every gate command you were given, exactly as below.
-  - `own-tests` (the quiet default) — only the test(s) `task.tests.add` names, the
-    ones you just wrote or locked; leave the rest of `task.tests.gate` to the
-    orchestrator's own run, which is what becomes evidence either way. A `gate-only`
-    task adds no test, so there is nothing of your own to run — say so plainly rather
-    than inventing a check to report against.
+  - `own-tests` (the quiet default) — run `run-test-gate.py <m> <P> --task <T> --own --quiet`,
+    the orchestrator's prompt gives you the finished command. It runs only the test(s)
+    `task.tests.add` names, the ones you just wrote or locked, writes no row and no pointer, ever,
+    and keeps its whole output on disk rather than in your context (its own `raw log:` line, if
+    it prints one); leave the rest of `task.tests.gate` to the orchestrator's own run, which is
+    what becomes evidence either way. A `gate-only` task adds no test, so there is **nothing of
+    its own to run** — say so plainly rather than inventing a check to report against.
   - `never` — run nothing yourself; report `"gates": {}` and let the orchestrator's
     recorded run be the only measurement this task's evidence rests on.
   Whichever word applies, **report pass/fail per command you actually ran** and

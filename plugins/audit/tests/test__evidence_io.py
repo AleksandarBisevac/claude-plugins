@@ -27,12 +27,14 @@ import os
 import subprocess
 import shutil
 import sys
+import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _evidence_io as M                           # noqa: E402
 import _journal_io                                 # noqa: E402
 import _locks                                      # noqa: E402
+import _manifest_vocab                             # noqa: E402
 
 
 def _project(root, config=None):
@@ -48,6 +50,32 @@ def _project(root, config=None):
 def _cases(check):
     tmp = _harness.fixture_root("audit-evidence-")
     try:
+        # --- resolved_commands: the one home for a gate entry's resolution -----
+        rc_man = {"meta": {"buildCommands": {"lint": "ruff check .",
+                                             "test": "pytest -q"},
+                           "nodePreamble": "source ~/.nvm/nvm.sh && nvm use"}}
+        check("rc0 every entry resolves through meta.buildCommands with "
+              "meta.nodePreamble in front - the ONE resolution `full_status` "
+              "and `run-test-gate.py` both have to share: %r"
+              % (M.resolved_commands(rc_man, ["lint", "test"]),),
+              M.resolved_commands(rc_man, ["lint", "test"]) == [
+                  ("lint", "source ~/.nvm/nvm.sh && nvm use && ruff check ."),
+                  ("test", "source ~/.nvm/nvm.sh && nvm use && pytest -q")])
+        check("rc0b an entry naming no build command is carried VERBATIM, and a "
+              "blank preamble is not one: %r"
+              % (M.resolved_commands({"meta": {"nodePreamble": "  "}},
+                                     ["echo literal"]),),
+              M.resolved_commands({"meta": {"nodePreamble": "  "}},
+                                  ["echo literal"])
+              == [("echo literal", "echo literal")])
+        check("rc0c the bare command half of THIS SAME function's answer is "
+              "the one `full_status`'s `full_commands` argument reads - "
+              "pinned here so the two never drift into two different shapes "
+              "of the same word: %r"
+              % ([c for _n, c in M.resolved_commands(rc_man, ["lint"])],),
+              [c for _n, c in M.resolved_commands(rc_man, ["lint"])]
+              == ["source ~/.nvm/nvm.sh && nvm use && ruff check ."])
+
         # --- where it lives ---------------------------------------------------
         plain = _project(os.path.join(tmp, "plain"), {})
         got = M.evidence_dir(plain)
@@ -379,6 +407,187 @@ def _cases(check):
                         published=["pytest -q"]
                         )["observations"]["coverageBasis"] is None)
 
+        # --- ef8-ef10: THE OTHER FIELD A RUNNER'S OWN OUTPUT WROTE -------------
+        # `failingSuites`/`failingSuitesBasis` are `failing`'s own two rules
+        # (STEP_KEYS, redaction, a bound the writer trusts from nobody) asked of
+        # a PATH instead of a line of prose - a suite file is exactly the shape
+        # `treeMutated` and `overlap` already answer that question for.
+        _suite_leak = os.path.join(tmp, "elsewhere", "cart.test.ts")
+        _fs_step = dict(RESULT["steps"][0])
+        _fs_step["failingSuites"] = ["src/cart.test.ts", _suite_leak]
+        _fs_step["failingSuitesBasis"] = ("the 2 suite file(s) jest named as "
+                                          "failing, read from jest's FAIL "
+                                          "<path> header(s)")
+        _with_fs = dict(RESULT)
+        _with_fs["steps"] = [_fs_step]
+        _rfs = M.row_for(plain, _with_fs, "task", {"taskId": "P1.2"}, IDENT,
+                         published=["pytest -q"])
+        check("ef8 `failingSuites` CROSSES INTO THE ROW beside `failing`, "
+              "which is what `STEP_KEYS` decides: %r"
+              % (_rfs["steps"][0].get("failingSuites"),),
+              "failingSuites" in M.STEP_KEYS and "failingSuitesBasis" in M.STEP_KEYS
+              and _rfs["steps"][0]["failingSuites"][0] == "src/cart.test.ts"
+              and "jest" in _rfs["steps"][0]["failingSuitesBasis"])
+        check("ef9 ...and a path OUTSIDE the repository is tokenised on the way "
+              "in, by the same redactor `treeMutated` uses - this row is "
+              "committed, and a suite path naming somebody's machine is the "
+              "same leak one door over: %r" % (_rfs["steps"][0]["failingSuites"],),
+              _journal_io.OUTSIDE_TOKEN in _rfs["steps"][0]["failingSuites"]
+              and not any(x.startswith(tmp)
+                         for x in _rfs["steps"][0]["failingSuites"]))
+
+        _over_fs = dict(RESULT)
+        _over_fs["steps"] = [dict(RESULT["steps"][0], failingSuites=[
+            "src/s%d.test.ts" % (n,) for n in range(M.MAX_PATHS + 5)],
+            failingSuitesBasis="a caller that did not cut its own list")]
+        _rofs = M.row_for(plain, _over_fs, "task", {"taskId": "P1.2"}, IDENT,
+                          published=["pytest -q"])
+        check("ef10 ...and CUT BY THE WRITER at `MAX_PATHS`, never trusted "
+              "from the caller - the same backstop `failing`'s `ef3` holds: %r"
+              % (len(_rofs["steps"][0]["failingSuites"]),),
+              len(_rofs["steps"][0]["failingSuites"]) == M.MAX_PATHS)
+
+        # --- og1-og5: WHY a step could not run, kept beside the verdict ---------
+        # A `could-not-run` step already carries `outcome`, and until now nothing
+        # else - a derived run that skipped a listed suite, a missing interpreter
+        # and a runner's own "no tests found" all collapsed onto that one word,
+        # which is the defect this proves closed. `outcomeBasis` and `derivedGap`
+        # are the two fields `run-test-gate.observed_step`/`run_gate` already put
+        # on the STEP dict; this proves they survive into the committed row.
+        _cnr_step = dict(RESULT["steps"][0], exit=1)
+        _cnr_step["outcome"] = "could-not-run"
+        _cnr_step["outcomeBasis"] = (
+            "no test files found in /Users/%s/shop" % (_leak_user,))
+        _cnr = dict(RESULT)
+        _cnr["steps"] = [_cnr_step]
+        _rcnr = M.row_for(plain, _cnr, "task", {"taskId": "P1.2"}, IDENT,
+                          published=["pytest -q"])
+        check("og1 a `could-not-run` step keeps ITS OWN `outcomeBasis` on the "
+              "committed row - the ONE field that says why nothing was measured, "
+              "which `STEP_KEYS` has to name before `_step` will carry it: %r"
+              % (_rcnr["steps"][0].get("outcomeBasis"),),
+              "outcomeBasis" in M.STEP_KEYS
+              and "no test files found" in _rcnr["steps"][0]["outcomeBasis"])
+        check("og2 ...REDACTED on the way in, the same rule `failing` obeys: "
+              "this row is committed, and a no-verdict sentence naming a home "
+              "directory is the identical CWE-532 leak one field over: %r"
+              % (_rcnr["steps"][0]["outcomeBasis"],),
+              _journal_io.OUTSIDE_TOKEN in _rcnr["steps"][0]["outcomeBasis"]
+              and _journal_io.canonical(_rcnr).count(_leak_user) == 0)
+
+        _long_basis = dict(RESULT)
+        _long_step = dict(RESULT["steps"][0], exit=1)
+        _long_step["outcome"] = "could-not-run"
+        _long_step["outcomeBasis"] = "x" * (_journal_io.MAX_VALUE_CHARS + 50)
+        _long_basis["steps"] = [_long_step]
+        _rlb = M.row_for(plain, _long_basis, "task", {"taskId": "P1.2"}, IDENT,
+                         published=["pytest -q"])
+        check("og3 ...and BOUNDED to a size limit exactly as `failing` is, "
+              "never trusted whole from the caller - a row is hash-chained, "
+              "so an unbounded free-text field is a row of unbounded size: %r"
+              % (len(_rlb["steps"][0]["outcomeBasis"]),),
+              len(_rlb["steps"][0]["outcomeBasis"]) <= _journal_io.MAX_VALUE_CHARS)
+
+        # A derived run that answered on a NARROWER question than the phase
+        # declared is a second, DISTINCT reason a step reads `could-not-run` -
+        # `run-test-gate.run_gate` marks it with `derivedGap: True` rather than
+        # a string a reader would have to parse back out of the basis sentence.
+        _gap_step = dict(RESULT["steps"][0], exit=0)
+        _gap_step["outcome"] = "could-not-run"
+        _gap_step["outcomeBasis"] = "DERIVED RUN NAMED 1 OF 2 LISTED SUITES: unit"
+        _gap_step["derivedGap"] = True
+        _gap = dict(RESULT)
+        _gap["steps"] = [_gap_step]
+        _rgap = M.row_for(plain, _gap, "task", {"taskId": "P1.2"}, IDENT,
+                          published=["pytest -q"])
+        check("og4 a DERIVED-RUN GAP is a MARKER on the row, distinguishable "
+              "from a missing interpreter or a bare no-verdict signature - "
+              "`derivedGap` is `STEP_KEYS`'s and never a string match on the "
+              "basis sentence: %r" % (_rgap["steps"][0].get("derivedGap"),),
+              "derivedGap" in M.STEP_KEYS
+              and _rgap["steps"][0]["derivedGap"] is True
+              and _rcnr["steps"][0].get("derivedGap") is None)
+        _passed_step = dict(RESULT["steps"][0], exit=0)
+        _passed = dict(RESULT, steps=[_passed_step])
+        _rpassed = M.row_for(plain, _passed, "task", {"taskId": "P1.2"}, IDENT,
+                             published=["pytest -q"])
+        check("og5 the allow case: a PASSED step - one whose input carries "
+              "neither key - gains neither on the row. The row only gains "
+              "keys for a step this file's own caller actually set, never for "
+              "every step by default: %r" % (sorted(_rpassed["steps"][0]),),
+              "outcomeBasis" not in _rpassed["steps"][0]
+              and "derivedGap" not in _rpassed["steps"][0])
+
+        # --- suiteReader and suite_keys, the ledger's own answer to "was a
+        # test suite even run" for a gate key that is not test-shaped by name.
+        def _row_with(steps, run_id="R-sk", ts="2026-09-01T00:00:00Z"):
+            r = dict(RESULT, steps=steps)
+            return M.row_for(plain, r, "task", {"taskId": "P1.2"},
+                             dict(IDENT, runId=run_id, ts=ts),
+                             published=["pytest -q"])
+
+        sk_rows = [
+            _row_with([dict(RESULT["steps"][0], name="lint",
+                            suiteReader="none")]),
+            _row_with([dict(RESULT["steps"][0], name="test",
+                            suiteReader="jest")]),
+            _row_with([dict(RESULT["steps"][0], name="test",
+                            suiteReader="none")]),
+            _row_with([{k: v for k, v in RESULT["steps"][0].items()}]),
+        ]
+        # the fourth row's step is named the same as `RESULT["steps"][0]`
+        # ("unit") and carries NO `suiteReader` at all - unknown, unless some
+        # OTHER row answers for that name too.
+        sk = M.suite_keys(sk_rows)
+        check("sk1 a name recorded RUNNING even once is RUNNING - one row "
+              "naming `jest` for `test` settles the question for that name, "
+              "whatever another row recorded beside it: %r" % (sk,),
+              sk["running"] == ["test"])
+        check("sk2 a name that carried the field and was NEVER anything but "
+              "`none` is SILENT: %r" % (sk,),
+              sk["silent"] == ["lint"])
+        check("sk3 a name recorded ONLY in rows from before this field "
+              "existed - the key absent outright, never `none` - is UNKNOWN: "
+              "%r" % (sk,),
+              sk["unknown"] == ["unit"])
+
+        _sk_absent_then_running = [
+            _row_with([{k: v for k, v in RESULT["steps"][0].items()}]),
+            _row_with([dict(RESULT["steps"][0], suiteReader="jest")]),
+        ]
+        check("sk4 SECOND DIRECTION: a name seen BOTH ways - once with no "
+              "field, once running - is not unknown. The moment any row "
+              "answers for a name, `unknown` no longer names it: %r"
+              % (M.suite_keys(_sk_absent_then_running),),
+              M.suite_keys(_sk_absent_then_running)["unknown"] == []
+              and M.suite_keys(_sk_absent_then_running)["running"] == ["unit"])
+
+        check("sk5 ALLOW: no rows at all answers every key with an empty "
+              "list rather than raising - a plan with no ledger yet has "
+              "asked a real question and gotten a real, empty answer: %r"
+              % (M.suite_keys([]),),
+              M.suite_keys([]) == {"running": [], "silent": [], "unknown": []})
+
+        rb_rows = [
+            _row_with([RESULT["steps"][0]], run_id="R-old",
+                      ts="2026-09-01T00:00:00Z"),
+            _row_with([RESULT["steps"][0]], run_id="R-new",
+                      ts="2026-09-02T00:00:00Z"),
+            _row_with([RESULT["steps"][0]], run_id="R-new",
+                      ts="2026-09-03T00:00:00Z"),
+        ]
+        check("rr1 `row_by_run` finds the row carrying that `runId`, newest "
+              "by `ts` when more than one writer recorded the same id: %r"
+              % (M.row_by_run(rb_rows, "R-new") or {}).get("ts"),
+              (M.row_by_run(rb_rows, "R-new") or {}).get("ts")
+              == "2026-09-03T00:00:00Z")
+        check("rr2 ALLOW: an id no row carries answers None, never the newest "
+              "row in the list - a caller asking for a run that was never "
+              "recorded must not be handed somebody else's",
+              M.row_by_run(rb_rows, "R-does-not-exist") is None
+              and M.row_by_run([], "R-new") is None
+              and M.row_by_run(rb_rows, None) is None)
+
         # A RUN NOTHING ELSE ON THE ROW COULD EXPLAIN. `failed` is read back off
         # the steps, `timed-out` off a step's `outcome` and its `timeoutSeconds`,
         # `no-checks` off `ranTotal` -- but a run a stop signal cut short keeps
@@ -523,6 +732,31 @@ def _cases(check):
               % ((os.path.basename(path), os.path.basename(p2)),),
               p2 != path and os.path.dirname(p2) == edir)
 
+        # --- RED-FIRST: a CI writer names its own ledger file -------------------
+        # A SEPARATE PROJECT, not `plain` - every case below this point counts
+        # evidence FILES and ROWS in `plain`, and a write here would shift
+        # both counts out from under them.
+        writer_proj = _project(os.path.join(tmp, "writer"), {})
+        with_session = dict(row)
+        with_session["runId"] = "R-writer-session"
+        p_named = M.append_row(writer_proj, with_session, session_id="sess-9",
+                               writer="ci-42")
+        check("ev18b RED-FIRST: `--writer` reaches `append_row` and WINS over a "
+              "session id - a build's own name should not be split across files "
+              "by which session happened to invoke the shard: %r"
+              % (os.path.basename(p_named),),
+              "ci-42" in os.path.basename(p_named)
+              and "sess-9" not in os.path.basename(p_named))
+
+        rec_result = {"status": "passed", "steps": [], "testedState": {}}
+        recorded = M.record(writer_proj, rec_result, "full", {},
+                            {"runId": "R-writer-record", "sessionId": "sess-10"},
+                            writer="ci-99")
+        check("ev18c ...and the SAME name reaches a ledger file through "
+              "`record()`, not only through `append_row` called by hand: %r"
+              % (os.path.basename(recorded["path"]),),
+              "ci-99" in os.path.basename(recorded["path"]))
+
         back = M.read_rows(plain)
         check("ev19 both rows read back, and the reader says how many files it "
               "walked - 'no rows' and 'no files' are different answers and a "
@@ -531,10 +765,39 @@ def _cases(check):
               len(back["rows"]) == 2 and back["files"] == 2
               and back["unreadable"] == 0
               and sorted(r["runId"] for r in back["rows"]) == ["R1", "R2"])
+        pairs = sorted(zip([r["runId"] for r in back["rows"]],
+                           back.get("rowFiles") or []))
+        check("ev19b `rowFiles` names, per row and at the row's own index, the "
+              "BASENAME of the ledger file it was read from - a caller that "
+              "must say which file holds a run reads it here instead of "
+              "walking the directory a second time with a different decode: %r"
+              % (pairs,),
+              len(back.get("rowFiles") or []) == len(back["rows"])
+              and pairs == [("R1", os.path.basename(path)),
+                            ("R2", os.path.basename(p2))])
 
         with open(path, "a", encoding="utf-8") as fh:
             fh.write("{not json at all\n")
         torn = M.read_rows(plain)
+        check("ev20b ...and a line that never became a row adds no entry, so "
+              "`rowFiles` stays index-aligned with `rows`: %r"
+              % ((len(torn["rows"]), len(torn.get("rowFiles") or [])),),
+              len(torn.get("rowFiles") or []) == len(torn["rows"]) == 2)
+        # A torn TAIL never becomes a row object at all; a bad line in the
+        # MIDDLE does, marked unparseable - the branch the tail cannot reach.
+        mid_proj = _project(os.path.join(tmp, "rowfiles-mid"), {})
+        mid_dir = M.evidence_dir(mid_proj)
+        os.makedirs(mid_dir, exist_ok=True)
+        with open(os.path.join(mid_dir, "2026-01.mid.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write('{"runId": "M1"}\n{not json at all\n{"runId": "M2"}\n')
+        mid = M.read_rows(mid_proj)
+        check("ev20c ...nor does an unparseable line in the MIDDLE of a file: "
+              "`rowFiles` stays index-aligned with `rows`: %r"
+              % ((mid["unreadable"], mid.get("rowFiles")),),
+              mid["unreadable"] == 1
+              and [r.get("runId") for r in mid["rows"]] == ["M1", "M2"]
+              and mid.get("rowFiles") == ["2026-01.mid.jsonl"] * 2)
         check("ev20 a torn line is skipped AND COUNTED. The usage ledger drops "
               "one in silence, which is right for telemetry and wrong here: "
               "silence about a lost EVIDENCE row is the failure this file "
@@ -1060,6 +1323,30 @@ def _cases(check):
               blocked["written"] is False
               and "reconcile" in (blocked.get("reason") or ""))
         _locks.release(gitproj, "phase-P1", session="me", out=lambda *_a: None)
+
+        # ONE RULE FOR "IS THIS LOCK OURS", the lock's own. A claim another live
+        # process of this session took for its own write is that process's; a
+        # pointer written under it with no lock of its own is the lost write the
+        # lock serialises every other caller against.
+        import platform as _pf
+        _pl_path = os.path.join(_locks.lock_dir(gitproj), "phase-P1.lock")
+        _pl_claim = {"sessionId": "me", "pid": os.getppid(), "hostname": _pf.node(),
+                     "note": "another process's write", "token": "tok-elsewhere",
+                     "handedOff": False,
+                     "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        _locks._write_lock(_pl_path, _pl_claim)
+        _pl_other, _pl_why = M.pointer_lock_state(gitproj, "P1", session_id="me")
+        _locks._write_lock(_pl_path, dict(_pl_claim, handedOff=True))
+        _pl_hand, _d = M.pointer_lock_state(gitproj, "P1", session_id="me")
+        os.unlink(_pl_path)
+        check("ed8b RED-FIRST: a claim ANOTHER live process of this session took "
+              "for its own write reads `held`, as `_locks.acquire` answers it - "
+              "one rule for whose lock it is, not a second copy that still "
+              "trusts the session: %r" % ((_pl_other, _pl_why),),
+              _pl_other == "held" and "reconcile" in (_pl_why or ""))
+        check("ed8c ALLOW: the same claim taken BY HAND (`handedOff`) is still "
+              "this session's to work under, so it reads `ours`: %r" % (_pl_hand,),
+              _pl_hand == "ours")
 
         # --- C4: two events, and the second only if the move happened ------
         jproj, jpath = _manifest_project("c4")
@@ -1707,11 +1994,100 @@ def _cases(check):
               "for two causes: %r / %r"
               % (gate_side, [r.get("runId") for r in out_side]),
               gate_side == [] and [r.get("runId") for r in out_side] == ["OUT"])
-        check("wr10 an inclusive endpoint counts: two runs that met for one "
-              "second met",
-              M._overlaps((10, 20), (20, 30)) and M._overlaps((20, 30), (10, 20))
-              and not M._overlaps((10, 20), (21, 30)))
+        check("wr10 a run that STARTS in the second the other's row was written, BY THE "
+              "SAME WRITER, is sequential - half-open at the end, in both orders: "
+              "%r / %r" % (M.overlap_state((10, 20), (20, 30), ordered=True),
+                           M.overlap_state((20, 30), (10, 20), ordered=True)),
+              M.overlap_state((10, 20), (20, 30), ordered=True) == M.OVERLAP_NO
+              and M.overlap_state((20, 30), (10, 20), ordered=True) == M.OVERLAP_NO
+              and M.overlap_state((10, 20), (21, 30)) == M.OVERLAP_NO)
+        check("wr10g ...but ACROSS writers the shared boundary second orders nothing - "
+              "undecided, never asserted sequential: %r / %r"
+              % (M.overlap_state((10, 20), (20, 30)),
+                 M.overlap_state((20, 20), (10, 20), ordered=True)),
+              M.overlap_state((10, 20), (20, 30)) == M.OVERLAP_UNDECIDED
+              and M.overlap_state((20, 30), (10, 20)) == M.OVERLAP_UNDECIDED
+              and M.overlap_state((20, 20), (10, 20), ordered=True) == M.OVERLAP_NO)
+        check("wr10b SECOND DIRECTION: windows that genuinely share a second or more "
+              "still overlap - %r / %r" % (M.overlap_state((10, 20), (19, 30)),
+                                           M.overlap_state((15, 15), (10, 20))),
+              M.overlap_state((10, 20), (19, 30)) == M.OVERLAP_YES
+              and M.overlap_state((19, 30), (10, 20)) == M.OVERLAP_YES
+              and M.overlap_state((15, 15), (10, 20)) == M.OVERLAP_YES)
+        check("wr10c a run shorter than a second, stamped in the very second the other "
+              "started or ended, is one whole-second stamps cannot place either side "
+              "of it - UNDECIDED, never asserted either way: %r"
+              % (M.overlap_state((20, 20), (10, 20)),),
+              M.overlap_state((20, 20), (10, 20)) == M.OVERLAP_UNDECIDED
+              and M.overlap_state((10, 10), (10, 20)) == M.OVERLAP_UNDECIDED
+              and M.overlap_state((12, 12), (12, 12)) == M.OVERLAP_UNDECIDED)
+        # The reported shape: three task gates recorded strictly one after another,
+        # each starting in the second the previous row was written.
+        _seq = [{"runId": "A", M.STARTED_KEY: "2026-09-26T15:48:37Z",
+                 "ts": "2026-09-26T15:49:37Z"},
+                {"runId": "B", M.STARTED_KEY: "2026-09-26T15:49:37Z",
+                 "ts": "2026-09-26T15:50:39Z"},
+                {"runId": "C", M.STARTED_KEY: "2026-09-26T15:50:39Z",
+                 "ts": "2026-09-26T15:51:38Z"}]
+        _chain = M.chain_file(_seq, "2026-09.writer.jsonl")
+        _crowd = [_seamed(M.shared_the_machine, _chain, r, seams=[])[0]
+                  for r in _chain]
+        _unsure = [_seamed(M.undecided_neighbours, _chain, r, M.RUNNER_GATE,
+                           seams=[]) for r in _chain]
+        check("wr10d runs ONE writer's chain records strictly one after another are "
+              "not a crowd and not undecided either - each finds nobody else in its "
+              "window: %r / %r"
+              % ([[o.get("runId") for o in c] for c in _crowd],
+                 [[o.get("runId") for o in u] for u in _unsure]),
+              _crowd == [[], [], []] and _unsure == [[], [], []])
+        _apart = (M.chain_file([_seq[0]], "2026-09.one.jsonl")
+                  + M.chain_file([_seq[1]], "2026-09.two.jsonl"))
+        check("wr10h ...while the same two windows from TWO writers meet in a second "
+              "no chain orders - undecided, not sequential: %r"
+              % (_ids(_seamed(M.undecided_neighbours, _apart, _apart[1],
+                              M.RUNNER_GATE, seams=[])),),
+              _seamed(M.shared_the_machine, _apart, _apart[1], seams=[])[0] == []
+              and _ids(_seamed(M.undecided_neighbours, _apart, _apart[1],
+                               M.RUNNER_GATE, seams=[])) == ["A"])
+        _over = [dict(_seq[0]), dict(_seq[1], **{M.STARTED_KEY:
+                                                 "2026-09-26T15:49:30Z"})]
+        check("wr10e SECOND DIRECTION: a run that began seven seconds before the other "
+              "ended IS in its window: %r"
+              % ([o.get("runId") for o in M.shared_the_machine(_over, _over[1])[0]],),
+              [o.get("runId") for o in M.shared_the_machine(_over, _over[1])[0]]
+              == ["A"])
+        _blip = {"runId": "Z", M.STARTED_KEY: "2026-09-26T15:49:37Z",
+                 "ts": "2026-09-26T15:49:37Z"}
+        check("wr10f ...and a sub-second run stamped in the second the other ended is "
+              "reported as undecided, not as sharing the window: shared %r, "
+              "undecided %r"
+              % (M.shared_the_machine([_blip], _seq[0])[0],
+                 [o.get("runId") for o in
+                  M.undecided_neighbours([_blip], _seq[0], M.RUNNER_GATE)]),
+              M.shared_the_machine([_blip], _seq[0])[0] == []
+              and [o.get("runId") for o in
+                   M.undecided_neighbours([_blip], _seq[0], M.RUNNER_GATE)] == ["Z"])
 
+        _mixed = M.chain_file(
+            [_seq[0], dict(_seq[1], **{M.RUNNER_KEY: M.RUNNER_OUTSIDE})],
+            "2026-09.one.jsonl")
+        check("wr10i an OUTSIDE suite whose row one writer's chain holds right after a "
+              "gate run is not ordered by that chain - the suite ran where no chain "
+              "watched it - so the shared second stays undecided: %r"
+              % (_ids(_seamed(M.undecided_neighbours, _mixed, _mixed[1],
+                              M.RUNNER_GATE, seams=[])),),
+              _ids(_seamed(M.undecided_neighbours, _mixed, _mixed[1],
+                           M.RUNNER_GATE, seams=[])) == ["A"])
+        _g = {"runId": "G", M.STARTED_KEY: "2026-09-26T10:00:12Z",
+              "ts": "2026-09-26T10:00:12Z"}
+        _o = {"runId": "O", M.STARTED_KEY: "2026-09-26T10:00:05Z",
+              "ts": "2026-09-26T10:00:12Z", M.RUNNER_KEY: M.RUNNER_OUTSIDE}
+        _gv = M.attribution_of(_g, [_o])
+        check("wr11b a sub-second gate red stamped in an outside run's end second is "
+              "neither its own verdict nor contested - the whole-second stamps cannot "
+              "say, and the basis names the run: %r" % (_gv,),
+              _gv["attributed"] is None and "O" in _gv["basis"]
+              and "not knowable" in _gv["basis"])
         verdict = M.attribution_of(_mine, [_outside])
         check("wr11 a red with an outside suite in its window is CONTESTED, and "
               "the basis NAMES the rival: the one thing missing when a push's "
@@ -1819,8 +2195,86 @@ def _cases(check):
           "claim as a run that cost nothing",
           M.gate_cost_ms([{"steps": [{"name": "lint", "exit": 0}]}], "lint")
           is None)
+    check("ev47 gate_cost_measured is the denominator a MEAN divides by - "
+          "the count of steps that carried a durationMs, not `gate_tally`'s "
+          "`ran` (which counts every matching step, measured or not): "
+          "3 of the 4 rows above carry one: %r"
+          % (M.gate_cost_measured(cost_rows, "lint"),),
+          M.gate_cost_measured(cost_rows, "lint") == 3
+          and M.gate_tally(cost_rows, "lint")[0] == 4)
+    check("ev48 ...and a gate with no measured step at all reports 0, "
+          "agreeing with gate_cost_ms's own None for the same rows - the "
+          "two never disagree about which steps counted, because both "
+          "read the one walk",
+          M.gate_cost_measured([{"steps": [{"name": "lint", "exit": 0}]}],
+                               "lint") == 0)
 
     _worktree_ledger_cases(check)
+    _merge_ledger_cases(check)
+    _chain_order_cases(check)
+    _narrowed_shadow_cases(check)
+
+
+def _narrowed_shadow_cases(check):
+    """(dgr) `row_for`'s two derived-gate fields - `narrowed`, two counts and
+    no path, and `shadow`, which carries `missed`, a path list a runner's
+    own output produced and so gets the same bound and redaction
+    `treeMutated`/`overlap` already get.
+    """
+    tmp = _harness.fixture_root("audit-evidence-derived-")
+    try:
+        plain = _project(os.path.join(tmp, "plain"), {})
+        base = {"status": "passed", "durationMs": 900, "failed": [],
+                "ranTotal": 3, "coverageBasis": None, "treeBasis": "b",
+                "treeMutated": [], "overlap": None, "steps": []}
+        ident = {"runId": "R-dgr", "attempt": 1, "via": "cli"}
+        with_both = dict(base, narrowed={"listed": 1, "full": 3},
+                         shadow={"listed": 1, "full": 2,
+                                 "missed": ["tests/test_x.py"]})
+        row = M.row_for(plain, with_both, "phase", {"phaseId": "P1"}, ident,
+                        published=[])
+        check("dgr1 RED-FIRST: `row_for` carries `narrowed` and `shadow` "
+              "when the run computed them - dropped before this task, an "
+              "inventive caller's own two keys read back as absent: %r"
+              % ((row.get("narrowed"), row.get("shadow")),),
+              row.get("narrowed") == {"listed": 1, "full": 3}
+              and row.get("shadow", {}).get("listed") == 1
+              and row.get("shadow", {}).get("full") == 2
+              and row.get("shadow", {}).get("missed")
+              == ["tests/test_x.py"])
+
+        no_derived = M.row_for(plain, base, "phase", {"phaseId": "P1"}, ident,
+                               published=[])
+        check("dgr2 ALLOW: a run that computed neither field carries "
+              "neither key - absence is not a zero-length dict, and a "
+              "writer that defaulted one in would tell every other reader "
+              "this phase has a derived gate when it does not",
+              "narrowed" not in no_derived and "shadow" not in no_derived)
+
+        many_missed = ["tests/test_%d.py" % i
+                       for i in range(M.MAX_PATHS + 5)]
+        over = dict(base, shadow={"listed": 0, "full": len(many_missed),
+                                  "missed": many_missed})
+        row_over = M.row_for(plain, over, "phase", {"phaseId": "P1"}, ident,
+                             published=[])
+        check("dgr3 `shadow.missed` is cut at MAX_PATHS with a count beside "
+              "it, the same bound `treeMutated` and `overlap` already carry "
+              "- an unbounded runner-produced path list is exactly the "
+              "unbounded row size this file's own rule refuses: %r"
+              % ((len(row_over["shadow"]["missed"]),
+                 row_over["shadow"].get("missedDropped")),),
+              len(row_over["shadow"]["missed"]) == M.MAX_PATHS
+              and row_over["shadow"]["missedDropped"] == 5)
+
+        no_widen = dict(base, narrowed={"listed": 1, "full": 2, "extra": "x"})
+        row_widen = M.row_for(plain, no_widen, "phase", {"phaseId": "P1"},
+                              ident, published=[])
+        check("dgr4 an inventive caller cannot widen `narrowed` past the "
+              "two counts this file names, the same rule every other field "
+              "on this row already keeps",
+              "extra" not in row_widen["narrowed"])
+    finally:
+        _harness.remove_tree(tmp)
 
 
 def _worktree_ledger_cases(check):
@@ -1894,6 +2348,753 @@ def _worktree_ledger_cases(check):
           "files as it reads the old one", not gaps
           and {"run-a", "run-b", "run-m"} <= set(committed),
           repr((sorted(committed), gaps)))
+
+
+
+# --- em: a ledger file that diverged, merged by the journal's one merge ----------
+def _em_run(run_id, ts, task, scope="task", phase="P1"):
+    row = {"v": 1, "runId": run_id, "ts": ts, "scope": scope,
+           "phaseId": phase, "status": "passed", "steps": [], "failed": []}
+    if task is not None:
+        row["taskId"] = task
+    return row
+
+
+def _em_merge(ours, theirs, name, aliases):
+    """`merge_rows` under a plan's `aliases`. A build whose `merge_rows` takes
+    none is called without them, so a case aimed at the reader's key fails on
+    its ASSERTION there rather than raising and taking the rest down."""
+    try:
+        return M.merge_rows(ours, theirs, name, aliases=aliases)
+    except TypeError:
+        return M.merge_rows(ours, theirs, name)
+
+
+def _em_pair(name, mine, yours):
+    base = [_em_run("run-a", "2026-06-01T10:00:00Z", "P1.1")]
+    return (M.chain_file(base + [mine], name),
+            M.chain_file(base + [yours], name))
+
+
+def _seamed(fn, *args, **kwargs):
+    """`fn` told which merged stretches the ledger holds. A build whose readers
+    take no `seams` is called without them, so a case aimed at the seam fails
+    on its ASSERTION there rather than raising and taking the rest down."""
+    try:
+        return fn(*args, **kwargs)
+    except TypeError:
+        kwargs.pop("seams", None)
+        return fn(*args, **kwargs)
+
+
+def _ids(rows):
+    return [o.get("runId") for o in rows or []]
+
+
+def _gate(run_id, start, end):
+    return {"runId": run_id, M.STARTED_KEY: "2026-09-26T10:00:%02dZ" % start,
+            "ts": "2026-09-26T10:00:%02dZ" % end}
+
+
+def _chain_order_cases(check):
+    # A chain records the order rows were WRITTEN in. That is an order of runs
+    # only when the later-written run began at or after the earlier one ended.
+    _b, _a = _gate("B", 12, 12), _gate("A", 5, 12)
+    _late = M.chain_file([_b, _a], "2026-09.writer.jsonl")
+    check("co1 a run written AFTER a sub-second one but begun seven seconds "
+          "before it ended is not called sequential by the chain - the pair "
+          "is undecided, and nobody is named as sharing the window: "
+          "undecided %r, shared %r"
+          % (_ids(_seamed(M.undecided_neighbours, _late, _late[1],
+                          M.RUNNER_GATE, seams=[])),
+             _ids(_seamed(M.shared_the_machine, _late, _late[1],
+                          seams=[])[0])),
+          _ids(_seamed(M.undecided_neighbours, _late, _late[1], M.RUNNER_GATE,
+                       seams=[])) == ["B"]
+          and _seamed(M.shared_the_machine, _late, _late[1], seams=[])[0] == []
+          and _seamed(M.chain_ordered, _late, _late[1], _late[0],
+                      seams=[]) is False)
+    _seq = M.chain_file([_gate("A", 5, 12), _gate("B", 12, 20)],
+                        "2026-09.writer.jsonl")
+    check("co2 SECOND DIRECTION: the same two seconds written in run order - "
+          "the later run began in the second the earlier row was written - "
+          "stay sequential: ordered %r, undecided %r"
+          % (_seamed(M.chain_ordered, _seq, _seq[1], _seq[0], seams=[]),
+             _ids(_seamed(M.undecided_neighbours, _seq, _seq[1],
+                          M.RUNNER_GATE, seams=[]))),
+          _seamed(M.chain_ordered, _seq, _seq[1], _seq[0], seams=[]) is True
+          and _seamed(M.chain_ordered, _seq, _seq[0], _seq[1], seams=[]) is True
+          and _seamed(M.undecided_neighbours, _seq, _seq[1], M.RUNNER_GATE,
+                      seams=[]) == [])
+    check("co3 ...and a reader not told whether the ledger was ever merged "
+          "does not read order off its chain at all - the boundary second "
+          "stays undecided: %r"
+          % (_ids(_seamed(M.undecided_neighbours, _seq, _seq[1],
+                          M.RUNNER_GATE, seams=None)),),
+          _ids(_seamed(M.undecided_neighbours, _seq, _seq[1], M.RUNNER_GATE,
+                       seams=None)) == ["A"]
+          and M.chain_ordered(_seq, _seq[1], _seq[0]) is False)
+
+    # Two branches appended to one file over a shared first row; the real
+    # merge re-chains the union in timestamp order.
+    name = "2026-09.s-co.jsonl"
+    base = [_gate("R", 0, 1)]
+    ours = M.chain_file(base + [_gate("X", 5, 12)], name)
+    theirs = M.chain_file(base + [_gate("Y", 12, 20)], name)
+    res = M.merge_rows(ours, theirs, name, aliases={})
+    merged = res["rows"]
+    seams = [(res.get("relinkedAfter"), res.get("relinkedThrough"))]
+    check("co4 a ledger merge that re-chains a divergence says where the "
+          "re-linked stretch begins and ends - after the last row both copies "
+          "held, through the last row it re-chained: %r"
+          % ([res.get("relinkedAfter"), res.get("relinkedThrough")],),
+          res["ok"] and _ids(merged) == ["R", "X", "Y"]
+          and res.get("relinkedAfter") == ours[0]["hash"]
+          and res.get("relinkedThrough") == merged[-1]["hash"])
+    check("co5 ...and two runs from two branches joined by that re-chain are "
+          "not ordered by it - their shared boundary second is undecided, as "
+          "it was before the merge: merged %r, unmerged %r"
+          % (_ids(_seamed(M.undecided_neighbours, merged, merged[2],
+                          M.RUNNER_GATE, seams=seams)),
+             _ids(_seamed(M.undecided_neighbours, ours + theirs[1:], theirs[1],
+                          M.RUNNER_GATE, seams=[]))),
+          _ids(_seamed(M.undecided_neighbours, merged, merged[2], M.RUNNER_GATE,
+                       seams=seams)) == ["X"]
+          and _seamed(M.chain_ordered, merged, merged[2], merged[1],
+                      seams=seams) is False
+          and _ids(_seamed(M.undecided_neighbours, ours + theirs[1:],
+                           theirs[1], M.RUNNER_GATE, seams=[])) == ["X"])
+    tail = list(merged)
+    for row in (_gate("P", 30, 40), _gate("Q", 40, 50)):
+        tail.append(M.chain_onto(row, tail, name))
+    check("co6 SECOND DIRECTION: runs the writer appended AFTER the merge are "
+          "ordered by the chain again - the refusal covers the re-linked "
+          "stretch, not the file: %r"
+          % (_seamed(M.chain_ordered, tail, tail[4], tail[3], seams=seams),),
+          _seamed(M.chain_ordered, tail, tail[4], tail[3], seams=seams) is True
+          and _seamed(M.undecided_neighbours, tail, tail[4], M.RUNNER_GATE,
+                      seams=seams) == []
+          and _seamed(M.chain_ordered, tail, tail[3], tail[2],
+                      seams=seams) is False)
+    grown = M.chain_file(base + [_gate("X", 5, 12), _gate("Y", 12, 20)], name)
+    flat = M.merge_rows(grown[:2], grown, name, aliases={})
+    check("co7 SECOND DIRECTION: a merge with nothing to re-chain - one copy a "
+          "prefix of the other - records no stretch, and the chain orders "
+          "the file's runs as before: %r / %r"
+          % ([flat.get("relinkedAfter"), flat.get("relinkedThrough")],
+             _seamed(M.chain_ordered, flat["rows"], flat["rows"][2],
+                     flat["rows"][1], seams=[]),),
+          flat["ok"] and flat.get("relinkedAfter") is None
+          and flat.get("relinkedThrough") is None
+          and _seamed(M.chain_ordered, flat["rows"], flat["rows"][2],
+                      flat["rows"][1], seams=[]) is True)
+
+    # A second merge over a file an earlier merge re-chained: main appended Z
+    # after merge one, and a second branch forked at the original prefix.
+    main1 = M.chain_file(base + [_gate("Y", 12, 20)], name)
+    b1 = M.chain_file(base + [_gate("X", 5, 12)], name)
+    b2 = M.chain_file(base + [_gate("W", 30, 40)], name)
+    m1 = M.merge_rows(main1, b1, name, aliases={})
+    s1 = (m1.get("relinkedAfter"), m1.get("relinkedThrough"))
+    main2 = list(m1["rows"])
+    main2.append(M.chain_onto(_gate("Z", 20, 30), main2, name))
+    m2 = M.merge_rows(main2, b2, name, aliases={})
+    twice = m2["rows"]
+    s2 = (m2.get("relinkedAfter"), m2.get("relinkedThrough"))
+    by = dict((r.get("runId"), r) for r in twice)
+    answers = [(_ids(_seamed(M.undecided_neighbours, twice, by.get("W", {}),
+                             M.RUNNER_GATE, seams=order)),
+                _seamed(M.chain_ordered, twice, by.get("W", {}), by.get("Z", {}),
+                        seams=order))
+               for order in ([s1, s2], [s2, s1])]
+    check("co11 after TWO successive real merges, a run the second merge "
+          "re-chained is undecided against the run it meets - in either order "
+          "the journal lists the two stretches, so an earlier stretch cannot "
+          "cut a later one short: %r over %r" % (answers, _ids(twice)),
+          m2["ok"] and _ids(twice) == ["R", "X", "Y", "Z", "W"]
+          and answers == [(["Z"], False), (["Z"], False)])
+    _one = M.chain_index(twice, [s1])["relinked"] or set()
+    _covered = sorted(r.get("runId") for r in twice if r.get("hash") in _one)
+    check("co12 SECOND DIRECTION: one merge's stretch alone still covers only "
+          "its own rows - X and Y, not R before it nor Z and W appended after "
+          "it: %r" % (_covered,), _covered == ["X", "Y"])
+
+    # Where no merge could be recorded, or none could be read, nobody can say
+    # whether one happened - which is not "no merge happened".
+    root = _harness.fixture_root("audit-evidence-seams-")
+    try:
+        off = _project(os.path.join(root, "off"), {"journal": {"enabled": False}})
+        got = M.merge_seams(off)
+        check("co13 a DISABLED journal could have recorded no ledger merge, so "
+              "the answer is None with that reason, never the claim that none "
+              "happened: %r" % (got,),
+              got[0] is None and "disabled" in got[1])
+        on = _project(os.path.join(root, "on"), {})
+        real = _journal_io.read_all
+
+        def broken(*args, **kwargs):
+            raise IOError("JOURNAL-UNREADABLE")
+        _journal_io.read_all = broken
+        try:
+            got = M.merge_seams(on)
+        finally:
+            _journal_io.read_all = real
+        check("co14 a journal read that raises answers None, carrying the "
+              "exception's text: %r" % (got,),
+              got[0] is None and "JOURNAL-UNREADABLE" in got[1])
+        got = M.merge_seams(on)
+        check("co15 SECOND DIRECTION: a readable journal recording no merge "
+              "answers [] with no reason: %r" % (got,), got == ([], ""))
+    finally:
+        _harness.remove_tree(root)
+
+    # The chain is read only for a pair the windows leave undecided.
+    big = M.chain_file(
+        [{"runId": "r%d" % i,
+          M.STARTED_KEY: "2026-09-26T%02d:%02d:%02dZ"
+          % (i // 3600 % 24, i // 60 % 60, i % 60),
+          "ts": "2026-09-26T%02d:%02d:%02dZ"
+          % (i // 3600 % 24, i // 60 % 60, i % 60)}
+         for i in range(0, 6000, 2)], "2026-09.big.jsonl")
+    real, calls = M.chain_ordered, []
+
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return real(*args, **kwargs)
+    M.chain_ordered = counted
+    try:
+        _seamed(M.undecided_neighbours, big, big[-1], M.RUNNER_GATE, seams=[])
+        _seamed(M.shared_the_machine, big, big[-1], seams=[])
+        quiet = len(calls)
+        _seamed(M.undecided_neighbours, _seq, _seq[1], M.RUNNER_GATE, seams=[])
+        meeting = len(calls) - quiet
+    finally:
+        M.chain_ordered = real
+    check("co8 over a ledger of %d chained runs in which no two windows meet, "
+          "the chain is never consulted - the windows decide every pair: %d "
+          "call(s)" % (len(big), quiet), quiet == 0)
+    check("co9 SECOND DIRECTION: a pair meeting in one second IS put to the "
+          "chain - the count above is a count, not a wrapper nothing calls: "
+          "%d call(s)" % (meeting,), meeting == 1)
+    crowd = M.chain_file([_gate("S%d" % i, 12, 12) for i in range(5)]
+                         + [_gate("L", 5, 12)], "2026-09.writer.jsonl")
+    real, built = M.chain_index, []
+
+    def counted_index(*args, **kwargs):
+        built.append(1)
+        return real(*args, **kwargs)
+    M.chain_index = counted_index
+    try:
+        _asked = _ids(_seamed(M.undecided_neighbours, crowd, crowd[-1],
+                              M.RUNNER_GATE, seams=[]))
+    finally:
+        M.chain_index = real
+    check("co10 ...and a run meeting several others in one second builds the "
+          "chain's lookups ONCE for the pass, not once per pair: %d build(s) "
+          "for %r" % (len(built), _asked),
+          len(built) == 1 and len(_asked) == 5)
+
+
+def _merge_ledger_cases(check):
+    name = "2026-06.s-em.jsonl"
+    stamp = "2026-06-02T10:00:00Z"
+
+    # THE READER'S KEY, FIRST. A `--task` run measured under its phase's gate is
+    # recorded `scope: phase` with a task id, and `latest_by_subject` files it
+    # under the phase - the key a phase sign-off run is filed under too.
+    ours, theirs = _em_pair(name, _em_run("run-task", stamp, "P1.2",
+                                          scope="phase"),
+                            _em_run("run-signoff", stamp, None, scope="phase"))
+    res = _em_merge(ours, theirs, name, {})
+    check("em7 a --task run measured under the phase gate and a phase sign-off "
+          "run of that phase in ONE second are REFUSED, not ordered - "
+          "`latest_by_subject` files both under the phase, so their order is "
+          "which one becomes the phase's pointer: %r"
+          % (res["refusals"] or res.get("ordered"),),
+          not res["ok"] and not res["rows"] and len(res["refusals"]) == 1)
+
+    ours, theirs = _em_pair(name, _em_run("run-old", stamp, "P1.9"),
+                            _em_run("run-new", stamp, "P1.2"))
+    moved = {("task", "P1.9"): ("task", "P1.2")}
+    res = _em_merge(ours, theirs, name, moved)
+    apart = _em_merge(ours, theirs, name, {})
+    check("em8 ...and so are runs under a moved task's OLD id and its NEW one: "
+          "the plan's aliases make them one subject to every reader. The pair: "
+          "under a plan that moved nothing the same two runs ARE disjoint and "
+          "are ordered: %r / %r" % (res["refusals"], apart.get("ordered")),
+          not res["ok"] and len(res["refusals"]) == 1
+          and apart["ok"] and len(apart["ordered"]) == 1)
+
+    ours, theirs = _em_pair(name, _em_run("run-o", stamp, "P1.1"),
+                            _em_run("run-t", stamp, "P1.2"))
+    res = _em_merge(ours, theirs, name, {})
+    swapped = _em_merge(theirs, ours, name, {})
+    check("em9 two task runs of DIFFERENT tasks in one second are ordered, the "
+          "order is written for the record of the merge, and the ledger - which "
+          "takes no marker row - comes out BYTE FOR BYTE the same whichever "
+          "side is ours: %r" % (res["ordered"],),
+          res["ok"] and len(res["rows"]) == 3
+          and all(r.get("runId") for r in res["rows"])
+          and not M.verify_rows(res["rows"], name)["findings"]
+          and _journal_io.merge_text(res["rows"])
+          == _journal_io.merge_text(swapped["rows"])
+          and stamp in res["summary"] and len(res["ordered"]) == 1)
+
+    blind = M.merge_rows(ours, theirs, name)
+    check("em10 ...and with the plan NOT read (no aliases at all) which ids were "
+          "moved is unknown, so the same tie is refused rather than ordered: %r"
+          % (blind["refusals"],),
+          not blind["ok"] and len(blind["refusals"]) == 1)
+
+    x = _em_run("run-x", stamp, "P1.3")
+    y = _em_run("run-y", stamp, "P1.3")
+    one = M.chain_file([_em_run("run-a", "2026-06-01T10:00:00Z", "P1.1"),
+                        x, y], name)
+    two = M.chain_file([_em_run("run-a", "2026-06-01T10:00:00Z", "P1.1"),
+                        y, x], name)
+    res = _em_merge(one, two, name, {})
+    swapped = _em_merge(two, one, name, {})
+    check("em11 an IDENTICAL tie held in two chain orders is ordered by content "
+          "too, so both resolutions of a ledger file are one file: %r"
+          % ([r.get("runId") for r in res["rows"]],),
+          res["ok"] and swapped["ok"]
+          and _journal_io.merge_text(res["rows"])
+          == _journal_io.merge_text(swapped["rows"]))
+
+    row = _em_run("run-t", stamp, "P1.2", scope="phase")
+    check("em12 a run's targets are the readers' keys - `subject_key`, which "
+          "`latest_by_subject` files a pointer under, and the `_same_subject` "
+          "pair, a moved id mapped in both - and nothing when the plan is "
+          "unread: %r" % (M.merge_targets(row, {}),),
+          M.merge_targets(row, {}) == ("key phase P1",
+                                       "pair task=P1.2 phase=P1")
+          and M.merge_targets(_em_run("r", stamp, "P1.9"), moved)
+          == ("key task P1.2", "pair task=P1.2 phase=P1")
+          and M.merge_targets(row, None) == ()
+          and M.subject_key(row) == ("phase", "P1")
+          and M.latest_by_subject([dict(row, ts=stamp)])
+          == {("phase", "P1"): dict(row, ts=stamp)})
+
+    # THE TIE ONLY THE VERDICT PAIR PROTECTS: a task-scope run and a phase-scope
+    # run carrying the same task id are filed under different `subject_key`s, and
+    # a task commit's verdict (`_same_subject`) reads both as that task's.
+    ours, theirs = _em_pair(name, _em_run("run-task", stamp, "P1.2"),
+                            _em_run("run-under-phase", stamp, "P1.2",
+                                    scope="phase"))
+    res = _em_merge(ours, theirs, name, {})
+    check("em13 a scope:task run and a scope:phase run carrying the SAME task id "
+          "in one second are refused: their keys differ, but the verdict a task "
+          "commit is bound to reads both as that task's, so their order is "
+          "which one is newest: %r" % (res["refusals"] or res.get("ordered"),),
+          not res["ok"] and len(res["refusals"]) == 1)
+
+    tmp = _harness.fixture_root("audit-evidence-plan-")
+    try:
+        proj = _project(os.path.join(tmp, "sharded"),
+                        {"manifestPath": "docs/audit/audit-plan.json"})
+        audit = os.path.join(proj, "docs", "audit")
+        os.makedirs(os.path.join(audit, "phases"))
+        with open(os.path.join(audit, "audit-plan.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"meta": {}, "phases": [
+                {"id": "P1", "shard": "phases/P1.json"},
+                {"id": "P2", "shard": "phases/P2.json"}]}, fh)
+        with open(os.path.join(audit, "phases", "P1.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"id": "P1", "tasks": []}, fh)
+        with open(os.path.join(audit, "phases", "P2.json"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("<<<<<<< ours\n{}\n=======\n{}\n>>>>>>> theirs\n")
+        aliases, why = M.plan_aliases(proj)
+        check("em14 a plan whose SHARD will not parse is named by that shard, "
+              "not by the index that parses - the operator is sent to the file "
+              "that failed: %r" % (why,),
+              aliases is None and "docs/audit/phases/P2.json" in why
+              and "docs/audit/audit-plan.json" not in why)
+    finally:
+        _harness.remove_tree(tmp)
+
+    _full_status_cases(check)
+
+
+# --- full_status: whole, provisional, unknown, or not declared -----------------
+def _fake_git(table):
+    """A fake git for `full_status`'s injected `run` - one answer for
+    `merge-base --is-ancestor`, so a case can drive the UNKNOWN branch a real
+    repository cannot be made to answer with (a ref that will never resolve)."""
+    def run(git_root, args, timeout=None):
+        return table.get(" ".join(args[:2]), (0, "", ""))
+    return run
+
+
+def _real_two_commits(root):
+    """A REAL git repository at `root`, two sequential commits on `main`.
+
+    `{"first", "second"}` are the two commits' own shas - `first` an actual
+    ancestor of `second`, never a string this fixture invents. This is what an
+    ancestry claim needs and a fake `run` cannot give it: a case that mutated
+    `full_status` to compare `head == mergedHead` would still pass against two
+    equal strings, and only two REAL, DIFFERENT, ancestor-related commits
+    catch that.
+    """
+    os.makedirs(root, exist_ok=True)
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+          "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+
+    def sh(*args):
+        subprocess.run(git + list(args), cwd=root, check=True,
+                       capture_output=True, timeout=30)
+
+    def rev():
+        out = subprocess.run(git + ["rev-parse", "HEAD"], cwd=root, check=True,
+                             capture_output=True, timeout=30)
+        return out.stdout.decode("utf-8").strip()
+
+    sh("init", "-q")
+    with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
+        fh.write("1\n")
+    sh("add", "-A")
+    sh("commit", "-qm", "one")
+    first = rev()
+    with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
+        fh.write("2\n")
+    sh("add", "-A")
+    sh("commit", "-qm", "two")
+    second = rev()
+    return {"root": root, "first": first, "second": second}
+
+
+def _fs_row(run_id, ts, head, commands, ran_total=3, dirty_outside=(),
+           status="passed", scope=None, extra=None):
+    """One well-formed scope-`full` row: every command carried VERBATIM (as
+    `row_for`/`_step` store it when the command is in the published set), every
+    step timed, a positive count with a basis, and a clean `dirtyOutside`.
+
+    `scope` DEFAULTS TO None RATHER THAN `M.FULL_SCOPE` DIRECTLY, on purpose:
+    a default argument is evaluated once, at import time, and reaching into
+    the module under test THEN would make a red-first proof against a
+    checkout that does not carry `full_status` yet fail on the wrong missing
+    name (`FULL_SCOPE`) instead of on the one this task actually introduces.
+    """
+    scope = scope if scope is not None else M.FULL_SCOPE
+    row = {
+        "v": M.ROW_VERSION, "runId": run_id, "ts": ts, "scope": scope,
+        "status": status,
+        "steps": [{"name": "gate", "command": c, "exit": 0, "durationMs": 1000}
+                 for c in commands],
+        "testedState": {"head": head},
+        "observations": {"ranTotal": ran_total, "countsBasis": "3 checks",
+                         "dirtyOutside": list(dirty_outside)},
+    }
+    if extra:
+        row.update(extra)
+    return row
+
+
+def _full_status_cases(check):
+    tmp = _harness.fixture_root("audit-evidence-full-")
+    try:
+        # --- the two questions that need no ledger at all ----------------------
+        check("fs1 no meta.fullGate at all is NOT_DECLARED, whatever the ledger "
+              "or the phase carry - a plan naming no third place has nothing to "
+              "ask",
+              M.full_status([], {"mergedHead": "abc"}, tmp, [])["answer"]
+              == _manifest_vocab.FULL_STATUS_NOT_DECLARED)
+
+        check("fs2 a declared fullGate but no phase.mergedHead is UNKNOWN, never "
+              "PROVISIONAL - PROVISIONAL would claim a specific gap this plan "
+              "cannot measure at all",
+              M.full_status([], {"id": "P9"}, tmp, ["echo x"])["answer"]
+              == _manifest_vocab.FULL_STATUS_UNKNOWN)
+
+        # --- RED-FIRST: ancestry, never a string comparison ---------------------
+        repo = _real_two_commits(os.path.join(tmp, "repo"))
+        phase = {"id": "P1", "mergedHead": repo["first"]}
+        whole_row = _fs_row("run-whole", "2026-01-02T00:00:00Z", repo["second"],
+                            ["echo x"])
+        res = M.full_status([whole_row], phase, repo["root"], ["echo x"])
+        check("fs3 RED-FIRST: a full run's head that CONTAINS mergedHead "
+              "without EQUALLING it reads WHOLE - real commits, so a "
+              "`head == mergedHead` mutation fails on this and only ancestry "
+              "passes it: %r" % (res,),
+              res["answer"] == _manifest_vocab.FULL_STATUS_WHOLE
+              and res["runId"] == "run-whole")
+
+        # ALLOW: the SAME head, trivially its own ancestor, still reads WHOLE -
+        # the mutation this pairs with is the opposite one (an ancestry check
+        # that forgot a run can equal its own subject is not a real risk here,
+        # but the case is what tells "ancestor of" apart from "strictly older
+        # than").
+        same_head_row = _fs_row("run-same", "2026-01-02T00:00:00Z", repo["first"],
+                                ["echo x"])
+        res_same = M.full_status([same_head_row], phase, repo["root"], ["echo x"])
+        check("fs4 ALLOW: a full run measured AT mergedHead itself is also "
+              "WHOLE - a commit is its own ancestor: %r" % (res_same,),
+              res_same["answer"] == _manifest_vocab.FULL_STATUS_WHOLE)
+
+        # A head that does NOT contain mergedHead (an unrelated commit) never
+        # reads WHOLE - PROVISIONAL, naming the run that does not contain it.
+        unrelated_row = _fs_row("run-unrelated", "2026-01-02T00:00:00Z",
+                                "0" * 40, ["echo x"])
+        res_un = M.full_status([unrelated_row], phase, repo["root"], ["echo x"],
+                               run=_fake_git(
+                                   {"merge-base --is-ancestor": (1, "", "")}))
+        check("fs5 a whole-bearing run whose head does not contain mergedHead "
+              "is PROVISIONAL, naming that run: %r" % (res_un,),
+              res_un["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
+              and "run-unrelated" in res_un["basis"])
+
+        # --- RED-FIRST: a dirty tree certifies nothing --------------------------
+        dirty_row = _fs_row("run-dirty", "2026-01-02T00:00:00Z", repo["second"],
+                            ["echo x"], dirty_outside=["src/app.ts"])
+        res_dirty = M.full_status([dirty_row], phase, repo["root"], ["echo x"])
+        check("fs6 RED-FIRST: a full run on a dirty tree never reads WHOLE, "
+              "even when its head really does contain mergedHead: %r"
+              % (res_dirty,),
+              res_dirty["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
+              and "DIRTY TREE" in res_dirty["basis"])
+
+        # A row that predates the dirtyOutside field is disqualified the same
+        # way - "unknown whether it was clean" is not "known clean".
+        no_dirty_key = _fs_row("run-nokey", "2026-01-02T00:00:00Z",
+                               repo["second"], ["echo x"])
+        del no_dirty_key["observations"]["dirtyOutside"]
+        res_nokey = M.full_status([no_dirty_key], phase, repo["root"], ["echo x"])
+        check("fs7 a row that never recorded dirtyOutside cannot be told clean, "
+              "so it is disqualified too: %r" % (res_nokey,),
+              res_nokey["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL)
+
+        # --- RED-FIRST: a hand-typed row that counted nothing -------------------
+        no_count_row = {"v": M.ROW_VERSION, "runId": "run-empty",
+                        "ts": "2026-01-02T00:00:00Z", "scope": M.FULL_SCOPE,
+                        "status": "passed", "steps": [],
+                        "testedState": {"head": repo["second"]}}
+        res_empty = M.full_status([no_count_row], phase, repo["root"], ["echo x"])
+        check("fs8 RED-FIRST: a hand-typed row with status passed and no steps "
+              "is refused as whole-bearing rather than read as WHOLE: %r"
+              % (res_empty,),
+              res_empty["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
+              and "counted nothing" in res_empty["basis"])
+
+        # --- RED-FIRST: subset and reordering never satisfy fullGate ------------
+        subset_row = _fs_row("run-subset", "2026-01-02T00:00:00Z", repo["second"],
+                             ["echo a", "echo b"])
+        res_subset = M.full_status([subset_row], phase, repo["root"],
+                                   ["echo a", "echo b", "echo c"])
+        check("fs9 RED-FIRST: a row whose commands are a STRICT SUBSET of "
+              "fullGate is disqualified by more than a length compare would "
+              "catch on its own, and the message names the count: %r"
+              % (res_subset,),
+              res_subset["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
+              and "2 OF 3" in res_subset["basis"])
+
+        reorder_row = _fs_row("run-reorder", "2026-01-02T00:00:00Z",
+                              repo["second"], ["echo b", "echo a"])
+        res_reorder = M.full_status([reorder_row], phase, repo["root"],
+                                    ["echo a", "echo b"])
+        check("fs10 RED-FIRST: a row whose commands are a REORDERING of "
+              "fullGate (same length) is refused too - a length-only compare "
+              "would let this one through: %r" % (res_reorder,),
+              res_reorder["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
+              and "verbatim" in res_reorder["basis"])
+
+        # --- RED-FIRST: the ledger is the only source ---------------------------
+        phase_with_stale_cache = {"id": "P1", "mergedHead": repo["first"],
+                                  "fullEvidence": {"status": "whole",
+                                                    "runId": "some-old-run"}}
+        res_cache = M.full_status([unrelated_row], phase_with_stale_cache,
+                                  repo["root"], ["echo x"],
+                                  run=_fake_git(
+                                      {"merge-base --is-ancestor": (1, "", "")}))
+        check("fs11 RED-FIRST: a stale phase.fullEvidence claiming whole is "
+              "never consulted - the answer comes from the ledger alone: %r"
+              % (res_cache,),
+              res_cache["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL)
+
+        # --- RED-FIRST: git's own could-not-ask is UNKNOWN, never folded in -----
+        res_128 = M.full_status(
+            [whole_row], phase, repo["root"], ["echo x"],
+            run=_fake_git({"merge-base --is-ancestor":
+                          (128, "", "fatal: bad object\n")}))
+        check("fs12 RED-FIRST: git answering 128 (could not be asked) is "
+              "UNKNOWN, never folded into PROVISIONAL - a could-not-ask is not "
+              "the same claim as a definite 'does not contain': %r" % (res_128,),
+              res_128["answer"] == _manifest_vocab.FULL_STATUS_UNKNOWN)
+
+        # The walk does not stop at the first whole-bearing row it tries: two
+        # rows both measured at a head that contains mergedHead, newest first,
+        # and the newest one still answers CONTAINED rather than the loop
+        # somehow needing a second pass over an older one.
+        older_whole = _fs_row("run-older-whole", "2026-01-01T00:00:00Z",
+                              repo["second"], ["echo x"])
+        res_two = M.full_status([older_whole, whole_row], phase, repo["root"],
+                                ["echo x"])
+        check("fs13 two whole-bearing rows, both containing mergedHead: the "
+              "newest one answers and names itself, not the older one: %r"
+              % (res_two,),
+              res_two["answer"] == _manifest_vocab.FULL_STATUS_WHOLE
+              and res_two["runId"] == "run-whole")
+
+        # --- ALLOW: no full row at all is PROVISIONAL, not UNKNOWN -------------
+        res_none = M.full_status([], phase, repo["root"], ["echo x"])
+        check("fs14 ALLOW: a plan with mergedHead and fullGate but no full run "
+              "ever recorded is PROVISIONAL, not UNKNOWN or WHOLE: %r"
+              % (res_none,),
+              res_none["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL)
+
+        # --- the newest WHOLE-BEARING run, named beside the answer ------------
+        # The fixture separates "the run full_status's answer names" from "the
+        # newest run that could bear whole": the newest row is disqualified (a
+        # dirty tree, status still passed), so a reading that took the moment
+        # off `runId` in the disqualified-only ledger, or off the newest row
+        # of any kind, answers the dirty run and goes red here.
+        newest_dirty = _fs_row("run-dirty-newest", "2026-01-03T00:00:00Z",
+                               repo["second"], ["echo x"],
+                               dirty_outside=["src/app.ts"])
+        older_bearing = _fs_row("run-bearing", "2026-01-01T00:00:00Z",
+                                "0" * 40, ["echo x"])
+        not_contained = _fake_git({"merge-base --is-ancestor": (1, "", "")})
+        res_wb = M.full_status([older_bearing, newest_dirty], phase,
+                               repo["root"], ["echo x"], run=not_contained)
+        check("fs19 RED-FIRST: full_status names the newest WHOLE-BEARING run "
+              "and its moment beside its answer, passing over a newer run on "
+              "a dirty tree: %r" % (res_wb,),
+              res_wb.get("wholeRunId") == "run-bearing"
+              and res_wb.get("wholeRunTs") == "2026-01-01T00:00:00Z"
+              and res_wb["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL)
+
+        res_dq = M.full_status([newest_dirty], phase, repo["root"], ["echo x"])
+        check("fs20 RED-FIRST: a ledger holding only a disqualified passed run "
+              "names NO whole-bearing run and no moment, while `runId` still "
+              "names the disqualified run its basis is about: %r" % (res_dq,),
+              "wholeRunId" in res_dq and res_dq["wholeRunId"] is None
+              and "wholeRunTs" in res_dq and res_dq["wholeRunTs"] is None
+              and res_dq["runId"] == "run-dirty-newest")
+
+        res_wh = M.full_status([whole_row], phase, repo["root"], ["echo x"])
+        check("fs21 ALLOW: a WHOLE answer names its run as the newest "
+              "whole-bearing one too, with that run's own moment: %r"
+              % (res_wh,),
+              res_wh.get("wholeRunId") == "run-whole"
+              and res_wh.get("wholeRunTs") == "2026-01-02T00:00:00Z")
+
+        # --- which phases are merged: one predicate every surface calls -------
+        cases = [
+            ({"id": "P1", "mergedAt": "2026-01-01T00:00:00Z"}, True),
+            ({"id": "P1", "mergedAt": "2026-01-01T00:00:00Z",
+              "status": "in_progress"}, True),
+            ({"mergedAt": "2026-01-01T00:00:00Z", "status": "done"}, False),
+            ({"id": None, "mergedAt": "2026-01-01T00:00:00Z"}, False),
+            ({"id": "P1", "status": "done"}, False),
+            ({"id": "P1", "mergedAt": ""}, False),
+            ("P1", False),
+            (None, False),
+        ]
+        wrong = [(p, want) for p, want in cases
+                 if M.merged_phase(p) is not want]
+        check("mp1 RED-FIRST: a phase is merged exactly when it carries "
+              "mergedAt and an id - a stored status of done without mergedAt "
+              "is not merged, an in_progress one with mergedAt is, and an "
+              "id-less one never is: %r" % (wrong,),
+              not wrong)
+
+        # --- "newest" is the newest MOMENT, never the greatest string -------
+        # Each pair below is ordered one way as text and the other way as
+        # time, so an ordering by the stamp's spelling picks the wrong run.
+        offset_later = _fs_row("run-offset", "2026-01-02T01:00:00+02:00",
+                               "0" * 40, ["echo x"])
+        utc_newer = _fs_row("run-utc", "2026-01-01T23:30:00Z", "0" * 40,
+                            ["echo x"])
+        res_off = M.full_status([offset_later, utc_newer], phase, repo["root"],
+                                ["echo x"], run=not_contained)
+        check("fs22 RED-FIRST: a stamp with an offset is ordered by the moment "
+              "it names - the UTC run half an hour later is the newest, though "
+              "its text sorts first the other way: %r" % (res_off,),
+              res_off.get("wholeRunId") == "run-utc"
+              and res_off["runId"] == "run-utc")
+
+        frac_newer = _fs_row("run-frac", "2026-01-01T10:00:00.500Z", "0" * 40,
+                             ["echo x"])
+        whole_second = _fs_row("run-whole-second", "2026-01-01T10:00:00Z",
+                               "0" * 40, ["echo x"])
+        res_frac = M.full_status([whole_second, frac_newer], phase,
+                                 repo["root"], ["echo x"], run=not_contained)
+        check("fs23 RED-FIRST: a fractional second is later than the whole "
+              "second it extends, though a text sort puts it first: %r"
+              % (res_frac,),
+              res_frac.get("wholeRunId") == "run-frac"
+              and res_frac.get("wholeRunTs") == "2026-01-01T10:00:00.500Z")
+
+        undated = _fs_row("run-undated", "not-a-moment", "0" * 40, ["echo x"])
+        dated = _fs_row("run-dated", "2026-01-01T00:00:00Z", "0" * 40,
+                        ["echo x"])
+        res_und = M.full_status([dated, undated], phase, repo["root"],
+                                ["echo x"], run=not_contained)
+        check("fs24 RED-FIRST: a run whose ts will not parse is never the "
+              "newest whole-bearing run, though its text sorts above every "
+              "real stamp: %r" % (res_und,),
+              res_und.get("wholeRunId") == "run-dated"
+              and res_und["runId"] == "run-dated")
+
+        res_only = M.full_status([undated], phase, repo["root"], ["echo x"],
+                                 run=not_contained)
+        check("fs25 a ledger whose only whole-bearing run has no readable ts "
+              "names no whole-bearing moment, yet the answer still names that "
+              "run rather than claiming none was recorded: %r" % (res_only,),
+              res_only["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
+              and res_only["runId"] == "run-undated"
+              and res_only.get("wholeRunId") is None
+              and res_only.get("wholeRunTs") is None
+              and "never been recorded" not in res_only["basis"])
+
+        contains = _fake_git({"merge-base --is-ancestor": (0, "", "")})
+        res_und_whole = M.full_status([undated], phase, repo["root"],
+                                      ["echo x"], run=contains)
+        check("fs26 ALLOW: a run with no readable ts still answers the "
+              "ancestry question it measured - an unreadable moment says "
+              "nothing about the head it ran on: %r" % (res_und_whole,),
+              res_und_whole["answer"] == _manifest_vocab.FULL_STATUS_WHOLE
+              and res_und_whole["runId"] == "run-undated")
+
+        # --- reconcile: a full row moves nothing and refuses nothing -----------
+        proj = _project(os.path.join(tmp, "recon"),
+                        {"manifestPath": "docs/audit/audit-plan.json"})
+        manifest_path = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(manifest_path))
+        with open(manifest_path, "w", encoding="utf-8") as fh:
+            json.dump({"meta": {}, "phases": []}, fh)
+        M.append_row(proj, whole_row)
+        res_recon = M.reconcile(proj, manifest_path)
+        check("fs15 a ledger holding only a scope:full row reconciles clean - "
+              "`subject_key` gives it no key (no phaseId, no taskId), so it "
+              "moves nothing and refuses nothing rather than being chased as "
+              "a phase pointer that does not exist: %r" % (res_recon,),
+              res_recon["moved"] == [] and res_recon["refused"] == []
+              and res_recon["subjects"] == 0)
+
+        # --- _same_subject / reusable_run: a head arm, widen-only --------------
+        head1 = _fs_row("run-h1", "2026-01-02T00:00:00Z", "h1", ["echo x"],
+                        extra={"reuseKey": "k1"})
+        head2 = _fs_row("run-h2", "2026-01-03T00:00:00Z", "h2", ["echo x"],
+                        extra={"reuseKey": "k1"})
+        phase_scope_row = {"runId": "run-phase", "ts": "2026-01-04T00:00:00Z",
+                           "scope": "phase", "status": "passed",
+                           "phaseId": "P1", "reuseKey": "k1"}
+        reused = M.reusable_run([head1, head2, phase_scope_row], M.FULL_SCOPE,
+                                {"head": "h1"}, "k1", ["passed"])
+        check("fs16 WIDEN-ONLY: reusable_run over scope:full matches the row "
+              "measured at the SAME head and never the other head or a "
+              "phase-scope row sharing the same reuseKey: %r"
+              % (reused and reused.get("runId"),),
+              reused is not None and reused["runId"] == "run-h1")
+        check("fs17 ...and the taskId/phaseId loop alone would have called "
+              "both full rows the same subject (neither carries either key) - "
+              "`_same_subject` needs the head arm for the two to disagree: %r"
+              % (M._same_subject(head1, {"head": "h2"}),),
+              M._same_subject(head1, {"head": "h1"})
+              and not M._same_subject(head1, {"head": "h2"}))
+    finally:
+        _harness.remove_tree(tmp)
 
 
 def _selftest():

@@ -156,6 +156,66 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   precedence, or ceasing to read a verdict as sign-off, is a major. What is not promised is the
   wording surfaces use for the state in between ("sign-off due"), under the standing exclusion
   for a command's wording below.
+- **`meta.phaseGate` and `meta.gateBudgetMs` are under the same promise, and absence keeps
+  meaning today's behaviour byte-for-byte.** With no `meta.phaseGate` at all, a new phase's
+  default gate is every `meta.buildCommands` key, in `buildCommands` order — exactly what
+  `/audit:phase add` wrote before either key existed. `phaseGate.always` alone only REORDERS that
+  default, putting the named keys first; it drops nothing on its own. With no `phaseGate.exclude`,
+  nothing is dropped from the default either. With no `meta.gateBudgetMs`, nothing is graded on
+  cost — `/audit:doctor`'s gate-economy row says so as an OK, never as silence. **A task's derived
+  gate reading `meta.phaseGate.always` when its own files name no suite to narrow to
+  (`tests.gateBasis: gate-only-no-suite`) moves no promise on this list either**: a NEW task's
+  derived gate has never been a promised value — only a manifest key a release *reads* is, and
+  the derivation this adds is one more shape that reading takes.
+- **`meta.phaseGate.mode`, `meta.coupling`, `phase.testGateDerived` and `phase.testGateBasis` are
+  under the same promise, and each absence is its own documented reading, never a gap.**
+  **`mode` absent means no PHASE-level derivation is ever computed** — `always`/`exclude` alone
+  still shape the wide gate exactly as they did before either key existed, and no narrower gate
+  is ever asked for. **`meta.coupling` absent means no learned arm contributes** — a derivation
+  still runs on `tests.add`, the import-graph listing, changed files and the last recorded
+  failure alone, which is exactly today's behaviour for a plan that has never coupled a test to
+  a source by hand. **`phase.testGateDerived` absent means `run-test-gate.py` prints no NARROWED
+  line and grades no derived-mismatch `could-not-run`** — a run against a phase that has never
+  derived a gate reads exactly as it did before either key existed. **`phase.testGateBasis`
+  absent means the undeclared default** — the same reading `tests.gateBasis` carries at task
+  scope: nothing has narrowed the gate and there is no reason string to read.
+  `derive-phase-gate.py` writes `testGateBasis` together with `testGateDerived`, so the two
+  are absent or present as a pair. Ceasing to read any of the
+  four, or reversing what its absence means, is a major.
+- **`meta.fullGate`, `phase.mergedHead` and `phase.mergedHeadAt` are under the same promise,
+  and each absence is its own documented reading, never a gap.** **`meta.fullGate` absent means
+  this plan names no third place at all** — no phase is ever provisional for lack of one,
+  `run-test-gate.py --full` refuses rather than measuring nothing, and the
+  `provisional`/`stale-full-run` status conditions are inert on every surface that grades them.
+  **`phase.mergedHead` absent means ancestry cannot be asked at all**, so a merged phase reads
+  `unknown` rather than `provisional` — a specific gap this plan has no way to measure is never
+  claimed in its place. **`phase.mergedHeadAt` absent means `mergedHead` is the recovered
+  commit** described next, and `stale-full-run` measures from `mergedAt`; present, it means
+  `mergedHead` was recorded after the fact, and `stale-full-run` measures from it instead.
+  `phase.mergedHead` is written into a plan only by `close-phase.py` (the demo generator stamps
+  its own fixture); a plan that never adopts the third
+  place behaves exactly as it did before any of the three existed. Ceasing to read any of them,
+  or reversing what its absence means, is a major.
+- **`phase.mergedHead` keeps two readings, and `phase.mergedHeadAt` keeps telling them apart.**
+  Without `mergedHeadAt`, `mergedHead` reads as the commit recovered from the parent's
+  first-parent chain as the one that brought the phase branch's tip in. With `mergedHeadAt`, it
+  reads as the parent's head at that moment, recorded with the branch gone and held to every task
+  commit the phase records — and nothing more is proved: a wrong parent that holds every recorded
+  task commit passes that check, and it says nothing about work no task recorded. What is
+  promised is the pair of readings and which key selects one — never which commit a given close
+  will find.
+  **The caveat is historical, and it is narrow.** No released version wrote `mergedHead` at all
+  (the key first appears under *Unreleased* in `CHANGELOG.md`), but a plan written by an
+  unreleased build from before `mergedHeadAt` existed may carry an unmarked `mergedHead` that is
+  the parent's head at close time rather than the recovered commit, and `close-phase.py` never
+  replaces a head already recorded.
+- **The `provisional` and `stale-full-run` status conditions are opt-in, and `DEFAULT_GATE` is
+  unchanged by their addition.** `--fail-on` is what turns either on; a plan that has never
+  declared `meta.fullGate` or recorded a full run fails no build over a condition it never
+  asked for.
+- **The evidence row's `outcomeBasis` and `derivedGap` step keys are additive.** A row written
+  before either existed carries neither key, which is the true reading for it, and a passed
+  step's row is unchanged.
 - **A ledger written before the evidence rows were hash-chained keeps verifying.**
   Rows now carry `prev` and `hash`; rows written by an earlier release carry neither,
   and `audit-journal.py verify` reports those as a **counted warning naming what is
@@ -290,7 +350,10 @@ depending on an implementation:
 - the rendered report's HTML, its DOM and its Markdown twin,
 - the audit trail's row shape, the usage ledger's NDJSON fields, and the evidence
   record's — all three are files this plugin writes and re-derives; the manifest's
-  `testEvidence` block is the interface, and an evidence row is not,
+  `testEvidence` block is the interface, and an evidence row is not. The block's
+  `gradedBy` (a group member's copy of its carrier's pointer) and a phase review's
+  `noEvidenceReason` and `acceptedCommits` are additive keys; a manifest without them
+  validates and reads exactly as before,
 - **the audit trail's file names.** A journal or evidence file is named by its month
   and its writer, and the writer has already been refined once: a linked worktree
   (git's answer, asked where `gitRoot` points) writes `<month>.<session>.wt-<key>.jsonl`
@@ -327,6 +390,15 @@ depending on an implementation:
   whose exit code changed was already not getting what it asked for. It is recorded here
   rather than passed over because an exit code moved from 0 to 2 on a shipped command, and a
   pipeline that read a discarded flag as success is a pipeline that now stops,
+- **a `passed` sign-off with no gate run behind it — and it changed.** `audit-task.py
+  signoff --verdict passed` (`/audit:phase signoff`) used to write the verdict whatever the
+  ledger held; it now **exits 2** unless the phase's newest recorded gate run binds its work,
+  or `--no-evidence-reason "<why>"` is passed and recorded. Unlike the flags entry above,
+  something that used to take effect now does not: a pipeline that signed off without
+  recording a gate run is a pipeline that now stops, and the repair is the gate run or the
+  reason. `close-phase.py`'s refusal for a phase that records no branch and whose composed
+  name is not one moved from **exit 4 to exit 1**: git answered, and the command is what has
+  to change (`--branch`),
 - **the id `/audit:phase add` allocates when you do not pass `--id`.** It was the lowest free
   `P<n>` and is the **highest in use plus one**. The taken set is unchanged — live phases and
   every id a parked proposal reserves — and `--id` still overrides it. The old rule re-minted

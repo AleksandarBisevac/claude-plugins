@@ -22,6 +22,7 @@ where FINISHED means done or cancelled, since a cancelled task is settled.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import json
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -275,6 +276,42 @@ def _cases(check):
           % ([M.tests_add_path(v) for v in (None, 7, "", "   ", [])],),
           [M.tests_add_path(v) for v in (None, 7, "", "   ", [])]
           == [None] * 5)
+
+    # --- what a runner printed AS A TEST IT RAN, moved here from
+    # `run-test-gate.py` (_TEST_MARKS, _TEST_DIRS, _subject_of, _segments,
+    # _is_suite_path) and from `audit-task.py` (_gate_entry_paths), beside
+    # `tests_add_path` above - the same filename bound, asked of a different
+    # field by two entry points that cannot import one another. -------------
+    check("sp1 `is_suite_path` is public here and gained ONE widening in the "
+          "move: a pytest `test_` PREFIX outside a test directory reads as a "
+          "suite path too - the plan gate's own default `exemptGlobs` already "
+          "grants `**/test_*.*` a test-file reading, and this file had none "
+          "at all: %r" % (getattr(M, "is_suite_path", None),),
+          hasattr(M, "is_suite_path")
+          and M.is_suite_path("pkg/test_orders.py") is True)
+    check("sp2 ...and the widening is CLASSIFICATION ONLY: `subject_of` stays "
+          "SUFFIX-only, because a bare prefix would re-spell a path onto "
+          "another file's stem, and an ordinary `testing.py` outside a test "
+          "directory still reads as ordinary source - the ALLOW pair this "
+          "widening must not touch",
+          hasattr(M, "subject_of") and hasattr(M, "is_suite_path")
+          and M.subject_of("pkg/test_orders.py") is None
+          and M.is_suite_path("src/testing.py") is False)
+    check("sp3 `gate_entry_paths` moved here too, beside the filename bound "
+          "it shares with `tests_add_path` - a gate entry's flags, selectors "
+          "and shard fractions read as what they are and not as paths: %r"
+          % (getattr(M, "gate_entry_paths", None),),
+          hasattr(M, "gate_entry_paths")
+          and M.gate_entry_paths("npm test -- src/a.test.ts")
+          == ["src/a.test.ts"]
+          and M.gate_entry_paths("yarn test --shard 1/4") == [])
+    check("sp4 `TEST_MARKS`, `TEST_DIRS` and `path_segments` are public here "
+          "too - the whole group `run-test-gate.py` used to carry under a "
+          "leading underscore, MOVED rather than copied",
+          hasattr(M, "TEST_MARKS") and ".test" in M.TEST_MARKS
+          and hasattr(M, "TEST_DIRS") and "tests" in M.TEST_DIRS
+          and hasattr(M, "path_segments")
+          and M.path_segments("src/a/b.py") == ["src", "a"])
 
     # THE RULE, driven through the WALK it now rides - one phase carrying the
     # same offending entry at four statuses, so what separates the verdicts is
@@ -933,6 +970,207 @@ def _cases(check):
                                  "previous": {"id": "P2.1", "phase": "P2"}})])])
     check("mo6 SECOND DIRECTION: a clean chain draws neither: %r" % (w,),
           not [x for x in w if "live task" in x or "both" in x])
+
+    # --- the one phase-gate default -------------------------------------------
+    check("pg1 `phase_gate_default` exists and puts `always` FIRST, then every "
+          "OTHER buildCommands key in buildCommands order: %r"
+          % (getattr(M, "phase_gate_default", None)
+             and M.phase_gate_default(
+                 {"buildCommands": {"test": "x", "lint": "y", "coverage": "z"},
+                  "phaseGate": {"always": ["lint"]}}),),
+          hasattr(M, "phase_gate_default")
+          and M.phase_gate_default(
+              {"buildCommands": {"test": "x", "lint": "y", "coverage": "z"},
+               "phaseGate": {"always": ["lint"]}})["entries"]
+          == ["lint", "test", "coverage"])
+    check("pg2 ...and `exclude` naming every key with no `always` empties the "
+          "default - the mutation to prove this is watched, not merely "
+          "asserted (skip the empty check -> red)",
+          hasattr(M, "phase_gate_default")
+          and M.phase_gate_default(
+              {"buildCommands": {"test": "x", "lint": "y", "coverage": "z"},
+               "phaseGate": {"exclude": ["test", "lint", "coverage"]}})
+              ["entries"] == [])
+    check("pg3 ...and with NO meta.phaseGate at all, the default is every "
+          "buildCommands key, in buildCommands order - byte-identical to "
+          "before this field existed (mutation: sort the keys -> red)",
+          hasattr(M, "phase_gate_default")
+          and M.phase_gate_default(
+              {"buildCommands": {"zeta": "x", "alpha": "y", "mid": "z"}})
+              ["entries"] == ["zeta", "alpha", "mid"])
+    check("pg4 `phase_gate_suite_gap` answers the CERTAIN arm with no evidence "
+          "at all: a default emptied by `exclude` with no `always` runs no "
+          "suite, whatever the ledger says",
+          hasattr(M, "phase_gate_suite_gap")
+          and M.phase_gate_suite_gap(
+              {"meta": {"buildCommands":
+                        {"test": "x", "lint": "y", "coverage": "z"},
+                        "phaseGate":
+                        {"exclude": ["test", "lint", "coverage"]}}})
+              is not None
+          and "phase gate runs no suite" in M.phase_gate_suite_gap(
+              {"meta": {"buildCommands":
+                        {"test": "x", "lint": "y", "coverage": "z"},
+                        "phaseGate":
+                        {"exclude": ["test", "lint", "coverage"]}}}))
+    check("pg5 ...and WITHOUT exclude the default is today's set, so the gap "
+          "is never asked - a manifest with no phaseGate at all draws no "
+          "'runs no suite' sentence",
+          hasattr(M, "phase_gate_suite_gap")
+          and M.phase_gate_suite_gap(
+              {"meta": {"buildCommands": {"test": "x"}}}) is None)
+    check("pg6 a blank-string buildCommands key never enters the default gate, "
+          "with no meta.phaseGate at all (mutation: drop the build_keys filter "
+          "-> red)",
+          hasattr(M, "phase_gate_default")
+          and M.phase_gate_default(
+              {"buildCommands": {"": "x", "lint": "y"}})["entries"]
+          == ["lint"])
+
+
+    # --- meta.coupling: shape, plus the two new coded warnings -----------------
+    cp_phase_ids = set(["P1", "P2"])
+    cp_ok = [{"test": "tests/test_a.py", "sources": ["src/a.ts"],
+             "basis": {"runId": "RUN-1", "head": "deadbeef",
+                      "phases": ["P1"]}}]
+    check("cp1 a coupling entry whose `basis.head` reads as an object id and "
+          "whose `basis.phases` are all held by the plan draws nothing: %r"
+          % (M._check_coupling(cp_ok, cp_phase_ids),),
+          M._check_coupling(cp_ok, cp_phase_ids) == [])
+    cp_bad_head = [{"test": "tests/test_a.py", "sources": ["src/a.ts"],
+                    "basis": {"runId": "RUN-1", "head": "not-a-sha",
+                             "phases": ["P1"]}}]
+    w = M._check_coupling(cp_bad_head, cp_phase_ids)
+    check("cp2 a `basis.head` that does not read as an object id (7-40 hex "
+          "characters) draws a CODED warning - `couple` itself asks git "
+          "before writing this field, so a bad value here means the "
+          "manifest was edited by hand: %r" % (w,),
+          len(w) == 1 and M._output.finding_code(w[0])
+          == "phases.coupling.head-shape" and "not-a-sha" in w[0])
+    cp_bad_phase = [{"test": "tests/test_a.py", "sources": ["src/a.ts"],
+                     "basis": {"runId": "RUN-1", "head": "deadbeef",
+                              "phases": ["P1", "P404"]}}]
+    w = M._check_coupling(cp_bad_phase, cp_phase_ids)
+    check("cp3 a `basis.phases` entry that is not a phase id in the plan "
+          "draws a CODED warning naming it: %r" % (w,),
+          len(w) == 1 and M._output.finding_code(w[0])
+          == "phases.coupling.phase-id" and "P404" in w[0])
+    check("cp4 SECOND DIRECTION: a clean entry with an object-id head and "
+          "every phase held by the plan draws neither coded warning",
+          M._check_coupling(cp_ok, cp_phase_ids) == [])
+
+
+    # --- meta.phaseGate.derived.listing: the commands derive-phase-gate.py
+    # actually runs, coded like `_check_coupling`'s siblings - shape split
+    # from value the same way `budgetusd-number`/`budgetusd-greater-than`
+    # split below, since a reader filtering by code needs to tell "wrong
+    # type" from "wrong content" apart --------------------------------------
+    _dl_verified = {"command": "npm run list-tests", "at": "t"}
+    _dl_related_noplaceholder = M._check_phase_gate_derived(
+        {"listing": {"related": "find-related-tests"},
+         "verifiedOn": _dl_verified}, set())
+    check("dl1 a `listing.related` with no {paths} placeholder is the "
+          "PLACEHOLDER code naming it - derive-phase-gate.py fills {paths} "
+          "in per phase, so a related command without one lists the same "
+          "suites for every phase: %r" % (_dl_related_noplaceholder,),
+          len(_dl_related_noplaceholder) == 1
+          and M._output.finding_code(_dl_related_noplaceholder[0])
+          == "phases.phase_gate_derived.listing-related-placeholder"
+          and "find-related-tests" in _dl_related_noplaceholder[0])
+    _dl_related_blank = M._check_phase_gate_derived(
+        {"listing": {"related": "   "}, "verifiedOn": _dl_verified}, set())
+    check("dl2 ...and a blank `listing.related` string is the SHAPE code, "
+          "not the placeholder one - a blank string has no content to check "
+          "for {paths} in the first place: %r" % (_dl_related_blank,),
+          len(_dl_related_blank) == 1
+          and M._output.finding_code(_dl_related_blank[0])
+          == "phases.phase_gate_derived.listing-related-shape")
+    _dl_all_blank = M._check_phase_gate_derived(
+        {"listing": {"all": ""}, "verifiedOn": _dl_verified}, set())
+    check("dl3 a blank `listing.all` is the SHAPE code - derive-phase-gate.py "
+          "runs `all` as-is with no path filter, so a blank one runs an "
+          "empty command: %r" % (_dl_all_blank,),
+          len(_dl_all_blank) == 1
+          and M._output.finding_code(_dl_all_blank[0])
+          == "phases.phase_gate_derived.listing-all-shape")
+    _dl_all_nonstring = M._check_phase_gate_derived(
+        {"listing": {"all": 3}, "verifiedOn": _dl_verified}, set())
+    check("dl4 ...and a non-string `listing.all` is the same SHAPE code: %r"
+          % (_dl_all_nonstring,),
+          len(_dl_all_nonstring) == 1
+          and M._output.finding_code(_dl_all_nonstring[0])
+          == "phases.phase_gate_derived.listing-all-shape")
+    _dl_ok = M._check_phase_gate_derived(
+        {"listing": {"related": "find-related {paths}", "all": "list-all"},
+         "verifiedOn": _dl_verified}, set())
+    check("dl5 ALLOW CASE: a schema-correct listing (related carries {paths}, "
+          "all is a non-blank string with no {paths} in it) draws neither "
+          "coded warning: %r" % (_dl_ok,), _dl_ok == [])
+    _dl_null = M._check_phase_gate_derived({"listing": None}, set())
+    _dl_absent = M._check_phase_gate_derived({}, set())
+    check("dl6 ALLOW CASE: a null or absent `listing` draws nothing - no "
+          "listing command is known, and that is not a shape defect: %r"
+          % ((_dl_null, _dl_absent),),
+          _dl_null == [] and _dl_absent == [])
+    _dl_all_haspaths = M._check_phase_gate_derived(
+        {"listing": {"related": "find-related {paths}",
+                     "all": "list-all {paths}"},
+         "verifiedOn": _dl_verified}, set())
+    check("dl7 a `listing.all` carrying {paths} is the PATHS-PRESENT code - "
+          "`_gather_facts` never substitutes into `all`, so the literal "
+          "token reaches the shell and the command fails silently at gate "
+          "time: %r" % (_dl_all_haspaths,),
+          len(_dl_all_haspaths) == 1
+          and M._output.finding_code(_dl_all_haspaths[0])
+          == "phases.phase_gate_derived.listing-all-paths-present"
+          and "list-all {paths}" in _dl_all_haspaths[0])
+
+    # --- the phase-gate family as one check: it RETURNS its lines, each coded,
+    # rather than writing into a list the caller hands it ----------------------
+    _gf_meta = {"buildCommands": {"lint": "x", "test": "y"},
+                "phaseGate": {"always": ["lint,test", "nope", "lint"],
+                              "exclude": ["lint", "zz"], "mode": "loud",
+                              "derived": 5, "smoke": ""},
+                "gateBudgetMs": -1,
+                "coupling": [5, {"test": "t", "sources": ["a"],
+                                 "basis": {"runId": "r"}},
+                             {"test": "t", "sources": ["a"],
+                              "basis": {"runId": "r"}}]}
+    _gf_manifest = {"meta": _gf_meta, "phases": [{"id": "P1"}]}
+    _gf_before = json.dumps(_gf_manifest, sort_keys=True)
+    _gf = M._check_phase_gate(_gf_manifest)
+    _gf_codes = [M._output.finding_code(x) for x in _gf]
+    check("gf1 _check_phase_gate takes the manifest alone and RETURNS every "
+          "line of the family, each carrying its own code, in the order the "
+          "checks run: %r" % (_gf_codes,),
+          isinstance(_gf, list) and _gf_codes == [
+              "phases.comma_joined_gate.joined-keys",
+              "phases.phase_gate.unknown-key",
+              "phases.phase_gate.unknown-key",
+              "phases.phase_gate.always-and-exclude",
+              "phases.phase_gate.mode",
+              "phases.phase_gate_derived.object",
+              "phases.phase_gate.smoke-shape",
+              "phases.phase_gate.budget-greater-than",
+              "phases.coupling.entry-object",
+              "phases.coupling.duplicate-test"])
+    check("gf2 ...and leaves the manifest it read exactly as it was",
+          json.dumps(_gf_manifest, sort_keys=True) == _gf_before)
+    # The over-fire direction: a check that coded every line by emitting one
+    # unconditionally would pass gf1; a plan with none of the three keys, and
+    # one with all three well formed, must draw nothing.
+    _gf_clean = M._check_phase_gate(
+        {"meta": {"buildCommands": {"lint": "x"},
+                  "phaseGate": {"always": ["lint"], "mode": "shadow"},
+                  "gateBudgetMs": 60000,
+                  "coupling": [{"test": "t", "sources": ["a"],
+                                "basis": {"runId": "r"}}]},
+         "phases": []})
+    check("gf3 SECOND DIRECTION: a plan whose phaseGate, gateBudgetMs and "
+          "coupling are all well formed draws nothing, and neither does one "
+          "carrying none of them: %r" % (_gf_clean,),
+          _gf_clean == [] and M._check_phase_gate({"meta": {}}) == []
+          and M._check_phase_gate({}) == [])
 
 
 def _selftest():

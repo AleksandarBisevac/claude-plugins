@@ -237,9 +237,166 @@
         },
         "buildCommands": {
           "type": "object",
-          "description": "Optional template map so gate entries like 'test:<project>' resolve to a real command instead of hardcoding a build tool. Keys are free (lint/test/typecheck/...). Two more are offered rather than required: `plugins/audit/scripts/status/_gate_feed.py`'s OFFERED_GATES catalog (list it with `--list-offered`) names 'provesCanFail' and 'claimsMatchCode' -- the two checks this project's own history learnt the hard way -- each with the sentence saying what it asks of a change and what it costs to run. Adding either key is this plan's own choice; leaving both out changes nothing here.",
+          "description": "Optional template map so gate entries like 'test:<project>' resolve to a real command instead of hardcoding a build tool. Keys are free (lint/test/typecheck/...). More keys are offered rather than required: `plugins/audit/scripts/status/_gate_feed.py`'s OFFERED_GATES catalog (list it with `--list-offered`) names them -- 'provesCanFail', 'claimsMatchCode' and whatever else that tuple holds, the checks this project's own history learnt the hard way -- each with the sentence saying what it asks of a change and what it costs to run. Adding any of those keys is this plan's own choice; leaving them all out changes nothing here.",
           "additionalProperties": {
             "type": "string"
+          }
+        },
+        "fullGate": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "meta.buildCommands keys naming the THIRD PLACE tests can pass at, beyond a task's own gate and a phase's sign-off gate — the full suite, coverage, an end-to-end pass. ABSENT means this plan names no third place: no phase is ever provisional for lack of one, and the full-status vocabulary (whole/provisional/unknown/not_declared) stays inert on every surface. Each entry must be a real meta.buildCommands key; the validator warns, never refuses, on one that is not (COMPATIBILITY.md -> Validation stays additive)."
+        },
+        "phaseGate": {
+          "type": "object",
+          "description": "What a NEW phase's gate defaults to, and the one declared way to narrow it. Absent = today's behaviour exactly: every meta.buildCommands key, in buildCommands order, byte-identical. See `always` and `exclude`.",
+          "additionalProperties": true,
+          "properties": {
+            "always": {
+              "type": "array",
+              "description": "meta.buildCommands keys that come FIRST in a new phase's default gate, in the order given here. Absent/empty adds nothing - every other buildCommands key still lands in the default, in buildCommands order.",
+              "items": {
+                "type": "string"
+              }
+            },
+            "exclude": {
+              "type": "array",
+              "description": "meta.buildCommands keys left OUT of a new phase's default gate - the ONE declared way to keep a key (a coverage re-run, an e2e suite that belongs at a later place) out of it. Absent/empty drops nothing. An entry named in both `always` and `exclude` stays IN the default: `always` is always.",
+              "items": {
+                "type": "string"
+              }
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "shadow",
+                "enforce"
+              ],
+              "description": "Whether a phase's DERIVED sign-off gate (phase.testGateDerived) is recorded beside the wide gate for comparison, or replaces it at sign-off. ABSENT MEANS NO DERIVATION -- `always`/`exclude` alone shape the wide gate and no narrower one is ever computed. 'shadow' = derive-phase-gate.py records phase.testGateDerived on every run but sign-off still runs the wide gate; 'enforce' = sign-off runs the derived gate and refuses (could-not-run) a derived run that did not name every listed suite."
+            },
+            "derived": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true,
+              "description": "How this phase's gate is narrowed when meta.phaseGate.mode is set. null/absent = the mode above still applies to NOTHING, because no runner label or listing/spelling command is declared yet; see `runner`, `spelling`, `listing` and `verifiedOn`.",
+              "properties": {
+                "runner": {
+                  "type": "string",
+                  "description": "A meta.buildCommands key: carried through only as the DISPLAY LABEL the printed DERIVED line and phase.testGateDerived's `entry` name the gate under - never resolved or run, and never asked for a listing (see `listing.related` and `listing.all` for what derive-phase-gate.py actually runs to list suites). Must be a key meta.buildCommands actually declares -- a label naming no real buildCommands entry names nothing an operator could actually run."
+                },
+                "spelling": {
+                  "type": "string",
+                  "description": "The path-scoped command spelling for `runner` - the SECOND source `_gate_derive.resolve_shape` tries for a narrowed gate's shape, read only when no sibling task's own gate already carries a path-scoped entry (the sibling always wins: its entry is evidence this project's runner already accepted it, a declared `spelling` is not). Carries a literal `{paths}` placeholder the derivation substitutes with the resolved file list (e.g. 'pytest {paths}'). Without one, and with no sibling path-scoped entry either, the wide gate is the only answer this project's own commands can produce -- see the 'phase-no-spelling' task-level gateBasis word for the same idea one level down."
+                },
+                "listing": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "additionalProperties": true,
+                  "description": "How the derivation LISTS suites without running them. null = no listing command is known, so importer resolution and the full-suite fallback are the only arms available.",
+                  "properties": {
+                    "related": {
+                      "type": "string",
+                      "description": "A command carrying `{paths}` that lists (never executes) the suites related to those paths -- an importer graph query, for instance."
+                    },
+                    "all": {
+                      "type": "string",
+                      "description": "A command listing every suite this runner would collect, with no path filter -- what 'the full suite' means for this project's own runner."
+                    }
+                  }
+                },
+                "verifiedOn": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The version command /audit:init actually ran for this runner, and its output VERBATIM -- so a later mismatch is checked against a real answer instead of a guess. A bare '<runner> <version>' string names no command to re-ask and could only ever be compared against a guess, which is why this is a command/answer pair and not a version string.",
+                  "properties": {
+                    "command": {
+                      "type": "string",
+                      "description": "The exact command init ran to learn the runner's version."
+                    },
+                    "answer": {
+                      "type": "string",
+                      "description": "That command's output, verbatim."
+                    }
+                  }
+                }
+              }
+            },
+            "smoke": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "A meta.buildCommands key that ALWAYS joins a derived gate beside whatever the derivation narrowed to -- a fast smoke suite worth paying for on every sign-off even when nothing else points at this phase. null/absent = the derived gate carries nothing beyond what was actually narrowed."
+            }
+          }
+        },
+        "gateBudgetMs": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "Advisory cost budget for a phase's gate, in milliseconds. Absent = nothing is graded on cost. A value of 0 or below is rejected for `budgetUSD`'s reason: an ungraded gate must render as 'no budget' rather than as infinitely over."
+        },
+        "coupling": {
+          "type": "array",
+          "description": "What a derived phase gate LEARNED beside its declared arms (tests.add, importers, changed files, last-failed): a test that has, in practice, gone red for a change none of those arms would have named. Absent/empty = no coupling has been learned yet, which is exactly today's behaviour -- the derivation still runs on tests.add/importers/changed/lastFailed alone.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+              "test",
+              "sources",
+              "basis"
+            ],
+            "properties": {
+              "test": {
+                "type": "string",
+                "description": "The suite file this entry couples in, e.g. a meta.buildCommands-resolvable path."
+              },
+              "sources": {
+                "type": "array",
+                "description": "The source paths this test is coupled to -- a derived gate narrowed to any of them also narrows in `test`.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "basis": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Where this entry came from, so it can be re-checked or aged out rather than trusted forever.",
+                "properties": {
+                  "runId": {
+                    "type": "string",
+                    "description": "The evidence-ledger run this coupling was learned from."
+                  },
+                  "head": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "The commit HEAD was at when the coupling was learned, if known."
+                  },
+                  "phases": {
+                    "type": "array",
+                    "description": "Which phase(s) this coupling has been observed under.",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "learnedAt": {
+                "type": "string",
+                "description": "When this entry was recorded."
+              }
+            }
           }
         },
         "ado": {
@@ -938,6 +1095,120 @@
           "$ref": "#/$defs/testEvidence",
           "description": "The last recorded run of THIS phase's `testGate`, as a pointer into the evidence ledger plus the verdict it reached. Optional and absent by default: a phase nobody has gated carries nothing here, which is not the same as a phase whose gate failed, and the ledger — never this block — is what a count or a history is read from."
         },
+        "testGateBasis": {
+          "type": "string",
+          "description": "Which derivation produced `testGateDerived`, in the same open-vocabulary spirit as a task's `tests.gateBasis` (_manifest_vocab.GATE_BASIS) -- ABSENT IS READ AS AN UNNARROWED DEFAULT, never as 'derived and empty on purpose'. See `_manifest_vocab.PHASE_GATE_BASIS` for the words this build knows: 'derived' (a narrower gate than the wide one), 'derived-empty' (the derivation ran and found nothing to narrow to, so the wide gate stands), and 'wide: importers resolved to the full suite' (an importer listing matched every suite file, so the wide gate IS the narrow answer). A word this build does not know is treated the same as absent."
+        },
+        "testGateDerived": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "What derive-phase-gate.py computed for this phase's sign-off gate, beside the wide `testGate` array (never in place of it -- see meta.phaseGate.mode for which one sign-off actually runs). Optional and absent by default: a phase meta.phaseGate.mode has never derived for carries nothing here, the same 'absent is not failure' rule testEvidence follows.",
+          "properties": {
+            "tests": {
+              "type": "array",
+              "description": "The suite files this derivation narrowed the gate to.",
+              "items": {
+                "type": "string"
+              }
+            },
+            "entry": {
+              "type": "string",
+              "description": "The meta.buildCommands key (meta.phaseGate.derived.runner) this derivation resolved `tests` through."
+            },
+            "listed": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "description": "What the listing command (meta.phaseGate.derived.listing) actually printed, or null if no listing command ran.",
+              "items": {
+                "type": "string"
+              }
+            },
+            "full": {
+              "type": "boolean",
+              "description": "Whether `tests` is the full suite (importers resolved to everything, or no narrower arm fired) rather than a genuinely narrowed subset."
+            },
+            "arms": {
+              "type": "object",
+              "additionalProperties": true,
+              "description": "Which derivation ARM contributed which test files, so a reader can tell a coupling-learned inclusion from a plain importer match.",
+              "properties": {
+                "tests.add": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "coupling": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "importers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "changed": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "lastFailed": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "always": {
+              "type": "array",
+              "description": "meta.phaseGate.always entries carried into the derived gate regardless of narrowing.",
+              "items": {
+                "type": "string"
+              }
+            },
+            "smoke": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "meta.phaseGate.smoke, carried verbatim so a reader of the derived block does not have to cross-reference meta to see why one extra key always rides along."
+            },
+            "narrowed": {
+              "type": "boolean",
+              "description": "Whether this run actually narrowed the wide gate (false = every arm came back empty or full, so the wide gate is the answer and `testGateBasis` should read 'derived-empty' or the importers word rather than 'derived')."
+            },
+            "listing": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true,
+              "description": "What running the listing command cost, or null if none ran.",
+              "properties": {
+                "command": {
+                  "type": "string"
+                },
+                "exit": {
+                  "type": "integer"
+                },
+                "durationMs": {
+                  "type": "integer"
+                }
+              }
+            },
+            "at": {
+              "type": "string",
+              "description": "When this derivation ran."
+            }
+          }
+        },
         "parentBranch": {
           "type": [
             "string",
@@ -972,6 +1243,20 @@
             "null"
           ],
           "description": "ISO timestamp after the phase branch reached its RESOLVED PARENT — phase.parentBranch ?? meta.developmentBranch — which is not always the development branch. This said 'the development branch' flatly until v2.1, while sign-off has merged into the resolved parent for as long as parentBranch has existed: a phase integrating into a story branch stamped this field and had not reached development at all. Absent/null means the branch has not landed; it is never written by a run that stopped before the merge (meta.merge.auto false)."
+        },
+        "mergedHead": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The commit ancestry is asked about for THIS phase's merge, written only by close-phase.py — never by hand. It has two readings, and mergedHeadAt says which: WITHOUT mergedHeadAt it is the oldest commit on the parent's first-parent chain that contains the tip: the commit on that chain that brought the tip in - the tip itself for a fast-forward, the merge commit for a direct merge, the parent's merge of an intermediate branch for a nested one — recovered from the parent's history while the branch is still there, and written only when it contains every task commit the phase records; values written by versions before mergedHeadAt existed may instead be a later parent head, which still contains the merge; WITH mergedHeadAt it was recorded after the fact with the branch gone, and is the parent's head at that moment, written only when every task commit the phase records is contained in it. That head sits at or after the merge, so it is stricter than the merge's own commit: a run containing the merge but not this head reads provisional, never whole. The evidence proves only that the parent holds the recorded work: a parent that does not hold every recorded task commit (a rewound one, a squash merge, a wrong one lacking the work) fails it, and no head is written. Absent means ancestry cannot be asked at all, so the phase's full-gate status reads unknown rather than provisional; a full run's own HEAD containing this commit is what lets a merged phase read whole instead. Must be a full 40-character hex SHA when present; the validator warns, never refuses, on one that is not."
+        },
+        "mergedHeadAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "ISO timestamp of the moment close-phase.py recorded mergedHead AFTER the fact — a merge recorded without one, re-run once its branch was gone — which makes mergedHead the parent's head at that moment rather than the merge's own commit. Written only then, in the same write as that mergedHead, and never by hand. Absent means mergedHead (when present) is the oldest commit on the parent's first-parent chain that contains the tip: the commit on that chain that brought the tip in - the tip itself for a fast-forward, the merge commit for a direct merge, the parent's merge of an intermediate branch for a nested one. A full run is measured as having run after this phase against this moment rather than mergedAt, because a run between the merge and this moment could contain the merge and not the later head."
         },
         "ado": {
           "$ref": "#/$defs/adoLink",
@@ -1455,7 +1740,7 @@
         },
         "gateBasis": {
           "type": "string",
-          "description": "Which derivation produced `gate`, written by /audit:task add and re-written by /audit:task scope --gate. 'declared' = the caller named the commands; 'cleared' = --gate-clear; 'tests.add'/'files' = narrowed to this task's own paths in a sibling's spelling; 'phase-no-spelling' = the phase's gate, because no task in the phase declares a path-scoped entry to read this project's spelling off; 'phase-no-paths' = the phase's gate, because a sibling is path-scoped and this task names no file. The validator's wide-gate warning reads it: 'declared' and 'phase-no-spelling' are answers rather than unnarrowed defaults, and a task carrying no basis at all is still named. The vocabulary is open — a word this build does not know is treated as an unnarrowed default rather than folded into one it does."
+          "description": "Which derivation produced `gate`, written by /audit:task add and re-written by /audit:task scope --gate. 'declared' = the caller named the commands; 'cleared' = --gate-clear; 'tests.add'/'files' = narrowed to this task's own paths in a sibling's spelling; 'phase-no-spelling' = the phase's gate, because no task in the phase declares a path-scoped entry to read this project's spelling off; 'phase-no-paths' = the phase's gate, because a sibling is path-scoped and this task names no file; 'gate-only-no-suite' = the phase's own gate runs no suite at all (`meta.phaseGate.exclude` removes every `meta.buildCommands` key), so there is no wide gate to narrow away from; 'failing-from-run:<runId>' = the ledger already has a run of this exact gate that failed, named by its opaque runId rather than parsed. The validator's wide-gate warning reads it: 'declared', 'phase-no-spelling' and 'gate-only-no-suite' are answers rather than unnarrowed defaults, and a task carrying no basis at all is still named. The vocabulary is open — a word this build does not know is treated as an unnarrowed default rather than folded into one it does."
         }
       }
     },
@@ -1467,7 +1752,7 @@
         "at"
       ],
       "additionalProperties": true,
-      "description": "A POINTER at the run that last exercised this task (or this phase's gate), together with the verdict that run reached. IT IS A CACHE AND NOT THE SOURCE OF TRUTH: the truth is the append-only evidence ledger kept beside the manifest, every run is in it, and anything a reader wants to COUNT or COMPARE is derived by reading it. That is what makes this block disposable — deleting it is always safe, the ledger still holds the run, and the next run writes it back. ABSENT MEANS 'NO EVIDENCE RECORDED', NEVER 'FAILED': a manifest written before this field existed, a task nobody has run yet, and a block somebody deleted are one and the same state, and every surface must say so rather than render the worst reading of a silence. Optional at both levels, and additive — a manifest that carries none validates exactly as it did before this field was declared. `attempt` and a run COUNT are deliberately NOT here. A count cached beside the thing that produces it is the defect this repo has now fixed under three separate numbers, and 'how many times has this run' is a question the ledger answers without a second copy that can disagree with it; a block that cannot go stale is worth more than one that can carry more. additionalProperties stays permissive, which is this document's policy at every object level and not an oversight here: the schema ships with the plugin, so an older copy of it must keep accepting a manifest a newer one wrote, and the keys below are what a consumer may READ rather than a refusal of a fourth. What IS required is all of them at once — a block missing `runId` points at nothing, one missing `status` caches nothing, one missing `at` cannot be aged, and since dropping the whole block is always safe there is never a reason to write half of one.",
+      "description": "A POINTER at the run that last exercised this task (or this phase's gate), together with the verdict that run reached. IT IS A CACHE AND NOT THE SOURCE OF TRUTH: the truth is the append-only evidence ledger kept beside the manifest, every run is in it, and anything a reader wants to COUNT or COMPARE is derived by reading it. That is what makes this block disposable — deleting it is always safe, the ledger still holds the run, and the next run writes it back - except for a pointer carrying `gradedBy`, which was copied from another phase at a group sign-off, and no run records it for this subject, so `run-test-gate.py --reconcile` does not restore it; deleting one leaves that member with no evidence until it is signed off again. ABSENT MEANS 'NO EVIDENCE RECORDED', NEVER 'FAILED': a manifest written before this field existed, a task nobody has run yet, and a block somebody deleted are one and the same state, and every surface must say so rather than render the worst reading of a silence. Optional at both levels, and additive — a manifest that carries none validates exactly as it did before this field was declared. `attempt` and a run COUNT are deliberately NOT here. A count cached beside the thing that produces it is the defect this repo has now fixed under three separate numbers, and 'how many times has this run' is a question the ledger answers without a second copy that can disagree with it; a block that cannot go stale is worth more than one that can carry more. additionalProperties stays permissive, which is this document's policy at every object level and not an oversight here: the schema ships with the plugin, so an older copy of it must keep accepting a manifest a newer one wrote, and the keys below are what a consumer may READ rather than a refusal of a fourth. What IS required is all of them at once — a block missing `runId` points at nothing, one missing `status` caches nothing, one missing `at` cannot be aged, and since dropping the whole block is always safe there is never a reason to write half of one.",
       "properties": {
         "runId": {
           "type": "string",
@@ -1489,6 +1774,10 @@
         "at": {
           "type": "string",
           "description": "ISO timestamp of the run this block points at, so a reader can tell a fresh verdict from a stale one without opening the ledger. It dates the RUN, not the moment the cache was written; the two are the same today and would stop being so the first time this block is rebuilt from the ledger."
+        },
+        "gradedBy": {
+          "type": "string",
+          "description": "Set only on a phase that took ANOTHER phase's pointer at a group sign-off (`audit-task.py signoff P1,P2 --branch <name>`): the id of the member that carried the group's one gate run. The run this block names is that member's, owned every member's files (its ledger row's `groupWith`), and is rendered as that member's run - never as a sign-off run this phase made. Absent on every pointer the recorder writes for its own subject."
         }
       }
     },
@@ -1640,6 +1929,21 @@
           "items": {
             "$ref": "#/$defs/finding"
           }
+        },
+        "noEvidenceReason": {
+          "type": "string",
+          "description": "The operator's words, recorded verbatim, for a `passed` sign-off that no gate run binds (`audit-task.py signoff --no-evidence-reason`). The report and the panel show it where the evidence badge's basis goes. It is not a run: `--fail-on no-test-evidence` still names the phase."
+        },
+        "acceptedCommits": {
+          "type": "array",
+          "description": "Commits a group's branch carried past its fork that no member records, taken into the group's review with `audit-task.py signoff --accept <sha> --reason`. Each is the full SHA and the operator's reason, written on every member of the group.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "commit": {"type": "string"},
+              "reason": {"type": "string"}
+            }
+          }
         }
       }
     },
@@ -1679,6 +1983,14 @@
             "resolution": {
               "type": "string",
               "description": "The concrete change that settles it — what a fix executor is handed."
+            },
+            "fixTask": {
+              "type": "string",
+              "description": "The task whose commit settled this finding, written by `audit-task.py resolve-finding`. An id, so a task move rewrites it (`_id_refs.SCALAR_REFS`)."
+            },
+            "commit": {
+              "type": "string",
+              "description": "The SHA `fixTask` landed in, written with it; `audit-task.py reopen` of that task removes it, so a finding never reads as fixed by work the plan has undone."
             }
           }
         }

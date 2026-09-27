@@ -52,6 +52,7 @@ _output.install_path()
 
 import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants)
 import _evidence_io  # noqa: E402  (the ledger this correlates the plan against)
+import _manifest_vocab  # noqa: E402  (the one sentence for a failed ledger read, at layer 1)
 import _journal_io  # noqa: E402  (read/verify the audit trail, at layer 1)
 import _commit_trail  # noqa: E402  (is a recorded SHA still reachable?)
 
@@ -147,8 +148,11 @@ def check_evidence_pointers(rep, project, manifest):
                     for t in (phase.get("tasks") or []) if isinstance(t, dict)]
         for holder, scope, subject in holders:
             block = holder.get("testEvidence")
-            if isinstance(block, dict) and block.get("runId"):
-                pointers.append((scope, subject, str(block["runId"])))
+            # A non-empty STRING runId: the schema's type, and the rule the
+            # report's `tev_pointer` and the panel's `evState` read it by.
+            if isinstance(block, dict) and isinstance(block.get("runId"), str) \
+                    and block.get("runId"):
+                pointers.append((scope, subject, block["runId"]))
     try:
         read = _evidence_io.read_rows(project)
         # Through `movedFrom`: a run recorded under a moved task's old id is that
@@ -158,8 +162,8 @@ def check_evidence_pointers(rep, project, manifest):
     except Exception as exc:
         # NOT an ok line. A reader who could not open the ledger has cleared
         # nothing, and saying so is the whole point of the level.
-        rep.warn("evidence", "could not read the evidence ledger, so the plan's "
-                             "pointers were not checked: %s" % (exc,))
+        rep.warn("evidence", "%s - so the plan's pointers were not checked"
+                 % (_manifest_vocab.LEDGER_READ_FAILED % (exc,),))
         return
     if not pointers and not read["rows"]:
         rep.ok("evidence", "no runs recorded and no pointers in the plan")

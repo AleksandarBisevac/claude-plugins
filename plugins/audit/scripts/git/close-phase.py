@@ -56,8 +56,12 @@ Exit codes:
      every cleanup asked for was done and read back. Also the answer when
      `meta.merge.auto` is false and the run deliberately stopped before the merge
   1  it could not: git refused a write, a precondition failed, or a cleanup was
-     blocked. The refusal names the path or ref that has to change
-  2  usage error -- the manifest will not load, or there is no such phase
+     blocked. The refusal names the path or ref that has to change - a branch that
+     is its own parent, or a phase that records no branch whose composed name is
+     not one, included: git answered, and it is the command that has to change
+  2  usage error -- the manifest will not load, or there is no such phase, or the
+     parent is checked out in no worktree while the manifest given is the phase
+     worktree's own copy: the landing would have no surviving copy to stamp
   3  NOT A FAST-FORWARD -- the parent moved while the phase ran. Nothing was written.
      Its own sentinel because it is the normal case on a team repo and the
      orchestrator has a human question for it; folded into 1 it would be
@@ -118,6 +122,28 @@ ACTION_PHASE_MERGED = "phase.merged"
 # is where they start to disagree.
 MERGED_FIELD = "mergedAt"
 
+# The oldest commit on the parent's first-parent chain that contains the tip: the
+# commit on that chain that brought the tip in - the tip itself for a
+# fast-forward, the merge commit for a direct merge, the parent's merge of an
+# intermediate branch for a nested one - and never a second write away from
+# `mergedAt`. A sentinel (not None) is `stamp_merged`'s
+# default for this one, so a caller that never mentions it leaves the key untouched
+# rather than pinning it to null; `main()` always passes one or the other on purpose.
+MERGED_HEAD_FIELD = "mergedHead"
+_HEAD_NOT_ASKED = object()
+
+# Present ONLY when `mergedHead` was recorded after the fact with the branch gone,
+# so it is the parent's head at that moment rather than the merge's own commit -
+# the moment a reader measures "ran after" against. Absent means `mergedHead` is
+# what `merge_commit` recovers.
+MERGED_HEAD_AT_FIELD = "mergedHeadAt"
+
+# The journal action for a head written AFTER its merge was recorded - a plan whose
+# merge predates the field. Its own name rather than a second `phase.merged` row:
+# nothing merged on the run that writes it, and a reader counting merges by that
+# action must not count this one.
+ACTION_MERGED_HEAD_RECORDED = "phase.mergedHead.recorded"
+
 
 # --- resolving what this phase is ------------------------------------------------
 
@@ -150,8 +176,18 @@ def resolve(manifest, phase, parent_arg=None, branch_arg=None, initials=None):
     else:
         resolved = _branch.parent_branch(meta, phase)
         parent, pbasis = resolved["branch"], resolved["basis"]
+    # A BRANCH THAT IS ITS OWN PARENT HAS NOTHING TO LAND, and the cleanup would
+    # then plan deleting the parent itself: already contained, settled, and held by
+    # no worktree reads as a branch to reap. Refused here, where both names meet.
+    refusal = None
+    if branch and branch == parent:
+        refusal = ("%r is its own parent (%s; parent from %s) - there is nothing to "
+                   "land, and the cleanup would delete %r. Name the branch the "
+                   "phase's work is on with --branch" % (branch, bbasis, pbasis,
+                                                          parent))
     return {"branch": branch, "parent": parent, "branchBasis": bbasis,
-            "parentBasis": pbasis, "policy": _branch.merge_policy(meta)}
+            "parentBasis": pbasis, "policy": _branch.merge_policy(meta),
+            "refusal": refusal}
 
 
 # --- observing the repository ----------------------------------------------------
@@ -426,6 +462,7 @@ def close(git_root, the_plan, branch, parent, run=None, dry_run=False,
         answer["plannedSteps"] = ([merge["argv"]] if merge["argv"] else []) \
             + [s["argv"] for s in preview["steps"]]
         answer["blocked"] = list(preview["blocked"])
+        answer["followUp"] = preview.get("followUp")
         answer["previewAssumes"] = (
             "the merge lands - the cleanup below is what follows it, not what "
             "this repository would allow right now")
@@ -499,6 +536,9 @@ def close(git_root, the_plan, branch, parent, run=None, dry_run=False,
         cleanup = cleanup_for(the_plan["cleanupInputs"], branch, parent,
                               verified["answer"], settled=settled_now)
         answer["blocked"] = list(cleanup["blocked"])
+    # The operator's half of a cleanup this command will not do: freeing a branch
+    # the main worktree stands on takes a switch, and no HEAD is moved here.
+    answer["followUp"] = cleanup.get("followUp")
 
     for step in cleanup["steps"]:
         code, out, err = fn(git_root, step["argv"])
@@ -544,17 +584,23 @@ def _phase_file(manifest_path, phase_id):
     return None
 
 
-def recorded_merge(manifest_path, phase_id):
-    """The `mergedAt` the plan at `manifest_path` already records for the phase, or
-    "" - read before a stamp so a re-run neither moves it nor journals it twice."""
+def _recorded_phase(manifest_path, phase_id):
+    """The phase as the plan at `manifest_path` records it now, or {} when the plan
+    cannot be read or does not hold it."""
     try:
         plan_now = _mio.load_manifest(manifest_path)
     except Exception:
-        return ""
+        return {}
     for ph in ((plan_now or {}).get("phases") or []):
         if isinstance(ph, dict) and str(ph.get("id")) == str(phase_id):
-            return ph.get(MERGED_FIELD) or ""
-    return ""
+            return ph
+    return {}
+
+
+def recorded_merge(manifest_path, phase_id):
+    """The `mergedAt` the plan at `manifest_path` already records for the phase, or
+    "" - read before a stamp so a re-run neither moves it nor journals it twice."""
+    return _recorded_phase(manifest_path, phase_id).get(MERGED_FIELD) or ""
 
 
 def phase_as_landed(git_root, manifest_path, branch, phase_id):
@@ -668,13 +714,201 @@ def _revalidated_write(manifest_path, path, obj):
     return new
 
 
-def stamp_merged(manifest_path, phase_id, when=None):
-    """Write `phase.mergedAt`. Returns the path written, or "" with a reason.
+def _utc_now():
+    """This moment in the plan's one UTC spelling. `datetime.utcnow()` is
+    deprecated from 3.12 and warns onto stderr of every run; the aware spelling
+    works unchanged on the 3.8 floor, which `datetime.UTC` (3.11+) would not."""
+    return (datetime.datetime.now(datetime.timezone.utc)
+            .strftime("%Y-%m-%dT%H:%M:%SZ"))
+
+
+def merge_commit(git_root, branch, parent, run=None):
+    """{"sha", "basis"} - the oldest commit on `parent`'s first-parent chain that
+    contains `branch`'s tip: the commit on that chain that brought the tip in -
+    the tip itself for a fast-forward, the merge commit for a direct merge, the
+    parent's merge of an intermediate branch for a nested one. `sha` is "" with
+    the reason when there is none.
+
+    ONE MEANING FOR `mergedHead` WHEREVER THE BRANCH RESOLVES. Read at the moment
+    of a merge this command just made, the parent's head IS that commit; read
+    later - a hand merge closed afterwards, or a re-run over a merge recorded
+    without a head - the parent may have moved on, and its head is then a
+    different, later commit. So the commit is recovered rather than read:
+
+    - the tip itself when the branch was fast-forwarded in, which is when the tip
+      sits on the parent's first-parent chain;
+    - otherwise the commit on that chain that brought the tip in - the merge
+      commit, or, for a tip that arrived through an intermediate branch, the
+      parent's own merge of that branch.
+
+    TWO WALKS, BECAUSE ONE IS NOT ENOUGH. `rev-list --first-parent <tip>..<parent>`
+    is the parent's own chain back to the tip's history, and `rev-list
+    --ancestry-path <tip>..<parent>` is every commit that descends from the tip,
+    through any parent. The answer is the oldest commit in both. Limiting the
+    ancestry path to first parents in one walk loses a tip merged into an
+    intermediate branch first: that inner merge is not on the parent's chain, so
+    the combined walk comes back empty for a tip the parent does hold. The
+    answer's own first parent being the tip is what marks a fast-forward.
+
+    The parent's head always descends from a tip it holds and is on its own
+    chain, so an empty intersection means the parent does not hold the tip, and
+    nothing is guessed.
+    """
+    fn = _wt._runner(run)
+    tip = _wt.ref_exists(git_root, branch, run=run)
+    head = _wt.ref_exists(git_root, parent, run=run)
+    if not tip["sha"]:
+        return {"sha": "", "basis": "%r %s" % (branch, tip["basis"])}
+    if not head["sha"]:
+        return {"sha": "", "basis": "%r %s" % (parent, head["basis"])}
+    if tip["sha"] == head["sha"]:
+        return {"sha": tip["sha"],
+                "basis": "%s's tip is %s's head: a fast-forward the parent has "
+                         "not moved past" % (branch, parent)}
+    span = "%s..%s" % (tip["sha"], head["sha"])
+    walks = []
+    for walk in (["rev-list", "--first-parent", span],
+                 ["rev-list", "--ancestry-path", span]):
+        code, out, _err = fn(git_root, walk)
+        if code != 0:
+            return {"sha": "", "basis": "git %s could not be asked"
+                                        % (" ".join(walk),)}
+        walks.append((out or "").split())
+    descends = set(walks[1])
+    chain = [c for c in walks[0] if c in descends]
+    if not chain:
+        return {"sha": "", "basis": "no commit on %s's first-parent chain contains "
+                                    "%s's tip, so %s does not hold it"
+                                    % (parent, branch, parent)}
+    oldest = chain[-1]
+    code, out, _err = fn(git_root, ["rev-parse", "--verify", "--quiet",
+                                    oldest + "^1"])
+    if code != 0:
+        return {"sha": "", "basis": "the first parent of %s could not be read"
+                                    % (oldest,)}
+    if (out or "").strip() == tip["sha"]:
+        return {"sha": tip["sha"],
+                "basis": "%s's tip is on %s's first-parent chain: a fast-forward"
+                         % (branch, parent)}
+    return {"sha": oldest,
+            "basis": "%s is the oldest commit on %s's first-parent chain that "
+                     "contains %s's tip" % (oldest, parent, branch)}
+
+
+def contained_task_commits(git_root, phase, parent, run=None):
+    """{"sha", "basis"} - the parent's head, when EVERY task commit the phase
+    records is an ancestor of it; `sha` is "" with the reason otherwise.
+
+    THE EVIDENCE A BRANCH-GONE BACKFILL STANDS ON. With the branch deleted there is
+    no tip to recover the merge commit from, and the recorded `mergedAt` alone says
+    only that SOME parent once held SOME branch: the parent asked about now can
+    come from `--parent` or from a `meta.developmentBranch` changed since, and a
+    parent can be rewound past its merge. A parent that does not hold every
+    recorded task commit - a rewound one, a squash merge, a wrong one lacking the
+    work - fails; a wrong parent that happens to hold all of them passes, and the
+    head written is then still a commit holding the phase's recorded work. The plan's own record of the work - the
+    commit each task landed as - is what can be asked of git instead, and each one
+    is asked against the one head that would be written, so the evidence and the
+    value are about the same commit.
+
+    WHAT IT CAN AND CANNOT PROVE. Every recorded task commit contained means the
+    parent's head holds the phase's recorded work. It does not prove the head
+    holds work no task recorded. A phase recording no task commit has no evidence
+    at all, and a squash merge leaves the task commits outside the parent's
+    history - both are refused, which leaves the phase unknown: the safe answer.
+    """
+    commits = _task_commits(phase)
+    if not commits:
+        return {"sha": "", "basis": "phase %s records no task commit, so nothing in "
+                                    "the plan shows %s holds its work"
+                                    % (phase.get("id"), parent)}
+    head = _wt.ref_exists(git_root, parent, run=run)
+    if not head["sha"]:
+        return {"sha": "", "basis": "%r %s" % (parent, head["basis"])}
+    missing = _task_commit_missing(git_root, commits, head["sha"],
+                                   "%s's head" % (parent,), run=run)
+    if missing:
+        return {"sha": "", "basis": missing}
+    return {"sha": head["sha"],
+            "basis": "every recorded task commit (%d) is in %s's head"
+                     % (len(commits), parent)}
+
+
+def _task_commits(phase):
+    """The distinct task commits `phase` records, sorted - [] when it records none."""
+    return sorted(set(str(t.get("commit")) for t in ((phase or {}).get("tasks") or [])
+                      if isinstance(t, dict) and t.get("commit")))
+
+
+def _task_commit_missing(git_root, commits, sha, where, run=None):
+    """The sentence naming the first of `commits` that `sha` does not contain, or ""
+    when it contains every one. Anything but CONTAINED - git saying no, or git
+    unable to say - is a miss, because each caller writes a head on "" alone."""
+    for commit in commits:
+        answer = _wt.merged_into(git_root, commit, sha, run=run)
+        if answer["answer"] != _wt.CONTAINED:
+            return ("task commit %s is %s in %s %s (%s)"
+                    % (commit, answer["answer"], where, sha, answer["basis"]))
+    return ""
+
+
+def recovered_head(git_root, branch, parent, phase, run=None):
+    """{"sha", "basis"} - `merge_commit`, held to the plan's own record of the work.
+
+    THE BRANCH REF IS READ AS IT STANDS NOW, and a ref can be moved: `git branch
+    -f` onto an older commit the parent's chain holds turns that commit into what
+    looks like a fast-forward, and recovering from it would record a head that
+    predates the phase's work - a run containing it but not that work would read
+    whole. So when the phase records task commits, the recovered commit must
+    contain every one of them, or nothing is written and the reason says which.
+
+    A PHASE RECORDING NO TASK COMMIT has nothing to hold the ref to, and the
+    recovered commit stands on the ref alone - the same trust the merge itself
+    placed in it, which is why a normal close of such a phase is unchanged.
+    """
+    head = merge_commit(git_root, branch, parent, run=run)
+    commits = _task_commits(phase)
+    if not head["sha"] or not commits:
+        return head
+    missing = _task_commit_missing(git_root, commits, head["sha"],
+                                   "the commit recovered from %s," % (branch,),
+                                   run=run)
+    if missing:
+        return {"sha": "", "basis": "%s - so %s does not hold this phase's recorded "
+                                    "work and no head is written" % (missing, branch)}
+    return {"sha": head["sha"],
+            "basis": "%s; every recorded task commit (%d) is in it"
+                     % (head["basis"], len(commits))}
+
+
+def _phases_in(body, phase_id):
+    """The phase dicts in a read plan file that are `phase_id`: the body itself when
+    the file is a shard, else the matching entries of its `phases`."""
+    if not isinstance(body, dict):
+        return []
+    if str(body.get("id")) == str(phase_id):
+        return [body]                                   # a shard IS the phase
+    return [ph for ph in (body.get("phases") or [])
+            if isinstance(ph, dict) and str(ph.get("id")) == str(phase_id)]
+
+
+def stamp_merged(manifest_path, phase_id, when=None, merged_head=_HEAD_NOT_ASKED):
+    """Write `phase.mergedAt` (and, in the SAME write, `phase.mergedHead`). Returns
+    the path written, or "" with a reason.
 
     THE FIELD IS WRITTEN ONLY AFTER THE PARENT DEMONSTRABLY CONTAINS THE BRANCH, and
     never on the `auto: false` path -- a plan that says a phase merged at a moment it
     did not is worse than a plan that says nothing, because every later reader treats
     it as landed.
+
+    `merged_head` IS THE COMMIT `recovered_head` FOUND, asked by the caller (never
+    composed here): the commit on the parent's first-parent chain that brought the
+    branch's tip in, held to the recorded task commits - `None` when none could be
+    recovered, and the not-asked
+    sentinel when the caller never mentions it at all, which leaves the key out of
+    the write entirely rather than pinning it to null. There is no second write:
+    both fields land in the one `_revalidated_write` call below, because a stamp
+    split across two writes is exactly the bug this exists to close.
     """
     path = _phase_file(manifest_path, phase_id)
     if not path:
@@ -684,35 +918,23 @@ def stamp_merged(manifest_path, phase_id, when=None):
         body = _mio.read_json(path)
     except Exception as exc:
         return "", "%s could not be read: %s" % (path, exc)
-    # `datetime.utcnow()` is deprecated from 3.12 and emits a warning onto stderr of
-    # every run; the aware spelling below works unchanged on the 3.8 floor, which
-    # `datetime.UTC` (3.11+) would not.
-    stamp = when or (datetime.datetime.now(datetime.timezone.utc)
-                     .strftime("%Y-%m-%dT%H:%M:%SZ"))
+    stamp = when or _utc_now()
     # A RECORDED MERGE IS KEPT: the field names the moment the parent came to hold
     # the branch, and a re-run finding it already there records nothing new.
-    if isinstance(body, dict) and str(body.get("id")) == str(phase_id) \
-            and body.get(MERGED_FIELD):
-        return path, body[MERGED_FIELD]
-    for ph in ((body or {}).get("phases") or []) if isinstance(body, dict) else []:
-        if isinstance(ph, dict) and str(ph.get("id")) == str(phase_id) \
-                and ph.get(MERGED_FIELD):
+    found = _phases_in(body, phase_id)
+    for ph in found:
+        if ph.get(MERGED_FIELD):
             return path, ph[MERGED_FIELD]
+    if not found:
+        return "", "phase %s is not in %s" % (phase_id, path)
     # THE MERGE IS AN INPUT OF THE DERIVED STATUS, so the status it now derives is
     # stored in the same write: `done` for a signed-off phase with every task
     # terminal, and nothing new for one whose sign-off is not recorded.
-    if isinstance(body, dict) and str(body.get("id")) == str(phase_id):
-        body[MERGED_FIELD] = stamp                      # a shard IS the phase
-        _store_derived(body)
-    else:
-        found = False
-        for ph in ((body or {}).get("phases") or []):
-            if isinstance(ph, dict) and str(ph.get("id")) == str(phase_id):
-                ph[MERGED_FIELD] = stamp
-                _store_derived(ph)
-                found = True
-        if not found:
-            return "", "phase %s is not in %s" % (phase_id, path)
+    for ph in found:
+        ph[MERGED_FIELD] = stamp
+        if merged_head is not _HEAD_NOT_ASKED:
+            ph[MERGED_HEAD_FIELD] = merged_head
+        _store_derived(ph)
     try:
         new = _revalidated_write(manifest_path, path, body)
     except Exception as exc:
@@ -721,6 +943,116 @@ def stamp_merged(manifest_path, phase_id, when=None):
         return "", ("%s would leave the plan invalid (%s), so its prior bytes were "
                     "restored" % (path, "; ".join(new[:3])))
     return path, stamp
+
+
+def record_merged_head(manifest_path, phase_id, merged_head, merged_head_at=None):
+    """(path, head written or "", why) - add `phase.mergedHead` (and, for a head
+    recorded after the fact, `phase.mergedHeadAt`) to a phase whose merge is
+    ALREADY recorded without one, and touch nothing else.
+
+    The counterpart of `stamp_merged` for a plan written before the field existed,
+    through the same `_revalidated_write`: one read, one write, restored on a new
+    finding. It refuses rather than writes when the phase records no merge (that
+    is `stamp_merged`'s job, and a head with no merge is a claim with no event) and
+    when a head is already recorded - A RECORDED HEAD IS NEVER REPLACED: it is the
+    one every reader has been measuring against, and replacing it would move a
+    verdict nothing about the merge changed. `mergedAt` is not
+    written at all, so it cannot move. `merged_head_at`, when given, is written in
+    the same write as `mergedHeadAt`: the head is then not the merge's own commit.
+    """
+    if not merged_head:
+        return "", "", "no head was supplied"
+    path = _phase_file(manifest_path, phase_id)
+    if not path:
+        return "", "", ("no file holds phase %s - the index names no shard for it"
+                        % (phase_id,))
+    try:
+        body = _mio.read_json(path)
+    except Exception as exc:
+        return "", "", "%s could not be read: %s" % (path, exc)
+    found = _phases_in(body, phase_id)
+    if not found:
+        return "", "", "phase %s is not in %s" % (phase_id, path)
+    if not all(ph.get(MERGED_FIELD) for ph in found):
+        return "", "", "phase %s records no merge in %s" % (phase_id, path)
+    if any(ph.get(MERGED_HEAD_FIELD) for ph in found):
+        return path, "", "a head is already recorded in %s" % (path,)
+    for ph in found:
+        ph[MERGED_HEAD_FIELD] = merged_head
+        if merged_head_at:
+            ph[MERGED_HEAD_AT_FIELD] = merged_head_at
+    try:
+        new = _revalidated_write(manifest_path, path, body)
+    except Exception as exc:
+        return "", "", "%s could not be written: %s" % (path, exc)
+    if new:
+        return "", "", ("%s would leave the plan invalid (%s), so its prior bytes "
+                        "were restored" % (path, "; ".join(new[:3])))
+    return path, merged_head, ""
+
+
+def backfill_merged_head(manifest_path, phase_id, parent, project, ask_head,
+                         after_the_fact, dry_run=False):
+    """Answer fields for a re-run over a merge recorded WITHOUT `mergedHead`: {} when
+    there is nothing to backfill (no merge recorded, or a head already is), else
+    the head written - once - or the reason it was not.
+
+    `ask_head` IS CALLED ONLY WHEN A HEAD IS OWED, so a re-run over a phase that
+    already has one asks git nothing. It returns `{"sha", "basis"}`:
+
+    - WITH THE BRANCH STILL THERE it is `recovered_head`, and the head written is
+      the oldest commit on the parent's first-parent chain that contains the tip:
+      the commit on that chain that brought the tip in - the tip itself for a
+      fast-forward, the merge commit for a direct merge, the parent's merge of an
+      intermediate branch for a nested one - held to the recorded task commits,
+      the same value a stamp at the merge would have written, so `mergedHead` keeps one meaning and no `mergedHeadAt` is written.
+    - WITH THE BRANCH GONE (`after_the_fact`) the merge commit cannot be recovered,
+      and it is `contained_task_commits`: the parent's head, and only when every
+      task commit the plan records is in it. That head sits at or after the merge,
+      and every reader asks whether `mergedHead` is an ancestor of a run's head, so
+      it is STRICTER than the merge's own commit: a green run that contains the
+      merge but predates this head reads provisional, never whole by accident.
+      `mergedHeadAt` records the moment, which is what "a run after this" is then
+      measured against. A parent that does not hold every recorded task commit (a
+      rewound one, a squash merge, a wrong one lacking the work) fails the
+      evidence and is refused, so the phase stays unknown.
+
+    The basis goes into the journal row's `reason`, and the summary says which of
+    the two heads this is.
+    """
+    recorded = _recorded_phase(manifest_path, phase_id)
+    if not recorded.get(MERGED_FIELD) or recorded.get(MERGED_HEAD_FIELD):
+        return {}
+    head = ask_head(recorded)
+    if not head["sha"]:
+        return {"mergedHeadWhy": head["basis"]}
+    if dry_run:
+        return {"mergedHeadWould": head["sha"]}
+    at = _utc_now() if after_the_fact else None
+    path, written, why = record_merged_head(manifest_path, phase_id, head["sha"],
+                                            merged_head_at=at)
+    if not written:
+        return {"mergedHeadWhy": why}
+    # ONLY ALLOW-LISTED DETAIL KEYS: `_journal_io` drops any other key in silence,
+    # so the head travels as `to`, its basis as `reason` and the branch whose chain
+    # it came from as `parent`; what has no key of its own - which head this is,
+    # `mergedHeadAt` - is in the summary.
+    what = ("recorded at %s after the fact: the parent's head then, not the "
+            "merge's own commit, so stricter than it" % (at,) if at
+            else "recovered from the parent's first-parent chain")
+    _journal_io.append_from_cli(project, {
+        "action": ACTION_MERGED_HEAD_RECORDED,
+        "actor": {"via": "close-phase"},
+        "target": str(phase_id),
+        "summary": "%s head %s for a merge at %s - %s"
+                   % (parent, written, recorded[MERGED_FIELD], what),
+        "details": {"phaseId": str(phase_id), "field": MERGED_HEAD_FIELD,
+                    "from": None, "to": written,
+                    "mergedAt": recorded[MERGED_FIELD], "parent": parent,
+                    "reason": ("recovered: " if not at else "") + head["basis"]},
+    })
+    return {"mergedHead": written, "mergedHeadBackfilled": path,
+            "mergedHeadAt": at}
 
 
 def surviving_copy(manifest_path, project, git_root, observation, the_plan,
@@ -745,14 +1077,28 @@ def surviving_copy(manifest_path, project, git_root, observation, the_plan,
     copy was written and carry on, because a merge that happened must not be reported
     as not having happened.
     """
-    tree = (observation or {}).get("parentTree")
-    if (the_plan or {}).get("merge", {}).get("mode") != "in-parent-worktree" \
+    observation = observation or {}
+    # THE TREE THE PASSED PATH SITS IN, read off the worktree list rather than
+    # assumed to be the git root: run from the main checkout with the WORKTREE's
+    # manifest, the git root is main while the path is the worktree's copy - and a
+    # stamp written there dirtied the tree the cleanup was about to remove.
+    source = _tree_holding(observation.get("trees") or [], manifest_path)
+    base = (source or {}).get("path") or git_root
+    tree = observation.get("parentTree")
+    # BOTH MODES THAT LAND IN A CHECKOUT: the merge made now, and the branch that
+    # already landed - a re-run, or a merge a human made by hand - whose stamp
+    # belongs in the same surviving copy.
+    if (the_plan or {}).get("merge", {}).get("mode") not in (
+            "in-parent-worktree", "already-contained") \
             or not tree or not tree.get("path"):
         return manifest_path, project, ""
-    if _wt.same_tree(tree.get("path"), git_root):
+    if _wt.same_tree(tree.get("path"), base):
         return manifest_path, project, ""
     try:
-        rel = os.path.relpath(os.path.abspath(manifest_path), git_root)
+        # Both sides RESOLVED: git prints a worktree's real path, and a caller's
+        # path through a symlinked prefix (`/var` for `/private/var`) would
+        # otherwise read as outside the tree it is in.
+        rel = os.path.relpath(os.path.realpath(manifest_path), os.path.realpath(base))
     except Exception as exc:
         return manifest_path, project, "%s" % (exc,)
     if rel.startswith(".."):
@@ -776,6 +1122,34 @@ def surviving_copy(manifest_path, project, git_root, observation, the_plan,
             "%s does not carry phase %s, so the stamp stays in the copy this run "
             "was pointed at" % (moved, phase_id))
     return moved, tree.get("path"), ""
+
+
+def no_survivor_refusal(observation, manifest_path, parent):
+    """The refusal owed when the landing has no surviving copy to stamp, or None.
+
+    With `parent` checked out in NO worktree the merge is a ref-only fast-forward,
+    and a manifest inside the phase's own worktree is the copy the cleanup removes.
+    No other checkout is the landing's either - another branch's plan is not this
+    one's. So the run stops before the merge: a moved ref with no record of the
+    landing is the disagreement this refuses to create."""
+    if (observation or {}).get("parentTree") is not None:
+        return None
+    phase_tree = (observation or {}).get("phaseTree")
+    if not phase_tree or phase_tree.get("isMain") \
+            or not _wt.within_tree(phase_tree.get("path"), manifest_path):
+        return None
+    return ("the landing has no surviving copy to stamp - %r is checked out in no "
+            "worktree, and %s is the phase worktree's own copy, which the cleanup "
+            "removes: check out %s in a worktree, or run close-phase from its "
+            "checkout" % (parent, manifest_path, parent))
+
+
+def _tree_holding(trees, path):
+    """The worktree record `path` sits in - the deepest when records nest - or None."""
+    holding = [t for t in trees if t.get("path") and not t.get("prunable")
+               and _wt.within_tree(t.get("path"), path)]
+    holding.sort(key=lambda t: len(os.path.realpath(t.get("path"))))
+    return holding[-1] if holding else None
 
 
 def _phase_present(manifest_path, phase_id):
@@ -828,6 +1202,26 @@ def record_row(project, phase_id, branch, parent, config=None):
 
 # --- rendering -------------------------------------------------------------------
 
+def _render_backfill(answer, out=print):
+    """The lines a `backfill_merged_head` answer owes - nothing for an empty one."""
+    if answer.get("mergedHeadBackfilled") and answer.get("mergedHeadAt"):
+        out("  %s = %s written to %s, with %s = %s (the branch is gone: the "
+            "parent's head now, not the merge's own commit, so stricter than it)"
+            % (MERGED_HEAD_FIELD, answer["mergedHead"],
+               answer["mergedHeadBackfilled"], MERGED_HEAD_AT_FIELD,
+               answer["mergedHeadAt"]))
+    elif answer.get("mergedHeadBackfilled"):
+        out("  %s = %s written to %s (the merge was recorded without one; this is "
+            "the commit recovered from the parent's first-parent chain)"
+            % (MERGED_HEAD_FIELD, answer["mergedHead"],
+               answer["mergedHeadBackfilled"]))
+    elif answer.get("mergedHeadWould"):
+        out("  would write %s = %s (the merge is recorded without one)"
+            % (MERGED_HEAD_FIELD, answer["mergedHeadWould"]))
+    elif answer.get("mergedHeadWhy"):
+        out("  %s NOT recorded: %s" % (MERGED_HEAD_FIELD, answer["mergedHeadWhy"]))
+
+
 def render(answer, out=print):
     """One block a human reads top to bottom: what was decided, what ran, what did
     not, and why. Refusals carry their remedy on the next line, because a refusal
@@ -847,6 +1241,7 @@ def render(answer, out=print):
             out("  would run: git %s" % (" ".join(argv),))
         if not answer.get("plannedSteps"):
             out("  would run: nothing - %s" % (answer["mode"],))
+        _render_backfill(answer, out=out)
     for step in answer.get("steps") or []:
         tail = (step["stderr"] or step["stdout"] or "").strip().split("\n")[0]
         out("  git %s -> %s%s" % (" ".join(step["argv"]), step["code"],
@@ -862,6 +1257,12 @@ def render(answer, out=print):
         if answer.get("stampedElsewhere"):
             out("    (that is the copy in the worktree the merge landed in - the "
                 "one in this tree is about to be removed)")
+        if answer.get("mergedHeadBackfilled"):
+            _render_backfill(answer, out=out)
+        elif answer.get("mergedHead"):
+            out("  %s = %s" % (MERGED_HEAD_FIELD, answer["mergedHead"]))
+        elif answer.get("mergedHeadWhy"):
+            out("  %s NOT recorded: %s" % (MERGED_HEAD_FIELD, answer["mergedHeadWhy"]))
         if answer.get("stubMirrored"):
             out("  index stub re-mirrored from the shard in %s"
                 % (answer["stubMirrored"],))
@@ -872,6 +1273,17 @@ def render(answer, out=print):
     if answer.get("finishFrom"):
         out("  cleanup is not finished. From %s, run:" % (answer["finishFrom"],))
         out("    %s" % (answer["finishCommand"],))
+    follow = answer.get("followUp")
+    if follow:
+        # A PREVIEW HAS RUN NOTHING, so it says what the cleanup will need rather
+        # than that a cleanup stopped.
+        out(("  after the merge, cleanup will need, from %s:" if answer.get("dryRun")
+             else "  cleanup is not finished, and this never moves a HEAD. From %s, "
+                  "run:") % (follow["from"],))
+        for command in follow["commands"]:
+            out("    %s" % (command,))
+        if follow.get("note"):
+            out("  (that %s)" % (follow["note"],))
     parked = answer.get("parkedOnBranch") or []
     if parked:
         out("  parked on %s, materializable now that it has landed - on %s, run:"
@@ -942,6 +1354,9 @@ def main(argv, out=print):
 
     names = resolve(manifest, phase, args.parent, args.branch,
                     initials=_wt.git_user_name(git_root))
+    if names["refusal"]:
+        out("[close-phase] REFUSED: %s. Nothing was written." % (names["refusal"],))
+        return E_FAIL
     # ALREADY LANDED AND CLEANED UP: the plan records the merge and the branch is
     # gone. Containment cannot be asked of a branch that no longer exists, and the
     # planner then said "merge it into the parent first" about a phase that had
@@ -961,9 +1376,33 @@ def main(argv, out=print):
                 % (args.phase, phase[MERGED_FIELD], names["branch"],
                    names["branchBasis"]))
             return E_NO_BASIS
-        out("[close-phase] phase %s landed at %s and %s is gone - nothing left "
-            "to do" % (args.phase, phase[MERGED_FIELD], names["branch"]))
+        # ...EXCEPT a head a plan older than the field never got. Without this the
+        # default re-run - the branch deleted by the first one - answered here for
+        # ever, and the phase's merged head stayed unknown with nothing to fill it.
+        # ASKED BEFORE ANYTHING IS PRINTED, so "nothing left to do" is said only
+        # when that is what happened.
+        filled = backfill_merged_head(
+            args.manifest, args.phase, names["parent"], project,
+            lambda recorded: contained_task_commits(git_root, recorded,
+                                                    names["parent"]),
+            after_the_fact=True, dry_run=args.dry_run)
+        out("[close-phase] phase %s landed at %s and %s is gone - %s"
+            % (args.phase, phase[MERGED_FIELD], names["branch"],
+               "nothing left to merge or clean up" if filled
+               else "nothing left to do"))
+        _render_backfill(filled, out=out)
         return E_OK
+    # ...AND A COMPOSED NAME NOTHING HOLDS IS NOT AN ANCESTRY QUESTION. Asked of git,
+    # it came back as "could not be established", which names the wrong gap: the
+    # plan recorded no branch, and the one predicted from the template is not in
+    # this repository. Phases built on one combined branch are exactly this shape.
+    if names["branchBasis"].startswith("composed") and _wt.ref_exists(
+            git_root, names["branch"])["exists"] is False:
+        out("[close-phase] no branch is recorded for phase %s, so the name asked "
+            "about, %s, was %s - and it is not a branch in this repository. Nothing was "
+            "written. Pass --branch <name>: the branch that carries this phase's "
+            "work" % (args.phase, names["branch"], names["branchBasis"]))
+        return E_FAIL
     observation = observe(git_root, names["branch"], names["parent"])
     if observation["why"]:
         out("[close-phase] %s" % (observation["why"],))
@@ -977,6 +1416,15 @@ def main(argv, out=print):
     the_plan = plan(observation, names["branch"], names["parent"],
                     names["policy"], want_worktree=args.remove_worktree,
                     want_branch=args.delete_branch, no_ff=args.no_ff)
+    # ASKED ONLY WHERE A WRITE WOULD FOLLOW. With `meta.merge.auto` false the run
+    # hands over the merge command and writes nothing, so there is no stamp to
+    # lack a survivor - unless the branch already landed and the stamp is due.
+    writes = the_plan["auto"] or the_plan["merge"]["mode"] == "already-contained"
+    refusal = (no_survivor_refusal(observation, args.manifest, names["parent"])
+               if writes else None)
+    if refusal:
+        out("[close-phase] REFUSED: %s. Nothing was merged or written." % (refusal,))
+        return E_USAGE
     def _stamp():
         """Persist `phase.mergedAt`, and report what happened in answer fields.
 
@@ -991,17 +1439,39 @@ def main(argv, out=print):
             return {"stamped": "", "stampWhy": why}
         earlier = recorded_merge(target, args.phase)
         if earlier:
-            # A re-run records the merge that happened; it does not move it.
-            return {"stamped": target, "stampedAt": earlier, "stampKept": True,
+            # A re-run records the merge that happened; it does not move it. A
+            # recorded mergedHead is kept too; only a merge recorded WITHOUT one -
+            # a plan older than the field - has the recovered commit added, once.
+            kept = {"stamped": target, "stampedAt": earlier, "stampKept": True,
                     "stampedElsewhere": (os.path.abspath(target)
                                          != os.path.abspath(args.manifest)),
                     "parkedOnBranch": _parked_after_merge(target, names["branch"])}
-        path, stamp_at = stamp_merged(target, args.phase)
+            kept.update(backfill_merged_head(
+                target, args.phase, names["parent"], project_for_row,
+                lambda recorded: recovered_head(git_root, names["branch"],
+                                                names["parent"], recorded),
+                after_the_fact=False))
+            return kept
+        # ASKED HERE, AFTER `close()` HAS VERIFIED CONTAINMENT AND BEFORE THE
+        # CLEANUP, while the branch still resolves: the oldest commit on the
+        # parent's first-parent chain that contains the tip, recovered by
+        # `merge_commit` - the merge's own commit unless that chain was rewritten
+        # past it. On a
+        # merge this run just made that is the parent's head; on a hand merge
+        # closed later the parent may have moved on, and its head would then be a
+        # later commit than the merge. A commit that cannot be recovered writes no
+        # guess: `None` travels through as an explicit null.
+        head = recovered_head(git_root, names["branch"], names["parent"],
+                              _recorded_phase(target, args.phase))
+        merged_head = head["sha"] or None
+        merged_head_why = "" if merged_head else head["basis"]
+        path, stamp_at = stamp_merged(target, args.phase, merged_head=merged_head)
         if not path:
             return {"stamped": "", "stampWhy": stamp_at}
         record_row(project_for_row, args.phase, names["branch"], names["parent"])
         mirrored, mirror_why = mirror_stub(target, args.phase, project_for_row)
         return {"stamped": path, "stampedAt": stamp_at,
+                "mergedHead": merged_head, "mergedHeadWhy": merged_head_why,
                 "stubMirrored": mirrored, "stubWhy": mirror_why,
                 "stampedElsewhere": (os.path.abspath(target)
                                      != os.path.abspath(args.manifest)),
@@ -1012,6 +1482,18 @@ def main(argv, out=print):
                          settled_now=settlement(landed or phase, merged=True),
                          stamp=_stamp)
     answer["settledBasis"] = landed_basis
+    # A PREVIEW OWES THE BACKFILL TOO. `close()` never calls the stamp on a dry run,
+    # so a re-run over a merge recorded without a head would preview in silence
+    # what the real run then writes. Asked of the copy the real run would write.
+    if answer.get("dryRun") and code == E_OK and not answer.get("pending"):
+        survivor = surviving_copy(args.manifest, project, git_root, observation,
+                                  the_plan, phase_id=args.phase)[0]
+        if survivor:
+            answer.update(backfill_merged_head(
+                survivor, args.phase, names["parent"], project,
+                lambda recorded: recovered_head(git_root, names["branch"],
+                                                names["parent"], recorded),
+                after_the_fact=False, dry_run=True))
     answer["branchBasis"] = names["branchBasis"]
     answer["parentBasis"] = names["parentBasis"]
 
@@ -1032,9 +1514,16 @@ def main(argv, out=print):
         # reads `__file__` outside the pinned preamble (`depth_sensitive_paths()`
         # fails the file that does), and a hard path would be wrong for the reader
         # anyway - they are running an installed plugin, not this checkout.
+        # ...NAMING THE SURVIVING MANIFEST, not the path this run was handed: that
+        # path is the worktree's copy, and a stamp through it lands in the tree the
+        # follow-up exists to remove.
+        survivor = surviving_copy(args.manifest, project, git_root, observation,
+                                  the_plan, phase_id=args.phase)[0]
+        shown = (os.path.relpath(os.path.realpath(survivor), os.path.realpath(tree))
+                 if _wt.within_tree(tree, survivor) else survivor)
         answer["finishCommand"] = (
             'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/git/close-phase.py" %s %s '
-            '--project .' % (args.manifest, args.phase))
+            '--project .' % (shown.replace(os.sep, "/"), args.phase))
 
     if args.as_json:
         out(json.dumps(answer, indent=2, sort_keys=True))

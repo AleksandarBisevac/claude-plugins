@@ -155,6 +155,122 @@ def _cases(record):
            callable(getattr(M, "main", None))
            and not hasattr(_manifest_rules, "main"))
 
+    # --- meta.phaseGate / meta.gateBudgetMs -----------------------------------
+    _pg_base = _valid_manifest()
+    _pg_base["meta"]["buildCommands"] = {"test": "x", "lint": "y", "coverage": "z"}
+
+    _pg_empty = copy.deepcopy(_pg_base)
+    _pg_empty["meta"]["phaseGate"] = {"exclude": ["test", "lint", "coverage"]}
+    _pg_empty_w = M.validate(_pg_empty)[1]
+    record("c26 a meta.phaseGate.exclude that removes every buildCommands key "
+           "validates (still additive) and WARNS 'phase gate runs no suite': "
+           "%r" % ([x for x in _pg_empty_w if "no suite" in x],),
+           any("phase gate runs no suite" in x for x in _pg_empty_w))
+
+    _pg_bad = copy.deepcopy(_pg_base)
+    _pg_bad["meta"]["phaseGate"] = {"always": ["lint", "nope"]}
+    _pg_bad_w = M.validate(_pg_bad)[1]
+    record("c27 an `always` entry that names no buildCommands key is warned by "
+           "name: %r" % ([x for x in _pg_bad_w if "phaseGate" in x],),
+           any("nope" in x and "phaseGate" in x for x in _pg_bad_w))
+
+    _pg_budget = copy.deepcopy(_pg_base)
+    _pg_budget["meta"]["gateBudgetMs"] = True
+    _pg_budget_w = M.validate(_pg_budget)[1]
+    # THE SUBSTRING IS "positive integer", NOT MERELY THE KEY NAME: the key
+    # alone is not proof of the type check - an unrecognised key ALSO draws a
+    # warning naming it (the typo-catcher), so a case asking only "is
+    # `gateBudgetMs` mentioned anywhere" would stay green even with the shape
+    # check deleted, the moment the key itself is merely known.
+    record("c28 a boolean `gateBudgetMs` is warned as the wrong SHAPE, the "
+           "same `bool is an int subclass` rule budgetUSD is held to - not "
+           "merely named as an unrecognised key: %r"
+           % ([x for x in _pg_budget_w if "gateBudgetMs" in x],),
+           any("gateBudgetMs" in x and "positive integer" in x
+               for x in _pg_budget_w))
+
+    # --- ALLOW: a reordering is not a narrowing -------------------------------
+    _pg_none_w = M.validate(_pg_base)[1]
+    record("c29 a manifest with no meta.phaseGate at all gains no new warning "
+           "from this rule: %r" % ([x for x in _pg_none_w
+                                    if "phaseGate" in x or "no suite" in x],),
+           not any("phaseGate" in x or "no suite" in x for x in _pg_none_w))
+    _pg_ok = copy.deepcopy(_pg_base)
+    _pg_ok["meta"]["phaseGate"] = {"always": ["lint"]}
+    _pg_ok_w = M.validate(_pg_ok)[1]
+    record("c30 ...and `always: [lint]` ALONE validates clean - a reordering of "
+           "the default gate is not a narrowing, so it draws none of this "
+           "rule's warnings: %r" % ([x for x in _pg_ok_w
+                                     if "phaseGate" in x or "no suite" in x],),
+           not any("phaseGate" in x or "no suite" in x for x in _pg_ok_w))
+
+    # --- P79.1 THE REPRO: mode and coupling shape checks ----------------------
+    _pg_mode = copy.deepcopy(_pg_base)
+    _pg_mode["meta"]["phaseGate"] = {"mode": "enforced"}
+    _pg_mode_w = M.validate(_pg_mode)[1]
+    record("c36 an invalid `meta.phaseGate.mode` ('enforced' - neither of the "
+           "two real words) draws a warning naming the field: %r"
+           % ([x for x in _pg_mode_w if "phaseGate.mode" in x],),
+           any("phaseGate.mode" in x for x in _pg_mode_w))
+
+    _pg_coupling = copy.deepcopy(_pg_base)
+    _pg_coupling["meta"]["coupling"] = [{"test": "tests/test_x.py",
+                                         "sources": ["src/x.py"]}]
+    _pg_coupling_w = M.validate(_pg_coupling)[1]
+    record("c37 a `meta.coupling` entry with no `basis` at all draws a warning "
+           "naming the missing `basis.runId`: %r"
+           % ([x for x in _pg_coupling_w if "coupling" in x],),
+           any("coupling" in x and "basis.runId" in x
+               for x in _pg_coupling_w))
+
+    # --- THE REPRO: meta.fullGate and phase.mergedHead ------------------------
+    # Before this rule existed, a `fullGate` entry naming no `buildCommands`
+    # key and a `mergedHead` that is not a SHA both validated with no warning
+    # naming them - the third place had no shape check at all.
+    _fg_bad = copy.deepcopy(_pg_base)
+    _fg_bad["meta"]["fullGate"] = ["nope"]
+    _fg_bad["phases"][0]["mergedHead"] = "not-a-sha"
+    _fg_bad_w = M.validate(_fg_bad)[1]
+    record("c38 a `meta.fullGate` entry naming no `buildCommands` key draws a "
+           "warning naming it: %r"
+           % ([x for x in _fg_bad_w if "fullGate" in x],),
+           any("fullGate" in x and "nope" in x for x in _fg_bad_w))
+    record("c39 ...and a phase `mergedHead` that is not a full hex SHA draws "
+           "a warning naming it, at the phase rather than at meta: %r"
+           % ([x for x in _fg_bad_w if "mergedHead" in x],),
+           any("mergedHead" in x and "not-a-sha" in x and "phase P0" in x
+               for x in _fg_bad_w))
+
+    # --- ALLOW: neither key present validates exactly as before ---------------
+    _fg_none_w = M.validate(_pg_base)[1]
+    record("c40 a plan with neither `fullGate` nor `mergedHead` draws no "
+           "warning from this rule: %r"
+           % ([x for x in _fg_none_w
+               if "fullGate" in x or "mergedHead" in x],),
+           not any("fullGate" in x or "mergedHead" in x for x in _fg_none_w))
+
+    # --- ALLOW: a real buildCommands key and a real full SHA are quiet --------
+    _fg_ok = copy.deepcopy(_pg_base)
+    _fg_ok["meta"]["fullGate"] = ["coverage"]
+    _fg_ok["phases"][0]["mergedHead"] = "a" * 40
+    _fg_ok_w = M.validate(_fg_ok)[1]
+    record("c41 a `fullGate` entry that IS a buildCommands key and a "
+           "`mergedHead` that IS a full 40-hex SHA validate in silence: %r"
+           % ([x for x in _fg_ok_w
+               if "fullGate" in x or "mergedHead" in x],),
+           not any("fullGate" in x or "mergedHead" in x for x in _fg_ok_w))
+
+    # --- the comma-joined spelling reuses `_comma_joined_gate` ----------------
+    _fg_comma = copy.deepcopy(_pg_base)
+    _fg_comma["meta"]["fullGate"] = ["test,coverage"]
+    _fg_comma_w = M.validate(_fg_comma)[1]
+    record("c42 a `fullGate` entry that is several buildCommands keys joined "
+           "by commas into ONE entry is warned the same way `phaseGate` is - "
+           "reusing `_comma_joined_gate` rather than re-deriving the shape: %r"
+           % ([x for x in _fg_comma_w if "fullGate" in x],),
+           any("fullGate" in x and "shell can find" in x
+               for x in _fg_comma_w))
+
     # --- a stub fallen behind its shard -------------------------------------
     # `validate()` reads the assembled manifest, where the body wins, so the stub's
     # stale copy is invisible to it - and the stub is what the index alone answers.
@@ -193,6 +309,7 @@ def _cases(record):
     try:
         _cases_output(record, path2)
         _cases_test_evidence(record, path2)
+        _cases_gate_evidence(record, path2)
     finally:
         if os.path.exists(path2):
             os.unlink(path2)
@@ -422,6 +539,106 @@ def _cases_test_evidence(record, path):
            "The misspelt run is what stops that equality being a validator "
            "answering the same thing to everything: %r / %r" % (bare, meta_ok),
            bare == (0, [], []) and meta_ok == bare and meta_typo != bare)
+
+
+def _cases_gate_evidence(record, path):
+    """The EVIDENCE ARM of 'phase gate runs no suite' - the sentence `validate()`
+    cannot print on its own, because it is handed the assembled manifest and
+    not the ledger beside it.
+
+    `_check_meta` already asks the CERTAIN arm with no evidence at all
+    (`c26` above pins it): a default left EMPTY after `meta.phaseGate.exclude`
+    is a warning regardless. This command is the caller that has the PATH, so
+    it is the one that can read the ledger and ask the second arm - only when
+    the certain one stayed quiet, and only when `exclude` names something at
+    all, so an ordinary plan with no `phaseGate` never pays for a ledger read.
+    """
+    plan = _valid_manifest()
+    plan["meta"]["buildCommands"] = {"lint": "eslint .", "test": "pytest -q"}
+    plan["meta"]["phaseGate"] = {"exclude": ["test"]}
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh)
+    project = os.path.dirname(os.path.abspath(path))
+    evidence_dir = os.path.join(project, "evidence")
+    os.makedirs(evidence_dir, exist_ok=True)
+    ledger_path = os.path.join(evidence_dir, "2026-09.gate-evidence-cases.jsonl")
+
+    def _write_ledger(step):
+        with open(ledger_path, "w", encoding="utf-8") as fh:
+            if step is not None:
+                fh.write(json.dumps({"steps": [step]}) + "\n")
+
+    def _warnings():
+        code, text = _run([path])
+        return code, [ln for ln in text.splitlines()
+                      if ln.startswith("WARNING: ")]
+
+    saved_env = os.environ.pop("CLAUDE_PROJECT_DIR", None)
+    try:
+        _write_ledger({"name": "lint", "suiteReader": "none"})
+        code_silent, w_silent = _warnings()
+        record("c31 THE REPRO: a phase gate whose only surviving key "
+               "(`lint`) never once recorded a suite in the ledger prints "
+               "'phase gate runs no suite as far as the ledger shows' - the "
+               "arm `validate()` alone cannot reach: %r"
+               % ([x for x in w_silent if "no suite" in x],),
+               code_silent == 0
+               and any("phase gate runs no suite as far as the ledger shows"
+                       in x and "lint" in x for x in w_silent))
+
+        _write_ledger({"name": "lint", "suiteReader": "jest"})
+        code_running, w_running = _warnings()
+        record("c32 ALLOW: the same plan with the ledger recording `jest` "
+               "for `lint` prints no such warning - the arm is a claim about "
+               "the LEDGER and not about the plan's shape alone: %r"
+               % ([x for x in w_running if "no suite" in x],),
+               code_running == 0
+               and not any("no suite" in x for x in w_running))
+
+        os.remove(ledger_path)
+        code_none, w_none = _warnings()
+        record("c33 ...and NO ledger at all reads the same as a ledger that "
+               "never ran the key - the certain arm already covers 'exclude "
+               "removed everything'; this is 'something is left, and as far "
+               "as recording goes it has never run': %r"
+               % ([x for x in w_none if "no suite" in x],),
+               code_none == 0
+               and any("no suite" in x for x in w_none))
+
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(plan, fh)
+        with open(ledger_path, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps({"steps": [{"name": "lint",
+                                            "suiteReader": "none"}]}) + "\n")
+            fh.write("{not json, a torn line\n")
+        code_torn, w_torn = _warnings()
+        record("c35 AN UNREADABLE LEDGER IS SAID, NEVER READ AS 'NO SUITE' - "
+               "a torn/unparseable line draws its OWN distinct warning naming "
+               "the ledger file, and NOT the 'runs no suite' sentence: a "
+               "partial read is not a partial answer to this question, "
+               "because the missing row could as easily have been the one "
+               "recording `jest`: %r" % (w_torn,),
+               code_torn == 0
+               and any("could not be fully read" in x
+                      and "gate-evidence-cases.jsonl" in x
+                      and "not 'phase gate runs no suite'" in x
+                      for x in w_torn)
+               and not any(x.startswith("WARNING: phase gate runs no suite")
+                          for x in w_torn))
+
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(_valid_manifest(), fh)
+        code_plain, w_plain = _warnings()
+        record("c34 ALLOW: a plan with no `meta.phaseGate` at all never asks "
+               "the ledger question in the first place - no `no suite` "
+               "warning, whatever a ledger sitting beside it might say: %r"
+               % ([x for x in w_plain if "no suite" in x],),
+               code_plain == 0 and not any("no suite" in x for x in w_plain))
+    finally:
+        if saved_env is not None:
+            os.environ["CLAUDE_PROJECT_DIR"] = saved_env
+        import shutil                                              # noqa: E402
+        shutil.rmtree(evidence_dir, ignore_errors=True)
 
 
 def _selftest():

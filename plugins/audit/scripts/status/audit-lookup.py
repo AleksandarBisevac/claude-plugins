@@ -13,6 +13,8 @@ already keeps it and handed back with the pointer that lets a reader check it:
     audit-lookup.py <manifest> bug <bugId> [--json]
     audit-lookup.py <manifest> file <path> [--json]
     audit-lookup.py <manifest> brief <taskId> [--json]
+    audit-lookup.py <manifest> run <runId> [--json]
+    audit-lookup.py <manifest> run latest (--phase <id> | --task <id>) [--json]
 
 THE FILE QUESTION IS A LOOKUP, NOT A SEARCH. `fileIndex` already records which
 tasks declared a path, in the order they were added - `manifest-conventions.md`'s
@@ -34,11 +36,26 @@ the plan already told it what grepping would have found.
 A MATCH THAT FINDS NOTHING SAYS SO. `cancel` on an id this manifest does not have
 at all, `bug` on an id not in `bugs[]`, `file` on a path `fileIndex` never
 recorded, `brief` on a task id this manifest does not have (or that names a
-phase, since `files` is a task field): all four exit non-zero with the plain
-sentence that nothing was found, never a nearest guess dressed as an answer. An
-id that DOES exist but was never cancelled is a different, legitimate answer -
-not a miss - and says so too; so is a task `brief` finds that simply declares
-no files yet.
+phase, since `files` is a task field), `run` on a `runId` (or a `latest`
+subject) the evidence ledger never recorded: all five exit non-zero with the
+plain sentence that nothing was found, never a nearest guess dressed as an
+answer. An id that DOES exist but was never cancelled is a different,
+legitimate answer - not a miss - and says so too; so is a task `brief` finds
+that simply declares no files yet.
+
+`run` IS THE ONE QUESTION THAT READS THE EVIDENCE LEDGER RATHER THAN THE
+MANIFEST OR THE JOURNAL. A gate that runs under `run_in_background` (longer
+than the Bash tool's foreground bound) writes its verdict there long before its
+own terminal is read again, so the orchestrator reads the row back instead of a
+truncated terminal: `runId`, `ts`, `scope`/`subject`, `status`, `failed`, per
+step `name`/`exit`/`durationMs`/`outcome`, and the failing lines and
+`failingSuites` with their bases EXACTLY as `_evio.row_for` already bounded and
+redacted them - never re-derived or re-cut here. `latest` in place of a runId,
+with `--phase <id>` or `--task <id>`, answers the newest recorded row for that
+subject (`_evio.latest_by_subject`) instead of one that must already be known.
+AN UNREADABLE LEDGER FILE IS SAID, NEVER READ AS "no such run": a miss folds in
+how many ledger files could not be read, because the run in question may be
+sitting in one of those rather than one that never happened.
 
 READ-ONLY. This never writes the manifest, the ledger or the journal.
 
@@ -278,6 +295,89 @@ def brief_lookup(manifest, task_id):
                             % (task_id,)}
 
 
+# --- run ---------------------------------------------------------------------
+# The step fields `run_lookup` reports, in the order the row already carries
+# them - `_evio.STEP_KEYS` minus `ran`, `measured`, `timeoutSeconds`,
+# `teardown`, `suiteReader` and the retry bookkeeping (`retriedAfterSignal`/
+# `retryBasis`): each of those is a fact about how or whether a step was
+# measured or retried, not a fact this lookup's caller is asking for.
+# `failing`/`failingSuites` cross through EXACTLY as `_evio._step` bounded
+# them at write time (`MAX_FAILING`/`MAX_PATHS`), never re-cut here - a
+# second cut would be a second, possibly disagreeing, opinion about where
+# the line is. `outcomeBasis`/`derivedGap` are the same rule applied to WHY a
+# `could-not-run` step has no verdict: a derived-run gap, a missing
+# interpreter and a runner's own no-verdict signature all set that one word,
+# and without these two this lookup told a caller nothing more than the
+# terminal it was meant to stand in for already scrolled past.
+_RUN_STEP_KEYS = ("name", "exit", "durationMs", "outcome",
+                  "failing", "failingBasis", "failingSuites", "failingSuitesBasis",
+                  "outcomeBasis", "derivedGap")
+
+
+def _run_payload(row):
+    """The bounded render of one evidence row - never raw runner output.
+
+    `subject` is read off whichever of `taskId`/`phaseId` the row's own
+    `scope` names, the same branch `_evio.latest_by_subject` takes to build its
+    key - a row recording one and rendering the other would be answering a
+    different row's question."""
+    scope = row.get("scope")
+    subject = row.get("taskId") if scope == "task" else row.get("phaseId")
+    payload = {
+        "runId": row.get("runId"), "ts": row.get("ts"), "scope": scope,
+        "subject": subject, "status": row.get("status"),
+        "failed": list(row.get("failed") or []),
+        "steps": [dict((k, s[k]) for k in _RUN_STEP_KEYS if k in s)
+                  for s in (row.get("steps") or []) if isinstance(s, dict)],
+        "pointer": "evidence ledger row for runId %r" % (row.get("runId"),),
+    }
+    if row.get(_evio.VERDICT_SOURCE) is not None:
+        payload[_evio.VERDICT_SOURCE] = row[_evio.VERDICT_SOURCE]
+    if isinstance(row.get("reusedFrom"), dict):
+        payload["reusedFrom"] = dict(row["reusedFrom"])
+    return payload
+
+
+def run_lookup(rows, run_id, phase_id=None, task_id=None, aliases=None,
+              unreadable=0):
+    """`(found, payload_or_message)` for "what did run `run_id` record" - or,
+    with `run_id == "latest"`, the newest recorded run for the ONE subject
+    named by `phase_id`/`task_id`.
+
+    THE ANSWER TO "a gate ran in the background; what did it say", which today
+    can only be read from a terminal a long gate may already have scrolled
+    past. `rows` is `_evio.read_rows(...)["rows"]`; a specific `run_id` goes
+    through `_evio.row_by_run`, `"latest"` through `_evio.latest_by_subject`
+    keyed exactly as that function keys its own answers (`aliases` is
+    `_evio.subject_aliases(manifest)`, so a task moved to a new id still
+    answers under it).
+
+    AN UNKNOWN RUN IS A MISS, worded like every other question here - never
+    "no such run", which would claim more than a ledger this caller may not
+    have read in full is entitled to. `unreadable` (a count of ledger files
+    `_evio.read_rows` could not read) is folded into that same miss rather
+    than swallowed: the run may be genuinely absent, or sitting in one of the
+    files nothing here could open, and a caller deciding whether to re-run a
+    gate needs to know which."""
+    if run_id == "latest":
+        scope = "phase" if phase_id else "task"
+        subject = phase_id if phase_id else task_id
+        key = (aliases or {}).get((scope, str(subject)), (scope, str(subject)))
+        row = _evio.latest_by_subject(rows, aliases).get(key)
+        label = "%s %r" % (scope, subject)
+    else:
+        row = _evio.row_by_run(rows, run_id)
+        label = "run %r" % (run_id,)
+    if row is None:
+        message = "no recorded %s in the evidence ledger" % (label,)
+        if unreadable:
+            message += (" (%d ledger file(s) could not be read - the miss "
+                        "may be there rather than a run that never happened)"
+                        % (unreadable,))
+        return False, message
+    return True, _run_payload(row)
+
+
 # --- cli --------------------------------------------------------------------------
 def _render_human(question, node_id, found, payload):
     if not found:
@@ -312,6 +412,37 @@ def _render_human(question, node_id, found, payload):
             else:
                 lines.append("  %s: last declared by %s (status: %s)"
                              % (entry["path"], entry["last"], entry["lastStatus"]))
+        lines.append("pointer: %s" % (payload["pointer"],))
+        return lines
+    if question == "run":
+        lines = ["run %s (%s %s): %s"
+                 % (payload["runId"], payload["scope"], payload["subject"],
+                    payload["status"])]
+        for step in payload["steps"]:
+            outcome = " outcome=%s" % (step["outcome"],) if step.get("outcome") else ""
+            lines.append("  %s: exit=%s durationMs=%s%s"
+                         % (step.get("name"), step.get("exit"),
+                            step.get("durationMs"), outcome))
+            for line in step.get("failing") or []:
+                lines.append("    failing: %s" % (line,))
+            for suite in step.get("failingSuites") or []:
+                lines.append("    failingSuite: %s" % (suite,))
+            # WHY, WHEN THE STEP HAS NO VERDICT. Printed only for a step that
+            # carries the field - a step recorded before it existed, or one
+            # that measured cleanly, says nothing here rather than an empty
+            # basis reading as a claim. `derivedGap` is named beside it rather
+            # than folded into the same sentence, because it is a fact this
+            # lookup can render on its own without re-parsing the basis text
+            # a build might phrase differently tomorrow.
+            if step.get("outcomeBasis"):
+                lines.append("    basis: %s" % (step["outcomeBasis"],))
+            if step.get("derivedGap"):
+                lines.append("    derivedGap: this step answered a narrower "
+                             "question than the phase's derived gate declared")
+        if _evio.VERDICT_SOURCE in payload:
+            lines.append("verdictSource: %s" % (payload[_evio.VERDICT_SOURCE],))
+        if "reusedFrom" in payload:
+            lines.append("reusedFrom: %s" % (payload["reusedFrom"],))
         lines.append("pointer: %s" % (payload["pointer"],))
         return lines
     # question == "file"
@@ -357,6 +488,16 @@ def build_parser():
         help="who last declared each file this task itself declares - "
              "one call, for a spawn prompt, instead of one `file` call per path")
     brief_p.add_argument("id")
+    run_p = sub.add_parser(
+        "run", parents=[common],
+        help="the evidence ledger row a background gate is read from")
+    run_p.add_argument("id", metavar="runId", help="a runId, or 'latest'")
+    run_p.add_argument("--phase", dest="phase", default=None, metavar="ID",
+                       help="with `latest`: the newest run recorded for this "
+                            "phase")
+    run_p.add_argument("--task", dest="task", default=None, metavar="ID",
+                       help="with `latest`: the newest run recorded for this "
+                            "task")
     return p
 
 
@@ -382,6 +523,31 @@ def main(argv):
         node_id = args.id
     elif args.question == "brief":
         found, payload = brief_lookup(manifest, args.id)
+        node_id = args.id
+    elif args.question == "run":
+        if args.id == "latest":
+            if bool(args.phase) == bool(args.task):
+                sys.stderr.write(
+                    "audit-lookup.py: `run latest` needs exactly one of "
+                    "--phase or --task\n")
+                return E_USAGE
+        elif args.phase or args.task:
+            sys.stderr.write(
+                "audit-lookup.py: --phase/--task only apply to `run "
+                "latest`\n")
+            return E_USAGE
+        project, config = _evio.project_config_for(args.manifest, args.project)
+        try:
+            read = _evio.read_rows(project, config)
+        except Exception as exc:
+            sys.stderr.write(
+                "audit-lookup.py: cannot read the evidence ledger: %s\n"
+                % (exc,))
+            return E_USAGE
+        aliases = _evio.subject_aliases(manifest)
+        found, payload = run_lookup(
+            read["rows"], args.id, phase_id=args.phase, task_id=args.task,
+            aliases=aliases, unreadable=read["unreadable"])
         node_id = args.id
     else:
         found, payload = file_lookup(manifest, args.path)

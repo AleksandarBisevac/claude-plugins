@@ -845,7 +845,9 @@ def cleanup_plan(trees, branch, parent, contained, tree_dirty, dirty_lines=None,
                  cwd_tree=None, want_worktree=True, want_branch=True,
                  resolve=None, owned=None, settled=None, tree=None,
                  branch_sha=None):
-    """{"steps", "blocked", "basis"} -- the ordered cleanup, or why each half cannot.
+    """{"steps", "blocked", "followUp", "basis"} -- the ordered cleanup, or why each
+    half cannot. `followUp` is `main_tree_release`'s answer when the branch is held
+    by the main worktree, else None.
 
     `steps` IS ORDERED AND THE ORDER IS THE CONTRACT. Worktree removal comes strictly
     before branch deletion, because `git branch -d` refuses with `error: cannot delete
@@ -880,13 +882,27 @@ def cleanup_plan(trees, branch, parent, contained, tree_dirty, dirty_lines=None,
     # objects to. Removing one of two holders does not free the branch.
     holders = [r for r in (trees or []) if r.get("branch") == branch]
     removed_here = False
+    # The commands that finish what this plan cannot do itself, or None. Only the
+    # main-worktree case has any: every other refusal is repaired by changing the
+    # repository, and a follow-up printed there would be advice to route around it.
+    follow_up = None
 
     # FAIL CLOSED. `owned` and `settled` default to None, which means the caller did
     # not establish them, and an unestablished precondition refuses. The alternative
     # -- defaulting to permission -- would make every existing call site reap by
     # omission, which is exactly the accident this pair exists to prevent.
     if want_worktree:
-        if not (owned or {}).get("ok"):
+        if tree is not None and tree.get("isMain"):
+            # ASKED BEFORE PROVENANCE, because the main tree is never removed and
+            # carries no marker: asked second, the ownership refusal answered for
+            # it and its remedy told the operator to `git worktree remove` the
+            # main tree. What frees the branch is the operator's own switch, which
+            # the branch half below names.
+            blocked.append(_refusal(
+                "%r is checked out in the MAIN worktree (%s), which is not a linked "
+                "worktree and is never removed" % (branch, tree.get("path")),
+                "nothing to remove - the main worktree stays where it is"))
+        elif not (owned or {}).get("ok"):
             # THE FIRST QUESTION, ahead of containment, because it is about whose
             # directory this is rather than about whether the work is safe. A
             # worktree somebody opened by hand is indistinguishable from ours by
@@ -925,12 +941,6 @@ def cleanup_plan(trees, branch, parent, contained, tree_dirty, dirty_lines=None,
             blocked.append(_refusal(
                 "no worktree holds %r, so there is none to remove" % (branch,),
                 "nothing to do - this is a report, not a failure"))
-        elif tree.get("isMain"):
-            blocked.append(_refusal(
-                "%r is checked out in the MAIN worktree (%s), which is not a linked "
-                "worktree and is never removed" % (branch, tree.get("path")),
-                "switch the main worktree to another branch if you want this one "
-                "reaped"))
         elif cwd_tree is None:
             # FAIL CLOSED, like `owned` and `settled` one gate up. This used
             # to skip on None, so "the caller never asked where it is standing" and
@@ -1017,11 +1027,23 @@ def cleanup_plan(trees, branch, parent, contained, tree_dirty, dirty_lines=None,
                                                         tree.get("path")
                                                         if tree else None,
                                                         resolve=resolve))]
-            blocked.append(_refusal(
-                "%r is still checked out at %s"
-                % (branch, ", ".join(str(r.get("path")) for r in _rest)),
-                "the worktree must go first; git refuses with `cannot delete branch "
-                "%r used by worktree at %r`" % (branch, _rest[0].get("path"))))
+            if len(_rest) == 1 and _rest[0].get("isMain"):
+                follow_up = main_tree_release(trees, branch, parent, _rest[0])
+                blocked.append(_refusal(
+                    "%r is checked out in the main worktree (%s), and this never "
+                    "moves a HEAD" % (branch, _rest[0].get("path")),
+                    "from %s, run %s%s"
+                    % (follow_up["from"],
+                       ", then ".join("`%s`" % c for c in follow_up["commands"]),
+                       " - which %s" % (follow_up["note"],)
+                       if follow_up["note"] else "")))
+            else:
+                blocked.append(_refusal(
+                    "%r is still checked out at %s"
+                    % (branch, ", ".join(str(r.get("path")) for r in _rest)),
+                    "the worktree must go first; git refuses with `cannot delete "
+                    "branch %r used by worktree at %r`"
+                    % (branch, _rest[0].get("path"))))
         else:
             # NOT `git branch -d` WHEN WE CAN DO BETTER, and this is measured rather
             # than preferred. After a `no-checkout` merge the parent is by
@@ -1054,8 +1076,28 @@ def cleanup_plan(trees, branch, parent, contained, tree_dirty, dirty_lines=None,
                                      "HEAD-graded check is the fallback)"
                                      % (branch, parent)})
 
-    return {"steps": steps, "blocked": blocked,
+    return {"steps": steps, "blocked": blocked, "followUp": follow_up,
             "basis": "%s; contained=%s" % (held["basis"], contained)}
+
+
+def main_tree_release(trees, branch, parent, main_tree):
+    """{"from", "commands", "note"} -- what the operator runs to free `branch` from
+    the main worktree, since nothing here moves a HEAD. `note` says what the
+    commands leave behind when that is not the parent checked out, else None.
+
+    `git switch <parent>` puts HEAD where `git branch -d` then grades the right
+    question, because `-d` grades against HEAD. When another worktree holds the
+    parent, git refuses that switch (`already used by worktree`), so the main tree
+    detaches at the parent instead - the same commit, and the same grading.
+    """
+    elsewhere = [r for r in (trees or []) if r.get("branch") == parent
+                 and not same_tree(r.get("path"), main_tree.get("path"))]
+    switch = ("git switch --detach %s" % (parent,) if elsewhere
+              else "git switch %s" % (parent,))
+    note = ("leaves %s on a detached HEAD at %s" % (main_tree.get("path"), parent)
+            if elsewhere else None)
+    return {"from": main_tree.get("path"),
+            "commands": [switch, "git branch -d %s" % (branch,)], "note": note}
 
 
 # --- planning a sweep (pure) -----------------------------------------------------

@@ -338,6 +338,46 @@ const panelLiveness = newLivenessTally();
 const TAB_WIRED_MS = 10000;
 const TAB_SWITCH_MS = 3000;
 
+/**
+ * How long a panel page gets to finish boot() before this file says it did not.
+ * Headroom over a wait that normally ends within a second, as TAB_WIRED_MS is;
+ * only a run that is already failing pays it.
+ */
+const PANEL_BOOT_MS = 20000;
+
+/**
+ * Wait until boot() has adopted the server's answers, and say so when it never does.
+ *
+ * `waitForSelector('.tab')` cannot be that wait: the tab strip is static markup in
+ * panel.html, so it is satisfied as soon as the page parses, while `STATE` is still
+ * `null` and `REG` still the empty placeholder boot() replaces from /api/registry.
+ * A fixed sleep after it was the whole of the old wait, and it was a race the idle
+ * machine won by tens of milliseconds: the panel's first /api/state is its slowest,
+ * and on a loaded machine the identity precondition read `null` and the manifest
+ * skills precondition found every skill undeclared — two confident diagnoses
+ * ("GIT_CONFIG_GLOBAL did not take", "add them to BIG_USER_SKILLS") of a page that
+ * had not loaded yet. `#guards` is empty in the markup and filled by renderSettings,
+ * which boot() runs only after /api/state and /api/registry have both answered.
+ *
+ * @param {import('playwright').Page} page
+ * @param {string} label prefix for the failure line
+ * @returns {Promise<boolean>} true once boot() has rendered from the server's state
+ */
+async function waitForPanelBoot(page, label) {
+  try {
+    await page.waitForFunction(() => typeof STATE === 'object' && STATE !== null
+      && (document.querySelector('#guards')?.children.length || 0) > 0,
+    null, { timeout: PANEL_BOOT_MS });
+    return true;
+  } catch {
+    fail(`${label}: ${PANEL_BOOT_MS}ms after the page loaded, boot() had not rendered `
+       + 'from /api/state, so every precondition read from STATE or REG here would '
+       + 'describe the page\'s initial placeholders rather than the server. The JS '
+       + 'errors this run collected and the panel\'s own "load failed" toast say why.');
+    return false;
+  }
+}
+
 // --- tab navigation, and whether a tab painted ---------------------------------
 
 /**
@@ -2945,8 +2985,13 @@ async function assertConfirmFlowWorks(page) {
   }
 
   // --- the dialog states a lock that is live NOW -----------------------------
-  // The lock is fabricated rather than taken for real: it lives in a git dir this
-  // generated project does not have. What is under test is that the dialog reads
+  // The lock is fabricated rather than taken for real, and served from the
+  // ENDPOINT so the 5s poll cannot overwrite it (the paragraph below says why). The
+  // generated project IS a git repository now - `gen-demo-manifest.py` writes its
+  // history - so the fixture's own saves take their locks in its git dir under
+  // `_locks.lock_dir`'s scheme like any clone's; a real lock taken there would
+  // race those saves, which is one more reason this one is fabricated. What is
+  // under test is that the dialog reads
   // the 5s POLL's answer — a dialog that opened saying "nothing is running"
   // because nothing was running when the tab loaded is exactly the reassurance
   // this flow must not give.
@@ -4079,6 +4124,7 @@ async function assertFilterPersistence(page, browser, panelUrl) {
   // The reload: chip, person header and hash all survive.
   await page.reload({ waitUntil: 'load' });
   await page.waitForSelector('.tab', { timeout: 15000 });
+  await waitForPanelBoot(page, 'usage');
   await page.waitForTimeout(600);
   const back = await page.evaluate(() => ({
     author: UF.author, order: UORDER.slice(), hash: location.hash,
@@ -4104,6 +4150,7 @@ async function assertFilterPersistence(page, browser, panelUrl) {
     await p2.goto(panelUrl + '#/usage!au=' + encodeURIComponent(who),
                   { waitUntil: 'load' });
     await p2.waitForSelector('.tab', { timeout: 15000 });
+    await waitForPanelBoot(p2, 'usage');
     await p2.waitForTimeout(600);
     const shared = await p2.evaluate(() => ({
       author: UF.author,
@@ -4135,6 +4182,7 @@ async function assertFilterPersistence(page, browser, panelUrl) {
   }
   await page.reload({ waitUntil: 'load' });
   await page.waitForSelector('.tab', { timeout: 15000 });
+  await waitForPanelBoot(page, 'usage');
   await page.waitForTimeout(600);
   const clean = await page.evaluate(() => ({
     author: UF.author, order: UORDER.length,
@@ -4780,6 +4828,98 @@ export function gateReason(event, ...values) {
   return fits[0].replace(/%[sd]/g, () => String(values[next++]));
 }
 
+/* ---- the full-run line on the panel (the third place) ------------------------
+ *
+ * The server computes each merged phase's answer (`_panel_composition.
+ * _phase_full_run`) and the Overview's opened phase paints it as a `full run`
+ * line (`overview.js` evFullRunLine). The Python half is pinned in its own suite;
+ * no browser had ever seen the line, so a paint that dropped it, showed the wrong
+ * answer's word or lost the basis would pass everything.
+ *
+ * THE FIXTURE IS BUILT TO CARRY EVERY ANSWER: `gen-demo-manifest.py` writes the
+ * panel fixture as a git repository whose one full run contains exactly one merge,
+ * so its composition holds a whole, a provisional and an unknown phase. An answer
+ * missing from the PAYLOAD is reported as that, before any painting is judged -
+ * "the server never sent it" and "the page never drew it" have different repairs.
+ *
+ * What is compared is the server's word against the page's paint: the answer on
+ * the chip is the payload's answer, the word is the one the page's own table gives
+ * that answer, and the basis line is the server's sentence verbatim. Red against a
+ * fixture with no history (every answer but one missing from the payload) and
+ * against a paint that drops the line (no line in an opened phase).
+ */
+const PANEL_FULLRUN_REQUIRED = ['whole', 'provisional', 'unknown'];
+
+async function assertPanelFullRun(page) {
+  await tabTo(page, 'over');
+  // Every phase on screen, whatever the checks before this left the filters at,
+  // and put back afterwards: the shots after this one photograph the Overview.
+  const saved = await page.evaluate(() => {
+    const was = { view: OVF.view, q: OVF.q, ts: OVF.ts, bs: OVF.bs,
+                  open: Object.keys(OVF.open).filter((k) => OVF.open[k]) };
+    OVF.view = 'all'; OVF.q = ''; OVF.ts = ''; OVF.bs = '';
+    renderOver();
+    return was;
+  });
+  await page.waitForTimeout(200);
+  const sent = await page.evaluate(() =>
+    ((STATE.composition || {}).phases || [])
+      .filter((p) => p.fullRun && typeof p.fullRun === 'object')
+      .map((p) => ({ id: p.id, answer: p.fullRun.answer, basis: p.fullRun.basis || '' })));
+  const absent = PANEL_FULLRUN_REQUIRED.filter((a) => !sent.some((p) => p.answer === a));
+  if (absent.length) {
+    fail(`panel full run: the composition payload carries no ${absent.join(', ')} `
+       + `answer (it sent ${sent.length} merged phase(s)) - the fixture is written as `
+       + 'a git history with one whole-making full run, so the server or the '
+       + 'fixture stopped producing it');
+  }
+  for (const answer of PANEL_FULLRUN_REQUIRED) {
+    const target = sent.find((p) => p.answer === answer);
+    if (!target) continue;
+    const row = page.locator(`#over .ovrow[data-phase="${target.id}"]`);
+    if (!(await row.count())) {
+      fail(`panel full run: phase ${target.id} (${answer}) has no Overview row to open`);
+      continue;
+    }
+    if ((await row.first().getAttribute('aria-expanded')) !== 'true') {
+      await row.first().click();
+      await page.waitForTimeout(200);
+    }
+    const painted = await page.evaluate((pid) => {
+      const line = document.querySelector(
+        `#over [data-ovdetail="${pid}"] [data-evline="full run"]`);
+      if (!line) return null;
+      const chip = line.querySelector('[data-fullrun]');
+      const basis = line.querySelector('.mut.small');
+      return { key: chip ? chip.getAttribute('data-fullrun') : null,
+               word: chip ? chip.textContent.trim() : '',
+               basis: basis ? basis.textContent.trim() : '',
+               visible: line.offsetParent !== null,
+               want: typeof fullRunWord === 'function' ? fullRunWord(chip
+                 ? chip.getAttribute('data-fullrun') : '') : null };
+    }, target.id);
+    if (!painted) {
+      fail(`panel full run: phase ${target.id} is ${answer} in the payload and its `
+         + 'opened detail paints no full-run line');
+    } else if (painted.key !== answer || !painted.word || painted.word !== painted.want
+               || painted.basis !== target.basis.trim() || !painted.visible) {
+      fail(`panel full run: phase ${target.id} is ${answer} in the payload and the `
+         + `page painted ${JSON.stringify(painted)} against the server's basis `
+         + JSON.stringify(target.basis));
+    } else {
+      note(`panel full run: ${target.id} paints ${answer} as "${painted.word}" with `
+         + "the server's basis");
+    }
+  }
+  await page.evaluate((was) => {
+    OVF.view = was.view; OVF.q = was.q; OVF.ts = was.ts; OVF.bs = was.bs;
+    Object.keys(OVF.open).forEach((k) => { delete OVF.open[k]; });
+    was.open.forEach((k) => { OVF.open[k] = true; });
+    renderOver();
+  }, saved);
+  await page.waitForTimeout(200);
+}
+
 /* ---- the plan gate card (gt, v0.34 B3) --------------------------------------
  *
  * Server truth is pinned in _panel_state (the gate block) and panel-server (the
@@ -5184,11 +5324,17 @@ async function assertManifestSkillsDiscovered(page) {
     (comp.areaSkills || []).forEach((s) => spelled.add(s));
     return { unknown: [...spelled].sort()
                .filter((n) => !REG.skills.some((s) => s.name === n)),
-             spelled: spelled.size };
+             spelled: spelled.size, known: REG.skills.length };
   });
   if (!gap.spelled) {
     fail('panel: the fixture manifest spells no skill at all, so neither the '
        + 'inventory hint nor this check has anything to be about');
+  } else if (!gap.known) {
+    // Not the fixture's gap: nothing is known, so every name is "unknown" and the
+    // advice below would send the reader to a declaration that is already right.
+    fail('panel: the page\'s skill registry is empty, so every name the fixture '
+       + 'manifest spells reads as undeclared — boot() has not adopted '
+       + '/api/registry, or discovery found nothing at all');
   } else if (gap.unknown.length) {
     fail(`panel: the fixture manifest spells ${JSON.stringify(gap.unknown)}, which `
        + `the fixture home does not declare — every composition shot would carry a `
@@ -6956,6 +7102,7 @@ async function main() {
       page.on('console', (m) => { if (m.type() === 'error') jsErrors.push(m.text()); });
       await page.goto(panel.url, { waitUntil: 'load' });
       await page.waitForSelector('.tab', { timeout: 15000 });
+      await waitForPanelBoot(page, 'panel');
       await page.waitForTimeout(400);
 
       const tabs = await page.$$eval('.tab', (els) => els.map((e) => e.dataset.t));
@@ -7113,6 +7260,7 @@ async function main() {
       await page.evaluate(() => window.scrollTo(0, 0));
       await shot(page, 'panel-overview', { full: true });
       await assertOverviewWorks(page, stageCtx);
+      await assertPanelFullRun(page);
 
       // gt (v0.34): the Plan gate card with a populated events table — the shot
       // the README's gate-events paragraph sits beside. Seeded straight into the
@@ -7392,6 +7540,7 @@ async function main() {
       mob.on('console', (m) => { if (m.type() === 'error') jsErrors.push('mobile: ' + m.text()); });
       await mob.goto(panel.url, { waitUntil: 'load' });
       await mob.waitForSelector('.tab', { timeout: 15000 });
+      await waitForPanelBoot(mob, 'panel/mobile');
       await tabTo(mob, 'over');
       await mob.waitForFunction(
         () => { const o = document.querySelector('#over');
@@ -7855,6 +8004,7 @@ async function main() {
         ppage.on('console', (m) => { if (m.type() === 'error') jsErrors.push('policy: ' + m.text()); });
         await ppage.goto(polPanel.url, { waitUntil: 'load' });
         await ppage.waitForSelector('.tab', { timeout: 15000 });
+        await waitForPanelBoot(ppage, 'policy');
         await ppage.waitForTimeout(400);
 
         await assertFixtureDiscovery(ppage, fx.want, 'policy');

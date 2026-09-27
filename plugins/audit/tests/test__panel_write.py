@@ -44,7 +44,12 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import json
 import os
 import re as _regex
+import shutil
+import subprocess
 import sys
+import tempfile
+import threading
+import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
@@ -519,7 +524,7 @@ def _cases(check):
 
     # --- v0.28: the areas registry over HTTP ------------------------------------
     # The GET cases (registry as stored, tags a phase uses, the typo case) moved to
-    # _panel_state.py (P12.3); the WRITE path is what is exercised here.
+    # _panel_state.py; the WRITE path is what is exercised here.
     # `meta` lives on the INDEX in a sharded manifest, so a registry save must
     # touch the index and nothing else. That is the whole reason this goes through
     # apply_composition rather than writing the file itself: a second writer here
@@ -727,7 +732,7 @@ def _cases(check):
 
     # --- v0.30: the capability policy ------------------------------------------
     # The rule-listing cases that are a pure function of the block, and the
-    # enforcement-marker cases, moved to _panel_state.py (P12.3).
+    # enforcement-marker cases, moved to _panel_state.py.
     # The resolution lives in _policy and is exercised there. What is checked here
     # is that this endpoint SHOWS what the guard hook will DO — same function, same
     # active areas — and that the one writer refuses what the validator refuses.
@@ -1707,7 +1712,7 @@ def _cases(check):
         _sh1.rmtree(_gf_tmp, ignore_errors=True)
         _sh1.rmtree(_gf_out, ignore_errors=True)
 
-    # --- isolation cases (P12.4): the moved boundary stays real -----------------
+    # --- isolation cases: the moved boundary stays real -------------------------
     _src = _harness.module_source(M)
     _imports = [l for l in _src.split("\n")
                 if l.startswith("import ") or l.startswith("from ")]
@@ -2196,6 +2201,50 @@ def _cases(check):
               and any("could not be asked for at all" in line
                       for line in _wl_boom_cmd)
               and not os.path.exists(_wl_legacy))
+
+        # TWO WRITES AT ONCE IN ONE SERVER. The panel serves requests on
+        # threads of one process, so a claim re-entered by process or by an
+        # inherited token let the second request write beside the first while
+        # both reported success. Real threads, real claim.
+        import threading as _th
+        import time as _tm
+        _tw = {}
+        _tw_held = _th.Event()
+
+        def _tw_first():
+            _tw["a"] = M._acquire_write_lock(_wl_proj, {}, None)
+            _tw_held.set()
+            _tm.sleep(0.6)
+            _tw["a_release"] = M._release_write_lock(_tw["a"])
+
+        def _tw_second():
+            _tw_held.wait(5)
+            started = _tm.monotonic()
+            _tw["b"] = M._acquire_write_lock(_wl_proj, {}, None)
+            _tw["b_waited"] = _tm.monotonic() - started
+            _tw["b_release"] = M._release_write_lock(_tw["b"])
+
+        _tw_threads = [_th.Thread(target=_tw_first), _th.Thread(target=_tw_second)]
+        for _t in _tw_threads:
+            _t.start()
+        for _t in _tw_threads:
+            _t.join(15)
+        check("wl9 RED-FIRST: a second panel write made WHILE the first holds the "
+              "lock waits for it and then takes its own claim - never borrowed, "
+              "which is what writing beside it looked like: %r"
+              % (dict((k, v) for k, v in _tw.items() if k != "a"),),
+              (_tw.get("a") or {}).get("held") is True
+              and (_tw.get("b") or {}).get("held") is True
+              and not (_tw.get("b") or {}).get("borrowed")
+              and _tw.get("b_waited", 0) >= 0.4
+              and _tw.get("a_release") is None and _tw.get("b_release") is None
+              and not os.path.exists(_wl_lock))
+        _tw_one = M._acquire_write_lock(_wl_proj, {}, None)
+        check("wl9b ALLOW: a single write with nothing else running still takes the "
+              "lock at once and gives it back: %r" % (_tw_one,),
+              _tw_one.get("held") is True and not _tw_one.get("borrowed")
+              and M._release_write_lock(_tw_one) is None
+              and not os.path.exists(_wl_lock))
     finally:
         _shutil.rmtree(_wl_proj, ignore_errors=True)
 
@@ -2300,6 +2349,232 @@ def _cases(check):
           M.sweep_rows(proj, {"actions": []}) == [], "empty plan, empty rows")
 
     _shutil.rmtree(tmp, ignore_errors=True)
+    _harness.stage(check, "lu-block", _lost_update_cases)
+
+# --- two saves at once: both changes land -------------------------------------
+# The server answers requests on threads of one process. A save that read the
+# document BEFORE it took the lock wrote a copy predating the save it waited
+# for, so the first save's change was lost while both answered ok. Each case
+# makes the FIRST save's write slow, starts the second while that write is under
+# way, and asserts that BOTH changes are on disk afterwards.
+def _slow(fn, started, delay=0.5):
+    """`fn`, marking `started` and pausing on the way in - the window a second
+    request lands in."""
+    def slowed(*args, **kwargs):
+        started.set()
+        time.sleep(delay)
+        return fn(*args, **kwargs)
+    return slowed
+
+
+def _race(first, second, started):
+    """Run `first` and, once its slow write has begun, `second`; their answers."""
+    got = {}
+
+    def one():
+        got["first"] = first()
+
+    def two():
+        started.wait(5)
+        got["second"] = second()
+
+    threads = [threading.Thread(target=one), threading.Thread(target=two)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(20)
+    return got
+
+
+def _lost_update_cases(check):
+    tmp = tempfile.mkdtemp(prefix="panel-lost-update-")
+    proj = os.path.join(tmp, "proj")
+    os.makedirs(os.path.join(proj, ".claude"), exist_ok=True)
+    real_write, real_save = M._atomic_write_json, M._proposals._save
+    try:
+        subprocess.run(["git", "init", "-q", proj], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        mpath = M._manifest_path(proj, M.read_config(proj))
+        os.makedirs(os.path.dirname(mpath), exist_ok=True)
+
+        def parked(prop_id, pid):
+            return {"id": prop_id, "name": pid, "status": "proposed",
+                    "branch": None, "materializedAs": None, "materializedAt": None,
+                    "payload": {"phase": {"id": pid, "title": pid,
+                                          "status": "pending", "tasks": []}}}
+        real_write(mpath, {"meta": {"version": 2},
+                           "phases": [{"id": "P1", "title": "P", "status": "pending",
+                                       "tasks": [{"id": "P1.1", "title": "a",
+                                                  "status": "pending"},
+                                                 {"id": "P1.2", "title": "b",
+                                                  "status": "pending"}]}],
+                           "fileIndex": {}, "bugs": [],
+                           "proposals": [parked("PROP-1", "P7"),
+                                         parked("PROP-2", "P8")]})
+
+        started = threading.Event()
+        M._atomic_write_json = _slow(real_write, started)
+        try:
+            got = _race(lambda: M.apply_composition(
+                            proj, {"tasks": {"P1.1": {"model": "opus"}}}),
+                        lambda: M.apply_composition(
+                            proj, {"tasks": {"P1.2": {"model": "haiku"}}}),
+                        started)
+        finally:
+            M._atomic_write_json = real_write
+        tasks = dict((t["id"], t.get("model"))
+                     for t in M._read_json(mpath)["phases"][0]["tasks"])
+        check("lu1 RED-FIRST: two composition saves at once on different tasks BOTH "
+              "land - the second reads the manifest inside the lock, after the "
+              "first wrote it: %r" % ((tasks, [(k, (v or {}).get("ok"))
+                                               for k, v in sorted(got.items())]),),
+              tasks == {"P1.1": "opus", "P1.2": "haiku"}
+              and all((v or {}).get("ok") for v in got.values()) and len(got) == 2)
+
+        started = threading.Event()
+        M._atomic_write_json = _slow(real_write, started)
+        try:
+            got = _race(lambda: M.write_policy(
+                            proj, {"policy": {"skills": {"default": "allow"}}}),
+                        lambda: M.write_theme(proj, {"use": "midnight"}),
+                        started)
+        finally:
+            M._atomic_write_json = real_write
+        cfg = M.read_config(proj)
+        check("lu2 RED-FIRST: a policy save and a theme switch at once BOTH land in "
+              "the config - each is a change applied to the config read under the "
+              "lock, never a whole document read before it: %r"
+              % ((cfg, [(k, (v or {}).get("ok")) for k, v in sorted(got.items())]),),
+              (cfg.get("policy") or {}).get("skills", {}).get("default") == "allow"
+              and (cfg.get("ui") or {}).get("theme") == "midnight"
+              and all((v or {}).get("ok") for v in got.values()) and len(got) == 2)
+
+        started = threading.Event()
+        M._proposals._save = _slow(real_save, started)
+        try:
+            got = _race(lambda: M.proposal_action(
+                            proj, {"action": "drop", "id": "PROP-1", "reason": "r1"}),
+                        lambda: M.proposal_action(
+                            proj, {"action": "drop", "id": "PROP-2", "reason": "r2"}),
+                        started)
+        finally:
+            M._proposals._save = real_save
+        props = dict((p["id"], p.get("status"))
+                     for p in M._read_json(mpath).get("proposals") or [])
+        check("lu3 RED-FIRST: two proposal drops at once BOTH land - the door holds "
+              "the panel's per-call lock around the run, taken before the manifest "
+              "is read: %r" % ((props, [(k, (v or {}).get("ok"))
+                                        for k, v in sorted(got.items())]),),
+              props == {"PROP-1": "dropped", "PROP-2": "dropped"}
+              and all((v or {}).get("ok") for v in got.values()) and len(got) == 2)
+        check("lu4 ...and no lock and no token outlive the saves - the proposal run "
+              "took no claim of its own to export: %r"
+              % (os.environ.get(M._locks.TOKEN_ENV),),
+              not os.path.exists(os.path.join(M._locks.lock_dir(proj), "index.lock"))
+              and not (os.environ.get(M._locks.TOKEN_ENV) or "").strip())
+        single = M.apply_composition(proj, {"tasks": {"P1.1": {"model": "sonnet"}}})
+        check("lu5 ALLOW: a single save with nothing else running still lands at "
+              "once: %r" % (single.get("ok"),),
+              single.get("ok") is True
+              and M._read_json(mpath)["phases"][0]["tasks"][0].get("model") == "sonnet")
+
+        # THE CRASHED PANEL'S RECOVERY LINE, followed as printed.
+        import platform
+        lock = os.path.join(M._locks.lock_dir(proj), "index.lock")
+        dead = subprocess.Popen([sys.executable, "-c", "pass"])
+        dead.wait()
+        M._locks._write_lock(lock, {"sessionId": "panel-%d" % dead.pid,
+                                    "pid": dead.pid, "hostname": platform.node(),
+                                    "note": "panel write", "token": "t-crashed",
+                                    "handedOff": False, "perCall": True,
+                                    "startedAt": time.strftime(
+                                        "%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+        stale = M._acquire_write_lock(proj, M.read_config(proj), None)
+        said = " ".join((stale.get("response") or {}).get("findings") or [])
+        line = [f for f in (stale.get("response") or {}).get("findings") or []
+                if f.startswith("Release it with: ")]
+        argv = line[0][len("Release it with: "):].split() if line else []
+        env = dict(os.environ, CLAUDE_CODE_SESSION_ID="the-operator")
+        env.pop("CLAUDE_PID", None)
+        ran = subprocess.run(
+            [sys.executable, os.path.join(_harness.SCRIPTS_DIR, "governance",
+                                          argv[0])] + argv[1:] if argv else
+            [sys.executable, "-c", "raise SystemExit(9)"],
+            cwd=proj, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        check("lu6 RED-FIRST: the line the panel prints for a CRASHED panel's claim, "
+              "run as printed, releases it - a dead holder's claim takes nothing "
+              "from anybody: %r" % ((said, ran.returncode,
+                                      ran.stdout.decode("utf-8", "replace")[-200:]),),
+              (stale.get("response") or {}).get("lockStale") is True
+              and argv[:2] == ["audit-lock.py", "release"]
+              and ran.returncode == 0 and not os.path.exists(lock))
+        M._locks._write_lock(lock, {"sessionId": "panel-live", "pid": os.getppid(),
+                                    "hostname": platform.node(), "note": "panel write",
+                                    "token": "t-live", "handedOff": False,
+                                    "perCall": True,
+                                    "startedAt": time.strftime(
+                                        "%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+        live = subprocess.run(
+            [sys.executable, os.path.join(_harness.SCRIPTS_DIR, "governance",
+                                          "audit-lock.py"), "release", "index",
+             "--project", "."],
+            cwd=proj, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        check("lu7 ALLOW: the same release against a LIVE holder's claim is still "
+              "refused, and the claim stays: %r" % (live.returncode,),
+              live.returncode == M._locks.E_LIVE and os.path.exists(lock))
+        os.unlink(lock)
+
+        # THE PLAN MOVED BETWEEN THE TWO PASSES. The first pass decided which
+        # phase locks the save could meet; if the manifest changes before the
+        # second, the save may now reach a phase whose lock was never asked about.
+        proj2 = os.path.join(tmp, "sharded")
+        os.makedirs(os.path.join(proj2, ".claude"), exist_ok=True)
+        subprocess.run(["git", "init", "-q", proj2], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        mp2 = M._manifest_path(proj2, M.read_config(proj2))
+        os.makedirs(os.path.dirname(mp2), exist_ok=True)
+        M._mio.save_sharded(mp2, {"meta": {"version": 2},
+                                  "phases": [
+                                      {"id": "P1", "title": "one", "status": "pending",
+                                       "tasks": [{"id": "P1.1", "title": "a",
+                                                  "status": "pending"}]},
+                                      {"id": "P2", "title": "two", "status": "pending",
+                                       "tasks": [{"id": "P2.1", "title": "b",
+                                                  "status": "pending"}]}],
+                                  "fileIndex": {}, "bugs": []})
+        real_acquire = M._acquire_write_lock
+        moved = []
+
+        def moving(*args, **kwargs):
+            if not moved:
+                plan = M._mio.load_manifest(mp2)
+                plan["phases"][1]["tasks"][0]["status"] = "in_progress"
+                M._mio.save_sharded(mp2, plan)
+                moved.append(True)
+            return real_acquire(*args, **kwargs)
+        M._acquire_write_lock = moving
+        try:
+            waited = M.apply_composition(proj2, {"tasks": {"P1.1": {"model": "opus"}}})
+        finally:
+            M._acquire_write_lock = real_acquire
+        again = M.apply_composition(proj2, {"tasks": {"P1.1": {"model": "opus"}}})
+        after = M._mio.load_manifest(mp2)
+        check("lu8 a save whose plan moved between its two passes, so that it now "
+              "reaches a phase whose lock it never asked about, is refused naming "
+              "that phase and leaves no lock; saving again lands: %r"
+              % ((waited, again.get("ok")),),
+              moved == [True] and waited.get("ok") is False
+              and any("P2" in f and "save again" in f
+                      for f in waited.get("findings") or [])
+              and not os.path.exists(os.path.join(M._locks.lock_dir(proj2),
+                                                  "index.lock"))
+              and again.get("ok") is True
+              and after["phases"][0]["tasks"][0].get("model") == "opus"
+              and after["phases"][1].get("status") == "in_progress")
+    finally:
+        M._atomic_write_json, M._proposals._save = real_write, real_save
+        shutil.rmtree(tmp, ignore_errors=True)
+
 
 def _selftest():
     return _harness.run(_cases)

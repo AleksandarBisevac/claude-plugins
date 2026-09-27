@@ -36,6 +36,7 @@ import subprocess
 import tempfile
 import io
 import sys
+import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
@@ -607,10 +608,76 @@ def _placeholder_cases(check):
           out2["phases"][0]["blockedBy"] == ["P4"], out2["phases"][0])
 
 
+# --- two command-line runs at once: both drops land ---------------------------
+# Two processes, each a real `run` taking its own claim. The first one's save is
+# slowed, and the second starts only once that save is under way - so a run that
+# read the manifest BEFORE taking the lock writes a copy predating the first
+# drop, and that drop is lost while both answer ok.
+_RACER = r"""
+import os, sys, time
+sys.path.insert(0, sys.argv[1])
+import _output
+_output.install_path()
+import _proposals
+mpath, pid, flag, slow = sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+if slow == "1":
+    real = _proposals._save
+    def slowed(*a, **k):
+        open(flag, "w").close()
+        time.sleep(0.8)
+        return real(*a, **k)
+    _proposals._save = slowed
+ok, payload = _proposals.run(mpath, "drop", [pid], reason="dropped by " + pid)
+sys.stdout.write("OK\n" if ok else "NO %r\n" % (payload,))
+"""
+
+
+def _race_cases(check):
+    tmp = tempfile.mkdtemp(prefix="proposals-race-")
+    try:
+        proj = os.path.join(tmp, "proj")
+        os.makedirs(proj)
+        subprocess.run(["git", "init", "-q", proj], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        mpath = os.path.join(proj, "audit-plan.json")
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(_manifest([_prop("PROP-1", payload=_payload("P7")),
+                                 _prop("PROP-2", payload=_payload("P8"))]), fh)
+        flag = os.path.join(tmp, "first-save-started")
+        env = dict(os.environ)
+        env.pop(_locks.TOKEN_ENV, None)
+        scripts = os.path.dirname(os.path.dirname(os.path.abspath(M.__file__)))
+
+        def racer(pid, slow):
+            return subprocess.Popen(
+                [sys.executable, "-c", _RACER, scripts, mpath, pid, flag,
+                 "1" if slow else "0"],
+                env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        first = racer("PROP-1", True)
+        deadline = time.time() + 20
+        while not os.path.exists(flag) and time.time() < deadline \
+                and first.poll() is None:
+            time.sleep(0.02)
+        second = racer("PROP-2", False)
+        said = [p.communicate(timeout=30)[0].decode("utf-8", "replace").strip()
+                for p in (first, second)]
+        with open(mpath, "r", encoding="utf-8") as fh:
+            props = dict((p["id"], p.get("status"))
+                         for p in json.load(fh).get("proposals") or [])
+        check("rc1 two command-line drops at once BOTH land - `run` takes the "
+              "lock before it reads the manifest, so the second reads what the "
+              "first wrote: %r" % ((props, said),),
+              os.path.exists(flag) and said == ["OK", "OK"]
+              and props == {"PROP-1": "dropped", "PROP-2": "dropped"})
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _placeholder_cases(check)
+        _race_cases(check)
     return _harness.run(body)
 
 

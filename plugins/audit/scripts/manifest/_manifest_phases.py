@@ -215,11 +215,484 @@ def _comma_joined_gate(entries, build_keys, where, field):
             continue
         parts = [p.strip() for p in entry.split(",")]
         if all(p and p in build_keys for p in parts):
-            out.append("%s: %s entry %r is %d buildCommands keys joined by "
-                       "commas into ONE entry, which runs as one shell command "
-                       "no shell can find - split it: %s"
-                       % (where, field, entry, len(parts), json.dumps(parts)))
+            out.append(_output.finding(
+                "phases.comma_joined_gate.joined-keys",
+                "%s: %s entry %r is %d buildCommands keys joined by commas "
+                "into ONE entry, which runs as one shell command no shell can "
+                "find - split it: %s"
+                % (where, field, entry, len(parts), json.dumps(parts))))
     return out
+
+
+# --- what a NEW phase's gate defaults to -------------------------------------------
+def _phase_gate_lists(meta):
+    """`(always, exclude, build_keys)` - the validated pieces `phase_gate_default`
+    and `_check_phase_gate` both read, asked ONCE so the two cannot disagree
+    about what counts as a non-blank string.
+    """
+    meta = meta if isinstance(meta, dict) else {}
+    build = meta.get("buildCommands")
+    build_keys = ([k for k in build.keys() if isinstance(k, str) and k.strip()]
+                  if isinstance(build, dict) else [])
+    gate = meta.get("phaseGate")
+    gate = gate if isinstance(gate, dict) else {}
+    always = [a for a in _safe_list(gate.get("always"))
+              if isinstance(a, str) and a.strip()]
+    exclude = [e for e in _safe_list(gate.get("exclude"))
+               if isinstance(e, str) and e.strip()]
+    return always, exclude, build_keys
+
+
+def phase_gate_default(meta):
+    """`{entries, always, rest, excluded, basis}` - what a NEW phase's gate
+    starts as, read by `/audit:phase add` now and by a future task-level
+    derivation alike - the ONE answer, so neither can quietly disagree with
+    the other about what "today's default" means.
+
+    `entries` = `always` in declared order, then every OTHER `buildCommands`
+    key in buildCommands order, minus `exclude`. `always` COMES FIRST because
+    that is the one thing a caller declared outright; `rest` preserves
+    buildCommands order rather than sorting it, because a plan's own ordering
+    is the only one this project has ever produced and there is no reason to
+    prefer another.
+
+    ALWAYS IS ALWAYS. An entry named in both lists is not dropped: `exclude`
+    is the declared way to keep a key OUT, and `always` is a stronger,
+    later-read declaration that puts a key back IN - so an author who lists
+    the same key in both gets the key, not the absence of one. `_check_phase_gate`
+    is what warns about the overlap; this function only resolves it.
+
+    ABSENT MEANS TODAY'S BEHAVIOUR EXACTLY: with no `phaseGate` at all, `always`
+    and `exclude` are both empty, so `entries` is every `buildCommands` key, in
+    buildCommands order, byte-identical to what `/audit:phase add` wrote before
+    this field existed.
+    """
+    always, exclude, build_keys = _phase_gate_lists(meta)
+    always_set = set(always)
+    exclude_set = set(exclude) - always_set
+    rest = [k for k in build_keys
+            if k not in always_set and k not in exclude_set]
+    excluded = [k for k in build_keys if k in exclude_set]
+    entries = list(always) + rest
+    if not build_keys:
+        basis = "no meta.buildCommands key exists to default a gate from"
+    elif not always and not exclude:
+        basis = ("no meta.phaseGate: default is every buildCommands key, in "
+                 "buildCommands order")
+    elif not excluded:
+        basis = ("meta.phaseGate.always puts %d key(s) first (%s); every "
+                 "other buildCommands key follows in buildCommands order"
+                 % (len(always), _output.some_of(always, render=repr))
+                 if always else
+                 "meta.phaseGate.exclude names no key meta.buildCommands "
+                 "actually declares, so the default is unchanged")
+    else:
+        basis = ("meta.phaseGate.exclude drops %d buildCommands key(s) (%s)%s"
+                 % (len(excluded), _output.some_of(excluded, render=repr),
+                    " after meta.phaseGate.always puts %d first (%s)"
+                    % (len(always), _output.some_of(always, render=repr))
+                    if always else ""))
+    return {"entries": entries, "always": always, "rest": rest,
+            "excluded": excluded, "basis": basis}
+
+
+def phase_gate_suite_gap(manifest, suite_keys=None):
+    """The 'phase gate runs no suite' warning, or None when the gate still runs one.
+
+    EVALUATED ONLY WHEN `exclude` IS NON-EMPTY - without it the default is
+    today's set, and today's set has always been trusted to run something.
+
+    TWO ARMS, and only the first needs no evidence. A default EMPTY after
+    exclusion (`exclude` removed every `buildCommands` key and `always` added
+    none) is CERTAIN: there is no key left to have run, whatever the ledger
+    says, so this arm fires from the plan alone. The second arm needs
+    `suite_keys` - `{running, silent, unknown}`, computed from the evidence
+    ledger by the counts reader (`run-test-gate.summary_reader`, recorded per
+    step as `suiteReader`) - because a wide key like `npm test` is not
+    test-shaped by its spelling and this function must not guess one from the
+    other: with no default key recorded as `running`, it names the keys left
+    after `exclude` as not established rather than as certainly silent.
+    `suite_keys=None` (the pure validator's call, with no evidence in hand)
+    answers only the certain arm.
+    """
+    meta = manifest.get("meta") if isinstance(manifest, dict) else None
+    meta = meta if isinstance(meta, dict) else {}
+    _always, exclude, _build_keys = _phase_gate_lists(meta)
+    if not exclude:
+        return None
+    default = phase_gate_default(meta)
+    if not default["entries"]:
+        return ("phase gate runs no suite: meta.phaseGate.exclude removes "
+                "every meta.buildCommands key and meta.phaseGate.always adds "
+                "none")
+    if suite_keys is None:
+        return None
+    running = set((suite_keys or {}).get("running") or [])
+    if any(k in running for k in default["entries"]):
+        return None
+    return ("phase gate runs no suite as far as the ledger shows: %s are "
+            "left after meta.phaseGate.exclude"
+            % (_output.some_of(default["entries"]),))
+
+
+# The two words `meta.phaseGate.mode` may hold. ABSENT MEANS NO DERIVATION -
+# `always`/`exclude` alone still shape the wide gate, and nothing narrower is
+# ever computed - so this tuple is read only when the key is PRESENT.
+PHASE_GATE_MODES = ("shadow", "enforce")
+
+
+def _check_phase_gate_derived(derived, build_keys):
+    """WARNINGS for `meta.phaseGate.derived` - shape only, no ledger, no running.
+
+    `derived` is None (absent or explicit null) whenever `meta.phaseGate.mode`
+    applies to nothing yet - a project that turned shadow mode on before
+    telling the derivation how its own runner takes paths. That is not a shape
+    problem, so it draws nothing here.
+
+    `listing` is what derive-phase-gate.py actually runs to list suites
+    without executing them: `related` takes a `{paths}` placeholder it fills
+    per phase, so a `related` without one would list the same thing for every
+    phase; `all` runs with NO path filter and `_gather_facts` never
+    substitutes into it, so a `{paths}` token left in `all` reaches the shell
+    literally and the command fails silently at gate time rather than
+    listing anything. Each of `related` and `all` splits its shape violation
+    (blank or non-string) from its value violation (a placeholder missing
+    where one is owed, or present where none is ever filled in) into its own
+    CODE, the way `budgetusd-number` and `budgetusd-greater-than` split type
+    from value below - a listing command is only ever produced by the
+    derivation itself, so a bad value here means the manifest was edited by
+    hand. A null or absent `listing`, or one where both fields are
+    well-formed, stays silent.
+    """
+    if derived is None:
+        return []
+    if not isinstance(derived, dict):
+        return [_output.finding(
+            "phases.phase_gate_derived.object",
+            "meta.phaseGate.derived: must be an object or null, got %s"
+            % (type(derived).__name__,))]
+    out = []
+    runner = derived.get("runner")
+    if runner is not None:
+        if not (isinstance(runner, str) and runner.strip()):
+            out.append(_output.finding(
+                "phases.phase_gate_derived.runner-shape",
+                "meta.phaseGate.derived.runner: must be a non-blank "
+                "buildCommands key, got %s" % (type(runner).__name__,)))
+        elif build_keys and runner not in build_keys:
+            out.append(_output.finding(
+                "phases.phase_gate_derived.runner-unknown-key",
+                "meta.phaseGate.derived.runner: %r is not a buildCommands "
+                "key - meta.buildCommands declares %s"
+                % (runner, _output.some_of(sorted(build_keys)))))
+    spelling = derived.get("spelling")
+    if spelling is not None:
+        if not (isinstance(spelling, str) and spelling.strip()):
+            out.append(_output.finding(
+                "phases.phase_gate_derived.spelling-shape",
+                "meta.phaseGate.derived.spelling: must be a non-blank "
+                "string, got %s" % (type(spelling).__name__,)))
+        elif "{paths}" not in spelling:
+            out.append(_output.finding(
+                "phases.phase_gate_derived.spelling-placeholder",
+                "meta.phaseGate.derived.spelling: %r carries no {paths} "
+                "placeholder - the derivation has nowhere to substitute a "
+                "resolved path list into it" % (spelling,)))
+    listing = derived.get("listing")
+    if listing is not None and not isinstance(listing, dict):
+        out.append(_output.finding(
+            "phases.phase_gate_derived.listing-object",
+            "meta.phaseGate.derived.listing: must be an object or null, "
+            "got %s" % (type(listing).__name__,)))
+        listing = None
+    if isinstance(listing, dict):
+        related = listing.get("related")
+        if related is not None:
+            if not (isinstance(related, str) and related.strip()):
+                out.append(_output.finding(
+                    "phases.phase_gate_derived.listing-related-shape",
+                    "meta.phaseGate.derived.listing.related: must be a "
+                    "non-blank string, got %s - write a command that lists "
+                    "the suites related to a path set"
+                    % (type(related).__name__,)))
+            elif "{paths}" not in related:
+                out.append(_output.finding(
+                    "phases.phase_gate_derived.listing-related-placeholder",
+                    "meta.phaseGate.derived.listing.related: %r carries no "
+                    "{paths} placeholder - derive-phase-gate.py fills one in "
+                    "per phase, so every phase would list the same suites "
+                    "without it; add {paths} to the command" % (related,)))
+        all_cmd = listing.get("all")
+        if all_cmd is not None:
+            if not (isinstance(all_cmd, str) and all_cmd.strip()):
+                out.append(_output.finding(
+                    "phases.phase_gate_derived.listing-all-shape",
+                    "meta.phaseGate.derived.listing.all: must be a "
+                    "non-blank string, got %s - write a command that lists "
+                    "every suite this runner would collect, with no path "
+                    "filter" % (type(all_cmd).__name__,)))
+            elif "{paths}" in all_cmd:
+                out.append(_output.finding(
+                    "phases.phase_gate_derived.listing-all-paths-present",
+                    "meta.phaseGate.derived.listing.all: %r carries a "
+                    "{paths} placeholder - derive-phase-gate.py runs `all` "
+                    "with no path filter and never substitutes into it, so "
+                    "the literal token reaches the shell and the command "
+                    "fails silently at gate time; write `all` to list every "
+                    "suite directly, with no {paths} token" % (all_cmd,)))
+    verified_on = derived.get("verifiedOn")
+    if listing is not None and not (isinstance(verified_on, dict)
+                                    and verified_on.get("command")):
+        out.append(_output.finding(
+            "phases.phase_gate_derived.listing-unverified",
+            "meta.phaseGate.derived: a `listing` command is declared with no "
+            "`verifiedOn` - its version was never checked, so a later "
+            "mismatch has no real answer to compare against, only a guess"))
+    return out
+
+
+_COUPLING_OBJECT_ID = re.compile(r"^[0-9a-fA-F]{7,40}$")
+
+# `phase.mergedHead` is a FULL sha only, unlike `_COUPLING_OBJECT_ID` above:
+# ancestry (`git merge-base --is-ancestor`) is what this field is read for, and
+# a short sha is ambiguous input to that check in a way a coupling pointer
+# (read by a human, never diffed against another commit) is not.
+_FULL_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+
+
+def _check_coupling(coupling, phase_ids):
+    """WARNINGS for `meta.coupling` - shape only, additive.
+
+    Every entry needs `test`, a non-empty `sources` and `basis.runId` - a
+    pointer with no runId points at nothing, the same reason `testEvidence`
+    requires one. Two entries naming the same `test` are named together
+    rather than one silently shadowing the other: a reader (and a future
+    derivation) has no rule for which of two conflicting source lists wins.
+
+    `basis.head` (an object-id shape) and `basis.phases` (every entry a
+    phase id `phase_ids` actually holds) are graded here too - `couple`
+    itself asks git and the plan before it ever writes either field, so a
+    bad value reaching this walk means the manifest was edited by hand.
+
+    Every line is CODED, as the rest of `_check_phase_gate`'s family is: a
+    stable code is what lets a caller keep filtering for one rule even
+    though the check stays additive.
+    """
+    if not isinstance(coupling, list):
+        return [_output.finding(
+            "phases.coupling.array",
+            "meta.coupling: must be an array, got %s"
+            % (type(coupling).__name__,))]
+    out = []
+    seen, dup = set(), set()
+    for i, entry in enumerate(coupling):
+        where = "meta.coupling[%d]" % (i,)
+        if not isinstance(entry, dict):
+            out.append(_output.finding(
+                "phases.coupling.entry-object",
+                "%s: must be an object, got %s"
+                % (where, type(entry).__name__)))
+            continue
+        missing = []
+        test = entry.get("test")
+        if not (isinstance(test, str) and test.strip()):
+            missing.append("test")
+        sources = entry.get("sources")
+        if not (isinstance(sources, list) and sources):
+            missing.append("sources")
+        basis = entry.get("basis")
+        run_id = basis.get("runId") if isinstance(basis, dict) else None
+        if not (isinstance(run_id, str) and run_id.strip()):
+            missing.append("basis.runId")
+        if missing:
+            out.append(_output.finding(
+                "phases.coupling.missing",
+                "%s: missing %s" % (where, _output.some_of(missing))))
+        if isinstance(basis, dict):
+            head = basis.get("head")
+            if head is not None and not (isinstance(head, str)
+                                         and _COUPLING_OBJECT_ID.match(head)):
+                out.append(_output.finding(
+                    "phases.coupling.head-shape",
+                    "%s: basis.head %r does not read as an object id (7-40 "
+                    "hex characters)" % (where, head)))
+            phases = basis.get("phases")
+            if isinstance(phases, list):
+                bad = [p for p in phases if p not in phase_ids]
+                if bad:
+                    out.append(_output.finding(
+                        "phases.coupling.phase-id",
+                        "%s: basis.phases names %s that %s not a phase id "
+                        "in this plan"
+                        % (where, _output.some_of(bad, render=repr),
+                           "is" if len(bad) == 1 else "are")))
+        if isinstance(test, str) and test.strip():
+            if test in seen:
+                dup.add(test)
+            seen.add(test)
+    if dup:
+        out.append(_output.finding(
+            "phases.coupling.duplicate-test",
+            "meta.coupling: duplicate `test` value(s) %s - each test should "
+            "carry ONE entry with every source it is coupled to, not two "
+            "entries a reader has no rule for choosing between"
+            % (_output.some_of(sorted(dup), render=repr),)))
+    return out
+
+
+def _check_phase_gate(manifest):
+    """WARNINGS for `meta.phaseGate`, `meta.gateBudgetMs` and `meta.coupling` -
+    additive, never a finding (`COMPATIBILITY.md` -> Validation stays
+    additive): all three are new, so a shape a validator does not like is
+    named rather than refused.
+
+    RETURNED, NOT WRITTEN INTO THE CALLER'S LIST, and every line built through
+    `_output.finding` so it carries a stable code. The list is named `findings`
+    because that is the name the stable-code walk in the suites follows, and
+    the helpers extended into it are walked as its feeders; a check that wrote
+    into a `warnings` parameter was outside that walk entirely, so its codes
+    were held by convention alone. The caller files the list as warnings.
+
+    THE 'RUNS NO SUITE' SENTENCE IS NOT HERE. `phase_gate_suite_gap` is asked
+    directly by `_manifest_rules._check_meta`, with no evidence, so the pure
+    validator emits its certain arm only - this function is the SHAPE checks
+    that do not need the ledger at all.
+    """
+    findings = []
+    meta = manifest.get("meta")
+    meta = meta if isinstance(meta, dict) else {}
+    if "phaseGate" in meta:
+        gate = meta.get("phaseGate")
+        if gate is not None and not isinstance(gate, dict):
+            findings.append(_output.finding(
+                "phases.phase_gate.object",
+                "meta.phaseGate: must be an object with `always` and/or "
+                "`exclude`, got %s" % (type(gate).__name__,)))
+        elif isinstance(gate, dict):
+            for field in ("always", "exclude"):
+                raw = gate.get(field)
+                if raw is None:
+                    continue
+                if not isinstance(raw, list):
+                    findings.append(_output.finding(
+                        "phases.phase_gate.list-array",
+                        "meta.phaseGate.%s: must be an array of "
+                        "buildCommands keys, got %s"
+                        % (field, type(raw).__name__)))
+                    continue
+                bad = [e for e in raw if not (isinstance(e, str) and e.strip())]
+                if bad:
+                    findings.append(_output.finding(
+                        "phases.phase_gate.list-blank-entry",
+                        "meta.phaseGate.%s: every entry must be a non-blank "
+                        "string (%d bad: %s)"
+                        % (field, len(bad), _output.some_of(bad, render=repr))))
+            always, exclude, build_keys = _phase_gate_lists(meta)
+            if build_keys:
+                for field, entries in (("always", always), ("exclude", exclude)):
+                    findings.extend(_comma_joined_gate(
+                        entries, build_keys, "meta.phaseGate", field))
+                    unknown = [e for e in entries if e not in build_keys]
+                    if unknown:
+                        findings.append(_output.finding(
+                            "phases.phase_gate.unknown-key",
+                            "meta.phaseGate.%s names %s, which %s not a "
+                            "buildCommands key - meta.buildCommands declares "
+                            "%s" % (field, _output.some_of(unknown, render=repr),
+                                    "is" if len(unknown) == 1 else "are",
+                                    _output.some_of(sorted(build_keys)))))
+            both = sorted(set(always) & set(exclude))
+            if both:
+                findings.append(_output.finding(
+                    "phases.phase_gate.always-and-exclude",
+                    "meta.phaseGate: %s in both `always` and `exclude` - "
+                    "always is always, so %s stays in the default gate"
+                    % (_output.some_of(both, render=repr),
+                       "it" if len(both) == 1 else "they")))
+            if "mode" in gate:
+                mode = gate.get("mode")
+                if mode not in PHASE_GATE_MODES:
+                    findings.append(_output.finding(
+                        "phases.phase_gate.mode",
+                        "meta.phaseGate.mode: must be 'shadow' or 'enforce', "
+                        "got %r" % (mode,)))
+            if "derived" in gate:
+                findings.extend(_check_phase_gate_derived(
+                    gate.get("derived"), build_keys))
+            if "smoke" in gate:
+                smoke = gate.get("smoke")
+                if smoke is not None:
+                    if not (isinstance(smoke, str) and smoke.strip()):
+                        findings.append(_output.finding(
+                            "phases.phase_gate.smoke-shape",
+                            "meta.phaseGate.smoke: must be a non-blank "
+                            "buildCommands key or null, got %s"
+                            % (type(smoke).__name__,)))
+                    elif build_keys and smoke not in build_keys:
+                        findings.append(_output.finding(
+                            "phases.phase_gate.smoke-unknown-key",
+                            "meta.phaseGate.smoke: %r is not a buildCommands "
+                            "key - meta.buildCommands declares %s"
+                            % (smoke, _output.some_of(sorted(build_keys)))))
+    if "gateBudgetMs" in meta:
+        budget = meta.get("gateBudgetMs")
+        if isinstance(budget, bool) or not isinstance(budget, int):
+            findings.append(_output.finding(
+                "phases.phase_gate.budget-integer",
+                "meta.gateBudgetMs: must be a positive integer, got %s"
+                % (type(budget).__name__,)))
+        elif budget <= 0:
+            findings.append(_output.finding(
+                "phases.phase_gate.budget-greater-than",
+                "meta.gateBudgetMs: must be greater than 0 (got %s) - omit the "
+                "key entirely for 'no budget'" % (budget,)))
+    if "coupling" in meta:
+        phase_ids = set(p.get("id") for p in (manifest.get("phases") or [])
+                        if isinstance(p, dict))
+        findings.extend(_check_coupling(meta.get("coupling"), phase_ids))
+    return findings
+
+
+def _check_full_gate(manifest, warnings):
+    """WARNINGS for `meta.fullGate` - the buildCommands keys naming the THIRD
+    place tests can pass at (full suite, coverage, e2e), beyond a task's own
+    gate and a phase's sign-off gate.
+
+    ADDITIVE, NEVER A FINDING (`COMPATIBILITY.md` -> Validation stays
+    additive), the same standing `meta.phaseGate.always`/`exclude` have: an
+    entry naming no real `meta.buildCommands` key is named rather than
+    refused, and an entry that is several such keys joined by commas into
+    ONE string is the exact `_comma_joined_gate` shape `phaseGate` already
+    warns about - reused here rather than re-derived, so the two definitions
+    of "this runs as one shell command no shell can find" cannot drift apart.
+    """
+    meta = manifest.get("meta")
+    meta = meta if isinstance(meta, dict) else {}
+    if "fullGate" not in meta:
+        return
+    full_gate = meta.get("fullGate")
+    if not isinstance(full_gate, list):
+        warnings.append("meta.fullGate: must be an array of buildCommands "
+                        "keys, got %s" % (type(full_gate).__name__,))
+        return
+    bad = [e for e in full_gate if not (isinstance(e, str) and e.strip())]
+    if bad:
+        warnings.append("meta.fullGate: every entry must be a non-blank "
+                        "string (%d bad: %s)"
+                        % (len(bad), _output.some_of(bad, render=repr)))
+    _, _, build_keys = _phase_gate_lists(meta)
+    if not build_keys:
+        return
+    entries = [e for e in full_gate if isinstance(e, str) and e.strip()]
+    warnings.extend(_comma_joined_gate(entries, build_keys, "meta", "fullGate"))
+    unknown = [e for e in entries if e not in build_keys]
+    if unknown:
+        warnings.append(
+            "meta.fullGate names %s, which %s not a buildCommands key - "
+            "meta.buildCommands declares %s"
+            % (_output.some_of(unknown, render=repr),
+               "is" if len(unknown) == 1 else "are",
+               _output.some_of(sorted(build_keys))))
 
 
 def _check_phase_intent(phase, pwhere, build_keys):
@@ -542,6 +1015,104 @@ def tests_add_repair(entry):
     return (REPAIR_REWRITE, "%s: %s" % (mentioned[0], entry.strip()))
 
 
+# --- what a runner printed AS A TEST IT RAN --------------------------------------
+# Moved here from `run-test-gate.py` (`_TEST_MARKS`, `_TEST_DIRS`, `_subject_of`,
+# `_segments`, `_is_suite_path`) and from `audit-task.py` (`_gate_entry_paths`),
+# beside `tests_add_path` above for the reason that group is here at all: "is
+# this string a path" and "is this path a test file" are the SAME filename bound,
+# asked of two different fields by two different entry points, and an entry
+# point cannot import another - so the gate-only narrowing in `audit-task.py`
+# and `--own` in `run-test-gate.py` could each only ever reach it by copying.
+# Both files keep the historic underscored names as thin aliases
+# (`_is_suite_path = _phases.is_suite_path`, and so on), so no caller and no
+# case that already existed had to change its spelling.
+
+# The suffixes a test file carries in front of its extension, across the
+# runners this is asked about. Used to relate `src/foo.test.ts` to `src/foo.ts`
+# and NOWHERE ELSE: a path that is not test-shaped is never re-spelled.
+TEST_MARKS = (".test", ".spec", "_test", "_spec", "-test", "-spec")
+
+
+def subject_of(path):
+    """The file a TEST path is about, or None when the path is not test-shaped.
+
+    `tests/foo.spec.ts` -> `foo`, `src/foo.test.ts` -> `foo`, `src/foo.ts` -> None.
+    The basename alone, because the two live in different directories as often as
+    not - `src/foo.ts` tested from `tests/foo.spec.ts` is the ordinary layout.
+
+    DELIBERATELY NARROW. `_PATHISH` above can over-match harmlessly because a
+    spurious path only ADDS overlap and overlap is reported rather than enforced.
+    That reasoning does NOT carry here: a false overlap tells the reader their work
+    was exercised when it was not, which is the exact false comfort `NO OVERLAP`
+    exists to prevent. So this fires only on a path that really is spelled like a
+    test, and only onto a file whose stem it matches exactly.
+    """
+    base = str(path or "").rsplit("/", 1)[-1]
+    stem = base.rsplit(".", 1)[0] if "." in base else base
+    for mark in TEST_MARKS:
+        if stem.endswith(mark) and len(stem) > len(mark):
+            return stem[:-len(mark)]
+    return None
+
+
+# ...and the directory names a suite lives in when its FILE NAME does not say so.
+# `__tests__/order.ts` is jest's own layout and carries no `.test` mark at all, so
+# `subject_of` cannot see it. Read for the CLASSIFICATION only and never for the
+# match - a directory is far too weak to re-spell a path onto another file's stem,
+# which is the thing `subject_of` guards.
+TEST_DIRS = frozenset((
+    "__tests__", "__test__", "test", "tests", "spec", "specs", "e2e",
+))
+
+
+def path_segments(path):
+    """A path's directory segments, POSIX-spelled, without its basename."""
+    return str(path or "").replace("\\", "/").split("/")[:-1]
+
+
+def is_suite_path(path):
+    """Whether the runner printed this as a TEST IT RAN rather than as a file it
+    processed.
+
+    THREE READINGS, and the second and third are why this is not `subject_of`
+    under another name: a suite says so in its FILE NAME (`order.test.ts`), in
+    the basename PREFIX pytest's own convention uses (`test_orders.py`, which
+    carries none of `TEST_MARKS`), or in its DIRECTORY (`__tests__/order.ts`,
+    jest's own layout, which carries no mark either). `subject_of` may use only
+    the first, because it re-spells a path onto another file's stem and neither
+    a bare prefix nor a directory is strong enough to justify that - the plan
+    gate's own default `exemptGlobs` already reads `**/test_*.*` as a test file,
+    and classifying is the weaker job, so it may read the weaker signal.
+    """
+    base = str(path or "").rsplit("/", 1)[-1]
+    return (subject_of(path) is not None
+            or base.startswith("test_")
+            or any(seg in TEST_DIRS for seg in path_segments(path)))
+
+
+def gate_entry_paths(entry):
+    """Every file path a gate entry NAMES, in the order they appear in it.
+
+    THE SAME QUESTION `tests.add` IS ASKED, asked of each whitespace-separated
+    token instead of the leading one. `tests_add_path` is the ONE answer to
+    "does this string name a file", and a gate entry is the other
+    place a path has to be recognized inside free text -- a second spelling of
+    the filename bound would be two opinions about the same token, and the one
+    that drifted would either miss a suite or read `--selectProjects` as a path.
+
+    A token has to carry an extension or be a dotfile to count, which is what
+    keeps `npm`, `--shard`, `1/4` and a bare build-command key out of the answer.
+    """
+    if not isinstance(entry, str):
+        return []
+    found = []
+    for token in entry.split():
+        path = tests_add_path(token)
+        if path:
+            found.append(path)
+    return found
+
+
 # --- the walk --------------------------------------------------------------------
 def _moved_from_conflicts(task_by_id, task_ids):
     """WARNINGS for a `movedFrom` chain no verb would have written.
@@ -642,6 +1213,19 @@ def _walk_phases(phases, build_keys=()):
             elif budget <= 0:
                 f.append(_output.finding("phases.walk_phases.budgetusd-greater-than", "%s: budgetUSD must be greater than 0 (got %s) — omit the "
                          "key entirely for 'no budget'" % (pwhere, budget)))
+        # `mergedHead` is written only by close-phase.py and read by ancestry
+        # (`git merge-base --is-ancestor`), so a malformed value is a WARNING
+        # naming it rather than a refusal - the field stays additive, and the
+        # cost of a bad value is that the phase reads `unknown` rather than
+        # `whole`, never a validator refusal.
+        if "mergedHead" in phase:
+            merged_head = phase.get("mergedHead")
+            if merged_head is not None and not (isinstance(merged_head, str)
+                                                and _FULL_SHA_RE.match(merged_head)):
+                w.append("%s: mergedHead %r is not a full hex SHA (40 "
+                         "characters) - ancestry cannot be asked of a "
+                         "partial or malformed one, so this phase reads "
+                         "unknown rather than whole" % (pwhere, merged_head))
 
         tasks_val = phase.get("tasks")
         if "tasks" not in phase:

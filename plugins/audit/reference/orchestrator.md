@@ -284,6 +284,13 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py" acquire <name> 
         --project <gitRoot> --note "<verb> <scope>"
 ```
 
+**A lock taken with this script is held BY HAND** (recorded `handedOff`), and every process of
+your session is let back in under it (exit 5 inside each verb) — so under such a hold run the
+verbs **one at a time, never as parallel tool calls**; two side by side are not serialised, and
+the later write replaces the earlier. `_locks.held_by_us` is the rule, and nothing refuses the
+parallel calls. A lock a verb takes for its own write is different: every other process waits
+for it, your own session's included.
+
 Every lock this script can take has one of these names. `index` and `usage` are the fixed
 names; `phase-<phaseId>` also works — **take the narrowest one that covers your writes:**
 
@@ -306,7 +313,7 @@ names; `phase-<phaseId>` also works — **take the narrowest one that covers you
 |---|---|---|
 | **0** | acquired | proceed |
 | **5** | **already yours** | this run already holds it, so proceed — and **do not release it**: the claim belongs to the hold that took it, and releasing here drops the lock out from under the step still using it. A shell reads this as 0, because "you already have it" is not a failure to take it. |
-| **3** | held by a **live** run | **STOP.** Print the script's output verbatim and end the command. Do not take it over. The script has already waited for it — a window sized for a lock taken for one structural write, while a phase lock is held for a whole run, so waiting longer buys the same refusal later. `--wait 0` reads the refusal at once. |
+| **3** | held by a **live** run | It can be a **parallel call of your own session**: a claim a process takes for its own write is waited for by every other process, session or not. **STOP.** Print the script's output verbatim and end the command. Do not take it over. The script has already waited for it — a window sized for a lock taken for one structural write, while a phase lock is held for a whole run, so waiting longer buys the same refusal later. `--wait 0` reads the refusal at once. |
 | **4** | holder is **not alive** | Print the output, ask the human (AskUserQuestion) to confirm, then rerun with `--takeover`. |
 | **1** | not a git repo / cannot write | Stop and report. With no git repo there is no lock scheme at all, so there is nothing to fall back to and nothing to coordinate against: say so rather than writing as though a lock had been taken. |
 
@@ -461,19 +468,20 @@ Omit the line entirely when the echo never applied (no `meta.ado`, or disabled).
 
 ## Answering one question about the trail
 
-Four questions come up repeatedly and each has exactly one answer, carried by a pointer a
-reader can check: why a task or phase was cancelled, what a bug concluded, which task last
-touched a file, and — folded from that third one — which task(s) last touched every file ONE
-task itself declares. None of them needs the whole plan or the whole journal read to answer —
-that cost grows with the project instead of with the question, and the file question (and the
-brief question built from it) is a **lookup**, not a search: `fileIndex` already records who
-declared what.
+A handful of questions come up repeatedly and each has exactly one answer, carried by a pointer
+a reader can check: why a task or phase was cancelled, what a bug concluded, which task last
+touched a file, which task(s) last touched every file ONE task itself declares (folded from the
+file question), and what a recorded gate run answered. None of them needs the whole plan or the
+whole journal read to answer — that cost grows with the project instead of with the question,
+and the file question (and the brief question built from it) is a **lookup**, not a search:
+`fileIndex` already records who declared what.
 
 ```
 scripts/status/audit-lookup.py <manifest> cancel <taskOrPhaseId>
 scripts/status/audit-lookup.py <manifest> bug <bugId>
 scripts/status/audit-lookup.py <manifest> file <path>
 scripts/status/audit-lookup.py <manifest> brief <taskId>
+scripts/status/audit-lookup.py <manifest> run <runId|latest> [--phase <id> | --task <id>]
 ```
 
 Run it and relay its answer — do not re-derive the same fact by grepping the manifest or the
@@ -482,7 +490,17 @@ and never returns the nearest id or a similar path as if it had answered; an id 
 does not apply to the question (a task that was never cancelled) is a different, legitimate
 answer and not a miss.
 
-**`brief` is the one of the four you do not wait to be asked.** `cancel`/`bug`/`file` answer a
+**`run` reads the evidence ledger, not the manifest or the journal — it is what a background
+gate's verdict is read back from.** A gate expected to outlast the Bash tool's foreground bound
+runs under `run_in_background`, so its own terminal may never be read to the end; the run
+records its row in the ledger **before** it prints anything (`--record`'s row write happens
+strictly after the measurement completes and strictly before the banner), so the verdict is
+never lost to a truncated terminal. Read it back with the `runId` the run's own `evidence:
+recorded <runId>` line named, or with `run latest --phase <id>` / `run latest --task <id>` when
+that id was not kept. **Never read a background gate's verdict off a truncated terminal** — the
+ledger row is what the recording already made durable, and it is a lookup rather than a search.
+
+**`brief` is the one of these you do not wait to be asked.** `cancel`/`bug`/`file` answer a
 question a human or a reviewing agent puts to you; `brief` answers the question an EXECUTOR
 would otherwise grep the manifest or the journal for at the start of its own task, so it is run
 by you and folded into the spawn prompt before that agent's first turn —
@@ -493,6 +511,28 @@ move.
 This is a narrower tool than the **Resume after interruption** procedure below, which asks a
 different question — *which phase is resumable* — and still needs the manifest read in full for
 that.
+
+## The third place
+
+`meta.fullGate` names a gate beyond a task's own and a phase's sign-off gate — the whole
+product, measured with `run-test-gate.py --full --record` or the one command
+`scripts/governance/full-gate.py` wraps around it, never one phase's or one task's claim.
+**A phase that merges is `provisional` until that third place records it, and provisional
+blocks nothing inside a session.** It already shows on `/audit:status`, the report and the
+panel, so whoever reads any of those already knows a phase has landed without yet being
+`whole`; only this repository's own release guard turns a provisional phase into a refusal,
+and that refusal belongs to the release command, never to a phase run.
+
+**Never claim a full run passed, or that a phase is whole, from anything but the ledger.**
+`_evidence_io.full_status` is the one answer every surface reads. It answers `whole`,
+`provisional`, `unknown` or `not_declared`, derived from the evidence ledger alone, never from a
+manifest pointer or a memory of what a gate answered earlier in this session. Read a recorded run back with `scripts/status/audit-lookup.py <manifest> run <runId>`,
+exactly as **Answering one question about the trail** above describes, rather than asserting
+what a run answered from its own printed lines.
+
+**A full run expected to outlast the Bash tool's foreground bound follows the same background
+rule a phase gate does**: run it under `run_in_background`, and read its verdict back from the
+ledger once it has recorded — never from a truncated terminal.
 
 ## Resume after interruption
 

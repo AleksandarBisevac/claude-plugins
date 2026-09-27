@@ -164,6 +164,9 @@ _anchor_row = _trail._anchor_row
 check_journal = _trail.check_journal
 check_task_restarts = _trail.check_task_restarts
 check_gate_patterns = _trail.check_gate_patterns
+check_gate_economy = _trail.check_gate_economy
+check_shadow_recall = _trail.check_shadow_recall
+check_full_run = _trail.check_full_run
 
 _hours_between = _completions._hours_between
 check_completions = _completions.check_completions
@@ -239,6 +242,21 @@ def diagnose(project, deep=False):
     # never before them.
     check_task_restarts(rep, project, cfg)
     check_gate_patterns(rep, project, manifest_rel, cfg)
+    # Directly after: the same evidence-ledger tally, graded on cost rather
+    # than on whether it ever failed - see check_gate_economy's own docstring
+    # for why it is restricted to the entries the row above already calls a
+    # candidate to drop.
+    check_gate_economy(rep, project, manifest_rel, manifest, cfg)
+    # Directly after: the same evidence-ledger read, over the one field
+    # `check_gate_economy` leaves untouched - whether a phase's derived
+    # sign-off gate, still running in shadow, would have caught what
+    # actually failed. Both grade the SAME rows past the same read; neither
+    # answers the other's question.
+    check_shadow_recall(rep, project, manifest_rel, manifest, cfg)
+    # Directly after: the third place's own verdict on the same ledger -
+    # whether a merged phase's own full run is WHOLE, PROVISIONAL or
+    # UNKNOWN, the fact the release guard actually blocks a tag on.
+    check_full_run(rep, project, manifest_rel, manifest, git_root, cfg)
     check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
                       deep=deep)
     check_evidence_pointers(rep, project, manifest)

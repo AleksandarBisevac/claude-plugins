@@ -5,7 +5,7 @@ The cases for `_panel_state.py`, moved out of it - an importable helper.
 `M` is the module under test; see `test__cli_fmt.py` for why that prefix and not a
 `from ... import` list.
 
-WHAT IS LEFT HERE AFTER U3.1. The module was split six ways, and the cases went
+WHAT IS LEFT HERE AFTER THE SPLIT. The module was split six ways, and the cases went
 with the code: `test__panel_paths.py`, `test__panel_viewer.py`,
 `test__panel_composition.py`, `test__panel_policy.py`, `test__panel_runstate.py`
 and `test__panel_usage.py`. What stays is the report export (which is still this
@@ -59,6 +59,8 @@ from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402  (script_path: resolve a sibling by basename)
 import _deps                                       # noqa: E402  (the import graph, read from the AST)
 import _manifest_io as _mio                        # noqa: E402  (as _panel_state imports it)
+import _evidence_io as _evidence                   # noqa: E402  (the ledger, for the fullRun fixture)
+import _manifest_vocab                             # noqa: E402  (the FULL_STATUS words)
 import _panel_state as M                           # noqa: E402
 
 
@@ -265,7 +267,7 @@ def _cases(check):
           len(_rr_debt) == 1 and "render-report" in _rr_debt[0])
 
 
-    # --- isolation cases (P12.3): the moved boundary stays real -----------------
+    # --- isolation cases: the moved boundary stays real -------------------------
     _imports = [l for l in _src.split("\n")
                 if l.startswith("import ") or l.startswith("from ")]
     check("this module never imports panel-server - the read side sits BELOW the "
@@ -303,7 +305,7 @@ def _cases(check):
           "\n_JOURNAL = _panel_state._JOURNAL\n" in _panel_src
           and isinstance(M._JOURNAL, dict))
 
-    # --- U3.1: the split boundary, in both directions ---------------------------
+    # --- the split boundary, in both directions ---------------------------------
     # The five leaves may not reach back up. A cycle here would not be a lint
     # failure first - it would be an ImportError at panel start-up, on the one
     # code path a user meets before anything else.
@@ -332,8 +334,198 @@ def _cases(check):
     shutil.rmtree(tmp, ignore_errors=True)
 
 
+# --- the third place, wired all the way to a live build_state --------------
+def _fr_repo(root):
+    """A REAL git repository, two sequential commits on `main` -
+    `test__panel_composition.py`'s own fixture, for the same reason: ancestry
+    needs two real, different, ancestor-related commits, and a fake `run`
+    cannot give it - a mutation comparing `head==mergedHead` would still pass
+    against two equal strings."""
+    import subprocess
+    os.makedirs(root, exist_ok=True)
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+          "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+
+    def sh(*args):
+        subprocess.run(git + list(args), cwd=root, check=True,
+                       capture_output=True, timeout=30)
+
+    def rev():
+        out = subprocess.run(git + ["rev-parse", "HEAD"], cwd=root, check=True,
+                             capture_output=True, timeout=30)
+        return out.stdout.decode("utf-8").strip()
+
+    sh("init", "-q")
+    with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
+        fh.write("1\n")
+    sh("add", "-A")
+    sh("commit", "-qm", "one")
+    first = rev()
+    with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
+        fh.write("2\n")
+    sh("add", "-A")
+    sh("commit", "-qm", "two")
+    second = rev()
+    return {"root": root, "first": first, "second": second}
+
+
+def _full_run_project(tmp, name, declare_gate):
+    """A project fixture with a real git repo at `<project>/repo`, a merged
+    phase whose `mergedHead` is the repo's first commit, and - when
+    `declare_gate` - `meta.fullGate` itself, never the ledger row: a real
+    full-scope run is written EITHER WAY, so a plan with no `meta.fullGate`
+    is tested against a ledger that genuinely could answer ancestry, and
+    'no git call' is a claim about the WIRING, not a vacuous one about an
+    empty ledger nothing could have asked git about anyway. Returns
+    `(project, config, repo)`."""
+    project = os.path.join(tmp, name)
+    os.makedirs(os.path.join(project, ".claude"), exist_ok=True)
+    repo = _fr_repo(os.path.join(project, "repo"))
+    config = {"manifestPath": "docs/audit/audit-plan.json", "gitRoot": "repo"}
+    _mio.atomic_write_json(M._config_path(project), config)
+    mpath = os.path.join(project, "docs", "audit", "audit-plan.json")
+    os.makedirs(os.path.dirname(mpath), exist_ok=True)
+    meta = {"version": 2}
+    if declare_gate:
+        meta["fullGate"] = ["full"]
+        meta["buildCommands"] = {"full": "echo x"}
+    _mio.atomic_write_json(mpath, {
+        "meta": meta,
+        "phases": [{"id": "P1", "title": "merged", "status": "done",
+                    "mergedAt": "2026-09-02T00:00:00Z",
+                    "mergedHead": repo["first"]}]})
+    evdir = _evidence.evidence_dir(project, M.read_config(project))
+    os.makedirs(evdir, exist_ok=True)
+    row = {"v": _evidence.ROW_VERSION, "runId": "run-whole",
+          "ts": "2026-09-01T00:00:00Z", "scope": _evidence.FULL_SCOPE,
+          "status": "passed",
+          "steps": [{"name": "gate", "command": "echo x", "exit": 0,
+                    "durationMs": 500}],
+          "testedState": {"head": repo["second"]},
+          "observations": {"ranTotal": 3, "countsBasis": "3 checks",
+                           "dirtyOutside": []}}
+    with open(os.path.join(evdir, "2026-09.w1.jsonl"), "w",
+              encoding="utf-8") as fh:
+        fh.write(json.dumps(row) + "\n")
+    return project, config, repo
+
+
+def _counting_run():
+    """A real-git-shaped runner that answers every ask with CONTAINED (code 0)
+    while counting how many times it was asked - `_composition._worktrees._git`
+    replaced by a seam, never a mock of the whole subprocess module."""
+    calls = []
+
+    def run(git_root, args):
+        calls.append((git_root,) + tuple(args))
+        return (0, "", "")
+    run.calls = calls
+    return run
+
+
+def _full_run_cases(check):
+    import shutil
+    import tempfile
+
+    tmp = tempfile.mkdtemp(prefix="panel-state-fullrun-")
+    try:
+        # --- (1) a live payload carries fullRun, off REAL git ancestry --------
+        proj, _cfg, repo = _full_run_project(tmp, "live", declare_gate=True)
+        st = M.build_state(proj)
+        phases = dict((p["id"], p) for p in st["composition"]["phases"])
+        check("bs1 a live build_state payload carries fullRun for a merged "
+              "phase when meta.fullGate is declared, reading WHOLE off a "
+              "real two-commit git fixture: %r" % (phases["P1"].get("fullRun"),),
+              phases["P1"].get("fullRun", {}).get("answer")
+              == _manifest_vocab.FULL_STATUS_WHOLE
+              and phases["P1"]["fullRun"]["runId"] == "run-whole")
+
+        # --- (2) no meta.fullGate: no key, and NOT ONE GIT CALL ----------------
+        proj_ng, _cfg_ng, _repo_ng = _full_run_project(tmp, "no-gate",
+                                                       declare_gate=False)
+        counter = _counting_run()
+        st_ng = M.build_state(proj_ng, run=counter)
+        phases_ng = dict((p["id"], p) for p in st_ng["composition"]["phases"])
+        check("bs2 ALLOW: a plan with no meta.fullGate carries no fullRun key "
+              "and reaches the runner ZERO times - MUTATION: call git anyway "
+              "-> red, counted through the runner seam rather than assumed: "
+              "%r" % (counter.calls,),
+              "fullRun" not in phases_ng["P1"] and counter.calls == [])
+
+        # --- (3) an unreadable ledger: the payload says so, never breaks -------
+        proj_err, cfg_err, _repo_err = _full_run_project(tmp, "unreadable",
+                                                         declare_gate=True)
+        _real_read_rows = _evidence.read_rows
+
+        def _boom(project, config=None):
+            raise OSError("permission denied (fixture)")
+        _evidence.read_rows = _boom
+        try:
+            st_err = M.build_state(proj_err)
+        finally:
+            _evidence.read_rows = _real_read_rows
+        phases_err = dict((p["id"], p) for p in st_err["composition"]["phases"])
+        check("bs3 an unreadable ledger does not break the payload - the "
+              "merged phase still carries a fullRun, UNKNOWN, with a basis "
+              "naming the read failure rather than a silent PROVISIONAL: %r"
+              % (phases_err["P1"].get("fullRun"),),
+              phases_err["P1"].get("fullRun", {}).get("answer")
+              == _manifest_vocab.FULL_STATUS_UNKNOWN
+              and "permission denied" in phases_err["P1"]["fullRun"]["basis"])
+        # THE SAME FAILURE, ONE PAYLOAD KEY OVER. The evidence tab reads
+        # `evidence`, not the phase row, and a read that raised used to reach
+        # it as a clean empty read: no runs, nothing read, nothing unreadable -
+        # the exact answer a ledger nobody ever wrote gives. The counts are
+        # asserted UNKNOWN (None) rather than merely non-zero, because a zero
+        # here is the fabricated claim itself.
+        ev_err = st_err["evidence"]
+        rerr = ev_err.get("readError")
+        check("bs3b ...and the EVIDENCE payload carries that same read error, "
+              "never zero files and zero unreadable lines standing in for a "
+              "read nobody made: %r" % (ev_err,),
+              isinstance(rerr, dict)
+              and "permission denied" in str(rerr.get("error"))
+              and "permission denied" in str(rerr.get("basis"))
+              and ev_err["files"] is None and ev_err["unreadable"] is None
+              and ev_err["runs"] == {})
+        # ALLOW, for the mutation that always reports an error: a ledger that
+        # WAS read carries no read error and its real counts.
+        ev_ok = st["evidence"]
+        check("bs3c ALLOW: a ledger that was read carries readError None and "
+              "the counts the read answered: %r" % (ev_ok,),
+              ev_ok.get("readError", "absent") is None
+              and ev_ok["files"] == 1 and ev_ok["unreadable"] == 0)
+
+        # --- COST: with and without the process-local memo ---------------------
+        # `full_run_cache` held ACROSS two build_state calls (two simulated
+        # polls of the same plan) against WITHOUT one - never a claim about a
+        # single call, since ancestry only repeats between polls, not within
+        # one merged phase's own single ask.
+        import time
+        cache = {}
+        t0 = time.time()
+        M.build_state(proj, full_run_cache=cache)
+        M.build_state(proj, full_run_cache=cache)
+        with_memo = time.time() - t0
+        t0 = time.time()
+        M.build_state(proj)
+        M.build_state(proj)
+        without_memo = time.time() - t0
+        check("bs4 MEASURED: two polls of the same plan, with a shared memo "
+              "dict (%.4fs) against two polls with none (%.4fs) - reported, "
+              "never claimed, because a single real git process on this "
+              "machine may itself be faster than the noise floor this "
+              "compares against" % (with_memo, without_memo),
+              with_memo >= 0 and without_memo >= 0)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _full_run_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

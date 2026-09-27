@@ -109,6 +109,15 @@ def render_md(manifest, summary, usage=None, evidence=None):
     out += ["**Overall:** %d/%d tasks done · %d/%d phases signed off · %d open bug(s) · %d ready now"
             % (tdone, summary["tasks"]["total"], phdone, len(summary["phases"]),
                summary["bugs"]["open"], len(summary["ready"])), ""]
+    # THE ONE SENTENCE THE COLUMN CANNOT CARRY. The HTML badge holds the read
+    # error as its detail; this table has no title to put it in, so it is said
+    # once here, above every phase, and only when the read failed - a readable
+    # ledger renders the twin it always did.
+    read_error = (evidence or {}).get("readError")
+    if isinstance(read_error, dict) and read_error.get("basis"):
+        out += ["**Test evidence:** %s - so a task whose tests cell reads "
+                "`ledger-unreadable` names a run nobody could look up."
+                % cell(read_error["basis"]), ""]
     for ph, psum in zip(
             [p for p in (manifest.get("phases") or []) if isinstance(p, dict)],
             summary["phases"]):
@@ -118,6 +127,15 @@ def render_md(manifest, summary, usage=None, evidence=None):
                       " · sign-off due" if psum.get("signoffDue") else ""))
         if ph.get("desiredOutcome"):
             out.append("_%s_" % cell(ph["desiredOutcome"]))
+        # THE SAME WORDS THE HTML CARRIES, off the SAME data - never recomputed:
+        # `evidence` is the one dict both renderers read, and a phase this plan
+        # names no third place for (or that has not merged) carries no `fullRun`
+        # key at all, so this line is absent exactly where the HTML's is.
+        phase_ev = ((evidence or {}).get("phases") or {}).get(str(psum["id"]))
+        verified = (_report_html._verified_line((phase_ev or {}).get("fullRun"))
+                   if phase_ev else "")
+        if verified:
+            out.append("_%s_" % cell(verified))
         out += ["", "| id | title | status | model | risk | commit | done |%s ADO |"
                 % (" tests |" if tviews else ""),
                 "|---|---|---|---|---|---|---|%s---|" % ("---|" if tviews else "")]

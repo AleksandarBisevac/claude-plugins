@@ -155,6 +155,22 @@ def _task_rows(fx):
             if r.get("action") == M.ACTION_TASK_COMMITTED]
 
 
+def _row_files(fx, action=None):
+    """The git-root-relative journal files holding a row of `action`."""
+    action = action or M.ACTION_TASK_COMMITTED
+    return sorted(set("docs/audit/journal/%s" % (r["_file"],)
+                      for r in _journal_io.read_all(fx["root"])
+                      if r.get("action") == action))
+
+
+def _trailer_of(fx, sha):
+    """The `Audit-Row` values the commit message of `sha` carries."""
+    prefix = "%s: " % (_invariants.ROW_TRAILER,)
+    return [ln[len(prefix):].strip() for ln in TI._git(
+        fx["root"], "log", "-1", "--format=%B", sha).splitlines()
+        if ln.startswith(prefix)]
+
+
 def _dirty_work(fx):
     """What a finished task leaves: the declared file edited, a SIBLING task's
     file edited beside it, and a stray nobody declares.
@@ -294,11 +310,13 @@ def _cases(check):
               code == 0 and after != before and after[:12] in text)
 
         carried = _carried(fx, after)
-        check("ctw2 ...and the commit carries the task's declared file and the "
-              "phase's manifest file and NOTHING else - asserted as the whole "
-              "file list, because a commit that swept the sibling in beside them "
-              "also contains both: %r" % (carried,),
-              carried == sorted([OWNED, SHARD_REL]))
+        check("ctw2 ...and the commit carries the task's declared file, the "
+              "phase's manifest file and the journal file holding the row that "
+              "names it, and NOTHING else - asserted as the whole file list, "
+              "because a commit that swept the sibling in beside them also "
+              "contains all three: %r" % (carried,),
+              len(_row_files(fx)) == 1
+              and carried == sorted([OWNED, SHARD_REL] + _row_files(fx)))
 
         clone = _clone_at(fx, after, repos.scratch("ordinary"))
         check("ctw3 ...and the pair a clone proves: the declared file's NEW bytes "
@@ -328,12 +346,16 @@ def _cases(check):
 
         rows = _task_rows(fx)
         details = rows[0].get("details") if rows else {}
+        nonce = details.get(_invariants.NONCE_KEY)
+        resolved, _why = _invariants.commits_carrying(fx["root"], [nonce])
         check("ctw6 the commit anchors itself with exactly one journal row "
-              "carrying the SHA, the task and the phase - between this commit "
-              "and `/audit:task done` there is otherwise a commit nothing points "
-              "at, and a run that dies in the gap leaves one for ever: %r"
-              % (details,),
-              len(rows) == 1 and details.get("commit") == after
+              "carrying a nonce, the task and the phase, and the nonce resolves "
+              "to THIS commit through its `Audit-Row` trailer - between this "
+              "commit and `/audit:task done` there is otherwise a commit nothing "
+              "points at, and a run that dies in the gap leaves one for ever: "
+              "%r -> %r" % (details, resolved),
+              len(rows) == 1 and (resolved or {}).get(nonce) == [after]
+              and _trailer_of(fx, after) == [nonce]
               and details.get("taskId") == TASK
               and details.get("phaseId") == PHASE)
         check("ctw7 ...and all three keys are on `_journal_io.DETAILS_KEYS`, "
@@ -341,7 +363,7 @@ def _cases(check):
               "it does not know, so a row could carry none of them and the case "
               "above would still see the action go by",
               all(key in _journal_io.DETAILS_KEYS
-                  for key in ("commit", "taskId", "phaseId")),
+                  for key in (_invariants.NONCE_KEY, "taskId", "phaseId")),
               repr(sorted(_journal_io.DETAILS_KEYS)))
 
         # --- the subject a commitlint repository will take ---------------------
@@ -453,7 +475,8 @@ def _cases(check):
               "reaches git, which has never heard of one - staging "
               "`a/b.py:10-20` would either fail or, worse, match nothing and "
               "leave the real file uncommitted: %r" % (_carried(fx, after),),
-              _carried(fx, after) == sorted([OWNED, SHARD_REL]))
+              _carried(fx, after) == sorted([OWNED, SHARD_REL]
+                                            + _row_files(fx)))
 
         # --- and the other direction of that same test -------------------------
         fx = repos.make()
@@ -489,13 +512,22 @@ def _cases(check):
               "own `files`, kept apart so a refusal can say which half of the "
               "list a path failed against: %r" % (targets["declared"],),
               targets["declared"] == [OWNED])
+        off = repos.make(journal_off=True)
+        off_manifest, off_phase, off_task = _phase_and_task(off)
+        off_targets = M.stage_targets(off_manifest, off_phase, off_task,
+                                      off["manifest"], off["root"], off["root"])
         check("ctw20 ...and a record directory that does not exist yet is "
               "REPORTED as skipped rather than silently dropped: 'it is outside "
               "the repository' and 'it is not there yet' leave the same commit "
-              "behind while being different things to know: %r"
-              % (targets["skipped"],),
-              any(M.JOURNAL_LABEL in line for line in targets["skipped"])
-              and any(M.EVIDENCE_LABEL in line for line in targets["skipped"]))
+              "behind while being different things to know. The journal is the "
+              "exception while it is on - the row this commit writes creates it "
+              "and is carried from there - and the pair is the same journal "
+              "turned off, where nothing will: %r / %r"
+              % (targets["skipped"], off_targets["skipped"]),
+              any(M.EVIDENCE_LABEL in line for line in targets["skipped"])
+              and not any(M.JOURNAL_LABEL in line for line in targets["skipped"])
+              and any(M.JOURNAL_LABEL in line
+                      for line in off_targets["skipped"]))
 
         # --- the records, when there ARE records -------------------------------
         fx = repos.make(leave_dirty=True)
@@ -509,13 +541,15 @@ def _cases(check):
               code == 0
               and any(p.startswith("docs/audit/evidence/")
                       for p in _carried(fx, after)))
-        check("ctw22 ...and the journal row this run appended is NOT in it, "
-              "because it names the SHA and so could only be written afterwards "
-              "- said on the run that creates the condition rather than met by "
-              "an operator on the next one",
-              not any(p.startswith("docs/audit/journal/")
-                      for p in _carried(fx, after))
-              or M.PREFIX in text, repr(_carried(fx, after)))
+        trail_dirty = [ln for ln in TI._git(fx["root"], "status",
+                                            "--porcelain").splitlines()
+                       if "docs/audit/journal/" in ln]
+        check("ctw22 ...and so is the journal row this run appended, which "
+              "names the commit by the trailer rather than by a SHA it could "
+              "not know, so no journal file is left dirty behind the commit: "
+              "%r / %r" % (_carried(fx, after), trail_dirty),
+              set(_row_files(fx)) <= set(_carried(fx, after))
+              and _row_files(fx) != [] and trail_dirty == [])
 
         # --- the single-file layout --------------------------------------------
         fx = repos.make()
@@ -788,10 +822,14 @@ def _verdict_cases(check, repos):
     details = rows[-1].get("details") if rows else {}
     check("ctw40 an explicit override commits anyway and writes a journal row "
           "naming the commit, the run it went over and the operator's reason - "
-          "an override nobody can find afterwards is a gate quietly deleted: "
+          "an override nobody can find afterwards is a gate quietly deleted. "
+          "The row is INSIDE the commit it names, keyed by the commit's "
+          "trailer, so the override reaches every clone the commit does: "
           "%r / %r" % (details, text),
           code == 0 and after != before and len(rows) == 1
-          and details.get("commit") == after
+          and _trailer_of(fx, after) == [details.get(_invariants.NONCE_KEY)]
+          and set(_row_files(fx, _const("ACTION_VERDICT_OVERRIDDEN")))
+          <= set(_carried(fx, after))
           and details.get("runId") == red.get("runId")
           and details.get("reason") == reason)
     fx = repos.make()
@@ -1353,21 +1391,28 @@ def _branch_cases(check, repos):
           and TI._git(fx["root"], "status", "--porcelain=v2", "--",
                       "src/ita.py") == found)
 
-    # THE OVERRIDE ROW FAILING AFTER THE COMMIT.
+    # THE OVERRIDE ROW FAILING, WHICH IS NOW BEFORE THE COMMIT.
     fx = repos.make()
     _dirty_work(fx)
     held_row = M.override_row
     M.override_row = lambda *args, **kwargs: False
+    before = _head(fx)
+    found = _index_entries(fx)
     try:
         code, text = _run(fx, TASK, "--override-verdict", "nothing was measured")
     finally:
         M.override_row = held_row
-    after = _head(fx)
-    check("ctw60 a commit made over its verdict whose override row could NOT be "
-          "written exits 1 and still names the SHA - the operator is owed the one "
-          "fact the flag promised, and a success would be a commit over a red "
-          "verdict nothing points at: %r / %r" % (code, text),
-          code == 1 and after[:12] in text and "could NOT be written" in text)
+    anchors = [(r.get("details") or {}).get(_invariants.NONCE_KEY)
+               for r in _task_rows(fx)]
+    withdrawn = _invariants.withdrawn_nonces(_journal_io.read_all(fx["root"]))
+    check("ctw60 an override whose row could NOT be written is REFUSED before "
+          "anything is staged - the row is written ahead of the commit now, so "
+          "no commit goes over its gate with nothing saying so - and the anchor "
+          "row already written for it is withdrawn by its nonce: %r / %r / %r"
+          % (code, text, anchors),
+          code == 1 and _head(fx) == before and _index_entries(fx) == found
+          and "could NOT be written" in text
+          and len(anchors) == 1 and anchors[0] in withdrawn)
 
     # AN UNREADABLE LEDGER LINE THAT COULD BE THIS TASK'S.
     fx = repos.make()

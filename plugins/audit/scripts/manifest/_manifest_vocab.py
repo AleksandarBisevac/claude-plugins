@@ -176,14 +176,105 @@ def segment_of(status):
 # folded into one of these, because publishing a provenance nobody recorded is
 # worse than rendering a word this build does not know.
 GATE_BASIS = ("declared", "cleared", "tests.add", "files",
-              "phase-no-spelling", "phase-no-paths")
+              "phase-no-spelling", "phase-no-paths",
+              # `gate-only-no-suite`: the phase's own gate runs no suite at all
+              # (`meta.phaseGate.exclude` removes every `meta.buildCommands`
+              # key), so there is no wide gate left to narrow away from.
+              # `failing-from-run` is written `failing-from-run:<runId>` - a
+              # reader compares the word before the colon and looks the runId
+              # up in the evidence ledger, and never parses it further, because
+              # the schema calls a runId opaque.
+              "gate-only-no-suite", "failing-from-run")
 
 # The arms under which the phase's gate verbatim is the ANSWER rather than an
 # unnarrowed default. `declared` is a caller naming the commands outright, which is
 # the deliberate wide gate the validator's line used to ask for in prose;
 # `phase-no-spelling` is the derivation reporting that nothing in this project
 # records how its runner takes paths, so narrowing would be a guess.
-GATE_BASIS_ANSWERED = ("declared", "phase-no-spelling")
+# `gate-only-no-suite` joins them for the same reason as `phase-no-spelling`:
+# a phase gate that runs no suite has nothing path-scoped to narrow FROM, so
+# carrying it verbatim is an answer and not an unnarrowed default.
+GATE_BASIS_ANSWERED = ("declared", "phase-no-spelling", "gate-only-no-suite")
+
+
+# --- which derivation produced a PHASE's `testGateDerived` -----------------------
+# `phase.testGateBasis`'s vocabulary — SEPARATE from `GATE_BASIS` above, and
+# deliberately so: `GATE_BASIS` is a TASK's `tests.gateBasis` word, read by
+# `audit-task.py`'s writer and by `_manifest_phases`'s wide-gate-verbatim warning
+# (`GATE_BASIS_ANSWERED`), and both of those readers ask about ONE task's own
+# gate. Folding a phase-only word into that tuple would let a task claim a
+# derivation no task ever goes through — nothing stops a caller writing
+# `tests.gateBasis: "derived"` on a task, and the wide-gate warning would then
+# read it as an answer rather than as the nonsense it is. A phase reads this
+# tuple; a task's vocabulary never sees it.
+#
+# 'derived' = `derive-phase-gate.py` narrowed the phase's wide gate to a real
+# subset it computed. 'derived-empty' = the same run computed nothing to narrow
+# to — no task named this phase in `tests.add`, no coupling entry matched, no
+# importer resolved, nothing changed, nothing last failed — so the WIDE gate
+# stayed the answer for lack of anything narrower, the same standing
+# `gate-only-no-suite` has in `GATE_BASIS_ANSWERED` above.
+# 'wide: importers resolved to the full suite' = the derivation ran and an
+# importer listing matched every suite file this runner would collect, so the
+# wide gate IS the narrow answer rather than an unnarrowed default.
+PHASE_GATE_BASIS = ("derived", "derived-empty",
+                    "wide: importers resolved to the full suite")
+
+
+# --- the third place, and the word every surface renders for it -----------------
+# `meta.fullGate` names a THIRD gate beyond a task's own and a phase's sign-off
+# gate - the full suite, coverage, an e2e pass - and `phase.mergedHead` is what
+# lets a MERGED phase be asked whether that third gate ran clean on exactly its
+# own work: the commit the merge brought the phase in with, so a full run's own
+# HEAD containing it is the one fact that makes "this phase's tests passed" a
+# claim about THIS phase rather than about whatever else has landed since. It
+# has two readings, told apart by `mergedHeadAt` - see the `KNOWN_PHASE` entries
+# for `mergedHead` and `mergedHeadAt` below.
+#
+# `VERIFIED` IS THE WORD, NOT THE SENTENCE. Every surface (status, report,
+# panel, doctor) needs one word for "tests passed" AT EACH PLACE a gate can
+# mean that - a task's own gate, a phase's sign-off gate, and the full run
+# above - and "all tests passed" answers none of those, because it does not say
+# which place is meant. Each word below names one place, in the order a change
+# passes through them.
+VERIFIED = ("task", "sign-off", "whole")
+
+# The answers a MERGED phase's full-gate status can be, read by the
+# evidence reader and rendered identically on every surface:
+#   WHOLE        a green, measured, clean, verbatim full run's HEAD contains
+#                this phase's `mergedHead` - the strongest claim this
+#                vocabulary can make.
+#   PROVISIONAL  the plan declares a `meta.fullGate` (so a third place
+#                exists), but no full run's HEAD is yet known to contain this
+#                phase's merge.
+#   UNKNOWN      `mergedHead` is absent, so ancestry cannot be asked at all,
+#                or git could not establish whether the newest relevant full
+#                run contains it (a shallow clone, most often) - never
+#                PROVISIONAL, which would claim a specific gap this phase does
+#                not carry enough to name.
+#   NOT_DECLARED the plan names no `meta.fullGate` at all, so the question
+#                does not apply - the ABSENT-means-inert reading
+#                `meta.fullGate`'s own schema description promises.
+FULL_STATUS_WHOLE = "whole"
+FULL_STATUS_PROVISIONAL = "provisional"
+FULL_STATUS_UNKNOWN = "unknown"
+FULL_STATUS_NOT_DECLARED = "not_declared"
+FULL_STATUS = (FULL_STATUS_WHOLE, FULL_STATUS_PROVISIONAL,
+              FULL_STATUS_UNKNOWN, FULL_STATUS_NOT_DECLARED)
+
+# The one sentence for an evidence-ledger read that failed, as a `%s` template
+# the caller fills with the error. It sits beside UNKNOWN because that is the
+# answer it most often explains: a merged phase whose full run nobody could look
+# up. Held here, at the floor, so every surface that reports the failure - the
+# report's badges, the panel's payload, both full-run blocks, the doctor's
+# ledger checks - fills one template instead of wording it again. A failure to
+# RESOLVE where the ledger lives is a different fact, so it has a template of
+# its own just below.
+LEDGER_READ_FAILED = "the evidence ledger could not be read: %s"
+# ...and the one for failing to find WHERE that ledger lives - the project, its
+# config or its git root - before any read was tried. A separate sentence,
+# because the repair is a different one.
+LEDGER_LOCATION_FAILED = "where the evidence ledger lives could not be resolved: %s"
 
 
 # Known keys per level. Unknown keys are WARNINGS (typo catcher), never findings
@@ -225,6 +316,29 @@ KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               # copy from .claude/audit.config.json — the plugin's standing split):
               # ledgerDir, showCost, pricingAsOf, pricing.
               "usage",
+              # The one phase-gate default. `always` and `exclude` are the
+              # only declared way to shape what a NEW phase's gate starts as -
+              # absent means today's behaviour exactly, every buildCommands key in
+              # buildCommands order. `_manifest_phases.phase_gate_default` is the
+              # one reader.
+              "phaseGate",
+              # Advisory cost budget for a phase's gate, in milliseconds.
+              # Absent = nothing is graded on cost, same shape as `budgetUSD` one
+              # level down.
+              "gateBudgetMs",
+              # What a derived phase gate LEARNED beside its declared arms — a
+              # test that has, in practice, gone red for a change none of them
+              # would have named. Absent/empty = no coupling learned yet, which
+              # is today's behaviour: the derivation still runs on
+              # tests.add/importers/changed/lastFailed alone.
+              # `_manifest_phases._check_coupling` is the shape check.
+              "coupling",
+              # The buildCommands keys naming the THIRD PLACE tests can pass at
+              # (full suite, coverage, e2e), beyond a task's own gate and a
+              # phase's sign-off gate. Absent = this plan names no third place,
+              # so no phase is ever provisional for lack of one. See `VERIFIED`
+              # and `FULL_STATUS` below.
+              "fullGate",
               # The rest are NOT in the schema, and the reason for each is in
               # `OFF_SCHEMA` below rather than here - one copy, and a lint that
               # goes red when it stops being true. (The comment that stood here
@@ -375,6 +489,32 @@ KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                # inside a block stayed exactly as silent - which is this
                # module's own KNOWN_CLAIM argument, one nesting level over.
                "testEvidence",
+               # Which derivation produced `testGateDerived` below — the phase
+               # twin of a task's `tests.gateBasis`, and open the same way:
+               # absent reads as an unnarrowed default rather than as
+               # 'derived and empty on purpose'. See `PHASE_GATE_BASIS`.
+               "testGateBasis",
+               # What `derive-phase-gate.py` computed for this phase's sign-off
+               # gate, beside the wide `testGate` array — never in place of it.
+               # Absent means "meta.phaseGate.mode has never derived for this
+               # phase", the same reading `testEvidence`'s absence gets.
+               "testGateDerived",
+               # The commit ancestry is asked about for THIS phase's merge,
+               # written only by close-phase.py: the oldest commit on the
+               # parent's first-parent chain that contains the tip (the commit on
+               # that chain that brought the tip in - the tip itself for a
+               # fast-forward, the merge commit for a direct merge, the parent's
+               # merge of an intermediate branch for a nested one), or - when
+               # `mergedHeadAt` is present
+               # - the parent's head when it was recorded after the fact. Absent means ancestry cannot be asked
+               # at all, so the phase reads `unknown` rather than `provisional` -
+               # see `FULL_STATUS` below.
+               "mergedHead",
+               # The moment close-phase.py recorded `mergedHead` AFTER the fact,
+               # with the branch gone: `mergedHead` is then the parent's head at
+               # that moment. Absent means it is the recovered commit described
+               # on `mergedHead` above.
+               "mergedHeadAt",
                # not in the schema; reason in `OFF_SCHEMA` below:
                "signOff"}
 # Recommended keys on a parallel-run claim — soft: a claim that omits one draws a

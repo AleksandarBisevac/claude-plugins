@@ -609,7 +609,7 @@ def _cases(check):
               "symmetric with task.complete",
               len(blk) == 1 and blk[0]["details"] == {
                   "taskId": "P1.1", "phaseId": "P1",
-                  "from": "in_progress", "attempts": 3},
+                  "from": "in_progress", "attempt": 3},
               repr(d_i1 and d_i1.get("events")))
         d_i2 = M.semantic_diff(i_blocked, i_base)
         check("i2 LEAVING blocked is a change row only, never a task.blocked "
@@ -645,6 +645,109 @@ def _cases(check):
         i_garbage["phases"][0]["tasks"][0]["ado"] = "WI-7"
         check("i6 a non-dict ado never crashes the diff and never links",
               M.semantic_diff(i_base, i_garbage) is None)
+
+        # --- ir: a derived row, read back OUT OF THE TRAIL ----------------------
+        # hm1 builds its held keys from details written in the case, which proves
+        # the key rule and nothing about the trail. These append the rows the hook
+        # itself derives through the real journal, read the keys back the way the
+        # sweep lane does, and derive again.
+        #
+        # A ROW IS WITHHELD ONLY WHEN SOMETHING IN IT IDENTIFIES ONE RECORD. A
+        # blocking has no such value: `reopen` sets `attempts` back to 0, and a task
+        # can be blocked, unblocked and blocked again without a start in between,
+        # so neither the attempt nor `startedAt` tells two blockings apart. A link
+        # has none either: an unlink followed by a re-link to the same work item is
+        # the same id. Both are therefore written every time they are derived - a
+        # repeated row, never a lost one.
+        _ir_entry = {"action": "manifest.edit", "target": "m.json",
+                     "summary": "x", "actor": {"author": "a"}}
+
+        def _ir_doc(status="in_progress", attempts=None, task_ado=None,
+                    phase_ado=None, completed=None, commit=None):
+            doc = manifest_doc(status=status, completed=completed, commit=commit)
+            if attempts is not None:
+                doc["phases"][0]["tasks"][0]["attempts"] = attempts
+            if task_ado is not None:
+                doc["phases"][0]["tasks"][0]["ado"] = {"id": task_ado, "url": "u"}
+            if phase_ado is not None:
+                doc["phases"][0]["ado"] = {"id": phase_ado, "url": "u"}
+            return doc
+
+        def _derived(old, new, recorded=None):
+            _row, rows = M._manifest_rows(dict(_ir_entry), "m.json", old, new,
+                                          recorded=recorded)
+            return rows
+
+        def _actions(rows):
+            # A phase link carries no task id, so None sorts as the empty string.
+            return sorted(((r["action"], r["details"].get("taskId"),
+                            r["details"].get("phaseId")) for r in rows),
+                          key=lambda t: tuple("" if v is None else v for v in t))
+
+        def _recorded_after(root, *pairs):
+            """Append what each (old, new) derives, then read the keys back."""
+            for old, new in pairs:
+                for row in _derived(old, new):
+                    _journal_io.append(root, row)
+            return M.recorded_keys(root)
+
+        _ir_root = _harness.fixture_root("jw-recorded-roundtrip")
+        try:
+            # Block at attempt 1; reopen (attempts back to 0), start (attempt 1
+            # again), block. The first blocking is in the trail.
+            _ir_first = _ir_doc(status="blocked", attempts=1)
+            _ir_held = _recorded_after(
+                _ir_root, (_ir_doc(attempts=1), _ir_first))
+            _ir_reblock = _derived(_ir_doc(attempts=1),
+                                   _ir_doc(status="blocked", attempts=1),
+                                   recorded=_ir_held)
+            # Link task and phase to items 7 and 9; unlink; link to the same ids.
+            _ir_linked = _ir_doc(task_ado=7, phase_ado=9)
+            _ir_held = _recorded_after(_ir_root, (_ir_doc(), _ir_linked))
+            _ir_relink = _derived(_ir_doc(), _ir_linked, recorded=_ir_held)
+            _ir_new_attempt = _derived(_ir_doc(attempts=2),
+                                       _ir_doc(status="blocked", attempts=2),
+                                       recorded=_ir_held)
+            _ir_new_link = _derived(_ir_doc(), _ir_doc(task_ado=8, phase_ado=10),
+                                    recorded=_ir_held)
+            # A completion carries what makes it one record - its completedAt and
+            # its commit - so the rule that stops a merge repeating it still holds.
+            _ir_done = _ir_doc(status="done", completed="X", commit="a" * 40)
+            _ir_held = _recorded_after(_ir_root, (_ir_doc(), _ir_done))
+            _ir_done_again = _derived(_ir_doc(), _ir_done, recorded=_ir_held)
+        finally:
+            _harness.remove_tree(_ir_root)
+        check("ir1 a task blocked at attempt 1, reopened, started and blocked at "
+              "attempt 1 again gets its SECOND task.blocked row - the trail holds "
+              "the first, and nothing in either row tells the two blockings apart, "
+              "so the second is not withheld: %r" % (_actions(_ir_reblock),),
+              _actions(_ir_reblock) == [("task.blocked", "P1.1", "P1")])
+        check("ir2 an unlink followed by a re-link to the SAME work item gets its "
+              "ado.link rows again, for the task and the phase - the id alone "
+              "cannot say it is the same link: %r" % (_actions(_ir_relink),),
+              _actions(_ir_relink) == [("ado.link", None, "P1"),
+                                       ("ado.link", "P1.1", "P1")])
+        check("ir3 ALLOW: a new blocked attempt of the same task is written: %r"
+              % (_actions(_ir_new_attempt),),
+              _actions(_ir_new_attempt) == [("task.blocked", "P1.1", "P1")])
+        check("ir4 ALLOW: a new link - a different work-item id - is written, for "
+              "the task and for the phase: %r" % (_actions(_ir_new_link),),
+              _actions(_ir_new_link) == [("ado.link", None, "P1"),
+                                         ("ado.link", "P1.1", "P1")])
+        # THE OTHER DIRECTION: a rule that stopped withholding anything would pass
+        # every case above. A completion the trail already holds is still withheld.
+        check("ir5 ...while a completion read back from the trail is still withheld "
+              "- its completedAt and commit do identify one record: %r"
+              % (_actions(_ir_done_again),), _actions(_ir_done_again) == [])
+        _ir_keys = [M._record_key("task.blocked",
+                                  {"taskId": "P1.1", "attempt": 1,
+                                   "startedAt": "T"}),
+                    M._record_key("ado.link", {"taskId": "P1.1", "phaseId": "P1",
+                                               "adoId": 7})]
+        check("ir6 neither task.blocked nor ado.link has a record key, whatever "
+              "its details hold - there is no value in either that names one "
+              "blocking or one link: %r" % (_ir_keys,),
+              _ir_keys == [None, None])
 
         write_manifest(manifest_doc())
         entries = M.post_entries(payload("Edit", man_rel, sid="pp-5"), cfg=cfg,
@@ -734,11 +837,12 @@ def _cases(check):
               "pre-image while it was off)",
               len(entries) == 1 and entries[0]["action"] == "config.edit")
 
-        # --- s: P0-S, the unsandboxed Bash run ---------------------------------
+        # --- s: the unsandboxed Bash run ----------------------------------------
         # `dangerouslyDisableSandbox: true` turns off the ONLY layer that can
-        # actually contain a read, and until P0-S no part of this plugin saw it:
-        # a live session read a secret through direnv that way and left no deny,
-        # no gate message and NO ROW. This stops nothing - PostToolUse is after
+        # actually contain a read, and before this file was widened to watch for
+        # it no part of this plugin saw it: a live session read a secret through
+        # direnv that way and left no deny, no gate message and NO ROW. This
+        # stops nothing - PostToolUse is after
         # the fact - it converts an invisible event into tamper-evident history,
         # which is the currency this plugin actually trades in.
         def bash_payload(cmd, *, sid="pp-s", sandbox_off=True):
@@ -1151,7 +1255,7 @@ def _cases(check):
               "and leaves no slot - nothing here outlives the user's switch",
               M.post_entries(f_bash("f-10b"), cfg=post_cfg, root=_f10b_dir) == []
               and not os.path.isdir(os.path.join(_f10b_dir, ".claude", "state")))
-        # f11: the P0-S row and the manifest rows share one Bash call, and both
+        # f11: the unsandboxed-run row and the manifest rows share one Bash call, and both
         # land. The lane was one `return` before this fix, so "either/or" is exactly
         # the shape a careless fix would have kept.
         f_write(manifest_doc(status="in_progress"))

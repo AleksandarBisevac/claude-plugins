@@ -374,8 +374,9 @@ LAYERS = (
      "_gate_feed",
      # `_evidence_io` is where a test-execution record lives and what it may say.
      # It reaches `_journal_io` (L1) for config loading, the writer id and the
-     # month, and nothing else - which is the reason it sits one layer up rather
-     # than beside it: a layer-mate may not be imported, and re-deriving "where
+     # month, and its other imports sit at L1 or below too; `_deps.py --render`
+     # prints the edges. That is the reason it sits one layer up rather than
+     # beside them: a layer-mate may not be imported, and re-deriving "where
      # does this manifest keep its committed record" would put the trail and the
      # evidence in different directories the first time a repo set an unusual
      # `manifestPath`. Its consumers are `_invariants` (L4), which has to know
@@ -434,6 +435,22 @@ LAYERS = (
     # nothing at L3 and nothing at L3 reaches it; its only consumer is
     # `render-report` at L7, which reads the disk and hands the answer down.
     ("usage_ledger", "_panel_settings", "_manifest_rules", "_evidence_view",
+     # `_verdict_binding` is the one rule for whether a recorded gate verdict
+     # binds the declared work now. It reads `_evidence_io` (the ledger) and
+     # `_tree_stamp` (the digest), peers at L2, so L3 is the first layer that
+     # holds both; `commit-task-work` and `audit-task` at L7 call it.
+     "_verdict_binding",
+     # `_gate_derive` is the gate helpers' one home (`is_shared_key`,
+     # `path_scoped_sibling`, `repointed` -- moved out of `audit-task.py`) plus
+     # the phase-level `derive()`. It reaches `_manifest_phases` and
+     # `_evidence_io`, both here at L2, so this is the first layer strictly
+     # above both; `_manifest_rules` is NOT one of its edges -- its
+     # `tests_add_path` only re-exports `_manifest_phases`' own, and this
+     # module calls that directly rather than moving up a layer for a
+     # re-export. Its consumers are `audit-task.py` (L7), which keeps thin
+     # aliases, and `derive-phase-gate` (L7), which reaches its arm helpers
+     # directly to REPORT the breakdown `derive()` itself does not expose.
+     "_gate_derive",
      # `_usage_bench` drives all four analytics passes (each L2), so L3 is the
      # lowest layer that can reach them; `render-report` loads it for `_time_best`.
      "_usage_bench",
@@ -716,6 +733,17 @@ LAYERS = (
      # rewrote five files and a gate that skipped every hook were both exit 0 and
      # neither was distinguishable from a verdict.
      "run-test-gate",
+     # `full-gate` is the one command of the third place: a pre-push hook's
+     # whole obligation, spelled once rather than left for every hook to
+     # re-derive `run-test-gate.py <m> --full --record` and its own refusal
+     # for a plan with no `meta.fullGate`. An entry point for this layer's
+     # usual reason - it never imports `run-test-gate` (an entry point may
+     # not import another entry point), it resolves it by basename through
+     # `_loader.script_path` (L1) and runs it as a subprocess, which is why
+     # no edge to `run-test-gate` appears here at all. It reaches
+     # `_manifest_io` (L1) for the one presence check - does this plan
+     # declare a third place - that decides whether to invoke anything.
+     "full-gate",
      # `propose-gates` folds the evidence ledger into a plan proposal instead
      # of leaving `/audit:init`'s recon read the tree alone: a candidate gate
      # command that has run before is classified by what it actually caught,
@@ -735,6 +763,18 @@ LAYERS = (
      # `_manifest_io` (L1) to take a task's declared files off the plan instead
      # of off a hand-typed list, which is the held model of state it is about.
      "stamp-verification",
+     # `derive-phase-gate` computes a PHASE's sign-off gate from
+     # `_gate_derive.derive` (L3) rather than deriving it itself: it gathers the
+     # observations that pure function needs -- the version answer, the two
+     # importer listings, changed paths since `baseRef`, the newest red
+     # phase-scope row (`_evidence_io`, L2) and the plan gate's own exempt
+     # verdict (`_loader.load_hooks_config()`, L1, the one door scripts/ has
+     # into `hooks/_config.py`) -- and writes the result under the index lock
+     # through `_panel_write` (L6), the same lock/snapshot/rollback pair every
+     # other manifest writer uses. `_proc_group` (L1) runs each listing so a
+     # runaway child cannot outlive the timeout the way a bare
+     # `subprocess.run` would.
+     "derive-phase-gate",
      # `set-priority` is the writer behind `/audit:phase priority`: one integer on
      # the index stub, under the index lock, revalidated. A command rather than a
      # prose instruction because the rule it enforces (tier 1 is unique, and a
@@ -762,6 +802,17 @@ LAYERS = (
      # the class this product keeps being repaired for. It reaches `_evidence_io`
      # (L3) for the row and the ledger and `_manifest_io` (L1) for the loader.
      "record-outside-run",
+     # `import-evidence` is the same question one machine LATER: a CI runner
+     # made its own gate run and recorded its own ledger file, and until now the
+     # only way that file reached a clone was a hand copy nothing verified - a
+     # byte changed in transit, a truncated download, a shard typed over
+     # another writer's file under one name, none of it visible before the row
+     # was trusted. It reaches `_evidence_io` (L2) for `verify_rows` (the SAME
+     # chain check every other reader of this ledger trusts, not a second
+     # opinion written here) and `evidence_dir`, `_journal_io` (L1) for
+     # `rows_from_text` and config loading, and `_manifest_io` (L1) for the
+     # loader that turns a bad `<manifest>` argument into a usage error.
+     "import-evidence",
      # `migrate-json-encoding` rewrites the files of ONE manifest in the escaping
      # `_manifest_io.json_document` chose, in a single all-or-nothing pass. An
      # entry point for this layer's usual reason - the caller is an operator, or

@@ -100,6 +100,7 @@ import signal
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -131,8 +132,15 @@ import _manifest_vocab as _vocab  # noqa: E402  (_strip_line_suffix: one reading
 #                                  `files` entry's `:line-range` suffix, shared with
 #                                  `commit-task-work.py` and `audit-task.py` rather
 #                                  than re-parsed a fourth time here)
+import _manifest_phases as _phases  # noqa: E402  (subject_of/is_suite_path/gate_entry_paths:
+#                                  the one filename bound "is this path a test file" builds
+#                                  on, moved out from under a leading underscore here rather
+#                                  than copied)
 import _fmt  # noqa: E402  (human_duration: a recorded durationMs, in the one spelling
 #                           the terminal and the rendered report both print it in)
+import _loader  # noqa: E402  (load_hooks_config: logs_dir/ensure_local_dir, for --own's
+#                              raw log - the same self-ignoring local directory every
+#                              hook already makes state and logs under)
 
 E_OK, E_FAIL, E_ASK = 0, 1, 2
 
@@ -880,6 +888,81 @@ def failing_lines(text, limit):
                   "it and NOT a list of failing checks" % (name, len(tail)))
 
 
+# vitest's own `FAIL  <file> > <suite> > <name>` line under `Failed Tests`. The
+# cross beside it in the file tree (`× <file> > <name>`) carries no `FAIL` word
+# at all and is deliberately NOT read here - `failing_lines` reads both because
+# either spelling names a failing CHECK, but only this one names a FILE.
+_VITEST_FAIL_LINE = re.compile(r"^[ \t]*FAIL[ \t]+(\S+)", re.M)
+
+
+def failing_suites(text):
+    """`(paths, basis)` - the SUITE FILES a runner named as failing.
+
+    `failing_lines` ALREADY ANSWERS "WHICH CHECK", NEVER "WHICH FILE", and the
+    two are not the same question: a jest bullet's title is the assertion's own
+    name (`_jest_failure_name`), and it carries no path at all unless the suite
+    failed to run entirely. A red row that names only the check leaves a reader
+    unable to point a failed-first fix task, the derived gate's last-failed arm
+    or the shadow recall at anything - they all need the FILE.
+
+    THREE READERS, one per runner whose own failure lines NAME a file: jest's
+    `FAIL <path>` header (`_JEST_SUITE_HEADER`, `FAIL` only - a `PASS` header is
+    not a failure), vitest's `FAIL <file> > ...` line, and pytest's path before
+    `::` on a `FAILED`/`ERROR` line. Read off `summary_reader`'s own name, the
+    same runner identity `failing_lines` uses, so the two can never disagree
+    about which runner this output is.
+
+    EVERY PATH IS ASKED TWO MORE QUESTIONS before it counts: `_is_suite_path`
+    (a runner can print a source file it merely PROCESSED, and that is not a
+    suite), and `_VENDOR_DIRS` (a dependency nobody's task declares is not
+    evidence about anybody's work, and jest especially prints its whole
+    `node_modules` path when a suite crashes on import).
+
+    `(None, basis)` FOR EVERY WAY THIS CAN COME UP EMPTY, and NEVER `([], ...)`
+    - the same rule `failing_lines` follows and for the same reason: a reader
+    who cannot tell an empty answer from nothing-to-tell would read a runner
+    that named no file as a runner that found nothing wrong. mocha NUMBERS its
+    failures and never names a file at all; an unrecognised runner answers the
+    same way for the same reason `failing_lines` falls to a tail instead of
+    a name. The basis says `named as failing` only when the paths came off the
+    runner's OWN failure lines - a learner can refuse anything else.
+    """
+    body = text or ""
+    name, _joined, _words = summary_reader(body)
+    if name == "jest":
+        raw = [header.group(1)
+               for header in (_JEST_SUITE_HEADER.match(line)
+                              for line in _ANSI.sub("", body).splitlines())
+               if header and header.group(0).strip().startswith("FAIL")]
+        source = "jest's FAIL <path> header(s)"
+    elif name == "vitest":
+        raw = _VITEST_FAIL_LINE.findall(body)
+        source = "vitest's FAIL <file> line(s)"
+    elif name == "pytest":
+        raw = [match.group(1).split("::", 1)[0]
+               for match in _FAILURE_READERS["pytest"].finditer(body)]
+        source = "pytest's FAILED/ERROR line(s)"
+    elif name is not None:
+        return None, ("%s's failure lines name no file, only the check that "
+                      "failed" % (name,))
+    else:
+        return None, ("no runner this gate can count recognised, so no suite "
+                      "file could be named")
+    kept = _distinct(
+        p for p in raw
+        if _is_suite_path(p)
+        and not any(seg in _VENDOR_DIRS for seg in _segments(p)))
+    if not kept:
+        return None, "%s named no path this gate reads as a suite file" % (name,)
+    if len(kept) > _ev.MAX_PATHS:
+        cut = kept[:_ev.MAX_PATHS]
+        return cut, ("%d of the %d suite file(s) %s named as failing, read "
+                     "from %s; the rest are not carried"
+                     % (len(cut), len(kept), name, source))
+    return kept, ("the %d suite file(s) %s named as failing, read from %s"
+                 % (len(kept), name, source))
+
+
 # --- did the runner get to the end of its run ---------------------------------
 # The END-OF-RUN reports a machine-readable reporter writes, for runners whose
 # exit status may itself be a count. Deliberately a WEAKER question than
@@ -1049,7 +1132,7 @@ def no_verdict_signature(exit_code, text, command=None):
 
 
 # --- what a count may be ADDED to, and what each step COST ---------------------
-# P46.5, reported from a live audit. A project's `meta.buildCommands` mapped one
+# Reported from a live audit. A project's `meta.buildCommands` mapped one
 # entry to a plain runner invocation and another to the SAME runner with coverage
 # on. The gate ran both, so the identical checks executed twice, and the TOTAL it
 # printed was the suite counted twice - which the operator and the reviewer both
@@ -1599,33 +1682,16 @@ def files_named(text):
     return found or None
 
 
-# The suffixes a test file carries in front of its extension, across the runners
-# this script actually meets. Used to relate `src/foo.test.ts` to `src/foo.ts`
-# and NOWHERE ELSE: a path that is not test-shaped is never re-spelled.
-_TEST_MARKS = (".test", ".spec", "_test", "_spec", "-test", "-spec")
-
-
-def _subject_of(path):
-    """The file a TEST path is about, or None when the path is not test-shaped.
-
-    `tests/foo.spec.ts` -> `foo`, `src/foo.test.ts` -> `foo`, `src/foo.ts` -> None.
-    The basename alone, because the two live in different directories as often as
-    not - `src/foo.ts` tested from `tests/foo.spec.ts` is the ordinary layout.
-
-    DELIBERATELY NARROW. `_PATHISH` above can over-match harmlessly because a
-    spurious path only ADDS overlap and overlap is reported rather than enforced.
-    That reasoning does NOT carry here: a false overlap tells the reader their work
-    was exercised when it was not, which is the exact false comfort `NO OVERLAP`
-    exists to prevent. So this fires only on a path that really is spelled like a
-    test, and only onto a file whose stem it matches exactly.
-    """
-    base = str(path or "").rsplit("/", 1)[-1]
-    stem = base.rsplit(".", 1)[0] if "." in base else base
-    for mark in _TEST_MARKS:
-        if stem.endswith(mark) and len(stem) > len(mark):
-            return stem[:-len(mark)]
-    return None
-
+# Thin module aliases, not copies: these five names moved to `_manifest_phases.py`
+# (beside `tests_add_path`, which asks the same "is this string a path" question of
+# a different field) with one deliberate widening on `is_suite_path` alone - see its
+# own docstring there. Kept under their historic underscored spellings so no caller
+# here, and no case that already existed, had to change.
+_TEST_MARKS = _phases.TEST_MARKS
+_subject_of = _phases.subject_of
+_TEST_DIRS = _phases.TEST_DIRS
+_segments = _phases.path_segments
+_is_suite_path = _phases.is_suite_path
 
 # The directory names a vendored dependency tree wears. A path inside one is code
 # NOBODY'S task declares, so it can never be evidence about the work under test -
@@ -1634,14 +1700,6 @@ def _subject_of(path):
 _VENDOR_DIRS = frozenset((
     "node_modules", "bower_components", "site-packages", "vendor", "venv",
     ".venv", ".tox",
-))
-# ...and the directory names a suite lives in when its FILE NAME does not say so.
-# `__tests__/order.ts` is jest's own layout and carries no `.test` mark at all, so
-# `_subject_of` cannot see it. Read for the CLASSIFICATION only and never for the
-# match - a directory is far too weak to re-spell a path onto another file's stem,
-# which is the thing `_subject_of` guards.
-_TEST_DIRS = frozenset((
-    "__tests__", "__test__", "test", "tests", "spec", "specs", "e2e",
 ))
 
 
@@ -1659,26 +1717,6 @@ def _extension(path):
 def _kinds(paths):
     """The extensions a path set is spelled with, ordered, `""` shown as itself."""
     return sorted(set(_extension(p) or "(no extension)" for p in (paths or ())))
-
-
-def _segments(path):
-    """A path's directory segments, POSIX-spelled, without its basename."""
-    return str(path or "").replace("\\", "/").split("/")[:-1]
-
-
-def _is_suite_path(path):
-    """Whether the runner printed this as a TEST IT RAN rather than as a file it
-    processed.
-
-    TWO READINGS, and the second is why this is not `_subject_of` under another
-    name: a suite says so in its FILE NAME (`order.test.ts`) or in its DIRECTORY
-    (`__tests__/order.ts`, jest's own layout, which carries no mark).
-    `_subject_of` may use only the first, because it re-spells a path onto
-    another file's stem and a directory is far too weak to justify that.
-    Classifying is the weaker job, so it may read the weaker signal.
-    """
-    return (_subject_of(path) is not None
-            or any(seg in _TEST_DIRS for seg in _segments(path)))
 
 
 def evidence_paths(owned, named):
@@ -1819,6 +1857,54 @@ def suite_breadth(task_files, named):
                _output.some_of(extra, budget=SAMPLE_BUDGET)))
 
 
+def _stem_subjects(named):
+    """The `_subject_of` stems present in `named`, once.
+
+    SHARED BY `coverage` AND `derived_step_gap` BELOW, which ask the same
+    question of two different populations - a task's declared source files
+    against a runner's paths, and a derived gate's listed suite files
+    against one step's own paths - so the stem reading cannot drift between
+    the two the day either one changes it.
+    """
+    return set(s for s in (_subject_of(n) for n in (named or ())) if s)
+
+
+def _names_declared(f, named, subjects):
+    """Whether `named` could have printed the declared/listed path `f`.
+
+    Asked of the path the entry names, never of the entry's own spelling: a
+    declared `a/b.py:12-34` is asking about `a/b.py`, and nothing a runner
+    prints ever carries the `:line-range` suffix the schema allows on `f` -
+    comparing the raw entry against `named` would silently drop every
+    suffixed declaration into the complement, which reads as "declared but
+    not named by the run" about a file the run named exactly.
+    """
+    path = _vocab._strip_line_suffix(f)
+    return (any(n == path or n.endswith("/" + path) or path.endswith("/" + n)
+                for n in named)
+            or _declared_stem(f) in subjects)
+
+
+def derived_step_gap(step, listed):
+    """`(matched, total, missing)` for the derived-gate step, or None.
+
+    `listed` is `phase.testGateDerived.tests` - the suite files this run was
+    supposed to measure because `meta.phaseGate.mode` is `enforce`. A step
+    that named fewer of them than it lists is a derived run whose own
+    coverage claim does not hold: the caller's signal to grade it
+    `could-not-run` rather than trust an exit code that answered a narrower
+    question than the one the phase recorded.
+
+    None when there is nothing declared to check the step against.
+    """
+    if not listed:
+        return None
+    named = step.get("named") or ()
+    subjects = _stem_subjects(named)
+    missing = sorted(f for f in listed if not _names_declared(f, named, subjects))
+    return len(listed) - len(missing), len(listed), missing
+
+
 def coverage(task_files, named, task_scope=False, reached=True):
     """`(overlap, basis)` -- which of the task's files the run actually named.
 
@@ -1858,25 +1944,8 @@ def coverage(task_files, named, task_scope=False, reached=True):
     if named is None:
         return None, ("this runner printed no file paths, so coverage is not "
                       "knowable from its output")
-    subjects = set(s for s in (_subject_of(n) for n in named) if s)
-
-    def _hit(f):
-        """Whether `named` could have printed the FILE `f` declares.
-
-        Asked of the path the entry names, never of the entry's own spelling:
-        a declared `a/b.py:12-34` is asking about `a/b.py`, and nothing a
-        runner prints ever carries the `:line-range` suffix the schema allows
-        on `f` -- comparing the raw entry against `named` would silently drop
-        every suffixed declaration out of `hits` and into the complement,
-        which reads as "declared but not named by the run" about a file the
-        run named exactly.
-        """
-        path = _vocab._strip_line_suffix(f)
-        return (any(n == path or n.endswith("/" + path) or path.endswith("/" + n)
-                    for n in named)
-                or _declared_stem(f) in subjects)
-
-    hits = sorted(f for f in owned if _hit(f))
+    subjects = _stem_subjects(named)
+    hits = sorted(f for f in owned if _names_declared(f, named, subjects))
     wide = suite_breadth(owned, named) if task_scope else ""
     basis = ("the runner named %d path(s); the work under test declares "
              "%d file(s)" % (len(named), len(owned)))
@@ -1958,6 +2027,128 @@ def owned_files(manifest, phase_id, task_id=None):
     return None, "no phase %r in this manifest" % (phase_id,)
 
 
+def group_owned_files(manifest, phase_id, also):
+    """`(files, error)` -- what a GROUP's one gate run owns: the union of `phase_id`'s
+    files and every `also` member's, in that order.
+
+    One run measures one tree, and phases built on one branch share it, so the run
+    that grades them all has to own all of their files: owned by the carrier alone,
+    a rewrite of a file only another member declares was reported beside a pass
+    instead of refusing it. Every member must be a phase the plan carries - a
+    member skipped here would be one the verdict claims and the run never owned.
+    """
+    union, seen = [], set()
+    for pid in [phase_id] + list(also or []):
+        files, err = owned_files(manifest, pid)
+        if err:
+            return None, "--also: %s" % (err,)
+        for f in files:
+            if f not in seen:
+                seen.add(f)
+                union.append(f)
+    return union, None
+
+
+def _phase_by_id(manifest, phase_id):
+    """The phase dict named `phase_id`, or None - the same lookup `gate_of`
+    and `owned_files` each inline, pulled out because the derived-gate
+    checks below need it a second time without re-deriving either one's own
+    reading of the manifest."""
+    for phase in (manifest.get("phases") or []):
+        if isinstance(phase, dict) and phase.get("id") == phase_id:
+            return phase
+    return None
+
+
+def derived_gate_check(manifest, phase_id):
+    """`{"entry", "tests"}` when THIS run must measure the phase's derived
+    gate, else None.
+
+    ENFORCE ONLY. In `shadow` mode `phase.testGateDerived` is recorded
+    beside the wide gate and never replaces it - a step named after
+    `entry` there is still measuring the wide gate's own declaration, and
+    grading it against a narrower list it was never asked to run would
+    refuse a run for not doing something nobody told it to do.
+    """
+    mode = ((manifest.get("meta") or {}).get("phaseGate") or {}).get("mode")
+    if mode != "enforce":
+        return None
+    phase = _phase_by_id(manifest, phase_id)
+    if phase is None:
+        return None
+    derived = phase.get("testGateDerived")
+    if not isinstance(derived, dict):
+        return None
+    entry, tests = derived.get("entry"), derived.get("tests")
+    if not entry or not tests:
+        return None
+    return {"entry": entry, "tests": list(tests)}
+
+
+def narrowed_gate_claim(manifest, phase_id):
+    """`{"listed", "full"}` for the NARROWED banner and the row, or None.
+
+    Fires on `phase.testGateBasis == "derived"` with
+    `testGateDerived.narrowed` true - the same two facts
+    `derive-phase-gate.py` itself writes to say a narrower gate was really
+    computed, never an unnarrowed default or an empty derivation standing in
+    for one (`derived-empty` and the importers-word both read false here).
+
+    `full` READS THE LISTING WHEN THERE IS ONE. `testGateDerived.listed` is
+    what the listing command printed before narrowing further - a broader
+    candidate set than `tests` whenever a listing ran at all - and falls
+    back to `tests`'s own count when none did, which is the honest answer
+    for a derivation this build cannot compare against anything wider.
+    """
+    phase = _phase_by_id(manifest, phase_id)
+    if phase is None or phase.get("testGateBasis") != "derived":
+        return None
+    derived = phase.get("testGateDerived")
+    if not isinstance(derived, dict) or not derived.get("narrowed"):
+        return None
+    tests = derived.get("tests") or []
+    listing = derived.get("listed")
+    full = len(listing) if isinstance(listing, list) and listing else len(tests)
+    return {"listed": len(tests), "full": full}
+
+
+def shadow_gate_claim(manifest, phase_id, steps):
+    """`{"listed", "full", "missed"}` for the shadow line and the row, or
+    None.
+
+    SHADOW ONLY, AND ONLY OVER A REAL FAILURE. `meta.phaseGate.mode` must be
+    `shadow` - `enforce` already ran the derived gate itself, so asking
+    whether it "would have" caught a failure it just measured is a question
+    with no content - and `phase.testGateBasis` must not already be
+    `derived`, the same guard `narrowed_gate_claim` reads for the opposite
+    reason. `missed` is bounded on the way into a committed row by
+    `_evidence_io.row_for`, not here: this is the observation, not the
+    write.
+    """
+    mode = ((manifest.get("meta") or {}).get("phaseGate") or {}).get("mode")
+    if mode != "shadow":
+        return None
+    phase = _phase_by_id(manifest, phase_id)
+    if phase is None or phase.get("testGateBasis") == "derived":
+        return None
+    derived = phase.get("testGateDerived")
+    listed_tests = (derived or {}).get("tests") if isinstance(derived, dict) else None
+    if not listed_tests:
+        return None
+    failing = []
+    for st in (steps or []):
+        if st.get("failingSuitesBasis") and st.get("failingSuites"):
+            failing.extend(st["failingSuites"])
+    failing = sorted(set(failing))
+    if not failing:
+        return None
+    missed = [f for f in failing
+              if not any(f == t or f.endswith("/" + t) or t.endswith("/" + f)
+                        for t in listed_tests)]
+    return {"listed": len(failing) - len(missed), "full": len(failing),
+            "missed": missed}
+
+
 def attempt_of(manifest, task_id):
     """Which attempt this run is, when the plan RECORDS one -- else None.
 
@@ -2004,30 +2195,18 @@ def declared_gate(entries, build):
 def _resolved(entries, build, preamble=None):
     """`[(name, command)]` - gate entries through `meta.buildCommands`, once.
 
-    THE ONE RESOLUTION, shared by both scopes on purpose. A task gate and a phase
-    gate are two declarations of the same kind, and resolving them in two places
-    would be two answers to "what is a gate entry" the first time the map grew a
-    rule. An entry naming no build command is carried VERBATIM, because it may be
-    a literal shell command and refusing it would make this script decide what a
-    gate is allowed to be.
-
-    `meta.nodePreamble` IS APPLIED HERE, and it was applied nowhere. The
-    document has instructed callers to run it before every build gate since it
-    shipped; this script spawns its OWN shell per command, so a preamble the caller
-    exported into a different one reaches nothing. Measured on a live run: two gate
-    rows recorded exit 127 for a `PATH` problem, so a committed ledger carries two
-    false failures permanently. A gate that records a false red is worse than a gate
-    that does not run, because the row outlives the session that could explain it.
-
-    JOINED WITH `&&`, which is what "un-piped" in `orchestrator.md` asks for: a pipe
-    would hand the gate's exit status to the preamble's tail and lose the verdict.
-    A whitespace-only value is not a preamble - prefixing it would make every gate
-    on that manifest die of a shell syntax error, which is the same false red one
-    door along.
+    A THIN ALIAS, KEPT BECAUSE `gate_of` AND `own_gate_of` STILL CALL IT BY
+    NAME. The resolution itself moved to `_evidence_io.resolved_commands` -
+    `full_status` needs to ask the identical question of `meta.fullGate`, and
+    `doctor.py`, the panel and the release guard all need the same answer
+    without importing a hyphen-named entry point, which a second copy here
+    could only ever answer for THIS script. `build` and `preamble` arrive
+    already split out of the manifest at both call sites, so they are folded
+    back into the small manifest shape that function reads - behaviour is
+    byte-identical, only the home moved.
     """
-    lead = (preamble or "").strip() if isinstance(preamble, str) else ""
-    return [(e, ("%s && %s" % (lead, command)) if lead else command)
-            for e, command in declared_gate(entries, build)]
+    return _ev.resolved_commands(
+        {"meta": {"buildCommands": build, "nodePreamble": preamble}}, entries)
 
 
 def gate_of(manifest, phase_id, task_id=None):
@@ -2073,6 +2252,75 @@ def gate_of(manifest, phase_id, task_id=None):
     # has to agree about whose gate that is.
     entries, source = _mio.gate_entries(phases[0], task)
     return _resolved(entries, build, preamble), source, None
+
+
+def own_gate_of(manifest, phase_id, task_id):
+    """`(commands, source, error)` for `--own` - the SAME shape `gate_of`
+    returns, so `main` can hand it to the identical downstream code, but a
+    narrower question: not "what measures this task" but "which of the
+    entries that measure it are pointed at nothing but ITS OWN `tests.add`
+    paths".
+
+    A TASK MEASURED BY ITS PHASE'S GATE HAS NOTHING OF ITS OWN, by
+    definition - `_mio.gate_entries` already answers `source == "phase"`
+    for exactly that case, and this asks for no filtering there: the phase's
+    gate is everybody's, an executor's OWN tests are a narrower claim than
+    any of it can make.
+
+    EVERY KEPT ENTRY CLEARS TWO GATES. It must not be a bare
+    `meta.buildCommands` KEY (`entry in build`) - a key resolves to
+    whatever that build step runs today, and "today" is not this task's
+    claim to make either, however the key happens to be spelled
+    (`e2e.spec` reads path-shaped and is not one). And every path
+    `_manifest_phases.gate_entry_paths` finds in it must be one of this
+    task's own declared `tests.add` paths (`tests_add_path` per entry) -
+    an entry naming ITS test AND ANOTHER'S is not this task's alone to
+    claim either, and an entry naming NO path at all (`gate_entry_paths`
+    empty) is not "pointed at" anything and is dropped for the same reason
+    a bare key is.
+
+    NONE LEFT IS AN ERROR, not the ordinary empty-gate state `gate_of`
+    reports as itself: `--own` asked a narrower question and got no for an
+    answer, which is not the same fact as a task or phase that declares no
+    gate at all - a gate-only task hears the identical sentence, because it
+    is in the identical state: nothing of its own points at its own tests.
+    """
+    phases = [p for p in (manifest.get("phases") or [])
+              if isinstance(p, dict) and p.get("id") == phase_id]
+    if not phases:
+        return None, None, "no phase %r in this manifest" % (phase_id,)
+    tasks = [t for t in (phases[0].get("tasks") or [])
+             if isinstance(t, dict) and t.get("id") == task_id]
+    if not tasks:
+        return None, None, "no task %r in phase %r" % (task_id, phase_id)
+    task = tasks[0]
+    build = ((manifest.get("meta") or {}).get("buildCommands") or {})
+    if not isinstance(build, dict):
+        build = {}
+    preamble = (manifest.get("meta") or {}).get("nodePreamble")
+    entries, source = _mio.gate_entries(phases[0], task)
+    tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
+    add_paths = set(p for p in
+                    (_phases.tests_add_path(e)
+                     for e in (tests.get("add") or [])
+                     if isinstance(e, str))
+                    if p is not None)
+    kept = []
+    if source == "task":
+        for entry in entries:
+            if entry in build:
+                continue
+            paths = _phases.gate_entry_paths(entry)
+            if paths and all(p in add_paths for p in paths):
+                kept.append(entry)
+    if kept:
+        return _resolved(kept, build, preamble), "task", None
+    basis = tests.get("gateBasis")
+    basis = basis if isinstance(basis, str) and basis.strip() else "unset"
+    return None, None, (
+        "%s declares no gate entry pointed at its own tests.add paths "
+        "(tests.gateBasis=%s) - there is nothing of its own to run"
+        % (task_id, basis))
 
 
 # --- a verdict already measured on these bytes --------------------------------
@@ -2176,7 +2424,7 @@ def grades_left_out(gate, excluded):
     return named
 
 
-def reuse_identity(project, manifest_path, manifest, commands, owns):
+def reuse_identity(project, manifest_path, manifest, commands, owns, group=None):
     """`{key, basis, limit, grading, unexcluded}` - what this run would have to
     match to be a repeat, and the entries that stop it being one.
 
@@ -2194,6 +2442,11 @@ def reuse_identity(project, manifest_path, manifest, commands, owns):
     reason `grading` does: the caller printing this dict is the one place an
     operator meets the run, and a narrowing that silently failed to apply is not
     this function's to swallow.
+
+    `group` is a group run's other members (`--also`), and it is part of the key
+    when there are any: a group run and a solo run over the same files are two
+    claims - the group's row says it owned each member - so neither may repeat
+    the other. A solo run's key is exactly what it was before.
     """
     excluded, unexcluded = _ev.recorded_paths(project, manifest_path)
     content, cbasis = _tree_stamp.content_digest(project, excluded=excluded)
@@ -2207,7 +2460,10 @@ def reuse_identity(project, manifest_path, manifest, commands, owns):
     if content is None:
         return {"key": None, "basis": cbasis, "limit": REUSE_LIMIT,
                 "grading": grading, "unexcluded": unexcluded}
-    return {"key": _tree_stamp.identity_of([content, gate, scope]),
+    parts = [content, gate, scope]
+    if group:
+        parts.append(["group", sorted(str(g) for g in group)])
+    return {"key": _tree_stamp.identity_of(parts),
             "basis": "%s; over that, the %d gate command(s) this manifest "
                      "declares and the %d file(s) the work under test declares"
                      % (cbasis, len(gate), len(scope)),
@@ -2521,6 +2777,15 @@ def observed_step(name, command, code, text, facts, duration_ms):
     # the outcome arms below, and not among them, because it takes part in none
     # of them - it says what was measured, never what the run is worth.
     step["measured"] = measured_state(step["ran"])
+    # ON EVERY STEP, PASSING ONES INCLUDED - the name `summary_reader` gave this
+    # output, or `none` when it recognised no test runner's summary at all.
+    # WRITTEN RATHER THAN LEFT ABSENT so that a step recorded BEFORE this field
+    # existed (the key simply missing) stays distinguishable from one this gate
+    # looked at and could not place: `_evidence_io.suite_keys` reads exactly that
+    # difference. A wrapper's own line tally (`_STEP_WORDS`) is read by `ran`,
+    # never by this - `pre-commit run --all-files` measures hooks, and a hook
+    # list is not a suite whatever `ran` says it counted.
+    step["suiteReader"] = summary_reader(text)[0] or "none"
     # THIS SITS BETWEEN THE TWO FOR A REASON. The wrapper's own facts
     # outrank it: a timed-out step was killed by OUR teardown, so its `-15` is
     # this process's signal and not the OS ending the run, and reading it here
@@ -2577,16 +2842,34 @@ def observed_step(name, command, code, text, facts, duration_ms):
     if step["exit"] != 0:
         step["failing"], step["failingBasis"] = failing_lines(text,
                                                               _ev.MAX_FAILING)
+        # NEVER ON A `could-not-run` STEP. A killed jest worker's `FAIL`
+        # header is not a failing TEST - `jest_worker_signal` already read
+        # exactly that report and answered `could-not-run` with it, and
+        # naming that suite here again would tell a failed-first fix task or
+        # the derived gate's last-failed arm to grade a suite nothing
+        # measured.
+        if step.get("outcome") != CANNOT_RUN:
+            suites, suites_basis = failing_suites(text)
+            if suites is not None:
+                step["failingSuites"] = suites
+                step["failingSuitesBasis"] = suites_basis
     return step
 
 
 def run_gate(project, commands, runner=None, owns=None, timeout=None,
-             recorded=None, task_scope=False):
+             recorded=None, task_scope=False, keep_text=False,
+             derived_check=None):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
     A dict rather than an exit code, for `verify-invariants.py`'s reason: a
     function that only returned a verdict could not be tested without building a
     repository around it, and `runner` is the seam the cases drive.
+
+    `derived_check` is `derived_gate_check`'s answer - the step named after
+    `phase.testGateDerived.entry` must name every one of `.tests`, or its
+    outcome is corrected to `could-not-run` before `failed`/`status` are
+    ever computed from it, so a derived run that skipped a listed suite can
+    never read as `passed` however green its own exit code came back.
 
     NOTHING HERE WRITES. The snapshot pair and the verdict are complete before the
     caller records anything, which is what keeps a recorder out of the measurement
@@ -2595,6 +2878,21 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
 
     `task_scope` is whether the work under test is one task, which is the only
     scope a gate can be too WIDE for (`suite_breadth`).
+
+    `keep_text` IS OFF BY DEFAULT AND COSTS NOTHING WHEN IT IS: an ordinary
+    run reads a step's output to decide what happened and lets Python free
+    it, exactly as it always has. `--own` is the one caller that needs every
+    line of it AFTER this function returns - for a local log file, never for
+    the row this run does not write - so it is asked for by name rather than
+    kept on every run on the chance somebody wants it. `res["stepText"]` is
+    ALWAYS on the row, `None` unless `keep_text` asked - the same shape
+    `cancelledBy` already uses, and for the reason spelled beside that key
+    below: a value written only conditionally, on a separate line, would
+    change WHICH AST NODE this function returns, and this function's own
+    return is what a producer/consumer scan (`_deps.dict_key_contracts`)
+    reads to know this dict exists at all. When it is a list, it is
+    `[(name, text)]` for every step that ran, in order, text UNREDACTED:
+    the log this feeds is never committed.
     """
     runner = runner or _shell
     before = _tree_stamp.porcelain(project)
@@ -2622,6 +2920,13 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     # list that can be off by one is a list that would attribute one step's
     # paths to another.
     step_named = []
+    # STRICTLY PARALLEL TO `steps` TOO, and unlike `texts` it skips NOTHING -
+    # `--own`'s log is meant to hold every step's whole output, verdict or
+    # not, which is the one thing the bounded render never shows at all.
+    # Built only when asked (`keep_text`): an ordinary run has nowhere this
+    # would go and no reason to hold every byte of every step in memory for
+    # the length of the run.
+    step_text = [] if keep_text else None
     cancelled_by = None
     try:
         for name, command in commands:
@@ -2657,16 +2962,59 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
                                      _elapsed_ms(retry_started))
                 step["retriedAfterSignal"] = first["signal"]
                 step["retryBasis"] = retry_note(first["signal"], change)
+            # NAMED ONCE, HERE, so both `step_named` below and the
+            # derived-gate check just after read the SAME reading of this
+            # step's own output - a second call could not disagree with this
+            # one, but a caller that read it twice from two different lines
+            # is exactly the kind of copy this file's own rule refuses.
+            named_now = files_named(text)
+            step["named"] = named_now
+            if derived_check and name == derived_check.get("entry"):
+                gap = derived_step_gap(step, derived_check.get("tests"))
+                if gap is not None:
+                    matched, total, missing = gap
+                    if matched < total:
+                        # A DERIVED RUN THAT DID NOT NAME EVERY LISTED SUITE
+                        # answered a narrower question than the phase
+                        # recorded, so its exit code is not this run's
+                        # verdict - `run_status` reads `could-not-run` off
+                        # `outcome` below exactly as it does for a kill or a
+                        # missing interpreter, and the repair is the same
+                        # shape: re-derive and re-run, not retry the task.
+                        #
+                        # A MARKER, NEVER A STRING MATCH ON `outcomeBasis`.
+                        # `_render_verdict` needs to know this gap fired
+                        # without re-parsing the sentence below out of
+                        # whatever else already sits on the step.
+                        step["derivedGap"] = True
+                        gap_reason = (
+                            "DERIVED RUN NAMED %d OF %d LISTED SUITES: %s"
+                            % (matched, total,
+                               _output.some_of(missing, budget=SAMPLE_BUDGET)))
+                        # KEEP WHAT WAS ALREADY THERE. A signal, a no-verdict
+                        # signature or `never_started` graded this same step
+                        # first, and each of those is its own observation -
+                        # overwriting it with the gap's reason would erase
+                        # the one that actually explains why nothing ran.
+                        if step.get("outcome") != CANNOT_RUN:
+                            step["outcome"] = CANNOT_RUN
+                        if step.get("outcomeBasis"):
+                            step["outcomeBasis"] = (
+                                step["outcomeBasis"] + "; " + gap_reason)
+                        else:
+                            step["outcomeBasis"] = gap_reason
             steps.append(step)
             # The attempt that ANSWERED, if one did: a retried step's first
             # attempt was ended by a signal, so only the second can speak here.
             if not step.get("outcome"):
                 texts.append(text or "")
+            if step_text is not None:
+                step_text.append((name, text or ""))
             # APPENDED WITH THE ROW AND NEVER BEFORE IT, so the two lists cannot
             # come apart. Scraped per step rather than sliced out of the joined
             # text below, because which STEP printed a path is the whole
             # question here and the join throws that away.
-            step_named.append(files_named(text))
+            step_named.append(named_now)
     except KeyboardInterrupt as exc:
         # THE ONE THING THE INTERRUPT PATH DOES IS LET THE ROW BE WRITTEN. The
         # child's group is already gone - `_shell`'s own `except BaseException`
@@ -2773,6 +3121,17 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
             # arrive with no basis at all.
             "cancelledBy": cancelled_by,
             "overlap": overlap, "coverageBasis": cbasis,
+            # ALWAYS PRESENT TOO, None UNLESS `keep_text` ASKED - the SAME
+            # shape as `cancelledBy` and for the same reason: a key that
+            # appeared on the literal only when a caller opted in could not
+            # be told apart, by anything that scans this function's OWN
+            # return statement (`_deps.dict_key_contracts`'s producer scan
+            # included), from a key this function never writes at all. An
+            # `if:` guard building the key on a separate line would make
+            # this return a `Name` rather than a `Dict` node and drop
+            # `run_gate` out of that scan in silence - the exact failure
+            # the scan exists to catch, turned against its own subject.
+            "stepText": step_text,
             "failed": failed}
 
 
@@ -2835,6 +3194,27 @@ def _render_verdict(res, out):
     quiet run is a second spelling of one run and not a second run - only the
     step inventory above this differs between the two.
     """
+    # THE STATEMENT THAT NOTHING HERE COULD TELL A SUITE FROM A HOOK LIST,
+    # above every other line this function prints - a caller reading a green
+    # verdict off a lint-only gate that excluded its one test entry should not
+    # have to open the ledger to learn that nothing here ran a suite at all.
+    # `suiteReader`, NEVER `measured`: a `pre-commit`-shaped step that measured
+    # real hook counts is not a test suite, which is exactly the conflation
+    # `suiteReader` exists to refuse. A STATEMENT, not a refusal -
+    # `GATE GREEN` still prints under it, and `reference/orchestrator.md`'s
+    # banners are unchanged. `excludedGateKeys` is computed once in `main`
+    # (the one arithmetic `phase_gate_default` owns) and carried on `res`,
+    # never re-derived here from a re-opened manifest.
+    excluded_keys = res.get("excludedGateKeys")
+    if excluded_keys:
+        steps = res.get("steps") or []
+        if steps and not any(st.get("suiteReader", "none") != "none"
+                             for st in steps):
+            out("PHASE GATE RAN NO SUITE: the counts reader recognised no "
+                "test runner's summary in any step (%s); meta.phaseGate."
+                "exclude declares %s out of this gate"
+                % (_output.some_of([st.get("name") for st in steps]),
+                   _output.some_of(excluded_keys)))
     # THE PARTS, PRINTED WHERE THE TOTAL IS READ (P46.5). Above the verdict
     # banners and below the steps, because this is a statement about the steps
     # and `reference/orchestrator.md` keys its arms on the banner literals - a
@@ -2852,6 +3232,13 @@ def _render_verdict(res, out):
                 "what a nondeterminism in that suite costs."
                 % (", ".join(grp["names"]), grp["ran"],
                    _output.some_of(grp["files"], budget=SAMPLE_BUDGET)))
+            manifest_path = res.get("manifestPath")
+            if manifest_path:
+                phase_id = res.get("subject")
+                for name in grp["names"][1:]:
+                    out('  remedy: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/'
+                        'manifest/audit-task.py" retarget %s --gate-drop %s '
+                        '%s' % (phase_id, name, manifest_path))
         else:
             out("SAME COUNT, SAME SUITE NOT ESTABLISHED: %s each reported %d "
                 "check(s), and %s named no suite file - so nothing here can "
@@ -3090,6 +3477,34 @@ def _render_verdict(res, out):
             % (", ".join(s["name"] for s in res["steps"]) or "no commands", tree,
                "" if res["ranTotal"] is None
                else ", %d check(s) ran" % res["ranTotal"]))
+    # AFTER THE VERDICT, ON PURPOSE - both lines say what this run did NOT
+    # measure, and a reader who wants that has already read the banner by
+    # the time either one prints.
+    narrowed = res.get("narrowed")
+    if isinstance(narrowed, dict):
+        # A MEASUREMENT CLAIM NEEDS A MEASUREMENT UNDER IT. `derived_step_gap`
+        # already graded this run `could-not-run` when the derived entry
+        # named fewer of the listed suites than the phase records - see the
+        # `GATE COULD NOT RUN` line above - so saying this same run
+        # "measured the DERIVED gate" would claim, in the very next line,
+        # exactly what the banner above just refused. The two sentences
+        # cannot both be true of one run.
+        if any(st.get("derivedGap") for st in (res.get("steps") or ())):
+            out("NARROWED sign-off: the derived gate was declared for this "
+                "phase, but this run did not name every listed suite, so it "
+                "certifies nothing about that gate - see the GATE COULD NOT "
+                "RUN line above for what it did not measure.")
+        else:
+            out("NARROWED sign-off: this run measured the DERIVED gate (%d of "
+                "%d listed checks; basis on phase.testGateBasis). It is "
+                "evidence about this phase's own tests and their recorded "
+                "couplings. meta.fullGate was not run here and is owed "
+                "before %s is whole."
+                % (narrowed["listed"], narrowed["full"], res.get("subject")))
+    shadow = res.get("shadow")
+    if isinstance(shadow, dict):
+        out("shadow: derived would have listed %d of %d failing suite(s)"
+            % (shadow["listed"], shadow["full"]))
     return code
 
 
@@ -3226,7 +3641,10 @@ def _say_who_else_was_running(project, res, row, out=print):
     except Exception as exc:
         out("  machine:  who else was running could not be read (%s)" % (exc,))
         return
-    others, basis = _ev.shared_the_machine(rows, row)
+    # Where a merge re-chained the ledger, its chain records no writer's order;
+    # not knowing whether one did is said beside the undecided runs below.
+    seams, seam_why = _ev.merge_seams(project)
+    others, basis = _ev.shared_the_machine(rows, row, seams)
     if others is None:
         out("  machine:  not knowable - %s" % (basis,))
     elif others:
@@ -3236,7 +3654,19 @@ def _say_who_else_was_running(project, res, row, out=print):
             % (len(others), ", ".join(str(o.get("runId") or "?")
                                       for o in others)))
     else:
-        out("  machine:  this run had the machine to itself")
+        # A run whose whole-second stamps cannot be placed either side of this
+        # one is said as that, never counted as the crowd nor as solitude.
+        unsure = _ev.undecided_neighbours(rows, row, _ev.RUNNER_GATE, seams)
+        if unsure:
+            out("  machine:  whether %s ran alongside this run is not knowable from "
+                "whole-second stamps - they meet in one second, in an order no "
+                "writer's chain records%s"
+                % (", ".join(str(o.get("runId") or "?") for o in unsure),
+                   "" if seams is not None else
+                   " (%s, so no chain was read as one writer's order)"
+                   % (seam_why,)))
+        else:
+            out("  machine:  this run had the machine to itself")
     # An EMPTY gate measured nothing, so there is no verdict to attribute.
     if res.get("status") in ("passed", EMPTY_GATE):
         return
@@ -3337,16 +3767,202 @@ def _record_run(project, args, res, source, commands, manifest, out=print):
             "boundary": since["at"], "boundaryWritten": bool(since["written"])}
 
 
+def _own_log_dir(manifest_path, project_dir):
+    """The directory `--own`'s raw log lands in, made and self-ignoring.
+
+    `_evidence_io.project_config_for` is the SAME resolution the evidence
+    ledger already uses - a project-dir override, else `CLAUDE_PROJECT_DIR`,
+    else the manifest's OWN directory - asked again here so the log and the
+    evidence it is deliberately NOT part of are sited by one rule and not
+    two that could disagree about where "this manifest's project" is.
+
+    NOT UNDER THE EVIDENCE DIRECTORY, on purpose: that directory is
+    COMMITTED (`_evidence_io`'s own module docstring), and this log is
+    exactly the opposite kind of artifact - the whole, unredacted output of
+    every step, on the operator's own machine, for as long as they want it
+    there. `hooks/_config.ensure_local_dir`'s own docstring says as much:
+    never call it on `docs/audit`, because the journal there is tracked on
+    purpose. `logs_dir` is the config's own answer to "where does a plugin
+    that is NOT the journal put a local file", and `ensure_local_dir` is
+    what makes the directory self-ignoring the moment it exists, so a repo
+    whose own `.gitignore` has never heard of this path is still safe.
+    """
+    log_project, log_config = _ev.project_config_for(manifest_path, project_dir)
+    hooks_cfg = _loader.load_hooks_config()
+    return hooks_cfg.ensure_local_dir(
+        hooks_cfg.logs_dir(Path(log_project), log_config) / "gate-raw")
+
+
+def _write_own_log(manifest_path, project_dir, step_text):
+    """Write every step's WHOLE output to `<logsDir>/gate-raw/<runId>.log`;
+    return the path.
+
+    ONE FILE PER RUN, named by `_evidence_io.new_run_id()` - the same
+    generator a recorded run's `runId` comes from, reused here for the one
+    property that matters to a log file and not to a ledger row: a name
+    nothing else on this machine is writing to right now. Nothing here
+    reads it back and nothing here writes a ledger row beside it; the id is
+    spent once, on a filename, and forgotten.
+
+    UNREDACTED, DELIBERATELY: `failing_lines` and `_step`'s own redaction
+    exist because the row they bound is COMMITTED and goes to a client. This
+    file is neither - it is the operator's own machine, self-ignored the
+    moment `ensure_local_dir` makes its directory - so the one copy of the
+    truth an executor can still ask for is not the one with the paths
+    filed off it.
+    """
+    directory = _own_log_dir(manifest_path, project_dir)
+    run_id = _ev.new_run_id()
+    path = directory / ("%s.log" % (run_id,))
+    with open(str(path), "w", encoding="utf-8", errors="replace") as fh:
+        for name, text in step_text:
+            fh.write("=== %s ===\n" % (name,))
+            fh.write(text or "")
+            if text and not text.endswith("\n"):
+                fh.write("\n")
+    return str(path)
+
+
+# --- the third place: --full, against the whole product -----------------------
+def _record_full_run(project, args, res, commands, out=print):
+    """Record a scope-`full` row: no ids, no pointer, no evidence boundary.
+
+    THE TWO WRITES A PHASE OR TASK RUN MAKES ARE BOTH ABSENT ON PURPOSE.
+    `write_pointer` caches a verdict onto ONE phase or task's own runtime
+    fields, and a full run names neither - `subject_ids` for this scope is
+    `{}`, so there is nothing for a pointer to be filed under. The evidence
+    boundary is a plan-wide "when could ANY run have been recorded", already
+    written by the first phase or task run this plan ever records; a full
+    run repeating that write would be a second writer of a fact one writer
+    already owns.
+
+    RECORDED STRICTLY BEFORE THE SUMMARY IS PRINTED, for the same reason the
+    phase/task path already keeps that order: a long full run can be cut off
+    by an operator's own tool timeout after `run_gate` returns and before this
+    process would otherwise finish printing, and a run that happened is worse
+    lost than a run whose summary the operator never saw.
+    """
+    identity = {"runId": _ev.new_run_id(), "via": "cli",
+                "sessionId": os.environ.get("CLAUDE_CODE_SESSION_ID") or None,
+                "attempt": None, _ev.STARTED_KEY: res.get("startedAt")}
+    published = [command for _name, command in (commands or [])]
+    try:
+        recorded = _ev.record(project, res, _ev.FULL_SCOPE, {}, identity,
+                              published=published, writer=args.writer)
+    except Exception as exc:
+        out("  evidence: NOT recorded - %s" % (exc,))
+        return {"recorded": False}
+    out("  evidence: recorded %s" % (identity["runId"],))
+    return {"recorded": True, "path": recorded["path"]}
+
+
+def _run_full(project, args, manifest, out=print):
+    """The `--full` path: `meta.fullGate`, measured against the whole product.
+
+    SCOPE `full`, IDS `{}` - the subject is `testedState.head`, which the row
+    already records, and neither a phase nor a task is asked about. `owns` is
+    EMPTY for the same reason: no coverage question is asked of a whole-product
+    run, and the declared-coverage line `_render_verdict` would otherwise print
+    for an empty declaration is suppressed here (`res["coverageBasis"] = None`)
+    rather than printed as if this run had nothing to relate to - it has
+    everything to relate to, and the question does not apply.
+
+    THE DIRTY-TREE OBSERVATION IS TAKEN BEFORE THE FIRST COMMAND, off the SAME
+    `dirty_outside` a phase/task run uses for its own excused-red question -
+    but asked with the RECORDER'S OWN PATHS as the owned set
+    (`_evidence_io.recorded_paths`), because a full run owns nothing of its
+    own to exclude a dirty path by. A non-empty answer is printed immediately
+    and carried onto the row as `observations.dirtyOutside`: the run still
+    happens and is still recorded, it just cannot bear WHOLE
+    (`_evidence_io._full_disqualification` reads exactly this key).
+    """
+    entries = ((manifest.get("meta") or {}).get("fullGate") or [])
+    commands = _ev.resolved_commands(manifest, entries)
+    if not commands:
+        out("[run-test-gate] no meta.fullGate declared - this plan names no "
+            "third place")
+        return E_ASK
+    recorded_excl, _unexcluded = _ev.recorded_paths(project, args.manifest)
+    # TAKEN BEFORE THE FIRST COMMAND RUNS - `run_gate` below takes its OWN,
+    # later snapshot for the ordinary tree-mutation bracket, and this is a
+    # separate question asked of the SAME moment: what the tree already
+    # carried when this run started, against the recorder's own paths rather
+    # than against `owns` (which is empty for a full run).
+    before = _tree_stamp.porcelain(project)
+    dirty_paths, dirty_basis = dirty_outside(before, recorded_excl)
+    previous = _arm_interrupt()
+    try:
+        res = run_gate(project, commands, owns=[], timeout=args.timeout,
+                       recorded=recorded_excl, task_scope=False,
+                       keep_text=False)
+    finally:
+        _disarm_interrupt(previous)
+    res["dirtyOutside"] = dirty_paths
+    res["dirtyOutsideBasis"] = dirty_basis
+    res["subject"] = None
+    # NAMED ABSENT, NOT LEFT UNSET. Every one of these is a claim only a
+    # phase- or task-scope row can make - which gate provenance graded it
+    # (`gateSource`), which other phases one group run owned (`groupWith`),
+    # what the resolved gate digests to (`_ev.GATE_DIGEST_KEY`), an identity a
+    # later run could repeat against (`_ev.REUSE_KEY`), whether this row
+    # repeats an earlier verdict (`_ev.VERDICT_SOURCE`, `reusedFrom`), or a
+    # derived gate's own coverage (`narrowed`, `shadow`). A full run is none
+    # of those, so this SAYS so rather than leaving `row_for` to read an
+    # absent key off a result nothing here ever populates.
+    res["gateSource"] = None
+    res["groupWith"] = None
+    res[_ev.GATE_DIGEST_KEY] = None
+    res[_ev.REUSE_KEY] = None
+    res[_ev.VERDICT_SOURCE] = None
+    res["reusedFrom"] = None
+    res["narrowed"] = None
+    res["shadow"] = None
+    head = (res.get("testedState") or {}).get("head")
+    if dirty_paths:
+        out("FULL RUN ON A DIRTY TREE: certifies nothing about %s" % (head,))
+    # SUPPRESSED, NOT ANSWERED. `declared_coverage_answer([])` reads "the work
+    # under test declares no files" - true of the DECLARATION, and false of
+    # what a full run means: it is the whole product's own claim, not an
+    # empty one.
+    res["coverageBasis"] = None
+    if args.record:
+        # STRICTLY BEFORE render()/render_quiet() PRINT ANYTHING - see
+        # `_record_full_run`'s own docstring for why.
+        res["recorded"] = _record_full_run(project, args, res, commands, out=out)
+    if args.as_json:
+        out(json.dumps(res, indent=2, sort_keys=True))
+        return E_OK if res["status"] == "passed" else E_FAIL
+    out("[run-test-gate] full gate: %d command(s)" % (len(commands),))
+    code = (render_quiet if args.quiet else render)(res, out=out)
+    out("FULL GATE GREEN at %s" % (head,) if code == E_OK else "FULL GATE RED")
+    return code
+
+
 def main(argv, out=print):
     p = argparse.ArgumentParser(prog="run-test-gate.py", add_help=True)
     p.add_argument("manifest")
-    p.add_argument("phase")
+    # OPTIONAL, because `--full` names no phase at all - it asks about the
+    # whole product, and the third arm below refuses whichever side left the
+    # other out.
+    p.add_argument("phase", nargs="?", default=None)
     p.add_argument("--project-dir", dest="project_dir", default=None)
     p.add_argument("--json", action="store_true", dest="as_json")
+    # THE THIRD PLACE. `meta.fullGate`, measured against the whole product and
+    # recorded with `scope=full` - never one phase's or one task's claim, so it
+    # takes no `phase` and refuses `--task` outright rather than silently
+    # narrowing to either.
+    p.add_argument("--full", dest="full", action="store_true")
+    # NAMES A CI SHARD'S OWN LEDGER FILE, reaching `_evidence_io.record` and
+    # winning over a session id - see `_evidence_io.append_row` for why a
+    # build's identity must not be split by which session invoked it.
+    p.add_argument("--writer", dest="writer", default=None)
     # NARROWS the coverage question to one task. Without it the question is asked
     # of the PHASE, which is where this script is invoked from - a task-level
     # gate needs this flag, since one with no caller states nothing.
     p.add_argument("--task", dest="task", default=None)
+    # A GROUP's one run: the other phases built on the same branch, whose files
+    # this run owns beside `phase`'s. Additive - absent, nothing here changes.
+    p.add_argument("--also", dest="also", default=None, metavar="PHASE,...")
     # The bound a step is held to, recorded on the row that reports a timeout so
     # "timed out" carries the number that makes it actionable rather than leaving
     # a reader to guess which limit was hit.
@@ -3374,10 +3990,54 @@ def main(argv, out=print):
     # want the inventory either; a human bisecting a red run still gets it,
     # because nothing here changes what `render` alone does.
     p.add_argument("--quiet", dest="quiet", action="store_true")
+    # AN EXECUTOR'S OWN TESTS, THROUGH THE RUNNER RATHER THAN BARE BASH - the
+    # one path whose whole output never has to reach the caller's context,
+    # because this file's own render is already bounded and a log on disk
+    # takes the rest. Named `--own` and not `--also`: `--also
+    # <phase,...>` is a DIFFERENT flag on this same parser, and the two must
+    # never collide.
+    p.add_argument("--own", dest="own", action="store_true")
     try:
         args = p.parse_args(argv)
     except SystemExit as exc:
         return E_ASK if exc.code else E_OK
+    # THE THIRD ARM, BEFORE ANYTHING ELSE IS ASKED. `--full` asks about the
+    # whole product rather than one phase or one task, so a phase positional
+    # beside it and a `--task` beside it are both a caller asking two
+    # different questions in one invocation - refused rather than one side
+    # silently winning. Its ABSENCE, symmetrically, still needs a phase: this
+    # positional was optional only so `--full` could omit it.
+    if args.full and args.phase is not None:
+        out("[run-test-gate] --full asks about the whole product and takes "
+            "no phase - drop %r or drop --full" % (args.phase,))
+        return E_ASK
+    if args.full and args.task is not None:
+        out("[run-test-gate] --full and --task are refused together - the "
+            "whole product is never one task's claim")
+        return E_ASK
+    if not args.full and args.phase is None:
+        out("[run-test-gate] a phase is required unless --full is given")
+        return E_ASK
+    if args.own:
+        # THREE REFUSALS, EACH NAMED, BEFORE ANYTHING ELSE IS ASKED. `--task`
+        # is not optional: an executor's own tests are a TASK's claim, never
+        # a phase's, and `own_gate_of` has no phase-scope reading to fall
+        # back to. `--record` and `--reconcile` are refused because there is
+        # nothing here that either one could act on - this run writes no row
+        # and no pointer, so recording one is not merely skipped, it is a
+        # flag asking for a write this path never makes.
+        if args.task is None:
+            out("[run-test-gate] --own requires --task - an executor's own "
+                "tests are a task's claim, never a phase's")
+            return E_ASK
+        if args.record:
+            out("[run-test-gate] --own refuses --record - this run writes "
+                "no row and no pointer, ever")
+            return E_ASK
+        if args.reconcile:
+            out("[run-test-gate] --own refuses --reconcile - there is no "
+                "pointer from this path for it to repair")
+            return E_ASK
     project = args.project_dir or os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.abspath(args.manifest))))
     try:
@@ -3385,6 +4045,8 @@ def main(argv, out=print):
     except Exception as exc:
         out("[run-test-gate] cannot read the manifest: %s" % exc)
         return E_ASK
+    if args.full:
+        return _run_full(project, args, manifest, out=out)
     if args.reconcile:
         report = _ev.reconcile(project, args.manifest,
                                session_id=os.environ.get("CLAUDE_CODE_SESSION_ID"))
@@ -3400,10 +4062,23 @@ def main(argv, out=print):
             out("  %d unreadable row(s) were skipped - a torn line is counted "
                 "here rather than dropped in silence" % (report["unreadable"],))
         return E_FAIL if report["refused"] else E_OK
-    commands, source, err = gate_of(manifest, args.phase, args.task)
+    if args.own:
+        commands, source, err = own_gate_of(manifest, args.phase, args.task)
+    else:
+        commands, source, err = gate_of(manifest, args.phase, args.task)
     if err:
         out("[run-test-gate] %s" % err)
         return E_ASK
+    also = [p.strip() for p in (args.also or "").split(",") if p.strip()]
+    if also and args.task is not None:
+        out("[run-test-gate] --also groups PHASES for one phase-scope run, and "
+            "--task narrows it to one task - the two answer different questions")
+        return E_ASK
+    if also:
+        _group, gerr = group_owned_files(manifest, args.phase, also)
+        if gerr:
+            out("[run-test-gate] %s" % (gerr,))
+            return E_ASK
     subject = args.task if source == "task" else args.phase
     if not commands:
         # The EMPTY gate is a designed state (`audit-task.py:_phase_gate`), so it
@@ -3427,7 +4102,8 @@ def main(argv, out=print):
             return E_OK
         out("[run-test-gate] %s" % (said,))
         return E_OK
-    owns, terr = owned_files(manifest, args.phase, args.task)
+    owns, terr = (group_owned_files(manifest, args.phase, also) if also
+                  else owned_files(manifest, args.phase, args.task))
     if terr:
         out("[run-test-gate] %s" % terr)
         return E_ASK
@@ -3447,37 +4123,51 @@ def main(argv, out=print):
     # row this run writes has to carry, so a `--no-reuse` run computes one too -
     # a forced measurement that recorded no identity would leave the next run
     # nothing to match, which turns one operator's override into everybody's.
+    #
+    # `--own` ASKS NONE OF THIS. It writes no row, ever, so there is no
+    # identity for a LATER run to match and no earlier row here to repeat -
+    # `reuse_identity` and the lookup it feeds are both a cost this run has
+    # no question to spend them on.
     started = time.monotonic()
-    identity = reuse_identity(project, args.manifest, manifest, commands, owns)
-    if identity.get("unexcluded"):
-        # A NARROWING THAT DID NOT APPLY, SAID RATHER THAN LEFT FOR A COUNT TO
-        # IMPLY. `recorded_paths` tried to leave this plugin's own writes out of
-        # the tree's content identity and could not, for one of these; the
-        # identity below still includes the path as source, so it will keep
-        # changing on every recorded run and no repeat will ever fire for it.
-        for path, why in identity["unexcluded"]:
-            out("[run-test-gate] %s is a path this plugin writes, but it %s - "
-                "so it stays inside the content identity rather than being "
-                "left out of it, and a run that changes it can never be "
-                "matched by a later one." % (path, why))
-    prior = None
-    if identity.get("grading"):
-        # THE ONE SUBJECT THIS IDENTITY CANNOT SPEAK FOR. Driven before this
-        # line existed: a gate whose single entry validates the plan reported
-        # GREEN over a plan that no longer validated, because the plan is among
-        # the paths the identity leaves out. The refusal is printed rather than
-        # silent, and it names the entry - an operator who sees a gate measure
-        # every time is owed the reason, or the next reader removes the cache.
-        for name, path in identity["grading"]:
-            out("[run-test-gate] %s names %s, which this identity leaves out, so "
-                "this run is MEASURED and not repeated. Whether the command reads "
-                "that path is not established here; naming it is enough, because "
-                "the other way round is a verdict that no longer describes the "
-                "thing it graded" % (name, path))
-    elif not args.no_reuse:
-        prior = _ev.reusable_run(_ev.read_rows(project)["rows"], source,
-                                 subject_ids(args.phase, args.task, source),
-                                 identity["key"], REUSABLE_STATUS)
+    if args.own:
+        identity = {"key": None,
+                    "basis": "--own is never recorded, so nothing here is "
+                             "ever repeated"}
+        prior = None
+    else:
+        # `group=also`: a group run and a solo run over the same files are two
+        # claims, so the members a run owns are part of what a repeat must match.
+        identity = reuse_identity(project, args.manifest, manifest, commands,
+                                  owns, group=also)
+        if identity.get("unexcluded"):
+            # A NARROWING THAT DID NOT APPLY, SAID RATHER THAN LEFT FOR A COUNT TO
+            # IMPLY. `recorded_paths` tried to leave this plugin's own writes out of
+            # the tree's content identity and could not, for one of these; the
+            # identity below still includes the path as source, so it will keep
+            # changing on every recorded run and no repeat will ever fire for it.
+            for path, why in identity["unexcluded"]:
+                out("[run-test-gate] %s is a path this plugin writes, but it %s - "
+                    "so it stays inside the content identity rather than being "
+                    "left out of it, and a run that changes it can never be "
+                    "matched by a later one." % (path, why))
+        prior = None
+        if identity.get("grading"):
+            # THE ONE SUBJECT THIS IDENTITY CANNOT SPEAK FOR. Driven before this
+            # line existed: a gate whose single entry validates the plan reported
+            # GREEN over a plan that no longer validated, because the plan is among
+            # the paths the identity leaves out. The refusal is printed rather than
+            # silent, and it names the entry - an operator who sees a gate measure
+            # every time is owed the reason, or the next reader removes the cache.
+            for name, path in identity["grading"]:
+                out("[run-test-gate] %s names %s, which this identity leaves out, so "
+                    "this run is MEASURED and not repeated. Whether the command reads "
+                    "that path is not established here; naming it is enough, because "
+                    "the other way round is a verdict that no longer describes the "
+                    "thing it graded" % (name, path))
+        elif not args.no_reuse:
+            prior = _ev.reusable_run(_ev.read_rows(project)["rows"], source,
+                                     subject_ids(args.phase, args.task, source),
+                                     identity["key"], REUSABLE_STATUS)
     if prior is not None:
         res = reused_result(identity, prior, _elapsed_ms(started))
     else:
@@ -3490,7 +4180,11 @@ def main(argv, out=print):
             res = run_gate(project, commands, owns=owns, timeout=args.timeout,
                            recorded=_ev.recorded_paths(project,
                                                        args.manifest)[0],
-                           task_scope=args.task is not None)
+                           task_scope=args.task is not None,
+                           keep_text=args.own,
+                           derived_check=(
+                               derived_gate_check(manifest, args.phase)
+                               if args.task is None else None))
         finally:
             _disarm_interrupt(previous)
         # ON THE MEASURED RUN AND NOT ON THE REPEAT'S SOURCE. `run_gate` takes no
@@ -3500,6 +4194,29 @@ def main(argv, out=print):
         # had its chance to rewrite one.
         res[_ev.REUSE_KEY] = identity["key"]
         res["reuseBasis"] = identity["basis"]
+        # PHASE-SCOPE ONLY, and asked of THIS run's own steps - a task-scope
+        # run is narrowed by its own `tests.gate`, whose rules are
+        # `_invariants`' and not `meta.phaseGate`'s, so neither claim is one
+        # this run was ever measured against.
+        if args.task is None:
+            narrowed = narrowed_gate_claim(manifest, args.phase)
+            if narrowed is not None:
+                res["narrowed"] = narrowed
+            shadow = shadow_gate_claim(manifest, args.phase, res.get("steps"))
+            if shadow is not None:
+                res["shadow"] = shadow
+    # THE LOG IS WRITTEN HERE - AFTER `run_gate` RETURNS, OUTSIDE ITS TREE
+    # BRACKET, and only for `--own`. `res.pop`, not a peek: the render below
+    # takes only the bounded step lines, `_evidence_io.MAX_FAILING` failing
+    # lines per step and the verdict - `stepText` carries the WHOLE thing,
+    # and leaving it on `res` would put it in `--json` too, which is exactly
+    # the unbounded reach this whole feature exists to close off.
+    raw_log_path = None
+    if args.own:
+        step_text = res.pop("stepText", None)
+        if step_text is not None:
+            raw_log_path = _write_own_log(args.manifest, args.project_dir,
+                                          step_text)
     # `gateSource` IS RECORDED AND `subject` IS NOT, and the split is the rule
     # about a cached claim rather than an oversight. Provenance is not
     # recoverable from the row - `_evidence_io.row_for` carries the reasoning -
@@ -3508,6 +4225,35 @@ def main(argv, out=print):
     # ledger and the other stays a fact of this process's own output.
     res["gateSource"] = source
     res["subject"] = subject
+    if also:
+        # WHICH MEMBERS THIS ONE RUN OWNED, on its row: a group member's copied
+        # pointer is checked against it, and the carrier's row alone could not
+        # say whose files its coverage and its tree bracket covered.
+        res["groupWith"] = list(also)
+        # ...and in the coverage basis, by member, so the files another member
+        # declares are not read as the carrier's own declaration.
+        mine = set(owned_files(manifest, args.phase)[0] or [])
+        theirs = []
+        for member in also:
+            files = [f for f in (owned_files(manifest, member)[0] or [])
+                     if f not in mine]
+            if files:
+                theirs.append("%s declared by %s (group member)"
+                              % (", ".join(files), member))
+        if theirs:
+            res["coverageBasis"] = "%s; one run for the group: %s" % (
+                res.get("coverageBasis") or "no coverage basis was recorded",
+                "; ".join(theirs))
+    # THE REMEDY LINE'S OWN GATE. `_render_verdict` composes a `retarget
+    # --gate-drop` call for a duplicated phase-scope suite, and it needs the
+    # manifest PATH to do it - but `gateSource` alone cannot say whether this
+    # was a phase-scope run: a task borrowing its phase's gate ALSO carries
+    # `gateSource == "phase"` (`graded_by`'s own check is this one -
+    # `args.task is None`). So the path is carried only when this run is
+    # genuinely phase-scope, and a task-scope run - borrowed gate or its own -
+    # never gets a phase retargeted out from under it.
+    if args.task is None:
+        res["manifestPath"] = args.manifest
     # The resolved gate, as a digest the row carries: what `commit-task-work`
     # compares so a `meta.buildCommands` edit after a green is a changed gate.
     res[_ev.GATE_DIGEST_KEY] = _ev.gate_digest(
@@ -3542,8 +4288,10 @@ def main(argv, out=print):
     # reader who assumed otherwise would credit the wrong declaration. So a
     # task-scope run names both ids here, and says it again under the banner.
     if args.task is None:
-        out("[run-test-gate] %s: %d command(s), phase gate"
-            % (args.phase, len(commands)))
+        out("[run-test-gate] %s: %d command(s), phase gate%s"
+            % (args.phase, len(commands),
+               " - one run for the group with %s, owning all of their files"
+               % (", ".join(also),) if also else ""))
     else:
         out("[run-test-gate] task %s in phase %s: %d command(s), %s"
             % (args.task, args.phase, len(commands),
@@ -3557,6 +4305,38 @@ def main(argv, out=print):
     # is open, so it is derived rather than guessed. Printed before the table so
     # it is read with the verdict rather than after the reader has left.
     out("  covers:   %s" % (runtime_claim(manifest),))
+    # BEFORE THE VERDICT, so the reader who wants every line never has to
+    # scroll past a red banner to find where they are - and printed only
+    # when the log was actually written, which is the shape every other
+    # optional line in this function already takes.
+    if raw_log_path is not None:
+        out("  raw log: %s" % (raw_log_path,))
+    # THE GATE PRINTS THE DECLARED NARROWING, under its header and phase-scope
+    # only - a task-scope run is narrowed by its OWN tests.gate, whose rules
+    # are `_invariants`' and not `meta.phaseGate`'s, so naming an exclusion
+    # here would describe a declaration this run was never measured against.
+    # `_phases.phase_gate_default` is the ONE answer to "what a gate built
+    # TODAY from meta.phaseGate would drop" - and that is NOT
+    # the same claim as "was not run here". `meta.phaseGate.exclude` can be
+    # edited after a phase's `testGate` was written, so a phase whose
+    # `testGate` still carries a now-excluded key RUNS that key regardless -
+    # `phase_gate_default` alone cannot see that, because it never looks at
+    # what THIS RUN actually resolved. `commands`, from `gate_of` above, is
+    # what did - so the claim this line makes is filtered against it.
+    if args.task is None:
+        default_excluded = _phases.phase_gate_default(
+            manifest.get("meta")).get("excluded") or []
+        ran_keys = set(name for name, _command in (commands or []))
+        excluded = [k for k in default_excluded if k not in ran_keys]
+        if excluded:
+            out("  excluded: %s - meta.phaseGate.exclude declares them out "
+                "of this phase's gate; they were not run here"
+                % (_output.some_of(excluded),))
+            # CARRIED ON THE RESULT, so `_render_verdict`'s "PHASE GATE RAN NO
+            # SUITE" line reads the SAME filtered list rather than re-opening
+            # the manifest to ask `phase_gate_default` a second time - and
+            # never the unfiltered one, for the reason above.
+            res["excludedGateKeys"] = excluded
     if identity["key"] is None:
         # THE MISSING BASIS IS THE THING TO SAY. Every other run records an
         # identity and this one cannot, so no verdict taken here will ever be

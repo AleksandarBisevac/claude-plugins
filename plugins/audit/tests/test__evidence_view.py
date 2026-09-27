@@ -489,6 +489,115 @@ def _cases(check):
           "missing rows and not about the pointers",
           T["P1.1"]["key"] == "passed" and eev["tasks"]["P1.1"]["key"] == "dangling")
 
+    # --- a ledger that could not be READ ---------------------------------------
+    # NOT THE STATE ABOVE. A ledger that is not there answers "the plan names a
+    # run this checkout does not hold"; a read that raised answers nothing about
+    # what the ledger holds, and rendering it as `dangling` with zero counts is
+    # the fabricated clean read this pins against. The pointer-less subjects keep
+    # their own words: they are facts about the plan, which no read decides.
+    _real_read_rows = _evidence_io.read_rows
+
+    def _boom(project, config=None):
+        raise OSError("permission denied (fixture)")
+    _evidence_io.read_rows = _boom
+    try:
+        uev = M.load_evidence(plan, path, project_dir=root)
+    finally:
+        _evidence_io.read_rows = _real_read_rows
+    _ukeys = set(v["key"] for v in uev["tasks"].values())
+    check("ev10c a ledger read that RAISES answers `ledger-unreadable` for every "
+          "pointer - task and phase - carries the read error with its basis, and "
+          "reports the counts UNKNOWN rather than zero: %r"
+          % ((sorted(_ukeys), uev.get("readError"), uev.get("files"),
+              uev.get("unreadable")),),
+          _ukeys == {"ledger-unreadable", "no-evidence", "no-gate"}
+          and uev["phases"]["P1"]["own"]["key"] == "ledger-unreadable"
+          and uev["tasks"]["P1.1"]["label"] == "Ledger unreadable"
+          and "permission denied (fixture)" in uev["tasks"]["P1.1"]["why"]
+          and (uev.get("readError") or {}).get("basis")
+          == _report_html.ledger_read_basis("permission denied (fixture)")
+          and uev["files"] is None and uev["unreadable"] is None)
+    check("ev10d ALLOW: a ledger that was read - empty or not - carries "
+          "readError None and real counts, so an empty ledger still reads "
+          "as dangling and never as unreadable",
+          eev.get("readError", "absent") is None
+          and ev.get("readError", "absent") is None
+          # `_write_project` writes one ledger file even with no rows in it, so
+          # the read counts that file: a real count, where a failed read has None.
+          and eev["files"] == 1 and eev["unreadable"] == 0
+          and "ledger-unreadable" not in set(v["key"] for v in eev["tasks"].values()))
+
+    # --- ...and the THIRD PLACE, when that same read fails ---------------------
+    # The report and the CLI each ask the full-run question in their own process.
+    # A read that raised used to come back as `{"error": ...}`, which no phase id
+    # is a key of - so every merged phase rendered NO full-run line, the silence a
+    # plan with no `meta.fullGate` gets. The panel already answers UNKNOWN with
+    # the read's basis; these two must say the same thing about the same failure.
+    import copy
+    import _loader
+    import _manifest_vocab
+    fplan = copy.deepcopy(plan)
+    fplan["meta"]["fullGate"] = ["full"]
+    fplan["meta"]["buildCommands"] = {"full": "echo x"}
+    fplan["phases"][0]["mergedAt"] = "2026-08-02T00:00:00Z"
+    fplan["phases"][0]["mergedHead"] = "a" * 40
+    froot = _harness.fixture_root("evidence-view-fullrun-unread")
+    fpath = _write_project(froot, fplan, rows)
+    _report_mod = _loader.load_script("render-report.py", modname="ev_render_report")
+    _status_mod = _loader.load_script("audit-status.py", modname="ev_audit_status")
+    _fr_basis = _manifest_vocab.LEDGER_READ_FAILED % ("permission denied (fixture)",)
+    _evidence_io.read_rows = _boom
+    try:
+        _rep_block = _report_mod._full_run_block(fplan, fpath, froot)
+        _cli_block = _status_mod.full_run_block(fplan, fpath, froot)
+        _fev = M.load_evidence(fplan, fpath, project_dir=froot,
+                               full_run=_rep_block)
+    finally:
+        _evidence_io.read_rows = _real_read_rows
+    _fev_row = (((_fev or {}).get("phases") or {}).get("P1") or {}).get("fullRun") or {}
+    check("ev10e a full-run ledger read that RAISES gives every merged phase an "
+          "UNKNOWN answer carrying the read's basis - in the report's block, in "
+          "the row the report renders from, and in the CLI's block - never a "
+          "block no phase is a key of: report %r, rendered %r, cli %r"
+          % (_rep_block, _fev_row, _cli_block),
+          sorted(_rep_block) == ["P1"] and sorted(_cli_block) == ["P1"]
+          and _rep_block["P1"].get("answer") == _manifest_vocab.FULL_STATUS_UNKNOWN
+          and _rep_block["P1"].get("basis") == _fr_basis
+          and _cli_block["P1"].get("answer") == _manifest_vocab.FULL_STATUS_UNKNOWN
+          and _cli_block["P1"].get("basis") == _fr_basis
+          and _fev_row.get("answer") == _manifest_vocab.FULL_STATUS_UNKNOWN
+          and _fev_row.get("basis") == _fr_basis
+          and _report_html._verified_line(_fev_row) == "unknown - " + _fr_basis)
+    # ...and the OTHER step the same function takes before any read: finding
+    # WHERE the ledger lives. A failure there is its own sentence, because the
+    # repair is the config or the project path, not the ledger's files - and one
+    # `try` around both steps would word it as a read that never happened.
+    _loc_basis = _manifest_vocab.LEDGER_LOCATION_FAILED % ("no such project (fixture)",)
+    _real_locate = _evidence_io.project_config_for
+
+    def _no_project(*_a, **_k):
+        raise OSError("no such project (fixture)")
+    _evidence_io.project_config_for = _no_project
+    try:
+        _rep_loc = _report_mod._full_run_block(fplan, fpath, froot)
+        _cli_loc = _status_mod.full_run_block(fplan, fpath, froot)
+    finally:
+        _evidence_io.project_config_for = _real_locate
+    check("ev10g a ledger nobody could LOCATE gives every merged phase an "
+          "UNKNOWN answer carrying the LOCATION template - in the report's "
+          "block and the CLI's - never the read template: report %r, cli %r"
+          % (_rep_loc, _cli_loc),
+          sorted(_rep_loc) == ["P1"] and sorted(_cli_loc) == ["P1"]
+          and all(b["P1"].get("answer") == _manifest_vocab.FULL_STATUS_UNKNOWN
+                  and b["P1"].get("basis") == _loc_basis
+                  for b in (_rep_loc, _cli_loc)))
+    _ok_block = _report_mod._full_run_block(fplan, fpath, froot)
+    check("ev10f ALLOW: with the ledger readable the same plan's merged phase "
+          "carries no ledger-read basis - the UNKNOWN above is the read's, not "
+          "the fixture's: %r" % (_ok_block,),
+          sorted(_ok_block) == ["P1"]
+          and _ok_block["P1"].get("basis") != _fr_basis)
+
     # --- which manifest's record ------------------------------------------------
     proj, cfg = M._project_and_config(path, root)
     check("ev11 the record is resolved from the manifest actually being "
@@ -777,8 +886,120 @@ def _shipped_cases(check):
                  for t in _shipped_excused if t in shipped["tasks"]}) == 2)
 
 
+def _graded_cases(check):
+    """A group member carries the carrier's pointer, named `gradedBy`; the report
+    renders it as the carrier's run, never as the member's own. A phase signed off
+    with a recorded reason and no run says that reason where its badge would be."""
+    root = _harness.fixture_root("evidence-view-graded")
+    try:
+        plan = {"meta": {"version": 2, "title": "g", "repo": "r"}, "bugs": [],
+                "phases": [
+                    {"id": "P1", "title": "carrier", "status": "done",
+                     "testGate": ["make test"],
+                     "testEvidence": {"runId": "R-G", "status": "passed",
+                                      "at": "2026-08-01T10:00:00Z"}, "tasks": []},
+                    {"id": "P2", "title": "member", "status": "done",
+                     "testGate": ["make test"],
+                     "review": {"status": "passed", "acceptedCommits": [
+                         {"commit": "abcdef0123456789abcdef0123456789abcdef01",
+                          "reason": "the multi-phase plan"}]},
+                     "testEvidence": {"runId": "R-G", "status": "passed",
+                                      "at": "2026-08-01T10:00:00Z",
+                                      "gradedBy": "P1"}, "tasks": []},
+                    {"id": "P3", "title": "reasoned", "status": "done",
+                     "testGate": ["make test"],
+                     "review": {"status": "passed",
+                                "noEvidenceReason": "no runner on this host"},
+                     "tasks": []}]}
+        rows = [{"v": 1, "runId": "R-G", "ts": "2026-08-01T10:00:00Z",
+                 "scope": "phase", "phaseId": "P1", "status": "passed",
+                 "steps": [], "failed": [], "testedState": {},
+                 "observations": {}}]
+        path = _write_project(root, plan, rows)
+        ev = M.load_evidence(plan, path, project_dir=root)
+        own = lambda pid: ev["phases"][pid]["own"]  # noqa: E731
+        check("gv1 a member's copied pointer renders as the CARRIER's run - the "
+              "view names the carrier and its reason says so: %r"
+              % ({k: own("P2").get(k) for k in ("gradedBy", "why")},),
+              own("P2").get("gradedBy") == "P1"
+              and own("P2")["why"].startswith("graded by P1's run R-G"))
+        check("gv2 SECOND DIRECTION: the carrier's own pointer names no carrier",
+              own("P1").get("gradedBy") is None
+              and not own("P1")["why"].startswith("graded by"))
+        check("gv3 a phase signed off with a recorded reason and no run shows the "
+              "reason where the badge's basis goes: %r" % (own("P3").get("why"),),
+              "no runner on this host" in (own("P3").get("why") or ""))
+        marks = _report_html._tev_phase_marks(ev["phases"]["P2"])
+        check("gv4 the phase row's mark says whose run graded it, and the carrier's "
+              "row does not: %r" % (marks,),
+              "sign-off (graded by P1's run)" in marks.replace("&#x27;", "'")
+              .replace("&#39;", "'")
+              and "graded by" not in _report_html._tev_phase_marks(
+                  ev["phases"]["P1"]))
+        check("gv5 a commit a group took into its review outside every task is shown "
+              "beside the sign-off, with its reason - the one reader the record had "
+              "none of: %r" % (marks,),
+              "abcdef012345" in marks and "the multi-phase plan" in marks
+              and "accepted" not in _report_html._tev_phase_marks(
+                  ev["phases"]["P1"]))
+    finally:
+        _harness.remove_tree(root)
+
+
+def _full_run_cases(check):
+    """`load_evidence(..., full_run=...)` gains the full row family: a phase's
+    `fullRun` entry carries the caller's own answer PLUS this phase's own
+    sign-off counts - never a second read of the ledger for either half."""
+    root = _harness.fixture_root("evidence-view-fullrun")
+    try:
+        plan = {"meta": {"version": 2, "title": "f", "repo": "r"}, "bugs": [],
+                "phases": [
+                    {"id": "P1", "title": "gated", "status": "done",
+                     "testGate": ["make test"], "testGateBasis": "derived",
+                     "mergedHead": "aaaa111122223333",
+                     "testEvidence": {"runId": "R-1", "status": "passed",
+                                      "at": "2026-08-01T10:00:00Z"}, "tasks": []},
+                    {"id": "P2", "title": "unmerged", "status": "in_progress",
+                     "tasks": []}]}
+        rows = [{"v": 1, "runId": "R-1", "ts": "2026-08-01T10:00:00Z",
+                 "scope": "phase", "phaseId": "P1", "status": "passed",
+                 "steps": [], "failed": [], "testedState": {},
+                 "observations": {},
+                 "narrowed": {"listed": 2, "full": 6}}]
+        path = _write_project(root, plan, rows)
+        full_run = {"P1": {"answer": "whole", "head": "cafebabe01234567",
+                           "runId": "R-full"}}
+        ev = M.load_evidence(plan, path, project_dir=root, full_run=full_run)
+        fr = ev["phases"]["P1"].get("fullRun")
+        check("fr1 the phase's fullRun carries the caller's own answer, "
+              "verbatim: %r" % (fr,),
+              isinstance(fr, dict) and fr.get("answer") == "whole"
+              and fr.get("head") == "cafebabe01234567")
+        check("fr2 ...AND this phase's own sign-off counts, read off the SAME "
+              "row `own` already carries - never a second read of the ledger",
+              fr.get("listed") == 2 and fr.get("full") == 6
+              and fr.get("signOffStatus") == "passed"
+              and fr.get("signOffTs") == "2026-08-01T10:00:00Z")
+        check("fr3 a phase `full_run` names nothing for carries no fullRun key "
+              "at all - not None, ABSENT, which is what keeps a plan naming no "
+              "third place byte-identical",
+              "fullRun" not in ev["phases"]["P2"])
+        ev_none = M.load_evidence(plan, path, project_dir=root, full_run=None)
+        check("fr4 `full_run=None` (a caller that computed no third-place "
+              "answer at all) is the SAME silence as `full_run={}` - neither "
+              "phase earns a fullRun key",
+              "fullRun" not in ev_none["phases"]["P1"]
+              and "fullRun" not in ev_none["phases"]["P2"])
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _graded_cases(check)
+        _full_run_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

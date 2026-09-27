@@ -1,6 +1,6 @@
 ---
 description: 'Audit pipeline: everything a phase has done to it — add one to a plan that already exists, run it end to end (every ready task, parallel where safe, then sign-off), pin which phase the pipeline reaches for first, or cancel one that will not be done. A bare `<phaseId>` runs it; --dry-run previews the run without mutating.'
-argument-hint: '<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] | add "<title>" --outcome "<what success is>" [--park] [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>" | signoff <phaseId> --verdict VERDICT --summary TEXT [--review-outcome TEXT] | settle'
+argument-hint: '<phaseId> [--dry-run] [--confirm-high-risk "<your words>"] | add "<title>" --outcome "<what success is>" [--park] [--id P7] [--description TEXT] [--area a,b] [--gate <entry>] [--gate-clear] [--blocked-by id,id] [--review-skill NAME] | retarget <phaseId> [--gate <entry>] [--gate-clear] [--gate-set <entry> ...] [--gate-drop <entry>] [--area a,b] [--outcome TEXT] [--description TEXT] [--rename TITLE] | priority <phaseId> <tier> [--force] | priority <phaseId> --clear | cancel <phaseId> --reason "<why>" | signoff <phaseId[,phaseId...]> --verdict VERDICT --summary TEXT [--review-outcome TEXT] [--no-evidence-reason TEXT] [--branch NAME] [--plan] [--bind] [--accept SHA --reason TEXT] | settle'
 allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 ---
 
@@ -57,6 +57,17 @@ the landing to a human, which the preview must say rather than let the reader as
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/git/close-phase.py" <manifestPath> <phaseId> \
     --project <projectDir> --dry-run
 ```
+
+**The landing is stamped in the tree the merge lands in** - the parent branch's checkout - whatever
+manifest path is passed, whether the merge is made now or the branch already landed (a re-run, or a
+merge made by hand): `mergedAt`, the derived status and the index stub go to that tree's copy,
+never to the one inside the phase's own worktree, which is removed moments later. A follow-up the
+preview prints (run from the main tree when this one stands inside the worktree) names that
+surviving manifest. When the parent branch is checked out in no worktree and the manifest given is
+the phase worktree's own copy, the landing has no surviving copy to stamp: close-phase refuses
+before merging (exit 2), naming the branch - check it out in a worktree, or run close-phase from
+its checkout - so the ref never moves without the record of the landing. With `meta.merge.auto`
+false nothing is written, so that run is not refused: it exits 0 and hands over the merge command.
 
 **If `--confirm-high-risk "<your words>"` is present:** the human is answering the high-risk gate
 **before** the run instead of during it. Run this FIRST, before the preflight, and print its output
@@ -301,10 +312,26 @@ already prints, and `/audit:status` to see the phase in the plan.
 
 ## Subcommand: `retarget <phaseId>`
 
-Correct a phase that already exists: `--gate <entry>` (repeatable) or `--gate-clear`,
+Correct a phase that already exists: `--gate <entry>` (repeatable), `--gate-clear`,
+`--gate-set <entry> ...` (repeatable-in-one-flag), `--gate-drop <entry>` (repeatable),
 `--area a,b`, `--outcome TEXT`, `--description TEXT`, `--rename TITLE`. Runs
 `scripts/manifest/audit-task.py retarget` — same lock, same revalidate-or-roll-back,
 same journal shape as `add`.
+
+**`--gate-set` is `--gate`'s own operation under a name that takes several values at
+once** — both REPLACE the gate outright; `--gate-set lint typecheck` and two repeats of
+`--gate` write the identical list. An empty `--gate-set` (no value at all, or every value
+blank) is refused with the same sentence `--gate-drop`-to-nothing uses below, because a
+caller who typed nothing meant the empty gate and not a gate of blank commands — unlike
+plain `--gate ""`, which still writes that odd literal, since `--gate-set` exists for a
+caller naming several entries at once rather than for one flag repeated.
+
+**`--gate-drop <entry>` narrows the CURRENT gate by name, the other operation.** Every
+named entry must already be in the phase's `testGate` — an entry it does not name is
+refused, naming the missing entry and the gate as it stands, so a typo is never a silent
+no-op. A drop that would leave nothing is refused with **the same empty-gate sentence**:
+`an empty gate is --gate-clear, which says so` — that state is reached by SAYING so, not
+as a side effect of what got dropped.
 
 **`--rename` is the flag, not `--title`** — the positional slot on this verb is called
 `title` and carries the phase id, so a `--title` flag would shadow it.
@@ -327,7 +354,7 @@ was outside the plugin — a hand edit the plugin forbids, a `buildCommands` val
 a shell hack, or installing a third-party tool to satisfy a gate the plugin itself
 picked.
 
-**`--gate-clear` is the point, not a convenience.** `--gate` appends, so without an
+**`--gate-clear` is the point, not a convenience.** `--gate` replaces, so without an
 explicit clear there is no spelling for the EMPTY gate — and the empty gate is a
 designed state, not a hole: `audit-task.py:_phase_gate` returns it with a basis, and its
 docstring says why it needs one, because *a phase nothing can prove done is a phase
@@ -351,8 +378,9 @@ gate and returns before writing a row, so the report and the panel read the phas
 every task in it that declares no `tests.gate` of its own — as `No gate configured`,
 *nothing could have run*, rather than as a run that answered nothing.
 
-`--gate` and `--gate-clear` together are refused: two answers about one field, and
-guessing which was meant is the fault this closes. `--area` with an empty value REMOVES
+Any TWO of `--gate`, `--gate-clear`, `--gate-set` and `--gate-drop` together are refused:
+two answers about one field, and guessing which was meant is the fault this closes.
+`--area` with an empty value REMOVES
 the key rather than writing `null`, because the conventions default it to absent and a
 `null` would make an untagged phase claim to have considered the question.
 
@@ -432,6 +460,84 @@ operator's and the reviewer's words: pass them verbatim, or `-` to read them off
 
 `--verdict` is the reviewer's call and has no default. `skipped` is honest where no review ran -
 say so in `--summary` - and is never a way to sign off work nobody looked at as if it had passed.
+
+**`passed` needs the gate run it rests on.** The verb refuses `--verdict passed` unless the
+phase's newest recorded gate run binds its work — the rule a task commit is bound by, which grades
+a repeated verdict against the run it repeats and leaves the recorder's own writes out — and
+prints the gate call that supplies one. A phase whose gate declares no entry is bound to no run.
+Where no gate run can back the verdict, pass `--no-evidence-reason "<why>"`: it is the operator's
+words, recorded verbatim on `review.noEvidenceReason` and shown where the evidence badge's basis
+goes. It is not a run, so `--fail-on no-test-evidence` still names such a phase. `skipped` needs
+neither.
+
+### The review's own record — findings, their fixes, and a text correction
+
+Sign-off's review step records what the reviewer found before the verdict is written, and that
+record has three writes of its own, each a script call with a journal row, under the index lock
+with revalidate-or-roll-back. They are not `/audit:phase` subcommands; `reference/phase-signoff.md`
+step 1 is where they are run.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" finding <phaseId> \
+        --severity low|med|high --file <path[:lines]> --issue - --resolution "<the change>"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" resolve-finding <findingId> \
+        --fix-task <taskId> [--commit <sha>]
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" correct <phaseId> \
+        [--review-outcome TEXT] [--summary TEXT]
+```
+
+`finding` appends one entry to `review.findings` in the schema's shape, with the id allocated as
+`<phaseId>-R<n>`, and journals `review.finding`. It refuses, before any write, a finding missing
+a field and a severity outside `low|med|high`. `resolve-finding` writes the fix task and its
+commit onto the finding — the task's recorded commit, or `--commit` for one it has not recorded —
+and journals `review.resolve`; a fix task that is not `done`, or has no commit, has not landed,
+and is refused. `finding --findings-file PATH|-` records a whole review's findings in one write
+and is the form to use for more than one: the per-finding form takes the index lock per call, so
+run those calls one at a time. `finding` refuses a phase that has already landed (`mergedAt` set);
+on a phase signed off but not landed it records the finding and says it came after the verdict.
+`reopen` on a fix task takes its commit back off every finding that recorded it.
+`correct` rewrites the review's outcome or the phase's summary on a phase that already carries a
+verdict, and journals `review.correct`; it never touches the verdict or its `phase.verdict` row,
+and `correct --verdict` is refused as a flag the verb does not read.
+
+**The `[findings: …]` tally at the end of `review.outcome` is derived**, by these three verbs and
+by `signoff --review-outcome`, from `review.findings` as it stands after the write. The text
+before it is kept verbatim; a tally typed at its end is replaced by the derived one.
+
+### A group of phases built on one branch — `signoff <P1,P2,...> --branch NAME`
+
+Phases whose work was built on **one combined branch** record no branch and no `baseRef` of their
+own, so the single-phase sign-off has no diff to review and `close-phase.py` has no name to land.
+The same verb signs them off together; it is a flag here rather than a verb of its own because it
+writes the single sign-off's record — plus each member's `branch` and `baseRef`, and the carrier's
+evidence pointer on the other members — under the single sign-off's refusals plus the group's.
+Preview first — it writes nothing:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" signoff P1,P2 \
+        --branch <combined-branch> --plan
+```
+
+It prints the whole sign-off with the command each step runs, and
+`reference/phase-signoff.md` → *Signing off a group* is the procedure: **`--bind`** records each
+member's branch and fork point first, so the invariants run grades them; the **review is scoped by
+the tasks' `commit`s**, which must be every commit the branch carries past its fork (or a member's
+journaled audit-state or index commit); **one gate run** over the union of the members'
+`testGate`, carried by the member whose gate holds all of it and owning every member's files
+(the gate's `--also`); **one invariants run**; the record, which needs that run to be
+current for `passed`; the commit — sharded, one `commit-audit-state.py` per member and then the
+index; single-file, one; and **one
+`close-phase.py --branch` per phase** — every one but the last keeps the branch and its worktree,
+because the first landing merges the whole branch. It refuses — naming every reason — a member with
+open work or already signed off, a member recording another branch, members that resolve to
+different parents, a `--branch` that is that parent, a finished task with no `commit`, a commit
+the branch does not carry (naming `repair-commits.py` for a rebase), a commit it carries that no
+member records - a merge counts only when its tree is the automatic merge of its parents,
+recomputed with `git merge-tree` (git 2.38+; a merge it cannot recompute is refused as not
+asked, never as an edit) - and `--accept <sha> --reason "<why>"`, which takes a hex SHA naming
+exactly one commit on the branch, takes one into the review, recorded on every member and shown
+beside the sign-off — and a union no member's gate holds (`/audit:phase
+retarget` gives one member the missing entries).
 
 ## Subcommand: `settle`
 

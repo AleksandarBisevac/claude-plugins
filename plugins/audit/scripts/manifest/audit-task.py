@@ -17,7 +17,8 @@ Usage:
                 [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
                 [--description TEXT|-] [--tests-mode tdd|regression|gate-only]
                 [--tests-add TEXT ...] [--gate CMD ... | --gate-clear]
-                [--dry-run] [--project-dir DIR] [--takeover] [--json]
+                [--failing-from RUNID] [--dry-run] [--project-dir DIR]
+                [--takeover] [--json]
   audit-task.py add-phase "<title>" [manifest] --outcome "<what success is>|-"
                 [--park] [--id P7] [--description TEXT|-] [--area a,b]
                 [--gate CMD ... | --gate-clear]
@@ -27,6 +28,10 @@ Usage:
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py signoff <phaseId> --verdict passed|skipped --summary TEXT|-
                 [--review-outcome TEXT|-] [manifest]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py signoff <P1,P2,...> --branch NAME
+                (--plan | --verdict passed|skipped --summary TEXT|-
+                 [--review-outcome TEXT|-]) [manifest]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py start <taskId> [manifest]
                 [--project-dir DIR] [--takeover] [--json]
@@ -50,7 +55,9 @@ Usage:
                 [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py retarget <phaseId> [manifest]
-                [--gate CMD ... | --gate-clear] [--area a,b] [--outcome TEXT|-]
+                [--gate CMD ... | --gate-clear | --gate-set entry ...
+                 | --gate-drop entry ...]
+                [--area a,b] [--outcome TEXT|-]
                 [--rename TITLE|-]
                 [--description TEXT|-] [--project-dir DIR] [--takeover] [--json]
   audit-task.py seed ["<phase title>"] [manifest]
@@ -60,6 +67,19 @@ Usage:
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py reopen <taskId> --reason "<why>|-" [manifest]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py couple --test <path> --sources p,p --basis-run <runId>
+                --basis-head <sha> [--phases id,id] [manifest]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py uncouple --test <path> [manifest]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py finding <phaseId> (--severity low|med|high --file <path>
+                --issue TEXT|- --resolution TEXT|- | --findings-file PATH|-)
+                [manifest] [--project-dir DIR] [--takeover] [--json]
+  audit-task.py resolve-finding <findingId> --fix-task <taskId>
+                [--commit <sha>] [manifest]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py correct <phaseId> [--review-outcome TEXT|-] [--summary TEXT|-]
+                [manifest] [--project-dir DIR] [--takeover] [--json]
   audit-task.py --selftest
 
   <manifest> defaults to the project's configured manifestPath
@@ -125,6 +145,22 @@ Usage:
   tree it has never run. `--gate`/`--gate-clear` still work, for a caller who
   already knows the real command and would rather not run `/audit:task
   retarget` a second time.
+  `couple` and `uncouple` are the only writers of `meta.coupling`, the record
+  a derived phase gate reads to widen itself back onto a test whose own run
+  named a source it depends on. `couple` appends a new entry or, for a test
+  already coupled, WIDENS the existing one -- unions `--sources` in, keeps
+  the first `learnedAt` -- because a coupling is a fact that grows and is
+  never silently replaced. `--basis-run` names a row the evidence ledger
+  actually holds (looked up, never parsed) and `--basis-head` the HEAD that
+  row examined; a coupling with no run to point at teaches nothing.
+  `uncouple` drops one entry by `--test` alone, and refuses, exit 2, a test
+  that carries none.
+  `finding`, `resolve-finding` and `correct` are the writes sign-off's review
+  step makes: a finding appended to `review.findings` in the schema's shape,
+  the task and commit that fixed one, and a TEXT correction of the review's
+  outcome or the phase summary that never touches the verdict. Each of them,
+  and `signoff`, derives the `[findings: ...]` tally at the end of
+  `review.outcome` from the list rather than taking it from the text.
 
 Exit codes:
   0  written, manifest valid
@@ -282,6 +318,14 @@ import _manifest_rules as _rules  # noqa: E402  (tests_add_path: the ONE answer 
 #                                            the shape grades the same field this verb
 #                                            writes - two parses would be two opinions
 #                                            about what `commit_scope` then judges)
+import _manifest_phases as _phases  # noqa: E402  (gate_entry_paths: the same filename
+#                                            bound asked of a gate entry instead of a
+#                                            `tests.add` one. A downward edge, L7 -> L2,
+#                                            kept separate from the `_rules` edge above
+#                                            because `run-test-gate.py`'s `--own` reads
+#                                            the identical function and a second copy
+#                                            here is exactly what an entry point cannot
+#                                            import out of the other)
 import _commit_trail          # noqa: E402  (is a SHA still in this clone? A downward
 #                                            edge, L7 -> L1, and the ONE answer the
 #                                            doctor and `repair-commits.py` already
@@ -291,11 +335,17 @@ import _commit_trail          # noqa: E402  (is a SHA still in this clone? A dow
 #                                            be a third answer to disagree with)
 import _branch                # noqa: E402  (parent_branch: which branch is the development one)
 import _journal_io            # noqa: E402  (read_all: the phase.add rows a side-branch
-                              # warning is read back from)
+                              # warning is read back from; MAX_VALUE_CHARS, the
+                              # per-value bound a long outcome is fitted into)
 import _id_shape              # noqa: E402  (the one answer to which id comes next, and the
                               # branch suffix that keeps two branches from minting it twice)
 import _evidence_io           # noqa: E402  (read_rows: the runs a move leaves keyed
                               # to the old id, which `move` reports)
+import _gate_derive           # noqa: E402  (is_shared_key, path_scoped_sibling,
+                              # repointed: a TASK's own gate and a PHASE's derived
+                              # one ask the same three questions, so both entry
+                              # points share one body instead of two that could
+                              # drift)
 import _id_refs               # noqa: E402  (rename: one id rewritten everywhere the plan
                               # points at it - `move`'s references, from the one list of
                               # fields that hold an id)
@@ -313,6 +363,10 @@ import _panel_write           # noqa: E402  (one answer to "where is the manifes
 #                                            byte-shape writer, the A4 heal, the lock and
 #                                            journal module handles -- reused by identity,
 #                                            not reimplemented)
+import _invariants            # noqa: E402  (the journal actions that record a state or
+#                                            index commit, which a group's branch may carry)
+import _verdict_binding as _vb  # noqa: E402  (the one rule for whether a recorded gate
+#                                            verdict binds the work, shared with the task commit)
 import _task_outputs as _touts  # noqa: E402  (what an `outputs` pattern may be -- the
 #                                            one rule this verb, the validator and the
 #                                            plan gate all read)
@@ -387,12 +441,10 @@ _FILE_REFUSALS = (
 )
 
 
-def _files_refusal(values):
-    """The refusal for a `--files` entry that cannot be a path, or None.
-
-    ONE MESSAGE FOR EVERY BAD ENTRY IN THE CALL, not one per entry: a caller who
-    typed the delta spelling typed it on both sides, and two refusals for one
-    mistake is the shape an operator learns to skip.
+def _path_problems(values):
+    """`["'<value>': <why>", ...]` for every entry that cannot be a
+    repository-relative path - the one reading `--files` and a finding's
+    `--file` share.
 
     THE `..` ARM IS A SEGMENT TEST AND NOT A SUBSTRING ONE, because `..` inside a
     name (`a..b.py`) is an ordinary filename and only a whole segment climbs out
@@ -410,6 +462,17 @@ def _files_refusal(values):
                    "so the index would key one file under two names")
         if why:
             bad.append("%r: %s" % (value, why))
+    return bad
+
+
+def _files_refusal(values):
+    """The refusal for a `--files` entry that cannot be a path, or None.
+
+    ONE MESSAGE FOR EVERY BAD ENTRY IN THE CALL, not one per entry: a caller who
+    typed the delta spelling typed it on both sides, and two refusals for one
+    mistake is the shape an operator learns to skip.
+    """
+    bad = _path_problems(values)
     if not bad:
         return None
     return ("[audit-task] --files takes the REPLACEMENT list of "
@@ -701,8 +764,18 @@ def _marked_excerpt(excerpt, rel_start, rel_end):
 # written verbatim into the plan. They are the exception to the measurement
 # above - neither field existed before these flags, so there was no corpus of
 # either to measure over.
+#
+# `--issue` and `--resolution` are a review finding's two sentences, which a fix
+# executor is handed verbatim, and they break the measurement above rather than
+# escaping it: run over the findings this repository's plan already records,
+# `shell_eaten_gap` fires on some of them - trailing whitespace a reviewer's
+# multi-line return carries, and code quoted up against punctuation. They are in
+# the table anyway, because a finding quotes code in backticks more than any other
+# field does, and a silently eaten identifier is the worse failure. So the stdin
+# route is the ordinary one for a finding's text, not the exception.
 PROSE_FLAGS = ("description", "reason", "outcome", "rename", "descriptive",
-               "technical", "summary", "review_outcome", "intent_basis", "text")
+               "technical", "summary", "review_outcome", "no_evidence_reason",
+               "intent_basis", "text", "issue", "resolution")
 
 # THE ONE PLACE `--help` SAYS ANYTHING ABOUT THE STDIN ESCAPE. Before this, none
 # of the flags in PROSE_FLAGS carried a `help=` at all -- `--help` printed the
@@ -974,13 +1047,22 @@ def stdin_notes_key(args):
 def _gate_contradiction(args):
     """The refusal line for `--gate` with `--gate-clear`, or None.
 
-    ONE SENTENCE, THREE VERBS. `add`, `scope` and `retarget` all take both flags
+    ONE SENTENCE, THREE VERBS. `add`, `scope` and `seed` all take both flags
     off the same global parser and the rule is one rule about one field: two
     answers to one question, and guessing which the caller meant is how a task
     ends up gated on a command nobody asked for. `scope` and `retarget` each
-    carried their own copy of the sentence; `add` needed a third when it learned
-    to read the flag, and three copies of a refusal is how one of them
+    carried their own copy of the sentence; `add` needed a third when it
+    learned to read the flag, and three copies of a refusal is how one of them
     eventually stops matching the other two.
+
+    RETARGET ASKS THE WIDER VERSION, `_retarget_gate_contradiction`, NOT THIS
+    ONE -- `gate_set` and `gate_drop` are declared on the shared parser but
+    live in `VERB_FLAGS["retarget"]` alone, and `vf6` (the call-graph closure
+    the manifest test suite derives `VERB_FLAGS` against) would read a call to
+    a FOUR-flag version here as every verb reaching all four fields, which
+    none but `retarget` actually may. Two functions, not one parametrized by a
+    caller nobody passes a different value from, is what keeps `add`, `scope`
+    and `seed`'s derived flag sets equal to their declared ones.
 
     Every caller asks it in the SAME POSITION -- under the lock, after the target
     has been resolved and before anything is mutated -- so the order a caller
@@ -989,6 +1071,23 @@ def _gate_contradiction(args):
     if args.gate and args.gate_clear:
         return ("[audit-task] --gate and --gate-clear say opposite things about "
                 "the same field -- pass one")
+    return None
+
+
+def _retarget_gate_contradiction(args):
+    """The refusal line for two of `--gate` / `--gate-clear` / `--gate-set` /
+    `--gate-drop` together, or None -- `retarget`'s own superset of
+    `_gate_contradiction`, for the reason that function's docstring gives.
+    """
+    present = [flag for flag, given in (
+        ("--gate", bool(args.gate)),
+        ("--gate-clear", bool(args.gate_clear)),
+        ("--gate-set", args.gate_set is not None),
+        ("--gate-drop", bool(args.gate_drop)),
+    ) if given]
+    if len(present) > 1:
+        return ("[audit-task] %s say opposite things about the same field -- "
+                "pass one" % " and ".join(present))
     return None
 
 
@@ -2083,99 +2182,161 @@ def _waiting_on(assembled, node):
 
 
 # --- the add -------------------------------------------------------------------
-def _gate_entry_paths(entry):
-    """Every file path a gate entry NAMES, in the order they appear in it.
+# A THIN ALIAS, NOT A COPY: `_manifest_phases.gate_entry_paths` is the SAME
+# question `tests.add` is asked (`_rules.tests_add_path` above), asked of each
+# whitespace-separated token in a gate entry instead of the leading one - and
+# `run-test-gate.py`'s `--own` narrowing reads the identical function. Two
+# entry points needing one answer could only have copied it before this moved;
+# now both alias one body.
+_gate_entry_paths = _phases.gate_entry_paths
 
-    THE SAME QUESTION `tests.add` IS ASKED, asked of each whitespace-separated
-    token instead of the leading one. `_rules.tests_add_path` is the ONE answer
-    to "does this string name a file", and a gate entry is the other
-    place a path has to be recognized inside free text -- a second spelling of
-    the filename bound would be two opinions about the same token, and the one
-    that drifted would either miss a suite or read `--selectProjects` as a path.
 
-    A token has to carry an extension or be a dotfile to count, which is what
-    keeps `npm`, `--shard`, `1/4` and a bare build-command key out of the answer.
+# THIN ALIASES, NOT COPIES: `is_shared_key`, `path_scoped_sibling` and
+# `repointed` moved to `_gate_derive.py` so a PHASE-level derivation and this
+# TASK-level one share one body apiece rather than two that could drift. See
+# that module for the (unchanged) docstrings.
+_is_shared_key = _gate_derive.is_shared_key
+_path_scoped_sibling = _gate_derive.path_scoped_sibling
+_repointed = _gate_derive.repointed
+
+
+def _failing_from_lookup(project, phase, run_id):
+    """`(row, refusal)` for `--failing-from <run_id>` -- the evidence row a
+    failed-first fix task derives its gate from, or the reason it cannot.
+    Exactly one of the two is not `None`.
+
+    THE RUNID IS LOOKED UP, NEVER PARSED. `_evidence_io.row_by_run` is the one
+    lookup this project keeps for exactly this question, because the schema
+    calls a runId opaque -- reading structure into one here would be a second,
+    silently different answer to a question `row_by_run` already answers.
+
+    THREE THINGS HAVE TO BE TRUE OF THE ROW, each refused by naming the actual
+    value rather than a generic "no such run": it must EXIST (a mistyped runId
+    is told there is no such run, never handed the ordinary derivation in
+    silence); it must be scoped to THIS PHASE (a task's own run, or another
+    phase's, cannot license a gate narrowed to suites this phase never ran);
+    and it must carry `status: "failed"` (a fix task opened from a run that
+    PASSED is not failed-first, and the sentence names the status the row
+    actually holds, never merely "not failed").
     """
-    if not isinstance(entry, str):
-        return []
-    found = []
-    for token in entry.split():
-        path = _rules.tests_add_path(token)
-        if path:
-            found.append(path)
-    return found
+    try:
+        rows = _evidence_io.read_rows(project)["rows"]
+    except Exception as exc:
+        return None, ("[audit-task] --failing-from %s: the evidence ledger "
+                      "could not be read (%s)" % (run_id, exc))
+    row = _evidence_io.row_by_run(rows, run_id)
+    if row is None:
+        return None, ("[audit-task] --failing-from %s: no run with this id is "
+                      "in the evidence ledger" % (run_id,))
+    phase_id = phase.get("id")
+    if row.get("scope") != "phase" or str(row.get("phaseId")) != str(phase_id):
+        subject = ("task %s" % row.get("taskId") if row.get("scope") == "task"
+                  else "phase %s" % row.get("phaseId")
+                  if row.get("scope") == "phase" else
+                  "scope %r" % (row.get("scope"),))
+        return None, (
+            "[audit-task] --failing-from %s is %s's run, not phase %s's -- a "
+            "fix task's gate can only be narrowed to suites THIS phase's own "
+            "run named as failing" % (run_id, subject, phase_id))
+    if row.get("status") != "failed":
+        return None, (
+            "[audit-task] --failing-from %s is not a FAILED run (status: %s) "
+            "-- a failed-first fix task needs a red run to point its gate at"
+            % (run_id, row.get("status")))
+    return row, None
 
 
-def _is_shared_key(entry, build):
-    """True when the entry is a `meta.buildCommands` KEY rather than a command.
+def _named_failing_suites(row):
+    """Every suite file `--failing-from`'s ROW named as failing, in the order
+    its failed steps carry them, deduplicated.
 
-    Asked of the declaration and never of the shape. `commands/init.md` has
-    entries resolve through `meta.buildCommands` wherever the scope is SHARED
-    and be literal commands wherever it differs per task, so what makes an entry
-    wide is that the manifest declares it -- not that it looks short. A key
-    someone spelled `e2e.spec` would otherwise read as path-scoped on its
-    punctuation alone.
+    A STEP COUNTS AS FAILED THE SAME WAY `run-test-gate.failed_steps` READS
+    ONE -- restated here rather than imported, because `run-test-gate.py` and
+    this file are peer entry points and neither imports the other: it ran to
+    completion (a non-zero exit) and carries no no-verdict `outcome`, since a
+    timed-out step's exit code is an artefact of the kill that stopped it and
+    reading that as a named failure would point a gate at a suite that never
+    finished.
+
+    ONLY A `failingSuitesBasis` THAT SAYS THE RUNNER NAMED THEM COUNTS.
+    `run-test-gate.failing_suites` falls back to a capped tail of the step's
+    own output when no runner it recognises wrote a summary, and a tail
+    excerpt is not a list of failing tests -- learning suites off it would be
+    a fix task's gate narrowed to whatever lines happened to scroll past last.
     """
-    return isinstance(build, dict) and entry in build
-
-
-def _path_scoped_sibling(phase, build):
-    """`(entries, taskId)` for the first task in this phase whose `tests.gate`
-    carries a path-scoped entry, or `(None, None)`.
-
-    THE PLAN IS THE ONLY RECORD OF THE RUNNER'S SPELLING. `commands/init.md`
-    step 5.3 says it plainly: nothing persists how this project narrows a gate
-    except the gates themselves, so a task added later reads the shape off its
-    siblings rather than re-detecting it. Which makes the sibling EVIDENCE and
-    not a resemblance -- that entry was accepted by this project's runner once,
-    so the same entry with different paths in it is a command that can run.
-
-    Document order, and the id comes back with the entries because the operator
-    has to be able to go and read the gate the shape was taken from.
-    """
-    for task in (phase.get("tasks") or []):
-        if not isinstance(task, dict):
+    suites = []
+    for step in (row.get("steps") or []):
+        if not isinstance(step, dict):
             continue
-        tests = task.get("tests")
-        entries = (tests.get("gate") or []) if isinstance(tests, dict) else []
-        entries = [e for e in entries if isinstance(e, str) and e.strip()]
-        if any(not _is_shared_key(e, build) and _gate_entry_paths(e)
-               for e in entries):
-            return entries, task.get("id")
-    return None, None
-
-
-def _repointed(entries, build, paths):
-    """`entries` with every path-scoped entry re-pointed at `paths`.
-
-    THE FLAGS ARE KEPT AND ONLY THE PATHS MOVE: the sibling's tokens are rebuilt
-    in order, the paths it named are dropped, and this task's paths go in where
-    the first of them stood. That is what carries a source-to-test flag, a `--`
-    separator or a project selector through a substitution nobody wrote a parser
-    for.
-
-    A shared key and an entry naming no path are copied THROUGH rather than
-    dropped: a gate of `["lint", "npm test -- <a suite>"]` narrows the suite and
-    still lints, because only one of those two entries has a scope that differs
-    per task.
-    """
-    out = []
-    for entry in entries:
-        if _is_shared_key(entry, build) or not _gate_entry_paths(entry):
-            out.append(entry)
+        if step.get("exit") in (0, None) or step.get("outcome"):
             continue
-        rebuilt, placed = [], False
-        for token in entry.split():
-            if not _rules.tests_add_path(token):
-                rebuilt.append(token)
-            elif not placed:
-                rebuilt.extend(paths)
-                placed = True
-        out.append(" ".join(rebuilt))
-    return out
+        if "named as failing" not in (step.get("failingSuitesBasis") or ""):
+            continue
+        for path in step.get("failingSuites") or []:
+            if path not in suites:
+                suites.append(path)
+    return suites
 
 
-def _task_gate(args, phase, assembled, add_paths, files):
+def _ordinary_task_gate(shape, owner, wide, build, add_paths, files, mode,
+                        meta, phase):
+    """The three ordinary defaults (`tests.add`, `files`, the phase's wide
+    gate), gate-only's own suite-filtered arm included -- split out of
+    `_task_gate` so a `--failing-from` call that cannot narrow anything falls
+    through to EXACTLY this, with the reason it fell through said beside it
+    rather than the phase's own gate handed back unexplained.
+    """
+    if shape is None:
+        return wide, ("the phase's testGate, wide -- no sibling task in %s "
+                      "declares a path-scoped gate entry to read this "
+                      "project's spelling off" % (phase.get("id"),)), \
+            "phase-no-spelling"
+    if add_paths:
+        return (_repointed(shape, build, add_paths),
+                "narrowed to this task's tests.add paths, in %s's spelling"
+                % (owner,), "tests.add")
+    if files:
+        if mode == "gate-only":
+            suite_files = [p for p in files if _phases.is_suite_path(p)]
+            if suite_files:
+                return (_repointed(shape, build, suite_files),
+                        "narrowed to this task's files, in %s's spelling"
+                        % (owner,), "files")
+            always = _phases.phase_gate_default(
+                meta if isinstance(meta, dict) else {})["always"]
+            if always:
+                return (list(always),
+                        "meta.phaseGate.always -- this task's files name no "
+                        "suite path to narrow %s's gate at" % (owner,),
+                        "gate-only-no-suite")
+            passthrough = [e for e in shape
+                          if _is_shared_key(e, build) or not _gate_entry_paths(e)]
+            return (passthrough,
+                    "%s's gate entries that name no path, carried through -- "
+                    "this task's files name no suite path to narrow %s's gate "
+                    "at" % (owner, owner), "gate-only-no-suite")
+        return (_repointed(shape, build, files),
+                "narrowed to this task's files, in %s's spelling" % (owner,),
+                "files")
+    return wide, ("the phase's testGate, wide -- %s is path-scoped but this "
+                  "task names no file to point a gate at" % (owner,)), \
+        "phase-no-paths"
+
+
+def _task_gate_setup(phase, assembled):
+    """`(wide, meta, build, shape, owner)` -- the pieces every arm past
+    `--gate`/`--gate-clear` needs, shared by `_task_gate` and
+    `_failing_from_task_gate` so the two keep exactly one copy of them rather
+    than two that could drift.
+    """
+    wide = [g for g in (phase.get("testGate") or []) if isinstance(g, str)]
+    meta = assembled.get("meta") if isinstance(assembled, dict) else None
+    build = (meta or {}).get("buildCommands") if isinstance(meta, dict) else None
+    shape, owner = _path_scoped_sibling(phase, build)
+    return wide, meta, build, shape, owner
+
+
+def _task_gate(args, phase, assembled, add_paths, files, mode="gate-only"):
     """`(gate, basis, source)` -- the new task's `tests.gate`, the sentence
     saying which of the three defaults produced it, and the ONE WORD that says
     the same thing to a rule.
@@ -2213,6 +2374,27 @@ def _task_gate(args, phase, assembled, add_paths, files):
     the only way it goes -- a false red is noticed the same day and a false green
     is never noticed at all. So the third default is reached with a reason naming
     what was missing, never with silence.
+
+    A GATE-ONLY TASK NARROWS ONLY TO A SUITE. Arm 2 above reads every kind of
+    `files` entry for a tdd or regression task, because `tests.add` already
+    proved the task creates a real test file -- but a gate-only task names no
+    case at all, so a source file among its `files` is not evidence the
+    project's suite-running command has anything of this task's to run. When
+    `mode` is `"gate-only"` and none of `files` is a suite path
+    (`_manifest_phases.is_suite_path`), narrowing to it would point the gate at
+    a command that runs nothing this task touched -- a green bought on work
+    nobody wrote. The gate is `meta.phaseGate.always` when the plan declares
+    one, else the sibling's own shared keys and path-less entries, carried
+    through exactly as `_repointed` already leaves them -- never the phase's
+    wide `testGate`, which is the wide gate an operator already gets warned
+    about running every attempt.
+
+    `seed`'s the only OTHER caller, and this is the version it gets: no
+    `--failing-from` arm, on purpose. `_failing_from_task_gate` is that arm's
+    entire home, so `seed`'s own call-graph closure (`vf6`'s equality check)
+    never comes to read `args.failing_from` at all -- a phase `seed` mints
+    has no sibling task yet to point a failed-first gate through in the first
+    place.
     """
     if args.gate:
         return list(args.gate), "from --gate", "declared"
@@ -2231,29 +2413,75 @@ def _task_gate(args, phase, assembled, add_paths, files):
         # caller saying nothing should grade this task is answering the question
         # the three defaults below exist to answer, not choosing among them.
         return [], "from --gate-clear", "cleared"
-    wide = [g for g in (phase.get("testGate") or []) if isinstance(g, str)]
-    meta = assembled.get("meta") if isinstance(assembled, dict) else None
-    build = (meta or {}).get("buildCommands") if isinstance(meta, dict) else None
-    shape, owner = _path_scoped_sibling(phase, build)
-    if shape is None:
-        return wide, ("the phase's testGate, wide -- no sibling task in %s "
-                      "declares a path-scoped gate entry to read this "
-                      "project's spelling off" % (phase.get("id"),)), \
-            "phase-no-spelling"
-    if add_paths:
-        return (_repointed(shape, build, add_paths),
-                "narrowed to this task's tests.add paths, in %s's spelling"
-                % (owner,), "tests.add")
-    if files:
-        return (_repointed(shape, build, files),
-                "narrowed to this task's files, in %s's spelling" % (owner,),
-                "files")
-    return wide, ("the phase's testGate, wide -- %s is path-scoped but this "
-                  "task names no file to point a gate at" % (owner,)), \
-        "phase-no-paths"
+    wide, meta, build, shape, owner = _task_gate_setup(phase, assembled)
+    return _ordinary_task_gate(shape, owner, wide, build, add_paths, files,
+                               mode, meta, phase)
 
 
-def _build_task(task_id, title, args, phase, assembled):
+def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
+                            failing_row):
+    """`(gate, basis, source)` for `add` ALONE -- `_task_gate` plus the
+    failed-first `--failing-from` arm, kept in its own function rather than
+    folded into `_task_gate` so `seed` (which shares every other arm) never
+    reads `args.failing_from` in its own call-graph closure; `vf6` grades that
+    closure against `VERB_FLAGS`, and `seed`'s row does not list the flag.
+
+    ASKED BETWEEN `--gate-clear` AND THE THREE ORDINARY DEFAULTS, never
+    instead of them: `--gate`/`--gate-clear` still answer first, exactly as
+    they do for every other verb. `failing_row` is a CALLER-VALIDATED evidence
+    row -- `_failing_from_lookup` already refused the call if it could not be
+    one -- so this function does no refusing, only derivation, the same split
+    `_locked_retarget` and `_retarget_gate_now` keep for `--gate-drop`/
+    `--gate-set`.
+
+    When the row's failed steps NAMED at least one suite
+    (`_named_failing_suites`) and the phase has a path-scoped spelling to
+    point them through, the gate is those suites UNIONED with this task's own
+    `tests.add` paths, in the sibling's spelling -- the union because a fix
+    task may still be asked to write a NEW case beside the failure it
+    repairs, and dropping that path would buy a green the task never earned.
+    Source word `failing-from-run:<runId>` (`_manifest_vocab.GATE_BASIS`'s own
+    spelling for it) -- a reader compares the word before the colon and looks
+    the runId up, never parsing further.
+
+    THE FALL-THROUGH NEVER REACHES AN EMPTY GATE. A row whose failed steps
+    named no suite (a tail excerpt is not a list of failing tests) or a phase
+    with no path-scoped sibling to narrow through falls to
+    `_ordinary_task_gate` exactly as a call with no `--failing-from` would,
+    with the reason it fell through said FIRST in the returned sentence --
+    never silence, and never the empty gate as though `--failing-from` were a
+    second spelling of `--gate-clear`.
+    """
+    if args.gate:
+        return list(args.gate), "from --gate", "declared"
+    if args.gate_clear:
+        return [], "from --gate-clear", "cleared"
+    wide, meta, build, shape, owner = _task_gate_setup(phase, assembled)
+    if not args.failing_from:
+        return _ordinary_task_gate(shape, owner, wide, build, add_paths,
+                                   files, mode, meta, phase)
+    if shape is not None:
+        suites = _named_failing_suites(failing_row) if failing_row else []
+        if suites:
+            union = _union_paths(suites, add_paths)
+            return (_repointed(shape, build, union),
+                    "narrowed to the suite(s) run %s named as failing, "
+                    "union with this task's tests.add paths, in %s's "
+                    "spelling" % (args.failing_from, owner),
+                    "failing-from-run:%s" % (args.failing_from,))
+        why = ("run %s's failed steps named no suite as failing (a tail "
+               "excerpt is not a list of failing tests)"
+               % (args.failing_from,))
+    else:
+        why = ("no sibling task in %s declares a path-scoped gate entry to "
+               "narrow --failing-from %s against"
+               % (phase.get("id"), args.failing_from))
+    gate, basis, source = _ordinary_task_gate(
+        shape, owner, wide, build, add_paths, files, mode, meta, phase)
+    return gate, "%s, so falling through: %s" % (why, basis), source
+
+
+def _build_task(task_id, title, args, phase, assembled, failing_row=None):
     """`(task, unnamed, gateBasis)` -- the new task, fully template-initialized
     (every field from the conventions' New task template, exactly once, in
     _TEMPLATE_KEYS order), the `tests.add` entries that named no file, and the
@@ -2279,8 +2507,8 @@ def _build_task(task_id, title, args, phase, assembled):
     # sat immediately above the parse of `--tests-add`, so the input a narrow
     # gate needs was produced one line too late and thrown away.
     files = _union_paths(_split_csv(args.files), add_paths)
-    gate, gate_basis, gate_source = _task_gate(args, phase, assembled,
-                                               add_paths, files)
+    gate, gate_basis, gate_source = _failing_from_task_gate(
+        args, phase, assembled, add_paths, files, mode, failing_row)
     task = {
         "id": task_id,
         "title": title,
@@ -2390,10 +2618,17 @@ def _locked_add(args, project, config, mpath, title, out):
     if refusal:
         out(refusal)
         return E_USAGE
+    failing_row = None
+    if args.failing_from:
+        failing_row, refusal = _failing_from_lookup(project, phase,
+                                                    args.failing_from)
+        if refusal:
+            out(refusal)
+            return E_USAGE
 
     task_id = _allocate_id(assembled, phase_id, _mint_suffix(mpath, assembled))
     task, unnamed_add, gate_basis = _build_task(task_id, title, args, phase,
-                                                assembled)
+                                                assembled, failing_row)
     # THE STAT IS OF THE FILE THE SUFFIX POINTS AT, NOT OF THE ENTRY'S OWN
     # SPELLING. A schema-legal `a/b.py:12-34` is a real, existing `a/b.py`, and
     # `os.path.exists` asked of the raw string can only ever say no -- reporting
@@ -3885,6 +4120,47 @@ def _reopen_refusal(kind, node, phase, tid):
     return None
 
 
+def _unresolve_findings(assembled, tid):
+    """`(phase_ids, changes)` after taking `tid`'s commit off every review finding
+    that recorded it as its fix - mutating those phases' reviews in place.
+
+    A FINDING'S FIX COMMIT IS A COPY taken when `resolve-finding` ran, and the
+    tally counts the copies. A re-opened task has no close any more, so a finding
+    still naming its commit would go on reading as fixed by work the plan has just
+    undone. `fixTask` stays - the task is still the one meant to fix it - and the
+    resolution goes back to what the reviewer asked for.
+    """
+    phase_ids, changes = [], []
+    for ph in (assembled.get("phases") or []):
+        review = ph.get("review") if isinstance(ph, dict) else None
+        listed = review.get("findings") if isinstance(review, dict) else None
+        if not isinstance(listed, list):
+            continue
+        hits = [i for i, f in enumerate(listed) if isinstance(f, dict)
+                and f.get("fixTask") == tid and f.get("commit")]
+        if not hits:
+            continue
+        findings = list(listed)
+        for i in hits:
+            was = findings[i]
+            entry = dict(was)
+            entry.pop("commit", None)
+            asked = _FIXED_PREFIX.sub("", (was.get("resolution") or "").strip())
+            entry["resolution"] = asked or was.get("resolution")
+            findings[i] = entry
+            changes.append({"id": was.get("id"), "field": "commit",
+                            "from": was.get("commit"), "to": None})
+        was_outcome = review.get("outcome")
+        new_review = dict(review, findings=findings,
+                          outcome=outcome_with_tally(was_outcome, findings))
+        changes.append({"id": ph.get("id"), "field": "review.outcome",
+                        "from": _journal_outcome(was_outcome),
+                        "to": _journal_outcome(new_review["outcome"])})
+        ph["review"] = new_review
+        phase_ids.append(ph.get("id"))
+    return phase_ids, changes
+
+
 def _locked_reopen(args, project, config, mpath, tid, reason, out):
     try:
         raw_index = _mio.read_json(mpath)
@@ -3929,10 +4205,18 @@ def _locked_reopen(args, project, config, mpath, tid, reason, out):
     for bug in bugs:
         put(bug, bug.get("id"), "status", "in_progress")
         put(bug, bug.get("id"), "fixedIn", None)
-    snap = _snapshot(_write_paths(project, mpath, raw_index, phase_id))
+    unresolved, finding_changes = _unresolve_findings(assembled, tid)
+    changes.extend(finding_changes)
+    phase_ids = [phase_id] + [p for p in unresolved if p != phase_id]
+    snap = _snapshot([path for pid in phase_ids
+                      for path in _write_paths(project, mpath, raw_index, pid)])
     try:
-        written = _write_add(project, mpath, raw_index, assembled, phase_id, False,
-                             index_fields=("bugs",) if bugs else ())
+        written = []
+        for pid in phase_ids:
+            for rel in _write_add(project, mpath, raw_index, assembled, pid, False,
+                                  index_fields=("bugs",) if bugs else ()):
+                if rel not in written:
+                    written.append(rel)
     except Exception as exc:
         _restore(snap)
         out("[audit-task] write failed -- manifest restored: %s" % exc)
@@ -3970,6 +4254,9 @@ def _locked_reopen(args, project, config, mpath, tid, reason, out):
         % (tid, phase_id, reason))
     for bug in bugs:
         out("  bug %s back to in_progress, fixedIn cleared" % (bug.get("id"),))
+    for change in finding_changes:
+        if change["field"] == "commit":
+            out("  finding %s no longer records a fix commit" % (change["id"],))
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
@@ -4514,12 +4801,43 @@ def _phase_gate(args, assembled):
         return list(args.gate), "from --gate"
     meta = assembled.get("meta")
     build = (meta or {}).get("buildCommands") if isinstance(meta, dict) else None
-    if isinstance(build, dict):
-        keys = [k for k in build.keys() if isinstance(k, str) and k.strip()]
-        if keys:
-            return keys, "from meta.buildCommands"
+    if not isinstance(build, dict):
+        return [], "the manifest declares no meta.buildCommands"
+    keys = [k for k in build.keys() if isinstance(k, str) and k.strip()]
+    if not keys:
         return [], "meta.buildCommands is empty"
-    return [], "the manifest declares no meta.buildCommands"
+    # `phase_gate_default` IS THE DERIVATION -- `always` is an ORDER and never a
+    # narrowing (an entry named in both `always` and `exclude` stays IN), and
+    # `exclude` is the only declared way to drop a buildCommands key. Asking it
+    # here rather than re-reading `meta.phaseGate` a second time is what keeps
+    # this resolver, the validator's shape warnings and the sign-off run from
+    # ever disagreeing about what "today's default" means.
+    default = _phases.phase_gate_default(meta if isinstance(meta, dict) else {})
+    entries, always, excluded = (default["entries"], default["always"],
+                                 default["excluded"])
+    if not entries:
+        # CERTAIN, EVEN WITH NO EVIDENCE: `exclude` removed every buildCommands
+        # key and `always` put none back, so there is nothing left to have run
+        # whatever a future ledger says. `phase_gate_suite_gap` names the same
+        # cause for the validator's own warning, printed among the post-write
+        # warnings a moment after this basis is written.
+        return [], ("meta.phaseGate.exclude drops every meta.buildCommands key "
+                   "(%s)%s -- the new phase's gate is empty"
+                   % (_output.some_of(excluded, render=repr),
+                      " and meta.phaseGate.always adds none back" if not always
+                      else ""))
+    if not always and not excluded:
+        # BYTE-IDENTICAL TO TODAY: no `meta.phaseGate` at all is `always` and
+        # `exclude` both empty, so `entries` is exactly `keys` in buildCommands
+        # order -- the sentence a phase without the field has always gotten.
+        return entries, "from meta.buildCommands"
+    if not excluded:
+        return entries, "from meta.buildCommands, meta.phaseGate.always first"
+    return entries, (
+        "from meta.buildCommands%s; excluded by meta.phaseGate.exclude: %s -- "
+        "declared out of this phase's gate, and the sign-off run prints it too"
+        % (", meta.phaseGate.always first" if always else "",
+           _output.some_of(excluded, render=repr)))
 
 
 def _build_phase(pid, title, args, gate):
@@ -4951,8 +5269,9 @@ def _locked_scope(args, project, config, mpath, tid, out):
     the operation this verb exists to replace.
 
     THE EMPTY GATE NEEDS ITS OWN FLAG HERE TOO, for a reason that is NOT
-    `retarget`'s. That verb appends to `testGate`, so the append itself left the
-    empty gate unspellable; this one REPLACES `tests.gate` outright. The gap is
+    `retarget`'s. That verb replaces `testGate` too, so the replacement itself
+    still left the empty gate unspellable; this one REPLACES `tests.gate`
+    outright. The gap is
     in the values: no `--gate` VALUE says "none" - `--gate ""` writes a gate
     holding an empty command, which is a gate that cannot run rather than the
     absence of one. Measured live: a phase retargeted to `testGate: []` because
@@ -5490,6 +5809,61 @@ def _locked_scope(args, project, config, mpath, tid, out):
     return 0
 
 
+_EMPTY_GATE_REFUSAL = ("[audit-task] an empty gate is --gate-clear, which says "
+                      "so")
+
+
+def _retarget_gate_now(args, current):
+    """`(now, refusal)` -- the phase's NEXT `testGate`, or the refusal line,
+    for whichever ONE of `--gate` / `--gate-clear` / `--gate-set` /
+    `--gate-drop` is present. Exactly one of the two return values is not
+    `None`; the caller already asked `_gate_contradiction` that at most one of
+    the four is present at all, so this never has to choose between them.
+
+    `--gate` AND `--gate-set` ARE ONE OPERATION, kept in this one function
+    rather than each carrying its own emptiness rule: both REPLACE the gate
+    outright, `--gate` one value per repeat of the flag, `--gate-set` several
+    values under one flag. `--gate-set` is the stricter of the two on purpose
+    -- an ALL-BLANK value set is refused the same way an empty one is, where
+    plain `--gate ""` still writes the odd literal gate it always has, because
+    `--gate-set`'s whole reason to exist is a caller who wants to name several
+    entries at once, and a caller who typed nothing but blanks almost always
+    meant the empty gate and not a gate of blank commands.
+
+    `--gate-drop` is the other operation, narrowing the CURRENT gate by name --
+    the only one of the four that reads `current` at all. Every named entry
+    must already be in it (refused by name otherwise, with the gate as it
+    stands, so a typo is not silently a no-op), and a drop that would leave
+    nothing is the same empty-gate refusal as the other three: the state is
+    reached through `--gate-clear` alone, which SAYS it is choosing that,
+    rather than through an operation that arrives there as a side effect of
+    what it dropped.
+    """
+    if args.gate_clear:
+        return [], None
+    if args.gate_set is not None:
+        now = [g for g in args.gate_set if isinstance(g, str)]
+        if not now or all(not g.strip() for g in now):
+            return None, _EMPTY_GATE_REFUSAL
+        return now, None
+    if args.gate:
+        return list(args.gate), None
+    if args.gate_drop:
+        missing = [g for g in args.gate_drop if g not in current]
+        if missing:
+            return None, (
+                "[audit-task] --gate-drop names %s, which %s not in this "
+                "phase's testGate (%s)"
+                % (_output.some_of(missing, render=repr),
+                   "is" if len(missing) == 1 else "are", json.dumps(current)))
+        drop = set(args.gate_drop)
+        now = [g for g in current if g not in drop]
+        if not now:
+            return None, _EMPTY_GATE_REFUSAL
+        return now, None
+    return None, None
+
+
 def _locked_retarget(args, project, config, mpath, pid, out):
     """Correct a phase's gate, area, outcome or description, under lock.
 
@@ -5507,7 +5881,7 @@ def _locked_retarget(args, project, config, mpath, pid, out):
     is a phase sign-off signs on review alone. That is a designed state, it
     validates clean, and `/audit:phase add --gate` can reach it for a NEW phase.
     An imported phase could not, which is what made a guessed gate a trap rather
-    than a default: `--gate` appends, so without an explicit clear there is no
+    than a default: `--gate` replaces, so without an explicit clear there is no
     spelling for "there is nothing here that can prove this".
 
     NOT PAST SIGN-OFF. A done or cancelled phase - and one whose verdict is
@@ -5566,15 +5940,17 @@ def _locked_retarget(args, project, config, mpath, pid, out):
             "of what this branch was cut for." % (pid, node.get("branch")))
         return E_USAGE
 
-    contradiction = _gate_contradiction(args)
+    contradiction = _retarget_gate_contradiction(args)
     if contradiction:
         out(contradiction)
         return E_USAGE
-    if not (args.gate or args.gate_clear or args.area is not None
+    if not (args.gate or args.gate_clear or args.gate_set is not None
+            or args.gate_drop or args.area is not None
             or args.outcome or args.description or args.rename):
-        out("[audit-task] retarget needs one of --gate / --gate-clear / --area / "
-            "--outcome / --description / --rename -- a call that changes nothing "
-            "is a lock taken for no reason")
+        out("[audit-task] retarget needs one of --gate / --gate-clear / "
+            "--gate-set / --gate-drop / --area / --outcome / --description / "
+            "--rename -- a call that changes nothing is a lock taken for no "
+            "reason")
         return E_USAGE
 
     changes = []
@@ -5583,9 +5959,12 @@ def _locked_retarget(args, project, config, mpath, pid, out):
         if was != now:
             changes.append({"id": pid, "field": field, "from": was, "to": now})
 
-    if args.gate or args.gate_clear:
+    if args.gate or args.gate_clear or args.gate_set is not None or args.gate_drop:
         was = list(node.get("testGate") or [])
-        now = [] if args.gate_clear else list(args.gate)
+        now, refusal = _retarget_gate_now(args, was)
+        if refusal:
+            out(refusal)
+            return E_USAGE
         _moved("testGate", was, now)
         node["testGate"] = now
     if args.area is not None:
@@ -5845,6 +6224,13 @@ def cmd_signoff(args, out):
     if not pid:
         out("[audit-task] signoff needs a phase id")
         return E_USAGE
+    ids = signoff_ids(pid)
+    # EVERY GROUP-ONLY FLAG ROUTES TO THE GROUP DOOR, which refuses it without
+    # --branch: on the single path they were read by nothing, so a `--bind` or an
+    # `--accept` beside a verdict signed off and recorded nothing of either.
+    if len(ids) > 1 or args.branch or args.plan or args.bind or args.accept \
+            or (args.reason or "").strip():
+        return _group_door(args, project, ids, out)
     if not args.verdict:
         out("[audit-task] signoff needs --verdict %s: which verdict the review reached "
             "is the reviewer's call" % ("|".join(_mio.SIGNOFF_VERDICTS),))
@@ -5877,6 +6263,34 @@ def _signoff_refusal(phase, pid):
     return None
 
 
+# A `passed` VERDICT STANDS ON A GATE RUN OR SAYS WHY THERE IS NONE. The procedure
+# runs the gate before the record, and nothing held it: a verdict could be written
+# with no run behind it. Whether a recorded run binds the work is
+# `_verdict_binding.binding`'s answer - the SAME rule a task commit is bound by, so
+# a repeated verdict, the recorder's own writes and a gate changed after the run
+# are graded here exactly as they are there.
+def phase_files(phases):
+    """The union of the task files `phases` declare, in plan order."""
+    files = []
+    for ph in phases:
+        for task in (ph.get("tasks") or []):
+            if isinstance(task, dict):
+                files.extend(f for f in (task.get("files") or []) if f not in files)
+    return files
+
+
+def phase_binding(project, mpath, manifest, phase, files, record):
+    """`_verdict_binding.binding` for `phase`'s own gate over `files` - its task
+    files, or a group's union when `phase` carries a group's one run."""
+    entries, source = _mio.gate_entries(phase, None)
+    build = ((manifest or {}).get("meta") or {}).get("buildCommands")
+    pid = str(phase.get("id"))
+    return _vb.binding(
+        project, {"phaseId": pid}, entries, source, files, mpath, record,
+        "phase %s declares no gate, so its sign-off rests on review alone" % (pid,),
+        build=build)
+
+
 def _locked_signoff(args, project, config, mpath, pid, summary, out):
     try:
         raw_index = _mio.read_json(mpath)
@@ -5893,10 +6307,26 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
     if refusal:
         out("[audit-task] " + refusal)
         return E_USAGE
+    reason = (args.no_evidence_reason or "").strip()
+    if args.verdict == "passed" and not reason:
+        gate = _plugin_cmd("governance/run-test-gate.py",
+                           _output.posix_rel(mpath, project), pid, "--record")
+        bound = phase_binding(project, mpath, assembled, phase,
+                              phase_files([phase]),
+                              "run `%s` on the work, then sign off" % (gate,))
+        if bound["state"] == "refused":
+            out("[audit-task] REFUSED: --verdict passed needs a gate run that binds "
+                "the phase's work - %s." % (bound["sentence"],))
+            out("    or pass --no-evidence-reason \"<why no gate run backs this "
+                "verdict>\", which is recorded on the review")
+            return E_USAGE
     review = phase.get("review") if isinstance(phase.get("review"), dict) else {}
     review = dict(review, status=args.verdict)
     if args.review_outcome:
-        review["outcome"] = args.review_outcome.strip()
+        review["outcome"] = outcome_with_tally(args.review_outcome.strip(),
+                                               review.get("findings"))
+    if reason:
+        review["noEvidenceReason"] = reason
     phase["review"] = review
     phase["summary"] = summary
     phase.pop("claim", None)
@@ -5972,6 +6402,1311 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
     out("  written: %s" % ", ".join(written))
     if index_note:
         out(index_note)
+    return 0
+
+
+# --- review findings: the record sign-off's first step writes ----------------------
+# The reviewer returns findings in the schema's shape and sign-off records them, and
+# that record was a hand edit of the phase shard: no lock, no revalidation, no
+# journal row, and a severity nothing graded until the validator warned about it
+# afterwards. One verb per write the step makes: `finding` appends one,
+# `resolve-finding` names the task and commit that fixed one, and `correct`
+# rewrites the review's outcome or the phase's summary as TEXT. The verdict is
+# `signoff`'s alone, and none of these three reads `--verdict`.
+#
+# THE TALLY IS DERIVED, NEVER TYPED. Every verb that writes `review.outcome` -
+# these three and `signoff` - rewrites its trailing `[findings: ...]` segment from
+# `review.findings` as it stands after the write, so the count in the outcome
+# cannot disagree with the list it counts. The prose before the segment is the
+# operator's and is kept verbatim; a segment of that shape the operator typed is
+# replaced, because a count nobody derived is the thing this removes.
+_TALLY_TAIL = re.compile(r"\s*\[findings: [^\[\]]*\]\s*$")
+# A finding's id is `<phaseId>-R<n>`, the spelling the plan's hand-recorded
+# findings already use, numbered past every id of that shape the review holds.
+_FINDING_ID = re.compile(r"^(?P<phase>.+)-R(?P<n>[0-9]+)$")
+# The resolution text a fix writes in front of what the reviewer asked for,
+# matched so a second resolution replaces the first rather than stacking on it.
+_FIXED_PREFIX = re.compile(r"^fixed in \S+ \([0-9a-fA-F]+\)(: )?")
+
+
+def review_tally(findings):
+    """The `[findings: ...]` segment `findings` derives, or None when it is empty.
+
+    None RATHER THAN A ZERO TALLY: a review with no finding recorded is one that
+    found nothing or one nobody recorded, and a count of zero would claim the
+    first. An entry outside the vocabulary - a legacy string, `medium` - is
+    counted as that, never dropped, so the total is always the list's length.
+    """
+    entries = list(findings or [])
+    if not entries:
+        return None
+    vocab = _phases.FINDING_SEVERITY
+    counts = dict((sev, 0) for sev in vocab)
+    outside = fixed = 0
+    for entry in entries:
+        sev = entry.get("severity") if isinstance(entry, dict) else None
+        if sev in counts:
+            counts[sev] += 1
+        else:
+            outside += 1
+        if isinstance(entry, dict) and entry.get("fixTask") and entry.get("commit"):
+            fixed += 1
+    parts = ["%d %s" % (counts[sev], sev) for sev in reversed(vocab)]
+    if outside:
+        parts.append("%d outside %s" % (outside, "|".join(vocab)))
+    # "RECORDED" IS THE WHOLE CLAUSE: it counts the findings `resolve-finding`
+    # wrote a fix task and commit onto, and says nothing about the rest - a fix
+    # a plan recorded in the resolution's prose is not one the fields hold.
+    return "[findings: %d - %s; %d with a recorded fix commit]" % (
+        len(entries), ", ".join(parts), fixed)
+
+
+def outcome_with_tally(text, findings):
+    """`text` with its trailing tally replaced by the one `findings` derives.
+
+    An absent outcome stays absent when there is nothing to count, and a tally
+    with no finding under it is stripped rather than kept: it has no basis.
+    """
+    base = text if isinstance(text, str) else ""
+    while _TALLY_TAIL.search(base):
+        base = _TALLY_TAIL.sub("", base)
+    base = base.strip()
+    tally = review_tally(findings)
+    if tally is None:
+        return base if (base or text is not None) else None
+    return "%s %s" % (base, tally) if base else tally
+
+
+def _next_finding_id(pid, review):
+    """`<pid>-R<n>`, one past every id of that shape either finding list holds."""
+    taken = [0]
+    for key in _phases.REVIEW_FINDING_LISTS:
+        for entry in (review.get(key) or []):
+            match = _FINDING_ID.match(str(entry.get("id"))) \
+                if isinstance(entry, dict) else None
+            if match and match.group("phase") == pid:
+                taken.append(int(match.group("n")))
+    return "%s-R%d" % (pid, max(taken) + 1)
+
+
+def _finding_problems(entry):
+    """Every reason `entry` - `{severity, file, issue, resolution}` - is not a
+    finding, in field order; empty when it is one."""
+    missing = [field for field in _phases.FINDING_FIELDS
+               if field != "id" and not entry.get(field)]
+    if missing:
+        return ["missing %s -- the shape is {%s}, and a finding missing one is one "
+                "no later run, report or panel can act on"
+                % (", ".join(missing), ", ".join(_phases.FINDING_FIELDS))]
+    problems = []
+    if entry["severity"] not in _phases.FINDING_SEVERITY:
+        problems.append("severity %r is outside the vocabulary: %s, the words the "
+                        "reviewer is asked to return and the validator grades"
+                        % (entry["severity"], ", ".join(_phases.FINDING_SEVERITY)))
+    bad = _path_problems([entry["file"]])
+    if bad:
+        problems.append("file is the repository-relative path a fix task's "
+                        "`files` is built from, and %s" % ("; ".join(bad),))
+    return problems
+
+
+def _field_text(value):
+    """A finding field as the record holds it: stripped text, or `""`."""
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _read_findings_file(path, stream=None):
+    """`(entries, None)` off a JSON list of findings, or `(None, refusal)`.
+
+    A reviewer's own `id` is dropped rather than kept: the plan allocates its ids,
+    and a number the reviewer counted from one would collide across reviews.
+    """
+    try:
+        if path == "-":
+            text = (stream if stream is not None else sys.stdin).read()
+        else:
+            with open(path, "r", encoding="utf-8") as fh:
+                text = fh.read()
+        data = json.loads(text)
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        return None, ("--findings-file %s could not be read as JSON: %s" % (path, exc))
+    if not isinstance(data, list) or not data:
+        return None, ("--findings-file %s holds %s, not a non-empty JSON list of "
+                      "findings" % (path, "an empty list" if data == [] else
+                                    type(data).__name__))
+    entries, bad = [], []
+    for n, raw in enumerate(data, 1):
+        if not isinstance(raw, dict):
+            bad.append("entry %d is %s, not a finding object" % (n, type(raw).__name__))
+            continue
+        entry = dict((field, _field_text(raw.get(field)))
+                     for field in _phases.FINDING_FIELDS if field != "id")
+        bad.extend("entry %d: %s" % (n, why) for why in _finding_problems(entry))
+        entries.append(entry)
+    if bad:
+        return None, ("--findings-file %s is refused WHOLE, nothing written: %s"
+                      % (path, "; ".join(bad)))
+    return entries, None
+
+
+def _finding_refusal(args):
+    """`(findings, None)` - one from the four flags, or a batch off
+    `--findings-file` - or `(None, refusal)`.
+
+    EVERY PROBLEM IN ONE REFUSAL, `_files_refusal`'s rule. The severity is
+    graded here and not by argparse `choices`: argparse answers on stderr before
+    `main` buffers anything, so a `--json` caller would read no object at all.
+    """
+    flagged = [flag for flag, value in (("--severity", args.severity),
+                                        ("--file", args.file),
+                                        ("--issue", args.issue),
+                                        ("--resolution", args.resolution))
+               if value is not None]
+    if args.findings_file is not None:
+        if flagged:
+            return None, ("[audit-task] --findings-file is the whole batch, so %s "
+                          "beside it would be a second finding nobody listed. "
+                          "Nothing written." % (", ".join(flagged),))
+        entries, refusal = _read_findings_file(args.findings_file)
+        return entries, ("[audit-task] " + refusal) if refusal else None
+    finding = {"severity": _field_text(args.severity),
+               "file": _field_text(args.file),
+               "issue": _field_text(args.issue),
+               "resolution": _field_text(args.resolution)}
+    missing = ["--%s" % field for field in _phases.FINDING_FIELDS
+               if field != "id" and not finding[field]]
+    if missing:
+        return None, ("[audit-task] finding needs %s (or --findings-file for a "
+                      "batch) -- the shape is {%s}, and a finding missing one is "
+                      "one no later run, report or panel can act on. Nothing "
+                      "written." % (", ".join(missing),
+                                    ", ".join(_phases.FINDING_FIELDS)))
+    problems = _finding_problems(finding)
+    if problems:
+        return None, "[audit-task] --%s. Nothing written." % ("; --".join(problems),)
+    return [finding], None
+
+
+def _review_target(assembled, pid, verb):
+    """`(phase, review, None)` for a phase whose review a verb may write, or
+    `(None, None, refusal)`. `review` is a COPY, so a refusal leaves no trace."""
+    kind, phase, _owner = _find_target(assembled, pid)
+    if kind is None:
+        return None, None, "no phase with id %r in this plan" % (pid,)
+    if kind != "phase":
+        return None, None, ("%s is a TASK -- `%s` takes the id of the phase whose "
+                            "review it writes" % (pid, verb))
+    if phase.get("status") == "cancelled":
+        return None, None, ("phase %s is cancelled -- a phase that will not be done "
+                            "has no review to record" % (pid,))
+    review = phase.get("review")
+    if review is not None and not isinstance(review, dict):
+        return None, None, ("phase %s carries a `review` that is not an object (%s) "
+                            "-- a write onto a value of another shape would replace "
+                            "it" % (pid, type(review).__name__))
+    review = dict(review or {})
+    listed = review.get("findings")
+    if listed is not None and not isinstance(listed, list):
+        return None, None, ("phase %s carries `review.findings` that is not a list "
+                            "(%s) -- nothing written" % (pid, type(listed).__name__))
+    return phase, review, None
+
+
+def _journal_outcome(text):
+    """`text` as a journal row holds it: shortened from the MIDDLE past the row's
+    per-value bound, keeping a trailing tally whole.
+
+    The row's own bound cuts from the end, and the tally sits at the end - so a
+    long outcome's before and after read identically in the trail while the one
+    part that changed was cut off.
+    """
+    limit = _journal_io.MAX_VALUE_CHARS
+    if not isinstance(text, str) or len(text) <= limit:
+        return text
+    gap = " ... "
+    match = _TALLY_TAIL.search(text)
+    keep = text[match.start():].strip() if match else text[-(limit // 2):]
+    room = limit - len(keep) - len(gap)
+    if room <= 0:
+        return keep[-limit:]
+    return text[:room].rstrip() + gap + keep
+
+
+def _landed_refusal(phase, pid):
+    """Why `phase` is a closed record no finding may be added to, or None."""
+    merged = phase.get("mergedAt")
+    if not merged:
+        return None
+    return ("phase %s landed at %s -- its review is the record the merge closed, "
+            "and a finding added now would sit under a verdict that never saw "
+            "it. Re-open the review with /audit:review %s, or report it as a bug "
+            "(/audit:bug add)" % (pid, merged, pid))
+
+
+def cmd_finding(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    pid = (args.title or "").strip()          # positional: the phase reviewed
+    if not pid:
+        out("[audit-task] finding needs a phase id")
+        return E_USAGE
+    findings, refusal = _finding_refusal(args)
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_finding(
+                           args, project, config, mpath, pid, findings, out))
+
+
+def _locked_finding(args, project, config, mpath, pid, findings, out):
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    phase, review, refusal = _review_target(assembled, pid, "finding")
+    refusal = refusal or (_landed_refusal(phase, pid) if phase else None)
+    if refusal:
+        out("[audit-task] " + refusal)
+        return E_USAGE
+    # A VERDICT ALREADY ON RECORD is said, not refused: a phase signed off and
+    # still awaiting its merge can still take a fix, and the finding that asks
+    # for one arrived after the verdict - which the row has to say.
+    verdict = review.get("status") if _mio.signoff_recorded(phase) else None
+    after = " (after its verdict %s)" % (verdict,) if verdict else ""
+    records = []
+    for finding in findings:
+        fid = _next_finding_id(pid, review)
+        records.append(dict([("id", fid)] + [(field, finding[field])
+                                             for field in _phases.FINDING_FIELDS
+                                             if field != "id"]))
+        review["findings"] = list(review.get("findings") or []) + [records[-1]]
+    was_outcome = review.get("outcome")
+    review["outcome"] = outcome_with_tally(was_outcome, review["findings"])
+    phase["review"] = review
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [pid],
+                        "the finding", out)
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    outcome_change = {"id": pid, "field": "review.outcome",
+                      "from": _journal_outcome(was_outcome),
+                      "to": _journal_outcome(review["outcome"])}
+    # ONE ROW PER FINDING, each attesting its own; the outcome moved once, so
+    # the last row carries that change.
+    rows = []
+    for n, record in enumerate(records, 1):
+        changes = [{"id": record["id"], "field": "review.findings", "from": None,
+                    "to": "%s %s" % (record["severity"], record["file"])}]
+        if n == len(records):
+            changes.append(outcome_change)
+        rows.append(_journal_row(project, config, mpath, "review.finding",
+                                 "%s finding %s (%s) in %s%s: %s"
+                                 % (pid, record["id"], record["severity"],
+                                    record["file"], after, record["issue"]),
+                                 {"phaseId": pid, "changes": changes}))
+    jres = next((r for r in rows if not r.get("journaled")), rows[-1])
+    index_note = _index_dirty_note(written, mpath, project, pid)
+    if args.as_json:
+        out(_json_tail({"ok": True, "id": records[-1]["id"], "phase": pid,
+                        "finding": records[-1], "findings": records,
+                        "verdictOnRecord": verdict,
+                        "outcome": review["outcome"], "written": written},
+                       args, jres, warnings, written_manifest, index_note))
+        return 0
+    for record in records:
+        out("[audit-task] %s recorded on %s%s (%s, %s): %s"
+            % (record["id"], pid, after, record["severity"], record["file"],
+               record["issue"]))
+    out("  review.outcome: %s" % (review["outcome"],))
+    _report_tail(out, jres, "review.finding", warnings, written_manifest, written,
+                 index_note)
+    return 0
+
+
+# `resolve-finding`: the finding named by its own id, which is unique across the
+# plan by construction (`<phaseId>-R<n>`) and refused by name when a hand-written
+# one is not. The commit is the fix task's own when it has closed, so the SHA is
+# the one `done` already fixed rather than a second typing of it; a fix that has
+# not landed has no commit to name, and that is the refusal.
+def cmd_resolve_finding(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    fid = (args.title or "").strip()          # positional: the finding's id
+    if not fid:
+        out("[audit-task] resolve-finding needs a finding id")
+        return E_USAGE
+    fix = (args.fix_task or "").strip()
+    if not fix:
+        out("[audit-task] resolve-finding needs --fix-task <taskId> -- the task "
+            "whose commit settles the finding")
+        return E_USAGE
+    commit = (args.commit or "").strip()
+    if commit:
+        shape = _commit_shape_refusal(commit)
+        if shape:
+            out(shape)
+            return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_resolve_finding(
+                           args, project, config, mpath, fid, fix, commit, out))
+
+
+def _finding_hits(assembled, fid):
+    """`[(phase, index), ...]` for every review finding whose id is `fid`."""
+    hits = []
+    for ph in (assembled.get("phases") or []):
+        review = ph.get("review") if isinstance(ph, dict) else None
+        listed = review.get("findings") if isinstance(review, dict) else None
+        for i, entry in enumerate(listed if isinstance(listed, list) else []):
+            if isinstance(entry, dict) and str(entry.get("id")) == fid:
+                hits.append((ph, i))
+    return hits
+
+
+def _fix_commit(task, commit):
+    """`(sha, None)` - the fix's commit - or `(None, refusal)`.
+
+    THE TASK MUST BE DONE, whatever `--commit` says. A SHA typed for a task
+    nobody closed is a claim about work the plan does not record as finished;
+    `--commit` only supplies the SHA a done task did not record.
+    """
+    if task.get("status") != "done":
+        return None, ("%s is %s, not done -- the fix has not landed, and a commit "
+                      "passed for it would record a fix the plan does not hold. "
+                      "Close it with `audit-task.py done %s --commit <sha>` first"
+                      % (task.get("id"), task.get("status"), task.get("id")))
+    recorded = (task.get("commit") or "").strip()
+    if commit and recorded and not (recorded.lower().startswith(commit.lower())
+                                    or commit.lower().startswith(recorded.lower())):
+        return None, ("--commit %s is not the commit %s recorded (%s) -- one fix "
+                      "cannot have landed in two" % (commit[:12], task.get("id"),
+                                                     recorded[:12]))
+    sha = commit or recorded
+    if not sha:
+        return None, ("%s records no commit and no --commit was passed -- the fix "
+                      "has not landed. Close it with `audit-task.py done %s "
+                      "--commit <sha>` first, or pass the SHA it landed in"
+                      % (task.get("id"), task.get("id")))
+    shape = _commit_shape_refusal(sha)
+    if shape:
+        return None, shape[len("[audit-task] "):]
+    return sha, None
+
+
+def _locked_resolve_finding(args, project, config, mpath, fid, fix, commit, out):
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    hits = _finding_hits(assembled, fid)
+    if not hits:
+        out("[audit-task] no review finding with id %r in this plan -- "
+            "`audit-task.py finding <phaseId>` records one" % (fid,))
+        return E_USAGE
+    if len(hits) > 1:
+        out("[audit-task] %r names a finding in more than one place (%s) -- a "
+            "resolution cannot choose between them; renumber the hand-written one"
+            % (fid, ", ".join(sorted(set(str(ph.get("id")) for ph, _i in hits)))))
+        return E_USAGE
+    phase, index = hits[0]
+    pid = phase.get("id")
+    kind, task, _owner = _find_target(assembled, fix)
+    if kind != "task":
+        out("[audit-task] --fix-task %s is %s -- a finding is settled by the "
+            "commit of one TASK" % (fix, "a PHASE" if kind else "no task in this plan"))
+        return E_USAGE
+    sha, refusal = _fix_commit(task, commit)
+    if refusal:
+        out("[audit-task] " + refusal)
+        return E_USAGE
+    git_root = os.path.abspath(os.path.join(project,
+                                            (config or {}).get("gitRoot") or "."))
+    refusal, unverified = _commit_git_note(git_root, sha)
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    review = dict(phase["review"])
+    findings = list(review["findings"])
+    was = findings[index]
+    if was.get("fixTask") == fix and was.get("commit") == sha:
+        return _unchanged(args, out, fid)
+    asked = _FIXED_PREFIX.sub("", (was.get("resolution") or "").strip())
+    head = "fixed in %s (%s)" % (fix, sha[:12])
+    entry = dict(was, fixTask=fix, commit=sha,
+                 resolution="%s: %s" % (head, asked) if asked else head)
+    findings[index] = entry
+    review["findings"] = findings
+    was_outcome = review.get("outcome")
+    review["outcome"] = outcome_with_tally(was_outcome, findings)
+    phase["review"] = review
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [pid],
+                        "the resolution", out)
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    changes = [{"id": fid, "field": "resolution", "from": was.get("resolution"),
+                "to": entry["resolution"]},
+               {"id": pid, "field": "review.outcome",
+                "from": _journal_outcome(was_outcome),
+                "to": _journal_outcome(review["outcome"])}]
+    jres = _journal_row(project, config, mpath, "review.resolve",
+                        "%s resolved by %s in %s" % (fid, fix, sha[:12]),
+                        {"phaseId": pid, "taskId": fix, "commit": sha,
+                         "changes": changes})
+    index_note = _index_dirty_note(written, mpath, project, pid)
+    if args.as_json:
+        out(_json_tail({"ok": True, "id": fid, "phase": pid,
+                                "finding": entry, "outcome": review["outcome"],
+                                "commitVerified": unverified is None,
+                                "changes": changes, "written": written},
+                       args, jres, warnings, written_manifest, index_note))
+        return 0
+    out("[audit-task] %s resolved by %s in %s" % (fid, fix, sha[:12]))
+    if unverified:
+        out(unverified)
+    out("  review.outcome: %s" % (review["outcome"],))
+    _report_tail(out, jres, "review.resolve", warnings, written_manifest, written,
+                 index_note)
+    return 0
+
+
+# `correct`: a typo in a signed-off record is fixed without re-signing it. It
+# writes TEXT and nothing a derivation reads - not the verdict, not the stored
+# status, not the claim - so the `phase.verdict` row the sign-off wrote stays the
+# only record of the verdict, and this verb's own row records the correction.
+def cmd_correct(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    pid = (args.title or "").strip()          # positional: the phase corrected
+    if not pid:
+        out("[audit-task] correct needs a phase id")
+        return E_USAGE
+    given = [(flag, value) for flag, value in (("--review-outcome", args.review_outcome),
+                                               ("--summary", args.summary))
+             if value is not None]
+    if not given:
+        out("[audit-task] correct needs --review-outcome TEXT and/or --summary TEXT "
+            "-- the two texts a sign-off wrote; the verdict is not one of them")
+        return E_USAGE
+    empty = [flag for flag, value in given if not value.strip()]
+    if empty:
+        out("[audit-task] %s is empty -- a correction replaces text with text, and "
+            "an empty one would erase what sign-off owes the reader"
+            % (", ".join(empty),))
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_correct(
+                           args, project, config, mpath, pid, out))
+
+
+def _locked_correct(args, project, config, mpath, pid, out):
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    phase, review, refusal = _review_target(assembled, pid, "correct")
+    if refusal:
+        out("[audit-task] " + refusal)
+        return E_USAGE
+    if not _mio.signoff_recorded(phase):
+        out("[audit-task] phase %s has no verdict recorded, so there is no sign-off "
+            "text to correct -- `audit-task.py signoff %s` writes the outcome and "
+            "the summary with the verdict" % (pid, pid))
+        return E_USAGE
+    changes = []
+    if args.review_outcome is not None:
+        new = outcome_with_tally(args.review_outcome.strip(), review.get("findings"))
+        if new != review.get("outcome"):
+            changes.append({"id": pid, "field": "review.outcome",
+                            "from": _journal_outcome(review.get("outcome")),
+                            "to": _journal_outcome(new)})
+            review["outcome"] = new
+    if args.summary is not None and args.summary.strip() != phase.get("summary"):
+        changes.append({"id": pid, "field": "summary", "from": phase.get("summary"),
+                        "to": args.summary.strip()})
+        phase["summary"] = args.summary.strip()
+    if not changes:
+        return _unchanged(args, out, pid)
+    phase["review"] = review
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [pid],
+                        "the correction", out)
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    jres = _journal_row(project, config, mpath, "review.correct",
+                        "%s sign-off text corrected (%s); verdict %s unchanged"
+                        % (pid, ", ".join(c["field"] for c in changes),
+                           review.get("status")),
+                        {"phaseId": pid, "changes": changes})
+    index_note = _index_dirty_note(written, mpath, project, pid)
+    if args.as_json:
+        out(_json_tail({"ok": True, "id": pid, "phase": pid,
+                                "verdict": review.get("status"),
+                                "changes": changes, "written": written},
+                       args, jres, warnings, written_manifest, index_note))
+        return 0
+    out("[audit-task] %s corrected: %s -- verdict %s unchanged"
+        % (pid, ", ".join(c["field"] for c in changes), review.get("status")))
+    _report_tail(out, jres, "review.correct", warnings, written_manifest, written,
+                 index_note)
+    return 0
+
+
+# --- group sign-off: phases built on one branch --------------------------------
+# A FLAG ON THIS VERB, NOT A VERB OF ITS OWN. A group writes the record one phase's
+# sign-off writes - the verdict, its outcome, the summary, the status that derives -
+# under the same refusals, and a second writer of the record the derivation reads
+# is where two answers to "is this phase signed off" would start. What a group
+# changes is what the evidence is scoped by: there is no `baseRef` to diff from,
+# so the review is scoped by the tasks' commits; the phases share one tree, so one
+# gate run and one invariants run measure all of them; and the branch is landed
+# once, so every member but the last keeps it for the next. `--plan` prints that;
+# the record re-asks the same planner under the lock, so the two cannot disagree.
+def signoff_ids(text):
+    """The phase ids a `signoff` names: one, or a comma list for a group."""
+    ids = []
+    for part in (text or "").split(","):
+        pid = part.strip()
+        if pid and pid not in ids:
+            ids.append(pid)
+    return ids
+
+
+def _group_gate(members):
+    """(carrier id, union) -- the member whose `testGate` holds every entry any
+    member declares, or (None, union) when none does. One run of the phase gate
+    measures one phase's gate, so the union is runnable only when one carries it."""
+    union = []
+    for ph in members:
+        for entry in (ph.get("testGate") or []):
+            if entry not in union:
+                union.append(entry)
+    for ph in members:
+        if set(union) <= set(ph.get("testGate") or []):
+            return ph.get("id"), union
+    return None, union
+
+
+def _accounted_commits(ids, journal_rows):
+    """The commits the journal records as a member's audit-state or index commit -
+    the other commits a group's branch may carry beside its tasks' own."""
+    actions = (_invariants.ACTION_STATE_COMMITTED, _invariants.ACTION_INDEX_COMMITTED)
+    out = set()
+    for row in (journal_rows or []):
+        det = row.get("details") if isinstance(row.get("details"), dict) else {}
+        if row.get("action") in actions and str(det.get("phaseId")) in ids \
+                and det.get("commit"):
+            out.add(str(det["commit"]))
+    return out
+
+
+def _is_accounted(sha, known):
+    """Does `sha` match a recorded commit, full or abbreviated either way?"""
+    return any(sha.startswith(k) or k.startswith(sha) for k in known if k)
+
+
+def group_plan(assembled, ids, branch, git_root, run=None, journal_rows=None,
+               journal_error=None, accepted=None):
+    """{"members", "refusals", "commits", "files", "gate", "union", "fork",
+    "accepted"} -- what
+    signing `ids` off together on `branch` owes, and every reason it cannot yet.
+    `fork` is `git merge-base <parent> <branch>`, the baseRef a member is bound to.
+
+    `commits` is `(phaseId, taskId, sha)` per task that landed work, in plan order;
+    a cancelled task is skipped, and any other task without a commit is a refusal,
+    because a review scoped by commits cannot see work no commit records. Each sha
+    is asked of git (`merge-base --is-ancestor <sha> <branch>`), since the plan's
+    word for where a commit is does not make it so - and the other direction is
+    asked too: every commit `fork..branch` carries must be one of those, or an
+    audit-state or index commit `journal_rows` records for a member. The first
+    landing merges the whole branch, so a commit that is neither lands unreviewed.
+
+    Two more are accounted, and neither hides anything. A MERGE commit whose every
+    parent is accounted, or lies on the parent side of the fork, AND whose tree is
+    the automatic merge of those parents (`_clean_merge`) - a merge carrying content
+    of its own is refused by SHA for review. And a commit named in `accepted`
+    (`--accept <sha> --reason`, each resolved to one full commit) is taken
+    into the group and listed in `accepted`, so it is reviewed with the members'
+    commits rather than refused or passed over. `journal_error` is the journal
+    read that failed: a commit only the journal could account for is then said as
+    that, rather than as a commit no member records.
+    """
+    refusals, members, commits, files = [], [], [], []
+    for pid in ids:
+        kind, phase, _owner = _find_target(assembled, pid)
+        if kind != "phase":
+            refusals.append("no phase %r in this plan" % (pid,))
+            continue
+        members.append(phase)
+        why = _signoff_refusal(phase, pid)
+        if why:
+            refusals.append(why)
+        recorded = phase.get("branch")
+        if recorded and recorded != branch:
+            refusals.append("phase %s records branch %r, not %r - a group is phases "
+                            "built on one branch" % (pid, recorded, branch))
+        for task in (phase.get("tasks") or []):
+            if not isinstance(task, dict) or task.get("status") == "cancelled":
+                continue
+            if not task.get("commit"):
+                refusals.append("task %s records no commit, and a group's review is "
+                                "scoped by its tasks' commits" % (task.get("id"),))
+                continue
+            commits.append((pid, task.get("id"), str(task["commit"])))
+    files = phase_files(members)
+    meta = assembled.get("meta") or {}
+    parents = []
+    for ph in members:
+        parent = _branch.parent_branch(meta, ph)["branch"]
+        if parent not in parents:
+            parents.append(parent)
+    if len(parents) > 1:
+        refusals.append("the members land in different parents (%s), and one branch "
+                        "lands in one" % (", ".join(str(p) for p in parents),))
+    if branch in parents:
+        # LANDING A BRANCH INTO ITSELF LANDS NOTHING, and close-phase's cleanup
+        # would then plan deleting that branch - the parent - as settled work.
+        refusals.append("%r is its own parent - a group branch is the one the "
+                        "members' work was built on, never the branch it lands in"
+                        % (branch,))
+        return {"members": members, "refusals": refusals, "commits": commits,
+                "files": files, "gate": None, "union": [], "fork": "",
+                "accepted": []}
+    fork = ""
+    found = _worktrees.ref_exists(git_root, branch, run=run)
+    fn = _worktrees._runner(run)
+    if found["exists"] is not True:
+        refusals.append("%r %s" % (branch, "is not a branch in this repository"
+                                   if found["exists"] is False
+                                   else "could not be resolved (%s)" % (found["basis"],)))
+    else:
+        code, said, _err = fn(git_root, ["merge-base", parents[0] if parents else "",
+                                         branch])
+        fork = (said or "").strip() if code == 0 else ""
+        if not fork:
+            refusals.append("where %r left %r could not be established (`git "
+                            "merge-base %s %s`), so no baseRef can be recorded for "
+                            "it" % (branch, parents[0] if parents else None,
+                                    parents[0] if parents else "<parent>", branch))
+        for pid, tid, sha in commits:
+            held = _worktrees.merged_into(git_root, sha, branch, run=run)
+            if held["answer"] != _worktrees.CONTAINED:
+                refusals.append("task %s's commit %s is not established to be on %r "
+                                "(%s: %s) - if the branch was rebased, "
+                                "`repair-commits.py` re-points the task at the commit "
+                                "that now carries its work"
+                                % (tid, sha[:12], branch, held["answer"],
+                                   held["basis"]))
+    taken, review = [], {}
+    if fork:
+        code, said, err = fn(git_root, ["rev-list", "--reverse", "--topo-order",
+                                        "--parents", "%s..%s" % (fork, branch)])
+        if code != 0:
+            refusals.append("which commits %r carries past %s could not be listed "
+                            "(`git rev-list %s..%s`: %s)"
+                            % (branch, fork[:12], fork[:12], branch,
+                               (err or "").strip().split("\n")[0]))
+        else:
+            known = set(sha for _p, _t, sha in commits) \
+                | _accounted_commits(ids, journal_rows)
+            resolved = {}
+            for name in (accepted or []):
+                if not _HEX_SHA.match(name or ""):
+                    refusals.append(
+                        "--accept %s is not a commit SHA - it takes a hex SHA, or a "
+                        "unique hex prefix of at least 4 digits, resolved to exactly "
+                        "one commit; a ref or a revision expression would be "
+                        "re-resolved on every call" % (name,))
+                    continue
+                code, full, _e = fn(git_root, ["rev-parse", "--verify", "--quiet",
+                                               "%s^{commit}" % (name,)])
+                full = (full or "").strip()
+                if code == 0 and full.startswith(name.lower()):
+                    resolved[full] = name
+                elif code == 0 and full:
+                    # A REF WHOSE NAME IS HEX wins over the commit it spells: git
+                    # prefers the ref, which re-resolves on every call.
+                    refusals.append("--accept %s names a ref, not a commit SHA - git "
+                                    "resolves it through the ref of that name to %s, "
+                                    "a commit it does not prefix; name the commit by "
+                                    "its full SHA" % (name, full[:12]))
+                else:
+                    refusals.append("--accept %s does not resolve to exactly one "
+                                    "commit (`git rev-parse --verify %s^{commit}`) "
+                                    "- name the commit by its full SHA, or a prefix "
+                                    "only it has" % (name, name))
+            verdicts = {}
+
+            def judge(sha, parents):
+                verdicts[sha] = _clean_merge(fn, git_root, sha, parents)
+                return verdicts[sha]
+            stray, taken, used, blocked, waiting = _account(
+                said, known, list(resolved), judge)
+            unused = [resolved[a] for a in resolved if a not in used]
+            if unused:
+                refusals.append("--accept %s names no commit %r carries past its "
+                                "fork %s" % (", ".join(unused), branch, fork[:12]))
+            for sha, over in blocked:
+                refusals.append(_merge_refusal(sha, verdicts[sha], over))
+            for sha, over in waiting:
+                refusals.append(
+                    "%s is a merge over %s, refused above - it recomputes clean, so "
+                    "it is accounted once %s" % (
+                        sha[:12], ", ".join(o[:12] for o in over),
+                        "that one is" if len(over) == 1 else "those are"))
+            review = dict((sha, _review_command(sha, verdicts.get(sha)))
+                          for sha in taken)
+            if stray and journal_error:
+                refusals.append(
+                    "%r carries %s no task records, and the journal could not be "
+                    "read, so whether it is a member's audit-state or index commit "
+                    "could not be accounted: %s (%s)"
+                    % (branch, "a commit" if len(stray) == 1 else "commits",
+                       ", ".join(c[:12] for c in stray), journal_error))
+            elif stray:
+                refusals.append(
+                    "%r carries %s that no member records - not reviewed, and the "
+                    "first landing would merge it: %s. Each has to be a member task's "
+                    "commit, an audit-state or index commit the journal records for a "
+                    "member, or a merge of those - or pass --accept <sha> --reason "
+                    "\"<why>\" to review it with the group"
+                    % (branch, "a commit" if len(stray) == 1 else "commits",
+                       ", ".join(c[:12] for c in stray)))
+    carrier, union = _group_gate(members)
+    if members and carrier is None:
+        refusals.append(
+            "no member's testGate holds the group's union (%s): %s - one gate run "
+            "measures one phase's gate, so give one member every entry with "
+            "`/audit:phase retarget <phaseId> --gate <entry>`"
+            % (", ".join(union), "; ".join("%s: %s" % (
+                ph.get("id"), ", ".join(ph.get("testGate") or []) or "(empty)")
+                for ph in members)))
+    return {"members": members, "refusals": refusals, "commits": commits,
+            "files": files, "gate": carrier, "union": union, "fork": fork,
+            "accepted": taken, "acceptedReview": review}
+
+
+# `--accept` takes a commit SHA - never a ref, which re-resolves on every call and
+# can name a different commit at the record than at the plan.
+_HEX_SHA = re.compile(r"^[0-9a-fA-F]{4,40}$")
+
+MERGE_CLEAN, MERGE_OWN, MERGE_UNASKED = "clean", "own", "could-not-ask"
+
+
+def _clean_merge(fn, git_root, sha, parents):
+    """`{"state", "tree", "why"}` - does merge `sha` carry content of its own?
+
+    `git merge-tree --write-tree` recomputes the automatic merge of two parents
+    without touching a work tree. THREE ANSWERS, because two would lie: `clean`
+    (exit 0 and the same tree), `own` (the parents conflict - exit 1, a hand
+    resolution - or the trees differ: an edit made inside the merge commit), and
+    `could-not-ask` - an octopus merge, which merge-tree cannot recompute, or any
+    other exit (a git before 2.38 has no `--write-tree`; a shallow clone may lack
+    an object). The last is said as a question not asked, never as an edit.
+    `tree` is the recomputed tree when there is one, which is what a reviewer
+    diffs the merge against."""
+    if len(parents) != 2:
+        return {"state": MERGE_UNASKED, "tree": None,
+                "why": "an octopus merge of %d parents cannot be recomputed - `git "
+                       "merge-tree --write-tree` takes two parents only"
+                       % (len(parents),)}
+    code, tree, err = fn(git_root, ["merge-tree", "--write-tree", parents[0],
+                                    parents[1]])
+    first = (tree or "").strip().split("\n")[0].strip()
+    if code not in (0, 1) or not first:
+        return {"state": MERGE_UNASKED, "tree": None,
+                "why": "`git merge-tree --write-tree` answered %s: %s - replaying a "
+                       "merge without writing it needs git 2.38+"
+                       % (code, (err or "").strip().split("\n")[0]
+                          or "no output")}
+    if code == 1:
+        return {"state": MERGE_OWN, "tree": first,
+                "why": "its parents conflict, so its tree is a hand resolution"}
+    code2, own, _err2 = fn(git_root, ["rev-parse", "%s^{tree}" % (sha,)])
+    if code2 != 0:
+        return {"state": MERGE_UNASKED, "tree": first,
+                "why": "the merge's own tree could not be read"}
+    if first == (own or "").strip():
+        return {"state": MERGE_CLEAN, "tree": first, "why": ""}
+    return {"state": MERGE_OWN, "tree": first,
+            "why": "its tree is not the automatic merge of its parents - an edit "
+                   "made inside the merge commit, or a change of a side it dropped"}
+
+
+def _review_command(sha, verdict):
+    """What a reviewer runs to see what a commit carries. For a merge, the
+    comparison the check made - the automatic merge's tree against the merge -
+    because a combined diff hides a path whose result equals one parent, which
+    is exactly how a dropped change looks. A merge with no recomputed tree gets a
+    diff against EACH parent (`git show -m`), which shows a drop on any git and
+    for any number of parents. `verdict` is set only for a merge."""
+    if verdict and verdict.get("tree"):
+        return "git diff %s %s" % (verdict["tree"], sha)
+    if verdict:
+        return "git show -m %s" % (sha,)
+    return "git show %s" % (sha,)
+
+
+def _merge_refusal(sha, verdict, over=None):
+    """The refusal a merge the accounting could not take in earns - with, when it
+    sits over merges refused above, those named too: it is judged on its own
+    account now, never promised accounting once they are."""
+    tail = ("; it is also a merge over %s, refused above"
+            % (", ".join(o[:12] for o in over),) if over else "")
+    if verdict["state"] == MERGE_UNASKED:
+        return ("merge %s: whether it adds or drops anything of its own could not "
+                "be asked (%s)%s. Review it (`%s`) and pass --accept %s --reason "
+                "\"<why>\" to take it into the group"
+                % (sha[:12], verdict["why"], tail, _review_command(sha, verdict),
+                   sha))
+    return ("merge %s carries content of its own - %s%s. Review what it adds or "
+            "drops with `%s`, and pass --accept %s --reason \"<why>\" to take it "
+            "into the group" % (sha[:12], verdict["why"], tail,
+                                _review_command(sha, verdict), sha))
+
+
+def _account(listing, known, accepted, judge):
+    """`(stray, taken, used, blocked, waiting)` over `git rev-list --parents`
+    output: the commits nothing accounts for, the ones `accepted` (full SHAs) took
+    in, which of those matched, the merges `judge` could not take in, and the
+    clean merges held up only by those - both `(sha, [refused merges below it])`.
+
+    A merge is accounted when every parent is accounted - an accepted commit
+    included - or lies outside the listed range, which is the parent side of the
+    fork, AND `judge` answers `clean`. Accounted parents are not enough: an edit
+    made inside a merge commit belongs to no parent, and the first landing would
+    carry it unreviewed."""
+    lines = [ln.split() for ln in (listing or "").splitlines() if ln.strip()]
+    in_range = set(parts[0] for parts in lines)
+    ok, stray, taken, used, blocked, waiting = set(), [], [], [], [], []
+    held = set()
+    for parts in lines:
+        sha, parents = parts[0], parts[1:]
+        named = [a for a in accepted if a == sha]
+        if _is_accounted(sha, known):
+            ok.add(sha)
+            continue
+        if named:
+            ok.add(sha)
+            taken.append(sha)
+            used.extend(named)
+            if len(parents) > 1:
+                judge(sha, parents)
+            continue
+        if len(parents) > 1:
+            pending = [p for p in parents if p in in_range and p not in ok]
+            if not pending:
+                if judge(sha, parents)["state"] == MERGE_CLEAN:
+                    ok.add(sha)
+                else:
+                    blocked.append((sha, []))
+                    held.add(sha)
+                continue
+            if all(p in held for p in pending):
+                # JUDGED NOW, as if the refused merges below were accounted:
+                # merge-tree replays two parents whatever is known of them, so a
+                # promise of accounting is made only for a merge that recomputes
+                # clean, and any other is refused on its own account.
+                if judge(sha, parents)["state"] == MERGE_CLEAN:
+                    waiting.append((sha, pending))
+                else:
+                    blocked.append((sha, pending))
+                held.add(sha)
+                continue
+        stray.append(sha)
+    return stray, taken, used, blocked, waiting
+
+
+def _plugin_cmd(rel, *argv):
+    """A plugin script call, spelled the way the command docs spell every one."""
+    return 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/%s" %s' % (rel, " ".join(argv))
+
+
+def landing_commands(mrel, ids, branch):
+    """One `close-phase.py --branch` per member, in order. The first landing merges
+    the whole branch and each later one finds it contained and stamps its own
+    phase, so every member but the last keeps the branch and its worktree - a
+    deletion on the first would leave the rest nothing to land."""
+    last = len(ids) - 1
+    return [_plugin_cmd("git/close-phase.py", mrel, pid, "--project", ".",
+                        "--branch", branch,
+                        *(() if i == last else ("--keep-worktree", "--keep-branch")))
+            for i, pid in enumerate(ids)]
+
+
+def gate_command(mrel, plan, ids):
+    """The group's one gate run, owning every member's files (`--also`)."""
+    others = [pid for pid in ids if pid != plan["gate"]]
+    return _plugin_cmd("governance/run-test-gate.py", mrel, plan["gate"],
+                       *(("--also", ",".join(others)) if others else ()),
+                       "--record")
+
+
+def commit_commands(mrel, ids, sharded):
+    """The sign-off commit, spelled as the plugin's own committers: one audit-state
+    commit per member - one commit carrying two members' shards reads as a scope
+    breach for each - and, sharded, the index alone after them."""
+    if not sharded:
+        return [_plugin_cmd("governance/commit-audit-state.py", mrel, ids[0],
+                            "--project", ".")]
+    return ([_plugin_cmd("governance/commit-audit-state.py", mrel, pid,
+                         "--project", ".") for pid in ids]
+            + [_plugin_cmd("governance/commit-manifest-index.py", mrel, ids[-1],
+                           "--project", ".")])
+
+
+def _group_door(args, project, ids, out):
+    if len(ids) > 1 and not args.branch:
+        out("[audit-task] signoff of %s is a group sign-off, which needs --branch "
+            "<name>: the one branch these phases were built on" % (", ".join(ids),))
+        return E_USAGE
+    if not args.branch:
+        out("[audit-task] --plan, --bind, --accept and --reason belong to a group "
+            "sign-off - `signoff <P1,P2,...> --branch <name>` - and one phase's "
+            "sign-off reads none of them. Nothing was written.")
+        return E_USAGE
+    if args.plan and args.bind:
+        out("[audit-task] signoff --plan writes nothing and --bind writes the "
+            "branch - one at a time")
+        return E_USAGE
+    if (args.plan or args.bind) and (args.verdict or args.summary
+                                     or args.review_outcome
+                                     or args.no_evidence_reason):
+        out("[audit-task] signoff --%s records no verdict, so --verdict, --summary, "
+            "--review-outcome and --no-evidence-reason have no reader there - "
+            "record the verdict on its own" % ("plan" if args.plan else "bind",))
+        return E_USAGE
+    if args.accept and not (args.reason or "").strip():
+        out("[audit-task] --accept takes a commit into the group's review, and it "
+            "is recorded with why: pass --reason \"<why this commit belongs>\"")
+        return E_USAGE
+    if (args.reason or "").strip() and not args.accept:
+        out("[audit-task] --reason on a group sign-off is the why of --accept "
+            "<sha>, and no commit was named")
+        return E_USAGE
+    summary = (args.summary or "").strip()
+    if not (args.plan or args.bind) and (not args.verdict or not summary):
+        out("[audit-task] a group sign-off records --verdict %s and --summary "
+            "\"<what the phases did>\"; `--plan` prints what it owes first"
+            % ("|".join(_mio.SIGNOFF_VERDICTS),))
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_group(
+                           args, project, config, mpath, ids, summary, out))
+
+
+def _group_write(project, mpath, raw_index, assembled, ids, vm, out):
+    """(written, warnings, manifest, exit) -- every member's file in one write,
+    revalidated and rolled back whole on a finding. `exit` is None on success."""
+    paths = []
+    for pid in ids:
+        paths.extend(p for p in _write_paths(project, mpath, raw_index, pid)
+                     if p not in paths)
+    snap = _snapshot(paths)
+    written = []
+    try:
+        for pid in ids:
+            written.extend(w for w in _write_add(project, mpath, raw_index,
+                                                 assembled, pid, False)
+                           if w not in written)
+    except Exception as exc:
+        _restore(snap)
+        out("[audit-task] write failed -- manifest restored: %s" % exc)
+        return [], [], {}, E_INVALID
+    try:
+        written_manifest = _mio.load_manifest(mpath)
+        findings, warnings = vm.validate(written_manifest)
+    except Exception as exc:
+        written_manifest, findings, warnings = {}, ["cannot re-read the written "
+                                                    "manifest: %s" % exc], []
+    if findings:
+        _restore(snap)
+        out("[audit-task] REFUSED: the group write would leave the manifest invalid "
+            "-- every written file rolled back, nothing kept:")
+        for line in findings:
+            out("FINDING: " + line)
+        return [], [], {}, E_INVALID
+    return written, warnings, written_manifest, None
+
+
+def _group_index_note(written, mpath, project, ids):
+    """`_index_dirty_note` for a write that touched several shards and the index."""
+    index_rel = _output.posix_rel(mpath, project)
+    if index_rel not in written or len(written) < 2:
+        return None
+    return _index_dirty_note([w for w in written if w != index_rel] + [index_rel],
+                             mpath, project, ids[-1])
+
+
+def _group_binding(project, mpath, assembled, carrier, plan, ids, gate):
+    """`(refusal, row)` - whether the carrier's newest run binds every member's
+    work: the one binding rule over the union of their files, and, for a group,
+    a measuring run that owned each other member (its row's `groupWith`)."""
+    bound = phase_binding(project, mpath, assembled, carrier, plan["files"],
+                          "run `%s` over every member's files, then record" % (gate,))
+    if bound["state"] == "refused":
+        return bound["sentence"], None
+    if bound["state"] == "no-gate":
+        # A GATE THAT DECLARES NO ENTRY GRADES NOTHING, so no run is copied: the
+        # carrier's newest row may be any older run, under a gate that is gone,
+        # that never owned the other members.
+        return None, None
+    measured = bound.get("measured") or {}
+    others = [pid for pid in ids if pid != carrier.get("id")]
+    owned = [str(p) for p in (measured.get("groupWith") or [])]
+    missing = [pid for pid in others if pid not in owned]
+    if bound["state"] == "bound" and missing:
+        return ("the run that measured it (%s) owned %s alone, not %s - run `%s`"
+                % (measured.get("runId"), carrier.get("id"), ", ".join(missing),
+                   gate)), None
+    return None, bound.get("row")
+
+
+def _locked_group(args, project, config, mpath, ids, summary, out):
+    try:
+        raw_index = _mio.read_json(mpath)
+        assembled = _mio.load_manifest(mpath)
+    except Exception as exc:
+        out("[audit-task] cannot read/assemble manifest: %s" % exc)
+        return E_USAGE
+    git_root = os.path.abspath(os.path.join(project,
+                                            (config or {}).get("gitRoot") or "."))
+    journal_error = None
+    try:
+        journal_rows = _journal_io.read_all(project,
+                                            _journal_cfg(config, mpath, project))
+    except Exception as exc:
+        # Carried, not absorbed: a commit only the journal could account for is
+        # then said as unaccountable, not as a commit nobody records.
+        journal_rows, journal_error = [], "%s" % (exc,)
+    plan = group_plan(assembled, ids, args.branch, git_root,
+                      journal_rows=journal_rows, journal_error=journal_error,
+                      accepted=list(args.accept or []))
+    mrel = _output.posix_rel(mpath, project)
+    if plan["refusals"]:
+        out("[audit-task] REFUSED: %s cannot be signed off together on %s - nothing "
+            "written:" % (", ".join(ids), args.branch))
+        for line in plan["refusals"]:
+            out("  - " + line)
+        return E_USAGE
+    landing = landing_commands(mrel, ids, args.branch)
+    sharded = _mio.is_sharded(raw_index)
+    if args.plan:
+        return _print_group_plan(args, plan, ids, mrel, landing, sharded, out)
+    vm = _panel_write._cores()[0]
+    if args.bind:
+        return _bind_group(args, project, config, mpath, raw_index, assembled,
+                           plan, ids, vm, out)
+    unbound = [ph.get("id") for ph in plan["members"]
+               if ph.get("branch") != args.branch or not ph.get("baseRef")]
+    if unbound:
+        out("[audit-task] REFUSED: %s %s not bound to %s yet - run `signoff %s "
+            "--branch %s --bind` first, so the sign-off's invariants run sees the "
+            "branch and baseRef it grades. Nothing written."
+            % (", ".join(unbound), "is" if len(unbound) == 1 else "are",
+               args.branch, ",".join(ids), args.branch))
+        return E_USAGE
+    reason = (args.no_evidence_reason or "").strip()
+    carrier = [ph for ph in plan["members"] if ph.get("id") == plan["gate"]][0]
+    pointer = None
+    if args.verdict == "passed" and not reason:
+        why, row = _group_binding(project, mpath, assembled, carrier, plan, ids,
+                                  gate_command(mrel, plan, ids))
+        if why:
+            out("[audit-task] REFUSED: --verdict passed needs the group's one gate "
+                "run to bind every member's work - %s." % (why,))
+            out("    or pass --no-evidence-reason \"<why no gate run backs this "
+                "verdict>\", which is recorded on every member's review")
+            return E_USAGE
+        pointer = _evidence_io.pointer_for(row) if row else None
+    for phase in plan["members"]:
+        review = phase.get("review") if isinstance(phase.get("review"), dict) else {}
+        review = dict(review, status=args.verdict)
+        if args.review_outcome:
+            review["outcome"] = outcome_with_tally(args.review_outcome.strip(),
+                                                   review.get("findings"))
+        if reason:
+            review["noEvidenceReason"] = reason
+        if plan["accepted"]:
+            review["acceptedCommits"] = [{"commit": sha, "reason": args.reason.strip()}
+                                         for sha in plan["accepted"]]
+        phase["review"] = review
+        phase["summary"] = summary
+        phase.pop("claim", None)
+        if pointer and phase is not carrier:
+            # THE CARRIER'S RUN, NAMED AS THE CARRIER'S. A member with no pointer
+            # reads as done work with no run recorded, and its repair - run its own
+            # gate - would re-measure the tree the one run already graded.
+            phase["testEvidence"] = dict(pointer, gradedBy=carrier.get("id"))
+    settled = _settle(assembled, set(("phase", pid) for pid in ids))
+    written, warnings, written_manifest, stop = _group_write(
+        project, mpath, raw_index, assembled, ids, vm, out)
+    if stop is not None:
+        return stop
+    rows = [_journal_row(project, config, mpath, "phase.verdict",
+                         "%s signed off (%s) with %s on %s: %s"
+                         % (pid, args.verdict, ", ".join(ids), args.branch, summary),
+                         {"phaseId": pid}) for pid in ids]
+    # EVERY POINTER MOVE IS A ROW, `write_pointer`'s rule: the copy a member takes
+    # is named with the run and the phase whose run it is.
+    rows += [_journal_row(project, config, mpath, "phase.testEvidence",
+                          "phase %s now points at %s's run %s (%s), gradedBy %s"
+                          % (pid, carrier.get("id"), pointer.get("runId"),
+                             pointer.get("status"), carrier.get("id")),
+                          {"phaseId": pid, "runId": str(pointer.get("runId")),
+                           "fromPhase": str(carrier.get("id"))})
+             for pid in ids if pointer and pid != carrier.get("id")]
+    effective = dict((ph.get("id"), _mio.effective_phase_status(ph))
+                     for ph in plan["members"])
+    commits = commit_commands(mrel, ids, sharded)
+    index_note = _group_index_note(written, mpath, project, ids)
+    if args.as_json:
+        result = {"ok": True, "ids": ids, "branch": args.branch,
+                  "verdict": args.verdict, "summary": summary,
+                  "effectiveStatus": effective, "stored": settled,
+                  "written": written, "commit": commits, "land": landing,
+                  "gatePhase": plan["gate"],
+                  "journaled": all(r.get("journaled") for r in rows),
+                  "warnings": _wg.collapse_machine(warnings, written_manifest)}
+        result.update(stdin_notes_key(args))
+        result.update(project_basis_key(args))
+        result.update(_index_dirty_key(index_note))
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    for pid in ids:
+        out("[audit-task] phase %s signed off (%s) with %s -- %s"
+            % (pid, args.verdict, ", ".join(q for q in ids if q != pid),
+               "now %s" % (effective[pid],) if effective[pid] in _mio.TERMINAL
+               else "done once %s lands" % (args.branch,)))
+    for line in _settled_lines(settled):
+        out(line)
+    for line in _wg.collapse(warnings, written_manifest):
+        out("WARNING: " + line)
+    if not all(r.get("journaled") for r in rows) \
+            and any(r.get("journaledWhy") == "failed" for r in rows):
+        out("  journal: the audit trail did NOT take every phase.verdict row")
+    if reason:
+        out("  gate: none - the reason is recorded on every member's review")
+    elif not pointer:
+        out("  gate: %s's gate declares no entry, so the sign-off rests on review "
+            "alone" % (plan["gate"],))
+    else:
+        others = [q for q in ids if q != plan["gate"]]
+        out("  gate: the group's one run is %s's; %s %s it as %s, gradedBy %s"
+            % (plan["gate"], ", ".join(others),
+               "records" if len(others) == 1 else "record",
+               "its own" if len(others) == 1 else "theirs", plan["gate"]))
+    out("  written: %s" % ", ".join(written))
+    if index_note:
+        out(index_note)
+    out("  commit it on %s, then land them in this order, from %s:"
+        % (args.branch, project))
+    for line in commits + landing:
+        out("    " + line)
+    return 0
+
+
+def _bind_group(args, project, config, mpath, raw_index, assembled, plan, ids, vm,
+                out):
+    """Record each member's branch and its fork point as baseRef, and nothing of the
+    verdict - the write that lets the sign-off's invariants run grade them."""
+    moved, changes = [], {}
+    for phase in plan["members"]:
+        pid = str(phase.get("id"))
+        if phase.get("branch") != args.branch:
+            changes.setdefault(pid, []).append(
+                {"id": pid, "field": "branch", "from": phase.get("branch"),
+                 "to": args.branch})
+            phase["branch"] = args.branch
+            moved.append("%s.branch" % (pid,))
+        if not phase.get("baseRef"):
+            changes.setdefault(pid, []).append(
+                {"id": pid, "field": "baseRef", "from": phase.get("baseRef"),
+                 "to": plan["fork"]})
+            phase["baseRef"] = plan["fork"]
+            moved.append("%s.baseRef" % (pid,))
+    if not moved:
+        out("[audit-task] %s already bound to %s - nothing written"
+            % (", ".join(ids), args.branch))
+        return 0
+    written, warnings, written_manifest, stop = _group_write(
+        project, mpath, raw_index, assembled, ids, vm, out)
+    if stop is not None:
+        return stop
+    # A row per member, `start`'s rule for the branch it cuts: the trail says when
+    # a member was bound, to which branch, from what.
+    for pid in ids:
+        if pid in changes:
+            _journal_row(project, config, mpath,
+                         "phase.bind", "%s bound to %s, baseRef %s"
+                         % (pid, args.branch, plan["fork"][:12]),
+                         {"phaseId": pid, "branch": args.branch,
+                          "changes": changes[pid]})
+    if args.as_json:
+        result = {"ok": True, "ids": ids, "branch": args.branch,
+                  "baseRef": plan["fork"], "moved": moved, "written": written}
+        result.update(project_basis_key(args))
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    out("[audit-task] %s bound to %s, baseRef %s (where it left the parent): %s"
+        % (", ".join(ids), args.branch, plan["fork"][:12], ", ".join(moved)))
+    for line in _wg.collapse(warnings, written_manifest):
+        out("WARNING: " + line)
+    out("  written: %s" % ", ".join(written))
+    return 0
+
+
+def _print_group_plan(args, plan, ids, mrel, landing, sharded, out):
+    """The group's sign-off, step by step, with the one command each step runs."""
+    commits = commit_commands(mrel, ids, sharded)
+    record = _plugin_cmd("manifest/audit-task.py", "signoff", ",".join(ids),
+                         "--branch", args.branch)
+    if args.as_json:
+        result = {"ok": True, "ids": ids, "branch": args.branch,
+                  "commits": [{"phaseId": p, "taskId": t, "commit": s}
+                              for p, t, s in plan["commits"]],
+                  "files": plan["files"], "gatePhase": plan["gate"],
+                  "gateUnion": plan["union"], "gate": gate_command(mrel, plan, ids),
+                  "bind": record + " --bind", "commit": commits, "land": landing}
+        result.update(project_basis_key(args))
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    out("[audit-task] group sign-off of %s on %s - the plan; nothing was written"
+        % (", ".join(ids), args.branch))
+    out("  1. bind - each member's branch, and baseRef %s where it left the parent, "
+        "so the invariants run below grades them:" % (plan["fork"][:12],))
+    out("       " + record + " --bind")
+    out("  2. review - scoped by the tasks' commits; every other commit the branch "
+        "carries past its fork is a member's journaled state or index commit, a "
+        "merge of accounted work, or accepted below:")
+    for pid, tid, sha in plan["commits"]:
+        out("       %s  git show %s" % (tid, sha))
+    for sha in plan["accepted"]:
+        out("       accepted  %s  (%s)" % (
+            (plan.get("acceptedReview") or {}).get(sha) or "git show %s" % (sha,),
+            (args.reason or "").strip()))
+    out("     files: %s" % (", ".join(plan["files"]) or "(none declared)",))
+    out("  3. gate - one run over the union (%s), carried by %s and owning every "
+        "member's files:" % (", ".join(plan["union"]) or "empty", plan["gate"]))
+    out("       " + gate_command(mrel, plan, ids))
+    out("  4. invariants - one run; `--all` is its one spelling over more than one "
+        "phase, so read the rows for %s:" % (", ".join(ids),))
+    out("       " + _plugin_cmd("governance/verify-invariants.py", mrel, "--all"))
+    out("  5. record the sign-off:")
+    out("       " + record + " --verdict passed|skipped --summary \"<...>\"")
+    out("  6. commit it on %s:" % (args.branch,))
+    for line in commits:
+        out("       " + line)
+    out("  7. land each phase, in this order:")
+    for line in landing:
+        out("       " + line)
     return 0
 
 
@@ -6097,6 +7832,282 @@ def _locked_settle(args, project, config, mpath, out):
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
         out("  journal: the audit trail did NOT take the plan.settle row")
     out("  written: %s" % ", ".join(written))
+    return 0
+
+
+# --- couple / uncouple: meta.coupling, an index-only write ----------------------
+# THE ENTRY `_manifest_phases._check_coupling` ALREADY GRADES: `{test, sources,
+# basis: {runId, head, phases}, learnedAt}`, one entry per `test` -- a second
+# entry for the same test is the validator's own duplicate-test finding, so
+# `couple` widens an existing entry's `sources` rather than appending a
+# second one, and never invents a shape the checker does not already accept.
+#
+# THESE TWO READS STAY OUT OF EVERY OTHER VERB'S CLOSURE. `vf6` derives what a
+# verb reads by walking the call graph from its door, so a helper this pair
+# calls that also read `args.sources` from `add` or `scope` would put
+# `sources` in both derived sets at once and the table could not describe
+# both truthfully. `_coupling_test_refusal` and `_coupling_sources_refusal`
+# take plain values, never `args`, for the same reason `_files_refusal` does;
+# `_locked_couple` and `_locked_uncouple` are the only functions that read
+# `args.test` / `args.sources` / `args.basis_run` / `args.basis_head` /
+# `args.phases` at all, the way `retarget`'s own `--gate-set`/`--gate-drop`
+# pair stayed inside `_retarget_gate_contradiction` and `_retarget_gate_now`.
+def _coupling_test_refusal(test):
+    """Whether `--test <path>` names something a coupling can be about, or
+    None. The same two readings `tests.add` and a suite path already share
+    (`_rules.tests_add_path`, `_phases.is_suite_path`) -- a coupling is a
+    file a runner ran, never free prose."""
+    if not test:
+        return ("[audit-task] couple/uncouple needs --test <path>")
+    if _rules.tests_add_path(test) is None or not _phases.is_suite_path(test):
+        return ("[audit-task] --test %r does not read as a suite path this "
+                "project already recognises a test by (`tests_add_path` and "
+                "`is_suite_path` both have to accept it) -- a coupling names "
+                "a file a runner ran, not a sentence about one" % (test,))
+    return None
+
+
+def _coupling_sources_refusal(sources):
+    """Whether every `--sources` value is a path `tests_add_path` accepts, or
+    the refusal naming the ones that are not."""
+    bad = [s for s in sources if _rules.tests_add_path(s) is None]
+    if not bad:
+        return None
+    return ("[audit-task] --sources names %s that does not read as a path -- "
+            "each source is a file the test failed alongside, not free prose"
+            % (_output.some_of(bad, render=repr),))
+
+
+def _coupling_phases_refusal(phases, phase_ids):
+    """Whether every `--phases` value names a phase this plan actually
+    holds, or the refusal naming the ones that do not. Stored unchecked,
+    a typo would sit in `meta.coupling` forever with no rule grading it
+    after the fact."""
+    bad = [p for p in phases if p not in phase_ids]
+    if not bad:
+        return None
+    return ("[audit-task] --phases names %s that %s not a phase id in this "
+            "plan" % (_output.some_of(bad, render=repr),
+                     "is" if len(bad) == 1 else "are"))
+
+
+def cmd_couple(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    if args.title and not args.manifest:          # `settle`'s own rule:
+        args.manifest = args.title                # this verb takes no id, so
+        args.title = ""                            # a lone positional is the manifest
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_couple(
+                           args, project, config, mpath, out))
+
+
+def _locked_couple(args, project, config, mpath, out):
+    """Learn (or widen) one `meta.coupling` entry, under lock.
+
+    THE THREE REQUIRED FLAGS ARE THE ENTRY'S OWN REQUIRED FIELDS, asked in the
+    same order `_check_coupling` grades them in: `--test`, `--sources`, then
+    `--basis-run` -- a coupling with no source names nothing this test is
+    coupled to, and one with no run id points at nothing, the exact reason
+    `_check_coupling`'s own docstring gives for requiring `basis.runId`.
+
+    `--basis-run` IS LOOKED UP, NEVER TRUSTED AS TYPED, `_failing_from_lookup`'s
+    own reason: `_evidence_io.row_by_run` is the one answer this project keeps
+    to "does a run with this id exist", and reading structure into the string
+    here would be a second, silently different answer to a question that
+    lookup already settles.
+
+    WIDENED, NEVER SILENTLY REPLACED: a test already coupled gets its
+    `sources` UNIONED with the ones just named, `basis` and `learnedAt` left
+    exactly as the first call wrote them -- so the entry records what first
+    taught the coupling and grows only the list of what it now covers, the
+    same shape `_check_coupling`'s docstring reads a widened entry as ("each
+    test should carry ONE entry with every source it is coupled to"). A
+    re-couple's own `--basis-run`/`--basis-head`/`--phases` are still
+    validated (a re-couple with a bad basis is still refused), but never
+    written over the first call's basis.
+
+    `--basis-head` IS ASKED OF GIT, not trusted as typed: refused when git
+    can be asked and says no, written and reported unverified when it
+    cannot be asked at all (no git, a shallow clone) -- `--commit`'s own
+    rule, reused rather than re-derived. `--phases` is checked against the
+    plan this call is writing into, refused by name when an id is not a
+    phase this plan holds.
+    """
+    test = (args.test or "").strip()
+    refusal = _coupling_test_refusal(test)
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    sources = _split_csv(args.sources)
+    if not sources:
+        out("[audit-task] couple needs --sources <path,path> -- a coupling "
+            "with no source names nothing this test is coupled to")
+        return E_USAGE
+    refusal = _coupling_sources_refusal(sources)
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    run_id = (args.basis_run or "").strip()
+    if not run_id:
+        out("[audit-task] couple needs --basis-run <runId> -- a coupling "
+            "says what taught it, and a run id is the pointer")
+        return E_USAGE
+    head = (args.basis_head or "").strip()
+    if not head:
+        out("[audit-task] couple needs --basis-head <sha> -- the HEAD the "
+            "run examined, so a later mismatch has a real answer to compare "
+            "against")
+        return E_USAGE
+    if not _SHA_SHAPE.match(head):
+        out("[audit-task] --basis-head %r is not a commit SHA (7-40 hex "
+            "characters) -- the same object-id shape `--commit` requires, "
+            "so a later mismatch has a real SHA to compare against, not a "
+            "name that goes on resolving to whatever it points at later"
+            % (head,))
+        return E_USAGE
+    try:
+        rows = _evidence_io.read_rows(project)["rows"]
+    except Exception as exc:
+        out("[audit-task] --basis-run %s: the evidence ledger could not be "
+            "read (%s)" % (run_id, exc))
+        return E_USAGE
+    if _evidence_io.row_by_run(rows, run_id) is None:
+        out("[audit-task] --basis-run %s: no run with this id is in the "
+            "evidence ledger -- a coupling says what taught it, and this run "
+            "taught nothing recorded" % (run_id,))
+        return E_USAGE
+    # THE SAME ASK `done --commit` MAKES, reused rather than re-derived
+    # (`_commit_git_note`'s own reason): refused when git can be asked and
+    # says no, written and reported unverified when it cannot be asked at
+    # all (no git, a shallow clone) -- an unasked question is not a clean
+    # trail, but it is not a fabricated SHA either.
+    git_root = os.path.abspath(os.path.join(project,
+                                            (config or {}).get("gitRoot") or "."))
+    refusal, unverified = _commit_git_note(git_root, head)
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    phases = _split_csv(args.phases)
+
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    phase_ids = set(p.get("id") for p in (assembled.get("phases") or [])
+                    if isinstance(p, dict))
+    refusal = _coupling_phases_refusal(phases, phase_ids)
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    meta = dict(assembled.get("meta") or {})
+    coupling = [dict(e) for e in (meta.get("coupling") or [])
+               if isinstance(e, dict)]
+    idx = next((i for i, e in enumerate(coupling) if e.get("test") == test),
+               None)
+    if idx is None:
+        entry = {"test": test, "sources": sources,
+                 "basis": {"runId": run_id, "head": head, "phases": phases},
+                 "learnedAt": _utc_now()}
+        coupling.append(entry)
+        summary = "%s coupled to %s (basis %s)" % (
+            test, ", ".join(sources), run_id)
+    else:
+        was = list(coupling[idx].get("sources") or [])
+        merged = list(was)
+        for s in sources:
+            if s not in merged:
+                merged.append(s)
+        coupling[idx]["sources"] = merged
+        entry = coupling[idx]
+        summary = "%s widened: sources %s -> %s (learnedAt kept)" % (
+            test, was, merged)
+    meta["coupling"] = coupling
+    assembled["meta"] = meta
+
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [],
+                        "the coupling", out, index_fields=("meta",))
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    jres = _journal_row(project, config, mpath, "coupling.learned", summary,
+                        {"field": test, "to": entry.get("sources"),
+                         "runId": run_id, "commit": head})
+    index_note = _index_dirty_note(written, mpath, project, None)
+    if args.as_json:
+        result = {"ok": True, "test": test, "entry": entry,
+                  "written": written, "commitVerified": unverified is None}
+        out(_json_tail(result, args, jres, warnings, written_manifest,
+                       index_note))
+        return 0
+    out("[audit-task] %s" % (summary,))
+    if unverified:
+        out(unverified)
+    _report_tail(out, jres, "coupling.learned", warnings, written_manifest,
+                written, index_note)
+    return 0
+
+
+def cmd_uncouple(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    if args.title and not args.manifest:
+        args.manifest = args.title
+        args.title = ""
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_uncouple(
+                           args, project, config, mpath, out))
+
+
+def _locked_uncouple(args, project, config, mpath, out):
+    """Drop one `meta.coupling` entry by `--test <path>`, under lock. Refused,
+    exit 2, when the test carries no entry -- an uncouple of a test nothing
+    coupled would otherwise be a no-op reporting success."""
+    test = (args.test or "").strip()
+    refusal = _coupling_test_refusal(test)
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    meta = dict(assembled.get("meta") or {})
+    coupling = [dict(e) for e in (meta.get("coupling") or [])
+               if isinstance(e, dict)]
+    idx = next((i for i, e in enumerate(coupling) if e.get("test") == test),
+               None)
+    if idx is None:
+        out("[audit-task] uncouple: %r carries no meta.coupling entry -- "
+            "nothing to drop" % (test,))
+        return E_USAGE
+    entry = coupling.pop(idx)
+    meta["coupling"] = coupling
+    assembled["meta"] = meta
+
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [],
+                        "the uncoupling", out, index_fields=("meta",))
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    jres = _journal_row(project, config, mpath, "coupling.dropped",
+                        "%s uncoupled from %s" % (
+                            test, ", ".join(entry.get("sources") or [])),
+                        {"field": test, "from": entry.get("sources")})
+    index_note = _index_dirty_note(written, mpath, project, None)
+    if args.as_json:
+        result = {"ok": True, "test": test, "dropped": entry,
+                  "written": written}
+        out(_json_tail(result, args, jres, warnings, written_manifest,
+                       index_note))
+        return 0
+    out("[audit-task] %s uncoupled" % (test,))
+    _report_tail(out, jres, "coupling.dropped", warnings, written_manifest,
+                written, index_note)
     return 0
 
 
@@ -6410,7 +8421,7 @@ VERB_FLAGS = {
     # afterwards is its own verb and its own refusals.
     "add": ("phase", "skills", "model", "files", "outputs", "risk",
             "blocked_by", "depends_on", "description", "tests_mode",
-            "tests_add", "gate", "gate_clear", "dry_run"),
+            "tests_add", "gate", "gate_clear", "dry_run", "failing_from"),
     "add-phase": ("phase_id", "outcome", "description", "area", "review_skill",
                   "blocked_by", "gate", "gate_clear", "park"),
     "cancel": ("reason",),
@@ -6430,8 +8441,8 @@ VERB_FLAGS = {
              "intent_basis", "no_change", "reason"),
     "scope": ("files", "tests_mode", "tests_add", "gate", "gate_clear",
               "description", "risk", "blocked_by", "depends_on"),
-    "retarget": ("gate", "gate_clear", "area", "outcome", "description",
-                 "rename"),
+    "retarget": ("gate", "gate_clear", "gate_drop", "gate_set", "area",
+                 "outcome", "description", "rename"),
     # `seed` writes where nothing exists yet, so it has no target to describe,
     # tag or rename -- only the one pair every gate-bearing verb offers, for a
     # caller who already knows the real command.
@@ -6441,7 +8452,14 @@ VERB_FLAGS = {
     "next-id": ("phase",),
     # `signoff` writes the one record a phase's `done` is derived from - the
     # review's verdict - and the paragraph sign-off owes the reader.
-    "signoff": ("verdict", "summary", "review_outcome"),
+    # `--branch` and `--plan` are the group's: the branch several phases were
+    # built on, and the read-only preview of what signing them off together owes.
+    # `--bind` writes a group's branch and fork point before its invariants run;
+    # `--no-evidence-reason` is the recorded why of a `passed` with no gate run.
+    # `--accept <sha> --reason` takes a commit no member records into a group's
+    # review, recorded with why.
+    "signoff": ("verdict", "summary", "review_outcome", "branch", "plan", "bind",
+                "no_evidence_reason", "accept", "reason"),
     # `settle` stores what the derivations already answer, over the whole plan, so
     # there is nothing for a flag to choose - an empty row, for `start`'s reason.
     "settle": (),
@@ -6454,6 +8472,23 @@ VERB_FLAGS = {
     "block": ("reason",),
     # `note` appends one entry, and its text is its one flag.
     "note": ("text",),
+    # `couple` writes `meta.coupling`: the test, what it is coupled to, and
+    # the run that taught it. `--phases` is the only one of the five that may
+    # be absent -- a coupling learned off a run with no phase scope narrows
+    # nothing by phase, which is a legal answer and not a hole.
+    "couple": ("test", "sources", "basis_run", "basis_head", "phases"),
+    # `uncouple` drops one entry by the test alone; it shares `--test` with
+    # `couple` and reads nothing else `couple` does.
+    "uncouple": ("test",),
+    # `finding` takes a finding's four flagged fields, one flag per field and
+    # spelled as the field; the id is allocated, never passed.
+    "finding": ("severity", "file", "issue", "resolution", "findings_file"),
+    # `resolve-finding` names the fix task and, when it has not recorded one,
+    # the commit - `done`'s `--commit`, the same SHA in the same shape.
+    "resolve-finding": ("fix_task", "commit"),
+    # `correct` takes the two texts a sign-off wrote and nothing else; it has
+    # no `verdict` on purpose, so passing one is refused as a misplaced flag.
+    "correct": ("review_outcome", "summary"),
 }
 
 
@@ -6485,7 +8520,8 @@ def build_parser():
                    choices=["add", "add-phase", "cancel", "scope",
                             "retarget", "start", "done", "seed", "next-id",
                             "signoff", "settle", "reopen", "move", "block",
-                            "note"])
+                            "note", "couple", "uncouple", "finding",
+                            "resolve-finding", "correct"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -6520,21 +8556,45 @@ def build_parser():
     p.add_argument("--tests-add", dest="tests_add", action="append",
                    default=None)
     p.add_argument("--gate", action="append", default=None)
-    # `retarget` AND `scope`, and the two need it for different reasons that
-    # reach the same state. On a phase `--gate` APPENDS, so without an explicit
-    # clear there is no spelling for the empty gate at all; on a task `--gate`
-    # replaces, and the gap is that no VALUE of it spells "none" - `--gate ""`
-    # writes a gate holding an empty command, which is a gate that cannot run
-    # rather than the absence of one. `_phase_gate` documents the empty gate as
-    # a designed state, and it is what a wrongly-guessed gate needs.
+    # `retarget` AND `scope`, for the SAME reason: `--gate` REPLACES on both a
+    # phase and a task, and the gap is that no VALUE of it spells "none" -
+    # `--gate ""` writes a gate holding an empty command, which is a gate that
+    # cannot run rather than the absence of one. `_phase_gate` documents the
+    # empty gate as a designed state, and it is what a wrongly-guessed gate
+    # needs.
     p.add_argument("--gate-clear", dest="gate_clear",
                    action="store_true")
+    # `retarget` only (`VERB_FLAGS["retarget"]`). `--gate-drop` names entries to
+    # REMOVE one at a time (`append`, so it can repeat); `--gate-set` REPLACES
+    # the whole gate, which is `--gate`'s own operation under a name that takes
+    # several values without the repeated-flag spelling `--gate` already uses
+    # for the same thing. `nargs="*"` and not `"+"`: a caller who passes NO
+    # value is answering "the empty gate", which is THIS verb's own refusal
+    # ("an empty gate is --gate-clear, which says so") -- argparse's own usage
+    # error for a starved `"+"` would answer instead, in argparse's words and
+    # not this project's.
+    p.add_argument("--gate-drop", dest="gate_drop", action="append",
+                   default=None,
+                   help="retarget: drop one testGate entry (repeatable)")
+    p.add_argument("--gate-set", dest="gate_set", nargs="*", default=None,
+                   help="retarget: replace testGate with these entries")
     p.add_argument("--project-dir", dest="project_dir", default=None)
     p.add_argument("--reason", default=None, help=_PROSE_HELP)
     p.add_argument("--verdict", default=None, choices=list(_mio.SIGNOFF_VERDICTS),
                    help="signoff: the sign-off verdict the phase's review reached")
     p.add_argument("--summary", default=None, metavar="TEXT", help=_PROSE_HELP)
     p.add_argument("--review-outcome", dest="review_outcome", default=None,
+                   metavar="TEXT", help=_PROSE_HELP)
+    p.add_argument("--branch", default=None, metavar="NAME",
+                   help="signoff: the one branch a group of phases was built on")
+    p.add_argument("--plan", action="store_true", default=False,
+                   help="signoff: print what a group sign-off owes, write nothing")
+    p.add_argument("--accept", action="append", default=None, metavar="SHA",
+                   help="signoff: a commit on a group's branch no member records, "
+                        "taken into its review; needs --reason")
+    p.add_argument("--bind", action="store_true", default=False,
+                   help="signoff: record a group's branch and baseRef, nothing else")
+    p.add_argument("--no-evidence-reason", dest="no_evidence_reason", default=None,
                    metavar="TEXT", help=_PROSE_HELP)
     # add-phase only. `--id` rather than a positional: the title is the
     # positional every verb here already spends, and an OPTIONAL id read off
@@ -6587,6 +8647,53 @@ def build_parser():
     p.add_argument("--dry-run", dest="dry_run", action="store_true", default=False,
                    help="add: build the task and validate the plan with it, and "
                         "write nothing - no manifest, no journal row")
+    # `add` only. A FAILED-FIRST fix task: point the new task's gate at the
+    # suites a red sign-off run's own steps NAMED as failing, rather than at
+    # the ordinary tests.add/files/phase-wide chain. The runId is opaque and
+    # looked up through `_evidence_io.row_by_run`, never parsed -- see
+    # `_failing_from_lookup`'s docstring for the three things the row must be.
+    p.add_argument("--failing-from", dest="failing_from", default=None,
+                   metavar="RUNID",
+                   help="add: point the new task's gate at the suites this "
+                        "run's own steps named as failing")
+    # `couple`/`uncouple` only. `--test` names the entry both verbs act on;
+    # `--sources`, `--basis-run`, `--basis-head` and `--phases` belong to
+    # `couple` alone (`VERB_FLAGS["couple"]`), one per field of the
+    # `meta.coupling` entry `_check_coupling` grades.
+    p.add_argument("--test", default=None, metavar="PATH",
+                   help="couple/uncouple: the test file the entry is about")
+    p.add_argument("--sources", action="append", default=None,
+                   help=_list_help("repo-relative source paths",
+                                   "--sources src/a.ts,src/b.ts",
+                                   empties=False))
+    p.add_argument("--basis-run", dest="basis_run", default=None,
+                   metavar="RUNID",
+                   help="couple: the evidence row that taught this coupling")
+    p.add_argument("--basis-head", dest="basis_head", default=None,
+                   metavar="SHA",
+                   help="couple: the HEAD the run examined")
+    p.add_argument("--phases", action="append", default=None,
+                   help=_list_help("phase ids", "--phases P2,P3"))
+    # `finding` only. A review finding's fields, spelled as the schema spells
+    # them. `--severity` carries no `choices`: argparse would refuse on stderr
+    # before `main` buffers anything, so `_finding_refusal` grades the word and a
+    # `--json` caller still receives one object.
+    p.add_argument("--severity", default=None,
+                   help="finding: %s" % ("|".join(_phases.FINDING_SEVERITY),))
+    p.add_argument("--file", default=None, metavar="PATH",
+                   help="finding: the repository-relative path, optionally "
+                        "path:lines")
+    p.add_argument("--issue", default=None, metavar="TEXT", help=_PROSE_HELP)
+    p.add_argument("--resolution", default=None, metavar="TEXT", help=_PROSE_HELP)
+    # ...or the whole batch a review returned: a JSON list of those four fields,
+    # read off a file or `-` (stdin), written under ONE lock in ONE write.
+    p.add_argument("--findings-file", dest="findings_file", default=None,
+                   metavar="PATH",
+                   help="finding: a JSON list of {severity, file, issue, "
+                        "resolution}, or - for stdin; recorded in one write")
+    # `resolve-finding` only. The task whose commit settles the finding.
+    p.add_argument("--fix-task", dest="fix_task", default=None, metavar="TASK",
+                   help="resolve-finding: the task whose commit settles it")
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--json", action="store_true", dest="as_json")
     return p
@@ -6791,7 +8898,9 @@ def _dispatch(args, argv, out):
              "done": cmd_done, "seed": cmd_seed, "next-id": cmd_next_id,
              "signoff": cmd_signoff, "settle": cmd_settle,
              "reopen": cmd_reopen, "move": cmd_move, "block": cmd_block,
-             "note": cmd_note}
+             "note": cmd_note, "couple": cmd_couple, "uncouple": cmd_uncouple,
+             "finding": cmd_finding, "resolve-finding": cmd_resolve_finding,
+             "correct": cmd_correct}
     try:
         return doors[args.command](args, out)
     except Exception as exc:                    # never leave a caller guessing

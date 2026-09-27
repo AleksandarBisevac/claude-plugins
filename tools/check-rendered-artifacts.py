@@ -27,6 +27,17 @@ went green here while a `git archive` of the commit still held the old bytes. Th
 reported apart: one is repaired by re-rendering and the other by committing, and a
 reader has to know which went red.
 
+AND THEY ARE ASKED AT DIFFERENT MOMENTS. Before a commit, the commit's question is red
+for as long as a re-rendered page is uncommitted - every change that re-renders a page
+with this repo's own recipe, until its commit. So `--selftest` - which the pre-commit
+sweep runs - and `--before-commit` ask the fresh render alone, `--against-commit` asks
+HEAD alone, and a run with no flag asks both. After a commit, `tools/verify.sh
+--release` (`--against-commit`) and a no-flag run by hand are where the HEAD arm can
+catch a page committed without its re-render. CI runs with no flag, but there the
+checkout IS the commit, so that arm cannot fire. `arm_verdict()` names an arm a run
+left out rather than going quiet about it, and `run_arms()` reads which arms the runner
+and the workflow really ask.
+
 WHAT IT STILL DOES NOT COVER, and the direction: an artifact nobody listed in
 `ARTIFACTS`. That is an UNDER-count -- the quiet direction -- so a clean run means
 "the artifacts in the table are current", not "every committed artifact is".
@@ -52,17 +63,20 @@ very flags `_fixture_argv()` renders with, so the instructions cannot drift from
 comparison the way a hand-copied recipe does -- and the recipe already existed by
 hand, in more than one file, on the day this was added.
 
-Run it:   python3 tools/check-rendered-artifacts.py
+Run it:   python3 tools/check-rendered-artifacts.py                   # both arms
+          python3 tools/check-rendered-artifacts.py --before-commit   # the render
+          python3 tools/check-rendered-artifacts.py --against-commit  # HEAD
           python3 tools/check-rendered-artifacts.py --how       # just the recipes
           python3 tools/check-rendered-artifacts.py --selftest
-Exit 0 when every artifact is current, the commit carries what the working tree
-holds, and the copy check is still in place; 1 naming each artifact that is stale,
-each page the commit does not carry, and each declared copy check that has gone; 2 on
-a usage error. A page nobody could look up in `HEAD` is named rather than counted
+Exit 0 when every arm the run asks is clean and the copy check is still in place; 1
+naming each artifact that is stale, each page the commit does not carry, and each
+declared copy check that has gone; 2 on a usage error (an unknown flag, or both arm
+flags at once). A page nobody could look up in `HEAD` is named rather than counted
 either way, and a run that could look up NONE of them exits 1 saying so. Nothing is
 written to the repo -- it renders into a temporary directory.
 """
 
+import ast
 import calendar
 import io
 import os
@@ -246,6 +260,14 @@ def _build_demo_fixture(work):
     The fixture is seeded, so two runs produce identical bytes; that is what lets
     the artifact rendered from it be compared at all. Returns None when a step
     exits non-zero, which the caller reports rather than treating as "no drift".
+
+    IT IS A GIT REPOSITORY, and the generator is what makes it one: the page shows
+    a merged phase WHOLE only when git answers that a full run's head contains
+    that merge, and a directory with no repository can only answer "could not be
+    asked". The history is written as loose objects dated from the plan, so its
+    commits - and the shas the page prints - are the same on every run. Nothing
+    here runs git to build it, which is why the recipe below needs no step of its
+    own for it; ra24 is what fails if the fixture stops being one.
     """
     project = os.path.join(work, "demo")
     os.makedirs(project)
@@ -593,6 +615,332 @@ def committed_report(result):
     return lines, 0
 
 
+# --- which run asks which question --------------------------------------------
+# THE COMMIT'S QUESTION IS THE WRONG ONE TO ASK BEFORE THE COMMIT. The fresh-render
+# arm is a question about the working tree and holds at any moment. The HEAD arm is a
+# question about a commit: asked of a working tree that is about to BECOME that
+# commit, it is red for as long as a re-rendered page is uncommitted - which is every
+# task that re-renders a page with this repo's own recipe, right up to the commit a
+# gate has to be green before. That is where the HEAD arm used to sit - live in
+# `--selftest`, which the pre-commit sweep runs - and every task that regenerated a
+# page could only land by overriding the verdict.
+#
+# WHERE IT CAN CATCH SOMETHING. After a commit: a re-render committed without its
+# page staged is what the arm exists for, and `tools/verify.sh --release` or a no-flag
+# run by hand is where it is found before a push. On CI it cannot fire - the checkout
+# IS the commit - so CI's no-flag run holds it only as the same call everybody makes;
+# the fresh-render arm is what goes red there on a stale committed page.
+#
+# So each run names the arms it asks, and a run that leaves one out says so in its
+# output rather than printing a verdict that reads as covering both:
+#   * `--before-commit` - the fresh render only. The sweep (through `--selftest`,
+#     which asks `SELFTEST_ARMS`) and a plain or `--affected` `tools/verify.sh` run.
+#   * `--against-commit` - HEAD only. `tools/verify.sh --release`, whose plain half
+#     has already asked the fresh render on the same tree.
+#   * no flag - both. CI, and a run by hand after a commit.
+# `run_arms()` reads those calls out of the runner and the workflow, so a flag moved
+# on either is a failing case here rather than a sentence that stopped being true.
+FRESH_ARM = "fresh"
+HEAD_ARM = "head"
+ALL_ARMS = (FRESH_ARM, HEAD_ARM)
+BEFORE_COMMIT_ARMS = (FRESH_ARM,)
+AGAINST_COMMIT_ARMS = (HEAD_ARM,)
+ARM_FLAGS = (("--before-commit", BEFORE_COMMIT_ARMS),
+             ("--against-commit", AGAINST_COMMIT_ARMS))
+# What `--selftest` asks of this checkout. The sweep that runs it is pre-commit.
+SELFTEST_ARMS = BEFORE_COMMIT_ARMS
+
+
+def arms_for(argv):
+    """(arms, problem) for a command line. Exactly one of the two is None.
+
+    A flag this tool does not know is a problem and not a no-op: an unknown flag
+    used to fall through to the full run, so a mistyped `--before-comit` would ask
+    the very question it was typed to leave out. Both flags at once name no run.
+    """
+    known = [flag for flag, _arms in ARM_FLAGS]
+    unknown = [a for a in argv if a not in known]
+    if unknown:
+        return None, "unknown argument(s): %s" % (" ".join(unknown),)
+    picked = [arms for flag, arms in ARM_FLAGS if flag in argv]
+    if len(picked) > 1:
+        return None, ("%s asks the working tree and %s asks the commit; with no "
+                      "flag at all this tool asks both" % tuple(known))
+    return (picked[0] if picked else ALL_ARMS), None
+
+
+# --- which arms the runner and the workflow really ask --------------------------
+# AN EXACT-LINE PIN, NOT A PARSER. Reading shell and YAML by hand kept leaving one
+# more spelling that read silently wrong - an `echo` of the call among them - so
+# nothing here interprets either file. Every non-comment line that names
+# this tool must, with its indentation stripped - and in ci.yml an optional leading
+# `- ` and `run:` - EQUAL one of the call lines in `_CALL_LINES`, or it is refused
+# by line. Beyond the exact line, `_context_problem` checks two things and no more:
+# the line before its command - the nearest code line above the runner's `run
+# "<label>"` wrapper, or above the call when there is none, may not contain `&`,
+# `|`, a backslash or `#` anywhere (`_FORBIDDEN_ABOVE`; a plain `run: |` opener is
+# exempt) - and, in ci.yml, its YAML context:
+# a one-line `run:` with no deeper continuation, or a line in a plain `run: |`
+# block. `run_arms()` then says which file, and which part of verify.sh, holds each
+# exact line.
+#
+# DELIBERATELY STRICT: that rule reads no shell, so a correct but unusual line above
+# a call is refused loudly rather than read.
+#
+# THE LIMITS, WHICH ARE WHAT A TEXT CHECK IS. It does not decide whether the line
+# is reached at all: control flow above it - an `exit 0`, a `false && {`, an `if
+# false; then ... fi` - is not read, and the release arm itself is a call inside an
+# `if`. And it does not tell a call from an exact call line that some construct
+# makes DATA rather than a command - a heredoc, a string opened on an earlier line,
+# an array literal, arithmetic, or another key's block text. The second only
+# matters if the real call is also removed, because ra29 pins each exact line to
+# exactly one place - a second copy fails it too. Lines are split the way the shell
+# splits them, at a newline only (`shell_lines`), and only space and tab count as
+# blanks anywhere in the reader (`_BLANKS`).
+_THIS_TOOL = "tools/check-rendered-artifacts.py"
+_VERIFY_REL = "tools/verify.sh"
+_CI_REL = ".github/workflows/ci.yml"
+# THE SHELL'S BLANKS: space and tab, and nothing else. Every strip, split and
+# pattern in the runner reader names them, because Python's no-argument forms and a
+# regex's `\s` also take NBSP, a form feed, the Unicode separators and a carriage
+# return - none of which the shell treats as a blank. ra29k reads the reader's AST
+# for a helper that forgets.
+_BLANKS = " \t"
+_RELEASE_OPEN = re.compile(r'^if \[ "\$RELEASE" -eq 1 \]; then[ \t]*$')
+_CALL_LINES = (("python3 %s" % (_THIS_TOOL,), ALL_ARMS),
+               ("python3 %s --before-commit" % (_THIS_TOOL,), BEFORE_COMMIT_ARMS),
+               ("python3 %s --against-commit" % (_THIS_TOOL,), AGAINST_COMMIT_ARMS))
+_YAML_ONE_LINE = re.compile(r"^([ \t]*(?:-[ \t]+)?)run:[ \t]+(?P<call>.*)$")
+_YAML_LITERAL = re.compile(r"^[ \t]*(?:-[ \t]+)?run:[ \t]*\|[-+]?[ \t]*$")
+_RUNNER_WRAPPER = re.compile(r'^run "[^"]*" \\$')
+
+
+def _indent(line):
+    return len(line) - len(line.lstrip(_BLANKS))
+
+
+def _next_value_line(lines, index):
+    """The first line after `index` that is neither blank nor a full-line comment,
+    or None."""
+    for line in lines[index + 1:]:
+        if line.strip(_BLANKS) and not _is_full_line_comment(line):
+            return line
+    return None
+
+
+def _opener(lines, index):
+    """The nearest earlier non-blank line indented less than line `index`, or None."""
+    depth = _indent(lines[index])
+    for line in reversed(lines[:index]):
+        if line.strip(_BLANKS) and _indent(line) < depth:
+            return line
+    return None
+
+
+# THE LINE BEFORE A CALL'S COMMAND MAY NOT CARRY ANY OF THESE, ANYWHERE. Deciding
+# whether a `&&`, `|` or backslash on that line really continues into the call means
+# lexing shell - comments, quotes, escapes - and every lexer written here leaked. So
+# the rule is deliberately strict: a correct but unusual line above a call is
+# refused loudly rather than read, and the repair is to move the call or the line.
+_FORBIDDEN_ABOVE = ("&", "|", "\\", "#")
+
+
+def _code_above(lines, index):
+    """The index of the nearest earlier line that is neither blank nor a full-line
+    comment, or None."""
+    for k in range(index - 1, -1, -1):
+        if lines[k].strip(_BLANKS) and not _is_full_line_comment(lines[k]):
+            return k
+    return None
+
+
+def _is_full_line_comment(line):
+    """A line whose first non-space character is `#` - in shell it never continues
+    a command, whatever it ends in."""
+    return line.lstrip(_BLANKS).startswith("#")
+
+
+def _context_problem(lines, index, yaml):
+    """Why the exact call line at `index` is not what runs there, or None.
+
+    The call's command starts at the runner's wrapper - `run "<label>"` ended by a
+    backslash - when that is the line directly above, and at the call line
+    otherwise. The nearest earlier CODE line before that start (blank lines and
+    full-line comments skipped) must contain none of `_FORBIDDEN_ABOVE`, anywhere;
+    in ci.yml a plain `run: |` opener there is the block's edge and is exempt. In
+    YAML the call is also read only (a) as a one-line `run: <call>` whose next
+    value line is indented no deeper than the key, or (b) as a line whose nearest
+    less-indented line is a plain `run: |`, `|-` or `|+` opener.
+    """
+    number = index + 1
+    first = index
+    if index > 0 and _RUNNER_WRAPPER.match(lines[index - 1].strip(_BLANKS)):
+        first = index - 1
+    before = _code_above(lines, first)
+    if (before is not None and yaml and _YAML_LITERAL.match(lines[before])):
+        before = None
+    if before is not None and any(ch in lines[before] for ch in _FORBIDDEN_ABOVE):
+        return ("lines %d to %d: line %d is the code line before the command that "
+                "carries the call on line %d, and it contains one of %s - this check "
+                "reads no shell, so such a line is refused rather than guessed at; "
+                "put a plain command line (or none) directly above the call"
+                % (before + 1, number, before + 1, number,
+                   " ".join("`%s`" % (ch,) for ch in _FORBIDDEN_ABOVE)))
+    if not yaml:
+        return None
+    one = _YAML_ONE_LINE.match(lines[index])
+    if one:
+        below = _next_value_line(lines, index)
+        if below is not None and _indent(below) > len(one.group(1)):
+            return ("line %d: the `run:` value continues onto a deeper line, so "
+                    "what runs is not this line alone" % (number,))
+        return None
+    opener = _opener(lines, index)
+    if opener is None or not _YAML_LITERAL.match(opener):
+        return ("line %d: the call is not inside a plain `run: |` block (nor a "
+                "one-line `run:`), so what runs is not this line as written"
+                % (number,))
+    return None
+
+
+def shell_lines(text):
+    """`text` split into lines the way the shell splits it: at a newline and at
+    nothing else. `str.splitlines()` also breaks at a carriage return, a form feed,
+    a vertical tab, the separators and NEL, none of which the shell treats as a line
+    break - so a call hidden after one of them would read as its own line. The file
+    is opened with `newline=""` for the same reason. One splitter serves both
+    `call_lines` and `release_lines`, so their line numbers agree."""
+    return text.split("\n")
+
+
+def call_lines(text, yaml=False):
+    """[(line number, arms or refusal)] for every non-comment line naming the tool.
+
+    A line is read only if it EQUALS an exact call line (indentation stripped, and
+    in YAML an optional leading `- ` and `run:`) AND `_context_problem` finds
+    nothing - the second half catches the real call whose flag sits on another
+    line. A refusal is a STRING naming the line, so a caller cannot read a line
+    this check does not know as a call that asks nothing.
+    """
+    known = dict(_CALL_LINES)
+    lines = shell_lines(text)
+    out = []
+    for index, line in enumerate(lines):
+        number = index + 1
+        bare = line.strip(_BLANKS)
+        if not bare or bare.startswith("#") or _THIS_TOOL not in bare:
+            continue
+        if yaml:
+            one = _YAML_ONE_LINE.match(line)
+            bare = (one.group("call").strip(_BLANKS) if one
+                    else re.sub(r"^-[ \t]+", "", bare, count=1))
+        arms = known.get(bare)
+        if arms is None:
+            out.append((number,
+                        "line %d names %s but is not one of the exact call lines "
+                        "this tool knows (%s) - write the call as one of them, and "
+                        "keep the name off any other line that is not a comment"
+                        % (number, _THIS_TOOL,
+                           "; ".join("`%s`" % (c,) for c, _a in _CALL_LINES))))
+            continue
+        problem = _context_problem(lines, index, yaml)
+        out.append((number, arms if problem is None else problem))
+    return out
+
+
+def release_lines(text):
+    """(first, last) line numbers of the runner's `--release` block, or None.
+
+    The block opens on `if [ "$RELEASE" -eq 1 ]; then` and closes on the first `fi`
+    at the start of a line after it. None when no block was found, so a runner that
+    lost it is not read as one whose release asks nothing.
+    """
+    lines = shell_lines(text)
+    opens = [i for i, line in enumerate(lines) if _RELEASE_OPEN.match(line)]
+    if not opens:
+        return None
+    closes = [i for i in range(opens[0] + 1, len(lines)) if lines[i] == "fi"]
+    if not closes:
+        return None
+    return opens[0] + 1, closes[0] + 1
+
+
+def run_arms(repo_root=None):
+    """{"plain", "release", "ci"}: [(line, arms or refusal)] each part holds.
+
+    None for a part that could not be read - the file, or verify.sh's release
+    block - so "found no call" and "could not look" never print the same way.
+    """
+    root = repo_root if repo_root is not None else REPO
+    texts = {}
+    for rel in (_VERIFY_REL, _CI_REL):
+        try:
+            with io.open(os.path.join(root, rel.replace("/", os.sep)),
+                         encoding="utf-8", newline="") as fh:
+                texts[rel] = fh.read()
+        except (OSError, UnicodeDecodeError):
+            texts[rel] = None
+    ci = (call_lines(texts[_CI_REL], yaml=True)
+          if texts[_CI_REL] is not None else None)
+    if texts[_VERIFY_REL] is None:
+        return {"plain": None, "release": None, "ci": ci}
+    verify = call_lines(texts[_VERIFY_REL])
+    block = release_lines(texts[_VERIFY_REL])
+    if block is None:
+        return {"plain": verify, "release": None, "ci": ci}
+    inside = [c for c in verify if block[0] <= c[0] <= block[1]]
+    return {"plain": [c for c in verify if c not in inside], "release": inside,
+            "ci": ci}
+
+
+def _recipe_lines(rel):
+    """How to refresh one artifact, or a sentence saying that nothing records it."""
+    how = refresh_for(rel)
+    if how is None:
+        return ["      nothing here records how to refresh this artifact - add the "
+                "command beside its table row"]
+    return ["      %s" % (line,) for line in how.split("\n")]
+
+
+def arm_verdict(arms, root=None, subjects=None, drift=None):
+    """([lines], exit code) for the named arms, and a line for each arm left out.
+
+    PURE AT THE SEAMS a case needs: `drift` stands in for the render (a callable
+    returning `drifted()`'s shape) and `root`/`subjects` point the HEAD arm at a
+    fixture repository. An arm not asked is NAMED as not asked, because a run that
+    printed nothing about the commit would read exactly like one whose commit
+    carried every page.
+    """
+    lines, code = [], 0
+    if FRESH_ARM in arms:
+        bad = drifted() if drift is None else drift()
+        for rel, detail in bad:
+            lines.append("STALE %s - %s" % (rel, detail))
+            lines.extend(_recipe_lines(rel))
+        if bad:
+            lines.append("%d committed artifact(s) no longer match their source. "
+                         "Re-render with the command printed under each, and commit "
+                         "the result." % (len(bad),))
+            code = 1
+        else:
+            lines.append("OK: %d committed artifact(s) match a fresh render"
+                         % (len(_tabled_artifacts()),))
+    else:
+        lines.append("NOT ASKED: whether the pages match a fresh render - this run "
+                     "asks only what %s carries; `--before-commit` asks the "
+                     "render" % (_HEAD,))
+    if HEAD_ARM in arms:
+        head_lines, head_code = committed_report(uncommitted(root, subjects))
+        lines.extend(head_lines)
+        code = max(code, head_code)
+    else:
+        lines.append("NOT ASKED: whether %s carries these pages - before a commit "
+                     "it is red while any re-rendered page is uncommitted; after "
+                     "one, `--against-commit` asks it (`tools/verify.sh --release` "
+                     "runs that), and so does a run with no flag" % (_HEAD,))
+    return lines, code
+
+
 # --- selftest -----------------------------------------------------------------
 def _cases(check):
     # TWO COMPUTATIONS, NOT ONE, and the reason is what this case used to be: it
@@ -712,9 +1060,14 @@ def _cases(check):
     # stream: the shared runner prints nothing until every case has run, so a slow
     # render delays the whole report and the ordering buys no early news. What it
     # does buy is a report whose expensive case is the last line before the tally.
-    _live = drifted()
+    #
+    # IT ASKS `SELFTEST_ARMS`: this suite runs in the pre-commit sweep, and asking
+    # it what the commit carries made every task that re-rendered a page red until
+    # its own commit existed. ra25 asserts the constant leaves HEAD out; ra30 fails
+    # on any git call this suite makes against this checkout while it runs.
+    _live_lines, _live_code = arm_verdict(SELFTEST_ARMS)
     check("ra5 every committed rendered artifact matches what its source renders "
-          "today - %r" % (_live,), _live == [])
+          "today - %r" % (_live_lines,), _live_code == 0)
 
     # THE SECOND ROW, DRIVEN FOR REAL. The generated half of the walk built its
     # fixture and its output under two FIXED names, so the row after the first
@@ -742,6 +1095,21 @@ def _cases(check):
           % (_dirs,),
           len(set(_dirs)) == 4
           and all(d.startswith("/probe/work") for d in _dirs))
+
+    # THE FIXTURE IS A REPOSITORY GIT ITSELF RESOLVES, asked through this tool's
+    # own git reader rather than by looking for a `.git` directory: a directory
+    # git will not open is the state the page's UNKNOWN-for-everything came from.
+    _repo_root = tempfile.mkdtemp(prefix="audit-fresh-repo-")
+    try:
+        _repo = _build_demo_fixture(_repo_root)
+        _why = ("the fixture generator exited non-zero" if _repo is None
+                else head_unavailable(_repo))
+    finally:
+        from _suite import remove_tree   # tools/_suite.py says why the import is here
+        remove_tree(_repo_root)
+    check("ra24 the scale demo's fixture is a git repository whose HEAD git "
+          "resolves, so the render can ask whether a full run contains a "
+          "merge at all: %r" % (_why,), _why is None)
 
     _head_cases(check)
 
@@ -907,19 +1275,505 @@ def _head_cases(check):
           and any(line.startswith("UNCOMMITTED") for line in _bad_lines)
           and any("commit it" in line for line in _bad_lines))
 
-    # The live one. It is a claim about THIS checkout and it is the last thing here
-    # for the reason `ra5` is last in the block above.
-    _live = uncommitted()
-    check("ra23 every published page this tool has an opinion about is byte-"
-          "identical to what the commit carries, and every one of them really was "
-          "compared: %r" % (_live,),
-          _live["differs"] == [] and _live["unlooked"] == []
-          and _live["compared"] == len(_live["subjects"]))
+    # NO LIVE CASE FOR THIS ARM, ON PURPOSE. It used to end here asking whether THIS
+    # checkout's commit carries every page, and this suite runs before a commit
+    # exists - see "which run asks which question" above. The live question is the
+    # CLI's, and `_arm_cases` pins which run asks it.
+    _arm_cases(check)
+
+
+def _arm_cases(check):
+    """Which run asks which question, driven over one real repository.
+
+    The fixture is the state that used to fail the pre-commit sweep: a page whose
+    working-tree bytes are the fresh render (the render is stood in for by `drift`,
+    because what is under test is the choice of arms, not the renderer) and whose
+    commit still holds the bytes from before the re-render.
+    """
+    _old = "<html>the render before this change</html>\n"
+    _new = "<html>the render this change made</html>\n"
+    def _matches_render():
+        return []
+
+    def _stale():
+        return [(_HEAD_FX_REL, "differs from a fresh render")]
+
+    root = _head_fixture(_old)
+    try:
+        _write_working(root, _HEAD_FX_REL, _new)
+        _pre_lines, _pre_code = arm_verdict(BEFORE_COMMIT_ARMS, root=root,
+                                            subjects=[_HEAD_FX_REL],
+                                            drift=_matches_render)
+        _neither_lines, _neither_code = arm_verdict(BEFORE_COMMIT_ARMS, root=root,
+                                                    subjects=[_HEAD_FX_REL],
+                                                    drift=_stale)
+        _ci_arms = arms_for([])[0]
+        _ci_lines, _ci_code = arm_verdict(_ci_arms, root=root,
+                                          subjects=[_HEAD_FX_REL],
+                                          drift=_matches_render)
+        _rel_arms = arms_for(["--against-commit"])[0]
+        _rel_lines, _rel_code = arm_verdict(_rel_arms, root=root,
+                                            subjects=[_HEAD_FX_REL],
+                                            drift=_stale)
+    finally:
+        from _suite import remove_tree   # tools/_suite.py says why the import is here
+        remove_tree(root)
+
+    def _count(lines, prefix):
+        return len([line for line in lines if line.startswith(prefix)])
+
+    check("ra25 a page re-rendered by the change being prepared - current against "
+          "a fresh render, not yet in HEAD - passes the before-commit arms, which "
+          "are the ones this suite asks; they say the commit was NOT ASKED rather "
+          "than going quiet about it: %r" % (_pre_lines,),
+          _pre_code == 0
+          and _count(_pre_lines, "UNCOMMITTED") == 0
+          and _count(_pre_lines, "NOT ASKED") == 1
+          and HEAD_ARM not in SELFTEST_ARMS
+          and HEAD_ARM not in BEFORE_COMMIT_ARMS)
+    # THE OTHER DIRECTION of ra25: an arm set that dropped the render along with the
+    # commit would pass ra25 for ever while checking nothing at all.
+    check("ra26 ...but a page matching NEITHER a fresh render nor HEAD still fails "
+          "the before-commit arms, once, as STALE: %r" % (_neither_lines,),
+          _neither_code == 1 and _count(_neither_lines, "STALE") == 1)
+    check("ra27 ...and the run CI makes (no flag) and the one `verify.sh --release` "
+          "makes (`--against-commit`) both still fail on a page the commit does "
+          "not carry: %r / %r" % (_ci_lines, _rel_lines),
+          _ci_code == 1 and _count(_ci_lines, "UNCOMMITTED") == 1
+          and _rel_code == 1 and _count(_rel_lines, "UNCOMMITTED") == 1
+          and _count(_rel_lines, "STALE") == 0)
+    _both, _both_problem = arms_for(["--before-commit", "--against-commit"])
+    _typo, _typo_problem = arms_for(["--before-comit"])
+    check("ra28 the flags map to the arms they name, no flag asks both, and a "
+          "mistyped or contradictory flag is a usage error rather than a quiet "
+          "fall-through to some other run: %r" % ((_both_problem, _typo_problem),),
+          arms_for([]) == (ALL_ARMS, None)
+          and arms_for(["--before-commit"]) == (BEFORE_COMMIT_ARMS, None)
+          and arms_for(["--against-commit"]) == (AGAINST_COMMIT_ARMS, None)
+          and _both is None and _both_problem is not None
+          and _typo is None and "--before-comit" in (_typo_problem or ""))
+
+    # THE CALLS THE RUNS REALLY MAKE, pinned by exact line. gate-parity names a gate
+    # by its script and ignores its flags, so without this a flag moved on either
+    # file left every check here green. Each exact line sits in exactly one place.
+    _runs = run_arms()
+    _found = dict((part, None if calls is None else [c for _n, c in calls])
+                  for part, calls in _runs.items())
+    check("ra29 each run carries its exact call line, exactly once and nothing else "
+          "naming this tool: verify.sh's plain run `--before-commit`, its --release "
+          "block `--against-commit`, ci.yml the line with no flag: %r" % (_runs,),
+          _found == {"plain": [BEFORE_COMMIT_ARMS],
+                     "release": [AGAINST_COMMIT_ARMS], "ci": [ALL_ARMS]})
+    _fx_runner = ("run \"x\" \\\n  python3 %s --before-commit\n"
+                  "if [ \"$RELEASE\" -eq 1 ]; then\n"
+                  "  python3 %s --against-commit\n"
+                  "fi\n" % ((_THIS_TOOL,) * 2))
+    # A form feed inside the block is no line break to the shell, so it must not
+    # move the block's end either.
+    _fx_ff = ("run \"x\" \\\n  python3 %s --before-commit\n"
+              "if [ \"$RELEASE\" -eq 1 ]; then\n"
+              "  echo a\x0cb\n"
+              "  python3 %s --against-commit\n"
+              "fi\n" % ((_THIS_TOOL,) * 2))
+    # THE FILES ARE READ AS THE SHELL READS THEM: a carriage return written into
+    # verify.sh stays inside its line. Opened with universal newlines it would
+    # become a line break, and the call after it would read as the plain run's.
+    _cr_root = tempfile.mkdtemp(prefix="audit-cr-runs-")
+    try:
+        for rel, body in (
+                (_VERIFY_REL, 'run "x" \\\n: \r  python3 %s --before-commit\n'
+                              'if [ "$RELEASE" -eq 1 ]; then\n'
+                              '  python3 %s --against-commit\nfi\n'
+                              % ((_THIS_TOOL,) * 2)),
+                (_CI_REL, "        run: |\n          python3 %s\n" % (_THIS_TOOL,))):
+            path = os.path.join(_cr_root, rel.replace("/", os.sep))
+            os.makedirs(os.path.dirname(path))
+            with io.open(path, "w", encoding="utf-8", newline="") as fh:
+                fh.write(body)
+        _cr_runs = run_arms(_cr_root)
+    finally:
+        from _suite import remove_tree   # tools/_suite.py says why the import is here
+        remove_tree(_cr_root)
+    check("ra29j a carriage return inside verify.sh's call line stays inside it when "
+          "the file is read, so the plain run is refused by line rather than read "
+          "as `--before-commit`: %r" % (_cr_runs,),
+          len(_cr_runs["plain"] or []) == 1
+          and isinstance(_cr_runs["plain"][0][1], str)
+          and "line 2 " in _cr_runs["plain"][0][1]
+          and [c for _n, c in _cr_runs["release"] or []] == [AGAINST_COMMIT_ARMS]
+          and [c for _n, c in _cr_runs["ci"] or []] == [ALL_ARMS])
+    # THE SHELL'S BLANKS ARE SPACE AND TAB, AND NOTHING ELSE. Python's no-argument
+    # strip and split, and a regex's `\s`, also take NBSP, a form feed, the Unicode
+    # separators and a carriage return - so every helper the runner reader reaches
+    # must name its blanks. Read off the AST, so the next helper is covered too.
+    _blank_leaks = _reader_blank_leaks()
+    check("ra29k no function the runner reader reaches strips, splits or matches "
+          "whitespace the shell does not: no argument-less strip/lstrip/rstrip/split, "
+          "no splitlines, and no `\\s` in the reader's patterns: %r" % (_blank_leaks,),
+          _blank_leaks == [])
+    _planted_leak = ("def call_lines(text):\n    return _helper(text)\n"
+                     "def _helper(text):\n    return text.strip()\n"
+                     "def unrelated(text):\n    return text.split()\n")
+    _seen = _reader_blank_leaks(_planted_leak)
+    check("ra29l ...and that walk follows the reader's calls: a no-argument strip in a "
+          "helper `call_lines` reaches is reported by its function and line, while "
+          "the same kind of call in a function the reader never reaches is not: %r"
+          % (_seen,), _seen == ["_helper:4 .strip()"])
+    check("ra29b the release block is found by its opening and closing lines, and a "
+          "runner with none reads as None rather than as a release asking nothing: "
+          "%r" % ((release_lines(_fx_runner),),),
+          release_lines(_fx_runner) == (3, 5)
+          and release_lines("python3 %s\n" % (_THIS_TOOL,)) is None
+          and release_lines(_fx_ff) == (3, 6))
+    # THE EXACT-LINE PIN, both directions. Read: each call line in `_CALL_LINES`,
+    # indentation stripped, and in YAML a leading `- ` and `run:`.
+    _t = _THIS_TOOL
+    _read_ok = {
+        "plain": (_pinned("  python3 %s --before-commit\n" % (_t,)),
+                  [BEFORE_COMMIT_ARMS]),
+        "no flag": (_pinned("python3 %s\n" % (_t,)), [ALL_ARMS]),
+        "tabs": (_pinned("\tpython3 %s --against-commit  \n" % (_t,)),
+                 [AGAINST_COMMIT_ARMS]),
+        "comment": (_pinned("# python3 %s --against-commit\n" % (_t,)), []),
+        "yaml item": (_pinned("      - run: python3 %s\n" % (_t,), yaml=True),
+                      [ALL_ARMS]),
+        "yaml key": (_pinned("        run: python3 %s --before-commit\n" % (_t,),
+                             yaml=True), [BEFORE_COMMIT_ARMS]),
+        "yaml block line": (_pinned("        run: |\n"
+                                    "          set -e\n"
+                                    "          python3 %s --against-commit\n"
+                                    % (_t,), yaml=True), [AGAINST_COMMIT_ARMS]),
+        "yaml |- block": (_pinned("      - run: |-\n          python3 %s\n"
+                                  % (_t,), yaml=True), [ALL_ARMS]),
+        "yaml |+ block": (_pinned("      - run: |+\n\n          python3 %s "
+                                  "--before-commit\n" % (_t,), yaml=True),
+                          [BEFORE_COMMIT_ARMS]),
+        "yaml one-line, comment below": (
+            _pinned("      - run: python3 %s --before-commit\n"
+                    "          # a note, not part of the value\n" % (_t,),
+                    yaml=True), [BEFORE_COMMIT_ARMS]),
+        "runner wrapper": (_pinned('run "x" \\\n  python3 %s --before-commit\n'
+                                   % (_t,)), [BEFORE_COMMIT_ARMS]),
+        "comments ending in a continuation": (_pinned(
+            "# a note that ends in a backslash \\\n# and one that ends in &&\n"
+            'run "x" \\\n  python3 %s --before-commit\n' % (_t,)),
+            [BEFORE_COMMIT_ARMS]),
+        "a comment ending in a backslash right above": (_pinned(
+            "# a note that ends in a backslash \\\n  python3 %s --against-commit\n"
+            % (_t,)), [AGAINST_COMMIT_ARMS]),
+        "a call right under `run: |`": (_pinned(
+            "      - run: |\n          python3 %s --against-commit\n" % (_t,),
+            yaml=True), [AGAINST_COMMIT_ARMS]),
+        "a finished command above": (_pinned(
+            "set -e\n\n  python3 %s --against-commit\n" % (_t,)),
+            [AGAINST_COMMIT_ARMS]),
+    }
+    _wrong = dict((k, got) for k, (got, want) in _read_ok.items() if got != want)
+    check("ra29g each exact call line the tool knows is read as its arms - no "
+          "flag, `--before-commit`, `--against-commit` - after its indentation, "
+          "and in YAML a leading `- ` and `run:`, are stripped; a comment line is "
+          "no call: wrongly read %r" % (_wrong,), _wrong == {})
+    # Refused: every other non-comment line naming the tool, each by its line -
+    # the echo is the one that reads as a call by accident.
+    _refuse = [
+        "echo Running: python3 %s --against-commit" % (_t,),
+        "ls %s" % (_t,),
+        "python3 %s --against-commit 2>&1" % (_t,),
+        "python3 -u %s" % (_t,),
+        "python3 %s --before-commit --against-commit" % (_t,),
+        "python3 ./%s" % (_t,),
+        "run: python3 %s" % (_t,),
+    ]
+    _yaml_refuse = ['      - run: "python3 %s"' % (_t,),
+                    "      - name: python3 %s" % (_t,)]
+    _not_refused = [line for line in _refuse
+                    if not _refused_once(_pinned("x\n" + line + "\n"))]
+    _not_refused += [line for line in _yaml_refuse
+                     if not _refused_once(_pinned("x\n" + line + "\n", yaml=True))]
+    check("ra29h every other non-comment line that names the tool is REFUSED by "
+          "its line - an `echo` of the call, a mention, a redirection, an "
+          "interpreter flag, both flags, another spelling of the path, a `run:` "
+          "prefix outside YAML, a quoted or foreign YAML value: not refused %r"
+          % (_not_refused,), _not_refused == [])
+    # THE REAL CALL WITH ITS FLAG ELSEWHERE: the line reads as the no-flag call
+    # while what runs is another command. In YAML, a flag on a continuation line of
+    # the run's own value; in shell, a call continued from a line that is not the
+    # runner's wrapper, so the tool never runs at all.
+    _continued = {
+        "folded >": _pinned("      - run: >\n          python3 %s\n"
+                            "          --against-commit\n" % (_t,), yaml=True),
+        "folded >-": _pinned("      - run: >-\n          python3 %s\n"
+                             "          --against-commit\n" % (_t,), yaml=True),
+        "plain, continued": _pinned("      - run: python3 %s\n"
+                                    "          --against-commit\n" % (_t,),
+                                    yaml=True),
+        "echo \\": _pinned('echo "x" \\\n  python3 %s --against-commit\n' % (_t,)),
+        ": \\": _pinned(': \\\n  python3 %s --against-commit\n' % (_t,)),
+    }
+    # THE LINE BEFORE THE COMMAND - above the wrapper, or above the call when there
+    # is none - may not contain `&`, `|`, a backslash or `#`: every spelling a review
+    # found that hid a continuation there, refused without reading any shell.
+    # (line the refusal must name, fixture)
+    _chained = {
+        "echo \\ above the wrapper": (1, _pinned(
+            'echo "x" \\\nrun "y" \\\n  python3 %s --against-commit\n' % (_t,))),
+        ": \\ above the wrapper": (1, _pinned(
+            ': \\\nrun "y" \\\n  python3 %s --against-commit\n' % (_t,))),
+        "true || above the wrapper": (1, _pinned(
+            'true ||\nrun "y" \\\n  python3 %s --against-commit\n' % (_t,))),
+        "true || above the call": (1, _pinned(
+            "true ||\n  python3 %s --against-commit\n" % (_t,))),
+        "echo x | above the call": (1, _pinned(
+            "echo x |\n\n  python3 %s --against-commit\n" % (_t,))),
+        "false && # comment above the wrapper": (1, _pinned(
+            'false && # skip\nrun "y" \\\n  python3 %s --against-commit\n' % (_t,))),
+        "true || # comment above the call": (1, _pinned(
+            "true || # c\n  python3 %s --against-commit\n" % (_t,))),
+        "echo x | # comment above the call": (1, _pinned(
+            "echo x | # c\n  python3 %s --against-commit\n" % (_t,))),
+        "a quoted # before && above the call": (1, _pinned(
+            'echo "a # b" &&\n  python3 %s --against-commit\n' % (_t,))),
+        "&&# with no space": (1, _pinned(
+            'false &&# c\nrun "y" \\\n  python3 %s --against-commit\n' % (_t,))),
+        "||# with no space": (1, _pinned(
+            'false ||# c\nrun "y" \\\n  python3 %s --against-commit\n' % (_t,))),
+        "|# with no space": (1, _pinned(
+            'echo x |# c\nrun "y" \\\n  python3 %s --against-commit\n' % (_t,))),
+        "an escaped double quote": (1, _pinned(
+            'false \\" && # c\nrun "y" \\\n  python3 %s --against-commit\n' % (_t,))),
+        "an escaped single quote": (1, _pinned(
+            "false \\' && # c\nrun \"y\" \\\n  python3 %s --against-commit\n"
+            % (_t,))),
+        "a quoted escaped quote": (1, _pinned(
+            'false "a \\" b" && # c\nrun "y" \\\n  python3 %s --against-commit\n'
+            % (_t,))),
+        "an escaped space, then # and &&": (1, _pinned(
+            'false \\ #x &&\nrun "y" \\\n  python3 %s --against-commit\n' % (_t,))),
+        "a comment ending in a backslash, then a blank line": (1, _pinned(
+            'false && # note \\\n\nrun "y" \\\n  python3 %s --against-commit\n'
+            % (_t,))),
+        "a comment ending in a backslash, then a comment line": (1, _pinned(
+            'false && # note \\\n# more\nrun "y" \\\n  python3 %s --against-commit\n'
+            % (_t,))),
+        "a trailing comment on the line above": (1, _pinned(
+            "echo ok # a note\n  python3 %s --against-commit\n" % (_t,))),
+        "a backslash before a comment": (1, _pinned(
+            "echo done \\ # a note\n  python3 %s --against-commit\n" % (_t,))),
+        "&&# in a run: | body": (2, _pinned(
+            "      - run: |\n          false &&# c\n          python3 %s\n" % (_t,),
+            yaml=True)),
+        "a comment ending in a backslash in a run: | body": (2, _pinned(
+            "      - run: |\n          false && # n \\\n\n          python3 %s\n"
+            % (_t,), yaml=True)),
+        "a form feed splits the call line": (2, _pinned(
+            'run "y" \\\n: \x0c  python3 %s --against-commit\n' % (_t,))),
+        "a carriage return splits the call line": (2, _pinned(
+            'run "y" \\\n: \r  python3 %s --against-commit\n' % (_t,))),
+        "a line separator splits the call line": (2, _pinned(
+            'run "y" \\\n: \u2028  python3 %s --against-commit\n' % (_t,))),
+        "a CRLF one-line run: in YAML": (1, _pinned(
+            "      - run: python3 %s --against-commit\r\n" % (_t,), yaml=True)),
+        "a CRLF call line": (1, _pinned(
+            "python3 %s --against-commit\r\n" % (_t,))),
+        "NBSP before `# n \\` above the wrapper": (1, _pinned(
+            '\u00a0# n \\\nrun "y" \\\n  python3 %s --against-commit\n' % (_t,))),
+        "FF before `# n \\` above the wrapper": (1, _pinned(
+            '\x0c# n \\\nrun "y" \\\n  python3 %s --against-commit\n' % (_t,))),
+        "NBSP before `# n \\` above the call": (1, _pinned(
+            "\u00a0# n \\\n  python3 %s --against-commit\n" % (_t,))),
+        "FF before `# n \\` above the call": (1, _pinned(
+            "\x0c# n \\\n  python3 %s --against-commit\n" % (_t,))),
+        "an NBSP-indented wrapper": (1, _pinned(
+            '\u00a0run "y" \\\n  python3 %s --against-commit\n' % (_t,))),
+        "FF before `# n \\` in a run: | body": (2, _pinned(
+            "      - run: |\n          \x0c# n \\\n          python3 %s\n" % (_t,),
+            yaml=True)),
+        "false && in a run: | body": (2, _pinned(
+            "      - run: |\n          false &&\n          python3 %s\n" % (_t,),
+            yaml=True)),
+    }
+    _chain_read = dict((k, got) for k, (_n, got) in _chained.items()
+                       if not (len(got) == 1 and isinstance(got[0], str)))
+    _chain_unnamed = [k for k, (n, got) in _chained.items()
+                      if ("line %d " % (n,)) not in str(got)]
+    _read_anyway = dict((k, got) for k, got in _continued.items()
+                        if not (len(got) == 1 and isinstance(got[0], str)))
+    _both_named = [k for k in ("echo \\", ": \\")
+                   if not ("line 1" in str(_continued[k]) and "line 2" in
+                           str(_continued[k]))]
+    check("ra29i the real call line is REFUSED when what runs is not it: a YAML "
+          "`run: >`/`>-` or a plain `run:` continued onto a deeper line (the flag "
+          "sits on the continuation), and a shell call continued from a line that "
+          "is not the runner's `run \"<label>\" \\` wrapper, naming both lines: "
+          "read anyway %r, both lines not named %r; and when the code line before "
+          "the command - above the wrapper or the call - contains `&`, `|`, a "
+          "backslash or `#` anywhere, naming that line: read anyway %r, line not "
+          "named %r"
+          % (_read_anyway, _both_named, _chain_read, _chain_unnamed),
+          _read_anyway == {} and _both_named == []
+          and _chain_read == {} and _chain_unnamed == [])
+
+
+# --- no case asks git about this checkout, measured while the cases run --------
+# The pre-commit sweep runs this suite, and a question put to this checkout's HEAD
+# from inside it is the one this file stopped asking there. A rule over the SOURCE
+# could only look for spellings - a call with no root - and `uncommitted(REPO)` or
+# `head_text(REPO, ...)` got past it. So the seam every HEAD question goes through,
+# `_git`, is swapped for a recorder while the cases run, and a call it saw against
+# this checkout is a failing case naming the function and line that made it.
+# WHAT IT CANNOT SEE: git run by something other than `_git`. This file does run
+# git that way, but only against repositories it builds for a case - the fixture
+# `_head_fixture` commits, and the staging in `_head_cases` - never against this
+# checkout.
+_GIT_SEAM = _git
+
+
+def _case_caller():
+    """"<function>:<line>" of the nearest selftest function on the stack."""
+    frame = sys._getframe(2)
+    while frame is not None:
+        name = frame.f_code.co_name
+        if name.endswith("_cases") or name.startswith("_planted"):
+            return "%s:%d" % (name, frame.f_lineno)
+        frame = frame.f_back
+    return "outside any case"
+
+
+def _recording_git(calls, root, real):
+    """A `_git` that notes every call made against `root` or any directory under
+    it - git answers those about the same repository - then makes it. Under means
+    a path separator follows, so a sibling that only shares the name's prefix is
+    not this checkout."""
+    target = os.path.realpath(root)
+
+    def recording(git_root, args):
+        where = os.path.realpath(git_root)
+        if where == target or where.startswith(target + os.sep):
+            calls.append("%s git %s" % (_case_caller(), args[0] if args else ""))
+        return real(git_root, args)
+    return recording
+
+
+def _planted_repo_call():
+    """What ra30b plants: a HEAD question put to this checkout by name."""
+    return uncommitted(REPO, subjects=[_HEAD_FX_REL])
+
+
+def _planted_subdir_call():
+    """...and the same question put to a directory INSIDE this checkout, which
+    git answers about the same repository."""
+    return head_unavailable(os.path.join(REPO, "tools"))
+
+
+def _seam_cases(check):
+    """The recorder itself: it catches a planted call, and not a fixture's."""
+    inner = []
+    outer = globals()["_git"]
+    globals()["_git"] = _recording_git(inner, REPO, _GIT_SEAM)
+    root = None
+    try:
+        _planted_repo_call()
+        caught = list(inner)
+        _planted_subdir_call()
+        caught_sub = inner[len(caught):]
+        caught = list(inner)
+        root = _head_fixture("<html>fixture</html>\n")
+        uncommitted(root, subjects=[_HEAD_FX_REL])
+        after_fixture = list(inner)
+    finally:
+        globals()["_git"] = outer
+        if root is not None:
+            from _suite import remove_tree   # tools/_suite.py says why the import is here
+            remove_tree(root)
+    check("ra30b the recorder catches `uncommitted(REPO)` - a call that names a "
+          "root and still asks this checkout - naming the function it came from, "
+          "and records nothing for the same question put to a fixture repository: "
+          "%r" % (after_fixture,),
+          caught != []
+          and all(c.startswith(("_planted_repo_call:", "_planted_subdir_call:"))
+                  for c in caught)
+          and after_fixture == caught)
+    _sibling = []
+    _probe = _recording_git(_sibling, REPO, lambda root, args: None)
+    _probe(REPO + "-sibling", ["status"])
+    check("ra30c a directory UNDER this checkout is this checkout - a question put "
+          "to it is caught too - while a sibling whose name merely starts with the "
+          "checkout's is not: %r / %r" % (caught_sub, _sibling),
+          len(caught_sub) == 1
+          and caught_sub[0].startswith("_planted_subdir_call:")
+          and _sibling == [])
+
+
+def _recorded_cases(check):
+    """Every case, with the `_git` seam recording calls against this checkout."""
+    calls = []
+    seam = globals()["_git"]
+    globals()["_git"] = _recording_git(calls, REPO, seam)
+    try:
+        _cases(check)
+        _seam_cases(check)
+    finally:
+        globals()["_git"] = seam
+    check("ra30 no case asked git about THIS checkout while the suite ran - the "
+          "pre-commit sweep runs it, so a HEAD question here is the one this file "
+          "moved out of it: %r" % (calls,), calls == [])
+
+
+_READER_ROOTS = ("call_lines", "release_lines", "run_arms")
+_READER_PATTERNS = ("_RELEASE_OPEN", "_YAML_ONE_LINE", "_YAML_LITERAL",
+                    "_RUNNER_WRAPPER")
+
+
+def _reader_blank_leaks(source=None):
+    """["<function>:<line> <call>"] - a whitespace test the shell would not make,
+    in any module-level function the runner reader reaches from `_READER_ROOTS`,
+    plus any reader pattern that uses `\\s`."""
+    if source is None:
+        with io.open(os.path.abspath(__file__), encoding="utf-8") as fh:
+            source = fh.read()
+    tree = ast.parse(source)
+    funcs = dict((node.name, node) for node in tree.body
+                 if isinstance(node, ast.FunctionDef))
+    reached, todo = set(), list(_READER_ROOTS)
+    while todo:
+        name = todo.pop()
+        if name in reached or name not in funcs:
+            continue
+        reached.add(name)
+        todo.extend(n.func.id for n in ast.walk(funcs[name])
+                    if isinstance(n, ast.Call) and isinstance(n.func, ast.Name))
+    out = []
+    for name in sorted(reached):
+        for node in ast.walk(funcs[name]):
+            if not (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)):
+                continue
+            attr = node.func.attr
+            if (attr in ("strip", "lstrip", "rstrip", "split") and not node.args) \
+                    or attr == "splitlines":
+                out.append("%s:%d .%s()" % (name, node.lineno, attr))
+        out.extend("%s:%d a pattern using \\s" % (name, node.lineno)
+                   for node in ast.walk(funcs[name])
+                   if isinstance(node, ast.Constant) and isinstance(node.value, str)
+                   and "\\s" in node.value)
+    out.extend("%s uses \\s" % (name,) for name in _READER_PATTERNS
+               if "\\s" in globals()[name].pattern)
+    return out
+
+
+def _pinned(text, yaml=False):
+    """What the pin makes of `text`: one entry per line naming the tool."""
+    return [c for _n, c in call_lines(text, yaml=yaml)]
+
+
+def _refused_once(got):
+    """Whether a reader's answer is exactly one refusal, naming line 2."""
+    return (len(got) == 1 and isinstance(got[0], str) and "line 2" in got[0])
 
 
 def _selftest():
     from _suite import run          # the house runner; tools/_suite.py says why here
-    return run(_cases)
+    return run(_recorded_cases)
 
 
 # --- cli ------------------------------------------------------------------------
@@ -929,17 +1783,6 @@ def _tabled_artifacts():
             + [rel for rel, _b in GENERATED_ARTIFACTS])
 
 
-def _write_recipe(rel):
-    """Print how to refresh one artifact, or say that nothing records it."""
-    how = refresh_for(rel)
-    if how is None:
-        sys.stdout.write("      nothing here records how to refresh this "
-                         "artifact - add the command beside its table row\n")
-        return
-    for line in how.split("\n"):
-        sys.stdout.write("      %s\n" % (line,))
-
-
 def main():
     argv = sys.argv[1:]
     if "--selftest" in argv:
@@ -947,26 +1790,29 @@ def main():
     if "--how" in argv:
         for rel in _tabled_artifacts():
             sys.stdout.write("%s\n" % (rel,))
-            _write_recipe(rel)
+            for line in _recipe_lines(rel):
+                sys.stdout.write(line + "\n")
         for copy_rel, source_rel, _sides in COPY_PROVEN:
             sys.stdout.write("%s (a byte copy, checked by cmp not by a render)\n"
                              % (copy_rel,))
             sys.stdout.write("      refresh %s FIRST, then\n" % (source_rel,))
             sys.stdout.write("      cp %s %s\n" % (source_rel, copy_rel))
-        sys.stdout.write("\nevery page above is also compared with what %s tracks. "
-                         "A refreshed page nobody committed is reported UNCOMMITTED "
-                         "and the repair is `git add` plus a commit, not another "
-                         "render.\n" % (_HEAD,))
+        sys.stdout.write("\na run that asks %s - no flag, or `--against-commit` - "
+                         "also compares every page above with what it tracks. A "
+                         "refreshed page nobody committed is then reported "
+                         "UNCOMMITTED and the repair is `git add` plus a commit, not "
+                         "another render. `--before-commit` does not ask it.\n"
+                         % (_HEAD,))
         return 0
-    bad = drifted()
-    for rel, detail in bad:
-        sys.stdout.write("STALE %s - %s\n" % (rel, detail))
-        _write_recipe(rel)
-    # THE SECOND ARM, PRINTED APART FROM THE FIRST. A page can be stale on disk, or
-    # current on disk and absent from the commit, and the two are repaired by
-    # different acts - so they are two blocks of output rather than one word.
-    head_lines, head_code = committed_report(uncommitted())
-    for line in head_lines:
+    arms, problem = arms_for(argv)
+    if problem is not None:
+        sys.stderr.write("check-rendered-artifacts.py: %s\n" % (problem,))
+        return 2
+    # THE TWO ARMS, PRINTED APART. A page can be stale on disk, or current on disk
+    # and absent from the commit, and the two are repaired by different acts - so
+    # they are two blocks of output rather than one word.
+    lines, code = arm_verdict(arms)
+    for line in lines:
         sys.stdout.write(line + "\n")
     # The claim this tool makes about what it does NOT compare. Reported beside the
     # drift rather than in the docstring alone, because "docs/index.html is covered
@@ -975,15 +1821,10 @@ def main():
     gaps = copy_check_missing()
     for copy_rel, side, problem in gaps:
         sys.stdout.write("UNCOVERED %s - %s %s\n" % (copy_rel, side, problem))
-    if bad:
-        sys.stdout.write("\n%d committed artifact(s) no longer match their source. "
-                         "Re-render with the command printed under each, and commit "
-                         "the result.\n" % len(bad))
-    if bad or gaps or head_code:
+    if code or gaps:
         return 1
-    sys.stdout.write("OK: %d committed artifact(s) match a fresh render, and every "
-                     "byte copy this tool defers on is still compared where it says "
-                     "it is\n" % (len(ARTIFACTS) + len(GENERATED_ARTIFACTS)))
+    sys.stdout.write("OK: every byte copy this tool defers on is still compared "
+                     "where it says it is\n")
     return 0
 
 

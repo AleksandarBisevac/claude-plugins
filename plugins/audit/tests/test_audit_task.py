@@ -37,6 +37,8 @@ import _loader                                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402  (as audit-task imports it)
 import _manifest_rules as _rules                   # noqa: E402  (the validator, to ask what a written plan warns about)
 import _manifest_vocab as _vocab                   # noqa: E402  (the gate-basis words the validator grades against)
+import _manifest_phases as _phases                 # noqa: E402  (the identity pin below: an alias, not a second body)
+import _gate_derive                                # noqa: E402  (the identity pin below: an alias, not a second body)
 import _panel_write                                # noqa: E402  (as audit-task imports it)
 
 M = _loader.load_script("audit-task.py", modname="audit_task")
@@ -49,7 +51,8 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # sharded/single), j (--json + journal row), h (A4 heal at this write site),
 # n (named-manifest project resolution), c (cancel), p (add-phase, both
 # layouts), w (the _waiting_on index), u (usage errors), sc (scope), rt
-# (retarget), gc (the empty gate a task could not reach), jf (the prior state
+# (retarget, extended by rt10-rt18 for --gate-drop/--gate-set),
+# gc (the empty gate a task could not reach), jf (the prior state
 # the trail attests), ag (the empty gate at CREATION), fn (the files row for a
 # change that did not happen), sf (the three task fields `scope` did not
 # reach), sn (the task with no `tests` object), qg (add-phase's empty gate),
@@ -59,13 +62,19 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # fg (the `tests.gate` a STARTED task could not change, and the two refusals
 # beside it that must stay), pr (the `start` verb: the promotion the plan gate
 # reads),
-# pd (P43.2, the `done` verb: the close, and the SHA that makes it a record),
-# tw (P46.2: the tree the caller stands in against the tree the verb writes),
+# pd (the `done` verb: the close, and the SHA that makes it a record),
+# tw (the tree the caller stands in against the tree the verb writes),
 # sd (seed: the smallest honest plan, written where none was),
-# gm (P55.19: the marker inside the gap window, and a cause the check tested
-# for rather than one it did not), bn (P55.20: a shard write naming the
-# phase's own branch against the one the caller stands on), ix (P55.21: the
-# index left dirty beside a shard, and the tool that lands it).
+# gm (the marker inside the gap window, and a cause the check tested
+# for rather than one it did not), bn (a shard write naming the
+# phase's own branch against the one the caller stands on), ix (the
+# index left dirty beside a shard, and the tool that lands it),
+# dg (a gate-only task's `files` arm narrows only to a suite path, and
+# a new phase's gate puts `meta.phaseGate.always` first and drops only what
+# `meta.phaseGate.exclude` names), pg (the same phase-gate derivation,
+# driven through `add-phase` itself), ff (`add --failing-from <runId>`
+# gates a fix task on the suites a red sign-off run's own steps NAMED as
+# failing).
 def _cases(check):
     import contextlib
     import io
@@ -1948,9 +1957,10 @@ def _cases(check):
         # ---- (rt) a plan can be CORRECTED, not only created ------------------
         # `init` and `pull sprint` synthesize a phase and choose its `testGate`;
         # until `retarget` that choice was unreachable, and one wrong choice made
-        # the phase unable to pass its own sign-off. `--gate` APPENDS, so the
+        # the phase unable to pass its own sign-off. `--gate` REPLACES, so the
         # empty gate - which `_phase_gate` documents as a designed state, sign-off
-        # on review alone - had no spelling at all after import.
+        # on review alone - had no spelling at all after import: no VALUE of
+        # `--gate` means "none".
         rt_proj, rt_mp = mk("p-retarget", base_manifest())
         code, txt = run(["retarget", "P3", "--gate", "test",
                          "--project-dir", rt_proj])
@@ -1961,8 +1971,8 @@ def _cases(check):
         code, txt = run(["retarget", "P3", "--gate-clear",
                          "--project-dir", rt_proj])
         _rtp = _mio.load_manifest(rt_mp)["phases"][2]
-        check("rt2 ...and --gate-clear reaches the EMPTY gate, which `--gate` "
-              "cannot because it appends - the designed state a guessed gate "
+        check("rt2 ...and --gate-clear reaches the EMPTY gate, which no `--gate` "
+              "VALUE can spell - the designed state a guessed gate "
               "took away, and the report SAYS what it means rather than leaving "
               "silence to read as breakage: %r" % (txt[-90:],),
               code == 0 and _rtp.get("testGate") == []
@@ -2108,6 +2118,90 @@ def _cases(check):
         check("rt8 a call that changes nothing is refused rather than taking the "
               "index lock for it: %r" % (txt[:70],),
               code == 2 and "retarget needs one of" in txt)
+
+        # ---- (rt10-18) retarget --gate-drop and --gate-set, one write each ---
+        # `--gate-set` is `--gate`'s own REPLACE operation under a name that
+        # takes several values under one flag instead of one value per repeat;
+        # `--gate-drop` is the other operation, narrowing the CURRENT gate by
+        # name. Both go through `_locked_retarget`, one lock, one
+        # revalidate-or-roll-back, one `phase.retarget` journal row.
+        def _gs_manifest():
+            m = base_manifest()
+            m["phases"][2]["testGate"] = ["test", "coverage"]
+            return m
+        gs_proj, gs_mp = mk("p-gate-drop-set", _gs_manifest())
+        import _journal_io
+
+        def gs_gate():
+            return _mio.load_manifest(gs_mp)["phases"][2].get("testGate")
+
+        code, txt = run(["retarget", "P3", "--gate-drop", "coverage",
+                         "--project-dir", gs_proj])
+        _gs_rows = [r for r in _journal_io.read_all(gs_proj)
+                   if r.get("action") == "phase.retarget"]
+        check("rt10 RED-FIRST: --gate-drop coverage on a phase gated "
+              "[test, coverage] writes [test] with ONE phase.retarget journal "
+              "row - today's parser does not declare the flag at all, so "
+              "argparse refuses the call outright instead of writing anything: "
+              "%r" % ((code, gs_gate(), len(_gs_rows)),),
+              code == 0 and gs_gate() == ["test"] and len(_gs_rows) == 1)
+        code, txt = run(["retarget", "P3", "--gate-drop", "test",
+                         "--project-dir", gs_proj])
+        check("rt11 dropping the ONLY remaining entry is refused with the "
+              "empty-gate sentence rather than silently emptied - that state is "
+              "reached through --gate-clear alone, which SAYS it is choosing "
+              "it: %r" % (txt[:90],),
+              code == 2 and "an empty gate is --gate-clear" in txt
+              and gs_gate() == ["test"])
+        code, txt = run(["retarget", "P3", "--gate-drop", "nope",
+                         "--project-dir", gs_proj])
+        check("rt12 --gate-drop naming an entry NOT in the phase's testGate is "
+              "refused, naming the missing entry and the gate as it stands - a "
+              "typo is not silently a no-op: %r" % (txt[:130],),
+              code == 2 and "nope" in txt and '["test"]' in txt
+              and gs_gate() == ["test"])
+        code, txt = run(["retarget", "P3", "--gate-set",
+                         "--project-dir", gs_proj])
+        check("rt13 RED-FIRST: --gate-set with NO value is refused with the "
+              "SAME empty-gate sentence, not argparse's own usage error for a "
+              "starved flag: %r" % (txt[:90],),
+              code == 2 and "an empty gate is --gate-clear" in txt
+              and gs_gate() == ["test"])
+        code, txt = run(["retarget", "P3", "--gate-set", "", "  ",
+                         "--project-dir", gs_proj])
+        check("rt14 SECOND DIRECTION: --gate-set of all-BLANK values is refused "
+              "the same way as no values at all - a caller who typed nothing "
+              "but blanks almost always meant the empty gate: %r" % (txt[:90],),
+              code == 2 and "an empty gate is --gate-clear" in txt
+              and gs_gate() == ["test"])
+        code, txt = run(["retarget", "P3", "--gate-set", "lint",
+                         "--project-dir", gs_proj])
+        check("rt15 ALLOW CASE: --gate-set lint REPLACES the gate outright, "
+              "the same operation --gate performs under a name that takes "
+              "several values at once - declared, not narrowed or guessed: %r"
+              % (gs_gate(),),
+              code == 0 and gs_gate() == ["lint"])
+        code, txt = run(["retarget", "P3", "--gate-set", "typecheck", "test",
+                         "--project-dir", gs_proj])
+        check("rt16 --gate-set takes SEVERAL values under one flag, unlike "
+              "--gate's repeated spelling of the same operation: %r"
+              % (gs_gate(),),
+              code == 0 and gs_gate() == ["typecheck", "test"])
+        code, txt = run(["retarget", "P3", "--gate-drop", "test", "--gate-set",
+                         "lint", "--project-dir", gs_proj])
+        check("rt17 --gate-drop with --gate-set is refused exactly as --gate "
+              "with --gate-clear is - two answers to one question, and "
+              "guessing which was meant is the fault this closes: %r"
+              % (txt[:90],),
+              code == 2 and "opposite things" in txt
+              and gs_gate() == ["typecheck", "test"])
+        code, txt = run(["retarget", "P1", "--gate-drop", "test",
+                         "--project-dir", gs_proj])
+        check("rt18 a DONE phase refuses --gate-drop too, by the SAME "
+              "past-sign-off rule --gate-clear already uses, unchanged: %r"
+              % (txt[:90],),
+              code == 2 and "was given against the gate it had" in txt)
+
         # THE OTHER half of the pending rule: an attempted task keeps an
         # outcome describing work judged under the scope it had.
         #
@@ -2136,10 +2230,11 @@ def _cases(check):
         # `scope` its `--gate`, and `scope` did not take the clear - so a phase
         # could say "nothing here can prove this" and a task could not. THE
         # REASON DIFFERS FROM `retarget`'s, which is why the same flag needed its
-        # own justification: that verb APPENDS to `testGate`, so the append is
-        # what left the empty gate unspellable, while this one REPLACES
-        # `tests.gate` outright. The gap here is in the values - no `--gate`
-        # VALUE says "none". Measured live: a phase retargeted to `testGate: []`
+        # own justification: that verb REPLACES `testGate` too, so the
+        # replacement is what left the empty gate unspellable, and this one
+        # REPLACES `tests.gate` outright as well. The gap here is in the
+        # values - no `--gate` VALUE says "none". Measured live: a phase
+        # retargeted to `testGate: []`
         # left its pending tasks holding the `["lint"]` inherited at creation,
         # and the only routes to the phase's own new state were a rescope mid-run
         # or the hand edit `commands/task.md` forbids.
@@ -3791,13 +3886,17 @@ def _cases(check):
               "of a task's `outcome` are the operator's own sentence, one "
               "rendered by every report surface and one quoted back to the next "
               "executor. `--intent-basis` and a note's `--text` are the same "
-              "again, and `move --to` is an id, which is why it is not: %r"
+              "again, and so are a finding's `--issue` and `--resolution`; "
+              "`move --to`, `--fix-task` and `--severity` are an id and a word, "
+              "which is why they are not: %r"
               % (sorted(M.PROSE_FLAGS),),
               sorted(M.PROSE_FLAGS)
-              == ["description", "descriptive", "intent_basis", "outcome",
-                  "reason", "rename", "review_outcome", "summary", "technical",
-                  "text"]
+              == ["description", "descriptive", "intent_basis", "issue",
+                  "no_evidence_reason", "outcome", "reason", "rename",
+                  "resolution", "review_outcome", "summary", "technical", "text"]
               and "to" not in M.PROSE_FLAGS
+              and "fix_task" not in M.PROSE_FLAGS
+              and "severity" not in M.PROSE_FLAGS
               and "gate" not in M.PROSE_FLAGS
               and "commit" not in M.PROSE_FLAGS
               and "verified_by" not in M.PROSE_FLAGS
@@ -3841,6 +3940,13 @@ def _cases(check):
              "verifiedBy": []})
         _VF_SHA = "0123456789abcdef0123456789abcdef01234567"
         vf_proj, vf_mp = mk("vf-flags", _vf_fx)
+        # `couple`'s own second-direction row needs a run its own project's
+        # evidence ledger actually holds - `_evidence_io.row_by_run`'s answer,
+        # never a string the call merely types.
+        import _evidence_io as _vf_ev
+        _vf_ev.append_row(vf_proj, {
+            "v": 1, "runId": "RUN-VF", "ts": "2026-09-01T00:00:00Z",
+            "scope": "phase", "phaseId": "P2", "status": "failed", "steps": []})
         with open(vf_mp, "rb") as _fh:
             _vf_before = _fh.read()
         code, txt = run(["add-phase", "Later work", "--outcome", "shipped",
@@ -3918,7 +4024,20 @@ def _cases(check):
                    # fixture carries, with the one flag each requires.
                    "move": ["move", "P2.3", "--to", "P3"],
                    "block": ["block", "P2.3", "--reason", "r"],
-                   "note": ["note", "P2.3", "--text", "t"]}
+                   "note": ["note", "P2.3", "--text", "t"],
+                   # `couple`/`uncouple` take no id at all - the misplaced-flag
+                   # check this grid drives fires BEFORE either verb's own
+                   # body runs, so a bare `--test` is enough to reach it.
+                   "couple": ["couple", "--test", "src/a.ts"],
+                   "uncouple": ["uncouple", "--test", "src/a.ts"],
+                   # The three review verbs each with the flags their door
+                   # requires, so a stray flag is what the call bounces on.
+                   "finding": ["finding", "P2", "--severity", "low",
+                               "--file", "src/a.ts", "--issue", "i",
+                               "--resolution", "r"],
+                   "resolve-finding": ["resolve-finding", "P2-R1",
+                                       "--fix-task", "P2.1"],
+                   "correct": ["correct", "P2", "--summary", "s"]}
         _vf_leaks = []
         for _vfv in sorted(M.VERB_FLAGS):
             _vfknown = set(M.VERB_FLAGS[_vfv]) | set(M.UNIVERSAL_FLAGS)
@@ -3974,7 +4093,13 @@ def _cases(check):
                   "--verified-by", "t_one,t_two", "--json"], "done/--commit"),
                 (["cancel", "P3", "--reason", "dropped", "--json"],
                  "cancel/--json"),
-                (["next-id", "bug", "--json"], "next-id/--json")):
+                (["next-id", "bug", "--json"], "next-id/--json"),
+                (["couple", "--test", "tests/test_vf.py",
+                  "--sources", "src/a.ts", "--basis-run", "RUN-VF",
+                  "--basis-head", "deadbeef", "--json"],
+                 "couple/--sources"),
+                (["uncouple", "--test", "tests/test_vf.py",
+                  "--json"], "uncouple/--test")):
             _vf_ok[_vfwhat] = run(_vfargv + ["--project-dir", vf_proj])[0]
         # `signoff` against a project whose P2 is finished, because on `vf_proj`
         # P2 still has open work and the verb rightly refuses it.
@@ -3983,7 +4108,8 @@ def _cases(check):
         _vf_sign_proj, _vf_sign_mp = mk("vf-sign", _vf_sign)
         _vf_ok["signoff/--verdict"] = run(
             ["signoff", "P2", "--verdict", "passed", "--summary", "s",
-             "--review-outcome", "r", "--json", "--project-dir", _vf_sign_proj])[0]
+             "--review-outcome", "r", "--no-evidence-reason", "fixture",
+             "--json", "--project-dir", _vf_sign_proj])[0]
         # `seed` alone, against its own empty project rather than `vf_proj`
         # every row above shares -- see `_vf_seed_proj`'s comment.
         _vf_ok["seed/--gate"] = run(
@@ -4006,6 +4132,24 @@ def _cases(check):
                 (["note", "P2.3", "--text", "t", "--json"], "note/--text")):
             _vf_own_proj, _vf_own_mp = mk("vf-%s" % _vfargv[0], base_manifest())
             _vf_ok[_vfwhat] = run(_vfargv + ["--project-dir", _vf_own_proj])[0]
+        # The review verbs against a phase in sign-off: `finding` appends, then
+        # `resolve-finding` settles it with the commit P2.1 is given here, and
+        # `correct` rewrites the text once `signoff` has recorded a verdict.
+        _vf_rv = base_manifest()
+        _vf_rv["phases"][1]["tasks"][1]["status"] = "done"
+        _vf_rv_proj, _vf_rv_mp = mk("vf-review", _vf_rv)
+        _vf_ok["finding/--severity"] = run(
+            ["finding", "P2", "--severity", "med", "--file", "src/a.ts",
+             "--issue", "i", "--resolution", "r", "--json",
+             "--project-dir", _vf_rv_proj])[0]
+        _vf_ok["resolve-finding/--fix-task"] = run(
+            ["resolve-finding", "P2-R1", "--fix-task", "P2.1",
+             "--commit", _VF_SHA, "--json", "--project-dir", _vf_rv_proj])[0]
+        run(["signoff", "P2", "--verdict", "skipped", "--summary", "s",
+             "--project-dir", _vf_rv_proj])
+        _vf_ok["correct/--summary"] = run(
+            ["correct", "P2", "--summary", "restated", "--review-outcome", "o",
+             "--json", "--project-dir", _vf_rv_proj])[0]
         # `done`'s no-change close reads `--no-change` and `--reason`, the half of
         # its row the close with a commit above does not reach.
         _vf_nc = base_manifest()
@@ -5224,14 +5368,18 @@ def _cases(check):
 
         codetg, txttg = run(
             ["add", "Cache the facet counts", "--phase", "P1",
-             "--project-dir", tg_proj, "--files", "src/search/facets.ts"])
+             "--project-dir", tg_proj, "--files",
+             "src/search/facets.test.ts"])
         check("tg2 DEFAULT TWO: no case named, so the task's `files` go in "
               "instead - same spelling, same sibling, and the basis says which "
-              "of the two it was: %r"
+              "of the two it was. A SUITE PATH, deliberately: a gate-only task "
+              "narrows only to a file `is_suite_path` accepts, so this fixture "
+              "has to stay one for `tg2` to keep testing this arm rather than "
+              "the gate-only-no-suite one `dg` below covers: %r"
               % ((tg_gate("P1.3"), codetg),),
               codetg == 0
-              and tg_gate("P1.3") == ["lint",
-                                      "npm test -- src/search/facets.ts"]
+              and tg_gate("P1.3") == [
+                  "lint", "npm test -- src/search/facets.test.ts"]
               and "narrowed to this task's files, in P1.1's spelling" in txttg)
 
         codetg, txttg = run(
@@ -5367,6 +5515,24 @@ def _cases(check):
               and M._gate_entry_paths("lint") == []
               and M._gate_entry_paths("pytest tests/.coveragerc") \
                   == ["tests/.coveragerc"])
+        check("tg13 `_gate_entry_paths` is an ALIAS of `_manifest_phases."
+              "gate_entry_paths`, not a second body - `is`, not merely "
+              "behaviour equal, because a re-pasted copy would pass tg11 "
+              "and still be the copy an entry point cannot import out of "
+              "run-test-gate.py",
+              getattr(M, "_gate_entry_paths", None)
+              is getattr(_phases, "gate_entry_paths", object()))
+        check("tg14 `_is_shared_key`/`_path_scoped_sibling`/`_repointed` are "
+              "ALIASES of `_gate_derive`'s own bodies, not copies re-pasted "
+              "here - `is`, not merely behaviour-equal, for tg13's exact "
+              "reason: a phase-level derivation and this task-level one must "
+              "share one body or risk drifting the moment either changes",
+              getattr(M, "_is_shared_key", None)
+              is getattr(_gate_derive, "is_shared_key", object())
+              and getattr(M, "_path_scoped_sibling", None)
+              is getattr(_gate_derive, "path_scoped_sibling", object())
+              and getattr(M, "_repointed", None)
+              is getattr(_gate_derive, "repointed", object()))
 
         # ---- (gb) the derivation's arm, recorded where a rule can read it -----
         # The basis above is a SENTENCE: printed once, then gone. So a narrow
@@ -5544,11 +5710,28 @@ def _cases(check):
                                   stdout=subprocess.PIPE,
                                   stderr=subprocess.DEVNULL)
         _tw_sha = _tw_head.stdout.decode("utf-8", "replace").strip()
+        # `couple`'s row needs a run its OWN project's evidence ledger holds.
+        import _evidence_io as _tw_ev
+        _tw_ev.append_row(tw_all, {
+            "v": 1, "runId": "RUN-TW", "ts": "2026-09-01T00:00:00Z",
+            "scope": "phase", "phaseId": "P2", "status": "failed", "steps": []})
         # `seed` gets its OWN pair: every row below relies on a manifest
         # already being at `tw_all`, and `seed` refuses for exactly that
         # reason -- its row has to stand in a tree that diverges from a
         # PROJECT that is still empty.
         tw_seed_proj, _tw_seed_mp, tw_seed_tree = mk_pair_empty("tw-seed")
+        # The review verbs get a pair of their own, whose P2 already carries a
+        # verdict: `correct` needs one, and the fix commit `resolve-finding`
+        # names has to be one this pair's git can resolve.
+        _tw_rv = base_manifest()
+        _tw_rv["phases"][1]["tasks"][1]["status"] = "done"
+        _tw_rv["phases"][1]["review"] = {"status": "skipped"}
+        _tw_rv["phases"][1]["summary"] = "s"
+        tw_rv_proj, _tw_rv_mp, tw_rv_tree = mk_pair("tw-review", _tw_rv)
+        _tw_rv_sha = subprocess.run(
+            ["git", "-C", tw_rv_proj, "rev-parse", "HEAD"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+        ).stdout.decode("utf-8", "replace").strip()
         _tw_argv = (
             ("add", ["add", "Fresh", "--phase", "P2"]),
             ("add-phase", ["add-phase", "Later", "--outcome", "it ships"]),
@@ -5561,7 +5744,8 @@ def _cases(check):
             # `next-id` writes nothing, and it still names the tree it READ: the
             # id it prints is only true of that tree's plan and branch.
             ("next-id", ["next-id", "bug"]),
-            ("signoff", ["signoff", "P2", "--verdict", "passed", "--summary", "s"]),
+            ("signoff", ["signoff", "P2", "--verdict", "passed", "--summary", "s",
+                         "--no-evidence-reason", "fixture"]),
             # `settle` writes nothing on a plan already settled, and still names
             # the tree it read: "nothing to settle" is only true of that plan.
             ("settle", ["settle"]),
@@ -5572,6 +5756,16 @@ def _cases(check):
             ("note", ["note", "P2.3", "--text", "t"]),
             ("block", ["block", "P2.3", "--reason", "r"]),
             ("move", ["move", "P2.3", "--to", "P4"]),
+            ("couple", ["couple", "--test", "tests/test_tw.py",
+                        "--sources", "src/a.ts", "--basis-run", "RUN-TW",
+                        "--basis-head", _tw_sha]),
+            ("uncouple", ["uncouple", "--test",
+                          "tests/test_tw.py"]),
+            ("finding", ["finding", "P2", "--severity", "low", "--file",
+                         "src/a.ts", "--issue", "i", "--resolution", "r"]),
+            ("resolve-finding", ["resolve-finding", "P2-R1", "--fix-task", "P2.1",
+                                 "--commit", _tw_rv_sha]),
+            ("correct", ["correct", "P2", "--summary", "restated"]),
         )
         # `signoff` gets its own pair too: by its row every other row has left P2
         # with open work, which it rightly refuses.
@@ -5579,7 +5773,10 @@ def _cases(check):
         _tw_sign["phases"][1]["tasks"][1]["status"] = "done"
         tw_sign_proj, _tw_sign_mp, tw_sign_tree = mk_pair("tw-sign", _tw_sign)
         _tw_pairs = {"seed": (tw_seed_tree, tw_seed_proj),
-                     "signoff": (tw_sign_tree, tw_sign_proj)}
+                     "signoff": (tw_sign_tree, tw_sign_proj),
+                     "finding": (tw_rv_tree, tw_rv_proj),
+                     "resolve-finding": (tw_rv_tree, tw_rv_proj),
+                     "correct": (tw_rv_tree, tw_rv_proj)}
         _tw_silent = []
         for _label, _argv in _tw_argv:
             _tw_tree, _tw_proj = _tw_pairs.get(_label, (tw_all_tree, tw_all))
@@ -5764,7 +5961,9 @@ def _cases(check):
               code == 2 and "P2.3" in txt)
         code, txt = run(["signoff", "P2", "--verdict", "passed",
                          "--summary", "Search sanitised end to end.",
-                         "--review-outcome", "no findings", "--project-dir", projs])
+                         "--review-outcome", "no findings",
+                         "--no-evidence-reason", "fixture: no gate is run here",
+                         "--project-dir", projs])
         ph2 = [p for p in _mio.load_manifest(mpaths)["phases"] if p["id"] == "P2"][0]
         check("so3 every task terminal: sign-off records the verdict, the outcome and the "
               "summary, clears the claim - and STORES the status the derivation now "
@@ -5799,6 +5998,7 @@ def _cases(check):
         branched["phases"][1]["branch"] = "feature/p2"
         projb2, mpathb2 = mk("so-branch", branched)
         code, txt = run(["signoff", "P2", "--verdict", "passed", "--summary", "z",
+                         "--no-evidence-reason", "fixture",
                          "--project-dir", projb2, "--json"])
         try:
             payload = json.loads(txt)
@@ -5824,6 +6024,7 @@ def _cases(check):
         shardsign["phases"][1]["tasks"][1]["status"] = "done"
         projss, mpss = mk("so-sharded", shardsign, sharded=True)
         code, txt = run(["signoff", "P2", "--verdict", "passed", "--summary", "s",
+                         "--no-evidence-reason", "fixture",
                          "--project-dir", projss])
         _ss_idx = _mio.read_json(mpss)
         _ss_stub = [s for s in _ss_idx["phases"] if s.get("id") == "P2"][0]
@@ -5838,6 +6039,836 @@ def _cases(check):
               code == 0 and _ss_eff == "done"
               and _ss_stub.get("status") == "done"
               and _ss_body.get("status") == "done")
+
+        # ---- (gs) a GROUP of phases built on one branch, signed off together ----
+        # A real repository: the group's review is scoped from its tasks' commits,
+        # and whether each commit is on the branch is git's answer, not a fixture's.
+        def gs_git(proj, *a):
+            env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                       GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+            done_ = subprocess.run(["git", "-C", proj] + list(a), env=env,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            return done_.stdout.decode("utf-8", "replace").strip()
+
+        def gs_fixture(name, gates=(["test"], ["test"]), sharded=False):
+            """(proj, mpath, shas) - P1 and P2, one task each, both finished, no
+            branch recorded, their commits on `combined`; `stray` is a commit on
+            main that the branch does not carry."""
+            plan = base_manifest()
+            plan["phases"] = [
+                {"id": "P1", "title": "One", "status": "in_progress",
+                 "testGate": list(gates[0]), "branch": None, "baseRef": None,
+                 "tasks": [{"id": "P1.1", "title": "a", "status": "done",
+                            "files": ["src/p1.py"]}]},
+                {"id": "P2", "title": "Two", "status": "in_progress",
+                 "testGate": list(gates[1]), "branch": None, "baseRef": None,
+                 "tasks": [{"id": "P2.1", "title": "b", "status": "done",
+                            "files": ["src/p2.py"]},
+                           {"id": "P2.2", "title": "c", "status": "cancelled"}]},
+            ]
+            plan["fileIndex"] = {"src/p1.py": ["P1.1"], "src/p2.py": ["P2.1"]}
+            proj, mpath = mk(name, plan, git=True, sharded=sharded)
+            gs_git(proj, "checkout", "-q", "-b", "main")
+            gs_git(proj, "commit", "-q", "--allow-empty", "-m", "base")
+            gs_git(proj, "checkout", "-q", "-b", "combined")
+            shas = {}
+            for tid in ("P1.1", "P2.1"):
+                gs_git(proj, "commit", "-q", "--allow-empty", "-m", tid)
+                shas[tid] = gs_git(proj, "rev-parse", "HEAD")
+            gs_git(proj, "checkout", "-q", "main")
+            gs_git(proj, "commit", "-q", "--allow-empty", "-m", "stray")
+            shas["stray"] = gs_git(proj, "rev-parse", "HEAD")
+            written = _mio.load_manifest(mpath)
+            for ph in written["phases"]:
+                for t in ph["tasks"]:
+                    if t["id"] in shas:
+                        t["commit"] = shas[t["id"]]
+            if sharded:
+                _mio.save_sharded(mpath, written)
+            else:
+                _panel_write._atomic_write_json(mpath, written)
+            return proj, mpath, shas
+
+        def gs_gate(proj, mpath, carrier, also=None, reuse=False):
+            """The group's one gate run, recorded - the real script, so the
+            evidence the record checks is a row a real run wrote. `reuse` lets
+            the gate repeat an earlier verdict, which is its default."""
+            argv = [sys.executable, os.path.join(_output.SCRIPTS_DIR, "governance",
+                                                 "run-test-gate.py"),
+                    mpath, carrier, "--record", "--project-dir", proj]
+            if not reuse:
+                argv.append("--no-reuse")
+            if also:
+                argv += ["--also", also]
+            done_ = subprocess.run(argv, stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT, cwd=proj)
+            return done_.returncode
+
+        gs_proj, gs_mp, gs_shas = gs_fixture("gs-plan")
+        _gs_before = open(gs_mp, "rb").read()
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", gs_proj])
+        _gs_lines = txt.split("\n")
+        _gs_land = [ln.strip() for ln in _gs_lines if "close-phase.py" in ln]
+        check("gs1 --plan over a group names the review scope from the tasks' "
+              "commits - every one, the cancelled task's absence included - and "
+              "writes nothing: exit %r, %s" % (code, txt),
+              code == 0 and open(gs_mp, "rb").read() == _gs_before
+              and all(("git show %s" % gs_shas[t]) in txt
+                      for t in ("P1.1", "P2.1"))
+              and "src/p1.py" in txt and "src/p2.py" in txt)
+        check("gs2 ...ONE gate run over the union and ONE invariants run - counted, "
+              "not found: %r"
+              % ([ln for ln in _gs_lines if "run-test-gate.py" in ln
+                  or "verify-invariants.py" in ln],),
+              len([ln for ln in _gs_lines if "run-test-gate.py" in ln]) == 1
+              and len([ln for ln in _gs_lines if "verify-invariants.py" in ln]) == 1)
+        check("gs3 ...and lands each phase with close-phase --branch, in order, the "
+              "branch and its worktree kept until the LAST one - the first landing "
+              "merges the whole branch, so a deletion there strands the rest: %r"
+              % (_gs_land,),
+              len(_gs_land) == 2
+              and " P1 " in _gs_land[0] and " P2 " in _gs_land[1]
+              and all("--branch combined" in ln for ln in _gs_land)
+              and "--keep-branch" in _gs_land[0]
+              and "--keep-worktree" in _gs_land[0]
+              and "--keep-branch" not in _gs_land[1]
+              and "--keep-worktree" not in _gs_land[1])
+        g2_proj, g2_mp, _g2 = gs_fixture("gs-gate", gates=(["test"],
+                                                           ["test", "lint"]))
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", g2_proj])
+        _g2_gate = [ln for ln in txt.split("\n") if "run-test-gate.py" in ln]
+        check("gs4 the one gate run is carried by the member whose testGate covers "
+              "the union - P2's, here: %r" % (_g2_gate,),
+              code == 0 and len(_g2_gate) == 1
+              and 'run-test-gate.py" docs/audit/audit-plan.json P2 --also P1'
+              in _g2_gate[0])
+        g3_proj, g3_mp, _g3 = gs_fixture("gs-nogate", gates=(["lint"], ["test"]))
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", g3_proj])
+        check("gs5 ...and when no member's gate covers the union, it is refused, "
+              "naming the verb that makes one carry it - no single run could "
+              "measure it: exit %r, %s" % (code, txt),
+              code == 2 and "run-test-gate.py" not in txt and "retarget" in txt)
+        _gs_record = ["signoff", "P1,P2", "--branch", "combined",
+                      "--verdict", "passed", "--summary", "both landed",
+                      "--review-outcome", "no findings", "--project-dir", gs_proj]
+        _gs_b0 = open(gs_mp, "rb").read()
+        code, txt = run(_gs_record)
+        check("gsb1 the record refuses a group whose branch and baseRef are not "
+              "bound yet, naming --bind - the sign-off's invariants run has to see "
+              "them, so they are written before it: exit %r, %s" % (code, txt),
+              code == 2 and "--bind" in txt and open(gs_mp, "rb").read() == _gs_b0)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--bind",
+                         "--project-dir", gs_proj])
+        _gs_bound = dict((p["id"], p) for p in _mio.load_manifest(gs_mp)["phases"])
+        _gs_fork = gs_git(gs_proj, "merge-base", "main", "combined")
+        check("gsb2 --bind writes each member's branch and its fork point as baseRef "
+              "and NOTHING of the verdict: %s" % (txt,),
+              code == 0 and len(_gs_fork) == 40
+              and all(_gs_bound[p]["branch"] == "combined"
+                      and _gs_bound[p]["baseRef"] == _gs_fork
+                      and not _mio.signoff_recorded(_gs_bound[p])
+                      for p in ("P1", "P2")))
+        _gs_b1 = open(gs_mp, "rb").read()
+        code, txt = run(_gs_record)
+        check("gse1 --verdict passed with no gate evidence for the carrier is refused, "
+              "naming the gate run that supplies it: exit %r, %s" % (code, txt),
+              code == 2 and "run-test-gate.py" in txt and "--also P2" in txt
+              and open(gs_mp, "rb").read() == _gs_b1)
+        _gs_gate = gs_gate(gs_proj, gs_mp, "P1", "P2")
+        code, txt = run(_gs_record)
+        _gs_after = dict((p["id"], p) for p in _mio.load_manifest(gs_mp)["phases"])
+        check("gs6 the record signs off EVERY member in one write, keeps the bound "
+              "branch and baseRef, and stores no done - each reads done once "
+              "close-phase lands it: gate %r / %s" % (_gs_gate, txt),
+              code == 0
+              and all(_gs_after[p]["review"]["status"] == "passed"
+                      and _gs_after[p]["summary"] == "both landed"
+                      and _gs_after[p]["branch"] == "combined"
+                      and _gs_after[p]["baseRef"] == _gs_fork
+                      and _gs_after[p]["status"] == "in_progress"
+                      and _mio.effective_phase_status(_gs_after[p]) == "in_progress"
+                      for p in ("P1", "P2"))
+              and len([ln for ln in txt.split("\n") if "close-phase.py" in ln]) == 2)
+        _gs_p1ev = _gs_after["P1"].get("testEvidence") or {}
+        _gs_p2ev = _gs_after["P2"].get("testEvidence") or {}
+        check("gse2 ...and the member that did not carry the gate records the "
+              "carrier's run as its evidence, naming the carrier - a record that "
+              "outlives this output: %r / %r" % (_gs_p1ev, _gs_p2ev),
+              _gs_p1ev.get("runId") and _gs_p2ev.get("runId") == _gs_p1ev["runId"]
+              and _gs_p2ev.get("status") == _gs_p1ev.get("status")
+              and _gs_p2ev.get("gradedBy") == "P1"
+              and "gradedBy" not in _gs_p1ev)
+        _gs_rows = [r for r in _journal_io.read_all(gs_proj)
+                    if r.get("action") == "phase.verdict"]
+        check("gs7 ...with one phase.verdict row per member: %r"
+              % ([(r.get("details") or {}).get("phaseId") for r in _gs_rows],),
+              sorted((r.get("details") or {}).get("phaseId") for r in _gs_rows)
+              == ["P1", "P2"])
+        # THE GROUP PATH DERIVES THE TALLY TOO, per member: P2 holds a finding,
+        # P1 holds none, and the typed tally in the shared outcome is replaced
+        # on the one and dropped on the other, since nothing under it counts.
+        gt_proj, gt_mp, _gt_shas = gs_fixture("gs-tally")
+        _gt_f = run(["finding", "P2", "--severity", "med", "--file", "src/p2.py",
+                     "--issue", "i", "--resolution", "r", "--project-dir", gt_proj])
+        run(["signoff", "P1,P2", "--branch", "combined", "--bind",
+             "--project-dir", gt_proj])
+        _gt_code = run(["signoff", "P1,P2", "--branch", "combined",
+                        "--verdict", "skipped", "--summary", "s",
+                        "--review-outcome", "matches [findings: 7 - 7 high, 0 med, "
+                        "0 low; 7 with a recorded fix commit]",
+                        "--project-dir", gt_proj])
+        _gt_ph = dict((p["id"], p) for p in _mio.load_manifest(gt_mp)["phases"])
+        check("gs6t the GROUP sign-off derives each member's tally from its own "
+              "findings - the typed one is replaced where a finding stands under "
+              "it and dropped where none does: %r"
+              % ((_gt_f[0], _gt_code, [(_gt_ph[p].get("review") or {}).get("outcome")
+                                       for p in ("P1", "P2")]),),
+              _gt_f[0] == 0 and _gt_code[0] == 0
+              and (_gt_ph["P2"].get("review") or {}).get("outcome")
+              == "matches [findings: 1 - 0 high, 1 med, 0 low; "
+                 "0 with a recorded fix commit]"
+              and (_gt_ph["P1"].get("review") or {}).get("outcome") == "matches")
+        g4_proj, g4_mp, g4_shas = gs_fixture("gs-stray")
+        _g4 = _mio.load_manifest(g4_mp)
+        _g4["phases"][1]["tasks"][0]["commit"] = g4_shas["stray"]
+        _panel_write._atomic_write_json(g4_mp, _g4)
+        _g4_before = open(g4_mp, "rb").read()
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined",
+                         "--verdict", "passed", "--summary", "s",
+                         "--project-dir", g4_proj])
+        check("gs8 a task commit the branch does not carry refuses the WHOLE group "
+              "and writes nothing - P1 is not signed off beside it: exit %r, %s"
+              % (code, txt),
+              code == 2 and "P2.1" in txt and open(g4_mp, "rb").read() == _g4_before)
+        g5_proj, g5_mp, _g5 = gs_fixture("gs-nocommit")
+        _g5m = _mio.load_manifest(g5_mp)
+        _g5m["phases"][0]["tasks"][0]["commit"] = None
+        _g5m["phases"][1]["branch"] = "elsewhere"
+        _panel_write._atomic_write_json(g5_mp, _g5m)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", g5_proj])
+        check("gs9 a finished task with no commit, and a member recording ANOTHER "
+              "branch, are both refused and both named: exit %r, %s" % (code, txt),
+              code == 2 and "task P1.1 records no commit" in txt
+              and "records branch 'elsewhere'" in txt)
+        code, txt = run(["signoff", "P1,P2", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", gs_proj])
+        check("gs10 a group without --branch is a usage error naming it: %s" % (txt,),
+              code == 2 and "--branch" in txt)
+        g6_proj, g6_mp, _g6 = gs_fixture("gs-open")
+        _g6m = _mio.load_manifest(g6_mp)
+        _g6m["phases"][1]["tasks"][0]["status"] = "in_progress"
+        _panel_write._atomic_write_json(g6_mp, _g6m)
+        _g6_before = open(g6_mp, "rb").read()
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined",
+                         "--verdict", "passed", "--summary", "s",
+                         "--project-dir", g6_proj])
+        check("gs11 one member with open work refuses the group, all or nothing: "
+              "exit %r, %s" % (code, txt),
+              code == 2 and "P2.1" in txt and open(g6_mp, "rb").read() == _g6_before)
+        g8_proj, g8_mp, _g8 = gs_fixture("gs-parents")
+        _g8m = _mio.load_manifest(g8_mp)
+        _g8m["phases"][1]["parentBranch"] = "develop"
+        _panel_write._atomic_write_json(g8_mp, _g8m)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", g8_proj])
+        check("gs13 members that land in different parents are refused - one branch "
+              "lands in one: exit %r, %s" % (code, txt),
+              code == 2 and "develop" in txt and "different parents" in txt)
+        g7_proj, g7_mp, _g7 = gs_fixture("gs-sharded", sharded=True)
+        run(["signoff", "P1,P2", "--branch", "combined", "--bind",
+             "--project-dir", g7_proj])
+        gs_gate(g7_proj, g7_mp, "P1", "P2")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined",
+                         "--verdict", "passed", "--summary", "s",
+                         "--project-dir", g7_proj])
+        _g7_ph = dict((p["id"], p) for p in _mio.load_manifest(g7_mp)["phases"])
+        check("gs12 in the SHARDED layout every member's shard takes the record, and "
+              "no index stub is left behind its shard: %s" % (txt,),
+              code == 0 and _mio.stale_stubs(g7_mp) == []
+              and all(_g7_ph[p]["review"]["status"] == "passed"
+                      and _g7_ph[p]["branch"] == "combined" for p in ("P1", "P2"))
+              and "phases/P1.json" in txt and "phases/P2.json" in txt)
+        g9_proj, g9_mp, _g9 = gs_fixture("gs-self")
+        _g9_before = open(g9_mp, "rb").read()
+        code, txt = run(["signoff", "P1,P2", "--branch", "main", "--plan",
+                         "--project-dir", g9_proj])
+        check("gs14 a group --branch that IS the members' parent is refused - landing "
+              "it would plan deleting the parent - and nothing is written or "
+              "printed to land: exit %r, %s" % (code, txt),
+              code == 2 and "its own parent" in txt and "close-phase.py" not in txt
+              and open(g9_mp, "rb").read() == _g9_before)
+        g10_proj, g10_mp, _g10 = gs_fixture("gs-unrecorded")
+        gs_git(g10_proj, "checkout", "-q", "combined")
+        gs_git(g10_proj, "commit", "-q", "--allow-empty", "-m", "hand fix-up")
+        _g10_extra = gs_git(g10_proj, "rev-parse", "HEAD")
+        gs_git(g10_proj, "checkout", "-q", "main")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", g10_proj])
+        check("gs15 a commit on the branch that is no member's recorded commit is "
+              "refused BY NAME - the first landing would carry it unreviewed: "
+              "exit %r, %s" % (code, txt),
+              code == 2 and _g10_extra[:12] in txt and "not reviewed" in txt)
+        _journal_io.append_from_cli(g10_proj, {
+            "action": "audit.state.committed", "actor": {"via": "cli"},
+            "target": "docs/audit/audit-plan.json", "summary": "state",
+            "details": {"commit": _g10_extra, "phaseId": "P2"}})
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", g10_proj])
+        check("gs16 SECOND DIRECTION: the same commit, journaled as a member's "
+              "audit-state commit, is accounted for and the plan stands: exit %r, %s"
+              % (code, txt[:300]),
+              code == 0 and "not reviewed" not in txt)
+        _g10_row_other = gs_fixture("gs-other-phase")
+        g11_proj = _g10_row_other[0]
+        gs_git(g11_proj, "checkout", "-q", "combined")
+        gs_git(g11_proj, "commit", "-q", "--allow-empty", "-m", "another phase")
+        _g11_extra = gs_git(g11_proj, "rev-parse", "HEAD")
+        gs_git(g11_proj, "checkout", "-q", "main")
+        _journal_io.append_from_cli(g11_proj, {
+            "action": "audit.state.committed", "actor": {"via": "cli"},
+            "target": "docs/audit/audit-plan.json", "summary": "state",
+            "details": {"commit": _g11_extra, "phaseId": "P7"}})
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", g11_proj])
+        check("gs17 ...but a commit the journal records for a phase OUTSIDE the "
+              "group is still refused: exit %r, %s" % (code, txt[:300]),
+              code == 2 and _g11_extra[:12] in txt)
+        g12_proj = gs_fixture("gs-plan-sharded", sharded=True)[0]
+        _gs_plan_lines = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                              "--project-dir", g12_proj])[1]
+        check("gs18 the plan prints the commit step's commands too - one "
+              "commit-audit-state per member and the index commit in the sharded "
+              "layout - and the gate spelled with --also: %s" % (_gs_plan_lines,),
+              ('commit-audit-state.py" docs/audit/audit-plan.json P1'
+               in _gs_plan_lines
+               and 'commit-audit-state.py" docs/audit/audit-plan.json P2'
+               in _gs_plan_lines
+               and "commit-manifest-index.py" in _gs_plan_lines
+               and 'run-test-gate.py" docs/audit/audit-plan.json P1 --also P2'
+               in _gs_plan_lines))
+        # --- sign-off's gate evidence on the single-phase path too --------------
+        s1_proj, s1_mp, _s1 = gs_fixture("so-evidence")
+        code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", s1_proj])
+        check("so11 --verdict passed on ONE phase with no gate evidence is refused, "
+              "naming the gate run and the reason flag: exit %r, %s" % (code, txt),
+              code == 2 and "run-test-gate.py" in txt
+              and "--no-evidence-reason" in txt)
+        gs_gate(s1_proj, s1_mp, "P1")
+        os.makedirs(os.path.join(s1_proj, "src"), exist_ok=True)
+        with open(os.path.join(s1_proj, "src", "p1.py"), "w") as fh:
+            fh.write("changed after the gate\n")
+        code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", s1_proj])
+        check("so12 ...and evidence taken BEFORE the phase's files changed is not "
+              "current, so it is refused too: exit %r, %s" % (code, txt),
+              code == 2 and "have changed since it was measured" in txt)
+        gs_gate(s1_proj, s1_mp, "P1")
+        code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", s1_proj])
+        check("so13 SECOND DIRECTION: with a current recorded run, the same sign-off "
+              "is written: exit %r, %s" % (code, txt), code == 0)
+        s2_proj, s2_mp, _s2 = gs_fixture("so-reason")
+        code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
+                         "--no-evidence-reason", "graded by hand: no runner here",
+                         "--project-dir", s2_proj])
+        _s2_ph = [p for p in _mio.load_manifest(s2_mp)["phases"]
+                  if p["id"] == "P1"][0]
+        check("so14 ...and an explicit reason is RECORDED on the review, where the "
+              "evidence badge on the report and the panel shows it: exit %r, %r"
+              % (code, _s2_ph.get("review")),
+              code == 0 and (_s2_ph.get("review") or {}).get("noEvidenceReason")
+              == "graded by hand: no runner here")
+        s3_proj, s3_mp, _s3 = gs_fixture("so-skipped")
+        code, txt = run(["signoff", "P1", "--verdict", "skipped", "--summary", "s",
+                         "--project-dir", s3_proj])
+        check("so15 --verdict skipped needs no gate evidence - it says no review "
+              "passed anything: exit %r, %s" % (code, txt), code == 0)
+
+        # ---- (ve) ONE verdict-binding rule: sign-off grades as a task commit does
+        def ve_rows(proj):
+            return _ve_evidence.read_rows(proj)["rows"]
+        import _evidence_io as _ve_evidence
+        v1_proj, v1_mp, _v1 = gs_fixture("ve-reuse")
+        gs_gate(v1_proj, v1_mp, "P1")
+        _v1_rc = gs_gate(v1_proj, v1_mp, "P1", reuse=True)
+        _v1_reused = [r for r in ve_rows(v1_proj)
+                      if r.get(_ve_evidence.VERDICT_SOURCE) == _ve_evidence.REUSED]
+        code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", v1_proj])
+        check("ve1 a phase gate recorded once with --no-reuse and again WITH reuse - "
+              "the gate's default - signs off `passed`: the repeat is graded "
+              "against the run that measured it: gate %r, reused rows %d, exit %r, %s"
+              % (_v1_rc, len(_v1_reused), code, txt),
+              _v1_rc == 0 and len(_v1_reused) == 1 and code == 0)
+        v2_proj, v2_mp, _v2 = gs_fixture("ve-orphan")
+        gs_gate(v2_proj, v2_mp, "P1")
+        gs_gate(v2_proj, v2_mp, "P1", reuse=True)
+        _v2_src = [r for r in ve_rows(v2_proj)
+                   if r.get(_ve_evidence.VERDICT_SOURCE) == _ve_evidence.REUSED]
+        _v2_origin = ((_v2_src or [{}])[0].get("reusedFrom") or {}).get("runId")
+        for _v2_path in _ve_evidence.ledger_files(v2_proj):
+            with open(_v2_path) as fh:
+                _v2_lines = fh.read().splitlines(True)
+            with open(_v2_path, "w") as fh:
+                fh.write("".join(ln for ln in _v2_lines
+                                 if not (_v2_origin and _v2_origin in ln
+                                         and '"reusedFrom"' not in ln)))
+        code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", v2_proj])
+        check("ve2 SECOND DIRECTION: a repeated verdict whose source run is gone from "
+              "the ledger is refused - the tree it was measured on is not "
+              "established: origin %r, exit %r, %s" % (_v2_origin, code, txt),
+              bool(_v2_origin) and code == 2 and "not in the ledger" in txt)
+        v3_proj, v3_mp, _v3 = gs_fixture("ve-manifest")
+        _v3m = _mio.load_manifest(v3_mp)
+        _v3m["phases"][0]["tasks"][0]["files"] = ["src/p1.py",
+                                                  "docs/audit/audit-plan.json"]
+        _v3m["fileIndex"]["docs/audit/audit-plan.json"] = ["P1.1"]
+        _panel_write._atomic_write_json(v3_mp, _v3m)
+        gs_gate(v3_proj, v3_mp, "P1")
+        code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", v3_proj])
+        check("ve3 a phase that declares its own manifest file signs off: the "
+              "recorder's own writes to it are left out on both sides, as a task "
+              "commit leaves them: exit %r, %s" % (code, txt), code == 0)
+        v4_proj, v4_mp, _v4 = gs_fixture("ve-gate-changed")
+        _v4m = _mio.load_manifest(v4_mp)
+        _v4m["phases"][0]["testGate"] = []
+        _panel_write._atomic_write_json(v4_mp, _v4m)
+        gs_gate(v4_proj, v4_mp, "P1")
+        _v4m = _mio.load_manifest(v4_mp)
+        _v4m["phases"][0]["testGate"] = ["test"]
+        _panel_write._atomic_write_json(v4_mp, _v4m)
+        code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", v4_proj])
+        check("ve4 an `empty-gate` run recorded before the gate gained an entry backs "
+              "no `passed` - a gate changed after the measurement: exit %r, %s"
+              % (code, txt), code == 2 and "different gate" in txt)
+        v5_proj, v5_mp, _v5 = gs_fixture("ve-group-reuse")
+        run(["signoff", "P1,P2", "--branch", "combined", "--bind",
+             "--project-dir", v5_proj])
+        gs_gate(v5_proj, v5_mp, "P1", "P2")
+        gs_gate(v5_proj, v5_mp, "P1", "P2", reuse=True)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--verdict",
+                         "passed", "--summary", "s", "--project-dir", v5_proj])
+        check("ve5 the group's gate, repeated by reuse, still backs the group's "
+              "`passed`: exit %r, %s" % (code, txt), code == 0)
+        v6_proj, v6_mp, _v6 = gs_fixture("ve-group-alone")
+        run(["signoff", "P1,P2", "--branch", "combined", "--bind",
+             "--project-dir", v6_proj])
+        gs_gate(v6_proj, v6_mp, "P1")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--verdict",
+                         "passed", "--summary", "s", "--project-dir", v6_proj])
+        check("ve6 a carrier run that did NOT own the other member (no --also) backs "
+              "no group verdict, and the refusal names the member it left out: "
+              "exit %r, %s" % (code, txt),
+              code == 2 and "P2" in txt and "--also P2" in txt)
+
+        v7_proj, v7_mp, _v7 = gs_fixture("ve-group-owned")
+        _v7m = _mio.load_manifest(v7_mp)
+        _v7m["phases"][1]["tasks"][0]["files"] = ["src/p1.py"]
+        _v7m["fileIndex"] = {"src/p1.py": ["P1.1", "P2.1"]}
+        _panel_write._atomic_write_json(v7_mp, _v7m)
+        run(["signoff", "P1,P2", "--branch", "combined", "--bind",
+             "--project-dir", v7_proj])
+        gs_gate(v7_proj, v7_mp, "P1")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--verdict",
+                         "passed", "--summary", "s", "--project-dir", v7_proj])
+        check("ve7 even over the SAME files, a carrier run that did not own the other "
+              "member (no `groupWith` on its row) backs no group verdict: exit %r, %s"
+              % (code, txt), code == 2 and "owned P1 alone, not P2" in txt)
+        _v7_again = gs_gate(v7_proj, v7_mp, "P1", "P2", reuse=True)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--verdict",
+                         "passed", "--summary", "s", "--project-dir", v7_proj])
+        check("ve8 ...and the command that refusal prints, run as printed - WITH the "
+              "gate's default reuse - reaches sign-off: a group run never repeats a "
+              "solo one: gate %r, exit %r, %s" % (_v7_again, code, txt),
+              _v7_again == 0 and code == 0)
+        n1_proj, n1_mp, _n1 = gs_fixture("ve-nogate-old", gates=(["test"], []))
+        run(["signoff", "P1,P2", "--branch", "combined", "--bind",
+             "--project-dir", n1_proj])
+        gs_gate(n1_proj, n1_mp, "P1")
+        _n1m = _mio.load_manifest(n1_mp)
+        _n1m["phases"][0]["testGate"] = []
+        _panel_write._atomic_write_json(n1_mp, _n1m)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--verdict",
+                         "passed", "--summary", "s", "--project-dir", n1_proj])
+        _n1_p2 = [p for p in _mio.load_manifest(n1_mp)["phases"] if p["id"] == "P2"][0]
+        check("ve9 a carrier whose gate declares no entry copies NO old run onto the "
+              "members - the sign-off rests on review alone, and says so: exit %r, "
+              "P2 evidence %r, %s" % (code, _n1_p2.get("testEvidence"), txt),
+              code == 0 and not _n1_p2.get("testEvidence")
+              and "rests on review alone" in txt)
+
+        # ---- (ga) what a group branch may carry that no member records --------
+        a1_proj, a1_mp, _a1 = gs_fixture("ga-accept")
+        gs_git(a1_proj, "checkout", "-q", "combined")
+        gs_git(a1_proj, "commit", "-q", "--allow-empty", "-m", "planning")
+        _a1_extra = gs_git(a1_proj, "rev-parse", "HEAD")
+        gs_git(a1_proj, "checkout", "-q", "main")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--accept", _a1_extra, "--reason", "the multi-phase plan",
+                         "--project-dir", a1_proj])
+        check("ga1 --accept <sha> --reason lets a commit no member records into the "
+              "group, and the plan lists it for review rather than hiding it: "
+              "exit %r, %s" % (code, txt),
+              code == 0 and ("git show %s" % (_a1_extra,)) in txt
+              and "the multi-phase plan" in txt)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--accept", _a1_extra, "--project-dir", a1_proj])
+        check("ga2 ...and --accept with no --reason is refused: an accepted commit "
+              "is recorded with why: exit %r, %s" % (code, txt),
+              code == 2 and "--reason" in txt)
+        run(["signoff", "P1,P2", "--branch", "combined", "--bind",
+             "--accept", _a1_extra, "--reason", "the multi-phase plan",
+             "--project-dir", a1_proj])
+        gs_gate(a1_proj, a1_mp, "P1", "P2")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--verdict",
+                         "passed", "--summary", "s", "--accept", _a1_extra,
+                         "--reason", "the multi-phase plan",
+                         "--project-dir", a1_proj])
+        _a1_ph = dict((p["id"], p) for p in _mio.load_manifest(a1_mp)["phases"])
+        check("ga3 ...and the record writes the accepted commit and its reason on "
+              "every member's review: exit %r, %r"
+              % (code, [_a1_ph[p].get("review") for p in ("P1", "P2")]),
+              code == 0 and all(
+                  [{"commit": _a1_extra, "reason": "the multi-phase plan"}]
+                  == (_a1_ph[p].get("review") or {}).get("acceptedCommits")
+                  for p in ("P1", "P2")))
+        # A branch BUILT BY MERGING the members' own branches, --no-ff.
+        m_plan = base_manifest()
+        m_plan["phases"] = [
+            {"id": "P1", "title": "One", "status": "in_progress", "testGate": ["test"],
+             "branch": None, "baseRef": None,
+             "tasks": [{"id": "P1.1", "title": "a", "status": "done",
+                        "files": ["src/p1.py"]}]},
+            {"id": "P2", "title": "Two", "status": "in_progress", "testGate": ["test"],
+             "branch": None, "baseRef": None,
+             "tasks": [{"id": "P2.1", "title": "b", "status": "done",
+                        "files": ["src/p2.py"]}]}]
+        m_proj, m_mp = mk("ga-merged", m_plan, git=True)
+        gs_git(m_proj, "checkout", "-q", "-b", "main")
+        gs_git(m_proj, "commit", "-q", "--allow-empty", "-m", "base")
+        _m_sha = {}
+        for tid, side in (("P1.1", "side1"), ("P2.1", "side2")):
+            gs_git(m_proj, "checkout", "-q", "-b", side, "main")
+            gs_git(m_proj, "commit", "-q", "--allow-empty", "-m", tid)
+            _m_sha[tid] = gs_git(m_proj, "rev-parse", "HEAD")
+        gs_git(m_proj, "checkout", "-q", "-b", "combined", "main")
+        gs_git(m_proj, "merge", "-q", "--no-ff", "-m", "merge side1", "side1")
+        gs_git(m_proj, "merge", "-q", "--no-ff", "-m", "merge side2", "side2")
+        gs_git(m_proj, "checkout", "-q", "main")
+        _m_m = _mio.load_manifest(m_mp)
+        for _ph in _m_m["phases"]:
+            for _t in _ph["tasks"]:
+                _t["commit"] = _m_sha[_t["id"]]
+        _panel_write._atomic_write_json(m_mp, _m_m)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", m_proj])
+        check("ga4 a combined branch built by merging the members' branches is "
+              "accounted for: each merge commit's parents are member commits or the "
+              "parent side: exit %r, %s" % (code, txt[:400]), code == 0)
+        # A merge that CARRIES CONTENT OF ITS OWN - an evil merge or a conflict
+        # resolution - is not made of its parents and is refused unless accepted.
+        e_proj, e_mp = mk("ga-evil", m_plan, git=True)
+        gs_git(e_proj, "checkout", "-q", "-b", "main")
+        gs_git(e_proj, "commit", "-q", "--allow-empty", "-m", "base")
+        _e_sha = {}
+        for tid, side in (("P1.1", "side1"), ("P2.1", "side2")):
+            gs_git(e_proj, "checkout", "-q", "-b", side, "main")
+            with open(os.path.join(e_proj, "%s.txt" % side), "w") as fh:
+                fh.write(tid + "\n")
+            gs_git(e_proj, "add", "%s.txt" % side)
+            gs_git(e_proj, "commit", "-q", "-m", tid)
+            _e_sha[tid] = gs_git(e_proj, "rev-parse", "HEAD")
+        gs_git(e_proj, "checkout", "-q", "-b", "combined", "main")
+        gs_git(e_proj, "merge", "-q", "--no-ff", "-m", "merge side1", "side1")
+        gs_git(e_proj, "merge", "-q", "--no-ff", "--no-commit", "side2")
+        with open(os.path.join(e_proj, "backdoor.txt"), "w") as fh:
+            fh.write("nobody reviewed this\n")
+        gs_git(e_proj, "add", "backdoor.txt")
+        gs_git(e_proj, "commit", "-q", "-m", "merge side2")
+        _e_evil = gs_git(e_proj, "rev-parse", "HEAD")
+        gs_git(e_proj, "checkout", "-q", "main")
+        _e_m = _mio.load_manifest(e_mp)
+        for _ph in _e_m["phases"]:
+            for _t in _ph["tasks"]:
+                _t["commit"] = _e_sha[_t["id"]]
+        _panel_write._atomic_write_json(e_mp, _e_m)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", e_proj])
+        check("ga8 a merge whose tree is not the automatic merge of its parents "
+              "carries content of its own, and is refused by name for review: "
+              "exit %r, %s" % (code, txt),
+              code == 2 and _e_evil[:12] in txt and "of its own" in txt)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--accept", _e_evil, "--reason", "the conflict resolution",
+                         "--project-dir", e_proj])
+        _e_tree = gs_git(e_proj, "merge-tree", "--write-tree", _e_evil + "^1",
+                         _e_evil + "^2").split("\n")[0].strip()
+        check("ga8b ...and --accept takes it into the review, listed with the "
+              "comparison the check made - the automatic merge's tree against the "
+              "merge (`git diff <tree> <sha>`): exit %r, %s" % (code, txt),
+              code == 0 and ("git diff %s %s" % (_e_tree, _e_evil)) in txt)
+
+        def ga_merged(name, how, extra=None):
+            """(proj, mpath, shas) - side1 (P1.1) and side2 (P2.1), each adding one
+            file, merged into `combined` from main. `how` is "two" for two --no-ff
+            merges, "octopus" for one merge of both, "drop" for a second merge that
+            leaves side2's file out, "evil-then-clean" for an edited first merge and
+            a clean second."""
+            proj, mpath = mk(name, m_plan, git=True)
+            gs_git(proj, "checkout", "-q", "-b", "main")
+            gs_git(proj, "commit", "-q", "--allow-empty", "-m", "base")
+            shas = {}
+            for tid, side in (("P1.1", "side1"), ("P2.1", "side2")):
+                gs_git(proj, "checkout", "-q", "-b", side, "main")
+                with open(os.path.join(proj, "%s.txt" % side), "w") as fh:
+                    fh.write(tid + "\n")
+                gs_git(proj, "add", "%s.txt" % side)
+                gs_git(proj, "commit", "-q", "-m", tid)
+                shas[tid] = gs_git(proj, "rev-parse", "HEAD")
+            gs_git(proj, "checkout", "-q", "-b", "combined", "main")
+            if how == "octopus":
+                gs_git(proj, "merge", "-q", "--no-ff", "-m", "octopus", "side1",
+                       "side2")
+            elif how in ("evil-then-clean", "evil-then-evil"):
+                gs_git(proj, "merge", "-q", "--no-ff", "--no-commit", "side1")
+                with open(os.path.join(proj, "edit.txt"), "w") as fh:
+                    fh.write("an edit inside the merge\n")
+                gs_git(proj, "add", "edit.txt")
+                gs_git(proj, "commit", "-q", "-m", "merge side1")
+                shas["m1"] = gs_git(proj, "rev-parse", "HEAD")
+                if how == "evil-then-evil":
+                    gs_git(proj, "merge", "-q", "--no-ff", "--no-commit", "side2")
+                    with open(os.path.join(proj, "edit2.txt"), "w") as fh:
+                        fh.write("a second edit inside a merge\n")
+                    gs_git(proj, "add", "edit2.txt")
+                    gs_git(proj, "commit", "-q", "-m", "merge side2")
+                else:
+                    gs_git(proj, "merge", "-q", "--no-ff", "-m", "merge side2",
+                           "side2")
+                shas["m2"] = gs_git(proj, "rev-parse", "HEAD")
+            else:
+                gs_git(proj, "merge", "-q", "--no-ff", "-m", "merge side1", "side1")
+                shas["m1"] = gs_git(proj, "rev-parse", "HEAD")
+                if how == "drop":
+                    gs_git(proj, "merge", "-q", "--no-ff", "--no-commit", "side2")
+                    gs_git(proj, "rm", "-q", "-f", "side2.txt")
+                    gs_git(proj, "commit", "-q", "-m", "merge side2")
+                else:
+                    gs_git(proj, "merge", "-q", "--no-ff", "-m", "merge side2",
+                           "side2")
+                shas["m2"] = gs_git(proj, "rev-parse", "HEAD")
+            gs_git(proj, "checkout", "-q", "main")
+            plan_now = _mio.load_manifest(mpath)
+            for ph in plan_now["phases"]:
+                for t in ph["tasks"]:
+                    t["commit"] = shas[t["id"]]
+            _panel_write._atomic_write_json(mpath, plan_now)
+            return proj, mpath, shas
+
+        # A git that cannot recompute a merge (before 2.38, or a missing object)
+        # is a question not asked - never an edit.
+        o_proj, o_mp, o_shas = ga_merged("ga-oldgit", "two")
+        _real = M._worktrees._runner(None)
+
+        def _old_git(git_root, argv, timeout=60):
+            if argv[:2] == ["merge-tree", "--write-tree"]:
+                return 128, "", "fatal: unknown rev --write-tree\n"
+            return _real(git_root, argv)
+        _o_plan = M.group_plan(_mio.load_manifest(o_mp), ["P1", "P2"], "combined",
+                               o_proj, run=_old_git, journal_rows=[])
+        _o_text = "\n".join(_o_plan["refusals"])
+        check("ga11 under a git that cannot recompute a merge, each clean merge is "
+              "refused as a question that could not be asked - git's own line and the "
+              "2.38 floor named - and never as an edit: %s" % (_o_text,),
+              "could not be asked" in _o_text and "2.38" in _o_text
+              and "unknown rev --write-tree" in _o_text
+              and "an edit" not in _o_text and o_shas["m1"][:12] in _o_text)
+        _o_m2 = [ln for ln in _o_plan["refusals"] if o_shas["m2"][:12] in ln
+                 and ln.find(o_shas["m2"][:12]) < 20]
+        check("ga11b ...and the merge above it is JUDGED now, not promised accounting "
+              "it was never checked for: under this git it too could not be asked, "
+              "said with its own reason and the refused merge below it: %s"
+              % (_o_m2,),
+              len(_o_m2) == 1 and "could not be asked" in _o_m2[0]
+              and ("also a merge over %s" % (o_shas["m1"][:12],)) in _o_m2[0]
+              and "accounted once" not in _o_text
+              and "no member records" not in _o_text)
+        od_proj, od_mp, od_shas = ga_merged("ga-oldgit-drop", "drop")
+        _od_plan = M.group_plan(_mio.load_manifest(od_mp), ["P1", "P2"], "combined",
+                                od_proj, run=_old_git, journal_rows=[])
+        _od_text = "\n".join(_od_plan["refusals"])
+        _od_cmd = [c for c in _od_text.split("`") if c.startswith("git show -m ")
+                   and od_shas["m2"] in c]
+        _od_out = (subprocess.run(_od_cmd[0].split(), cwd=od_proj,
+                                  stdout=subprocess.PIPE).stdout.decode()
+                   if _od_cmd else "")
+        check("ga11c a merge that DROPS a side, under a git that cannot recompute it, "
+              "names a review command that shows the drop - a diff against each "
+              "parent (`git show -m`), where `git show` alone shows nothing: "
+              "command %r, shows side2.txt %r" % (_od_cmd, "side2.txt" in _od_out),
+              len(_od_cmd) == 1 and "side2.txt" in _od_out)
+        oc_proj, oc_mp, oc_shas = ga_merged("ga-octopus", "octopus")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", oc_proj])
+        check("ga12 a clean OCTOPUS merge is refused as not established - merge-tree "
+              "recomputes two parents only - and not as an edit: exit %r, %s"
+              % (code, txt),
+              code == 2 and "octopus" in txt and "an edit" not in txt
+              and "could not be asked" in txt
+              and "carries content of its own" not in txt)
+        d_proj, d_mp, d_shas = ga_merged("ga-drop", "drop")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", d_proj])
+        _d_cmd = [ln for ln in txt.split("`") if ln.startswith("git diff ")]
+        _d_out = (subprocess.run(_d_cmd[0].split(), cwd=d_proj,
+                                 stdout=subprocess.PIPE).stdout.decode()
+                  if _d_cmd else "")
+        check("ga13 a merge that silently DROPS a side's change is refused, and the "
+              "review command it prints shows the dropped change - where `git show "
+              "--cc` shows nothing: exit %r, command %r, shows %r"
+              % (code, _d_cmd, _d_out[:120]),
+              code == 2 and len(_d_cmd) == 1 and "side2.txt" in _d_out
+              and "git show --cc" not in txt)
+        w_proj, w_mp, w_shas = ga_merged("ga-waiting", "evil-then-clean")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", w_proj])
+        check("ga14 a clean merge over a refused merge is named as waiting on it: "
+              "exit %r, %s" % (code, txt),
+              code == 2 and ("%s is a merge over %s" % (w_shas["m2"][:12],
+                                                        w_shas["m1"][:12])) in txt)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--accept", w_shas["m1"], "--reason", "the edit is reviewed",
+                         "--project-dir", w_proj])
+        check("ga14b ...and once the refused merge is accepted, the clean merge over "
+              "it is accounted and the plan stands: exit %r, %s" % (code, txt),
+              code == 0)
+        ww_proj, ww_mp, ww_shas = ga_merged("ga-evil-evil", "evil-then-evil")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", ww_proj])
+        check("ga14c a merge with content of its own over a refused merge is refused "
+              "NOW with its own reason - never promised accounting once the one below "
+              "is: exit %r, %s" % (code, txt),
+              code == 2 and "accounted once" not in txt
+              and ("merge %s carries content of its own" % (ww_shas["m2"][:12],))
+              in txt)
+        # One --accept names ONE commit.
+        p_proj, p_mp, _p = gs_fixture("ga-prefix")
+        gs_git(p_proj, "checkout", "-q", "combined")
+        _p_extra = []
+        for i in range(24):
+            gs_git(p_proj, "commit", "-q", "--allow-empty", "-m", "stray%d" % i)
+            _p_extra.append(gs_git(p_proj, "rev-parse", "HEAD"))
+        gs_git(p_proj, "checkout", "-q", "main")
+        _p_short = _p_extra[0][:1]
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--accept", _p_short, "--reason", "r",
+                         "--project-dir", p_proj])
+        check("ga9 an --accept value that does not resolve to exactly one commit - a "
+              "one-character prefix - is refused by name, and takes nothing in: "
+              "exit %r, %s" % (code, txt),
+              code == 2 and ("--accept %s" % (_p_short,)) in txt
+              and "exactly one commit" in txt)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--accept", "0" * 40, "--reason", "r",
+                         "--project-dir", p_proj])
+        check("ga9b ...and so is a full SHA that names no commit",
+              code == 2 and "exactly one commit" in txt, txt)
+        q_proj, q_mp, _q = gs_fixture("ga-unique")
+        gs_git(q_proj, "checkout", "-q", "combined")
+        gs_git(q_proj, "commit", "-q", "--allow-empty", "-m", "planning")
+        _q_extra = gs_git(q_proj, "rev-parse", "HEAD")
+        gs_git(q_proj, "checkout", "-q", "main")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--accept", _q_extra[:12], "--reason", "r",
+                         "--project-dir", q_proj])
+        check("ga9c SECOND DIRECTION: a unique short SHA resolves to its one commit, "
+              "listed in full: exit %r, %s" % (code, txt),
+              code == 0 and ("git show %s" % (_q_extra,)) in txt)
+        _q_ref = _q_extra[:6]
+        gs_git(q_proj, "branch", _q_ref, "main")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--accept", _q_ref, "--reason", "r", "--project-dir", q_proj])
+        check("ga10b a HEX-spelled name that is also a branch resolves through the ref, "
+              "not to the commit it prefixes - refused, saying it names a ref: exit %r, "
+              "%s" % (code, txt),
+              code == 2 and ("--accept %s names a ref" % (_q_ref,)) in txt)
+        gs_git(q_proj, "branch", "-D", _q_ref)
+        for _ref in ("combined", "HEAD", "combined~0"):
+            code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                             "--accept", _ref, "--reason", "r",
+                             "--project-dir", q_proj])
+            check("ga10 --accept %s - a ref or a revision expression, re-resolved on "
+                  "every call - is refused by name: it takes a hex SHA: exit %r, %s"
+                  % (_ref, code, txt),
+                  code == 2 and ("--accept %s is not a commit SHA" % (_ref,)) in txt)
+        # The group-only flags on ONE phase are refused, not ignored.
+        f_proj, f_mp, _f = gs_fixture("gs-single-flags")
+        _f_before = open(f_mp, "rb").read()
+        code, txt = run(["signoff", "P1", "--bind", "--project-dir", f_proj])
+        check("gs19 `signoff P1 --bind` is refused, naming the group form - it used "
+              "to ask for a verdict: exit %r, %s" % (code, txt),
+              code == 2 and "--branch" in txt and "--verdict" not in txt
+              and open(f_mp, "rb").read() == _f_before)
+        code, txt = run(["signoff", "P1", "--accept", "abc123", "--reason", "r",
+                         "--verdict", "skipped", "--summary", "s",
+                         "--project-dir", f_proj])
+        check("gs19b ...and so is --accept on one phase, with nothing written - it "
+              "used to sign off and record nothing of the accept: exit %r, %s"
+              % (code, txt),
+              code == 2 and "--branch" in txt and open(f_mp, "rb").read() == _f_before)
+        g8b_proj, g8b_mp, g8b_shas = gs_fixture("ga-rebased")
+        _g8b = _mio.load_manifest(g8b_mp)
+        _g8b["phases"][1]["tasks"][0]["commit"] = g8b_shas["stray"]
+        _panel_write._atomic_write_json(g8b_mp, _g8b)
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                         "--project-dir", g8b_proj])
+        check("ga5 a recorded task commit missing from the branch names "
+              "repair-commits.py, the verb that re-points a rebased task: exit %r, %s"
+              % (code, txt), code == 2 and "repair-commits.py" in txt)
+        j_proj, j_mp, _j = gs_fixture("ga-journal")
+        gs_git(j_proj, "checkout", "-q", "combined")
+        gs_git(j_proj, "commit", "-q", "--allow-empty", "-m", "audit-state")
+        gs_git(j_proj, "checkout", "-q", "main")
+        _j_real = M._journal_io.read_all
+
+        def _j_broken(*_a, **_k):
+            raise IOError("the trail is not readable here")
+        M._journal_io.read_all = _j_broken
+        try:
+            code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--plan",
+                             "--project-dir", j_proj])
+        finally:
+            M._journal_io.read_all = _j_real
+        check("ga6 a commit that only the journal could account for, with the journal "
+              "unreadable, is said as that - not as a commit no member records: "
+              "exit %r, %s" % (code, txt),
+              code == 2 and "journal could not be read" in txt
+              and "the trail is not readable here" in txt)
+        b_proj, b_mp, _b = gs_fixture("ga-bind-trail")
+        run(["signoff", "P1,P2", "--branch", "combined", "--bind",
+             "--project-dir", b_proj])
+        gs_gate(b_proj, b_mp, "P1", "P2")
+        run(["signoff", "P1,P2", "--branch", "combined", "--verdict", "passed",
+             "--summary", "s", "--project-dir", b_proj])
+        _b_rows = _journal_io.read_all(b_proj)
+        _b_bind = [r for r in _b_rows if r.get("action") == "phase.bind"]
+        _b_ptr = [r for r in _b_rows if r.get("action") == "phase.testEvidence"
+                  and (r.get("details") or {}).get("phaseId") == "P2"
+                  and (r.get("details") or {}).get("fromPhase") == "P1"]
+        check("ga7 --bind journals a phase.bind row per member, and the record "
+              "journals the copied pointer on P2 naming P1: %r / %r"
+              % ([(r.get("details") or {}).get("phaseId") for r in _b_bind],
+                 [r.get("summary") for r in _b_ptr]),
+              sorted((r.get("details") or {}).get("phaseId") for r in _b_bind)
+              == ["P1", "P2"] and len(_b_ptr) == 1)
 
         # ---- (sv) a close stores its bug's derived status; settle stores the rest
         # A linked bug derives `fixed` and its `fixedIn` from its fix task's close,
@@ -5975,7 +7006,7 @@ def _cases(check):
                                                  completedAt="2026-01-02T00:00:00Z")
         projro, mpro = mk("ro-signed", rosigned)
         run(["signoff", "P2", "--verdict", "passed", "--summary", "s",
-             "--project-dir", projro])
+             "--no-evidence-reason", "fixture", "--project-dir", projro])
         _ro_hand = _mio.load_manifest(mpro)
         for _t in _ro_hand["phases"][1]["tasks"]:
             if _t["id"] == "P2.3":
@@ -6363,6 +7394,7 @@ def _cases(check):
                              "commit": _PD_SHA}})
         projis, _mpis = mk("ia-signoff", iasign)
         code, txt = run(["signoff", "P2", "--verdict", "passed", "--summary", "s",
+                         "--no-evidence-reason", "the case is about intent answers",
                          "--project-dir", projis])
         _ia_line = [ln for ln in txt.splitlines() if "no intent answer" in ln]
         check("ia3 sign-off NAMES the done tasks with no intent answer, and leaves "
@@ -6371,6 +7403,7 @@ def _cases(check):
               and "P2.3" in _ia_line[0] and "P2.5" not in _ia_line[0])
         projis2, _mpis2 = mk("ia-signoff-json", iasign)
         code, txt = run(["signoff", "P2", "--verdict", "passed", "--summary", "s",
+                         "--no-evidence-reason", "the case is about intent answers",
                          "--json", "--project-dir", projis2])
         try:
             _ia_js = json.loads(txt)
@@ -6386,6 +7419,7 @@ def _cases(check):
              "intentCheck": {"answer": "matches", "commit": _PD_SHA}}]
         projia3, _mpia3 = mk("ia-signoff-answered", iaall)
         code, txt = run(["signoff", "P2", "--verdict", "passed", "--summary", "s",
+                         "--no-evidence-reason", "the case is about intent answers",
                          "--project-dir", projia3])
         check("ia5 SECOND DIRECTION: a phase whose every done task carries an answer "
               "prints no such line - the one an always-on list would fail: %s" % (txt,),
@@ -6533,6 +7567,421 @@ def _cases(check):
         check("nt2 an empty note and a phase id are refused, nothing written: %r"
               % ((_nt_empty[0], _nt_phase[0]),),
               _nt_empty[0] == 2 and _nt_phase[0] == 2 and _nt_after == _nt_before)
+
+        # ---- (rv) review findings: recorded by a verb, the tally derived ----------
+        # Sign-off step 1 records the reviewer's findings, and until these verbs
+        # that record was a hand edit of the phase shard - no lock, no journal row,
+        # and a severity outside the vocabulary written with nothing to refuse it.
+        # The fixture is a phase in sign-off: every task done, no verdict yet.
+        def rv_fixture():
+            fx = base_manifest()
+            fx["phases"][1]["tasks"][1].update(
+                status="done", commit="abcdef1234567890abcdef1234567890abcdef12")
+            # A fix task that has NOT landed, in a phase of its own so P2's
+            # sign-off is not held up by it.
+            fx["phases"][2]["tasks"] = [{"id": "P3.1", "title": "fix, not landed",
+                                         "status": "pending"}]
+            return fx
+
+        def rv_phase(mp, pid="P2"):
+            return [p for p in _mio.load_manifest(mp)["phases"]
+                    if p["id"] == pid][0]
+
+        def rv_rows(proj, action):
+            return [r for r in _journal_io.read_all(proj)
+                    if r.get("action") == action]
+
+        def rv_bytes(mp):
+            with open(mp, "rb") as _fh:
+                return _fh.read()
+
+        _RV_ARGS = ["--file", "src/a.ts:12-30",
+                    "--issue", "the guard reads the spelling, not the operation",
+                    "--resolution", "decide from the resolved path"]
+        projrv, mprv = mk("rv-findings", rv_fixture())
+        _rv_before = rv_bytes(mprv)
+        with open(os.devnull, "w") as _null, contextlib.redirect_stderr(_null):
+            _rv_nosev = run(["finding", "P2"] + _RV_ARGS + ["--project-dir", projrv])
+            _rv_badsev = run(["finding", "P2", "--severity", "medium"] + _RV_ARGS
+                             + ["--project-dir", projrv])
+            _rv_bare = run(["finding", "P2", "--severity", "high",
+                            "--project-dir", projrv])
+        check("rv1 RED-FIRST: a finding with no --severity is refused exit 2 naming "
+              "the missing field, BEFORE any write - the manifest is byte "
+              "identical and no review.finding row was written: %r"
+              % (_rv_nosev[1][:200],),
+              _rv_nosev[0] == 2 and "--severity" in _rv_nosev[1]
+              and rv_bytes(mprv) == _rv_before
+              and rv_rows(projrv, "review.finding") == [])
+        check("rv2 RED-FIRST: a severity outside the vocabulary is refused naming "
+              "the vocabulary the validator grades against, nothing written: %r"
+              % (_rv_badsev[1][:200],),
+              _rv_badsev[0] == 2 and "'medium'" in _rv_badsev[1]
+              and "low, med, high" in _rv_badsev[1]
+              and rv_bytes(mprv) == _rv_before)
+        check("rv2b ...and a finding missing several fields names EVERY one of them "
+              "in one refusal - one round trip, not one per field: %r"
+              % (_rv_bare[1][:200],),
+              _rv_bare[0] == 2 and "--file" in _rv_bare[1]
+              and "--issue" in _rv_bare[1] and "--resolution" in _rv_bare[1]
+              and rv_bytes(mprv) == _rv_before)
+        _rv_one = run(["finding", "P2", "--severity", "high"] + _RV_ARGS
+                      + ["--project-dir", projrv])
+        _rv_two = run(["finding", "P2", "--severity", "med", "--file", "src/b.ts",
+                       "--issue", "the retry arm is unbounded",
+                       "--resolution", "cap it", "--project-dir", projrv])
+        _rv_ph = rv_phase(mprv)
+        _rv_f = (_rv_ph.get("review") or {}).get("findings") or []
+        _rv_frows = rv_rows(projrv, "review.finding")
+        check("rv3 ALLOW: a well-formed finding is APPENDED in the schema's shape "
+              "with an allocated id, in FINDING_FIELDS order, and each call writes "
+              "one review.finding row naming the phase: %r"
+              % ((_rv_one[0], _rv_two[0], _rv_f),),
+              _rv_one[0] == 0 and _rv_two[0] == 0
+              and [list(f.keys()) for f in _rv_f]
+              == [list(_phases.FINDING_FIELDS)] * 2
+              and [f["id"] for f in _rv_f] == ["P2-R1", "P2-R2"]
+              and _rv_f[0]["severity"] == "high"
+              and _rv_f[0]["file"] == "src/a.ts:12-30"
+              and _rv_f[0]["resolution"] == "decide from the resolved path"
+              and len(_rv_frows) == 2
+              and all((r.get("details") or {}).get("phaseId") == "P2"
+                      for r in _rv_frows))
+        _rv_w = _rules.validate(_mio.load_manifest(mprv))[1]
+        check("rv3b ...and the written findings draw none of the validator's "
+              "finding-shape warnings - the verb writes the shape the warning "
+              "asks for: %r" % ([w for w in _rv_w if "review." in str(w)],),
+              not [w for w in _rv_w if "review.findings" in str(w)])
+        check("rv4 the TALLY is derived from review.findings on every write: two "
+              "findings, one high and one med, none fixed: %r"
+              % (_rv_ph.get("review", {}).get("outcome"),),
+              (_rv_ph.get("review") or {}).get("outcome")
+              == "[findings: 2 - 1 high, 1 med, 0 low; 0 with a recorded fix commit]")
+        _RV_SHA = "0123456789abcdef0123456789abcdef01234567"
+        _rv_res = run(["resolve-finding", "P2-R1", "--fix-task", "P2.1",
+                       "--commit", _RV_SHA, "--project-dir", projrv])
+        _rv_ph = rv_phase(mprv)
+        _rv_r1 = ((_rv_ph.get("review") or {}).get("findings") or [{}])[0]
+        _rv_rrows = rv_rows(projrv, "review.resolve")
+        check("rv5 RED-FIRST: `resolve-finding` records the fix task and commit on "
+              "the finding, keeps what the reviewer asked for in the resolution "
+              "text, and writes one review.resolve row: %r" % ((_rv_res, _rv_r1),),
+              _rv_res[0] == 0 and _rv_r1.get("fixTask") == "P2.1"
+              and _rv_r1.get("commit") == _RV_SHA
+              and _rv_r1.get("resolution")
+              == "fixed in P2.1 (%s): decide from the resolved path" % (_RV_SHA[:12],)
+              and len(_rv_rrows) == 1
+              and (_rv_rrows[0].get("details") or {}).get("taskId") == "P2.1"
+              and (_rv_rrows[0].get("details") or {}).get("commit") == _RV_SHA)
+        check("rv5b ...and the tally counts it as fixed, derived again: %r"
+              % ((_rv_ph.get("review") or {}).get("outcome"),),
+              (_rv_ph.get("review") or {}).get("outcome")
+              == "[findings: 2 - 1 high, 1 med, 0 low; 1 with a recorded fix commit]")
+        _rv_own = run(["resolve-finding", "P2-R2", "--fix-task", "P2.3",
+                       "--json", "--project-dir", projrv])
+        try:
+            _rv_own_j = json.loads(_rv_own[1])
+        except ValueError:
+            _rv_own_j = {}
+        _rv_r2 = ((rv_phase(mprv).get("review") or {}).get("findings") or [{}, {}])[1]
+        check("rv5c with no --commit the fix task's OWN recorded commit is the one "
+              "written - the SHA the close already fixed, not a second typing of "
+              "it - and --json says so: %r" % (_rv_own_j,),
+              _rv_own[0] == 0 and _rv_own_j.get("ok") is True
+              and _rv_r2.get("commit") == "abcdef1234567890abcdef1234567890abcdef12")
+        _rv_before2 = rv_bytes(mprv)
+        _rv_ref = [run(argv + ["--project-dir", projrv])[0] for argv in (
+            ["resolve-finding", "P2-R9", "--fix-task", "P2.3", "--commit", _RV_SHA],
+            ["resolve-finding", "P2-R1", "--fix-task", "P9.9", "--commit", _RV_SHA],
+            ["resolve-finding", "P2-R1", "--fix-task", "P2", "--commit", _RV_SHA],
+            ["resolve-finding", "P2-R1", "--fix-task", "P2.1"],
+            ["resolve-finding", "P2-R1", "--fix-task", "P2.3", "--commit", "HEAD"],
+            ["resolve-finding", "P2-R1", "--fix-task", "P2.3",
+             "--commit", "fedcba9876543210fedcba9876543210fedcba98"],
+            ["resolve-finding", "P2-R1", "--commit", _RV_SHA])]
+        check("rv6 a finding no phase holds, a fix task the plan does not hold, a "
+              "PHASE id as the fix task, a fix that has not landed (no --commit and "
+              "none recorded), a ref name for a SHA, a commit contradicting the one "
+              "the task recorded, and no --fix-task are each refused exit 2 with "
+              "nothing written: %r" % (_rv_ref,),
+              _rv_ref == [2] * 7 and rv_bytes(mprv) == _rv_before2)
+
+        _rv_before2b = rv_bytes(mprv)
+        _rv_pend = run(["resolve-finding", "P2-R1", "--fix-task", "P3.1",
+                        "--commit", _RV_SHA, "--project-dir", projrv])
+        check("rv6b RED-FIRST: a fix task that has not landed is refused even with "
+              "--commit - the SHA a caller types for a pending task is a claim "
+              "about work nobody has closed: %r" % (_rv_pend,),
+              _rv_pend[0] == 2 and "P3.1" in _rv_pend[1]
+              and "pending" in _rv_pend[1] and rv_bytes(mprv) == _rv_before2b)
+
+        # A CORRECTION IS TEXT ONLY. The verdict and its phase.verdict row are
+        # the reviewer's call recorded once; a typo in the outcome must not cost
+        # a re-sign-off, and fixing it must not be a way to re-decide anything.
+        _rv_sign = run(["signoff", "P2", "--verdict", "passed",
+                        "--summary", "Search sanitized end to end.",
+                        "--review-outcome", "matches",
+                        "--no-evidence-reason", "fixture: no gate is run here",
+                        "--project-dir", projrv])
+        _rv_ph = rv_phase(mprv)
+        check("rv7 signoff's --review-outcome carries the DERIVED tally too - every "
+              "writer of review.outcome derives it, or the verb that writes it last "
+              "decides whether it is true: %r"
+              % ((_rv_sign[0], (_rv_ph.get("review") or {}).get("outcome")),),
+              _rv_sign[0] == 0
+              and (_rv_ph.get("review") or {}).get("outcome")
+              == "matches [findings: 2 - 1 high, 1 med, 0 low; 2 with a recorded fix commit]")
+        _rv_vrows = rv_rows(projrv, "phase.verdict")
+        _rv_status = (_rv_ph.get("review") or {}).get("status")
+        _rv_cor = run(["correct", "P2",
+                       "--review-outcome", "matches after two fixes",
+                       "--summary", "Search sanitized end to end, both paths.",
+                       "--project-dir", projrv])
+        _rv_ph2 = rv_phase(mprv)
+        _rv_crows = rv_rows(projrv, "review.correct")
+        check("rv8 RED-FIRST: `correct` rewrites the outcome and the summary as "
+              "TEXT, with one review.correct row of its own: %r"
+              % ((_rv_cor, (_rv_ph2.get("review") or {}).get("outcome"),
+                  _rv_ph2.get("summary")),),
+              _rv_cor[0] == 0
+              and (_rv_ph2.get("review") or {}).get("outcome")
+              == "matches after two fixes [findings: 2 - 1 high, 1 med, 0 low; "
+                 "2 with a recorded fix commit]"
+              and _rv_ph2.get("summary") == "Search sanitized end to end, both paths."
+              and len(_rv_crows) == 1)
+        check("rv8b ...and the VERDICT and ITS ROW are untouched: review.status is "
+              "what signoff wrote, the phase.verdict rows are the same rows, no new "
+              "one - a correction never re-decides the verdict: %r"
+              % ((_rv_status, (_rv_ph2.get("review") or {}).get("status"),
+                  len(_rv_vrows)),),
+              _rv_status == "passed"
+              and (_rv_ph2.get("review") or {}).get("status") == "passed"
+              and len(_rv_vrows) == 1
+              and rv_rows(projrv, "phase.verdict") == _rv_vrows)
+        # THE OVER-FIRE DIRECTION: a tally typed into the text is prose, never
+        # the count. A version that read the numbers back out of the outcome
+        # would keep the nine; the list holds two.
+        _rv_typed = run(["correct", "P2", "--review-outcome",
+                         "matches [findings: 9 - 9 high, 0 med, 0 low; "
+                         "9 with a recorded fix commit]", "--project-dir", projrv])
+        _rv_out = (rv_phase(mprv).get("review") or {}).get("outcome") or ""
+        check("rv9 a tally TYPED into the outcome is replaced by the one the "
+              "findings derive, and there is exactly one: %r" % (_rv_out,),
+              _rv_typed[0] == 0 and _rv_out.count("[findings:") == 1
+              and _rv_out == "matches [findings: 2 - 1 high, 1 med, 0 low; "
+                             "2 with a recorded fix commit]")
+        _rv_before3 = rv_bytes(mprv)
+        with open(os.devnull, "w") as _null, contextlib.redirect_stderr(_null):
+            _rv_cref = [run(argv + ["--project-dir", projrv])[0] for argv in (
+                ["correct", "P2", "--verdict", "skipped", "--summary", "s"],
+                ["correct", "P2"],
+                ["correct", "P2", "--summary", ""],
+                ["correct", "P2.1", "--summary", "s"])]
+        check("rv10 `correct` refuses --verdict (it does not read it), a call with "
+              "nothing to correct, an empty text and a task id - nothing written: %r"
+              % (_rv_cref,),
+              _rv_cref == [2] * 4 and rv_bytes(mprv) == _rv_before3)
+        projrv2, mprv2 = mk("rv-unsigned", rv_fixture())
+        _rv_pre = run(["correct", "P2", "--summary", "s", "--project-dir", projrv2])
+        check("rv10b ...and a phase with no verdict yet: there is no record to "
+              "correct, and the one that writes it is signoff: %r" % (_rv_pre,),
+              _rv_pre[0] == 2 and "signoff" in _rv_pre[1])
+        _rv_leg = rv_fixture()
+        _rv_leg["phases"][1]["review"] = {"status": "pending",
+                                          "findings": ["a legacy free-text note"]}
+        projrv3, mprv3 = mk("rv-legacy", _rv_leg)
+        _rv_l = run(["finding", "P2", "--severity", "low", "--file", "README.md",
+                     "--issue", "typo", "--resolution", "fix it", "--json",
+                     "--project-dir", projrv3])
+        try:
+            _rv_lj = json.loads(_rv_l[1])
+        except ValueError:
+            _rv_lj = {}
+        _rv_lr = rv_phase(mprv3).get("review") or {}
+        _rv_lw = _rules.validate(_mio.load_manifest(mprv3))[1]
+        check("rv11 a legacy string finding stays where it is, the new one is "
+              "numbered past it, and the tally names the entry outside the "
+              "vocabulary rather than dropping it; --json carries the finding: %r"
+              % ((_rv_lj.get("finding"), _rv_lr.get("outcome")),),
+              _rv_l[0] == 0 and (_rv_lj.get("finding") or {}).get("id") == "P2-R1"
+              and _rv_lr.get("findings", [None])[0] == "a legacy free-text note"
+              # ...and the validator DOES warn on this plan, which is what keeps
+              # rv3b's silence from being the silence of a warning that never fires.
+              and [w for w in _rv_lw if "review.findings" in str(w)] != []
+              and _rv_lr.get("outcome")
+              == "[findings: 2 - 0 high, 0 med, 1 low, 1 outside low|med|high; "
+                 "0 with a recorded fix commit]")
+
+        # ---- the batch form, the landed phase, reopen, and the journal's view ------
+        # A batch is ONE lock and ONE write for every finding a review returned,
+        # which is what parallel single-finding calls could never be.
+        projrb, mprb = mk("rv-batch", rv_fixture())
+        _rb_file = os.path.join(tmp, "rv-batch-findings.json")
+        with open(_rb_file, "w", encoding="utf-8") as _fh:
+            json.dump([{"id": 1, "severity": "high", "file": "src/a.ts:3",
+                        "issue": "reads `argv` as prose", "resolution": "read the path"},
+                       {"severity": "low", "file": "src/b.ts",
+                        "issue": "i2", "resolution": "r2"},
+                       {"severity": "low", "file": "README.md",
+                        "issue": "i3", "resolution": "r3"}], _fh)
+        _rb = run(["finding", "P2", "--findings-file", _rb_file,
+                   "--project-dir", projrb])
+        _rb_f = (rv_phase(mprb).get("review") or {}).get("findings") or []
+        _rb_rows = rv_rows(projrb, "review.finding")
+        check("rv12 `finding --findings-file` records EVERY finding a review "
+              "returned in one write, each with an allocated id (the reviewer's "
+              "own number is not the plan's id), one review.finding row each: %r"
+              % ((_rb[0], [f.get("id") for f in _rb_f], len(_rb_rows)),),
+              _rb[0] == 0 and [f.get("id") for f in _rb_f] == ["P2-R1", "P2-R2", "P2-R3"]
+              and _rb_f[0].get("issue") == "reads `argv` as prose"
+              and len(_rb_rows) == 3
+              and (rv_phase(mprb).get("review") or {}).get("outcome")
+              == "[findings: 3 - 1 high, 0 med, 2 low; 0 with a recorded fix commit]")
+        _rb_before = rv_bytes(mprb)
+        _rb_bad = os.path.join(tmp, "rv-batch-bad.json")
+        with open(_rb_bad, "w", encoding="utf-8") as _fh:
+            json.dump([{"severity": "low", "file": "a", "issue": "i", "resolution": "r"},
+                       {"severity": "medium", "file": "b", "issue": "i",
+                        "resolution": "r"}], _fh)
+        _rb_badr = run(["finding", "P2", "--findings-file", _rb_bad,
+                        "--project-dir", projrb])
+        _rb_mix = run(["finding", "P2", "--findings-file", _rb_file,
+                       "--severity", "low", "--project-dir", projrb])
+        with open(_rb_bad, "w", encoding="utf-8") as _fh:
+            _fh.write("{not json")
+        _rb_torn = run(["finding", "P2", "--findings-file", _rb_bad,
+                        "--project-dir", projrb])
+        check("rv12b ...and a batch with ONE bad entry is refused WHOLE, naming the "
+              "entry; a batch beside the per-field flags and a file that is not "
+              "a JSON list are refused too - nothing written: %r"
+              % ((_rb_badr, _rb_mix[0], _rb_torn[0]),),
+              _rb_badr[0] == 2 and "entry 2" in _rb_badr[1]
+              and "'medium'" in _rb_badr[1]
+              and _rb_mix[0] == 2 and _rb_torn[0] == 2
+              and rv_bytes(mprb) == _rb_before)
+
+        projrs, mprs = mk("rv-batch-stdin", rv_fixture())
+        _rs = run_on_stdin(["finding", "P2", "--findings-file", "-",
+                            "--project-dir", projrs],
+                           json.dumps([{"severity": "med", "file": "a",
+                                        "issue": "quotes `code` and 'text'",
+                                        "resolution": "r"}]))
+        _rs_f = (rv_phase(mprs).get("review") or {}).get("findings") or []
+        check("rv12c ...and `--findings-file -` reads the batch off stdin verbatim, "
+              "backticks and quotes intact - the route step 1 prescribes: %r"
+              % ((_rs[0], _rs_f),),
+              _rs[0] == 0 and [f.get("issue") for f in _rs_f]
+              == ["quotes `code` and 'text'"])
+
+        # PARALLEL CALLS FROM ONE SESSION. Several processes carrying one session
+        # id and one CLAUDE_PID is what several Bash calls in one message are; the
+        # lock let each of them back in as "already yours", so every one wrote
+        # over the others and reported success.
+        projpar, mppar = mk("rv-parallel", rv_fixture(), git=True)
+        _par_env = dict(os.environ, CLAUDE_CODE_SESSION_ID="s-one-session",
+                        CLAUDE_PID=str(os.getpid()))
+        _par_env.pop("AUDIT_LOCK_TOKENS", None)
+        _par_script = os.path.join(_output.SCRIPTS_DIR, "manifest", "audit-task.py")
+        _par_procs = [subprocess.Popen(
+            [sys.executable, _par_script, "finding", "P2", "--severity", "low",
+             "--file", "src/p%d.ts" % n, "--issue", "issue %d" % n,
+             "--resolution", "fix %d" % n, "--project-dir", projpar],
+            env=_par_env, cwd=projpar, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT) for n in range(4)]
+        _par_out = [(pr.wait(), pr.stdout.read().decode("utf-8", "replace"))
+                    for pr in _par_procs]
+        for pr in _par_procs:
+            pr.stdout.close()
+        _par_f = (rv_phase(mppar).get("review") or {}).get("findings") or []
+        check("rv13 RED-FIRST: four `finding` processes of ONE session run at once "
+              "and EVERY finding lands, under four distinct ids - the lock "
+              "serialises another process of the same session instead of letting "
+              "it back in: %r"
+              % (([c for c, _t in _par_out], sorted(f.get("file") for f in _par_f)),),
+              [c for c, _t in _par_out] == [0] * 4
+              and sorted(f.get("file") for f in _par_f)
+              == ["src/p%d.ts" % n for n in range(4)]
+              and sorted(f.get("id") for f in _par_f)
+              == ["P2-R%d" % n for n in range(1, 5)])
+
+        # A LANDED PHASE IS A CLOSED RECORD; a signed-off one still in flight
+        # takes the finding and the row says it arrived after the verdict.
+        _rl = rv_fixture()
+        _rl["phases"][1].update(review={"status": "passed"}, summary="s",
+                                branch="audit/p2", mergedAt="2026-09-01T00:00:00Z")
+        projrl, mprl = mk("rv-landed", _rl)
+        _rl_before = rv_bytes(mprl)
+        _rl_code = run(["finding", "P2", "--severity", "low", "--file", "a",
+                        "--issue", "i", "--resolution", "r", "--project-dir", projrl])
+        check("rv14 RED-FIRST: `finding` refuses a phase that has LANDED (mergedAt "
+              "set), naming when and the verb that re-opens review: %r" % (_rl_code,),
+              _rl_code[0] == 2 and "2026-09-01T00:00:00Z" in _rl_code[1]
+              and "/audit:review" in _rl_code[1] and rv_bytes(mprl) == _rl_before)
+        _ru = rv_fixture()
+        _ru["phases"][1].update(review={"status": "passed"}, summary="s",
+                                branch="audit/p2")
+        projru, mpru = mk("rv-unlanded", _ru)
+        _ru_code = run(["finding", "P2", "--severity", "low", "--file", "a",
+                        "--issue", "i", "--resolution", "r", "--project-dir", projru])
+        _ru_rows = rv_rows(projru, "review.finding")
+        check("rv14b ALLOW: a signed-off phase that has NOT landed still takes a "
+              "finding, and both the output and the row say the verdict was "
+              "already on record: %r" % ((_ru_code, [r.get("summary") for r in _ru_rows]),),
+              _ru_code[0] == 0 and "verdict passed" in _ru_code[1]
+              and len(_ru_rows) == 1
+              and "verdict passed" in (_ru_rows[0].get("summary") or ""))
+
+        # REOPEN takes the fix back, so the finding stops saying it was fixed.
+        projro, mpro = mk("rv-reopen", rv_fixture())
+        run(["finding", "P2", "--severity", "med", "--file", "a", "--issue", "i",
+             "--resolution", "decide", "--project-dir", projro])
+        run(["resolve-finding", "P2-R1", "--fix-task", "P2.3",
+             "--project-dir", projro])
+        _ro_code = run(["reopen", "P2.3", "--reason", "the fix was wrong",
+                        "--project-dir", projro])
+        _ro_ph = rv_phase(mpro)
+        _ro_f = ((_ro_ph.get("review") or {}).get("findings") or [{}])[0]
+        check("rv15 RED-FIRST: `reopen` of a fix task clears the commit from every "
+              "finding that recorded it, restores the reviewer's resolution, and "
+              "the tally stops counting it: %r"
+              % ((_ro_code[0], _ro_f, (_ro_ph.get("review") or {}).get("outcome")),),
+              _ro_code[0] == 0 and not _ro_f.get("commit")
+              and _ro_f.get("resolution") == "decide"
+              and (_ro_ph.get("review") or {}).get("outcome")
+              == "[findings: 1 - 0 high, 1 med, 0 low; 0 with a recorded fix commit]")
+
+        # THE JOURNAL'S VIEW OF A LONG OUTCOME keeps its END, where the tally is.
+        projrj, mprj = mk("rv-journal", rv_fixture())
+        run(["signoff", "P2", "--verdict", "skipped", "--summary", "s",
+             "--review-outcome", "x" * 300, "--project-dir", projrj])
+        run(["finding", "P2", "--severity", "high", "--file", "a", "--issue", "i",
+             "--resolution", "r", "--project-dir", projrj])
+        _rj_ch = [c for r in rv_rows(projrj, "review.finding")
+                  for c in ((r.get("details") or {}).get("changes") or [])
+                  if c.get("field") == "review.outcome"]
+        check("rv16 RED-FIRST: a long outcome is shortened from the MIDDLE in the "
+              "journal row, so the tally at its end is what the row shows "
+              "changing: %r" % (_rj_ch,),
+              len(_rj_ch) == 1
+              and str(_rj_ch[0].get("to")).endswith(
+                  "[findings: 1 - 1 high, 0 med, 0 low; 0 with a recorded fix commit]")
+              and "truncated" not in str(_rj_ch[0].get("to")))
+
+        # A FIX RECORDED BY HAND is prose; the clause counts only what it names.
+        _rh = rv_fixture()
+        _rh["phases"][1]["review"] = {"status": "pending", "findings": [
+            {"id": "P2-R1", "severity": "med", "file": "a", "issue": "i",
+             "resolution": "fixed in P2.3 (abcdef123456)"}]}
+        projrh, mprh = mk("rv-hand", _rh)
+        run(["finding", "P2", "--severity", "low", "--file", "b", "--issue", "i",
+             "--resolution", "r", "--project-dir", projrh])
+        _rh_out = (rv_phase(mprh).get("review") or {}).get("outcome") or ""
+        check("rv17 the clause says exactly what it counts - a fix recorded by hand "
+              "in the resolution text is not one the fields recorded, so it reads "
+              "`0 with a recorded fix commit` and nothing calls it unfixed: %r"
+              % (_rh_out,),
+              _rh_out == "[findings: 2 - 0 high, 1 med, 1 low; "
+                         "0 with a recorded fix commit]")
 
         # ---- (mv) move: the hand procedure, as a verb ------------------------------
         def mv_fixture():
@@ -6800,7 +8249,7 @@ def _cases(check):
                          " now returns 204", "--project-dir", projgs])
         _gs_lines = txt.splitlines()
         _gs_route = [i for i, ln in enumerate(_gs_lines) if "<<'BRIEF'" in ln]
-        check("gs1 a leading or doubled space is named as LIKELY backtick "
+        check("gz1 a leading or doubled space is named as LIKELY backtick "
               "substitution, pointing at the shell's own stderr, in a refusal cut to "
               "the route and the marked span: %d line(s): %r"
               % (len(_gs_lines), txt),
@@ -6809,7 +8258,7 @@ def _cases(check):
               and _gs_route and _gs_route[0] <= 2 and "Seen at:" in txt)
         code, txt = run(["add", "Comma", "--phase", "P2", "--description",
                          "gating on , returning it", "--project-dir", projgs])
-        check("gs2 SECOND DIRECTION: a shape that is just as likely code quoted into "
+        check("gz2 SECOND DIRECTION: a shape that is just as likely code quoted into "
               "prose does not claim substitution as likely - it says the check "
               "cannot tell them apart: %r" % (txt,),
               code == 2 and "likely" not in txt.lower()
@@ -6868,7 +8317,8 @@ def _cases(check):
               code == 0 and not [ln for ln in txt.splitlines()
                                  if "directory" in ln and ln.startswith("WARNING")])
 
-        # ---- (rv) P76 review findings --------------------------------------------
+        # ---- (rv) review findings: a bug's derived state must survive a
+        # close that changed nothing -------------------------------------------
         # R1: a no-change close on a bug's FIX TASK would derive the bug `fixed`
         # with no fixedIn - a bug marked fixed with no fix commit, which the
         # release guard then stops counting as open.
@@ -7040,10 +8490,539 @@ def _cases(check):
         # R8: a span substituted at the END leaves trailing whitespace on its own.
         code, txt = run(["add", "Trail", "--phase", "P2", "--description",
                          "fix the build ", "--project-dir", projrv4])
-        check("gs3 trailing whitespace is named as likely COMMAND SUBSTITUTION too - a "
+        check("gz3 trailing whitespace is named as likely COMMAND SUBSTITUTION too - a "
               "span at the end of the text leaves it as mechanically as one at the "
               "start: %s" % (txt,),
               code == 2 and "Likely COMMAND SUBSTITUTION" in txt)
+
+        # ---- (dg) a gate-only task narrows only to a SUITE PATH ----------------
+        # `tests.add` already proves a tdd/regression task creates a real test
+        # file, so its `files` arm stays unfiltered (dg3, unchanged from
+        # today) - but a gate-only task names no case at all, and a source
+        # file among its `files` is not evidence the sibling's suite-running
+        # command has anything of THIS task's to run. RED-FIRST on today's
+        # code: before this fix, dg1 below reads back
+        # `["vitest run src/Button.tsx README.md"]` with basis `"files"`, the
+        # sibling's spelling pointed at two files it never tested.
+        def dg_manifest():
+            return {
+                "meta": {"version": 2,
+                         "buildCommands": {"lint": "eslint .",
+                                           "typecheck": "tsc --noEmit",
+                                           "test": "vitest run"},
+                         "phaseGate": {"always": ["lint", "typecheck"]}},
+                "phases": [
+                    {"id": "P1", "title": "UI", "status": "in_progress",
+                     "testGate": ["lint", "typecheck", "test"],
+                     "tasks": [
+                         {"id": "P1.1", "title": "seed", "status": "done",
+                          "files": ["src/a.ts"],
+                          "tests": {"mode": "gate-only", "add": [],
+                                    "expectRedFirst": False,
+                                    "gate": ["vitest run src/a.test.ts"]}}]},
+                ],
+                "fileIndex": {"src/a.ts": ["P1.1"]},
+                "bugs": [],
+            }
+
+        dg_proj, dg_mp = mk("dg-gate", dg_manifest())
+
+        def dg_tests(tid):
+            return (task_in(dg_mp, tid) or {}).get("tests") or {}
+
+        codedg, txtdg = run(
+            ["add", "New button", "--phase", "P1", "--project-dir", dg_proj,
+             "--files", "src/Button.tsx,README.md"])
+        check("dg1 RED-FIRST: a gate-only task whose files name NO suite path "
+              "gets `meta.phaseGate.always`, with basis `gate-only-no-suite` - "
+              "never the sibling's spelling pointed at two source files "
+              "nothing here tested: %r"
+              % ((dg_tests("P1.2").get("gate"), dg_tests("P1.2").get("gateBasis")),),
+              codedg == 0
+              and dg_tests("P1.2").get("gate") == ["lint", "typecheck"]
+              and dg_tests("P1.2").get("gateBasis") == "gate-only-no-suite")
+
+        # ALLOW CASE: a suite path AMONG the files still narrows the gate, in
+        # the sibling's spelling - the arm this fix must not disable outright.
+        codedg, txtdg = run(
+            ["add", "New button, tested", "--phase", "P1",
+             "--project-dir", dg_proj, "--files",
+             "src/Button.tsx,src/Button.test.tsx"])
+        check("dg2 ALLOW CASE: a suite path among the files still narrows the "
+              "gate, in the sibling's spelling: %r"
+              % ((dg_tests("P1.3").get("gate"), dg_tests("P1.3").get("gateBasis")),),
+              codedg == 0
+              and dg_tests("P1.3").get("gate")
+              == ["vitest run src/Button.test.tsx"]
+              and dg_tests("P1.3").get("gateBasis") == "files")
+
+        # ALLOW CASE: a REGRESSION task's `files` arm is unfiltered, exactly as
+        # today - `tests.add`'s invariant already covers it, this fix is
+        # gate-only's alone.
+        codedg, txtdg = run(
+            ["add", "Fix a regression", "--phase", "P1",
+             "--project-dir", dg_proj, "--tests-mode", "regression",
+             "--files", "src/Button.tsx"])
+        check("dg3 ALLOW CASE: a regression task keeps today's unfiltered "
+              "`files` arm even with only a source file named: %r"
+              % ((dg_tests("P1.4").get("gate"), dg_tests("P1.4").get("gateBasis")),),
+              codedg == 0
+              and dg_tests("P1.4").get("gate") == ["vitest run src/Button.tsx"]
+              and dg_tests("P1.4").get("gateBasis") == "files")
+
+        # ---- (pg) a NEW PHASE's gate: always FIRST, exclude the only drop ------
+        pg_always = {
+            "meta": {"version": 2,
+                     "buildCommands": {"test": "npm test",
+                                       "lint": "npm run lint"},
+                     "phaseGate": {"always": ["lint"]}},
+            "phases": [], "fileIndex": {}, "bugs": [],
+        }
+        pg_proj, pg_mp = mk("pg-always", pg_always)
+        code, txt = run(["add-phase", "Docs", "--outcome", "shipped",
+                         "--project-dir", pg_proj])
+
+        def pg_gate(mp, title):
+            found = [p for p in _mio.load_manifest(mp)["phases"]
+                    if p.get("title") == title]
+            return found[0].get("testGate") if found else None
+
+        check("pg1 RED-FIRST: `meta.phaseGate.always` puts a key FIRST and every "
+              "OTHER buildCommands key still follows, in buildCommands order - "
+              "`always` is an ORDER and never a narrowing, so `test` does not "
+              "vanish: %r" % (pg_gate(pg_mp, "Docs"),),
+              code == 0 and pg_gate(pg_mp, "Docs") == ["lint", "test"]
+              and "meta.phaseGate.always first" in txt)
+
+        pg_exclude = {
+            "meta": {"version": 2,
+                     "buildCommands": {"test": "npm test",
+                                       "lint": "npm run lint",
+                                       "coverage": "npm run coverage"},
+                     "phaseGate": {"exclude": ["coverage"]}},
+            "phases": [], "fileIndex": {}, "bugs": [],
+        }
+        pg_proj2, pg_mp2 = mk("pg-exclude", pg_exclude)
+        code, txt = run(["add-phase", "Docs2", "--outcome", "shipped",
+                         "--project-dir", pg_proj2])
+        check("pg2 RED-FIRST: `meta.phaseGate.exclude` drops the buildCommands "
+              "key it names from a NEW phase's gate, and the basis names the "
+              "exclusion - today's code writes `coverage` in anyway and the "
+              "basis names no exclusion at all: %r"
+              % ((pg_gate(pg_mp2, "Docs2"), txt.splitlines()[2]
+                  if len(txt.splitlines()) > 2 else txt),),
+              code == 0 and pg_gate(pg_mp2, "Docs2") == ["test", "lint"]
+              and "coverage" not in (pg_gate(pg_mp2, "Docs2") or [])
+              and "excluded by meta.phaseGate.exclude" in txt
+              and "coverage" in txt)
+
+        # pg3: EXCLUDE-TO-NOTHING - `meta.phaseGate.exclude` names every
+        # buildCommands key and `always` adds none back, so the derived
+        # default has nothing left. Today's code (which never reads `exclude`
+        # at all) would write both keys in anyway; this is CERTAIN even with
+        # no evidence in hand (`phase_gate_suite_gap`'s first arm), which is
+        # why the validator's warning fires from the plan alone.
+        pg_nothing = {
+            "meta": {"version": 2,
+                     "buildCommands": {"lint": "npm run lint",
+                                       "test": "npm test"},
+                     "phaseGate": {"exclude": ["lint", "test"]}},
+            "phases": [], "fileIndex": {}, "bugs": [],
+        }
+        pg_proj3, pg_mp3 = mk("pg-nothing", pg_nothing)
+        code, txt = run(["add-phase", "Docs3", "--outcome", "shipped",
+                         "--project-dir", pg_proj3])
+        check("pg3 RED-FIRST EXCLUDE-TO-NOTHING: `meta.phaseGate.exclude` "
+              "naming EVERY buildCommands key, with no `always`, writes an "
+              "EMPTY gate - the basis names `meta.phaseGate.exclude` as the "
+              "cause, and the post-write warnings carry `phase_gate_suite_gap`'s "
+              "'phase gate runs no suite' line, since nothing here can prove "
+              "this phase done: %r"
+              % ((pg_gate(pg_mp3, "Docs3"),
+                  [ln for ln in txt.splitlines() if "WARNING" in ln]),),
+              code == 0 and pg_gate(pg_mp3, "Docs3") == []
+              and "meta.phaseGate.exclude" in txt
+              and "phase gate runs no suite" in txt)
+
+        # pg4: ABSENT phaseGate = TODAY - locked to the literal, now that the
+        # derivation this case checks (calling `phase_gate_default` at all) is
+        # itself part of the committed HEAD this suite runs against. This case
+        # used to capture its expected value by loading HEAD's OWN
+        # `_phase_gate` text dynamically and running it - the right proof
+        # while HEAD still held the PRE-fix code, so a hand-derived
+        # expectation could not be an inference from the same function being
+        # tested. Once that derivation landed, HEAD's `_phase_gate` IS this
+        # module's, so that comparison had become `M._phase_gate` read back at
+        # itself (and broke outright: the extracted function text called
+        # `_phases.phase_gate_default`, a name that exists in THIS module's
+        # namespace and not in the bare one the extracted text was `exec`'d
+        # into - `NameError: name '_phases' is not defined`). The mutation
+        # this case exists to catch (building the default from SORTED keys)
+        # was proved live during that derivation's own red-first pass; the
+        # literal here is what stays to keep proving it.
+        import types
+        _pg4_args = types.SimpleNamespace(gate=None, gate_clear=False)
+        _pg4_manifest = {"meta": {
+            "version": 2,
+            "buildCommands": {"test": "npm test", "lint": "npm run lint",
+                              "coverage": "npm run coverage"}}}
+        _pg4_got = M._phase_gate(_pg4_args, _pg4_manifest)
+        check("pg4 ABSENT phaseGate = TODAY: with no `meta.phaseGate` at all, "
+              "the gate is every buildCommands key in ITS OWN declared order "
+              "(`test, lint, coverage`), never sorted, with basis 'from "
+              "meta.buildCommands': %r" % (_pg4_got,),
+              _pg4_got == (["test", "lint", "coverage"],
+                          "from meta.buildCommands"))
+
+        # ---- (ff) a fix task opened after a red run is gated on ITS failing --
+        # suites -- `add --failing-from <runId>`. `_named_failing_suites`'s own
+        # rule: only a step whose `failingSuitesBasis` says the runner NAMED
+        # them counts; a tail excerpt is not a list of failing tests.
+        import _evidence_io as _ff_ev
+
+        def ff_manifest():
+            return {
+                "meta": {"version": 2,
+                         "buildCommands": {"lint": "eslint .",
+                                           "test": "vitest run"}},
+                "phases": [
+                    {"id": "P1", "title": "Cart", "status": "in_progress",
+                     "testGate": ["lint", "test"],
+                     "tasks": [{
+                         "id": "P1.1", "title": "seed", "status": "done",
+                         "files": ["src/a.ts"],
+                         "tests": {"mode": "gate-only", "add": [],
+                                  "expectRedFirst": False,
+                                  "gate": ["lint",
+                                          "vitest run src/a.test.ts"]}}]},
+                    {"id": "P2", "title": "Elsewhere", "status": "pending",
+                     "testGate": ["lint", "test"], "tasks": []},
+                ],
+                "fileIndex": {"src/a.ts": ["P1.1"]},
+                "bugs": [],
+            }
+
+        ff_proj, ff_mp = mk("ff-failing-from", ff_manifest())
+        _ff_ev.append_row(ff_proj, {
+            "v": 1, "runId": "RUN-VITEST", "ts": "2026-09-01T00:00:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "failed",
+            "steps": [{"name": "test", "exit": 1,
+                      "failingSuites": ["src/cart.test.ts"],
+                      "failingSuitesBasis": ("the 1 suite file(s) vitest "
+                                             "named as failing, read from "
+                                             "vitest's FAIL <file> line(s)")}]})
+
+        def ff_tests(tid):
+            return (task_in(ff_mp, tid) or {}).get("tests") or {}
+
+        codeff, txtff = run(
+            ["add", "Fix the cart total", "--phase", "P1",
+             "--project-dir", ff_proj, "--failing-from", "RUN-VITEST",
+             "--tests-add", "src/cart2.test.ts: covers the new branch too"])
+        check("ff1 RED-FIRST (dg21): a fixture ledger row with a failed step "
+              "whose failingSuites names ['src/cart.test.ts'] (named basis) "
+              "and a sibling spelled 'vitest run src/a.test.ts' give the new "
+              "task 'vitest run src/cart.test.ts <its tests.add path>' and "
+              "gateBasis failing-from-run:<runId> - today's parser does not "
+              "know --failing-from at all, so this exits 2 rather than 0: %r"
+              % ((codeff, ff_tests("P1.2").get("gate"),
+                  ff_tests("P1.2").get("gateBasis")),),
+              codeff == 0
+              and ff_tests("P1.2").get("gate")
+              == ["lint",
+                  "vitest run src/cart.test.ts src/cart2.test.ts"]
+              and ff_tests("P1.2").get("gateBasis")
+              == "failing-from-run:RUN-VITEST")
+
+        # ---- MUTATION GUARD: a JEST-shaped row, `failing` carries CHECK -----
+        # names, never a suite path - reading suites off it instead of
+        # `failingSuites` would put a check's own title where a file path
+        # belongs.
+        _ff_ev.append_row(ff_proj, {
+            "v": 1, "runId": "RUN-JEST", "ts": "2026-09-01T00:05:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "failed",
+            "steps": [{"name": "test", "exit": 1,
+                      "failing": ["renders the cart > totals an empty cart"],
+                      "failingSuites": ["src/cart.test.ts"],
+                      "failingSuitesBasis": ("the 1 suite file(s) jest named "
+                                             "as failing, read from jest's "
+                                             "FAIL <path> header(s)")}]})
+        codeff, txtff = run(
+            ["add", "Fix on a jest-shaped row", "--phase", "P1",
+             "--project-dir", ff_proj, "--failing-from", "RUN-JEST"])
+        check("ff2 MUTATION GUARD (dg21): the suite is read off "
+              "`failingSuites`, a FILE, never off `failing`, a CHECK's own "
+              "title with no path in it at all: %r"
+              % (ff_tests("P1.3").get("gate"),),
+              codeff == 0
+              and ff_tests("P1.3").get("gate")
+              == ["lint", "vitest run src/cart.test.ts"])
+
+        # ---- ALLOW CASE: a TAIL basis falls through, printing why ----------
+        _ff_ev.append_row(ff_proj, {
+            "v": 1, "runId": "RUN-TAIL", "ts": "2026-09-01T00:10:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "failed",
+            "steps": [{"name": "test", "exit": 1,
+                      "failingSuitesBasis": (
+                          "no runner this gate can count recognised, so no "
+                          "suite file could be named")}]})
+        codeff, txtff = run(
+            ["add", "Fix from a tail-only row", "--phase", "P1",
+             "--project-dir", ff_proj, "--failing-from", "RUN-TAIL",
+             "--tests-add", "src/tail.test.ts: the case this task writes"])
+        check("ff3 ALLOW CASE: a row with a TAIL basis (no runner named a "
+              "suite) falls through to the task's tests.add gate, with the "
+              "reason PRINTED rather than an empty gate - the gate is never "
+              "empty just because --failing-from could not narrow anything: "
+              "%r" % ((codeff, ff_tests("P1.4").get("gate"),
+                       ff_tests("P1.4").get("gateBasis")),),
+              codeff == 0
+              and ff_tests("P1.4").get("gate")
+              == ["lint", "vitest run src/tail.test.ts"]
+              and ff_tests("P1.4").get("gateBasis") == "tests.add"
+              and "named no suite as failing" in txtff)
+
+        # ---- ALLOW CASE: an unknown runId is refused, exit 2 ----------------
+        codeff, txtff = run(
+            ["add", "Fix an id nobody recorded", "--phase", "P1",
+             "--project-dir", ff_proj, "--failing-from", "NO-SUCH-RUN"])
+        check("ff4 ALLOW CASE: an unknown runId is refused exit 2, naming NO "
+              "run rather than handing back the ordinary derivation in "
+              "silence: %r" % (txtff[:120],),
+              codeff == 2 and "no run with this id" in txtff
+              and task_in(ff_mp, "P1.5") is None)
+
+        # ---- ALLOW CASE: a PASSED row is refused, exit 2 --------------------
+        _ff_ev.append_row(ff_proj, {
+            "v": 1, "runId": "RUN-GREEN", "ts": "2026-09-01T00:15:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "passed", "steps": []})
+        codeff, txtff = run(
+            ["add", "Fix from a green run", "--phase", "P1",
+             "--project-dir", ff_proj, "--failing-from", "RUN-GREEN"])
+        check("ff5 ALLOW CASE: a run that PASSED is refused exit 2, naming its "
+              "actual status - a fix task opened from a passed run is not "
+              "failed-first: %r" % (txtff[:120],),
+              codeff == 2 and "not a FAILED run" in txtff and "passed" in txtff
+              and task_in(ff_mp, "P1.5") is None)
+
+        # ---- ALLOW CASE: a row scoped to a DIFFERENT phase is refused -------
+        _ff_ev.append_row(ff_proj, {
+            "v": 1, "runId": "RUN-OTHER", "ts": "2026-09-01T00:20:00Z",
+            "scope": "phase", "phaseId": "P2", "status": "failed",
+            "steps": [{"name": "test", "exit": 1,
+                      "failingSuites": ["src/other.test.ts"],
+                      "failingSuitesBasis": ("the 1 suite file(s) vitest "
+                                             "named as failing, read from "
+                                             "vitest's FAIL <file> line(s)")}]})
+        codeff, txtff = run(
+            ["add", "Fix P1 from P2's run", "--phase", "P1",
+             "--project-dir", ff_proj, "--failing-from", "RUN-OTHER"])
+        check("ff6 ALLOW CASE: a row scoped to a DIFFERENT phase is refused - "
+              "a fix task's gate can only narrow to suites THIS phase's own "
+              "run named as failing: %r" % (txtff[:140],),
+              codeff == 2 and "not phase P1's" in txtff
+              and task_in(ff_mp, "P1.5") is None)
+
+        # ---- (cp) couple / uncouple: `meta.coupling`, an index-only write --
+        import _evidence_io as _cp_ev
+
+        def cp_meta(mpath):
+            try:
+                return _mio.load_manifest(mpath).get("meta") or {}
+            except Exception:
+                return {}
+
+        def cp_coupling(mpath):
+            return cp_meta(mpath).get("coupling") or []
+
+        def cp_journal(project, action):
+            """Every row of `action` the journal actually holds - the same
+            read every other verb's case in this file takes (`task.scope`,
+            `phase.cancel`), so a coupling row is read the way the rest of
+            the trail already is rather than by a second route."""
+            jmod = _panel_write._journalmod()
+            return [r for r in (jmod.read_all(project) if jmod else [])
+                   if r.get("action") == action]
+
+        def cp_repo(name, manifest):
+            """A fixture whose project really IS a git repository with a
+            commit - `pd_repo`'s own reason: the question `couple` asks is
+            whether git resolves a SHA, and a stub would answer for a third
+            party neither the suite nor the code asked."""
+            proj, mpath = mk(name, manifest, git=True)
+            for argv in (["config", "user.email", "t@example.com"],
+                         ["config", "user.name", "Test User"],
+                         ["add", "-A"], ["commit", "-qm", "seed"]):
+                subprocess.run(["git", "-C", proj] + argv,
+                               stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL)
+            head = subprocess.run(["git", "-C", proj, "rev-parse", "HEAD"],
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL)
+            return proj, mpath, head.stdout.decode("utf-8", "replace").strip()
+
+        cp_proj, cp_mp = mk("cp-couple", base_manifest())
+        _cp_ev.append_row(cp_proj, {
+            "v": 1, "runId": "RUN-CP1", "ts": "2026-09-01T00:00:00Z",
+            "scope": "phase", "phaseId": "P2", "status": "failed", "steps": []})
+
+        codecp, txtcp = run(
+            ["couple", "--test", "tests/test_a.py",
+             "--sources", "src/a.ts,src/b.ts",
+             "--basis-run", "RUN-CP1", "--basis-head", "deadbeef",
+             "--phases", "P2", "--project-dir", cp_proj])
+        check("cp1 RED-FIRST: `couple` is an unknown verb on current code, "
+              "so this must exit 2 (usage) rather than write an entry -- "
+              "green here means `meta.coupling` can only be written by hand: "
+              "%r" % ((codecp, cp_coupling(cp_mp)),),
+              codecp == 0
+              and cp_coupling(cp_mp) == [
+                  {"test": "tests/test_a.py",
+                   "sources": ["src/a.ts", "src/b.ts"],
+                   "basis": {"runId": "RUN-CP1", "head": "deadbeef",
+                            "phases": ["P2"]},
+                   "learnedAt": cp_coupling(cp_mp)[0]["learnedAt"]}])
+        _cp_learned_at = cp_coupling(cp_mp)[0]["learnedAt"] if cp_coupling(cp_mp) else None
+        _cp_learned_rows = cp_journal(cp_proj, "coupling.learned")
+        # `details.to` is a LIST, so `_journal_io._clip` spells it as JSON
+        # text - decoded rather than compared as text, `jf_val`'s own reason
+        # two groups over.
+        _cp_learned_det = (_cp_learned_rows[0].get("details") or {}
+                           if _cp_learned_rows else {})
+        check("cp1b `couple` writes exactly one `coupling.learned` journal "
+              "row, carrying {field, to, runId, commit} - read the way "
+              "every other verb's case in this file reads its own action: "
+              "%r" % (_cp_learned_rows,),
+              len(_cp_learned_rows) == 1
+              and _cp_learned_det.get("field") == "tests/test_a.py"
+              and json.loads(_cp_learned_det.get("to") or "null")
+              == ["src/a.ts", "src/b.ts"]
+              and _cp_learned_det.get("runId") == "RUN-CP1"
+              and _cp_learned_det.get("commit") == "deadbeef")
+
+        # ---- MUTATION GUARD: coupling the SAME test twice UNIONS the -------
+        # sources and keeps the first `learnedAt` -- an implementation that
+        # OVERWRITES the entry instead of widening it would drop the first
+        # source and/or move `learnedAt`, and this is the case that catches it.
+        codecp2, txtcp2 = run(
+            ["couple", "--test", "tests/test_a.py",
+             "--sources", "src/c.ts",
+             "--basis-run", "RUN-CP1", "--basis-head", "deadbeef",
+             "--project-dir", cp_proj])
+        check("cp2 MUTATION GUARD: a second `couple` on the same test widens "
+              "`sources` (union, order-preserving) and keeps the FIRST "
+              "`learnedAt` rather than replacing the entry: %r"
+              % (cp_coupling(cp_mp),),
+              codecp2 == 0 and len(cp_coupling(cp_mp)) == 1
+              and cp_coupling(cp_mp)[0]["sources"]
+              == ["src/a.ts", "src/b.ts", "src/c.ts"]
+              and cp_coupling(cp_mp)[0]["learnedAt"] == _cp_learned_at)
+
+        # ---- MUTATION GUARD: a re-couple does not pin `basis` -- a THIRD --
+        # `couple` on the same test, passing a DIFFERENT --basis-run,
+        # --basis-head and --phases, must still keep the entry's basis
+        # exactly as the first call wrote it: `basis` is what taught the
+        # coupling, and only the first teaching counts.
+        _cp_ev.append_row(cp_proj, {
+            "v": 1, "runId": "RUN-CP2", "ts": "2026-09-01T00:30:00Z",
+            "scope": "phase", "phaseId": "P3", "status": "failed", "steps": []})
+        codecp2b, txtcp2b = run(
+            ["couple", "--test", "tests/test_a.py",
+             "--sources", "src/d.ts",
+             "--basis-run", "RUN-CP2", "--basis-head", "cafebabe",
+             "--phases", "P3", "--project-dir", cp_proj])
+        check("cp2b MUTATION GUARD: a re-couple with a DIFFERENT basis "
+              "widens `sources` again but keeps the FIRST call's basis "
+              "{runId, head, phases} - an implementation that overwrote "
+              "basis on every call would move it here: %r"
+              % (cp_coupling(cp_mp),),
+              codecp2b == 0 and len(cp_coupling(cp_mp)) == 1
+              and cp_coupling(cp_mp)[0]["sources"]
+              == ["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts"]
+              and cp_coupling(cp_mp)[0]["basis"] == {
+                  "runId": "RUN-CP1", "head": "deadbeef", "phases": ["P2"]}
+              and cp_coupling(cp_mp)[0]["learnedAt"] == _cp_learned_at)
+
+        # ---- ALLOW CASE: a runId the ledger lacks is refused, exit 2 -------
+        codecp3, txtcp3 = run(
+            ["couple", "--test", "tests/test_b.py",
+             "--sources", "src/z.ts", "--basis-run", "NO-SUCH-RUN",
+             "--basis-head", "deadbeef", "--project-dir", cp_proj])
+        check("cp3 ALLOW CASE: --basis-run naming a run the evidence ledger "
+              "does not hold is refused exit 2, and nothing is written -- a "
+              "coupling says what taught it: %r" % (txtcp3[:140],),
+              codecp3 == 2 and "no run with this id" in txtcp3
+              and len(cp_coupling(cp_mp)) == 1)
+
+        # ---- ALLOW CASE: --test naming no real path is refused -------------
+        codecp4, txtcp4 = run(
+            ["couple", "--test", "not a path at all",
+             "--sources", "src/z.ts", "--basis-run", "RUN-CP1",
+             "--basis-head", "deadbeef", "--project-dir", cp_proj])
+        check("cp4 ALLOW CASE: --test that neither `tests_add_path` nor "
+              "`is_suite_path` accepts is refused exit 2: %r" % (txtcp4[:140],),
+              codecp4 == 2 and len(cp_coupling(cp_mp)) == 1)
+
+        # ---- (cp) uncouple -------------------------------------------------
+        codecp5, txtcp5 = run(
+            ["uncouple", "--test", "tests/test_a.py",
+             "--project-dir", cp_proj])
+        check("cp5 `uncouple --test` drops the entry it names: %r"
+              % (cp_coupling(cp_mp),),
+              codecp5 == 0 and cp_coupling(cp_mp) == [])
+        _cp_dropped_rows = cp_journal(cp_proj, "coupling.dropped")
+        _cp_dropped_det = (_cp_dropped_rows[0].get("details") or {}
+                           if _cp_dropped_rows else {})
+        check("cp5b `uncouple` writes exactly one `coupling.dropped` "
+              "journal row, carrying {field, from}: %r" % (_cp_dropped_rows,),
+              len(_cp_dropped_rows) == 1
+              and _cp_dropped_det.get("field") == "tests/test_a.py"
+              and json.loads(_cp_dropped_det.get("from") or "null")
+              == ["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts"])
+
+        # ---- ALLOW CASE: uncoupling an unknown test is refused, exit 2 -----
+        codecp6, txtcp6 = run(
+            ["uncouple", "--test", "tests/test_a.py",
+             "--project-dir", cp_proj])
+        check("cp6 RED-FIRST/ALLOW CASE: `uncouple` of a test carrying no "
+              "coupling entry is refused exit 2 - a no-op reporting success "
+              "would hide that nothing was there to drop: %r" % (txtcp6[:140],),
+              codecp6 == 2 and "carries no meta.coupling entry" in txtcp6)
+
+        # ---- (cp) --basis-head is asked of git, exactly as `done --commit` -
+        cp_projg, cp_mpg, cp_head = cp_repo("cp-git", base_manifest())
+        _cp_ev.append_row(cp_projg, {
+            "v": 1, "runId": "RUN-CPG", "ts": "2026-09-01T01:00:00Z",
+            "scope": "phase", "phaseId": "P2", "status": "failed", "steps": []})
+        codecp7, txtcp7 = run(
+            ["couple", "--test", "tests/test_g.py", "--sources", "src/g.ts",
+             "--basis-run", "RUN-CPG", "--basis-head", "0" * 40,
+             "--phases", "P2", "--project-dir", cp_projg])
+        check("cp7 RED-FIRST/ALLOW CASE: --basis-head naming a SHA git CAN "
+              "be asked about and does not have is refused exit 2, nothing "
+              "written - the same refusal `done --commit` gives a "
+              "fabricated SHA: %r" % (txtcp7[:160],),
+              codecp7 == 2 and "0" * 12 in txtcp7
+              and cp_coupling(cp_mpg) == [])
+        codecp8, txtcp8 = run(
+            ["couple", "--test", "tests/test_g.py", "--sources", "src/g.ts",
+             "--basis-run", "RUN-CPG", "--basis-head", cp_head,
+             "--phases", "P2", "--project-dir", cp_projg])
+        check("cp8 ALLOW CASE, the direction cp7 breaks in: the repository's "
+              "REAL head is accepted, and a real phase id passes --phases "
+              "unchanged: %r" % ((codecp8, cp_coupling(cp_mpg)),),
+              codecp8 == 0 and len(cp_coupling(cp_mpg)) == 1
+              and cp_coupling(cp_mpg)[0]["basis"] == {
+                  "runId": "RUN-CPG", "head": cp_head, "phases": ["P2"]})
+        codecp9, txtcp9 = run(
+            ["couple", "--test", "tests/test_h.py", "--sources", "src/h.ts",
+             "--basis-run", "RUN-CPG", "--basis-head", cp_head,
+             "--phases", "P2,P404", "--project-dir", cp_projg])
+        check("cp9 RED-FIRST/ALLOW CASE: --phases naming an id the plan "
+              "does not hold is refused exit 2, and nothing is added: %r"
+              % (txtcp9[:140],),
+              codecp9 == 2 and "P404" in txtcp9
+              and len(cp_coupling(cp_mpg)) == 1)
 
     finally:
         _harness.remove_tree(tmp)

@@ -27,9 +27,10 @@
    exists to stop somebody assuming. */
 [data-evstatus="passed"]{--st:var(--ok)}
 [data-evstatus="failed"]{--st:var(--err)}
-/* Answered nothing, or answered that the record itself is wrong. Amber rather
-   than red: none of these is a failing test, and `could-not-run` in particular
-   must never be rendered as one.
+/* Answered nothing, or answered that the record itself is wrong - or, for
+   `ledger-unreadable`, that the ledger could not be read to find out. Amber
+   rather than red: none of these is a failing test, and `could-not-run` in
+   particular must never be rendered as one.
    `gate-mutated` is the one that ANSWERED and still belongs here (F280): every
    command came back green, so red would send a reader looking for a failing test
    that does not exist. What it refuses is its own measurement — the gate rewrote
@@ -38,6 +39,7 @@
 [data-evstatus="gate-mutated"],
 [data-evstatus="no-checks"],[data-evstatus="timed-out"],
 [data-evstatus="could-not-run"],[data-evstatus="dangling"],
+[data-evstatus="ledger-unreadable"],
 [data-evstatus="undated"],
 [data-evstatus="unknown"]{--st:var(--warn)}
 /* Settled, not achieved — the bucket `cancelled` already sits in one vocabulary

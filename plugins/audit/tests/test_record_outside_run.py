@@ -190,6 +190,17 @@ def _cases(check):
                          "--ended", "2026-09-01T11:05:00Z", "--json"])
         answer2 = json.loads(out) if code == 0 else {}
         verdict2 = _ev.attribution_of(gate2, rows(d2))
+        d3, mp3 = project()
+        _gate_row(d3, "run-gate-3", "2026-09-01T10:00:00Z", "2026-09-01T10:05:00Z")
+        code, out = run([mp3, "--project", d3, "--label", "a suite at the boundary",
+                         "--started", "2026-09-01T10:05:00Z",
+                         "--ended", "2026-09-01T10:06:00Z"])
+        check("o14 an outside run that starts in the second a gate run's row was "
+              "written - two writers, one shared second - says whether it shares the "
+              "window is not knowable, never that nothing is put in doubt: %r"
+              % (out,),
+              code == 0 and "not knowable" in out and "run-gate-3" in out
+              and "nothing this plugin measured is put in doubt" not in out)
         check("o8 SECOND-DIRECTION CASE: an outside run that did NOT share the "
               "window contests nothing, and the gate's verdict stays its own. A "
               "rule that reported every run as contested would pass every case "

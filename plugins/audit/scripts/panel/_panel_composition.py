@@ -9,6 +9,7 @@ Split out of `_panel_state.py` (U3.1). Layer 4, above `_panel_paths` (3).
 Stdlib only, Python 3.8 compatible.
 """
 import os
+import re
 import sys
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -42,6 +43,7 @@ import _ado_parent            # noqa: E402  (where ONE item hangs, and the marke
 import _ado_tracked           # noqa: E402  (whether ONE item belongs on the board at all - three-valued)
 import _ado_drift as _drift   # noqa: E402  (link_inventory: the ONE walk over ado links, at layer 2)
 import _evidence_io as _ev    # noqa: E402  (the pointer's key and the ONE ledger read, at layer 2)
+import _manifest_vocab         # noqa: E402  (the FULL_STATUS words, at layer 1)
 import _status_facts as _facts  # noqa: E402  (evidence_gap: whether an absence is EXCUSED, at layer 2)
 import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
 
@@ -814,14 +816,16 @@ def empty_evidence():
 
     `files` and `unreadable` are zero here rather than absent because no pointer
     exists on this path, so nothing reads them; the moment a pointer does exist,
-    `evidence_view` replaces both with what the ledger actually answered.
+    `evidence_view` replaces both with what the ledger actually answered - or
+    with None beside a filled `readError` when the ledger could not be read.
     """
     return {"fields": list(EVIDENCE_FIELDS),
             "stepFields": list(EVIDENCE_STEP_FIELDS),
-            "runs": {}, "files": 0, "unreadable": 0}
+            "runs": {}, "files": 0, "unreadable": 0, "readError": None}
 
 
-def evidence_view(project, composition, config=None):
+def evidence_view(project, composition, config=None, read=None,
+                  read_error=None):
     """The recorded runs the plan POINTS AT, as facts the browser re-aggregates.
 
     Keyed by `runId` and cut to the pointers the composition rows already carry,
@@ -841,7 +845,32 @@ def evidence_view(project, composition, config=None):
     The ledger is read WHOLE and cut afterwards: `read_rows` is the one walk over
     it, and a filtered read written here would be a second opinion about what is
     in the directory.
+
+    `read`, WHEN GIVEN, IS `read_rows`'s OWN RETURN SHAPE, ALREADY IN HAND -
+    `boundary`'s pattern one call over. `_panel_state.build_state` now reads the
+    ledger ONCE and hands the SAME dict here and to the third place's ancestry
+    check, rather than this function asking `read_rows` a second time for rows
+    the caller already has: two reads of a ledger a parallel run may have grown
+    between is how they would come to disagree, and a read that failed would
+    otherwise fail twice, in two different shapes, for one cause. `None` (the
+    default) asks `read_rows` itself, which is every caller before this one.
+
+    `read_error`, WHEN GIVEN, IS THE CALLER'S OWN FAILED READ, and it wins over
+    `read`. A failed read is not an empty one: the ledger may hold every run the
+    plan points at, so the counts are None (UNKNOWN), never the zeros an empty
+    directory answers, and the ledger is not asked a second time.
     """
+    if read_error is not None:
+        out = empty_evidence()
+        out["files"], out["unreadable"] = None, None
+        # The report's shape (`_report_html.tev_read_error`) built here, because
+        # the layer graph refuses that import; the words are the vocabulary's
+        # template, which both fill. `test__panel_composition` holds the two
+        # shapes equal.
+        out["readError"] = {"error": "%s" % (read_error,),
+                            "basis": _manifest_vocab.LEDGER_READ_FAILED
+                            % (read_error,)}
+        return out
     wanted = set()
     for group in ("phases", "tasks"):
         for row in (composition.get(group) or []):
@@ -849,7 +878,7 @@ def evidence_view(project, composition, config=None):
             run_id = pointer.get("runId") if isinstance(pointer, dict) else None
             if isinstance(run_id, str) and run_id:
                 wanted.add(run_id)
-    read = _ev.read_rows(project, config=config)
+    read = read if isinstance(read, dict) else _ev.read_rows(project, config=config)
     newest = {}
     for row in read["rows"]:
         run_id = row.get("runId")
@@ -869,7 +898,121 @@ def evidence_view(project, composition, config=None):
     return out
 
 
-def _composition_view(manifest, boundary=None):
+def full_gate_commands(manifest):
+    """The resolved commands `meta.fullGate` names, or `[]` when there are
+    none - the ONE reading of "does this plan have a third place at all".
+
+    PUBLIC, because `_panel_state.build_state` needs the SAME answer before
+    it decides whether reading the evidence ledger or resolving a git root is
+    worth paying for - a plan with no third place should pay nothing for one.
+    A second reading of `meta.fullGate` there would be free to disagree with
+    this one about which plans have a third place to ask about.
+    """
+    meta = manifest.get("meta") if isinstance(manifest, dict) else None
+    meta = meta if isinstance(meta, dict) else {}
+    return [c for _name, c in _ev.resolved_commands(manifest, meta.get("fullGate"))]
+
+
+_FULL_SHA = re.compile(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}")
+
+
+def _is_full_sha(value):
+    """Whether `value` is a full SHA-1 or SHA-256 object id, and so a name
+    for one fixed commit."""
+    return isinstance(value, str) and _FULL_SHA.fullmatch(value) is not None
+
+
+def _memoizing_runner(cache, run=None):
+    """Wrap a git runner so `git merge-base --is-ancestor <a> <b>` is asked at
+    most once per `(git_root, a, b)` for as long as `cache` lives - commit
+    ancestry between two fixed commits never changes, so the SAME question
+    asked twice is free the second time.
+
+    ONLY WHEN BOTH OPERANDS ARE FULL COMMIT OBJECT IDS (SHA-1 or SHA-256). `mergedHead` is warned
+    about, not refused, when it is something else, and a branch name, a tag
+    or an abbreviated SHA names a commit that can MOVE: an answer about it is
+    true only until the ref does, so caching it would keep serving the old
+    answer after the ref moved. Anything that is not a full SHA on both sides
+    is asked of git every time.
+
+    AN UNKNOWN ANSWER IS NEVER CACHED. `code` 0 (contained) and 1 (not
+    contained) are the two real answers `_worktrees.merged_into` reads;
+    anything else -- git not on PATH, a ref that will not resolve, a timeout
+    -- is "could not be asked", not "no", and a later call in this same
+    process may succeed where this one could not. Caching that would turn a
+    transient failure into a permanent wrong answer.
+
+    `cache` IS THE CALLER'S, NEVER A MODULE GLOBAL - the dialect here holds a
+    memo as an explicit argument the caller owns and threads through, not a
+    hidden mutable global two callers could disagree about.
+    """
+    fn = run if run is not None else _worktrees._git
+
+    def wrapped(git_root, args):
+        if (len(args) == 4 and args[0] == "merge-base"
+                and args[1] == "--is-ancestor"
+                and _is_full_sha(args[2]) and _is_full_sha(args[3])):
+            key = (git_root, args[2], args[3])
+            if key in cache:
+                return cache[key]
+            result = fn(git_root, args)
+            if result[0] in (0, 1):
+                cache[key] = result
+            return result
+        return fn(git_root, args)
+    return wrapped
+
+
+def _phase_full_run(ph, full_commands, rows, git_root, run=None, cache=None,
+                    error=None):
+    """One merged phase's third-place verdict, or None when the question does
+    not apply to this phase at all.
+
+    MERGED IS `_ev.merged_phase` -- `mergedAt`, the field close-phase stamps
+    together with `mergedHead`, and an id -- never merely `done` or
+    `terminal`, and never a reading of its own that the status, the report
+    and the doctor do not share. A phase that has not
+    merged carries no claim here whatsoever, rather than the UNKNOWN
+    `full_status` would hand back for a phase that merged but recorded no
+    `mergedHead` - those are different silences and only the second is this
+    function's to report.
+
+    `full_commands` EMPTY MEANS THE SAME AS `full_status`'s NOT_DECLARED, and
+    is refused BEFORE the ledger is asked: a plan naming no third place has
+    nothing to ask of it, and returning here is what keeps that phase's row
+    free of a `fullRun` key altogether rather than carrying one nobody wanted.
+
+    `error` IS THE CALLER'S OWN "the ledger could not be read", CARRIED
+    RATHER THAN SWALLOWED. A read failure means the rows this function would
+    otherwise judge ancestry against are not trustworthy, so the honest
+    answer is UNKNOWN with a basis naming what happened - never a silent
+    PROVISIONAL claiming "no full-scope run has ever been recorded", which
+    would be a wrong claim about a question nobody could actually ask.
+
+    `cache`, WHEN GIVEN, WRAPS THE RUNNER - see `_memoizing_runner`. `None`
+    (the default) asks git fresh every time, which is exactly today's
+    behaviour before this argument existed.
+
+    THE ANSWER IS CARRIED VERBATIM. `full_status` already names the word this
+    plan renders for whole, provisional and unknown; a second opinion here
+    about what those words mean would be the exact defect `_evidence_gap_of`
+    is written against one field over.
+    """
+    if not _ev.merged_phase(ph):
+        return None
+    if not full_commands:
+        return None
+    if error is not None:
+        return {"answer": _manifest_vocab.FULL_STATUS_UNKNOWN,
+                "basis": _manifest_vocab.LEDGER_READ_FAILED % (error,),
+                "runId": None}
+    asked = _memoizing_runner(cache, run) if isinstance(cache, dict) else run
+    return _ev.full_status(rows, ph, git_root, full_commands, run=asked)
+
+
+def _composition_view(manifest, boundary=None, full_run_rows=None,
+                      git_root=None, run=None, full_run_error=None,
+                      full_run_cache=None):
     """The plan as the Composition and Overview tabs read it.
 
     `boundary` is `_evidence_io`'s block, or None when nobody computed one. It
@@ -878,9 +1021,43 @@ def _composition_view(manifest, boundary=None):
     the state builder computes ONE block and hands the same object to the rollup
     and to this walk, so the panel's badges and its gate verdict cannot rest on
     two reads of a ledger a parallel run may have grown between.
+
+    `full_run_rows` AND `git_root` ARE THE SAME KIND OF ARGUMENT, ONE LAYER
+    OVER. Both name inputs this module has no business reading itself - the
+    full-scope rows live in the evidence ledger (`_evidence_io`, layer 2) and
+    resolving a git root is `_panel_state`'s own convention, not this file's -
+    so a caller that has not wired them yet gets NO `fullRun` key at all on
+    any phase row, never a PROVISIONAL built from a ledger nobody actually
+    read. `full_run_rows=None` is that "not wired yet" state; an empty list
+    is a real answer ("the ledger holds no full-scope run") and is not the
+    same claim.
+
+    `full_run_error`, WHEN GIVEN, MEANS THE CALLER TRIED TO READ THE LEDGER
+    AND COULD NOT - a third state beside "not wired" and "read clean", and it
+    still reaches every merged phase's row (as UNKNOWN, `_phase_full_run`'s
+    own words) rather than silently falling back to "not wired" and dropping
+    the key: an unreadable ledger is not the same claim as one nobody asked
+    to read.
+
+    `full_run_cache`, WHEN GIVEN, IS THE CALLER'S memo dict for
+    `_memoizing_runner` - held and reused across calls by whoever owns it
+    (`_panel_state.build_state`'s caller, across polls), never created or
+    kept here.
     """
     meta = manifest.get("meta") or {}
     ado = meta.get("ado") if isinstance(meta.get("ado"), dict) else {}
+    # ONE RESOLUTION OF `meta.fullGate`, READ ONCE FOR EVERY PHASE - the same
+    # list a recorded full run's own `published` argument carries, so a phase
+    # judged WHOLE is judged against the identical commands its run was
+    # measured against and never a second reading of `meta.buildCommands`.
+    # `resolved_commands` already answers [] for an absent/empty `fullGate`,
+    # which is what keeps a plan naming no third place from reaching
+    # `_phase_full_run` at all. `full_gate_commands` IS THIS SAME RESOLUTION,
+    # exposed so `_panel_state.build_state` can ask the identical question
+    # before it decides whether reading the ledger or resolving a git root is
+    # worth paying for at all - a second reading of `meta.fullGate` there
+    # would be free to disagree with this one.
+    full_commands = full_gate_commands(manifest)
     phases_out, tasks_out = [], []
     # `phases_out` and `tasks_out` are separate flat lists, so splitting the old
     # nested walk in two changes neither one's order: the phase rows stay in
@@ -890,7 +1067,7 @@ def _composition_view(manifest, boundary=None):
         if not isinstance(ph, dict):
             continue
         review = ph.get("review") if isinstance(ph.get("review"), dict) else {}
-        phases_out.append({"id": ph.get("id"), "title": ph.get("title"),
+        prow = {"id": ph.get("id"), "title": ph.get("title"),
                            # DERIVED, with where sign-off stands beside it: a plan
                            # signed off before the verbs stored the derived status
                            # read a signed-off phase as in progress with every
@@ -902,6 +1079,15 @@ def _composition_view(manifest, boundary=None):
                            "signoffVerdict": (review.get("status")
                                               if _mio.signoff_recorded(ph) else None),
                            "branch": ph.get("branch"),
+                           # The operator's why for a `passed` sign-off no gate run
+                           # backs, so the evidence badge can say it.
+                           "noEvidenceReason": review.get("noEvidenceReason") or None,
+                           # ...and the commits a group sign-off took into its
+                           # review outside every task, for the sign-off note.
+                           "acceptedCommits": [
+                               {"commit": a.get("commit"), "reason": a.get("reason")}
+                               for a in (review.get("acceptedCommits") or [])
+                               if isinstance(a, dict) and a.get("commit")],
                            "reviewModel": review.get("model"),
                            "area": _areas_of(ph.get("area")), "reviewSkill": ph.get("reviewSkill"),
                            # Through `_priority.tier_of`, never off the raw field:
@@ -953,7 +1139,22 @@ def _composition_view(manifest, boundary=None):
                            # mid-flight adopter a wall of neglect while the gate
                            # it is looking at reports green.
                            "evidenceGap": _evidence_gap_of(ph, "phase",
-                                                           boundary)})
+                                                           boundary)}
+        # THE THIRD PLACE, LAST AND CONDITIONAL. `full_run_rows is not None`
+        # OR `full_run_error is not None` is the "wired up" signal this
+        # docstring names - a read failure is wired up too, just wired up to
+        # a caller that could not finish reading; `_phase_full_run` still
+        # refuses a phase that never merged or a plan naming no third place,
+        # which is what keeps a `fullRun` key off every row it does not apply
+        # to rather than shipping a null the client would have to tell apart
+        # from "not asked".
+        if full_run_rows is not None or full_run_error is not None:
+            full_run = _phase_full_run(ph, full_commands, full_run_rows or [],
+                                       git_root, run=run, cache=full_run_cache,
+                                       error=full_run_error)
+            if full_run is not None:
+                prow["fullRun"] = full_run
+        phases_out.append(prow)
     for ph, t in _mio.iter_tasks(manifest):
         tasks_out.append({
             "id": t.get("id"), "title": t.get("title"),

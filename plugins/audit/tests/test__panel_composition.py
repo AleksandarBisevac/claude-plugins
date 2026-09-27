@@ -11,11 +11,13 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import os
+import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _manifest_io as _mio                        # noqa: E402  (as the module imports it)
+import _manifest_vocab                          # noqa: E402  (the FULL_STATUS words, for fr* below)
 import _panel_paths as _paths                     # noqa: E402  (the shared base)
 import _ado_parent as _adop                    # noqa: E402  (the marker + resolve)
 import _ado_tracked as _adot               # noqa: E402  (the three-valued answer + its basis)
@@ -1084,6 +1086,48 @@ def _cases(check):
               "and never a raise: no runs, no files, nothing unreadable",
               M.evidence_view(os.path.join(_evproj, "nope"), _ev_view)
               == M.empty_evidence())
+        # A READ THAT FAILED IS NOT AN EMPTY READ. The caller hands the error
+        # in; the view must neither ask the ledger again (that would be a
+        # second read, failing a second time in a second shape) nor answer
+        # zero counts for a read nobody made.
+        _ev_err = M.evidence_view(_evproj, _ev_view,
+                                  read_error="disk exploded (fixture)")
+        _ev_err_basis = (_ev_err.get("readError") or {}).get("basis")
+        _fr_err = M._composition_view(
+            {"meta": {"version": 2, "fullGate": ["full"],
+                      "buildCommands": {"full": "echo x"}},
+             "phases": [{"id": "P1", "title": "m", "status": "done",
+                         "mergedAt": "2026-09-02T00:00:00Z",
+                         "mergedHead": "a" * 40}]},
+            full_run_error="disk exploded (fixture)")["phases"][0]
+        check("ev16 a read error reaches the evidence payload as `readError` "
+              "with the error AND the same basis sentence the full-run UNKNOWN "
+              "carries, the counts UNKNOWN rather than zero, and no runs even "
+              "though the directory holds some - the error wins over a second "
+              "read: %r" % (_ev_err,),
+              (_ev_err.get("readError") or {}).get("error")
+              == "disk exploded (fixture)"
+              and _ev_err_basis
+              == (_fr_err.get("fullRun") or {}).get("basis")
+              and _ev_err["files"] is None and _ev_err["unreadable"] is None
+              and _ev_err["runs"] == {}
+              and sorted(_ev_err) == sorted(M.empty_evidence()))
+        # ONE SHAPE, ONE SENTENCE, TWO SURFACES. The panel builds its payload
+        # without importing the report (the layer graph refuses that edge), so
+        # what keeps the two from drifting is this comparison, not a shared
+        # function: the report's builder and the vocabulary's template.
+        import _report_html
+        check("ev16b the panel's `readError` is the report's own shape, and its "
+              "basis is `_manifest_vocab`'s template filled: %r"
+              % (_ev_err.get("readError"),),
+              _ev_err.get("readError")
+              == _report_html.tev_read_error("disk exploded (fixture)")
+              and _ev_err_basis == _manifest_vocab.LEDGER_READ_FAILED
+              % ("disk exploded (fixture)",))
+        check("ev17 ALLOW: an empty read and a successful one carry readError "
+              "None - the key is always there, and only a failed read fills it",
+              M.empty_evidence().get("readError", "absent") is None
+              and _ev_out.get("readError", "absent") is None)
     finally:
         shutil.rmtree(_evproj, ignore_errors=True)
 
@@ -1106,6 +1150,18 @@ def _signoff_cases(check):
           % ({k: due.get(k) for k in ("status", "signoffDue", "signoffVerdict")},),
           due["status"] == "in_progress" and due["signoffDue"] is True
           and due["signoffVerdict"] is None)
+    reasoned = row(review={"status": "passed", "noEvidenceReason": "by hand"})
+    check("pc-sd0 a phase signed off with a recorded reason and no gate run carries "
+          "the reason, so the badge can say it: %r" % (reasoned.get("noEvidenceReason"),),
+          reasoned.get("noEvidenceReason") == "by hand"
+          and row().get("noEvidenceReason") is None)
+    accepted = row(review={"status": "passed", "acceptedCommits": [
+        {"commit": "abcdef0123456789", "reason": "plan"}]})
+    check("pc-sd0b a group member's accepted commits ride its row, so the sign-off "
+          "note can show them: %r" % (accepted.get("acceptedCommits"),),
+          accepted.get("acceptedCommits") == [{"commit": "abcdef0123456789",
+                                               "reason": "plan"}]
+          and row().get("acceptedCommits") == [])
     signed = row(review={"status": "passed"})
     check("pc-sd2 signed off with no branch, the row reads DONE, so the view files it "
           "with the closed phases and freezes its controls: %r" % (signed["status"],),
@@ -1126,10 +1182,246 @@ def _signoff_cases(check):
           running["signoffDue"] is False and running["signoffVerdict"] is None)
 
 
+# --- fr: the third place, beside a merged phase's evidence ---------------------
+def _fr_repo(root):
+    """A REAL git repository, two sequential commits on `main` -- `_full_status`
+    needs actual ancestry and a fake `run` cannot give it, `test__evidence_io`'s
+    own fixture and for the same reason: a mutation comparing `head==mergedHead`
+    passes against two equal strings and only two real, different,
+    ancestor-related commits catch that."""
+    os.makedirs(root, exist_ok=True)
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+          "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+
+    def sh(*args):
+        subprocess.run(git + list(args), cwd=root, check=True,
+                       capture_output=True, timeout=30)
+
+    def rev():
+        out = subprocess.run(git + ["rev-parse", "HEAD"], cwd=root, check=True,
+                             capture_output=True, timeout=30)
+        return out.stdout.decode("utf-8").strip()
+
+    sh("init", "-q")
+    with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
+        fh.write("1\n")
+    sh("add", "-A")
+    sh("commit", "-qm", "one")
+    first = rev()
+    with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
+        fh.write("2\n")
+    sh("add", "-A")
+    sh("commit", "-qm", "two")
+    second = rev()
+    with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
+        fh.write("3\n")
+    sh("add", "-A")
+    sh("commit", "-qm", "three")
+    third = rev()
+    return {"root": root, "first": first, "second": second, "third": third}
+
+
+def _fr_row(run_id, head, commands, ran_total=3, dirty_outside=()):
+    """One well-formed scope-`full` row, `test__evidence_io._fs_row`'s shape:
+    every command carried verbatim, a positive count with a basis, a clean
+    `dirtyOutside`."""
+    return {"v": _evidence.ROW_VERSION, "runId": run_id, "ts": "2026-09-01T00:00:00Z",
+           "scope": _evidence.FULL_SCOPE, "status": "passed",
+           "steps": [{"name": "gate", "command": c, "exit": 0, "durationMs": 500}
+                    for c in commands],
+           "testedState": {"head": head},
+           "observations": {"ranTotal": ran_total, "countsBasis": "3 checks",
+                            "dirtyOutside": list(dirty_outside)}}
+
+
+def _full_run_cases(check):
+    tmp = _harness.fixture_root("panel-composition-fullrun-")
+    try:
+        repo = _fr_repo(os.path.join(tmp, "repo"))
+        check("fr0 `_phase_full_run` refuses a phase with no `mergedAt` at all, "
+              "whatever `full_commands` and the ledger say - the merged check "
+              "comes before either is asked",
+              M._phase_full_run({"id": "PX"}, ["echo x"],
+                                [_fr_row("r", repo["first"], ["echo x"])],
+                                repo["root"]) is None)
+        gate_manifest = {"meta": {"fullGate": ["full"],
+                                 "buildCommands": {"full": "echo x"}},
+                        "phases": [
+                            {"id": "P1", "title": "merged and whole",
+                             "mergedAt": "2026-09-02T00:00:00Z",
+                             "mergedHead": repo["first"]},
+                            {"id": "P2", "title": "merged, no full run yet",
+                             "mergedAt": "2026-09-02T00:00:00Z",
+                             "mergedHead": repo["third"]},
+                            {"id": "P3", "title": "not merged"}]}
+        whole_row = _fr_row("run-whole", repo["second"], ["echo x"])
+
+        # RED-FIRST: current code carries no `fullRun` key for a merged phase at
+        # all - `_composition_view` does not yet read `full_run_rows`/`git_root`.
+        cv = M._composition_view(gate_manifest, full_run_rows=[whole_row],
+                                 git_root=repo["root"])
+        by_id = dict((p["id"], p) for p in cv["phases"])
+        check("fr1 a WHOLE merged phase carries fullRun with the ledger's own "
+              "answer and the run that proved it: %r" % (by_id["P1"].get("fullRun"),),
+              by_id["P1"].get("fullRun", {}).get("answer")
+              == _manifest_vocab.FULL_STATUS_WHOLE
+              and by_id["P1"]["fullRun"]["runId"] == "run-whole"
+              and isinstance(by_id["P1"]["fullRun"].get("basis"), str)
+              and by_id["P1"]["fullRun"]["basis"])
+        check("fr2 a merged phase no whole-bearing run's head contains is "
+              "PROVISIONAL, carrying the basis that says so: %r"
+              % (by_id["P2"].get("fullRun"),),
+              by_id["P2"].get("fullRun", {}).get("answer")
+              == _manifest_vocab.FULL_STATUS_PROVISIONAL
+              and by_id["P2"]["fullRun"]["basis"])
+        check("fr3 a phase that never merged carries NO fullRun key at all, "
+              "whatever the ledger holds",
+              "fullRun" not in by_id["P3"])
+
+        # --- UNKNOWN: merged, but no mergedHead to ask ancestry of at all -------
+        unknown_manifest = {"meta": gate_manifest["meta"], "phases": [
+            {"id": "PU", "title": "merged, no mergedHead recorded",
+             "mergedAt": "2026-09-02T00:00:00Z"}]}
+        cv_u = M._composition_view(unknown_manifest, full_run_rows=[whole_row],
+                                   git_root=repo["root"])
+        check("fr3b UNKNOWN reads as unknown, never as whole or provisional - "
+              "MUTATION: fold unknown into whole -> red: %r"
+              % (cv_u["phases"][0].get("fullRun"),),
+              cv_u["phases"][0].get("fullRun", {}).get("answer")
+              == _manifest_vocab.FULL_STATUS_UNKNOWN)
+
+        # --- the allow case: no meta.fullGate names no third place -------------
+        no_gate_manifest = {"meta": {}, "phases": [
+            {"id": "P1", "title": "merged", "mergedAt": "2026-09-02T00:00:00Z",
+             "mergedHead": repo["first"]}]}
+        cv_ng = M._composition_view(no_gate_manifest, full_run_rows=[whole_row],
+                                    git_root=repo["root"])
+        check("fr4 ALLOW: a plan naming no meta.fullGate carries no fullRun key "
+              "on any phase, merged or not - MUTATION: always emit the key -> "
+              "red, because this is the one case that must stay absent",
+              "fullRun" not in cv_ng["phases"][0])
+
+        # --- the caller that has not wired rows/git_root at all -----------------
+        cv_unwired = M._composition_view(gate_manifest)
+        check("fr5 a caller that hands neither `full_run_rows` nor `git_root` "
+              "gets no fullRun key either - 'not asked' is not the same claim "
+              "as 'the ledger holds nothing'",
+              "fullRun" not in cv_unwired["phases"][0])
+
+        # --- full_gate_commands: the ONE reading `build_state` shares -----------
+        check("fr5b full_gate_commands answers [] for an absent/empty "
+              "meta.fullGate and the resolved list otherwise, agreeing with "
+              "what _composition_view itself reads internally: %r"
+              % (M.full_gate_commands(gate_manifest),),
+              M.full_gate_commands({"meta": {}}) == []
+              and M.full_gate_commands(gate_manifest) == ["echo x"])
+
+        # --- an unreadable ledger: UNKNOWN, with a basis naming the failure -----
+        cv_err = M._composition_view(gate_manifest, full_run_error="disk exploded",
+                                     git_root=repo["root"])
+        by_id_err = dict((p["id"], p) for p in cv_err["phases"])
+        check("fr6 a ledger the caller could not read yields UNKNOWN with a "
+              "basis naming the failure, never a silent PROVISIONAL claiming "
+              "no run was ever recorded: %r" % (by_id_err["P1"].get("fullRun"),),
+              by_id_err["P1"].get("fullRun", {}).get("answer")
+              == _manifest_vocab.FULL_STATUS_UNKNOWN
+              and "disk exploded" in by_id_err["P1"]["fullRun"]["basis"])
+        check("fr6b ...and a phase that never merged still carries no key at "
+              "all, even when the caller carries a read error",
+              "fullRun" not in by_id_err["P3"])
+
+        # --- the memoizing runner: cached, and UNKNOWN never is -----------------
+        def _counting_run(answers):
+            calls = []
+
+            def run(git_root, args):
+                calls.append((git_root,) + tuple(args))
+                key = (git_root, args[2], args[3]) if len(args) >= 4 else None
+                return answers.get(key, (0, "", ""))
+            run.calls = calls
+            return run
+
+        sha_a, sha_b = "a" * 40, "b" * 40
+        contained_run = _counting_run({("root", sha_a, sha_b): (0, "", "")})
+        cache = {}
+        wrapped = M._memoizing_runner(cache, contained_run)
+        ask = lambda: wrapped("root", ["merge-base", "--is-ancestor",
+                                       sha_a, sha_b])
+        r1, r2 = ask(), ask()
+        check("fr7 ALLOW: a CONTAINED answer between two full commit SHAs is "
+              "memoized - the second identical ask of the same (git_root, "
+              "mergedHead, runHead) never reaches the runner at all: %r"
+              % (contained_run.calls,),
+              r1 == (0, "", "") and r2 == (0, "", "")
+              and len(contained_run.calls) == 1)
+
+        # A SHA-256 repository names a commit by a longer full object id; it
+        # is just as fixed, so its answer is memoized too.
+        sha256_a, sha256_b = "c" * 64, "d" * 64
+        long_run = _counting_run({("root", sha256_a, sha256_b): (0, "", "")})
+        long_wrapped = M._memoizing_runner({}, long_run)
+        for _i in range(2):
+            long_wrapped("root", ["merge-base", "--is-ancestor",
+                                  sha256_a, sha256_b])
+        check("fr11 RED-FIRST: an ancestry answer between two full SHA-256 "
+              "object ids is memoized, exactly as a SHA-1 pair is in fr7: %r"
+              % (long_run.calls,),
+              len(long_run.calls) == 1)
+
+        # A branch name, an abbreviated SHA, or anything else that is not a
+        # full commit SHA names a commit that can MOVE, so an answer about it
+        # is only true until the ref does. Each such pair is asked twice and
+        # must reach git both times; fr7 above is the allow case that keeps
+        # the memo from being dropped altogether.
+        moving = [("main", sha_b), (sha_a, "feature/x"), (sha_a[:12], sha_b),
+                  (sha_a + "0", sha_b), ("g" * 40, sha_b)]
+        memo_hits = []
+        for left, right in moving:
+            mv_run = _counting_run({("root", left, right): (1, "", "")})
+            mv_wrapped = M._memoizing_runner({}, mv_run)
+            for _i in range(2):
+                mv_wrapped("root", ["merge-base", "--is-ancestor", left, right])
+            if len(mv_run.calls) != 2:
+                memo_hits.append((left, right, len(mv_run.calls)))
+        check("fr10 RED-FIRST: an ancestry answer whose operands are not both "
+              "full commit SHAs is never memoized - every ask reaches git: %r"
+              % (memo_hits,),
+              not memo_hits)
+
+        # Full SHAs on purpose: a pair of anything else never reaches the
+        # cache at all, so this case could not see whether an UNKNOWN answer
+        # is kept out of it.
+        unknown_run = _counting_run({("root", sha_a, sha_b): (128, "", "boom")})
+        cache2 = {}
+        wrapped2 = M._memoizing_runner(cache2, unknown_run)
+        ask2 = lambda: wrapped2("root", ["merge-base", "--is-ancestor",
+                                         sha_a, sha_b])
+        ask2(), ask2()
+        check("fr8 an UNKNOWN answer (git could not be asked) is NEVER cached "
+              "- MUTATION: cache it too -> red, because 'could not ask' may "
+              "succeed on a later call in this same process: %r"
+              % (unknown_run.calls,),
+              len(unknown_run.calls) == 2)
+
+        # ...and a call for something other than the ancestor check passes
+        # straight through, uncached - the memo is scoped to the one shape it
+        # recognises, never a general-purpose cache over every git call.
+        other_run = _counting_run({})
+        wrapped3 = M._memoizing_runner({}, other_run)
+        wrapped3("root", ["rev-parse", "HEAD"])
+        wrapped3("root", ["rev-parse", "HEAD"])
+        check("fr9 a non-ancestor call is never memoized - both asks reach "
+              "the runner",
+              len(other_run.calls) == 2)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _signoff_cases(check)
+        _full_run_cases(check)
     return _harness.run(body)
 
 

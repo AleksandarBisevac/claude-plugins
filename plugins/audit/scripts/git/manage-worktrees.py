@@ -230,6 +230,17 @@ def do_add(git_root, manifest, phase_id, path=None, run=None):
     if listing["error"]:
         return E_NO_BASIS, {"error": listing["error"]}
     held = _wt.holder_of(listing["trees"], branch)["tree"]
+    if held is not None and held.get("isMain"):
+        # The main tree is never a worktree to remove, so the remedy is the switch
+        # that frees the branch there - `main_tree_release`'s answer, not a second.
+        release = _wt.main_tree_release(listing["trees"], branch, parent, held)
+        return E_FAIL, {"error": "%r is checked out in the MAIN worktree (%s)"
+                                 % (branch, held.get("path")),
+                        "remedy": "run the phase there, or free the branch: from %s "
+                                  "run `%s`%s" % (release["from"],
+                                                  release["commands"][0],
+                                                  " - which %s" % (release["note"],)
+                                                  if release["note"] else "")}
     if held is not None:
         return E_FAIL, {"error": "%r is already checked out at %s"
                                  % (branch, held.get("path")),
@@ -306,6 +317,24 @@ def do_remove(git_root, manifest, phase_id, force=False, run=None, path=None):
         return E_FAIL, {"error": "no worktree holds %r" % (branch,),
                         "remedy": "nothing to remove - this is a report, not a "
                                   "failure"}
+    if tree.get("isMain"):
+        # ASKED BEFORE EVERY OTHER REFUSAL, `--path`'s rule on this arm too: the
+        # main tree is never removed, and a later refusal answering for it - the
+        # one about where this process stands - reads as how to try again.
+        phase = ([ph for ph in (manifest.get("phases") or [])
+                  if isinstance(ph, dict) and str(ph.get("id")) == str(phase_id)]
+                 or [{}])[0]
+        parent = _branch.parent_branch(manifest.get("meta") or {}, phase)["branch"]
+        release = _wt.main_tree_release(listing["trees"], branch, parent, tree)
+        return E_FAIL, {
+            "error": "%r is checked out in the MAIN worktree (%s), which is not a "
+                     "linked worktree and is never removed" % (branch,
+                                                               tree.get("path")),
+            "remedy": "nothing to remove. To free the branch, from %s run %s%s"
+                      % (release["from"],
+                         ", then ".join("`%s`" % c for c in release["commands"]),
+                         " - which %s" % (release["note"],)
+                         if release["note"] else "")}
     standing = _wt.standing_in(listing["trees"], os.getcwd())
     if standing is not None and _wt.same_tree(standing.get("path"),
                                               tree.get("path")):

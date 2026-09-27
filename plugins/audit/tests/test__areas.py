@@ -50,6 +50,7 @@ import tempfile
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _areas as M                                 # noqa: E402
+import _manifest_vocab                             # noqa: E402
 
 
 # --- cases --------------------------------------------------------------------
@@ -607,6 +608,55 @@ def _cases(check):
                   for c, p in M.claim_drift(text=_invented_lock)),
           repr([p for c, p in M.claim_drift(text=_invented_lock)
                 if c == "lock-fixed-names"]))
+    # --- the third place is a `##` section, so the scan reads it ---------------
+    # `doc_sections` splits on `## ` alone, so a section written one level
+    # deeper is body text of whatever `##` precedes it: no anchor can name it and
+    # coverage cannot report it undeclared. The section once sat at that depth.
+    # The words `full_status` answers with are read off `_manifest_vocab`'s
+    # constants, so the section is anchored to the code it describes.
+    check("oa34 `## The third place` is a section the anchor scan reads, and "
+          "the words it says `full_status` answers with are exactly the "
+          "`FULL_STATUS_*` constants `_manifest_vocab` spells them with",
+          "The third place" in M.anchor_coverage()["anchored"]
+          and not [p for c, p in M.claim_drift()
+                   if c == "full-status-words"],
+          repr([p for c, p in M.claim_drift() if c == "full-status-words"]))
+    _demoted = body.replace("\n## The third place\n", "\n### The third place\n")
+    check("oa35 ...and demoting that heading back under the section before it "
+          "is a finding, not a quiet exit from the scan",
+          _demoted != body
+          and any(c == "full-status-words" and "no single '## The third place"
+                  in p for c, p in M.claim_drift(text=_demoted)),
+          repr([p for c, p in M.claim_drift(text=_demoted)
+                if c == "full-status-words"]))
+    _dropped_word = body.replace("`unknown` or `not_declared`",
+                                 "or `unknown`")
+    check("oa36 ...and a word `full_status` can answer with that the section "
+          "stops naming is a finding - a verdict a surface prints that this "
+          "document never explained",
+          _dropped_word != body
+          and any(c == "full-status-words" and "'not_declared'" in p
+                  and "does not name it" in p
+                  for c, p in M.claim_drift(text=_dropped_word)),
+          repr([p for c, p in M.claim_drift(text=_dropped_word)
+                if c == "full-status-words"]))
+    # The row reads the run of string constants ABOVE `FULL_STATUS = (`, not the
+    # tuple itself, which holds names. This case is what ties the two: a member
+    # dropped from the tuple, or one defined away from that run and added to the
+    # tuple, makes the row's parse and the tuple disagree.
+    _fs_row = [r for r in M.LIST_ANCHORS if r[0] == "full-status-words"][0]
+    _fs_src, _fs_err = M._read(os.path.join(M._output.PLUGIN_ROOT, _fs_row[2]))
+    _fs_match = (re.search(_fs_row[3], _fs_src, re.S)
+                 if _fs_err is None else None)
+    _fs_parsed = (set(re.findall(r'"([^"]+)"', _fs_match.group(1)))
+                  if _fs_match else set())
+    check("oa37 the words the `full-status-words` row parses out of "
+          "`_manifest_vocab.py` are exactly the members of "
+          "`_manifest_vocab.FULL_STATUS`, so the run it reads cannot drift from "
+          "the tuple every surface answers with",
+          bool(_fs_parsed) and _fs_parsed == set(_manifest_vocab.FULL_STATUS),
+          "parsed=%r tuple=%r err=%r"
+          % (sorted(_fs_parsed), sorted(_manifest_vocab.FULL_STATUS), _fs_err))
     # --- the clause a five-claim section was not holding ------------------------
     # `## Phase sign-off` told the reader `/audit:task scope` refuses a `done`
     # task, and a prior fix had already reversed that: driven on one fixture with

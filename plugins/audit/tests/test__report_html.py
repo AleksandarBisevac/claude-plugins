@@ -577,6 +577,14 @@ def _cases(check):
           and M.tev_pointer({"testEvidence": {"runId": "R"}}) == {"runId": "R"}
           and M.tev_pointer({}) is None
           and M.tev_pointer("not-a-dict") is None)
+    # THE SCHEMA SAYS `runId` IS A STRING, and the panel reads it as one. A
+    # truthy number or boolean used to count as a pointer here and as none on
+    # the panel - two words for one subject. One rule, both surfaces.
+    check("tv1b a runId that is not a string points at nothing either - a "
+          "number or a boolean is not a run id the ledger could hold",
+          M.tev_pointer({"testEvidence": {"runId": 7}}) is None
+          and M.tev_pointer({"testEvidence": {"runId": True}}) is None
+          and M.tev_pointer({"testEvidence": {"runId": "7"}}) == {"runId": "7"})
     check("tv2 a gate is configured when the TASK declares one, when its PHASE "
           "declares one, and not when neither does - absent and empty are one "
           "answer, exactly as run-test-gate.gate_of takes them",
@@ -633,6 +641,66 @@ def _cases(check):
           and len({M.tev_view(None, None, True)["why"],
                    M.tev_view(None, None, False)["why"],
                    M.tev_view(_ptr, None, True)["why"]}) == 3)
+    # ANOTHER NO-RUN STATE, AND IT IS NOT `dangling`. A pointer whose run could
+    # not be looked up because the READ failed says nothing about whether the
+    # ledger holds it, so the badge word itself has to differ - a sentence only
+    # in the title leaves the visible word claiming the evidence is missing.
+    _tv_ur = M.tev_view(_ptr, None, True, read_error="disk gone (fixture)")
+    _tv_urcell = M._tev_cell(_tv_ur)
+    check("tv6a a pointer whose ledger could not be READ is its own key and its "
+          "own word, with the read error's one basis sentence as its detail, "
+          "and it ranks in the no-run tail beside `dangling`: %r" % (_tv_ur,),
+          (_tv_ur["key"], _tv_ur["label"])
+          == ("ledger-unreadable", "Ledger unreadable")
+          and M.TEV_LABELS.get("ledger-unreadable") == "Ledger unreadable"
+          and M.ledger_read_basis("disk gone (fixture)") in _tv_ur["why"]
+          and "run R" in _tv_ur["why"]
+          and _tv_ur["row"] is None and _tv_ur["flags"] == []
+          and _tv_urcell.count('data-tev="ledger-unreadable"') == 1
+          and _tv_urcell.count(">Ledger unreadable<") == 1
+          and "ledger-unreadable" in M.TEV_ORDER
+          and M.TEV_ORDER.index("could-not-run")
+          < M.TEV_ORDER.index("ledger-unreadable")
+          < M.TEV_ORDER.index("no-gate"))
+    check("tv6a2 ALLOW: with no read error the same pointer is still "
+          "`dangling`, and a row that WAS found wins over a read error nobody "
+          "should have passed beside it",
+          M.tev_view(_ptr, None, True)["key"] == "dangling"
+          and M.tev_view(_ptr, None, True, read_error=None)["label"]
+          == "Pointer without evidence"
+          and M.tev_view(_ptr, {"runId": "R", "status": "passed"}, True,
+                         read_error="x")["key"] == "passed")
+    check("tv6a3 the read error travels as ONE payload shape, built in one "
+          "place for both surfaces: the error verbatim and the basis sentence",
+          M.tev_read_error("disk gone (fixture)")
+          == {"error": "disk gone (fixture)",
+              "basis": M.ledger_read_basis("disk gone (fixture)")}
+          and "could not be read" in M.ledger_read_basis("x")
+          # ...and the words are the vocabulary's template, not this module's.
+          and M.ledger_read_basis("x") == _vocab.LEDGER_READ_FAILED % ("x",))
+    # ONE WORDING IN THE TREE. The sentence is a `%s` template in
+    # `_manifest_vocab` and every surface fills it; a second copy anywhere under
+    # scripts/ or hooks/ is two wordings of one failure the day either is edited.
+    # Read as TEXT over the template's own tail, which is the shape a copy takes.
+    # The third shape is the PARAPHRASE: the same fact worded actively, which a
+    # scan for the template's own tail would never see.
+    _lr_tails = ("ledger could not be read: %s", "ledger lives could not be resolved: %s",
+                 "could not read the evidence ledger")
+    _lr_homes = []
+    for _lr_dir in (_output.SCRIPTS_DIR, _output.HOOKS_DIR):
+        for _lr_root, _lr_subs, _lr_files in os.walk(_lr_dir):
+            for _lr_name in _lr_files:
+                if not _lr_name.endswith(".py"):
+                    continue
+                with open(os.path.join(_lr_root, _lr_name),
+                          encoding="utf-8") as _lr_fh:
+                    _lr_text = _lr_fh.read()
+                    _lr_homes += [_lr_name for _t in _lr_tails if _t in _lr_text]
+    check("tv6a4 the ledger-read failure, and the failure to locate that ledger, "
+          "are each worded in ONE place - a template in _manifest_vocab - and "
+          "nowhere else under scripts/ or hooks/, paraphrased or not: %r"
+          % (sorted(_lr_homes),),
+          sorted(_lr_homes) == ["_manifest_vocab.py", "_manifest_vocab.py"])
     # --- tv6b..tv6g: the evidence boundary, as the badge tells it ------------
     # FOUR SENTENCES WHERE THERE WERE THREE. `No evidence` used to answer for
     # work finished before this plan could record anything, which is the state a
@@ -905,6 +973,136 @@ def _cases(check):
               ["no-checks"], "data-tev", "fchip", mapping=M.TEV_LABELS)
           and M._chip_buttons(["done"], "data-ps", "fchip")
           == M._chip_buttons(["done"], "data-ps", "fchip", mapping=None))
+
+    # --- _verified_line(): the one line VERIFIED speaks for a merged phase ----
+    # A merged phase whose full run contains its mergedHead names the run's own
+    # SHA and its own sign-off counts - a phase this build cannot answer WHOLE
+    # for renders no such line at all, which is the repro this case is: it FAILS
+    # on any build that has not yet learned the word.
+    _fr_whole = {"answer": "whole", "head": "abcdef0123456789",
+                 "testGateBasis": "derived", "listed": 3, "full": 5,
+                 "signOffStatus": "passed", "signOffTs": "2026-01-01T00:00:00Z"}
+    check("vl1 a WHOLE answer names the run's own sha and the phase's own "
+          "sign-off counts, never a bare word: %r" % (M._verified_line(_fr_whole),),
+          "whole at abcdef012" in M._verified_line(_fr_whole)
+          and "sign-off: derived, 3 of 5 suites, passed "
+              "2026-01-01T00:00:00Z" in M._verified_line(_fr_whole))
+    # NO COUNTS RECORDED IS THE NORMAL STATE, not a gap: without a
+    # `meta.phaseGate` a sign-off run records no narrowed or shadow counts, so
+    # printing two question marks would put a placeholder where a claim goes on
+    # every such line. The clause is dropped; a HALF-recorded pair is an anomaly
+    # and keeps its question mark, because that one is worth a reader's look.
+    _fr_uncounted = dict(_fr_whole, testGateBasis=None, listed=None, full=None)
+    check("vl1b a WHOLE answer with NO suite counts recorded drops the count "
+          "clause rather than printing two question marks: %r"
+          % (M._verified_line(_fr_uncounted),),
+          M._verified_line(_fr_uncounted)
+          == "sign-off: wide, passed 2026-01-01T00:00:00Z; whole at abcdef012"
+          and "?" not in M._verified_line(_fr_uncounted))
+    check("vl1c ...but a HALF-recorded pair keeps its question mark, because "
+          "that is an anomaly and not the ordinary absence",
+          "sign-off: derived, ? of 5 suites, passed "
+          in M._verified_line(dict(_fr_whole, listed=None)))
+    check("vl2 the mode word falls back to wide for anything that is not "
+          "literally 'derived' - a phase this build has never seen narrowed "
+          "is a wide gate, not a blank",
+          "sign-off: wide" in M._verified_line(dict(_fr_whole, testGateBasis=None)))
+    # A PROVISIONAL phase names no mergedHead to record a run AT until this
+    # line exists to say so - the repro half of this case.
+    _fr_prov = {"answer": "provisional", "mergedHead": "deadbeef00cafe12",
+               "phaseId": "P3"}
+    check("vl3 a PROVISIONAL answer is the repair, not just the gap: it names "
+          "the mergedHead to record a run against and the command that would "
+          "do it: %r" % (M._verified_line(_fr_prov),),
+          "record a full run at deadbeef0" in M._verified_line(_fr_prov)
+          and "/audit:review P3 --full" in M._verified_line(_fr_prov))
+    check("vl4 an UNKNOWN answer carries `full_status`'s own basis verbatim, "
+          "never a second opinion about why ancestry could not be asked",
+          M._verified_line({"answer": "unknown", "basis": "git could not be "
+                            "asked"}) == "unknown - git could not be asked")
+    check("vl5 no fullRun at all (this plan names no meta.fullGate, or this "
+          "phase never merged) renders no line - the byte-identical case",
+          M._verified_line(None) == "" and M._verified_line({}) == "")
+    check("vl6 not_declared (or any word this build does not recognise) "
+          "renders no line either - NOT_DECLARED is the ABSENT-means-inert "
+          "reading this plugin promises everywhere else",
+          M._verified_line({"answer": "not_declared"}) == ""
+          and M._verified_line({"answer": "some-future-word"}) == "")
+
+    # --- _tev_phase_marks(): the third mark, and only when there is one --------
+    check("pm1 a phase row with a fullRun answer wears a third mark carrying "
+          "the same words _verified_line renders, in the existing .ptev chip "
+          "class - no new class for the stylesheet to learn",
+          "sign-off: derived" in M._tev_phase_marks({"own": None, "rollup": [],
+                                                     "fullRun": _fr_whole})
+          and M._tev_phase_marks(
+              {"own": None, "rollup": [],
+               "fullRun": _fr_whole}).count('class="ptev"') == 1)
+    _entry_no_full = {"own": None, "rollup": []}
+    _entry_full_none = {"own": None, "rollup": [], "fullRun": None}
+    check("pm2 a phase with no fullRun key renders BYTE-IDENTICAL markup to one "
+          "whose fullRun is explicitly None - the old plan and the new one "
+          "that simply has not merged read as the same silence",
+          M._tev_phase_marks(_entry_no_full)
+          == M._tev_phase_marks(_entry_full_none) == "")
+
+    # --- the stylesheet's half of the unreadable-ledger badge ------------------
+    # A PROPERTY OF THE SOURCE, and labelled as one: whether the chip is amber on
+    # a painted page belongs to the browser gates. What text can hold is that the
+    # key sits in the SAME selector group as `dangling` and the other states a
+    # person has to act on, once, and not in the grey silences.
+    import _report_ui
+    _rcss = _report_ui.CSS
+    _amber_from = _rcss.find(':where(.chip,.tevn)[data-tev="gate-mutated"],')
+    _amber_to = _rcss.find("{--st:var(--st-prog);--st-ink:var(--st-prog-ink)}",
+                           max(_amber_from, 0))
+    _amber = _rcss[_amber_from:_amber_to] if 0 <= _amber_from < _amber_to else ""
+    check("css1 CONSTRUCT: the report paints `ledger-unreadable` in the amber "
+          "group beside `dangling`, and names it exactly once in the "
+          "stylesheet: %r" % (_amber,),
+          '[data-tev="ledger-unreadable"]' in _amber
+          and '[data-tev="dangling"]' in _amber
+          and _rcss.count('[data-tev="ledger-unreadable"]') == 1)
+    # The full-run line is ONE sentence in ONE `.ptev` span, and `.ptev` does
+    # not wrap - so the phase cell's narrowest width was the whole sentence, and
+    # a narrow viewport scrolled sideways. The rule that lets it wrap is pinned
+    # here as text; that the page no longer scrolls is
+    # tools/check-report-interactive.mjs's to say, in a real browser.
+    check("css2 CONSTRUCT: the full-run mark alone may wrap - every other "
+          "`.ptev` mark stays on one line, and the full-run one does not",
+          ".ptev{margin-left:var(--sp-2);font-size:.76rem;color:var(--muted);"
+          "white-space:nowrap}" in _rcss
+          and _rcss.count(".ptev[data-fullrun]{white-space:normal") == 1)
+
+    # --- _tev_step_rows(): why a could-not-run step has no verdict -------------
+    # A step that measured cleanly stays exactly as it was - no basis was ever
+    # recorded for it and none is owed.
+    _passed_steps = M._tev_step_rows({"steps": [
+        {"name": "lint", "exit": 0, "outcome": "measured",
+         "outcomeBasis": "never read for a passed step", "derivedGap": True}]})
+    check("sr1 a step that is not could-not-run renders no basis line and no "
+          "derivedGap marker, even when the row carries both fields - only "
+          "the outcome decides, never their bare presence: %r" % (_passed_steps,),
+          "basis:" not in _passed_steps and "derivedGap:" not in _passed_steps)
+    _gap_steps = M._tev_step_rows({"steps": [
+        {"name": "test", "exit": None, "outcome": "could-not-run",
+         "outcomeBasis": "npm test printed no verdict signature",
+         "derivedGap": True}]})
+    check("sr2 a could-not-run step renders the basis it was recorded with, "
+          "and the derivedGap marker separately from it, in the wording "
+          "audit-lookup.py already renders for the same two fields: %r"
+          % (_gap_steps,),
+          "basis: npm test printed no verdict signature" in _gap_steps
+          and "derivedGap: this step answered a narrower question than the "
+              "phase's derived gate declared" in _gap_steps)
+    _nogap_steps = M._tev_step_rows({"steps": [
+        {"name": "test", "exit": None, "outcome": "could-not-run",
+         "outcomeBasis": "the interpreter was not on PATH"}]})
+    check("sr3 a could-not-run step with no derivedGap renders the basis "
+          "alone - the marker is never invented for a step that did not "
+          "earn it: %r" % (_nogap_steps,),
+          "basis: the interpreter was not on PATH" in _nogap_steps
+          and "derivedGap:" not in _nogap_steps)
 
 
 

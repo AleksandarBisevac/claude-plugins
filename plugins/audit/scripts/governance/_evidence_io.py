@@ -83,10 +83,55 @@ _output.install_path()
 import _journal_io  # noqa: E402  (config loading, the writer id, the month)
 import _locks  # noqa: E402  (whose phase lock, and is it live)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; the atomic write)
+import _manifest_vocab  # noqa: E402  (the FULL_STATUS words, one vocabulary)
+import _worktrees  # noqa: E402  (git ancestry: merged_into, the three answers)
+import _usage_core  # noqa: E402  (parse_ts: a full run's ts read as a moment, at layer 1)
 from _journal_io import (command_facts, redacted_paths,  # noqa: E402
                          redacted_text, repo_relative_or_token)
 
 DEFAULT_DIRNAME = "evidence"
+
+
+# --- one resolution of a gate entry, for every reader that needs one -----------
+def resolved_commands(manifest, entries):
+    """`[(name, command)]` -- every entry through `meta.buildCommands`, once,
+    with `meta.nodePreamble` in front.
+
+    THE ONE HOME. `run-test-gate.py` used to be the only place that knew how
+    to turn a `meta.buildCommands` KEY into a shell command, which made it the
+    only caller that could ask `full_status` the question it needs asked:
+    `full_status`'s `full_commands` argument is exactly this function's answer
+    for `meta.fullGate`, and it is the SAME resolution a recorded run's
+    `published` list comes from -- so a plan judged whole is judged against
+    the identical list its own row was measured against, never a second
+    reading of `meta.buildCommands` that could drift from it. `doctor.py`, the
+    panel and the release guard all need that same question answered and none
+    of them may import a hyphen-named entry point, which is what put this here
+    rather than where it was written first.
+
+    AN ENTRY NAMING NO BUILD COMMAND IS CARRIED VERBATIM, because it may be a
+    literal shell command and refusing it would make this function decide
+    what a gate is allowed to be. A BLANK `nodePreamble` IS NOT A PREAMBLE --
+    prefixing `   && ` would make every gate on the manifest die of a shell
+    syntax error, which is the false red this guards against. Joined with
+    `&&` rather than a pipe: `reference/orchestrator.md`'s "un-piped" asks for
+    exactly that, because a pipe hands the gate's exit status to the
+    preamble's tail and loses the verdict.
+    """
+    manifest = manifest if isinstance(manifest, dict) else {}
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    build = meta.get("buildCommands")
+    build = build if isinstance(build, dict) else {}
+    preamble = meta.get("nodePreamble")
+    lead = preamble.strip() if isinstance(preamble, str) else ""
+    resolved = []
+    for entry in entries or []:
+        if not (isinstance(entry, str) and entry.strip()):
+            continue
+        command = build.get(entry, entry)
+        resolved.append(
+            (entry, ("%s && %s" % (lead, command)) if lead else command))
+    return resolved
 
 
 # --- where it lives -----------------------------------------------------------
@@ -372,9 +417,35 @@ MAX_FAILING = 10
 # the terms the plan declared. The basis travels with the word because the second
 # attempt may have run under a lowered worker bound or under the same one, and
 # those are different claims about what was measured.
+# `failingSuites`/`failingSuitesBasis` ARE THE SAME TWO RULES `failing` OBEYS,
+# for the same reason: they are the other value a runner's own output wrote,
+# so both the redaction rule and the row-cannot-be-widened rule land on them
+# in `_step` and nowhere else. `suiteReader` needs neither - it is one of the
+# vocabulary words this plugin composes, never a runner's own bytes, so it
+# crosses unredacted exactly like `outcome` does.
+#
+# `outcomeBasis` IS THE THIRD SUCH VALUE, and the reason `could-not-run` had
+# only ONE word for every cause. A no-verdict signature a runner printed, a
+# derived run that skipped a listed suite, a missing interpreter and a step
+# the OS killed all set `outcome` to the same word, and until this key
+# existed nothing on the row said which of them happened -- a committed row
+# carried the verdict and not why it was reached. It gets the same two rules
+# `failing` gets, for the same reason: it is a sentence built out of a
+# runner's own printed bytes (or, for the derived-gap arm, the phase's own
+# suite names -- still worth bounding, since nothing here caps how many a
+# phase declares), so it is redacted through `redacted_text` and cut to that
+# function's own bound rather than trusted whole from the caller.
+#
+# `derivedGap` IS A MARKER, NOT A SECOND COPY of the sentence above. A reader
+# asking "was THIS could-not-run a derived run that answered a narrower
+# question than the phase declared" needs a fact it can branch on, and
+# string-matching the basis sentence would break the moment its wording
+# changed -- `run-test-gate.run_gate` sets the marker and composes the
+# sentence in the same place, so the two cannot drift apart.
 STEP_KEYS = ("name", "exit", "ran", "measured", "durationMs", "outcome",
              "timeoutSeconds", "teardown", "failing", "failingBasis",
-             "retriedAfterSignal", "retryBasis")
+             "failingSuites", "failingSuitesBasis", "suiteReader",
+             "retriedAfterSignal", "retryBasis", "outcomeBasis", "derivedGap")
 STATE_KEYS = ("head", "headBasis", "scopeDigest", "scopeBasis",
               "scopeListDigest", "dirtyDigest", "dirtyBasis")
 _PORCELAIN_RENAME = " -> "
@@ -489,6 +560,27 @@ def _step(project, step, published):
             out[key] = [redacted_text(project, line)
                         for line in step[key][:MAX_FAILING]]
             continue
+        if key == "failingSuites":
+            # THE SAME PAIR OF RULES, over a PATH rather than a line of prose:
+            # bounded by `MAX_PATHS` (`run-test-gate.failing_suites` already
+            # states its own cut in `failingSuitesBasis` when it truncates
+            # there - this is the BACKSTOP, for a caller that did not), and
+            # redacted through `repo_relative_or_token` exactly as `_paths`
+            # redacts `treeMutated` and `overlap` - this row is committed, and
+            # an absolute suite path names somebody's machine.
+            out[key] = [repo_relative_or_token(project, p)
+                        for p in step[key][:MAX_PATHS]]
+            continue
+        if key == "outcomeBasis":
+            # WHY THIS `could-not-run` STEP HAS NO VERDICT, bounded and
+            # redacted exactly as `failing`'s lines are: a no-verdict
+            # signature or a derived-gap sentence is built out of a runner's
+            # own printed bytes or a phase's own suite names, and this row is
+            # committed - so it gets `redacted_text`'s bound the same way
+            # `failing` gets it, rather than being trusted whole from the
+            # caller.
+            out[key] = redacted_text(project, str(step[key]))
+            continue
         out[key] = step[key]
     command = step.get("command")
     if command is None:
@@ -548,6 +640,18 @@ def row_for(project, result, scope, ids, identity, published=None):
                 else redacted_paths(project, result.get("coverageBasis"))),
         },
     }
+    # THE THIRD PLACE'S OWN OBSERVATION, WRITTEN ONLY WHEN A CALLER MEASURED IT.
+    # `full_status`'s `_full_disqualification` reads its ABSENCE as "cannot be
+    # told clean", which is a different claim from an empty list ("measured,
+    # and nothing was dirty") - so this key is added only when
+    # `run-test-gate.py`'s `--full` path actually computed it, exactly as
+    # `treeMutated`/`overlap` above are bounded and repo-relative rather than
+    # absolute paths naming somebody's machine in a committed file.
+    if result.get("dirtyOutside") is not None:
+        dirty, dirty_dropped = _paths(project, result.get("dirtyOutside"))
+        row["observations"]["dirtyOutside"] = dirty
+        if dirty_dropped:
+            row["dirtyOutsideDropped"] = dirty_dropped
     # THE BASIS FOR THE ONE STATUS WORD THAT HAS NO OTHER. `failed` is read back
     # off the steps, `timed-out` off a step's `outcome` and its `timeoutSeconds`,
     # `no-checks` off `ranTotal`, `gate-mutated` off `observations.treeMutated`
@@ -601,6 +705,11 @@ def row_for(project, result, scope, ids, identity, published=None):
     # `phase` beside a `taskId`, which is a shape two opposite readings both fit.
     if result.get("gateSource") is not None:
         row["gateSource"] = str(result["gateSource"])
+    # THE OTHER PHASES A GROUP'S ONE RUN OWNED (`run-test-gate.py --also`). Written
+    # only for a group run, so a row that carries none is a run for its subject
+    # alone - which is what a member's copied pointer is checked against.
+    if isinstance(result.get("groupWith"), list) and result["groupWith"]:
+        row["groupWith"] = [str(p) for p in result["groupWith"]]
     # WHAT THE GATE WAS, resolved: a digest of every entry beside the command it
     # resolves to (`gate_digest`), so a reader can tell a gate whose entries kept
     # their names while `meta.buildCommands` changed what they run. Written only
@@ -656,6 +765,25 @@ def row_for(project, result, scope, ids, identity, published=None):
         row["treeMutatedDropped"] = mut_dropped
     if cov_dropped:
         row["coverageDropped"] = cov_dropped
+    # THE DERIVED GATE'S OWN TWO CLAIMS, ALLOW-LISTED LIKE EVERYTHING ELSE
+    # HERE - an inventive caller handing this function an ad-hoc `result`
+    # cannot widen the row by inventing a third key under either one.
+    # `narrowed` is two counts and carries no path, so it needs no bound;
+    # `shadow.missed` is a path list a runner's own output produced, so it
+    # gets the SAME cut and the SAME redaction `treeMutated`/`overlap` get
+    # above, through `_paths`.
+    narrowed = result.get("narrowed")
+    if isinstance(narrowed, dict):
+        row["narrowed"] = {"listed": narrowed.get("listed"),
+                           "full": narrowed.get("full")}
+    shadow = result.get("shadow")
+    if isinstance(shadow, dict):
+        missed, missed_dropped = _paths(project, shadow.get("missed"))
+        shadow_row = {"listed": shadow.get("listed"), "full": shadow.get("full"),
+                      "missed": missed}
+        if missed_dropped:
+            shadow_row["missedDropped"] = missed_dropped
+        row["shadow"] = shadow_row
     # The three-valued fields keep their shape at the TOP level too, so a reader
     # that never opens `observations` still cannot mistake unknown for clean.
     row["treeMutated"] = row["observations"]["treeMutated"]
@@ -821,8 +949,164 @@ def verify_rows(rows, basename):
     return out
 
 
+# --- merging a ledger file that diverged ----------------------------------------
+# ONE MERGE FOR BOTH CHAINED RECORDS. A ledger file appended on two branches under
+# one name - which every file was before the per-worktree writer key - conflicts
+# exactly as a journal file does, and is resolved by `_journal_io.merge_rows`
+# with the same refusals and the same re-chain: this chain IS the journal's.
+#
+# NO MARKER ROW IN THE LEDGER, and the reason is the readers. Every row in this
+# directory is read as a RECORDED RUN - `read_rows`, `latest_by_subject`, the gate
+# tallies, `earliest_recorded`, the verdict a task commit is bound to - so a row
+# recording a merge would be counted as a run with no status by each of them. The
+# merge is recorded in the JOURNAL instead (`ACTION_MERGED`), in a row whose
+# target is the merged file: its `stateHash` is the file's new bytes, which is
+# also what keeps the journal's anchor from reporting the re-chained file as an
+# edit it never saw.
+ACTION_MERGED = _journal_io.EVIDENCE_MERGE_ACTION
+
+
+def merge_targets(row, aliases):
+    """Every subject a reader of the ledger could file `row` under, as strings.
+
+    The targets a same-second tie is ordered by, and they are the READERS' keys
+    rather than a rule of the merge's own: two rows are disjoint only when no
+    reader could put them on one subject, because for rows on one subject the
+    order IS which verdict is newest. So a row's targets are
+      * `subject_key(row, aliases)` - the `(scope, id)` key `latest_by_subject`
+        writes a pointer under, moved task ids mapped onto the id held now; a
+        `--task` run measured under its phase's gate is `scope: phase` and so
+        shares its phase sign-off's key; and
+      * the `taskId`/`phaseId` pair `_same_subject` compares a verdict by, with
+        a moved task id mapped the same way and an absent id kept distinct.
+    `aliases` is `subject_aliases(plan)`; None means the plan was not read, so
+    how old ids map is unknown and the row has NO target - a tie is then refused,
+    never ordered.
+    """
+    if not isinstance(row, dict) or aliases is None:
+        return ()
+    out = []
+    key = subject_key(row, aliases)
+    if key is not None:
+        out.append("key %s %s" % key)
+    task = row.get("taskId")
+    if task is not None:
+        task = aliases.get(("task", str(task)), ("task", str(task)))[1]
+    out.append("pair task=%s phase=%s" % (
+        "-" if task is None else task,
+        "-" if row.get("phaseId") is None else str(row.get("phaseId"))))
+    return tuple(out)
+
+
+def merge_rows(ours, theirs, name, torn=(), aliases=None):
+    """`_journal_io.merge_rows` for one ledger file: the readers' subject keys as
+    each run's targets (`merge_targets`, under the plan's `aliases`), and no
+    marker row (the section above says why)."""
+    return _journal_io.merge_rows(
+        ours, theirs, name, torn=torn,
+        target_of=lambda row: merge_targets(row, aliases), marker=False)
+
+
+def plan_aliases(project, config=None):
+    """`(aliases, why)` - `subject_aliases` of the plan this project keeps, or
+    `(None, why)` when it could not be read, which a merge reads as "no two runs
+    are provably disjoint"."""
+    config = _journal_io.load_config(project) if config is None else config
+    rel = (config or {}).get("manifestPath") or _journal_io.DEFAULT_MANIFEST
+    path = os.path.join(project, str(rel))
+    try:
+        return subject_aliases(_mio.load_manifest(path)), ""
+    except Exception as exc:
+        where, why = _unreadable_plan_file(project, path, rel, exc)
+        return None, ("the plan could not be read - %s (%s) - so which task ids "
+                      "were moved onto which is unknown and no same-second tie "
+                      "in the ledger can be ordered" % (where, why))
+
+
+def _unreadable_plan_file(project, path, rel, exc):
+    """`(file, reason)` - the FILE of the plan that would not load, and why.
+
+    The loader reads the index and then every shard it names, and its error
+    carries a parser offset with no file name - so an unreadable shard would be
+    reported against the index, which parses. Each is read on its own here to
+    name the one that failed; when none does, the loader's own reason stands.
+    """
+    try:
+        index = _mio.read_json(path)
+    except Exception as first:
+        return rel, first
+    base = os.path.dirname(path)
+    for stub in (index.get("phases") or []) if isinstance(index, dict) else []:
+        shard = stub.get("shard") if isinstance(stub, dict) else None
+        if not shard:
+            continue
+        try:
+            _mio.read_json(os.path.join(base, str(shard)))
+        except Exception as bad:
+            return (_output.posix_rel(os.path.join(base, str(shard)), project),
+                    bad)
+    return rel, exc
+
+
+def record_merge(project, path, result, actor=None, config=None):
+    """The journal row recording a ledger merge. Returns the file, or False.
+
+    Written AFTER the merged file, so its `stateHash` is the merged bytes.
+    Fail-soft like every append; the caller says when it could not be written.
+    """
+    config = _journal_io.load_config(project) if config is None else config
+    entry = {
+        "action": ACTION_MERGED,
+        "actor": actor if isinstance(actor, dict) else {"via": "merge"},
+        "target": repo_relative_or_token(project, path),
+        "summary": result.get("summary") or "",
+    }
+    # WHERE THE RE-CHAIN LIES, because this row is the only place it can be
+    # kept: a ledger row's content may not change and no row may be added to
+    # the ledger, and past this merge `prev` in that stretch no longer records
+    # one writer's order (`chain_ordered`).
+    stretch = dict((key, result.get(key)) for key in
+                   ("relinkedAfter", "relinkedThrough") if result.get(key))
+    if stretch:
+        entry["details"] = stretch
+    return _journal_io.append_from_cli(project, entry, config=config)
+
+
+def merge_seams(project, config=None):
+    """`(seams, why)` - every re-chained stretch a ledger merge recorded, as
+    `(relinkedAfter, relinkedThrough)` pairs read off the journal's
+    `ACTION_MERGED` rows, or `(None, why)` when the journal could not be read.
+
+    `[]` is an answer - no merge re-chained this ledger - and None is not one,
+    which is why they are kept apart: `chain_ordered` reads no chain as a
+    writer's order under None. A merge whose journal row was never written
+    (`record_merge` is fail-soft, and says so) leaves no stretch here.
+
+    A DISABLED JOURNAL IS None AND NOT []: with `journal.enabled` false no
+    merge could have been recorded, so the absence of one proves nothing."""
+    if not _journal_io.enabled(
+            _journal_io.load_config(project) if config is None else config):
+        return None, ("the journal is disabled (journal.enabled false), so no "
+                      "ledger merge could have been recorded")
+    try:
+        journal = _journal_io.read_all(project, config)
+    except Exception as exc:
+        return None, ("the journal that records ledger merges could not be read "
+                      "(%s)" % (exc,))
+    seams = []
+    for row in journal:
+        if row.get("action") != ACTION_MERGED:
+            continue
+        details = row.get("details") if isinstance(row.get("details"), dict) else {}
+        after = details.get("relinkedAfter")
+        if isinstance(after, str) and after:
+            through = details.get("relinkedThrough")
+            seams.append((after, through if isinstance(through, str) else None))
+    return seams, ""
+
+
 # --- writing and reading ------------------------------------------------------
-def append_row(project, row, session_id=None, config=None):
+def append_row(project, row, session_id=None, config=None, writer=None):
     """Append one row, chained onto the file's tail; return the file it landed in.
 
     THE LOCK IS THE CHAIN'S, and it is why this is no longer the bare O_APPEND the
@@ -832,18 +1116,29 @@ def append_row(project, row, session_id=None, config=None):
     lock is taken rather than a second one written here; when it cannot be taken
     the append RAISES, because a false tamper verdict is worse than a missing row
     and `record()` already declines to report a run whose evidence was not stored.
+
+    `writer`, WHEN GIVEN, NAMES THE FILE AND WINS OVER A SESSION ID. A CI build
+    has no `CLAUDE_CODE_SESSION_ID` most of the time, but even where it does, a
+    build's own identity should not be split across files by which session
+    happened to invoke the shard - `--writer ci-42` is the caller SAYING that
+    name is the writer, so `session_id` is left out of the lookup entirely
+    rather than merely offered as a fallback that a session would still beat.
     """
     config = _journal_io.load_config(project) if config is None else config
     directory = evidence_dir(project, config)
     os.makedirs(directory, exist_ok=True)
-    actor = {"sessionId": session_id} if session_id else {}
+    writer = writer.strip() if isinstance(writer, str) else ""
+    if writer:
+        actor, fallback = {}, writer
+    else:
+        actor = {"sessionId": session_id} if session_id else {}
+        fallback = (None if _journal_io.has_session(actor)
+                   else _journal_io.writer_token(project, config))
     # The trail's own key, for the trail's reason: one writer per file, and one
     # session driving two linked worktrees is two writers - their branches would
     # otherwise each append the same basename and meet as a conflict on merge.
     path = _journal_io.file_for(
-        directory, row.get("ts") or _now(), actor,
-        fallback=None if _journal_io.has_session(actor)
-        else _journal_io.writer_token(project, config),
+        directory, row.get("ts") or _now(), actor, fallback=fallback,
         worktree=_journal_io.worktree_key(project, config))
     lock = _journal_io._acquire(path, record="the evidence ledger")
     try:
@@ -873,7 +1168,8 @@ def ledger_files(project, config=None):
 
 
 def read_rows(project, config=None):
-    """`{"rows", "files", "unreadable"}` - every recorded run, and what was lost.
+    """`{"rows", "rowFiles", "files", "unreadable", "unreadableFiles"}` - every
+    recorded run, and what was lost.
 
     A TORN LINE IS COUNTED, not merely skipped. `usage_ledger.read_ledger` drops
     one in silence, which is right for telemetry and wrong here: silence about a
@@ -887,26 +1183,50 @@ def read_rows(project, config=None):
     never returned: same bytes, two opinions about what a row even is. What stays
     local is the RULE -- the trail forgives a torn tail as a crash, and this
     counts it, because a lost measurement is not a lost note.
+
+    `unreadableFiles` NAMES THE PATH, ADDITIVELY. `unreadable` has always been a
+    bare count, which is enough for a boundary that only needs to know something
+    was lost (`since_boundary`) - but a reader asking a QUESTION about the
+    ledger's own content (`validate-manifest.py`'s 'phase gate runs no suite')
+    has to say WHICH file it could not trust, not merely how many lines. One
+    path per FILE that contributed to `unreadable` (a file unreadable outright,
+    or carrying an unparseable line, or a torn tail), deduplicated, in the order
+    `ledger_files` returns them.
+
+    `rowFiles` NAMES EACH ROW'S FILE, ADDITIVELY: the basename of the ledger
+    file `rows[i]` was read from, at the same index. A caller that must say
+    WHICH file holds a run reads it here rather than walking the directory a
+    second time - a second walk is a second decode, and one stricter than the
+    read above would find a row here that it cannot find there.
     """
     config = _journal_io.load_config(project) if config is None else config
-    rows, unreadable, files = [], 0, 0
+    rows, row_files, unreadable, files = [], [], 0, 0
+    unreadable_files = []
     for path in ledger_files(project, config):
         files += 1
+        lost_here = False
         try:
             with open(path, "r", encoding="utf-8", errors="replace") as fh:
                 text = fh.read()
         except Exception:
             unreadable += 1
+            unreadable_files.append(path)
             continue
         parsed, torn = _journal_io.rows_from_text(text)
         for obj in parsed:
             if obj.get("_unparseable"):
                 unreadable += 1
+                lost_here = True
             else:
                 rows.append(obj)
+                row_files.append(os.path.basename(path))
         if torn:
             unreadable += 1
-    return {"rows": rows, "files": files, "unreadable": unreadable}
+            lost_here = True
+        if lost_here:
+            unreadable_files.append(path)
+    return {"rows": rows, "rowFiles": row_files, "files": files,
+           "unreadable": unreadable, "unreadableFiles": unreadable_files}
 
 
 # --- folding history into a tally, never into a verdict ------------------------
@@ -989,12 +1309,14 @@ def gate_last_caught(rows, name):
     return caught[-1] if caught else None
 
 
-def gate_cost_ms(rows, name):
-    """Total recorded run time (ms) for the named gate across `rows`, summed
-    over every matching step that carries one. `None` when not one step did --
-    absent means UNMEASURED, never zero, which is `phase_budgets`' rule read
-    for a run's own cost rather than for the plan's declared one."""
-    total, seen = 0, False
+def _gate_cost_walk(rows, name):
+    """`(total, measured)` for the named gate across `rows`, walked ONCE --
+    the total ms summed over every matching step that carries a `durationMs`,
+    beside a count of exactly those steps. `gate_cost_ms` and
+    `gate_cost_measured` both read this one walk rather than each summing and
+    counting for itself, so a future step key can never make the sum and the
+    count disagree about which steps contributed."""
+    total, measured = 0, 0
     for row in (rows or []):
         for step in (row.get("steps") or []):
             if not (isinstance(step, dict) and step.get("name") == name):
@@ -1002,8 +1324,28 @@ def gate_cost_ms(rows, name):
             duration = step.get("durationMs")
             if isinstance(duration, (int, float)) and not isinstance(duration, bool):
                 total += duration
-                seen = True
-    return total if seen else None
+                measured += 1
+    return total, measured
+
+
+def gate_cost_ms(rows, name):
+    """Total recorded run time (ms) for the named gate across `rows`, summed
+    over every matching step that carries one. `None` when not one step did --
+    absent means UNMEASURED, never zero, which is `phase_budgets`' rule read
+    for a run's own cost rather than for the plan's declared one."""
+    total, measured = _gate_cost_walk(rows, name)
+    return total if measured else None
+
+
+def gate_cost_measured(rows, name):
+    """How many recorded runs of the named gate across `rows` carried a
+    `durationMs` -- the denominator a MEAN must divide by. `gate_tally`'s
+    `ran` counts every matching step whether or not it carries one, so a
+    history that mixes measured and unmeasured runs dilutes `total / ran`
+    toward zero and can hide a gate that is over budget on the runs actually
+    measured; this is the count that keeps the two questions from being
+    answered as if they were one."""
+    return _gate_cost_walk(rows, name)[1]
 
 
 def gate_names_seen(rows):
@@ -1095,7 +1437,8 @@ def verify(project, config=None):
     return out
 
 
-def record(project, result, scope, ids, identity, published=None, config=None):
+def record(project, result, scope, ids, identity, published=None, config=None,
+           writer=None):
     """Append the row, then anchor it in the journal. Returns both outcomes.
 
     ORDER IS THE POINT. The ledger row is written FIRST and the journal row
@@ -1119,11 +1462,15 @@ def record(project, result, scope, ids, identity, published=None, config=None):
     caches identity, verdict and moment, and a hash cached beside the row it
     digests would be this repository's most repeated defect wearing a new field
     name. Hash the file, not the return value.
+
+    `writer` PASSES THROUGH TO `append_row` UNCHANGED - see that function for
+    why it wins over `identity["sessionId"]` rather than merely falling back
+    to it.
     """
     config = _journal_io.load_config(project) if config is None else config
     row = row_for(project, result, scope, ids, identity, published=published)
     path = append_row(project, row, session_id=identity.get("sessionId"),
-                      config=config)
+                      config=config, writer=writer)
     details = {"runId": row["runId"]}
     for key in ("taskId", "phaseId"):
         if row.get(key):
@@ -1169,10 +1516,13 @@ def lock_state(project, name, label, session_id=None, hint=""):
 
     `free` | `ours` | `held` | `stale` | `unlockable`.
 
-    `ours` EXISTS BECAUSE `_locks.acquire` IS NOT RE-ENTRANT. A gate recorded from
-    inside its own phase run meets the lock that run already holds, and acquiring
-    would refuse it -- which is every in-phase recording there is. So the holder's
-    session is COMPARED rather than the lock re-taken.
+    `ours` IS `_locks.held_by_us`'s ANSWER, asked rather than re-derived. A gate
+    recorded from inside its own phase run meets the lock that run holds, and this
+    reads the claim instead of taking it; whose claim it is has one rule, the
+    lock's own. A copy here that compared the session alone went on calling a
+    claim another live process of this session took for its own write "ours"
+    after the lock stopped doing so - and a pointer written under it raced that
+    process's write of the same shard.
 
     `unlockable` is the panel's documented third answer, kept for its reason: a
     project with no `.git` has no lock scheme and never had one, and refusing
@@ -1194,9 +1544,9 @@ def lock_state(project, name, label, session_id=None, hint=""):
         if not os.path.exists(path):
             return "free", ""
         info = _locks.read_lock(path)
-        holder = info.get("sessionId")
-        if holder and session_id and str(holder) == str(session_id):
-            return "ours", "held by this session"
+        mine = _locks.held_by_us(info, session=session_id)
+        if mine["ours"]:
+            return "ours", mine["why"]
         live, basis = _locks.judge(info, path)
         if live:
             return "held", ("the %s lock is held by another live run (%s); %s"
@@ -1417,13 +1767,132 @@ def window_of(row):
             % (STARTED_KEY,))
 
 
+OVERLAP_YES, OVERLAP_NO, OVERLAP_UNDECIDED = "yes", "no", "undecided"
+
+
+def overlap_state(one, other, ordered=False):
+    """Whether two `(start, end)` windows, in WHOLE seconds, share a moment:
+    `OVERLAP_YES`, `OVERLAP_NO`, or `OVERLAP_UNDECIDED` when the stamps cannot say.
+
+    A stamp names the second an instant fell in, never the instant. Windows
+    sharing a whole second or more overlap; windows with a second between them do
+    not. What is left is two windows MEETING in one second - one ending in second
+    t, the other starting in t, or a run shorter than a second stamped in the
+    other's start or end second. Both instants fell inside that second in an
+    order the stamps do not record, so the answer is UNDECIDED - unless `ordered`:
+    the caller has established the two runs happened one after the other
+    (`chain_ordered`), and then the shared second is sequential."""
+    s1, e1 = one
+    s2, e2 = other
+    meeting = OVERLAP_NO if ordered else OVERLAP_UNDECIDED
+    if s1 == e1 or s2 == e2:
+        point, (s, e) = (s1, (s2, e2)) if s1 == e1 else (s2, (s1, e1))
+        if s == e:
+            return meeting if point == s else OVERLAP_NO
+        if s < point < e:
+            return OVERLAP_YES
+        return meeting if point in (s, e) else OVERLAP_NO
+    if s1 < e2 and s2 < e1:
+        return OVERLAP_YES
+    return meeting if (e1 == s2 or e2 == s1) else OVERLAP_NO
+
+
+def chain_index(rows, seams):
+    """The lookups `chain_ordered` walks, built once for a reader's whole pass:
+    `{"byId", "byHash", "relinked"}`.
+
+    `relinked` is the set of hashes inside a RE-CHAINED STRETCH - the rows a
+    ledger merge linked in timestamp order across two branches (`merge_seams`),
+    from the row after `relinkedAfter` through `relinkedThrough`. A stretch
+    whose end is no longer in the rows (a later merge re-chained it again) runs
+    to the end of its chain, so an unlocatable end widens the refusal rather
+    than narrowing it. EACH STRETCH IS WALKED ON ITS OWN, with its own record
+    of where it has been: a later merge's stretch routinely starts inside an
+    earlier one whose hashes survived it, and stopping at a row another
+    stretch already holds would let an earlier merge row - real or forged -
+    cut a later one short. `seams` None means nobody could say whether the ledger
+    was ever merged, and then `relinked` is None too."""
+    rows = [r for r in (rows or []) if isinstance(r, dict)]
+    by_id = dict((str(r.get("runId")), r) for r in rows if r.get("runId"))
+    by_hash = dict((r.get("hash"), r) for r in rows if r.get("hash"))
+    relinked = None
+    if seams is not None:
+        after_of = dict((r.get("prev"), r) for r in rows if r.get("prev"))
+        relinked = set()
+        for after, through in seams:
+            seen, cur = set(), after_of.get(after)
+            while isinstance(cur, dict) and cur.get("hash") not in seen:
+                seen.add(cur.get("hash"))
+                relinked.add(cur.get("hash"))
+                if cur.get("hash") == through:
+                    break
+                cur = after_of.get(cur.get("hash"))
+    return {"byId": by_id, "byHash": by_hash, "relinked": relinked}
+
+
+def chain_ordered(rows, one, other, seams=None, index=None):
+    """Did `one` and `other` run one after the other, as ONE gate writer's chain
+    records them?
+
+    A row's `prev` names the `hash` of the row appended before it in the same
+    writer's file, so following `prev` from one row and reaching the other says
+    which was WRITTEN later. That is taken for the order the runs happened in
+    under an ASSUMPTION nothing enforces - that one writer file runs its gates
+    one at a time - and only where the windows agree with it: the later-written
+    run must start at or after the earlier run ended. A long run written after
+    a sub-second one began before that one's row existed, which one-at-a-time
+    cannot produce, so the pair is not ordered.
+
+    NOT ORDERED EITHER, each for its own reason:
+      * an OUTSIDE run - its row is written by this plugin, but the suite ran
+        where no chain watched it;
+      * a row inside a re-chained stretch of a merged ledger (`chain_index`) -
+        there `prev` is the timestamp order a merge chose between two
+        branches, not one writer's appends;
+      * any pair when `seams` is None - nobody could say whether the ledger
+        was ever merged, so no chain is read as a writer's order.
+
+    A row passed without its chain keys (the run just recorded) is matched to
+    its copy on disk by `runId`. `index` is `chain_index(rows, seams)`, passed
+    by a reader asking about many pairs so the lookups are built once."""
+    if runner_of(one) != RUNNER_GATE or runner_of(other) != RUNNER_GATE:
+        return False
+    index = chain_index(rows, seams) if index is None else index
+    if index["relinked"] is None:
+        return False
+    by_id, by_hash = index["byId"], index["byHash"]
+    one = by_id.get(str(one.get("runId")), one)
+    other = by_id.get(str(other.get("runId")), other)
+    if not (one.get("hash") and other.get("hash")):
+        return False
+    if one["hash"] in index["relinked"] or other["hash"] in index["relinked"]:
+        return False
+
+    def reaches(start, target):
+        seen, cur = set(), start
+        while isinstance(cur, dict) and cur.get("prev") and cur["prev"] not in seen:
+            seen.add(cur["prev"])
+            cur = by_hash.get(cur["prev"])
+            if cur is target:
+                return True
+        return False
+    if reaches(one, other):
+        later, earlier = one, other
+    elif reaches(other, one):
+        later, earlier = other, one
+    else:
+        return False
+    began, _e, _w = window_of(later)
+    _s, ended, _w = window_of(earlier)
+    return began is not None and ended is not None and began >= ended
+
+
 def _overlaps(one, other):
-    """Whether two `(start, end)` pairs share any moment. Inclusive at the
-    endpoints, because two runs that met for one second met."""
-    return one[0] <= other[1] and other[0] <= one[1]
+    """Whether two windows DEFINITELY share a moment (`overlap_state`)."""
+    return overlap_state(one, other) == OVERLAP_YES
 
 
-def overlapping_runs(rows, row, runner):
+def overlapping_runs(rows, row, runner, seams=None):
     """`(overlapping, basis)` — the OTHER runs made by `runner` whose window
     overlaps `row`'s.
 
@@ -1444,12 +1913,29 @@ def overlapping_runs(rows, row, runner):
     re-run once it is finished; another GATE run in the window means two
     executors were invited onto one machine, and the answer belongs to whoever
     invited them.
+
+    `seams` is `merge_seams(project)[0]`: where the ledger was re-chained by a
+    merge, or None when that is not known - `chain_ordered` says what each
+    answer lets a chain decide.
     """
+    found, _undecided, basis = _classified(rows, row, runner, seams)
+    return (found, basis)
+
+
+def _classified(rows, row, runner, seams=None):
+    """`(overlapping, undecided, basis)` for `row` against every OTHER run by
+    `runner` - one pass, so a reader of either list reads one answer. Both are
+    None when `row` has no window.
+
+    THE WINDOWS DECIDE FIRST and the chain is asked only about a pair they leave
+    undecided, with its lookups built once for the pass: a reader runs on every
+    recorded gate run over the ledger's whole life, and a chain walk per pair
+    made that quadratic in rows nobody's windows ever met."""
     start, end, basis = window_of(row)
     if start is None:
-        return (None, basis)
+        return (None, None, basis)
     mine = str((row or {}).get("runId") or "")
-    found = []
+    found, unsure, index = [], [], None
     for other in (rows or []):
         if not isinstance(other, dict):
             continue
@@ -1460,9 +1946,25 @@ def overlapping_runs(rows, row, runner):
         o_start, o_end, _why = window_of(other)
         if o_start is None:
             continue
-        if _overlaps((start, end), (o_start, o_end)):
+        state = overlap_state((start, end), (o_start, o_end))
+        if state == OVERLAP_UNDECIDED:
+            index = chain_index(rows, seams) if index is None else index
+            if chain_ordered(rows, row, other, seams, index):
+                state = overlap_state((start, end), (o_start, o_end),
+                                      ordered=True)
+        if state == OVERLAP_YES:
             found.append(other)
-    return (found, basis)
+        elif state == OVERLAP_UNDECIDED:
+            unsure.append(other)
+    return (found, unsure, basis)
+
+
+def undecided_neighbours(rows, row, runner, seams=None):
+    """The OTHER runs by `runner` whose window whole-second stamps cannot place
+    either side of `row`'s (`OVERLAP_UNDECIDED`) - reported apart from the runs
+    that did overlap, so a surface says it cannot tell rather than that the
+    window was shared, or that nobody else ran. `[]` when `row` has no window."""
+    return _classified(rows, row, runner, seams)[1] or []
 
 
 def contested_by(rows, row):
@@ -1472,7 +1974,7 @@ def contested_by(rows, row):
     return overlapping_runs(rows, row, RUNNER_OUTSIDE)
 
 
-def shared_the_machine(rows, row):
+def shared_the_machine(rows, row, seams=None):
     """`(others, basis)` — the other GATE runs whose window overlaps `row`'s.
 
     THE RULE THE PARALLEL-SAFETY RULE DID NOT HAVE. That rule is about the file
@@ -1487,7 +1989,7 @@ def shared_the_machine(rows, row):
     solo run would be refusing the ordinary case, which is how a rule gets routed
     around instead of read.
     """
-    return overlapping_runs(rows, row, RUNNER_GATE)
+    return overlapping_runs(rows, row, RUNNER_GATE, seams)
 
 
 def attribution_of(row, rows):
@@ -1511,6 +2013,15 @@ def attribution_of(row, rows):
     contesting, basis = contested_by(rows, row)
     if contesting is None:
         return {"attributed": None, "contested": [], "basis": basis}
+    unsure = undecided_neighbours(rows, row, RUNNER_OUTSIDE)
+    if not contesting and unsure:
+        # NEITHER CLAIM IS MADE: whether that suite ran alongside this one is not
+        # in the whole-second stamps, so the verdict is not asserted as this run's.
+        return {"attributed": None, "contested": [],
+                "basis": "%s; whether %s ran outside this gate in the same window is "
+                         "not knowable from whole-second stamps"
+                         % (basis, ", ".join(str(o.get("runId") or "?")
+                                             for o in unsure))}
     if not contesting:
         return {"attributed": True, "contested": [],
                 "basis": "%s; no run from outside this gate shares that window"
@@ -1550,6 +2061,25 @@ def subject_aliases(manifest):
                 if len(owners) == 1 and old not in live)
 
 
+def subject_key(row, aliases=None):
+    """The `(scope, id)` a pointer for `row` is written under, or None.
+
+    ONE KEY FUNCTION, read by `latest_by_subject` and by the ledger merge's
+    `merge_targets`: whether two runs' order decides a pointer is a question
+    about this key, so it has exactly one spelling. A task-scope row is keyed by
+    its task, anything else by its phase, and a moved task's old id by the id it
+    holds now (`aliases`). None for a row missing the id its scope needs.
+    """
+    if not isinstance(row, dict):
+        return None
+    scope = row.get("scope")
+    subject = row.get("taskId") if scope == "task" else row.get("phaseId")
+    if not scope or not subject:
+        return None
+    key = (scope, str(subject))
+    return (aliases or {}).get(key, key)
+
+
 def latest_by_subject(rows, aliases=None):
     """The newest recorded run per `(scope, id)`, keyed for a pointer write.
 
@@ -1567,18 +2097,85 @@ def latest_by_subject(rows, aliases=None):
     """
     best = {}
     for row in rows or []:
-        if not isinstance(row, dict):
+        key = subject_key(row, aliases)
+        if key is None or not row.get("runId"):
             continue
-        scope = row.get("scope")
-        subject = row.get("taskId") if scope == "task" else row.get("phaseId")
-        if not scope or not subject or not row.get("runId"):
-            continue
-        key = (scope, str(subject))
-        key = (aliases or {}).get(key, key)
         current = best.get(key)
         if current is None or str(row.get("ts") or "") >= str(current.get("ts") or ""):
             best[key] = row
     return best
+
+
+def row_by_run(rows, run_id):
+    """The row carrying `runId == run_id`, newest by `ts`; `None` when none do.
+
+    BESIDE `latest_by_subject` AND NOT A SPECIAL CASE OF IT, because the
+    question a caller already holding a `runId` asks is different: it does not
+    need to know whose subject the run belonged to, only to find the run again
+    - a retry's own row, a fixture a failed-first fix task was opened from. NEWEST
+    BY `ts`, not by file order, for `latest_by_subject`'s own reason: nothing
+    here declares `runId` unique across every writer this project's worktrees
+    keep, so a second row claiming the same id is read as a later one rather
+    than as an error neither caller can act on.
+    """
+    if not run_id:
+        return None
+    best = None
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("runId") or "") != str(run_id):
+            continue
+        if best is None or str(row.get("ts") or "") >= str(best.get("ts") or ""):
+            best = row
+    return best
+
+
+def suite_keys(rows):
+    """`{"running", "silent", "unknown"}` - every step NAME, sorted into what its
+    OWN recorded `suiteReader` says across every row that ever carried it.
+
+    THE ONE LEDGER ANSWER `_manifest_phases.phase_gate_suite_gap` NEEDS for its
+    second arm: a default gate key like `npm test` is not test-shaped by its
+    spelling, so whether it runs a suite has to come from what was actually
+    recorded rather than from guessing at the name.
+
+    RUNNING beats every other reading for a name: one row recording `jest` for
+    `"test"` is enough to call `"test"` a suite-running key forever, because a
+    name that ran a suite even once has answered the question this asks.
+    SILENT is a name that carried `suiteReader` in every row it ever appeared
+    in and never once as anything but `"none"`. UNKNOWN is a name that appears
+    ONLY in rows recorded before the field existed - `suiteReader` absent
+    outright, never `"none"`, which is exactly the distinction the field was
+    written rather than left absent to preserve: treating an absent field as
+    `"none"` would call a step this gate never looked at SILENT, which is a
+    stronger claim than this ledger can make about it.
+
+    A NAME SEEN BOTH WAYS IS NOT UNKNOWN. The moment any row records the field
+    for a name, that name has an answer this ledger CAN give, and it is
+    RUNNING or SILENT - unknown is reserved for a name the field has never once
+    reached.
+    """
+    running, has_field, no_field = set(), set(), set()
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        for step in row.get("steps") or []:
+            if not isinstance(step, dict):
+                continue
+            name = step.get("name")
+            if not name:
+                continue
+            if "suiteReader" not in step:
+                no_field.add(name)
+                continue
+            has_field.add(name)
+            if step.get("suiteReader") != "none":
+                running.add(name)
+    silent = has_field - running
+    unknown = no_field - has_field - running
+    return {"running": sorted(running), "silent": sorted(silent),
+           "unknown": sorted(unknown)}
 
 
 def _same_subject(row, ids):
@@ -1588,10 +2185,25 @@ def _same_subject(row, ids):
     `row_for`'s own rule read back: a phase-scope row carries no `taskId` at all,
     and letting a missing key match a present one would hand a phase's verdict to
     a task.
+
+    A FULL-SCOPE ROW HAS NEITHER, AND A THIRD ARM COVERS IT. `taskId` and
+    `phaseId` are both absent on every full row alike, so the loop above passes
+    every one of them against every other -- a plan never asks a full run's
+    verdict about a task or a phase, it asks about the TREE that run measured.
+    `testedState.head` is what says which tree that was, so a caller comparing
+    full-scope subjects passes it under `ids["head"]` and this is where it is
+    read back, with the same absent-is-distinct rule as the pair above.
     """
     for key in ("taskId", "phaseId"):
         left = row.get(key)
         right = (ids or {}).get(key)
+        if (left is None) != (right is None):
+            return False
+        if left is not None and str(left) != str(right):
+            return False
+    if row.get("scope") == FULL_SCOPE:
+        left = (row.get("testedState") or {}).get("head")
+        right = (ids or {}).get("head")
         if (left is None) != (right is None):
             return False
         if left is not None and str(left) != str(right):
@@ -1710,6 +2322,277 @@ def _current_pointer(manifest_path, scope, ids):
     except Exception:
         return None
     return None
+
+
+# --- full_status: whole, provisional, unknown, or not declared -----------------
+# THE THIRD PLACE'S OWN VERDICT, DERIVED FROM THE LEDGER ALONE. `phase.mergedHead`
+# names the commit the parent's first-parent chain brought the phase in with, or,
+# with `phase.mergedHeadAt` set, the parent's head recorded after the fact. A
+# WHOLE answer needs a green, measured, clean, verbatim full run whose recorded
+# head CONTAINS that commit, and that
+# containment is asked of git through `_worktrees.merged_into` -- never a string
+# comparison, because a head that merely EQUALS `mergedHead` is a special case of
+# containment and a head that is further ahead of it is the ordinary one.
+#
+# NO MANIFEST POINTER IS EVER READ HERE. `phase.testEvidence` and any cache a
+# surface keeps beside it answer a different, narrower question (is THIS task's
+# or phase's own gate run backed by evidence); a stale or hand-edited cache must
+# never be able to make a phase read WHOLE that the ledger does not actually
+# hold, so the only two things this reads are the rows it is handed and the
+# phase dict's own `mergedHead`.
+FULL_SCOPE = "full"
+
+
+def _full_disqualification(row, full_commands):
+    """Why `row` cannot bear WHOLE, or None when every rule holds.
+
+    EVERY RULE NAMES ITSELF IN ITS OWN RETURN, because a caller reporting
+    PROVISIONAL over the nearest disqualified row has to say WHICH condition
+    failed -- a bare "not whole-bearing" would be the same silence a filter
+    that narrows to nothing must never produce.
+
+    THE ORDER IS THE ORDER A ROW WAS BUILT IN: whether it is a measurement at
+    all (status, then not a repeat), what scope it claims, whether it measured
+    anything, whether every step's cost is known, whether the tree it measured
+    was clean, and only last whether it ran the gate that is actually declared
+    now -- a row that failed every earlier test would be a strange one to praise
+    for running the right commands.
+    """
+    if row.get("status") != "passed":
+        return "status is %r, not passed" % (row.get("status"),)
+    if row.get(VERDICT_SOURCE) is not None:
+        return ("this row repeats an earlier verdict (%s=%r) rather than "
+                "measuring one" % (VERDICT_SOURCE, row.get(VERDICT_SOURCE)))
+    if row.get("scope") != FULL_SCOPE:
+        return "scope is %r, not %r" % (row.get("scope"), FULL_SCOPE)
+    obs = row.get("observations") if isinstance(row.get("observations"), dict) else {}
+    ran_total = obs.get("ranTotal")
+    if not (isinstance(ran_total, (int, float)) and not isinstance(ran_total, bool)
+            and ran_total > 0):
+        return "the full run counted nothing"
+    if not obs.get("countsBasis"):
+        return "the full run's count carries no basis"
+    steps = row.get("steps") if isinstance(row.get("steps"), list) else []
+    for step in steps:
+        duration = step.get("durationMs") if isinstance(step, dict) else None
+        if isinstance(duration, bool) or not isinstance(duration, (int, float)):
+            return ("a step of this run carries no durationMs, so its cost "
+                    "cannot be measured")
+    if "dirtyOutside" not in obs:
+        return ("this run carries no dirtyOutside observation, so a dirty "
+                "tree cannot be ruled out")
+    if obs.get("dirtyOutside"):
+        return ("FULL RUN ON A DIRTY TREE: certifies nothing about %s"
+                % ((row.get("testedState") or {}).get("head"),))
+    commands = [s.get("command") if isinstance(s, dict) else None for s in steps]
+    declared = list(full_commands or [])
+    if len(commands) != len(declared):
+        return ("FULL RUN RAN %d OF %d DECLARED ENTRIES"
+                % (len(commands), len(declared)))
+    if commands != declared:
+        return ("the published commands do not match meta.fullGate verbatim "
+                "and in order")
+    return None
+
+
+def merged_phase(phase):
+    """Whether `phase` is one the third place is asked about: a dict carrying a
+    truthy `mergedAt` and an `id` that is not None.
+
+    MERGED IS THE FIELD THE MERGE STAMPS, NEVER A STATUS. `close-phase.py`
+    writes `mergedAt` together with `mergedHead` and never decides merged
+    from status, so a phase reads merged before its effective status catches
+    up to done, and a done phase need never have merged at all. An id-less phase has no
+    name any surface could print a verdict under, so none asks about it.
+
+    ONE PREDICATE FOR EVERY SURFACE. The status, the report, the panel and
+    the doctor each call this rather than spelling their own reading, so the
+    set of phases they grade cannot drift apart.
+    """
+    return (isinstance(phase, dict) and bool(phase.get("mergedAt"))
+            and phase.get("id") is not None)
+
+
+def _ts_moment(row):
+    """A row's `ts` as epoch seconds, or None when it will not parse."""
+    return _usage_core.parse_ts(row.get("ts"))
+
+
+def _newest_first(full_rows):
+    """`full_rows` ordered by the MOMENT each `ts` names, newest first, with
+    every row whose `ts` will not parse after all of them, in ledger order.
+
+    PARSED, NEVER COMPARED AS TEXT. A stamp carrying an offset or a
+    fractional second sorts as text against a plain UTC one by its spelling
+    rather than its moment, so "newest" would be whichever string is
+    greatest. An unreadable `ts` has no place in that order at all; it goes
+    last so it is still walked for the answer - its head is as measured as
+    any other - but `_is_dated` keeps it from ever being called newest.
+    """
+    keyed = [(_ts_moment(r), r) for r in full_rows]
+    dated = [pair for pair in keyed if pair[0] is not None]
+    dated.sort(key=lambda pair: pair[0], reverse=True)
+    return ([r for _m, r in dated]
+            + [r for m, r in keyed if m is None])
+
+
+def _is_dated(row):
+    """Whether `row`'s `ts` names a moment - the condition for being the
+    newest whole-bearing run, since a run with no readable moment cannot be
+    placed before or after any other."""
+    return _ts_moment(row) is not None
+
+
+def _newest_whole_bearing(full_rows, full_commands):
+    """The newest DATED row of `full_rows` (already in `_newest_first` order)
+    that `_full_disqualification` passes, or None when none does."""
+    for row in full_rows:
+        if _is_dated(row) and _full_disqualification(row, full_commands) is None:
+            return row
+    return None
+
+
+def full_status(rows, phase, git_root, full_commands, run=None):
+    """`{"answer", "basis", "runId", "wholeRunId", "wholeRunTs"}` -- is this
+    phase's merge WHOLE, PROVISIONAL, UNKNOWN, or NOT_DECLARED, from the ledger
+    alone, and which recorded run is the newest one that COULD bear whole.
+
+    `runId` IS THE RUN THE ANSWER'S BASIS IS ABOUT, which for a PROVISIONAL
+    answer over a ledger holding no whole-bearing run is the nearest
+    DISQUALIFIED one - the run the basis names the failed rule of.
+
+    `wholeRunId` AND `wholeRunTs` NAME THE NEWEST WHOLE-BEARING FULL RUN (one
+    `_full_disqualification` finds nothing wrong with, whose `ts` parses to a
+    moment) and that recorded `ts`, or None for both when no such run
+    exists. They always describe ONE run, and on a WHOLE answer it can be a
+    different run from `runId`'s. They are carried on every
+    answer, so a caller asking "has a run that counts happened since this
+    phase merged" reads them and never re-derives which run counts: a run
+    that was red, repeated a verdict, measured the wrong scope, counted
+    nothing, ran on a dirty tree or ran other commands is not "a full run
+    happened", and its moment must not be read as one.
+
+    `full_commands` IS THE BARE COMMAND HALF OF `resolved_commands(manifest,
+    meta.fullGate)` -- `[c for _name, c in resolved_commands(manifest,
+    meta.fullGate)]`, EXACTLY. That is the same list a recorded run's
+    `published` argument carries (`run-test-gate._record_full_run` builds it
+    the identical way), which is what a row's `steps[].command` stores
+    verbatim - so a run measured through that resolution is judged against
+    the identical commands it was measured against, and never a second
+    reading of `meta.buildCommands` that could drift from it.
+
+    NOT_DECLARED when `full_commands` (the resolved `meta.fullGate`) is empty --
+    a plan naming no third place has nothing to ask. UNKNOWN when the phase
+    carries no `mergedHead` -- ancestry needs two ends and this one has only
+    one, so it is never PROVISIONAL, which would claim a specific gap this
+    plan has no way to measure.
+
+    OTHERWISE, every scope-`full` row is walked NEWEST FIRST by the moment
+    its `ts` names (`_newest_first`; a row whose `ts` will not parse is
+    walked last and is never the newest), and only the
+    WHOLE-BEARING ones (`_full_disqualification` finds nothing wrong) are asked
+    of git: `_worktrees.merged_into(git_root, mergedHead, row's head, run=run)`.
+    CONTAINED answers WHOLE, naming the run. NOT_CONTAINED moves on to an
+    older whole-bearing run. UNKNOWN is remembered rather than answered
+    immediately, because a newer run that DOES answer CONTAINED still settles
+    the question -- git could not say about one run is not the same as git
+    saying no about all of them.
+
+    If nothing was CONTAINED: any remembered UNKNOWN wins, because a could-not-
+    ask is never folded into a definite answer. Otherwise PROVISIONAL, whose
+    basis names the newest whole-bearing run and that its head does not
+    contain `mergedHead` -- or, when the only whole-bearing runs carry no
+    readable `ts`, the nearest of those, saying so -- or, when not one
+    recorded full run was whole-bearing at all, the nearest disqualified one
+    and why.
+    """
+    phase = phase if isinstance(phase, dict) else {}
+    declared = list(full_commands or [])
+    full_rows = _newest_first([r for r in (rows or [])
+                              if isinstance(r, dict)
+                              and r.get("scope") == FULL_SCOPE])
+    whole = _newest_whole_bearing(full_rows, declared) if declared else None
+    whole_ts = whole.get("ts") if whole is not None else None
+    return dict(_full_answer(full_rows, phase, git_root, declared, run),
+                wholeRunId=whole.get("runId") if whole is not None else None,
+                wholeRunTs=str(whole_ts) if whole_ts else None)
+
+
+def _full_answer(full_rows, phase, git_root, declared, run):
+    """`full_status`'s `{"answer", "basis", "runId"}` over the scope-`full`
+    rows it already sorted newest first - the walk its docstring describes."""
+    if not declared:
+        return {"answer": _manifest_vocab.FULL_STATUS_NOT_DECLARED,
+                "basis": "this plan names no meta.fullGate, so there is no "
+                         "third place to ask",
+                "runId": None}
+    merged_head = phase.get("mergedHead")
+    if not merged_head:
+        return {"answer": _manifest_vocab.FULL_STATUS_UNKNOWN,
+                "basis": "phase %s records no mergedHead, so ancestry cannot "
+                         "be asked at all" % (phase.get("id"),),
+                "runId": None}
+    newest_whole_bearing, nearest_disqualified, newest_unknown = None, None, None
+    undated_whole_bearing = None
+    for row in full_rows:
+        reason = _full_disqualification(row, declared)
+        if reason is not None:
+            if nearest_disqualified is None:
+                nearest_disqualified = (row, reason)
+            continue
+        if not _is_dated(row):
+            if undated_whole_bearing is None:
+                undated_whole_bearing = row
+        elif newest_whole_bearing is None:
+            newest_whole_bearing = row
+        head = (row.get("testedState") or {}).get("head")
+        answer = _worktrees.merged_into(git_root, merged_head, head, run=run)
+        if answer["answer"] == _worktrees.CONTAINED:
+            return {"answer": _manifest_vocab.FULL_STATUS_WHOLE,
+                    "basis": "%s is contained in run %s's head %s (%s)"
+                             % (merged_head, row.get("runId"), head,
+                                answer["basis"]),
+                    "runId": row.get("runId")}
+        if answer["answer"] == _worktrees.UNKNOWN:
+            if newest_unknown is None:
+                newest_unknown = (row, answer)
+            continue
+        # NOT_CONTAINED - an older whole-bearing run may still contain it.
+    if newest_unknown is not None:
+        row, answer = newest_unknown
+        return {"answer": _manifest_vocab.FULL_STATUS_UNKNOWN,
+                "basis": ("whether %s is contained in run %s's head could not "
+                         "be established: %s"
+                         % (merged_head, row.get("runId"),
+                            answer.get("detail") or answer.get("basis"))),
+                "runId": row.get("runId")}
+    if newest_whole_bearing is not None:
+        head = (newest_whole_bearing.get("testedState") or {}).get("head")
+        return {"answer": _manifest_vocab.FULL_STATUS_PROVISIONAL,
+                "basis": ("the newest measured full run (%s, head %s) does "
+                         "not contain %s"
+                         % (newest_whole_bearing.get("runId"), head,
+                            merged_head)),
+                "runId": newest_whole_bearing.get("runId")}
+    if undated_whole_bearing is not None:
+        head = (undated_whole_bearing.get("testedState") or {}).get("head")
+        return {"answer": _manifest_vocab.FULL_STATUS_PROVISIONAL,
+                "basis": ("no measured full run carries a readable ts; run "
+                         "%s (ts %r, head %s) does not contain %s"
+                         % (undated_whole_bearing.get("runId"),
+                            undated_whole_bearing.get("ts"), head,
+                            merged_head)),
+                "runId": undated_whole_bearing.get("runId")}
+    if nearest_disqualified is not None:
+        row, reason = nearest_disqualified
+        return {"answer": _manifest_vocab.FULL_STATUS_PROVISIONAL,
+                "basis": ("the newest recorded full run (%s) is not "
+                         "whole-bearing: %s" % (row.get("runId"), reason)),
+                "runId": row.get("runId")}
+    return {"answer": _manifest_vocab.FULL_STATUS_PROVISIONAL,
+            "basis": ("no full-scope run has ever been recorded, so nothing "
+                     "can be asked whether it contains %s" % (merged_head,)),
+            "runId": None}
 
 
 # --- the boundary: when could a run have been recorded at all ------------------

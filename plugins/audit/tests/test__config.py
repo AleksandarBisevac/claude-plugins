@@ -1405,6 +1405,36 @@ def _cases(check):
           _jc("echo '#' " + _nl + "c") == "echo '#' c"
           and _jc('echo "#" ' + _nl + "c") == 'echo "#" c',
           repr((_jc("echo '#' " + _nl + "c"), _jc('echo "#" ' + _nl + "c"))))
+    # Whether `#` starts a word is a fact about the word the shell has
+    # assembled, not about the raw character before it: a removed
+    # backslash-newline joins `x` and `#`, and an escaped blank is part of its
+    # word. Both lines below are one command line to bash, sh and zsh.
+    check("jc5 a `#` right after a removed continuation continues the word, so it "
+          "is not a comment and the next continuation is joined",
+          _jc("x" + _nl + "#y " + _nl + "z") == "x#y z",
+          repr(_jc("x" + _nl + "#y " + _nl + "z")))
+    check("jc6 ...and neither is a `#` after an escaped blank",
+          _jc("a\\ #b " + _nl + "c") == "a\\ #b c",
+          repr(_jc("a\\ #b " + _nl + "c")))
+    check("jc8 ...and an escaped blank STARTING a word makes the `#` after it "
+          "mid-word too", _jc("echo \\ #b " + _nl + "c") == "echo \\ #b c",
+          repr(_jc("echo \\ #b " + _nl + "c")))
+    # (ro) runs_own_program: whether an interpreter's words already name the
+    # program it runs, per interpreter.
+    _ro = M.runs_own_program
+    _ro_cases = ((["python3", "-c", "x"], True), (["python3", "-m", "mod"], True),
+                 (["python3", "-E"], False), (["perl", "-c"], False),
+                 (["perl", "-e", "x"], True), (["ruby", "tools/x.rb"], True),
+                 (["node", "--no-warnings", "x.mjs"], True),
+                 (["node", "-r", "x.js"], False), (["node"], False))
+    check("ro1 an interpreter runs a program of its own only through its own "
+          "inline flag or a script operand after its options",
+          all(_ro(w) is want for w, want in _ro_cases),
+          repr([(w, _ro(w)) for w, want in _ro_cases if _ro(w) is not want]))
+    check("jc7 ...while a `#` after a continuation that followed a blank still "
+          "opens a comment, whose trailing backslash is kept",
+          _jc("x " + _nl + "# y " + _nl + "z") == "x # y " + _nl + "z",
+          repr(_jc("x " + _nl + "# y " + _nl + "z")))
 
     # (i) ensure_local_dir: plugin-managed local dirs are self-ignoring --------
     # state/, logs/ and the ledger hold live tokens, person identities and

@@ -36,7 +36,10 @@ import _loader                                     # noqa: E402  (script_path: r
 import _proc_group as _pg                          # noqa: E402  (the teardown `_tear_down` is)
 import _journal_io                                 # noqa: E402  (the rows a stamp anchors)
 import _evidence_io as _ev_io                      # noqa: E402  (STEP_KEYS: what a row keeps)
+import _manifest_vocab                             # noqa: E402  (FULL_STATUS_WHOLE, for --full)
 import _fmt as _rtg_fmt                            # noqa: E402  (where human_duration lives now)
+import _manifest_phases as _phases                 # noqa: E402  (the identity pin below: an
+#                                  alias, not a second body)
 import io as _io
 import contextlib as _ctx
 
@@ -350,6 +353,50 @@ Tests:       0 total
 Snapshots:   0 total
 Time:        0.149 s
 Ran all test suites matching src/features/projects/syntax.
+"""
+
+# --- fixtures: an ordinary assertion failure, one runner at a time ------------
+# `failing_lines`/`jest_failures` already answer "which CHECK failed" from these
+# - the bullet title alone, per `_jest_failure_name`. What none of them answer is
+# which FILE that check lives in, which is the suite path on the `FAIL` header
+# above the bullet and is dropped on the floor today.
+JEST_CART_FAIL = """\
+FAIL src/cart.test.ts
+  ● cart > rejects a negative quantity
+
+    expected true to be false
+
+Tests:       1 failed, 3 passed, 4 total
+"""
+# vitest prints the failing file TWICE - once beside a cross in the file tree,
+# once again as `FAIL  <file> > <suite> > <name>` under `Failed Tests`. Only the
+# second is read here: the first carries no `FAIL` word at all.
+VITEST_CART_FAIL = """\
+❯ src/cart.test.ts (5)
+   × cart > rejects a negative quantity
+FAIL  src/cart.test.ts > cart > rejects a negative quantity
+ Tests  1 failed | 4 passed (5)
+"""
+PYTEST_CART_FAIL = """\
+FAILED tests/test_cart.py::test_negative - AssertionError
+=== 1 failed, 2 passed in 0.12s ===
+"""
+# mocha NUMBERS its failures and names only the check - no suite path is ever
+# on the line, so this runner is recognised and still answers (None, ...).
+MOCHA_CART_FAIL = """\
+  4 passing (23ms)
+  1 failing
+
+  1) cart rejects a negative quantity:
+     AssertionError: expected true to be false
+"""
+# A `FAIL` header naming only a vendored path - the one case where a real jest
+# header exists and still names nothing this gate may attribute to the work.
+JEST_VENDOR_ONLY_FAIL = """\
+FAIL node_modules/some-pkg/dist/index.test.js
+  ● x
+
+Tests:       1 failed, 0 passed, 1 total
 """
 
 
@@ -2094,6 +2141,22 @@ def _cases(check):
           repr([M._subject_of(p) for p in
                 ("src/foo.ts", "src/foo.test.ts", "tests/foo_spec.rb",
                  "src/.spec.ts")]))
+    check("mp1 `_subject_of`, `_is_suite_path`, `_TEST_MARKS`, `_TEST_DIRS` "
+          "and `_segments` are ALIASES of `_manifest_phases`'s public "
+          "functions, not a second body: `is` rather than a behavioural "
+          "match, because a re-pasted copy would pass every case above and "
+          "still be the second definition an entry point cannot share with "
+          "audit-task.py",
+          getattr(M, "_subject_of", None)
+          is getattr(_phases, "subject_of", object())
+          and getattr(M, "_is_suite_path", None)
+          is getattr(_phases, "is_suite_path", object())
+          and getattr(M, "_TEST_MARKS", None)
+          is getattr(_phases, "TEST_MARKS", object())
+          and getattr(M, "_TEST_DIRS", None)
+          is getattr(_phases, "TEST_DIRS", object())
+          and getattr(M, "_segments", None)
+          is getattr(_phases, "path_segments", object()))
     check("cv6 `files_named` reads a path out of runner prose and leaves the "
           "words alone - a grammar that swallowed `Passed` or `2` would make "
           "every run overlap everything: %r"
@@ -4179,6 +4242,12 @@ def _cases(check):
     _harness.stage(check, "nv0 the no-verdict block", _no_verdict_cases)
     _harness.stage(check, "ce0 the empty-and-retry block",
                    _empty_and_retry_cases)
+    _harness.stage(check, "sf0 the suite-files block", _suite_files_cases)
+    _harness.stage(check, "rv0 the remedy-line block", _remedy_cases)
+    _harness.stage(check, "dg0 the record-before-render block", _record_order_cases)
+    _harness.stage(check, "xg0 the excluded/no-suite block", _excluded_cases)
+    _harness.stage(check, "ow0 the --own block", _own_cases)
+    _harness.stage(check, "dgv0 the derived-gate block", _derived_gate_cases)
 
     if SENDS_REAL_SIGNALS:
         _harness.stage(check, "is0 the real-interrupt block", _interrupt_cases)
@@ -4693,6 +4762,774 @@ def _empty_and_retry_cases(check):
           "sits directly under it: %r" % ([z_lines[i:i + 2] for i in z_at],),
           z_code == M.E_FAIL and len(z_at) == 1
           and z_lines[z_at[0] + 1].strip().startswith("graded by:"))
+
+
+def _suite_files_cases(check):
+    """`failing_suites` names the FILE a failing check lives in, which `failing`
+    (the check's own name) cannot - and `suiteReader` records, on every step,
+    whether this gate could even tell a test suite from a hook list.
+    """
+    def _obs(code, text, command="gate"):
+        return M.observed_step("gate", command, code, text, {}, 1)
+
+    named, basis = M.failing_lines(JEST_CART_FAIL, _ev_io.MAX_FAILING)
+    suites, s_basis = M.failing_suites(JEST_CART_FAIL)
+    check("sf1 THE FAULT, READ DIRECTLY: an ordinary jest assertion failure "
+          "records the bullet TITLE in `failing` and the suite it lives in "
+          "NOWHERE - `failing_suites` is the reader that answers the second "
+          "question: %r" % ((named, suites, s_basis),),
+          named == ["cart > rejects a negative quantity"]
+          and "cart > rejects a negative quantity" not in " ".join(
+              suites or [])
+          and suites == ["src/cart.test.ts"]
+          and "jest" in s_basis and "named as failing" in s_basis)
+
+    v_suites, v_basis = M.failing_suites(VITEST_CART_FAIL)
+    check("sf2 vitest: the FILE PART of `FAIL <file> > <suite> > <name>`, "
+          "never the cross line beside it in the file tree (it carries no "
+          "`FAIL` word at all): %r" % ((v_suites, v_basis),),
+          v_suites == ["src/cart.test.ts"] and "vitest" in v_basis)
+
+    p_suites, p_basis = M.failing_suites(PYTEST_CART_FAIL)
+    check("sf3 pytest: the path BEFORE `::` on its FAILED/ERROR line(s): %r"
+          % ((p_suites, p_basis),),
+          p_suites == ["tests/test_cart.py"] and "pytest" in p_basis)
+
+    m_suites, m_basis = M.failing_suites(MOCHA_CART_FAIL)
+    check("sf4 mocha is a RECOGNISED runner whose failure lines name only the "
+          "check, never a file - so this is `(None, <a basis saying so>)`, "
+          "never an empty list that would read as nothing failed: %r"
+          % ((m_suites, m_basis),),
+          m_suites is None and "mocha" in m_basis)
+
+    u_suites, u_basis = M.failing_suites(
+        "building object files\nmake: *** [build/parse.o] Error 1\n")
+    check("sf5 a runner NONE of the readers recognises answers `(None, ...)` "
+          "too, and the basis says so rather than naming a runner: %r"
+          % ((u_suites, u_basis),),
+          u_suites is None and "no runner" in u_basis)
+
+    vend_suites, vend_basis = M.failing_suites(JEST_VENDOR_ONLY_FAIL)
+    check("sf6 a `FAIL` header naming ONLY a vendored path is not a suite this "
+          "work owns - `_VENDOR_DIRS` filters it out, and the empty result "
+          "reads as `(None, ...)` and never as an empty list: %r"
+          % ((vend_suites, vend_basis),),
+          vend_suites is None and "node_modules" not in (vend_basis or ""))
+
+    mixed = _obs(1, JEST_KILLED_AND_RED, "jest")
+    check("sf7 a real assertion failure beside a killed worker is a VERDICT, "
+          "so the step's `failingSuites` names BOTH suites - the broken one "
+          "and the one jest reports as killed: %r" % (mixed.get("failingSuites"),),
+          mixed.get("outcome") is None
+          and set(mixed.get("failingSuites") or [])
+          == {"src/features/projects/broken.test.js", JEST_KILLED_SUITE})
+
+    killed = _obs(1, JEST_WORKER_KILLED, "jest")
+    check("sf8 THE OUTCOME GUARD: a jest run whose ONLY failures are workers "
+          "the OS killed is `could-not-run`, and a killed worker's `FAIL` "
+          "header is not a failing TEST - so the step carries NEITHER "
+          "`failingSuites` nor `failingSuitesBasis` at all: %r"
+          % (sorted(k for k in killed if k.startswith("failingSuite")),),
+          killed.get("outcome") == M.CANNOT_RUN
+          and "failingSuites" not in killed
+          and "failingSuitesBasis" not in killed)
+
+    passing = _obs(0, "Tests:       4 passed, 4 total\n", "jest")
+    check("sf9 ALLOW: a step that simply passed carries neither key either - "
+          "the guard above is `exit != 0`, not `outcome is None`, so a green "
+          "step never gains a `failingSuites` of its own: %r"
+          % (sorted(k for k in passing if k.startswith("failingSuite")),),
+          "failingSuites" not in passing and "failingSuitesBasis" not in passing)
+
+    jest_step = _obs(1, JEST_CART_FAIL, "jest")
+    vitest_step = _obs(1, VITEST_CART_FAIL, "vitest run src/cart.test.ts")
+    precommit_step = _obs(
+        0, "check yaml................................................"
+           ".............Passed\n", "pre-commit run --all-files")
+    unknown_step = _obs(1, "building object files\nError 1\n", "make check")
+    check("sf10 EVERY STEP RECORDS `suiteReader`, passing ones included - the "
+          "name the counts reader gave its output, or `none` when it "
+          "recognised no test runner's summary at all: %r"
+          % ((jest_step.get("suiteReader"), vitest_step.get("suiteReader"),
+              precommit_step.get("suiteReader"),
+              unknown_step.get("suiteReader")),),
+          jest_step.get("suiteReader") == "jest"
+          and vitest_step.get("suiteReader") == "vitest"
+          and precommit_step.get("suiteReader") == "none"
+          and unknown_step.get("suiteReader") == "none")
+
+    check("sf11 A `pre-commit` WRAPPER'S OWN LINE TALLY IS NOT A SUITE: "
+          "`suiteReader` is read off `summary_reader`, never off `measured` "
+          "or `ran` - a hook list that `_STEP_WORDS` counts perfectly well is "
+          "still `none` here: %r" % (precommit_step.get("measured"),),
+          precommit_step.get("measured") is not None
+          and precommit_step.get("suiteReader") == "none")
+
+
+def _remedy_cases(check):
+    """The remedy line under `SAME SUITE COUNTED ONCE`, phase-scope only.
+
+    THE REPRO: a phase gate `[test, coverage]` whose two steps print the same
+    suite and the same count prints the duplication with no runnable way out
+    of it - `main` has `res['subject']` (the phase id) and the manifest PATH
+    in hand, and printed nothing that used either.
+    """
+    root = _harness.fixture_root("run-test-gate-remedy-")
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    say = os.path.join(root, "say.py")
+    with open(say, "w") as fh:
+        fh.write("import sys\n"
+                 "sys.stdout.write(open(sys.argv[1]).read())\n"
+                 "raise SystemExit(int(sys.argv[2]))\n")
+    dup_out = os.path.join(root, "dup.txt")
+    with open(dup_out, "w") as fh:
+        fh.write(" PASS  src/cart.test.js\nTests  5 passed (5)\n")
+
+    def _plan(gate):
+        mp = os.path.join(root, "audit-plan.json")
+        with open(mp, "w") as fh:
+            json.dump({"meta": {"version": 2, "buildCommands": {
+                "test": _step(sys.executable, say, dup_out, "0"),
+                "coverage": _step(sys.executable, say, dup_out, "0")}},
+                "phases": [{"id": "P1", "title": "p", "status": "in_progress",
+                            "testGate": gate, "tasks": [
+                                {"id": "P1.1", "title": "t", "status":
+                                 "in_progress", "files": ["src/a.ts"]}]}]},
+                      fh)
+        return mp
+
+    mp = _plan(["test", "coverage"])
+    lines = []
+    code = M.main([mp, "P1", "--project-dir", root, "--no-reuse"],
+                  out=lines.append)
+    text = "\n".join(lines)
+    remedy = [ln.strip() for ln in lines if ln.strip().startswith("remedy:")]
+    check("rv1 THE REPRO: a phase gate whose two steps report the SAME suite "
+          "and the SAME count prints the duplication with a runnable way out "
+          "of it - a `retarget --gate-drop` line naming the SECOND entry, "
+          "`coverage`, and the manifest path `main` already holds: %r"
+          % (remedy,),
+          code == M.E_OK and "SAME SUITE COUNTED ONCE" in text
+          and len(remedy) == 1 and "retarget P1 --gate-drop coverage" in remedy[0]
+          and mp in remedy[0] and "CLAUDE_PLUGIN_ROOT" in remedy[0]
+          and "audit-task.py" in remedy[0])
+
+    cmd = remedy[0][len("remedy:"):].strip()
+    env = dict(os.environ)
+    env["CLAUDE_PLUGIN_ROOT"] = _output.PLUGIN_ROOT
+    proc = subprocess.run(cmd + " --project-dir " + root, shell=True,
+                          cwd=root, env=env, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE)
+    with open(mp, encoding="utf-8") as fh:
+        after = json.load(fh)
+    check("rv2 RUNNING THE PRINTED COMMAND, argv split and nothing added but "
+          "the project directory a real terminal would already be standing "
+          "in, drops `coverage` from the phase's own testGate: %r"
+          % ((proc.returncode, after["phases"][0].get("testGate")),),
+          proc.returncode == 0 and after["phases"][0]["testGate"] == ["test"])
+
+    task_lines = []
+    M.main([mp, "P1", "--project-dir", root, "--no-reuse", "--task", "P1.1"],
+          out=task_lines.append)
+    _plan(["test", "coverage"])
+    task_lines = []
+    M.main([mp, "P1", "--project-dir", root, "--no-reuse", "--task", "P1.1"],
+          out=task_lines.append)
+    task_text = "\n".join(task_lines)
+    check("rv3 ALLOW: a TASK-scope run of the same duplicated gate prints the "
+          "duplication line and NO remedy - a phase retarget there would drop "
+          "the wrong declaration, since the narrowing rules a task's own "
+          "gate is corrected by are `_invariants`'s and not "
+          "`meta.phaseGate`'s: %r"
+          % ([ln for ln in task_lines if "remedy:" in ln],),
+          "SAME SUITE COUNTED ONCE" in task_text
+          and not any("remedy:" in ln for ln in task_lines))
+
+    def _vitest_other(_project, command, _timeout=None):
+        return 0, (" PASS  src/user.test.js\nTests  5 passed (5)\n"
+                   if "user" in command else
+                   " PASS  src/cart.test.js\nTests  5 passed (5)\n"), {}
+
+    res_diff = M.run_gate(root, [("cart", "npx vitest run src/cart.test.js"),
+                                 ("user", "npx vitest run src/user.test.js")],
+                          runner=_vitest_other)
+    res_diff["manifestPath"] = mp
+    res_diff["subject"] = "P1"
+    diff_lines = []
+    M.render(res_diff, out=diff_lines.append)
+    check("rv4 ALLOW: two steps of equal count over DIFFERENT suites print "
+          "neither the duplication line nor a remedy (`sc5` stays green) - "
+          "even with `manifestPath` present, there is no `SAME SUITE` group "
+          "to hang a remedy off of: %r"
+          % ([ln for ln in diff_lines if "remedy:" in ln],),
+          not any("SAME SUITE" in ln for ln in diff_lines)
+          and not any("remedy:" in ln for ln in diff_lines))
+
+
+def _record_order_cases(check):
+    """A PIN, NO BEHAVIOUR CHANGE: the ledger row is written before the first
+    verdict banner, so a run cut off mid-render still leaves its row.
+    """
+    root = _harness.fixture_root("run-test-gate-order-")
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    say = os.path.join(root, "say.py")
+    with open(say, "w") as fh:
+        fh.write("import sys\n"
+                 "sys.stdout.write('Tests: 1 failed, 0 passed, 1 total\\n')\n"
+                 "raise SystemExit(1)\n")
+    mp = os.path.join(root, "audit-plan.json")
+    with open(mp, "w") as fh:
+        json.dump({"meta": {"version": 2, "buildCommands": {
+            "test": _step(sys.executable, say)}},
+            "phases": [{"id": "P1", "title": "p", "status": "in_progress",
+                        "testGate": ["test"], "tasks": []}]}, fh)
+
+    class _CutOff(Exception):
+        pass
+
+    seen = []
+
+    def _raising_out(line):
+        seen.append(line)
+        if str(line).startswith(M._VERDICT_BANNERS):
+            raise _CutOff("cut off at the first verdict banner")
+
+    try:
+        M.main([mp, "P1", "--project-dir", root, "--no-reuse", "--record"],
+              out=_raising_out)
+        raised = False
+    except _CutOff:
+        raised = True
+    recorded_line = [ln for ln in seen if ln.startswith("  evidence: recorded")]
+    rows = _ev_io.read_rows(root)["rows"]
+    check("dg22 THE ROW IS WRITTEN BEFORE THE BANNER: `_record_run` already "
+          "runs before `render`, so a run cut off AT the first verdict "
+          "banner still leaves `evidence: recorded <runId>` printed and the "
+          "row sitting in the ledger - never a run that answered and left "
+          "no trace of it: %r"
+          % ((raised, len(recorded_line), len(rows)),),
+          raised and len(recorded_line) == 1 and len(rows) == 1)
+
+
+def _excluded_cases(check):
+    """The declared narrowing, printed rather than silently applied - and the
+    statement that nothing here could tell a suite from a hook list.
+    """
+    root = _harness.fixture_root("run-test-gate-excluded-")
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    lint_out = os.path.join(root, "lint.txt")
+    with open(lint_out, "w") as fh:
+        fh.write("check yaml.................................."
+                 "............................Passed\n")
+    # NAMED FOR THE WRAPPER IT STANDS IN FOR, not "say.py" - `wrapper_words`
+    # (and so `ran_count`/`measured_state`) matches on the COMMAND STRING, and
+    # this is the one case here that needs the lint step to measure real HOOK
+    # checks (`MEASURED_CHECKS`) rather than an unknowable count, so the
+    # `suiteReader`-vs-`measured` mutation has something to disagree about.
+    say = os.path.join(root, "pre-commit-lint.py")
+    with open(say, "w") as fh:
+        fh.write("import sys\n"
+                 "sys.stdout.write(open(sys.argv[1]).read())\n"
+                 "raise SystemExit(0)\n")
+
+    def _plan(exclude):
+        mp = os.path.join(root, "audit-plan.json")
+        meta = {"version": 2, "buildCommands": {
+            "lint": _step(sys.executable, say, lint_out),
+            "test": _step(sys.executable, say, lint_out)}}
+        if exclude:
+            meta["phaseGate"] = {"exclude": exclude}
+        with open(mp, "w") as fh:
+            json.dump({"meta": meta,
+                       "phases": [{"id": "P1", "title": "p", "status":
+                                   "in_progress", "testGate": ["lint"],
+                                   "tasks": []}]}, fh)
+        return mp
+
+    mp = _plan(["test"])
+    lines = []
+    M.main([mp, "P1", "--project-dir", root, "--no-reuse"], out=lines.append)
+    check("xg1 RED-FIRST: a phase gate excluding `test` prints, under its "
+          "header, which buildCommands key `meta.phaseGate.exclude` "
+          "declares out of this gate - naming it rather than leaving a "
+          "reader to diff `meta.buildCommands` against `testGate` by hand: %r"
+          % ([ln for ln in lines if "excluded:" in ln],),
+          any("excluded:" in ln and "test" in ln for ln in lines))
+    check("xg2 RED-FIRST: a lint-only gate under that exclude - a "
+          "`pre-commit`-shaped step that MEASURED real checks and recognised "
+          "no test runner's summary - prints `PHASE GATE RAN NO SUITE` "
+          "above the verdict: %r"
+          % ([ln for ln in lines if "PHASE GATE RAN NO SUITE" in ln],),
+          any(ln.startswith("PHASE GATE RAN NO SUITE") for ln in lines)
+          and "test" in [ln for ln in lines
+                        if ln.startswith("PHASE GATE RAN NO SUITE")][0])
+
+    mp_none = _plan(None)
+    lines_none = []
+    M.main([mp_none, "P1", "--project-dir", root, "--no-reuse"],
+          out=lines_none.append)
+    check("xg3 ALLOW: a plan with no `meta.phaseGate.exclude` at all prints "
+          "NEITHER line - there is nothing declared out of this gate to "
+          "name, and nothing here refuses a green verdict either way: %r"
+          % ([ln for ln in lines_none
+              if "excluded:" in ln or "PHASE GATE RAN NO SUITE" in ln],),
+          not any("excluded:" in ln or "PHASE GATE RAN NO SUITE" in ln
+                 for ln in lines_none))
+
+    # --- xg4: RED-FIRST - `meta.phaseGate.exclude` edited AFTER `testGate` -
+    # `phase_gate_default` alone answers "what would a gate built TODAY drop",
+    # which is a DIFFERENT claim from "was not run here": a phase's own
+    # `testGate` can still carry a key `exclude` now lists, and that key RUNS.
+    # The fixture is built so the two readings disagree - `test` is excluded
+    # AND still in `testGate` (stale), `coverage` is excluded and genuinely
+    # absent from `testGate` (true) - so a version reading `exclude` alone
+    # cannot tell them apart and this case can.
+    stale_mp = os.path.join(root, "audit-plan-stale.json")
+    with open(stale_mp, "w") as fh:
+        json.dump({"meta": {"version": 2, "buildCommands": {
+            "lint": _step(sys.executable, say, lint_out),
+            "test": _step(sys.executable, say, lint_out),
+            "coverage": _step(sys.executable, say, lint_out)},
+            "phaseGate": {"exclude": ["test", "coverage"]}},
+            "phases": [{"id": "P1", "title": "p", "status": "in_progress",
+                        "testGate": ["lint", "test"], "tasks": []}]}, fh)
+    stale_lines = []
+    M.main([stale_mp, "P1", "--project-dir", root, "--no-reuse"],
+          out=stale_lines.append)
+    excluded_line = [ln for ln in stale_lines if "excluded:" in ln]
+    check("xg4 RED-FIRST: `test` is STILL in this phase's `testGate` - it "
+          "RAN, whatever `meta.phaseGate.exclude` now says - so the line "
+          "must not name it; `coverage` truly is not in `testGate`, so the "
+          "line must name that one instead: %r" % (excluded_line,),
+          len(excluded_line) == 1
+          and excluded_line[0]
+          == "  excluded: coverage - meta.phaseGate.exclude declares them "
+             "out of this phase's gate; they were not run here")
+
+
+def _derived_gate_cases(check):
+    """The derived sign-off gate, in shadow first: a phase's `testGateDerived`
+    either replaces the phase's gate (`meta.phaseGate.mode == "enforce"`) or
+    rides beside it (`"shadow"`), and this run has to grade itself against
+    whichever one it actually was measured under.
+    """
+    def _plan(root, say, phase_extra, meta_extra):
+        mp = os.path.join(root, "audit-plan.json")
+        meta = {"version": 2,
+                "buildCommands": {"pytest": _step(sys.executable, say)}}
+        meta.update(meta_extra)
+        phase = {"id": "P1", "title": "p", "status": "in_progress",
+                 "testGate": ["pytest"], "tasks": []}
+        phase.update(phase_extra)
+        with open(mp, "w") as fh:
+            json.dump({"meta": meta, "phases": [phase]}, fh)
+        return mp
+
+    # --- dg3: a derived (enforce) run that skipped a listed suite ----------
+    root = _harness.fixture_root("run-test-gate-derived-")
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    say = os.path.join(root, "say.py")
+    with open(say, "w") as fh:
+        fh.write("import sys\n"
+                 "sys.stdout.write('tests/test_a.py::"
+                 "test_one PASSED\\n')\n"
+                 "sys.stdout.write('tests/test_b.py::"
+                 "test_two PASSED\\n')\n"
+                 "sys.stdout.write('2 passed in 0.01s\\n')\n"
+                 "raise SystemExit(0)\n")
+    derived = {"entry": "pytest",
+               "tests": ["tests/test_a.py",
+                        "tests/test_b.py",
+                        "tests/test_c.py"],
+               "narrowed": True}
+    mp = _plan(root, say,
+              {"testGateBasis": "derived", "testGateDerived": derived},
+              {"phaseGate": {"mode": "enforce"}})
+    lines = []
+    M.main([mp, "P1", "--project-dir", root, "--no-reuse", "--record"],
+          out=lines.append)
+    check("dg3 RED-FIRST: a derived gate listing three suites whose run "
+          "named only two comes back `GATE COULD NOT RUN`, never `GATE "
+          "GREEN` - the step's own exit code answered a narrower question "
+          "than the phase recorded, and that is not this run's verdict: %r"
+          % ([ln for ln in lines
+              if "DERIVED RUN NAMED" in ln or ln.startswith(
+                  M._VERDICT_BANNERS)],),
+          any(ln.startswith("GATE COULD NOT RUN:") for ln in lines)
+          and not any(ln.startswith("GATE GREEN:") for ln in lines)
+          and any("DERIVED RUN NAMED 2 OF 3 LISTED SUITES" in ln
+                  and "test_c.py" in ln for ln in lines))
+    check("dg3n RED-FIRST: `testGateDerived.narrowed` is true, but this run "
+          "did not name every listed suite - the derived-step gap already "
+          "graded it `could-not-run` - so the sign-off line must not claim "
+          "this run MEASURED the derived gate; the two sentences cannot "
+          "both be true of one run: %r"
+          % ([ln for ln in lines if ln.startswith("NARROWED sign-off:")],),
+          not any(ln.startswith("NARROWED sign-off:")
+                 and "measured the DERIVED gate" in ln for ln in lines)
+          and any(ln.startswith("NARROWED sign-off:")
+                 and "did not name every listed suite" in ln
+                 and "certifies nothing" in ln for ln in lines))
+
+    # --- dg3g: a derived run that DID name every listed suite -- the allow -
+    # narrowed sign-off's measured line still prints exactly as before, which
+    # is the direction `dg3n` above must not have broken.
+    root1b = _harness.fixture_root("run-test-gate-derived-full-")
+    subprocess.run(["git", "init", "-q", root1b], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    say1b = os.path.join(root1b, "say.py")
+    with open(say1b, "w") as fh:
+        fh.write("import sys\n"
+                 "sys.stdout.write('tests/test_a.py::"
+                 "test_one PASSED\\n')\n"
+                 "sys.stdout.write('tests/test_b.py::"
+                 "test_two PASSED\\n')\n"
+                 "sys.stdout.write('2 passed in 0.01s\\n')\n"
+                 "raise SystemExit(0)\n")
+    derived_full = {"entry": "pytest",
+                    "tests": ["tests/test_a.py", "tests/test_b.py"],
+                    "narrowed": True}
+    mp1b = _plan(root1b, say1b,
+                {"testGateBasis": "derived", "testGateDerived": derived_full},
+                {"phaseGate": {"mode": "enforce"}})
+    lines1b = []
+    M.main([mp1b, "P1", "--project-dir", root1b, "--no-reuse", "--record"],
+          out=lines1b.append)
+    check("dg3g ALLOW: a run that named every listed suite still prints the "
+          "measured NARROWED line unchanged - suppressing it is only for a "
+          "run the derived-step gap actually graded `could-not-run`: %r"
+          % ([ln for ln in lines1b if ln.startswith("NARROWED sign-off:")],),
+          any(ln.startswith("NARROWED sign-off:")
+              and "measured the DERIVED gate" in ln
+              and "2 of 2 listed checks" in ln
+              and "before P1 is whole" in ln for ln in lines1b))
+    rows_derived = _ev_io.read_rows(root)["rows"]
+    check("dg3s ALLOW: an ENFORCE-mode run - `phase.testGateBasis` is "
+          "already `derived` - prints no `shadow:` line and records no "
+          "`shadow` field: asking whether the derived gate `would have` "
+          "caught what it just ran is a question with no content",
+          not any(ln.startswith("shadow:") for ln in lines)
+          and "shadow" not in (rows_derived[0] if rows_derived else {}))
+
+    root2 = _harness.fixture_root("run-test-gate-derived-narrow-off-")
+    subprocess.run(["git", "init", "-q", root2], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    say2 = os.path.join(root2, "say.py")
+    with open(say2, "w") as fh:
+        fh.write("import sys\n"
+                 "sys.stdout.write('tests/test_a.py::"
+                 "test_one PASSED\\n')\n"
+                 "sys.stdout.write('1 passed in 0.01s\\n')\n"
+                 "raise SystemExit(0)\n")
+    derived_off = {"entry": "pytest", "tests": ["tests/test_a.py"],
+                  "narrowed": False}
+    mp2 = _plan(root2, say2,
+               {"testGateBasis": "derived", "testGateDerived": derived_off},
+               {"phaseGate": {"mode": "enforce"}})
+    lines2 = []
+    M.main([mp2, "P1", "--project-dir", root2, "--no-reuse", "--record"],
+          out=lines2.append)
+    check("dg3-allow NARROWED prints NOTHING when `testGateDerived.narrowed` "
+          "is false - a derivation that computed nothing to narrow to earns "
+          "no claim that a narrower gate ran",
+          not any(ln.startswith("NARROWED sign-off:") for ln in lines2))
+
+    # --- dg19: a wide (shadow) run over two failing suites, one listed -----
+    root3 = _harness.fixture_root("run-test-gate-shadow-")
+    subprocess.run(["git", "init", "-q", root3], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    say3 = os.path.join(root3, "say.py")
+    with open(say3, "w") as fh:
+        fh.write("import sys\n"
+                 "sys.stdout.write('FAILED tests/test_a.py::"
+                 "test_one - AssertionError\\n')\n"
+                 "sys.stdout.write('FAILED tests/"
+                 "test_other.py::test_two - AssertionError\\n')\n"
+                 "sys.stdout.write('2 failed in 0.02s\\n')\n"
+                 "raise SystemExit(1)\n")
+    derived_shadow = {"entry": "pytest",
+                      "tests": ["tests/test_a.py"],
+                      "narrowed": False}
+    mp3 = _plan(root3, say3, {"testGateDerived": derived_shadow},
+               {"phaseGate": {"mode": "shadow"}})
+    lines3 = []
+    M.main([mp3, "P1", "--project-dir", root3, "--no-reuse", "--record"],
+          out=lines3.append)
+    rows3 = _ev_io.read_rows(root3)["rows"]
+    check("dg19 RED-FIRST: a WIDE run of a shadow-mode phase with two "
+          "failing suites, one of them listed in `testGateDerived.tests`, "
+          "records `shadow.missed` of one - the suite the derived gate "
+          "would NOT have caught: %r"
+          % ([ln for ln in lines3 if ln.startswith("shadow:")],),
+          any(ln == "shadow: derived would have listed 1 of 2 failing "
+                     "suite(s)" for ln in lines3)
+          and len(rows3) == 1
+          and rows3[0].get("shadow", {}).get("listed") == 1
+          and rows3[0].get("shadow", {}).get("full") == 2
+          and rows3[0].get("shadow", {}).get("missed")
+          == ["tests/test_other.py"])
+
+    # --- dg19-allow: a plan with no meta.phaseGate.mode records no shadow --
+    root4 = _harness.fixture_root("run-test-gate-shadow-off-")
+    subprocess.run(["git", "init", "-q", root4], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    say4 = os.path.join(root4, "say.py")
+    with open(say4, "w") as fh:
+        fh.write("import sys\n"
+                 "sys.stdout.write('FAILED tests/test_a.py::"
+                 "test_one - AssertionError\\n')\n"
+                 "sys.stdout.write('FAILED tests/"
+                 "test_other.py::test_two - AssertionError\\n')\n"
+                 "sys.stdout.write('2 failed in 0.02s\\n')\n"
+                 "raise SystemExit(1)\n")
+    mp4 = _plan(root4, say4, {"testGateDerived": derived_shadow}, {})
+    lines4 = []
+    M.main([mp4, "P1", "--project-dir", root4, "--no-reuse", "--record"],
+          out=lines4.append)
+    rows4 = _ev_io.read_rows(root4)["rows"]
+    check("dg19-allow: a plan with no `meta.phaseGate.mode` at all records "
+          "no `shadow` field and prints no shadow line, even with the same "
+          "two failing suites and a `testGateDerived` on the phase",
+          not any(ln.startswith("shadow:") for ln in lines4)
+          and "shadow" not in (rows4[0] if rows4 else {}))
+
+    # --- dg20: SHADOW mode with `testGateBasis` already `derived` -----------
+    # An independent case from `dg3s` above: that one is mode `enforce`, so
+    # `shadow_gate_claim`'s own first line - `mode != "shadow"` - already
+    # returns None before its `testGateBasis` guard is ever reached. This
+    # fixture sets mode to `shadow` so the FIRST guard cannot be what is
+    # doing the work, and isolates the second one alone.
+    root5 = _harness.fixture_root("run-test-gate-shadow-derived-")
+    subprocess.run(["git", "init", "-q", root5], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    say5 = os.path.join(root5, "say.py")
+    with open(say5, "w") as fh:
+        fh.write("import sys\n"
+                 "sys.stdout.write('FAILED tests/test_a.py::"
+                 "test_one - AssertionError\\n')\n"
+                 "sys.stdout.write('FAILED tests/"
+                 "test_other.py::test_two - AssertionError\\n')\n"
+                 "sys.stdout.write('2 failed in 0.02s\\n')\n"
+                 "raise SystemExit(1)\n")
+    mp5 = _plan(root5, say5,
+               {"testGateBasis": "derived", "testGateDerived": derived_shadow},
+               {"phaseGate": {"mode": "shadow"}})
+    lines5 = []
+    M.main([mp5, "P1", "--project-dir", root5, "--no-reuse", "--record"],
+          out=lines5.append)
+    rows5 = _ev_io.read_rows(root5)["rows"]
+    check("dg20 RED-FIRST: mode `shadow` AND `phase.testGateBasis == "
+          "\"derived\"` together still record no `shadow` field and print "
+          "no `shadow:` line, on the SAME two failing suites `dg19` reads a "
+          "shadow claim from - the `testGateBasis` guard has to fire on its "
+          "own, not only alongside `mode != \"shadow\"`",
+          not any(ln.startswith("shadow:") for ln in lines5)
+          and "shadow" not in (rows5[0] if rows5 else {}))
+
+    # --- dg21: the derived-step gap must not overwrite an earlier no-verdict
+    # outcome/outcomeBasis a step already carries - it appends its own reason
+    # instead. The entry here reports one no-verdict signature of its own
+    # (a vitest-shaped "no test files" exit) AND names fewer of the listed
+    # suites than `testGateDerived.tests` records, so both arms fire on the
+    # SAME step. Driven through `run_gate` directly, the same seam `lc16`
+    # above uses, because `outcomeBasis` is an in-memory field - it is not
+    # among `_evidence_io.STEP_KEYS`, so a committed row is the wrong place
+    # to read it back from.
+    root6 = _harness.fixture_root("run-test-gate-derived-gap-keeps-")
+    subprocess.run(["git", "init", "-q", root6], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    say6 = os.path.join(root6, "say6.py")
+    with open(say6, "w") as fh:
+        fh.write("import sys\n"
+                 "sys.stdout.write('tests/test_a.py::test_one\\n')\n"
+                 "sys.stdout.write('No test files found, exiting with "
+                 "code 1\\n')\n"
+                 "raise SystemExit(1)\n")
+    res6 = M.run_gate(root6, [("pytest", _step(sys.executable, say6))],
+                      derived_check={"entry": "pytest",
+                                     "tests": ["tests/test_a.py",
+                                              "tests/test_b.py"]})
+    step6 = res6["steps"][0]
+    check("dg21 RED-FIRST: the step's own no-verdict signature ('vitest "
+          "found no test file to run') stays on `outcomeBasis`, and the "
+          "derived-gap reason is APPENDED to it rather than replacing it: %r"
+          % (step6.get("outcomeBasis"),),
+          step6.get("outcome") == M.CANNOT_RUN
+          and "vitest found no test file to run" in
+              (step6.get("outcomeBasis") or "")
+          and "DERIVED RUN NAMED 1 OF 2 LISTED SUITES" in
+              (step6.get("outcomeBasis") or ""))
+
+
+def _own_cases(check):
+    """`--own`: an executor's own tests, through the runner rather than bare
+    Bash - the bounded render reaches the caller, the whole raw output
+    reaches a local log file nobody's context ever sees, and nothing here
+    is ever recorded.
+    """
+    root = _harness.fixture_root("run-test-gate-own-")
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    big_n = _ev_io.MAX_FAILING + 20
+    big_script = os.path.join(root, "big_fail.py")
+    with open(big_script, "w") as fh:
+        fh.write("import sys\n"
+                 "N = %d\n" % (big_n,)
+                 + "for i in range(N):\n"
+                   "    print('FAILED tests/test_a.py::test_%d - "
+                   "AssertionError' % i)\n"
+                   "print('=== %d failed in 0.01s ===' % N)\n"
+                   "sys.exit(1)\n")
+    entry = "%s tests/test_a.py" % (_step(sys.executable, big_script),)
+
+    def _plan(gate, add=None, files=None, gate_basis="declared",
+             task_id="P1.1"):
+        mp = os.path.join(root, "audit-plan.json")
+        tests = {"gateBasis": gate_basis}
+        if gate is not None:
+            tests["gate"] = gate
+        if add is not None:
+            tests["add"] = add
+        task = {"id": task_id, "title": "t", "status": "in_progress",
+               "tests": tests}
+        if files is not None:
+            task["files"] = files
+        with open(mp, "w") as fh:
+            json.dump({"meta": {"version": 2, "buildCommands": {
+                "lint": "true"}},
+                "phases": [{"id": "P1", "title": "p", "status":
+                            "in_progress", "testGate": ["lint"],
+                            "tasks": [task]}]}, fh)
+        return mp
+
+    mp = _plan([entry], add=["tests/test_a.py: covers a"])
+
+    def _run_own(*extra):
+        lines = []
+        code = M.main([mp, "P1", "--project-dir", root, "--own",
+                      "--task", "P1.1"] + list(extra), out=lines.append)
+        return code, lines
+
+    code, lines = _run_own("--quiet")
+    named = [ln for ln in "\n".join(lines).splitlines()
+            if "tests/test_a.py::test_" in ln]
+    log_lines = [ln for ln in lines if ln.strip().startswith("raw log:")]
+    check("tk1 THE REPRO/RED-FIRST: a fake runner printing far more lines "
+          "than the bound, through `--own --quiet`, renders no more than "
+          "the bounded failing lines - never the %d this step actually "
+          "printed: %r" % (big_n, (len(named), len(log_lines))),
+          code == M.E_FAIL and len(named) == _ev_io.MAX_FAILING
+          and len(log_lines) == 1)
+    log_path = log_lines[0].split("raw log:", 1)[1].strip()
+    with open(log_path, encoding="utf-8") as fh:
+        log_text = fh.read()
+    check("tk1b ...and the LOG holds every line the bounded render dropped: "
+          "%r" % (log_text.count("FAILED tests/test_a.py::test_"),),
+          log_text.count("FAILED tests/test_a.py::test_") == big_n)
+
+    own2_lines = []
+    own2_code = M.main([mp, "P1", "--project-dir", root, "--own"],
+                       out=own2_lines.append)
+    check("own2 ALLOW: `--own` requires `--task` - an executor's own tests "
+          "are a task's claim, never a phase's, and the sentence names "
+          "THAT reason rather than merely refusing by some other path: %r"
+          % (own2_lines,),
+          own2_code == M.E_ASK
+          and any("--own requires --task" in ln for ln in own2_lines))
+    own3_lines = []
+    own3_code = M.main([mp, "P1", "--project-dir", root, "--own", "--task",
+                       "P1.1", "--record"], out=own3_lines.append)
+    check("own3 ALLOW: `--own` refuses `--record` - this run writes no row "
+          "and no pointer, ever, and the sentence names `--record` rather "
+          "than refusing by some other path: %r" % (own3_lines,),
+          own3_code == M.E_ASK
+          and any("--own refuses --record" in ln for ln in own3_lines))
+    own4_lines = []
+    own4_code = M.main([mp, "P1", "--project-dir", root, "--own", "--task",
+                       "P1.1", "--reconcile"], out=own4_lines.append)
+    check("own4 ALLOW: `--own` refuses `--reconcile` - there is no pointer "
+          "from this path for it to repair, and the sentence names "
+          "`--reconcile`: %r" % (own4_lines,),
+          own4_code == M.E_ASK
+          and any("--own refuses --reconcile" in ln for ln in own4_lines))
+
+    gate_only_mp = _plan(None, gate_basis="cleared", task_id="P1.1")
+    go_lines = []
+    go_code = M.main([gate_only_mp, "P1", "--project-dir", root, "--own",
+                      "--task", "P1.1"], out=go_lines.append)
+    check("own5 A GATE-ONLY TASK HEARS THE IDENTICAL SENTENCE: nothing of "
+          "its own points at its own tests, whether that is because it "
+          "declared no entries at all or because every entry it declared "
+          "got filtered out - exit 2, naming the task and its gateBasis: %r"
+          % (go_lines,),
+          go_code == M.E_ASK
+          and any("P1.1 declares no gate entry pointed at its own "
+                  "tests.add paths (tests.gateBasis=cleared)" in ln
+                  and "nothing of its own to run" in ln
+                  for ln in go_lines))
+
+    log_dir = os.path.dirname(log_path)
+    check("own6 the log directory carries the .gitignore marker "
+          "`ensure_local_dir` drops - self-ignoring the moment it exists, "
+          "whatever the repository's own `.gitignore` does or does not say: "
+          "%r" % (log_dir,),
+          os.path.isfile(os.path.join(log_dir, ".gitignore"))
+          and open(os.path.join(log_dir, ".gitignore")).read().strip()
+          .endswith("*"))
+    check("own7 ABSENT `logsDir` MEANS THE CONFIG DEFAULT: no config file "
+          "exists in this fixture project at all, and the log still lands "
+          "under `.claude/logs/gate-raw` - the same default "
+          "`hooks/_config.DEFAULTS['logsDir']` names: %r" % (log_dir,),
+          log_dir.replace("\\", "/").endswith(
+              ".claude/logs/gate-raw"))
+
+    before_rows = _ev_io.read_rows(root)["rows"]
+    _run_own()
+    after_rows = _ev_io.read_rows(root)["rows"]
+    check("own8 NOTHING IS RECORDED: the ledger carries exactly as many "
+          "rows after an `--own` run as before it - no row, and so no "
+          "pointer either, whatever the plan's own testEvidence says: %r"
+          % ((len(before_rows), len(after_rows)),),
+          len(before_rows) == 0 and len(after_rows) == 0)
+
+    # --- own_gate_of, at the unit level: what gets kept and what does not --
+    shared_mp_manifest = {
+        "meta": {"version": 2, "buildCommands": {"lint": "true",
+                                                  "test": "pytest -q"}},
+        "phases": [{"id": "P1", "title": "p", "status": "in_progress",
+                    "testGate": ["lint", "test"], "tasks": [
+                        {"id": "P1.1", "title": "own", "status":
+                         "in_progress",
+                         "tests": {"gateBasis": "declared",
+                                  "gate": ["test", entry,
+                                          "%s tests/other.py"
+                                          % (_step(sys.executable,
+                                                  big_script),)],
+                                  "add": ["tests/test_a.py: covers a"]}},
+                        {"id": "P1.2", "title": "borrowed", "status":
+                         "in_progress"}]}]}
+    own_kept, own_source, own_err = M.own_gate_of(
+        shared_mp_manifest, "P1", "P1.1")
+    check("own9 A `meta.buildCommands` KEY IS NEVER KEPT, whatever it is "
+          "spelled - `test` names a build step this task's own claim "
+          "cannot narrow, so only the LITERAL command pointed at "
+          "`tests/test_a.py` survives, and the entry pointed at "
+          "`tests/other.py` (not this task's own path) is dropped too: %r"
+          % (own_kept,),
+          own_err is None and own_source == "task" and len(own_kept) == 1
+          and own_kept[0][0] == entry)
+    borrowed_kept, borrowed_source, borrowed_err = M.own_gate_of(
+        shared_mp_manifest, "P1", "P1.2")
+    check("own10 A TASK MEASURED BY ITS PHASE'S GATE HAS NOTHING OF ITS "
+          "OWN, by definition - `own_gate_of` refuses it exactly as it "
+          "refuses a task whose every entry got filtered out, never by "
+          "falling back to the phase's gate: %r" % (borrowed_err,),
+          borrowed_kept is None and borrowed_source is None
+          and "P1.2 declares no gate entry" in (borrowed_err or ""))
 
 
 def _reuse_cases(check):
@@ -5488,8 +6325,447 @@ def _interrupt_cases(check):
                                     {"test": "npx playwright test"}}}) == _claim)
 
 
+def _group_cases(check):
+    """`--also`: one gate run over a GROUP of phases built on one branch owns the
+    union of their files, so a rewrite of a file only a non-carrier member declares
+    is the gate grading bytes it produced. A real repository and a real command,
+    because the ownership answer is read off `git status`."""
+    root = _harness.fixture_root("run-test-gate-group-")
+    try:
+        os.makedirs(os.path.join(root, "src"))
+        os.makedirs(os.path.join(root, ".claude"))
+        os.makedirs(os.path.join(root, "docs", "audit"))
+        with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        for name in ("p1.txt", "p2.txt"):
+            with open(os.path.join(root, "src", name), "w") as fh:
+                fh.write("0\n")
+        mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+        with open(mpath, "w") as fh:
+            json.dump({"meta": {"version": 3,
+                                "buildCommands": {"rw": "printf 1 > src/p2.txt"}},
+                       "phases": [
+                           {"id": "P1", "title": "one", "status": "in_progress",
+                            "testGate": ["rw"],
+                            "tasks": [{"id": "P1.1", "title": "a",
+                                       "status": "done", "files": ["src/p1.txt"]}]},
+                           {"id": "P2", "title": "two", "status": "in_progress",
+                            "testGate": ["rw"],
+                            "tasks": [{"id": "P2.1", "title": "b",
+                                       "status": "done",
+                                       "files": ["src/p2.txt"]}]}]}, fh)
+
+        def reset():
+            for arg in (["add", "-A"],
+                        ["-c", "user.email=f@e", "-c", "user.name=F",
+                         "-c", "commit.gpgsign=false", "commit", "-qm", "fixture",
+                         "--allow-empty"]):
+                subprocess.run(["git", "-C", root] + arg, check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["git", "init", "-q", root], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        reset()
+
+        def run_json(argv):
+            lines = []
+            code = M.main(argv, out=lines.append)
+            try:
+                return code, json.loads("\n".join(lines))
+            except ValueError:
+                return code, {"raw": "\n".join(lines)}
+        code, alone = run_json([mpath, "P1", "--project-dir", root, "--json",
+                                "--no-reuse"])
+        subprocess.run(["git", "-C", root, "checkout", "-q", "--", "src"],
+                       check=True)
+        code_g, grp = run_json([mpath, "P1", "--also", "P2", "--project-dir", root,
+                                "--json", "--no-reuse"])
+        check("gg1 a gate run for P1 with --also P2 owns P2's files too, so the "
+              "command rewriting src/p2.txt is `gate-mutated`, not a pass: exit %r "
+              "status %r" % (code_g, grp.get("status") or grp.get("raw", "")[:200]),
+              code_g == M.E_FAIL and grp.get("status") == "gate-mutated")
+        check("gg2 SECOND DIRECTION: without --also the same run owns only P1's "
+              "files and passes - the union is what widened the refusal: exit %r "
+              "status %r" % (code, alone.get("status")),
+              code == M.E_OK and alone.get("status") == "passed")
+        code_t, _t = run_json([mpath, "P1", "--also", "P2", "--task", "P1.1",
+                               "--project-dir", root, "--json"])
+        check("gg3 --also is a PHASE-scope group and is refused beside --task, which "
+              "narrows to one task: exit %r" % (code_t,), code_t == M.E_ASK)
+        code_u, _u = run_json([mpath, "P1", "--also", "P9", "--project-dir", root,
+                               "--json"])
+        check("gg4 an --also member the plan does not carry is refused, not "
+              "skipped: exit %r" % (code_u,), code_u == M.E_ASK)
+        subprocess.run(["git", "-C", root, "checkout", "-q", "--", "src"],
+                       check=True)
+        with open(mpath) as fh:
+            _gg = json.load(fh)
+        _gg["meta"]["buildCommands"]["rw"] = "true"
+        with open(mpath, "w") as fh:
+            json.dump(_gg, fh)
+        reset()
+        M.main([mpath, "P1", "--also", "P2", "--project-dir", root, "--record",
+                "--no-reuse"], out=lambda *_a: None)
+        M.main([mpath, "P1", "--project-dir", root, "--record", "--no-reuse"],
+               out=lambda *_a: None)
+        _gg_rows = sorted(_recorded_rows(os.path.join(root, "docs", "audit",
+                                                      "evidence")),
+                          key=lambda r: str(r.get("ts") or ""))
+        _gg_with = [r.get("groupWith") for r in _gg_rows]
+        check("gg5 a group run's ledger row names the members it owned, and a run "
+              "for the carrier alone names none - the row is where a member's "
+              "copied pointer is checked against: %r" % (_gg_with,),
+              len(_gg_rows) == 2 and _gg_rows[0].get("groupWith") == ["P2"]
+              and "groupWith" not in _gg_rows[1])
+        _gg_basis = str((_gg_rows[0].get("observations") or {}).get("coverageBasis"))
+        check("gg6 the group run's coverage basis names the files it owned for the "
+              "OTHER members by member, so a reader of the carrier's row does not take "
+              "them for the carrier's declaration: %r" % (_gg_basis,),
+              "src/p2.txt declared by P2 (group member)" in _gg_basis
+              and "group member" not in str((_gg_rows[1].get("observations") or {})
+                                            .get("coverageBasis")))
+        # A group whose other member declares only the carrier's own files has the
+        # same owned set as the carrier alone, and still never repeats its solo run.
+        with open(mpath) as fh:
+            _gg = json.load(fh)
+        _gg["phases"][1]["tasks"][0]["files"] = ["src/p1.txt"]
+        with open(mpath, "w") as fh:
+            json.dump(_gg, fh)
+        reset()
+        _ev_dir = os.path.join(root, "docs", "audit", "evidence")
+        for _name in os.listdir(_ev_dir):
+            os.remove(os.path.join(_ev_dir, _name))
+        M.main([mpath, "P1", "--project-dir", root, "--record", "--no-reuse"],
+               out=lambda *_a: None)
+        M.main([mpath, "P1", "--also", "P2", "--project-dir", root, "--record"],
+               out=lambda *_a: None)
+        _gg7 = sorted(_recorded_rows(_ev_dir), key=lambda r: str(r.get("ts") or ""))
+        check("gg7 a group run over the same files as a solo run is MEASURED, not a "
+              "repeat of it - the members a run owns are part of what it would have "
+              "to match: %r" % ([(r.get("groupWith"), r.get(_ev_io.VERDICT_SOURCE))
+                                 for r in _gg7],),
+              len(_gg7) == 2 and _gg7[-1].get("groupWith") == ["P2"]
+              and _gg7[-1].get(_ev_io.VERDICT_SOURCE) != _ev_io.REUSED)
+    finally:
+        _harness.remove_tree(root)
+
+
+def _crowd_cases(check):
+    """The machine line reads the ledger's windows: runs recorded one after another
+    are not a crowd, a run that genuinely overlapped is, and one whole-second
+    stamps cannot place is said to be unknowable rather than shared."""
+    root = _harness.fixture_root("run-test-gate-crowd-")
+    try:
+        os.makedirs(os.path.join(root, ".claude"))
+        with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        evidence = _ev_io.evidence_dir(root)
+        os.makedirs(evidence)
+        prev = {"runId": "A", _ev_io.STARTED_KEY: "2026-09-26T15:48:37Z",
+                "ts": "2026-09-26T15:49:37Z", "scope": "task", "status": "passed"}
+
+        def line_for(row, others, one_writer=True):
+            """The machine line for `row`, with `others` written before it by the
+            same writer (one chain) or by another writer (another file)."""
+            for name in os.listdir(evidence):
+                os.remove(os.path.join(evidence, name))
+            files = ([("2026-09.t.jsonl", others + [row])] if one_writer
+                     else [("2026-09.other.jsonl", others),
+                           ("2026-09.t.jsonl", [row])])
+            for name, part in files:
+                with open(os.path.join(evidence, name), "w") as fh:
+                    for r in _ev_io.chain_file(part, name):
+                        fh.write(json.dumps(r) + "\n")
+            lines = []
+            M._say_who_else_was_running(root, {"status": "passed"}, row,
+                                        out=lines.append)
+            return [ln for ln in lines if "machine:" in ln]
+        mine = {"runId": "B", _ev_io.STARTED_KEY: "2026-09-26T15:49:37Z",
+                "ts": "2026-09-26T15:50:39Z", "scope": "task", "status": "passed"}
+        got = line_for(mine, [prev])
+        check("gc1 a run that started in the second the previous run's row was "
+              "written had the machine to itself - not a crowd: %r" % (got,),
+              len(got) == 1 and "had the machine to itself" in got[0])
+        got = line_for(dict(mine, **{_ev_io.STARTED_KEY: "2026-09-26T15:49:30Z"}),
+                       [prev])
+        check("gc2 SECOND DIRECTION: a run that began seven seconds before the "
+              "previous one ended shared the window, and the line names it: %r"
+              % (got,),
+              len(got) == 1 and "1 other gate run(s) shared this window (A)" in got[0])
+        blip = {"runId": "Z", _ev_io.STARTED_KEY: "2026-09-26T15:49:37Z",
+                "ts": "2026-09-26T15:49:37Z", "scope": "task", "status": "passed"}
+        got = line_for(prev, [blip], one_writer=False)
+        check("gc3 a sub-second run stamped in the second this one ended is said to "
+              "be unknowable from whole-second stamps, never asserted as sharing "
+              "the window: %r" % (got,),
+              len(got) == 1 and "whole-second" in got[0] and "Z" in got[0]
+              and "shared this window" not in got[0])
+        got = line_for(mine, [prev], one_writer=False)
+        check("gc4 the same back-to-back pair from TWO writers is said to be "
+              "unknowable, never that this run had the machine to itself: %r" % (got,),
+              len(got) == 1 and "whole-second" in got[0] and "A" in got[0]
+              and "to itself" not in got[0])
+        # The gc1 pair again, but the journal records that a ledger merge
+        # re-chained the file from the row after R0 through this run.
+        first = {"runId": "R0", _ev_io.STARTED_KEY: "2026-09-26T15:40:00Z",
+                 "ts": "2026-09-26T15:40:01Z", "scope": "task", "status": "passed"}
+        name = "2026-09.t.jsonl"
+        for stale in os.listdir(evidence):
+            os.remove(os.path.join(evidence, stale))
+        chained = _ev_io.chain_file([first, prev, mine], name)
+        with open(os.path.join(evidence, name), "w") as fh:
+            for r in chained:
+                fh.write(json.dumps(r) + "\n")
+        _ev_io.record_merge(root, os.path.join(evidence, name),
+                            {"relinkedAfter": chained[0]["hash"],
+                             "relinkedThrough": chained[-1]["hash"]})
+        lines = []
+        M._say_who_else_was_running(root, {"status": "passed"}, mine,
+                                    out=lines.append)
+        got = [ln for ln in lines if "machine:" in ln]
+        check("gc5 the gc1 pair inside a stretch a ledger merge re-chained is "
+              "said to be unknowable - the re-chain joined two branches in "
+              "timestamp order, which is no writer's order: %r" % (got,),
+              len(got) == 1 and "whether A ran alongside" in got[0]
+              and "to itself" not in got[0])
+        real = M._ev.merge_seams
+        M._ev.merge_seams = lambda project, config=None: (None, "SEAMS-UNREAD")
+        try:
+            got = line_for(mine, [prev])
+        finally:
+            M._ev.merge_seams = real
+        check("gc6 ...and when nothing could say whether the ledger was ever "
+              "merged, the gc1 pair is unknowable too and the line says why: %r"
+              % (got,),
+              len(got) == 1 and "SEAMS-UNREAD" in got[0]
+              and "to itself" not in got[0])
+    finally:
+        _harness.remove_tree(root)
+
+
+def _full_repo(name, fullgate=("ok",), buildcommands=None, mergedhead=None,
+              extra_phases=(), preamble=None):
+    """A committed git repository whose plan declares `meta.fullGate`.
+
+    Returns `(root, mpath, head)`, `head` being the full sha of the fixture
+    commit just made. `fullgate=None` builds a manifest that names no
+    third place at all, for the refusal case. `mergedhead`, when given, is
+    written onto phase `P1` so a WHOLE claim can be asked of the SAME commit
+    this fixture just made - a commit is its own ancestor. `preamble`, when
+    given, is written as `meta.nodePreamble` verbatim.
+    """
+    root = _harness.fixture_root("run-test-gate-full-")
+    os.makedirs(os.path.join(root, "docs", "audit"))
+    os.makedirs(os.path.join(root, ".claude"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    meta = {"version": 3,
+           "buildCommands": buildcommands or {"ok": "true", "bad": "false"}}
+    if fullgate is not None:
+        meta["fullGate"] = list(fullgate)
+    if preamble is not None:
+        meta["nodePreamble"] = preamble
+    phases = [{"id": "P1", "title": "one", "status": "in_progress", "tasks": []}]
+    if mergedhead is not None:
+        phases[0]["mergedHead"] = mergedhead
+    phases.extend(extra_phases)
+    with open(mpath, "w") as fh:
+        json.dump({"meta": meta, "phases": phases}, fh)
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for arg in (["add", "--", "docs", ".claude"],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        subprocess.run(["git", "-C", root] + arg, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    head = subprocess.run(["git", "-C", root, "rev-parse", "HEAD"],
+                          capture_output=True, text=True, check=True).stdout.strip()
+    return root, mpath, head
+
+
+def _full_scope_cases(check):
+    # --- the third arm's own refusals: no git, no manifest needed at all ----
+    lines = []
+    code = M.main(["nowhere.json", "P1", "--full"], out=lines.append)
+    check("fg1 RED-FIRST: --full and a phase positional are refused together - "
+          "the whole product is never one phase's claim: %r" % (lines,),
+          code == M.E_ASK and any("--full" in ln for ln in lines))
+
+    lines = []
+    code = M.main(["nowhere.json", "--full", "--task", "P1.1"], out=lines.append)
+    check("fg2 RED-FIRST: --full and --task are refused together for the same "
+          "reason: %r" % (lines,),
+          code == M.E_ASK and any("--task" in ln for ln in lines))
+
+    lines = []
+    code = M.main(["nowhere.json", "--project-dir", "/nowhere"], out=lines.append)
+    check("fg3 a phase is required unless --full is given - dropping BOTH is "
+          "refused rather than reading as one of them: %r" % (lines,),
+          code == M.E_ASK)
+
+    # --- no meta.fullGate: exit 2, the sentence this plan names no third place -
+    root_none, mpath_none, _head_none = _full_repo("no-fullgate", fullgate=None)
+    try:
+        lines = []
+        code = M.main([mpath_none, "--full", "--project-dir", root_none],
+                      out=lines.append)
+        check("fg4 RED-FIRST: --full over a plan with no meta.fullGate exits 2 "
+              "with the sentence naming what is missing, rather than running "
+              "anyway: %r" % (lines,),
+              code == M.E_ASK
+              and any("no meta.fullGate declared" in ln for ln in lines))
+    finally:
+        _harness.remove_tree(root_none)
+
+    # --- the ordinary run: scope full, ids {}, no pointer, no boundary ------
+    root, mpath, _head = _full_repo("ok")
+    try:
+        lines = []
+        code = M.main([mpath, "--full", "--project-dir", root, "--record"],
+                      out=lines.append)
+        text = "\n".join(lines)
+        rows = _ev_io.read_rows(root)["rows"]
+        full_rows = [r for r in rows if r.get("scope") == "full"]
+        check("fg5 RED-FIRST: a declared fullGate records a scope-full row "
+              "with the head it measured and a clean dirtyOutside, prints "
+              "FULL GATE GREEN, and writes no pointer at all: %r"
+              % (full_rows and full_rows[0],),
+              code == M.E_OK and "FULL GATE GREEN at" in text
+              and len(full_rows) == 1)
+        row = full_rows[0]
+        check("fg5b ...and the row itself carries no taskId/phaseId (ids={}), "
+              "an empty dirtyOutside, and the ONE resolution both places use "
+              "for its published commands: %r"
+              % ({k: row.get(k) for k in ("taskId", "phaseId")},),
+              "taskId" not in row and "phaseId" not in row
+              and row["observations"]["dirtyOutside"] == []
+              and row["steps"][0]["command"] == "true")
+        manifest_after = json.loads(open(mpath).read())
+        check("fg6 ...NO pointer (write_pointer is never called for scope "
+              "full) and NO evidence boundary stamp: %r"
+              % (manifest_after["phases"][0].get("testEvidence"),),
+              "testEvidence" not in manifest_after["phases"][0]
+              and "evidenceSince" not in manifest_after["meta"])
+
+        # --- ordering: the row is written before the summary is printed ----
+        recorded_at = next(i for i, ln in enumerate(lines)
+                           if ln.startswith("  evidence: recorded"))
+        banner_at = next(i for i, ln in enumerate(lines)
+                         if ln.startswith("FULL GATE"))
+        check("fg7 the evidence line is printed BEFORE the FULL GATE banner - "
+              "the row must survive an operator's own tool timeout landing "
+              "between the run finishing and this process finishing its "
+              "summary: recorded@%d banner@%d" % (recorded_at, banner_at),
+              recorded_at < banner_at)
+    finally:
+        _harness.remove_tree(root)
+
+    # --- a dirty tree certifies nothing, but the run still happens ---------
+    root_d, mpath_d, _head_d = _full_repo("dirty")
+    try:
+        with open(os.path.join(root_d, "untracked.txt"), "w") as fh:
+            fh.write("uncommitted\n")
+        lines = []
+        code = M.main([mpath_d, "--full", "--project-dir", root_d, "--record"],
+                      out=lines.append)
+        text = "\n".join(lines)
+        rows = _ev_io.read_rows(root_d)["rows"]
+        row = [r for r in rows if r.get("scope") == "full"][0]
+        check("fg8 RED-FIRST: a dirty tree outside the recorder's own paths "
+              "prints FULL RUN ON A DIRTY TREE and is carried onto the row - "
+              "the run still happens and is still recorded: %r"
+              % (row["observations"]["dirtyOutside"],),
+              "FULL RUN ON A DIRTY TREE" in text
+              and code == M.E_OK
+              and any("untracked.txt" in p
+                     for p in row["observations"]["dirtyOutside"]))
+    finally:
+        _harness.remove_tree(root_d)
+
+    # --- --writer names a CI shard's own ledger file ------------------------
+    root_w, mpath_w, _head_w = _full_repo("writer")
+    try:
+        code = M.main([mpath_w, "--full", "--project-dir", root_w, "--record",
+                      "--writer", "ci-42"], out=(lambda _l: None))
+        ev_dir = _ev_io.evidence_dir(root_w)
+        names = os.listdir(ev_dir)
+        check("fg9 RED-FIRST: --writer ci-42 lands in a file named for it - a "
+              "CI build's identity must not be split by session: %r" % (names,),
+              code == M.E_OK and any("ci-42" in n for n in names))
+    finally:
+        _harness.remove_tree(root_w)
+
+    # --- a full run recorded by --full is judged WHOLE by full_status ------
+    # A COUNTABLE COMMAND, unlike the bare `true` the other fixtures use:
+    # `_full_disqualification` refuses a row whose `ranTotal` is not knowable
+    # ("the full run counted nothing"), so a whole-bearing row needs a summary
+    # this gate's own reader can count.
+    root_w2, mpath_w2, head_full = _full_repo(
+        "whole", buildcommands={"ok": "echo '1 passed in 0.01s'"})
+    try:
+        code = M.main([mpath_w2, "--full", "--project-dir", root_w2, "--record"],
+                      out=(lambda _l: None))
+        manifest_now = json.loads(open(mpath_w2).read())
+        phase = dict(manifest_now["phases"][0], mergedHead=head_full)
+        rows = _ev_io.read_rows(root_w2)["rows"]
+        # `full_commands` IS THE BARE COMMAND HALF of `resolved_commands` -
+        # see `_evidence_io.full_status`'s own docstring for why that, and
+        # not the (name, command) pairs, is the contract.
+        full_commands = [c for _n, c in M._ev.resolved_commands(
+            manifest_now, manifest_now["meta"]["fullGate"])]
+        status = M._ev.full_status(rows, phase, root_w2, full_commands)
+        check("fg10 a full run recorded by --full, measured at this repo's own "
+              "HEAD, is judged WHOLE by full_status once the phase's own "
+              "mergedHead is that same commit - the SAME resolution and the "
+              "SAME rows a real /audit:phase would read: %r" % (status,),
+              code == M.E_OK
+              and status["answer"] == _manifest_vocab.FULL_STATUS_WHOLE)
+        # The comparison above reads its expected commands from the function
+        # it is judging, so a resolution that went wrong on both sides would
+        # still agree with itself. The literal below is written by hand: the
+        # `buildCommands` value the fixture's `fullGate` names.
+        recorded = [s.get("command") for r in rows if r.get("scope") == "full"
+                    for s in r.get("steps") or []]
+        check("fg10b ...and the command the run recorded is the fixture's "
+              "declared gate spelled out by hand, not re-derived by the "
+              "resolver under test: %r" % (recorded,),
+              recorded == ["echo '1 passed in 0.01s'"])
+    finally:
+        _harness.remove_tree(root_w2)
+
+    # --- the same run with meta.nodePreamble set ----------------------------
+    # Padded with whitespace on purpose: the preamble is stripped before it is
+    # joined with `&&`, so a literal that kept the padding, or one that
+    # dropped the preamble, would each tell a mis-resolution apart.
+    root_p, mpath_p, _head_p = _full_repo(
+        "preamble", buildcommands={"ok": "echo '1 passed in 0.01s'"},
+        preamble="  export FIXTURE_PREAMBLE=on  ")
+    try:
+        code = M.main([mpath_p, "--full", "--project-dir", root_p, "--record"],
+                      out=(lambda _l: None))
+        rows = _ev_io.read_rows(root_p)["rows"]
+        recorded = [s.get("command") for r in rows if r.get("scope") == "full"
+                    for s in r.get("steps") or []]
+        check("fg10c ...and with meta.nodePreamble set, the recorded command "
+              "is the preamble, stripped, joined to the declared gate by `&&` "
+              "- written here by hand, so a resolver that dropped or "
+              "mis-joined the preamble cannot agree with itself: %r"
+              % (recorded,),
+              code == M.E_OK
+              and recorded == [
+                  "export FIXTURE_PREAMBLE=on && echo '1 passed in 0.01s'"])
+    finally:
+        _harness.remove_tree(root_p)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _group_cases(check)
+        _crowd_cases(check)
+        _full_scope_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

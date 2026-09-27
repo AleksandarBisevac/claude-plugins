@@ -106,7 +106,7 @@ def _cases(check):
     check("u4 pricingAsOf surfaced in HTML, not only once the table has gone stale",
           "rates as of 2026-08-06" in uh)
     # A sub-cent fixture: real spend, but under a cent. `_fmt_cost` delegates to
-    # _fmt.fmt_cost for this rule (P10.6) — nothing above spends under $0.01, so a
+    # _fmt.fmt_cost for this rule — nothing above spends under $0.01, so a
     # broken delegation (e.g. a raw "$%.2f") would round this to "$0.00" and every
     # OTHER case here would stay green. Asserted through the rendered tile, the
     # narrowest renderer that carries a formatted cost, not through _fmt_cost
@@ -504,7 +504,7 @@ def _cases(check):
 
     # --- uf: the `<1%` floor, and the sites that deliberately refuse it -------
     # `0%` for a slice that EXISTS is the same lie `$0.00` tells about real
-    # spend, and `_fmt.fmt_share` has owned that rule since P10.6.
+    # spend, and `_fmt.fmt_share` owns that rule.
     # `_hover_share` was the last share string in this file still spelling out
     # fmt_share WITHOUT it — ud2 above used to pin that absence. It is now a
     # pure alias, and the derived rates (cache, coverage, retry) render through

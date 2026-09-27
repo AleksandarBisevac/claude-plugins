@@ -109,7 +109,7 @@ def _cases(check):
               for k in M._META_API_ONLY))
 
     # c6's server half (the change rows a save echoes) and the journal call site
-    # moved to _panel_write.py (P12.4). What stays below and further down is the
+    # moved to _panel_write.py. What stays below and further down is the
     # browser's half of the same contract, pinned against UI_HTML.
 
     check("the UI badges an abandoned lock differently from a running one",
@@ -147,8 +147,8 @@ def _cases(check):
 
     # --- Settings: the whole config, named by what it does ---------------------
     # The coverage checks (SETTINGS_GROUPS/FIELD_HELP derived against
-    # validate-config's own key sets) live in _panel_settings.py's own selftest
-    # (P12.1); the cases that need a server call (the exempt key's route, the
+    # validate-config's own key sets) live in _panel_settings.py's own selftest;
+    # the cases that need a server call (the exempt key's route, the
     # bands key the validator accepts) stayed in panel-server.py. What is here
     # needs the assembled page.
     #
@@ -719,15 +719,29 @@ def _cases(check):
     _ev_uncovered = [w for w in _ev_enum
                      if ("'%s':" % w) not in _evword_block
                      and ("%s:" % w) not in _evword_block]
-    # The three the PLAN answers rather than a run. They must NOT be schema
-    # statuses: a manifest carrying `status: "no-gate"` would be a run claiming
-    # to be a silence.
-    _ev_plan_only = [k for k in ("none", "no-gate", "dangling") if k in _ev_enum]
+    # The keys the PLAN or the READ answers rather than a run. They must NOT be
+    # schema statuses: a manifest carrying `status: "no-gate"` would be a run
+    # claiming to be a silence, and one carrying `ledger-unreadable` would be a
+    # run claiming the read that looked for it failed.
+    _ev_plan_only = [k for k in ("none", "no-gate", "dangling",
+                                 "ledger-unreadable") if k in _ev_enum]
     check("ev2 the badge table covers every status the SCHEMA lets a manifest "
-          "cache (%r uncovered), and the three keys the page adds are the ones "
+          "cache (%r uncovered), and the keys the page adds are the ones "
           "no run can report (%r wrongly in the enum) - a comment claiming two "
           "vocabularies agree is not a check" % (_ev_uncovered, _ev_plan_only),
           bool(_ev_enum) and not _ev_uncovered and not _ev_plan_only)
+    # CONSTRUCT, and labelled as one: the painted hue belongs to the browser
+    # gates. The unreadable-ledger badge wears the WARN ink of the states a person
+    # has to act on, beside `dangling`, and never the muted ink of a silence.
+    _ev_warn_from = M.UI_HTML.find('[data-evstatus="gate-mutated"],')
+    _ev_warn_to = M.UI_HTML.find("{--st:var(--warn)}", max(_ev_warn_from, 0))
+    _ev_warn = (M.UI_HTML[_ev_warn_from:_ev_warn_to]
+                if 0 <= _ev_warn_from < _ev_warn_to else "")
+    check("ev2b CONSTRUCT: the panel paints `ledger-unreadable` in the warn "
+          "group beside `dangling`, and names it once: %r" % (_ev_warn,),
+          '[data-evstatus="ledger-unreadable"]' in _ev_warn
+          and '[data-evstatus="dangling"]' in _ev_warn
+          and M.UI_HTML.count('[data-evstatus="ledger-unreadable"]') == 1)
     check("ev3 an unrecognised verdict is NAMED rather than folded into "
           "'failed' - the schema leaves the enum open and says so, so the "
           "default arm humanises the word it did not recognise, and a run that "
@@ -816,6 +830,11 @@ def _cases(check):
           and "{key:'before-recording',run:null," in _evsrc
           and "{key:'undated',run:null," in _evsrc
           and "if(!run)return {key:'dangling',run:null," in _evsrc
+          # ...and a pointer whose run could not be looked up because the READ
+          # failed wears its own key, asked before the dangling one.
+          and "if(!run&&unread)return {key:'ledger-unreadable',run:null," in _evsrc
+          and 0 <= _evsrc.find("if(!run&&unread)return")
+          < _evsrc.find("if(!run)return {key:'dangling'")
           and "an absent record is not a failure." in _evsrc
           and "no test gate is declared here or on the phase" in _evsrc
           and "excused, not missing" in _evsrc
@@ -2025,7 +2044,7 @@ def _cases(check):
 
     # _bugs_view: the bug rows behind the strip. Every derived field is decided in
     # Python by the SAME functions the rollup counts with — pinned in
-    # _panel_state.py (P12.3). What stays here is the other half of that claim:
+    # _panel_state.py. What stays here is the other half of that claim:
     # the browser being handed the verdicts rather than deriving its own.
     check("the browser is handed those verdicts rather than re-deriving them",
           "b.open&&b.high" in M.UI_HTML and "STATE.bugs" in M.UI_HTML
@@ -3687,7 +3706,7 @@ def _cases(check):
           and "slot.querySelector('[data-stale]')" in M.UI_HTML)
 
     # usage_state's own cases (facts, the roll-up cap, the declared rate basis)
-    # moved to _panel_state.py (P12.3); everything above is the tab that reads it.
+    # moved to _panel_state.py; everything above is the tab that reads it.
 
     # --- WCAG 2.2 SC 2.5.8 Target Size (Minimum): a census, not a wish list ------
     # 24 x 24 CSS px, or a named exception. The exceptions are five and they are

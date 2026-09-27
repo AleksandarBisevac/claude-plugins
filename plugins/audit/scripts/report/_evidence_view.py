@@ -118,7 +118,8 @@ def _rows_for(rows, scope, subject_id):
     return sorted(mine, key=lambda r: str(r.get("ts") or ""), reverse=True)
 
 
-def _view_for(holder, phase, scope, by_run, rows, boundary=None):
+def _view_for(holder, phase, scope, by_run, rows, boundary=None,
+              read_error=None):
     """One holder's view, with the runs before it attached.
 
     The current run is dropped from the history by RUN ID rather than by position:
@@ -133,6 +134,9 @@ def _view_for(holder, phase, scope, by_run, rows, boundary=None):
     which absences are excused, free to disagree with the exit code the reader is
     holding; and the direction it would disagree in is silent, because a badge
     that excuses more than the gate does turns neglect into a green-looking page.
+
+    `read_error` is the caller's failed ledger read, handed to `tev_view` so a
+    pointer whose run could not be looked up says so instead of dangling.
     """
     pointer = _report_html.tev_pointer(holder)
     row = by_run.get(str(pointer.get("runId"))) if pointer else None
@@ -143,7 +147,27 @@ def _view_for(holder, phase, scope, by_run, rows, boundary=None):
     view = _report_html.tev_view(
         pointer, row, configured,
         gap=_status_facts.evidence_gap(holder, scope, boundary),
-        basis=(boundary or {}).get("basis"))
+        basis=(boundary or {}).get("basis"), read_error=read_error)
+    # A GROUP MEMBER'S POINTER IS ITS CARRIER'S RUN, and saying so is the whole
+    # difference between "graded" and "measured here": rendered bare it would
+    # claim a sign-off run for this phase that nobody made.
+    carrier = _status_facts.graded_by(holder)
+    if carrier and pointer:
+        view["gradedBy"] = carrier
+        view["why"] = "graded by %s's run %s - %s" % (carrier, pointer.get("runId"),
+                                                       view.get("why") or "")
+    # ...and a phase signed off with a recorded reason and no run says the reason
+    # where the badge's basis goes, rather than only that no run was recorded.
+    review = holder.get("review") if isinstance(holder.get("review"), dict) else {}
+    # The commits a group took into its review outside every task, with the
+    # reason: the one place a later reader can see what the sign-off accepted.
+    accepted = [a for a in (review.get("acceptedCommits") or [])
+                if isinstance(a, dict) and a.get("commit")]
+    if scope == "phase" and accepted:
+        view["acceptedCommits"] = accepted
+    if scope == "phase" and not pointer and review.get("noEvidenceReason"):
+        view["why"] = "signed off with no gate run, and the reason recorded: %s. %s" % (
+            review["noEvidenceReason"], view.get("why") or "")
     subject = holder.get("id")
     if subject:
         current = str((row or {}).get("runId") or "")
@@ -152,16 +176,50 @@ def _view_for(holder, phase, scope, by_run, rows, boundary=None):
     return view
 
 
+def _phase_full_row(raw, own_view):
+    """One phase's `fullRun` entry for the report, or None.
+
+    `raw` is the caller's own per-phase answer (`answer`/`basis`/`runId`, plus
+    `head`/`mergedHead`/`phaseId`/`testGateBasis` - render-report.py computes it
+    at layer 7, the same way it computes `boundary`, and this module never reads
+    git or a second copy of the ledger to get there).
+
+    THE SUITE COUNTS AND THE SIGN-OFF STAMP COME FROM `own_view`'S OWN ROW,
+    never re-read from the ledger a second time: `own_view` is this SAME phase's
+    sign-off view, already built by `_view_for` two lines above the call site, and
+    its `row` is the ledger row the phase's OWN gate last recorded. A `derived`
+    run narrows to a subset it counts as `narrowed`; a `wide` one still counts
+    what it WOULD have narrowed to, as `shadow` - the same two keys, so reading
+    either first and falling back to the second answers "how many suites, out of
+    how many" regardless of which mode this phase's gate runs in.
+    """
+    if not isinstance(raw, dict):
+        return None
+    out = dict(raw)
+    row = own_view.get("row") if isinstance(own_view, dict) else None
+    if isinstance(row, dict):
+        counts = row.get("narrowed") or row.get("shadow") or {}
+        out["listed"] = counts.get("listed")
+        out["full"] = counts.get("full")
+        out["signOffStatus"] = row.get("status")
+        out["signOffTs"] = row.get("ts")
+    return out
+
+
 # --- the load -----------------------------------------------------------------
-def load_evidence(manifest, manifest_path, project_dir=None, boundary=None):
+def load_evidence(manifest, manifest_path, project_dir=None, boundary=None,
+                  full_run=None):
     """Everything the report says about test execution, or None when it says none.
 
-    `{"tasks", "phases", "keys", "flags", "rows", "files", "unreadable"}`:
+    `{"tasks", "phases", "keys", "flags", "rows", "files", "unreadable",
+    "readError"}`:
 
       tasks   {taskId: view}  - one per task, whether or not it points at a run
-      phases  {phaseId: {"own": view, "rollup": [(key, label, count), ...]}} -
-              the phase's OWN sign-off run and an aggregate over its tasks, kept
-              apart because merging them would claim a measurement nobody made
+      phases  {phaseId: {"own": view, "rollup": [(key, label, count), ...][,
+              "fullRun": {...}]}} - the phase's OWN sign-off run and an
+              aggregate over its tasks, kept apart because merging them would
+              claim a measurement nobody made; `fullRun` is a THIRD measurement,
+              present only for a phase `full_run` names at all
       keys    the distinct statuses across the TASK views, in vocabulary order
       flags   the distinct observation markers across them, in vocabulary order
 
@@ -171,8 +229,12 @@ def load_evidence(manifest, manifest_path, project_dir=None, boundary=None):
     the one-author Author cell and the unpinned sort select already refuse.
 
     Fail-soft in one direction only. A ledger that cannot be read leaves every
-    pointer DANGLING rather than silently clean, because "the plan names a run"
-    and "the run is here" are different claims and only the second one failed.
+    pointer `ledger-unreadable` rather than silently clean - and not `dangling`
+    either, because "the run is not here" is a claim only a read can make.
+    `readError` carries the failure (`_report_html.tev_read_error`'s shape, the
+    one the panel ships too) and `files`/`unreadable` are None beside it: a
+    count of a read nobody made is not zero, it is unknown. A read that worked
+    carries `readError` None and its real counts.
 
     `boundary` ARRIVES AS AN ARGUMENT AND IS NEVER DERIVED HERE, which is the rule
     `rollup` already follows one module over and it matters more here. The caller
@@ -181,15 +243,22 @@ def load_evidence(manifest, manifest_path, project_dir=None, boundary=None):
     two reads of a ledger that a parallel run may have grown between. None is the
     third state, not a default: a caller that computed no boundary excuses
     nothing, which is exactly what every caller rendered before this existed.
+
+    `full_run` IS THE SAME KIND OF ARGUMENT, ONE FIELD OVER: render-report.py's own
+    `{phaseId: {"answer", ...}}`, or None when it computed none (a plan naming no
+    `meta.fullGate` at all). `None` and `{}` read the same here - no phase earns a
+    `fullRun` key, which is what keeps a report of a plan naming no third place
+    byte-identical.
     """
     tasks, phases = subjects(manifest)
     if not _pointed_at_anything(tasks, phases):
         return None
     project, config = _project_and_config(manifest_path, project_dir)
+    read_error = None
     try:
         read = _evidence_io.read_rows(project, config=config)
-    except Exception:
-        read = {"rows": [], "files": 0, "unreadable": 0}
+    except Exception as exc:
+        read, read_error = {"rows": []}, "%s" % (exc,)
     rows = [r for r in (read.get("rows") or []) if isinstance(r, dict)]
     by_run = {}
     for row in rows:
@@ -201,7 +270,7 @@ def load_evidence(manifest, manifest_path, project_dir=None, boundary=None):
         tid = task.get("id")
         if tid:
             task_views[str(tid)] = _view_for(task, phase, "task", by_run, rows,
-                                             boundary)
+                                             boundary, read_error)
     phase_views = {}
     for phase in phases:
         pid = phase.get("id")
@@ -209,10 +278,13 @@ def load_evidence(manifest, manifest_path, project_dir=None, boundary=None):
             continue
         mine = [task_views[str(t.get("id"))] for t in (phase.get("tasks") or [])
                 if isinstance(t, dict) and str(t.get("id")) in task_views]
-        phase_views[str(pid)] = {
-            "own": _view_for(phase, phase, "phase", by_run, rows, boundary),
-            "rollup": _report_html.tev_rollup(mine),
-        }
+        own_view = _view_for(phase, phase, "phase", by_run, rows, boundary,
+                             read_error)
+        entry = {"own": own_view, "rollup": _report_html.tev_rollup(mine)}
+        full_row = _phase_full_row((full_run or {}).get(str(pid)), own_view)
+        if full_row is not None:
+            entry["fullRun"] = full_row
+        phase_views[str(pid)] = entry
     return {
         "tasks": task_views,
         "phases": phase_views,
@@ -222,8 +294,11 @@ def load_evidence(manifest, manifest_path, project_dir=None, boundary=None):
                               for k, _w in v["flags"]),
                           tuple(_report_html.TEV_FLAG_LABELS)),
         "rows": len(rows),
-        "files": read.get("files") or 0,
-        "unreadable": read.get("unreadable") or 0,
+        "files": None if read_error is not None else (read.get("files") or 0),
+        "unreadable": (None if read_error is not None
+                       else (read.get("unreadable") or 0)),
+        "readError": (None if read_error is None
+                      else _report_html.tev_read_error(read_error)),
     }
 
 

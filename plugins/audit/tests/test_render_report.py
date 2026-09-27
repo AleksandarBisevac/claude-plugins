@@ -102,6 +102,73 @@ def _cases(check):
     rc = M.main([mp, "--out-dir", tmp])
     check("c1 CLI exits 0", rc == 0)
 
+    with open(os.path.join(tmp, "audit-report.html"), encoding="utf-8") as fh:
+        _no_full_html = fh.read()
+    # A PLAN NAMING NO `meta.fullGate` RENDERS THE SAME BYTES AS BEFORE THIS
+    # FEATURE EXISTED - the repro this case is: a build that always rendered
+    # the third place's own line, whether or not a phase's `fullRun` carries
+    # one, goes red here (mutate `_verified_line` to return a non-empty string
+    # unconditionally and this fails).
+    check("vl-r1 no meta.fullGate means no rendered claim about the third "
+          "place at all - not a bare word, not an empty chip, nothing",
+          "data-fullrun=" not in _no_full_html
+          and "whole at" not in _no_full_html
+          and "record a full run at" not in _no_full_html)
+
+    # A plan that DOES name a third place, with one merged phase and no
+    # full-scope run recorded at all - the PROVISIONAL answer, reachable
+    # without asking git anything (see gen-demo-manifest.py's own comment on
+    # why a WHOLE answer cannot be proven this way in an automated suite
+    # either: `full_status` asks a REAL git process, and a temp directory
+    # carries no repository for it to answer about).
+    _fg_root = _harness.fixture_root("render-report-fullgate-")
+    _fg_manifest = {
+        "meta": {"version": 2, "title": "third place", "repo": "r",
+                 "buildCommands": {"build": "yarn build"},
+                 "fullGate": ["build"]},
+        "phases": [
+            {"id": "P1", "title": "merged phase", "status": "done",
+             "mergedAt": "2026-07-09T00:00:00Z",
+             "mergedHead": "deadbeef00cafe1234",
+             "testGate": ["build"],
+             "testEvidence": {"runId": "R-1", "status": "passed",
+                              "at": "2026-07-09T10:00:00Z"},
+             "tasks": [{"id": "P1.1", "title": "t", "status": "done"}]}],
+        "fileIndex": {},
+    }
+    _fg_mp = os.path.join(_fg_root, "m.json")
+    with open(_fg_mp, "w", encoding="utf-8") as fh:
+        json.dump(_fg_manifest, fh)
+    os.makedirs(os.path.join(_fg_root, "evidence"), exist_ok=True)
+    with open(os.path.join(_fg_root, "evidence", "2026-07.t.jsonl"), "w",
+              encoding="utf-8") as fh:
+        fh.write(json.dumps({
+            "v": 1, "runId": "R-1", "ts": "2026-07-09T10:00:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "passed",
+            "steps": [], "failed": [], "testedState": {}, "observations": {},
+        }, sort_keys=True) + "\n")
+    _prev_proj = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = _fg_root
+    try:
+        _fg_rc = M.main([_fg_mp, "--out-dir", _fg_root, "--format", "both"])
+    finally:
+        if _prev_proj is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = _prev_proj
+    check("vl-r2 CLI exits 0 over a plan naming a third place", _fg_rc == 0)
+    with open(os.path.join(_fg_root, "audit-report.html"), encoding="utf-8") as fh:
+        _fg_html = fh.read()
+    check("vl-r3 a merged phase with no full-scope run recorded reads the "
+          "repair, naming its own mergedHead: %r"
+          % (_fg_html[_fg_html.find("data-fullrun"):][:160],),
+          "record a full run at deadbeef0" in _fg_html
+          and "/audit:review P1 --full" in _fg_html)
+    with open(os.path.join(_fg_root, "audit-report.md"), encoding="utf-8") as fh:
+        _fg_md = fh.read()
+    check("vl-r4 the Markdown twin carries the same words",
+          "record a full run at deadbeef0" in _fg_md)
+
     # th: a report is a FILE — mailed, published, opened months later —
     # so the theme is COMPILED INTO it rather than referenced. Rendered with a
     # project theme on disk, the stylesheet must carry that value and still be a

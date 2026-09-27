@@ -32,12 +32,13 @@ question of the FILE -- is the digest still the one the slot remembers -- and th
 slot is refreshed after every recorded row so its baseline is the manifest as of
 the last row in the journal, whoever wrote it.
 
-THE ONE EXCEPTION, and why it earns the exception (P0-S). A Bash call carrying
+THE ONE EXCEPTION, and why it earns the exception. A Bash call carrying
 `dangerouslyDisableSandbox: true` runs with the only layer that can actually
-CONTAIN a read switched off, and until P0-S no part of this plugin saw it -- a
-live session read a secret through direnv that way and left no deny, no gate
-message and no row. `bash.unsandboxed` records a DIGEST of the command, its byte
-length, its program name, and the cwd relative to the repo. It prevents nothing
+CONTAIN a read switched off, and before this file was widened to watch for it
+no part of this plugin saw it -- a live session read a secret through direnv
+that way and left no deny, no gate message and no row. `bash.unsandboxed`
+records a DIGEST of the command, its byte length, its program name, and the
+cwd relative to the repo. It prevents nothing
 (PostToolUse is after the fact) and it is not meant to: it turns an invisible
 event into tamper-evident history, which is what this file is for. An ordinary
 sandboxed Bash call is still nobody's business here, and the flag -- not the tool
@@ -631,7 +632,10 @@ def semantic_diff(old_obj, new_obj):
                                        "taskId": tid,
                                        "phaseId": new_owner.get(tid),
                                        "from": ov,
-                                       "attempts":
+                                       # The trail's spelling: singular, the
+                                       # key `_journal_io` keeps and the
+                                       # evidence ledger joins on.
+                                       "attempt":
                                        new_task.get("attempts")}})
                 if (field == "commit" and ov is None
                         and isinstance(nv, str) and nv):
@@ -768,7 +772,7 @@ def sandbox_disabled(ti):
 
 
 def unsandboxed_entries(data, *, cfg=None, root=None):
-    """P0-S: one row for a Bash run that went around the harness sandbox.
+    """One row for a Bash run that went around the harness sandbox.
 
     THE FLAG IS STILL READ BEFORE ANYTHING ELSE IN HERE, and the reason it used to
     give is no longer the reason. It said that resolving the repo root and loading
@@ -830,12 +834,17 @@ def unsandboxed_entries(data, *, cfg=None, root=None):
 # The key's last field must be present: a phase signed off with no branch records
 # `mergedAt: null`, which cannot tell one sign-off from a later one, so that row is
 # never withheld - a repeated row, never a lost one.
+#
+# `task.blocked` AND `ado.link` HAVE NO KEY, for the same reason. Nothing in either
+# names ONE record: `reopen` sets `attempts` back to 0 and a task can be blocked
+# again without a start in between, so neither the attempt nor `startedAt` tells
+# two blockings apart; an unlink followed by a re-link to the same work item has
+# the same id. Keyed on those, a real second blocking or re-link was withheld and
+# the edit row said the trail already held it. Unkeyed, a merge may repeat one.
 _RECORD_KEYS = {
     "task.complete": ("taskId", "completedAt"),
     "task.commit": ("taskId", "commit"),
-    "task.blocked": ("taskId", "attempts"),
     "phase.signoff": ("phaseId", "mergedAt"),
-    "ado.link": ("taskId", "phaseId", "adoId"),
 }
 
 

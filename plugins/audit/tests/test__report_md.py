@@ -184,6 +184,36 @@ def _cases(check):
           and "| passed |" in _partial
           and [ln for ln in _partial.splitlines()
                if ln.startswith("| P2.1 ")][0].endswith("| — | — |"))
+    # THE TWIN HAS NO TITLE ATTRIBUTE, so the sentence the HTML badge carries as
+    # its detail needs a line of its own here - once, above the phases - while
+    # the column keeps its one machine value. Absent for a readable ledger, which
+    # is what keeps every committed twin byte-identical.
+    _ur_basis = "the evidence ledger could not be read: disk gone (fixture)"
+    _ur = M.render_md(manifest, summary, None,
+                      {"tasks": {"P1.1": {"key": "ledger-unreadable"}},
+                       "readError": {"error": "disk gone (fixture)",
+                                     "basis": _ur_basis}})
+    check("md16 a ledger that could not be read is SAID in the twin, once, with "
+          "its basis, and the column carries the machine key the HTML filters "
+          "by",
+          _ur.count(_ur_basis) == 1
+          and "| ledger-unreadable |" in _ur
+          and _ur.index(_ur_basis) < _ur.index("## "))
+    # The generation stamp is wall-clock unless SOURCE_DATE_EPOCH is set, so the
+    # comparison drops that one line rather than racing a minute boundary.
+
+    def _unstamped(text):
+        return [ln for ln in text.splitlines() if not ln.startswith("repo: ")]
+    check("md17 ALLOW: a readable ledger adds no such line - the twin is the "
+          "one it always was",
+          # The line's own marker, not its wording: an over-firing line would
+          # carry whatever basis it was handed, so the words cannot be the test.
+          "**Test evidence:**" not in _tev
+          and "**Test evidence:**" not in _partial
+          and _unstamped(M.render_md(manifest, summary, None,
+                                     {"tasks": {"P1.1": {"key": "passed"}},
+                                      "readError": None}))
+          == _unstamped(_partial))
 
 
 def _signoff_cases(check):
@@ -203,10 +233,39 @@ def _signoff_cases(check):
           and not any(h.startswith("## P2") and "sign-off due" in h for h in heads))
 
 
+def _verified_cases(check):
+    """The Markdown twin carries `_manifest_vocab.VERIFIED`'s own words - the
+    SAME data the HTML reads, off `evidence.phases[id].fullRun`, never a second
+    computation of them."""
+    m = {"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "merged", "status": "done",
+         "tasks": [{"id": "P1.1", "title": "t", "status": "done"}]}],
+        "bugs": [], "fileIndex": {}}
+    import _status_facts
+    summary = _status_facts.rollup(m, [], [])
+    evidence = {"phases": {"P1": {"own": None, "rollup": [],
+                                 "fullRun": {"answer": "provisional",
+                                             "mergedHead": "deadbeef00cafe12",
+                                             "phaseId": "P1"}}}}
+    text = M.render_md(m, summary, None, evidence)
+    check("rm-vl1 a merged phase's provisional third-place answer reads in the "
+          "twin exactly as it reads in the HTML - the same sentence, not a "
+          "second spelling of it: %r" % (text[text.find("## P1"):][:400],),
+          "record a full run at deadbeef0" in text
+          and "/audit:review P1 --full" in text)
+    no_full = M.render_md(m, summary, None, {"phases": {"P1": {"own": None,
+                                                               "rollup": []}}})
+    check("rm-vl2 a phase with no fullRun at all carries no such line - the "
+          "byte-identical case the HTML keeps too",
+          "record a full run at" not in no_full
+          and "whole at" not in no_full)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _signoff_cases(check)
+        _verified_cases(check)
     return _harness.run(body)
 
 

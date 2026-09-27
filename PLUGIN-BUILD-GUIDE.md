@@ -142,20 +142,25 @@ claude-plugins/                           # this repo (personal, public)
           audit-lock.py                   # the CLI over it: acquire/release/status as exit codes
           _journal_io.py                  # the audit trail: row shape, hash chain, read/append/verify
           _evidence_io.py                 # the test-evidence record: where it lives, what a row may say, and the chain over it
+          _gate_derive.py                 # the gate helpers' one home (is_shared_key/path_scoped_sibling/repointed) and a pure derive() for a phase's sign-off gate
           audit-journal.py                # the CLI over both records: append/verify/show/archive, plus merge and sessions
           _invariants.py                  # the orchestrator's rules, re-derived from git + shard + journal + ledger
           verify-invariants.py            # the CLI over it: one phase or --all, breach = exit 1
           _scoped_commit.py               # what both commit-a-narrow-allow-list commands share: the git runner, the two index reads, the answer
           commit-audit-state.py           # commits the phase's manifest file + journal + evidence and NOTHING else, or says there is none
-          commit-manifest-index.py        # commits the manifest INDEX and NOTHING else, under the index lock; refuses in the single-file layout
+          commit-manifest-index.py        # commits the manifest INDEX and the row naming the commit, NOTHING else, under the index lock; refuses in the single-file layout
           commit-task-work.py             # commits ONE task's declared files + the phase file + the records, naming any staged path outside that list
           run-test-gate.py                # runs a phase's gate bracketed by a tree snapshot; counts what ran; states what it touched
           propose-gates.py                # a plan proposal from what evidence history caught, not the tree alone - and says which it drew on
           record-risk-confirmation.py     # the high-risk gate answered BEFORE the run, bounded to named task ids and written to the trail
           record-outside-run.py           # a suite that ran where this plugin could not see it, so a gate run in the same window is not credited with its effects
+          import-evidence.py              # a CI build's own evidence ledger file, brought in whole after its chain verifies - never rewrites a row, never re-chains
+          full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, or the sentence and exit 0 when no meta.fullGate is declared
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
+          _verdict_binding.py             # the ONE rule for whether a recorded gate verdict binds the declared work now - a task commit's and a sign-off's
           stamp-verification.py           # the CLI over it: take a stamp, or grade one - current / stale (naming the field) / unestablished; `red` proves a red-first in a throwaway tree
+          derive-phase-gate.py            # observes a phase's version answer, its two importer listings, changed/red-suite paths and the plan gate's exempt verdict, hands them to _gate_derive.derive, and records phase.testGateDerived (+ testGate in enforce mode) under the index lock
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
         _fmt.py                           # the one token/cost formatter, shared by usage + report + status
         _cli_fmt.py                       # the one place CLI color lives: --color resolution + paint roles
@@ -306,18 +311,18 @@ L2:
   _ado_drift -> _manifest_io, _manifest_vocab, _output, _usage_core
   _config_rules -> _loader, _output, _policy
   _doctor_report -> _loader, _output
-  _evidence_io -> _journal_io, _locks, _manifest_io, _output
+  _evidence_io -> _journal_io, _locks, _manifest_io, _manifest_vocab, _output, _usage_core, _worktrees
   _gate_feed -> _journal_io, _loader, _output, _usage_core
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
   _id_shape -> _branch, _manifest_io, _manifest_vocab, _output
   _manifest_ado -> _ado_conventions, _ado_fields, _manifest_vocab, _output
-  _manifest_crossrefs -> _ado_parent, _manifest_io, _manifest_vocab, _output, _priority
+  _manifest_crossrefs -> _ado_parent, _id_refs, _manifest_io, _manifest_vocab, _output, _priority
   _manifest_phases -> _ado_parent, _ado_tracked, _areas, _manifest_io, _manifest_vocab, _output, _task_outputs
   _manifest_typos -> _areas, _manifest_vocab, _output
   _panel_ui -> _output, _ui_theme
   _report_html -> _areas, _fmt, _manifest_io, _manifest_vocab, _output, _priority, _ui_theme
   _report_ui -> _output, _ui_theme
-  _status_facts -> _areas, _manifest_io, _output, _priority, _usage_core
+  _status_facts -> _areas, _manifest_io, _manifest_vocab, _output, _priority, _usage_core
   _tree_stamp -> _journal_io, _manifest_vocab, _output
   _usage_coverage -> _manifest_io, _output, _usage_core
   _usage_economics -> _manifest_io, _output, _usage_core
@@ -330,21 +335,23 @@ L3:
   _doctor_ado -> _ado_drift, _ado_tracked, _doctor_report, _output
   _doctor_hygiene -> _branch, _locks, _output, _worktrees
   _evidence_view -> _evidence_io, _manifest_io, _output, _report_html, _status_facts
+  _gate_derive -> _evidence_io, _manifest_io, _manifest_phases, _manifest_vocab, _output
   _manifest_rules -> _branch, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output
   _panel_discovery -> _help, _manifest_io, _output, _policy
   _panel_paths -> _config_rules, _loader, _manifest_io, _output, _status_facts
   _panel_settings -> _config_rules, _output
   _usage_bench -> _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
   _usage_viz -> _fmt, _output, _report_html
+  _verdict_binding -> _evidence_io, _journal_io, _output, _tree_stamp
   usage_ledger -> _manifest_io, _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
 
 L4:
-  _doctor_completions -> _commit_trail, _doctor_report, _evidence_io, _journal_io, _output
+  _doctor_completions -> _commit_trail, _doctor_report, _evidence_io, _journal_io, _manifest_vocab, _output
   _doctor_policy -> _branch, _doctor_report, _manifest_io, _output, _worktrees
   _doctor_setup -> _claude_home, _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _merge_install, _output, _status_facts, _warning_groups
-  _doctor_trail -> _doctor_report, _evidence_io, _journal_io, _output
+  _doctor_trail -> _doctor_report, _evidence_io, _fmt, _journal_io, _manifest_io, _manifest_vocab, _output
   _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _locks, _manifest_crossrefs, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
-  _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _output, _panel_paths, _priority, _status_facts, _worktrees
+  _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _manifest_vocab, _output, _panel_paths, _priority, _status_facts, _worktrees
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _panel_policy -> _areas, _config_rules, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
   _panel_runstate -> _doctor_report, _evidence_io, _journal_io, _locks, _output, _panel_paths
@@ -360,7 +367,7 @@ L5:
   _panel_state -> _evidence_io, _help, _journal_io, _manifest_io, _manifest_rules, _output, _panel_composition, _panel_discovery, _panel_paths, _panel_policy, _panel_runstate, _panel_usage, _panel_viewer, _proposals, _report_html
   _report_md -> _output, _report_html, _usage_markdown
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
-  _scoped_commit -> _evidence_io, _invariants, _output
+  _scoped_commit -> _evidence_io, _invariants, _journal_io, _output
 
 L6:
   _panel_write -> _ado_parent, _ado_tracked, _areas, _branch, _config_rules, _gate_feed, _journal_io, _locks, _manifest_io, _output, _panel_discovery, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme, _warning_groups, _worktrees
@@ -374,39 +381,42 @@ L7:
   audit-logs -> _gate_feed, _output
   audit-lookup -> _evidence_io, _journal_io, _manifest_io, _manifest_vocab, _output
   audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _areas, _branch, _commit_trail, _evidence_io, _id_refs, _id_shape, _journal_io, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _warning_groups, _worktrees
+  audit-task -> _areas, _branch, _commit_trail, _evidence_io, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
   close-phase -> _branch, _journal_io, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _worktrees
   commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
   commit-manifest-index -> _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
-  commit-task-work -> _evidence_io, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _tree_stamp
+  commit-task-work -> _evidence_io, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
+  derive-phase-gate -> _evidence_io, _gate_derive, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
+  full-gate -> _loader, _manifest_io, _output
   gen-demo-manifest -> _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
   gen-demo-usage -> _demo_cast, _loader, _output
+  import-evidence -> _evidence_io, _journal_io, _manifest_io, _output
   manage-worktrees -> _branch, _manifest_io, _output, _worktrees
   materialize-proposal -> _manifest_io, _output, _proposals, _warning_groups
   merge-manifest -> _id_refs, _id_shape, _locks, _manifest_io, _manifest_merge, _manifest_rules, _merge_install, _output
   migrate-json-encoding -> _manifest_io, _manifest_rules, _output, _panel_write
   migrate-manifest -> _id_shape, _manifest_io, _manifest_rules, _output
   panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_runstate, _panel_settings, _panel_state, _panel_write, _ui_theme
-  propose-gates -> _evidence_io, _output
+  propose-gates -> _evidence_io, _manifest_vocab, _output
   read-ado-links -> _ado_drift, _ado_tracked, _manifest_io, _output
   record-outside-run -> _evidence_io, _journal_io, _manifest_io, _output
   record-risk-confirmation -> _journal_io, _manifest_io, _output
-  render-report -> _areas, _evidence_io, _evidence_view, _fmt, _loader, _manifest_io, _manifest_rules, _output, _panel_discovery, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
+  render-report -> _areas, _evidence_io, _evidence_view, _fmt, _invariants, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output
   repair-tests-add -> _journal_io, _locks, _manifest_io, _manifest_rules, _output
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
-  run-test-gate -> _evidence_io, _fmt, _manifest_io, _manifest_vocab, _output, _proc_group, _tree_stamp
+  run-test-gate -> _evidence_io, _fmt, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _proc_group, _tree_stamp
   set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
   stamp-verification -> _locks, _manifest_io, _output, _proc_group, _tree_stamp
   validate-config -> _config_rules, _output
-  validate-manifest -> _manifest_io, _manifest_rules, _output, _warning_groups
+  validate-manifest -> _evidence_io, _manifest_io, _manifest_rules, _output, _warning_groups
   verify-invariants -> _invariants, _manifest_io, _output
 ```
 
@@ -1668,7 +1678,7 @@ the `journal.merge` marker row is required for the benign reading — so no chec
 either, and the warning's job is to send a human to read the extra rows. `_doctor_trail`'s
 `journal_warning_advice` is where that is worded for an operator.
 
-**`merge` is the verb a journal conflict needs and did not have.** One writer on two
+**`merge` is the verb a journal conflict needs and did not have** (and an evidence ledger's, since it is chained the same way). One writer on two
 BRANCHES is ordinary while a phase is paused, and the per-writer file split does not separate
 them — so a landing phase produces one file with a shared prefix and two tails, which cannot
 be resolved by editing, because each divergent row's hash covers a `prev` only its own side
@@ -1724,6 +1734,23 @@ that moment render `Before recording` rather than `No evidence`. It is held back
 later phase still records — a fixture with no runs at all would name no boundary and take the
 ledger, the pointers and every state that depends on them down with it at the smallest sizes.
 `SCHEMA_EXEMPTIONS` used to hold the key back on exactly this argument, and that row is gone.
+
+**The fixture is a real git repository**, because `full_status` answers whole only when git says
+a full run's head contains a phase's `mergedHead`, and a directory with no repository can only
+answer unknown. `write_history()` writes it into `<out-dir>/.git` as loose objects the generator
+builds itself — no git process runs, so no hook, identity, template or `GIT_*` variable of the
+caller's reaches a commit, and every date comes from the plan, so the commit names are the same
+on every machine. The real objects are the merges `generate()` stamps as each phase's
+`mergedHead` and the commit the one recorded full run measured, which sits right after the
+first of those merges: that phase reads whole, every later one provisional, and the earliest
+done phase, which records no `mergedHead`, unknown. Every task's `commit` and every phase's
+`baseRef` stays a stable fake no object backs, so a reader asking git about those — the
+doctor's commit trail, for one — calls them dangling here, which is a property of the fixture
+and not a finding. **It never writes into a repository it did not make:** `history_refusal()` is
+asked before the manifest, the ledger or a single object is written, and accepts an existing
+`.git` only when it is a directory whose `HEAD`, `config` and branch ref are byte for byte what
+this history would write. Anything else — a linked worktree's `.git` file, a link, somebody's
+repository — and `gen-demo-manifest.py` exits 2 with the reason, having written nothing.
 
 ### `plugins/audit/scripts/demo/gen-demo-usage.py`
 Generates a synthetic usage ledger consistent with a real manifest — task/phase ids that exist,
@@ -2807,7 +2834,14 @@ the derivation exists to correct. `file <path>` is a
 LOOKUP over `fileIndex`, never a search: an exact key match only, and the last entry in
 `fileIndex[path]` is the answer by the index's own append-only convention (never remove
 another task's id). `brief <taskId>` is `file` folded over every path the task declares,
-one call at spawn time instead of one per path. Each returns a plain "no match" — never a
+one call at spawn time instead of one per path. `run <runId>` (or `run latest --phase <id>`
+/`--task <id>`) reads the evidence ledger instead of the manifest or journal — the bounded
+render of one recorded row (`_evidence_io.row_by_run`/`latest_by_subject`, the latter keyed
+through `subject_aliases` so a moved task still answers under its live id), never raw runner
+output, because a gate run under `run_in_background` writes its verdict there long before its
+own terminal is read again; the failing lines and `failingSuites` cross through exactly as the
+writer already bounded and redacted them, never re-cut here, and an unreadable ledger file is
+said rather than read as "no such run". Each returns a plain "no match" — never a
 nearest id or a similar path — when the manifest does not carry an answer; an id that exists but does not apply to
 the question (a task that was never cancelled) is a different, legitimate answer and not a
 miss. Read-only, exit 0 on a match, 1 on a miss, 2 a usage error. Layer 7 (an entry point
@@ -2827,9 +2861,19 @@ should be small. `audit-task.py`'s dependency was the one nothing could see: it 
 index lock by building an argv and calling `main()` through `_panel_write._lockmod()`, so
 `_deps` attributed the edge to the panel. It is an ordinary import now.
 
+**Whose claim it is has one rule, `held_by_us`**, which `acquire` and `_evidence_io.lock_state`
+both ask. A claim a process takes for its own write records a random `token`, re-entered only
+by that process and by a child that inherited the token through `TOKEN_ENV`
+(`AUDIT_LOCK_TOKENS`); another process of the same session waits like any holder. A claim
+`audit-lock.py acquire` takes by hand is recorded `handedOff`, and its session still works under
+it - the take-then-run-the-verbs flow the commands prescribe - so parallel calls under a
+hand-held hold are not serialised. A claim taken with `per_call` (the panel's writes, one per
+request on the server's threads) is re-entered by nobody. A claim written before tokens existed
+keeps the session rule.
+
 ### `plugins/audit/scripts/governance/audit-lock.py`
 The CLI over `_locks`: `acquire <name>`, `release <name>`, `status`, over the names
-`_locks.valid_name` accepts — `index` and `usage`, the fixed pair, or `phase-<id>` with an ASCII
+`_locks.valid_name` accepts — a name in `_locks.FIXED_NAMES`, or `phase-<id>` with an ASCII
 id (a spelling that differs only in case from a held lock is refused, so the answer does not
 depend on whether the filesystem folds case), and for tooling that is not the plugin's a
 namespaced `user-<name>` under `_locks.USER_NAME_RULES`, whose own part may never be a lock name
@@ -2857,8 +2901,10 @@ check — `CHECK_NAMES` is the list and `verify-invariants.py --all` prints it: 
 staged only its own `files`, its phase's manifest file and the two records beside it
 (`git show --name-only`); an **audit-state** commit staged those records and *not* the task's
 `files`, found through the journal's `audit.state.committed` rows because nothing in the
-manifest names such a commit; a **manifest-index** commit staged the shared index and nothing
-at all beside it, found the same way through `audit.index.committed` rows; no push, no forced
+manifest names such a commit; a **manifest-index** commit staged the shared index and the
+journal holding its own row and nothing else, found the same way through `audit.index.committed`
+rows — each row naming its commit by `details.commit` or, when the row is inside that commit, by
+the `Audit-Row` trailer its `commitNonce` matches (`_invariants.commits_carrying`); no push, no forced
 update and no stash touched the phase
 branch (the remote-tracking refs, the branch's own reflog compared pairwise for ancestry,
 and `refs/stash`); every manifest state the phase COMMITTED still validates (each commit's
@@ -2969,7 +3015,9 @@ departs from `usage_ledger.read_ledger`'s silent `continue`: that is right for t
 for evidence. It reports the file count too, because "no rows" and "no files" are different answers
 and a bare list could not tell them apart. The **parse** is `_journal_io.rows_from_text`'s and only
 the **counting rule** is local, so a row the chain grades and a row this returns can never be two
-different things.
+different things. `rowFiles` names, at each row's own index, the basename of the file it was read
+from, so a caller that must say *which* file holds a run reads it from this one read instead of
+walking the directory again with a decode of its own.
 
 **Every row is hash-chained, with the trail's chain and not a second one.** `append_row()` links
 each row onto the file's tail — `prev`, then `hash` over the canonical row, seeded from the file's
@@ -3044,6 +3092,94 @@ it cannot be committed there at all, so the plan is not at fault for naming rows
 to hold. A torn committed row is a **gap**: it says a row could not be read, never that a pointer is
 unsupported.
 
+**`full_status()` answers the third place's own question from the ledger alone**, never from a
+manifest pointer: WHOLE only when a scope-`full` row that is green, measured, clean and running
+`meta.fullGate` verbatim has a head `_worktrees.merged_into` (git ancestry, never string equality)
+finds containing the phase's `mergedHead`, PROVISIONAL when every such row falls short of that,
+UNKNOWN when the phase carries no `mergedHead` or git itself could not say, and NOT_DECLARED when
+the plan names no third place at all.
+
+### `plugins/audit/scripts/governance/_gate_derive.py`
+The gate helpers' one home, and a pure `derive()`.
+
+`is_shared_key`, `path_scoped_sibling` and `repointed` used to live only inside
+`audit-task.py`, answering the same three questions a TASK's own narrow gate is
+derived from. A PHASE-level derivation needs the identical questions asked one
+level up, and an entry point cannot import another entry point — so the phase
+side could only ever have copied the three. They moved here, unchanged, and
+`audit-task.py` keeps thin aliases so no existing caller or case had to change
+its spelling.
+
+`derive(manifest, phase, facts)` is the phase-level answer: what
+`meta.phaseGate.mode` computes for one phase's sign-off gate, replacing only
+the part of the wide default that is not `meta.phaseGate.always` — read once,
+through `_manifest_phases.phase_gate_default`, so a fallback can never run
+fewer suites than `/audit:phase add` would already have written. It is PURE:
+every observation (a listing's exit code and paths, the installed version's
+answer, which paths changed since `baseRef`, the newest red phase-scope row's
+named failures, the plan gate's exempt verdict per touched file) arrives
+through `facts`, supplied by the caller — no subprocess, no git, inside the
+function itself.
+
+`resolve_shape(phase, build, derived_cfg)` is where the path-scoped shape a
+narrowed gate repoints comes from — a sibling task's own `path_scoped_sibling`
+entries FIRST (evidence the runner already accepted them), and only when none
+exists, `meta.phaseGate.derived.spelling` SECOND, when it carries a literal
+`{paths}` placeholder (ignored, with a printed reason, when it does not).
+Neither existing is `phase-no-spelling`, unchanged. `derive()`'s own result
+carries `shapeSource` — the sibling's task id, or the literal
+`meta.phaseGate.derived.spelling` — so a reader can tell which of the two
+supplied the shape; a spelling-sourced shape is filled by literal `{paths}`
+substitution rather than through `repointed()` (its placeholder is not a
+path-shaped token that function would recognize), the resolved paths
+shell-quoted through `shlex.quote` exactly the way a listing command is.
+
+**`derived-empty` has TWO triggers, and `derive()` is the only place either is
+computed.** The first: `meta.phaseGate.derived.listing.all` ran, exited 0 and
+named no suite (caught by `_full_listing_empty`, before coupling/importers/
+changed/last-failed ever run). The second: the shape came from
+`meta.phaseGate.derived.spelling` and, after every arm has had its turn,
+`test_paths` is still empty — a sibling-sourced shape cannot reach this
+(the same task that supplies it already contributed a path through
+`_tests_add_arm`), but a spelling-sourced one carries no such guarantee, and
+substituting `{paths}` with nothing would make the gate mean either the WHOLE
+suite or NOTHING depending on the runner, silently. Both triggers return
+`attribution: None` alongside `basis: "derived-empty"` — the SAME word, so a
+caller renders the SAME honest wide line regardless of which one fired.
+`attribution` (`{testsAdd, coupling, importers, changed, lastFailed, union}`)
+is `derive()`'s own per-arm breakdown, present ONLY when `narrowed` is true —
+`None` for EVERY wide basis with no exception, `phase-no-spelling` and both
+`derived-empty` triggers and a full-suite resolution alike: a full-suite
+`test_paths` is real (the union of `tests.add` and coupling, computed before
+the importer/changed/last-failed loops even run) but it is not what the wide
+gate runs, so it is not attributed either. `derive-phase-gate.py`'s renderers
+read ONLY this dict, keyed off `result["narrowed"]` and `result["basis"]` —
+never off whether `attribution` happens to be `None`, because a second,
+independent computation of the same arms does not know every widening
+trigger `derive()` knows, and would report a narrowed-looking breakdown for a
+gate that is actually wide the next time a trigger is added. That second
+computation used to exist here, as `derive-phase-gate.py._breakdown()`; it is
+deleted, and `attribution` is the only breakdown this plugin computes.
+
+Four arms, each additive to the test-path set before it is re-pointed through
+the sibling's own spelling: the union of path-scoped paths in each task's OWN
+gate (never a task that fell back to its phase's wide one — that fallback IS
+the wide gate, and reading it as evidence of a narrow one would be the
+derivation citing itself), every `meta.coupling[].test` whose `sources` overlap
+the phase's own touched files, an importer listing (only trusted when its
+`verifiedOn` answer matches the machine asking, dg23, and only narrowing when
+its paths are a **strict** subset of the full listing — equal to the full
+listing means the wide gate already **is** the narrow answer, dg1), and the
+always-on additions (changed test files, the last-failed suites). `meta.
+phaseGate.smoke` is added unless every file the phase touched is exempt or a
+test file itself — **never** decided by `meta.runtimeBoot.appRootPath` (dg10):
+a source file outside an app's own root is still a source file. No path-scoped
+sibling, or nothing to narrow to after all four arms, falls back to
+`meta.phaseGate.always` plus the default's non-`always` part — never an empty
+gate. Every narrowed answer's basis carries one pinned sentence (dg4):
+"selected by import graph and recorded couplings only" — naming the ceiling on
+what this derivation is allowed to have used.
+
 ### `plugins/audit/scripts/governance/verify-invariants.py`
 The CLI over it: `verify-invariants.py <manifest> <phaseId>`, or `--all` for every phase that
 has started (a branch, a `baseRef` or a recorded commit). `--json` for the whole answer,
@@ -3096,9 +3232,10 @@ checker both have to give.
 
 **What is deliberately not here: the allow-lists.** Each command derives its own, and they differ
 in exactly the entries that matter — one may stage the phase's shard and the records beside it and
-never the shared index, the other may stage only the shared index and never a phase's file. A
-shared builder taking a flag would be one function holding two safety properties, which is the
-shape in which a widened list stops being noticed.
+never the shared index, another may stage only the shared index and the journal file holding
+the row that names its commit, and never a phase's file. A shared builder taking a flag would be
+one function holding several safety properties, which is the shape in which a widened list stops
+being noticed.
 
 ### `plugins/audit/scripts/governance/commit-audit-state.py`
 `commit-audit-state.py <manifest> <phaseId>` — **commit any uncommitted audit state, or say
@@ -3148,14 +3285,24 @@ was. The shape is unconditional and deliberately **not** read from `meta.commit`
 a default type and a trailer, records nothing about which commitlint rules a repository
 configures, and a fixed spelling no manifest can move is exactly what this buys.
 
-**It anchors itself in the trail.** After committing it appends an `audit.state.committed`
-journal row whose `details` carry `commit` and `phaseId` — the only handle anything has on such
-a commit, since it is not a `task.commit` and the manifest does not name it. That is what
-`_invariants.audit_state_scope()` reads to find these commits and grade them; the row's target
-is the **evidence directory** and deliberately not the phase's manifest file, because
-`_recorded_states()` reads every row naming that file as a *write* to it and a commit is not an
-edit. The append is fail-soft (`_journal_io.append`'s contract) and the failure is printed: a
-commit that happened must not be reported as not having happened.
+**It anchors itself in the trail, from inside the commit.** Before committing it appends an
+`audit.state.committed` journal row whose `details` carry `commitNonce` and `phaseId`, ends the
+commit message with an `Audit-Row: <nonce>` trailer, and stages the row with the rest — so the
+row is in the commit it names and the run leaves no trail behind (`_scoped_commit.commit_with_rows`,
+shared by every scoped commit). A row inside a commit cannot hold that commit's SHA, which is
+why it holds the nonce; `_invariants.audit_state_scope()` resolves it with `git log --grep`, which a
+rebase does not break. A commit carrying the trailer is graded only when its subject opens with the
+class header (`_invariants.STATE_HEADER`, `INDEX_HEADER`) and the trailer is in its last paragraph;
+any other carrier - a squash merge, or a commit that gained a paragraph after its trailer - is
+reported as a gap naming it and the test it failed, and is never graded. A commit refused after the row was written — a hook, git itself — leaves an
+`audit.commit.withdrawn` row naming the nonce, and a reader drops a withdrawn nonce instead of
+reporting a commit that does not exist. Because the row is inside its commit, a journal holding
+only other writers' rows is committed like the other two records; a second run finds nothing
+uncommitted. The row's target is the **evidence directory** and deliberately not the phase's
+manifest file, because `_recorded_states()` reads every row naming that file as a *write* to it
+and a commit is not an edit. The append is fail-soft (`_journal_io.append`'s contract) and a row
+that could not be written is printed: a commit that happened must not be reported as not having
+happened.
 
 ### `plugins/audit/scripts/governance/commit-manifest-index.py`
 `commit-manifest-index.py <manifest> <phaseId>` — **commit the manifest INDEX on its own, or say
@@ -3180,9 +3327,10 @@ it carries. Widening `commit-audit-state.py`'s list would have satisfied that sc
 verification — its allow-list and its staged set are one list, so nothing there could notice —
 while destroying the property both scope checks exist to defend.
 
-**What it stages: the index, and nothing else.** Not the shard, not the journal, not the evidence,
-not the task's `files`. The allow-list is one entry long and nothing downstream widens it. The
-path is staged **explicitly** (`git add -- <path>`, never `git add -A`), and the index is read back
+**What it stages: the index, and the one journal file holding the row that names the commit, and
+nothing else.** Not the shard, not the rest of the journal, not the evidence, not the task's
+`files`. The allow-list is the index; `commit_with_rows` adds the row's file to it, and nothing
+else widens it. Each path is staged **explicitly** (`git add -- <path>`, never `git add -A`), and the index is read back
 with `git diff --cached --name-only` and compared against the same list **before** the commit —
 and read **before** staging too, so work somebody else had already staged is refused while the git
 index is still exactly as it was found. Both reads are `_scoped_commit`'s, shared with its sibling.
@@ -3213,10 +3361,13 @@ refuses along with start-case, pascal-case and upper-case. The reasoning is spel
 the word names the phase **without** claiming to be scoped to it — the conventional scope says
 `audit-index`, and that is what the commit is scoped to, while the subject's phase is attribution.
 
-**It anchors itself in the trail.** After committing it appends an `audit.index.committed` journal
-row whose `details` carry `commit` and `phaseId` — both on `_journal_io.DETAILS_KEYS`, checked by a
-case rather than assumed, because that allow-list drops an unknown key in silence. The row is the
-only handle anything has on such a commit, and it is what `_invariants.index_scope()` reads to find
+**It anchors itself in the trail, from inside the commit.** Before committing it appends an
+`audit.index.committed` journal row whose `details` carry `commitNonce` and `phaseId` — both on
+`_journal_io.DETAILS_KEYS`, checked by a case rather than assumed, because that allow-list drops an
+unknown key in silence — and adds the ONE journal file that row landed in to its allow-list, so the
+commit carries the index and the row naming it. A journal file is named for one writer and one
+worktree, so it is not a file two phases meet on. The row is the only handle anything has on such a
+commit, and it is what `_invariants.index_scope()` resolves through the `Audit-Row` trailer to find
 these commits and grade them. `<phaseId>` throughout is **attribution and not scope**: the index is
 shared, and the phase id says which run made the structural change.
 
@@ -3279,7 +3430,10 @@ gate badge, the report and the demo generator all read.
 shard is inside that commit, so writing it here would need a second commit or an amend — which
 step 4c forbids. The SHA is printed and `/audit:task done <taskId> --commit <sha>` records it,
 riding along with the next commit exactly as step 4c already says. It anchors itself in the trail
-with an `audit.task.committed` row in the meantime, which is redundant the moment that verb runs.
+with an `audit.task.committed` row in the meantime, which is redundant the moment that verb runs;
+the row — and an override's row — is written before the commit and carried by it, keyed by the
+commit's `Audit-Row` trailer, and an override whose row cannot be written is refused before
+anything is staged.
 
 **It takes no lock**, and that is the asymmetry with `commit-manifest-index.py` rather than an
 omission: this commit touches the phase's own shard, which only that phase's run writes, and the
@@ -3447,6 +3601,16 @@ stated and pinned: `dirtyDigest` records *which* paths were dirty, not their con
 already-dirty file outside the declared scope moves neither digest. It discriminates retries; it is
 not a reproducible snapshot of the repository.
 
+**`--also <phase,...>` is a group's one run.** Phases built on one combined branch share one tree,
+and a group sign-off runs the phase gate once, for the member whose `testGate` holds the union.
+Owned by that member's files alone, the run reported a rewrite of a file only another member
+declares beside a pass. `--also` makes the run own the union of every named member's files
+(`group_owned_files`), so the `GATE MUTATED THE TREE` refusal, the coverage answer and the
+`scopeDigest` all cover the group. It is additive — absent, the run is what it was — refused beside
+`--task`, and a member the plan does not carry is refused rather than skipped. `audit-task.py
+signoff` compares that `scopeDigest` against the members' files as they stand when it records a
+`passed` verdict, which is how the verdict knows the run it rests on is current.
+
 ### `plugins/audit/scripts/governance/record-outside-run.py`
 `record-outside-run.py <manifest> --label TEXT --started <ISO> [--ended <ISO> | --duration-ms N]
 [--status passed|failed]` — **record a test suite that ran where this plugin could not see it.**
@@ -3476,6 +3640,69 @@ fill the field. The window is the whole value of the row, so a `--started` that 
 a refusal rather than a guess — and the stamp is read by `_evidence_io`'s own reader, because a
 writer parsing instants its own way would disagree with the module that decides whether two of
 them overlap, by a time zone.
+
+### `plugins/audit/scripts/governance/import-evidence.py`
+`import-evidence.py <manifest> <shard.jsonl> [--json] [--project-dir DIR]` — **bring a CI build's
+own evidence ledger file into this checkout, whole.**
+
+**Why it exists.** A CI runner's gate run writes its evidence row on the runner, and that file
+never reaches a clone through `git` — it is gitignored scratch unless something copies it out. A
+hand copy verifies nothing: a byte changed in transit, a line torn by a truncated artifact
+download, a shard typed over another writer's file under the same name, none of it visible before
+the row was trusted.
+
+**Verification is borrowed, never re-derived.** Before anything is copied, every line must parse
+and `_evidence_io.verify_rows` must hold over the whole file — the same chain check
+`audit-journal.py` and the doctor already trust, so a second implementation here could never come
+to disagree with it about what tampering looks like. A torn last line is checked separately,
+because a truncated tail never becomes a row for `verify_rows` to grade at all.
+
+**A name collision is graded by bytes, not merged.** A file already sitting under the shard's
+basename is compared byte for byte: identical bytes is the same import arriving twice and exits 0
+as "already imported"; different bytes is refused outright, because the chain's genesis is seeded
+from the basename alone (`_journal_io.genesis_prev`) — two different chains sharing one name is
+exactly the substitution that seed exists to catch. The copy itself is atomic: the bytes land in a
+temp file inside the destination directory and only `os.replace` gives it the final name.
+
+**One run, one row — checked before anything is written.** Every reader of the evidence directory
+counts rows, so a run arriving twice is counted twice. The import is refused, exit 1, naming each
+duplicated `runId` and the file already holding it, when the shard carries a `runId` the ledger
+already holds under another file, or repeats a `runId` among its own rows (the shard itself is
+then the holder). The holders come from `_evidence_io.read_rows`'s `rowFiles`, the same read every
+consumer trusts. A ledger that cannot be read in full refuses the import too, saying the check
+could not be made rather than reading as empty — an unread row may be the duplicate — and names the
+file with the step that clears each cause it cannot tell apart — make a file that would not open
+readable; truncate a torn tail's partial line on purpose; restore a file with a corrupted line from
+its committed copy or remove that line on purpose — and points at `audit-journal.py verify`, which
+names the cause. The byte-identical re-import is compared before this check and still reads as
+already imported.
+
+**What it does not prove.** A ledger is evidence, not authentication — a new shard starts at its
+own genesis the moment somebody names a file that way, so a verified chain says the rows were not
+edited after the file was written and says nothing about who wrote it. The report says so on every
+successful import; the commit that carries the imported file into the repository is the
+authorship trail.
+
+### `plugins/audit/scripts/governance/full-gate.py`
+`full-gate.py <manifest> [--writer NAME] [--project-dir DIR]` — **the one command of the third
+place**, meant for a pre-push hook or a CI step that should not have to spell out
+`run-test-gate.py --full --record` and its own refusals itself.
+
+**Delegation, not re-implementation.** An entry point may not import another entry point, so
+this resolves `run-test-gate.py` by basename (`_loader.script_path`, never loaded — see
+`render-report._bench_fixture` for the same shape) and runs it as a **subprocess**, streaming its
+combined output line by line and exiting with its **unchanged** code. Nothing here re-derives
+what a green or a red full run means; that verdict is `run-test-gate.py`'s alone.
+
+**The one branch this file decides for itself.** `run-test-gate.py --full` refuses (exit 2) a
+plan with no `meta.fullGate` — a usage error for a phase-scope caller asking for a run with
+nothing to run. A pre-push hook is not that caller: a plan that never declared a third place must
+not block every push, forever, over a gate nobody asked for. So this file reads `meta.fullGate`
+itself, before invoking anything, and answers with the sentence and **exit 0** instead of letting
+that usage refusal reach an operator's shell as a blocked push.
+
+**Does not learn.** No selection-miss pass, no read of the evidence ledger, no bug opened on a
+red run — that pass belongs to the phase after this one. What this file owes is delegation.
 
 ### `plugins/audit/scripts/governance/propose-gates.py`
 A plan proposal that reads what previous runs in THIS repository actually ran and what they
@@ -3534,6 +3761,23 @@ tree identity. The module holds `porcelain()`, `HEAD_BASIS`, `scope_digest()`, `
 `tested_state()` unchanged. An entry point reaching another entry point is the `KNOWN_LAYER_DEBT`
 shape that table exists to keep rare, which is why the shared half came down to L2 rather than the
 new command reaching up.
+
+### `plugins/audit/scripts/governance/_verdict_binding.py`
+Whether a recorded gate verdict binds the declared work as it stands now - one answer for the two
+writers that stand on one. `commit-task-work.py` commits a task's work only under a green run of
+the gate that measures it; `audit-task.py signoff` records a `passed` sign-off only under a green
+run of the phase's gate (a group's carrier, over every member's files). A second implementation
+of the rule in the sign-off verb had fewer arms than the task commit's: it graded a repeated
+verdict by the repeat's own empty stamp and refused it on an unchanged tree, compared a digest the
+recorder took with its own writes left out against one taken with them in, and accepted an
+`empty-gate` row under a gate that had since gained entries. So the rule moved here, at L3 - the
+first layer above `_evidence_io` (the ledger) and `_tree_stamp` (the digest), which are peers and
+cannot hold it. `binding()` takes the subject's ids, the gate entries that measure it and their
+source, its declared files and the caller's own sentences, and answers `bound`, `no-gate` or
+`refused` with a sentence naming the run: the newest row for the subject, never the plan's
+pointer; a repeat graded through `reusedFrom`; a gate changed after the run; a red nothing
+retired; an unparseable line that could be the subject's; the digest with the recorder's paths
+left out on both sides. Its cases are `plugins/audit/tests/test__verdict_binding.py`.
 
 ### `plugins/audit/scripts/governance/_tree_stamp.py`
 Which tree was this, and is it still that one.
@@ -3771,6 +4015,89 @@ gets no word at all (exit `1`): a test that passes without the fix is work left,
 record. The block it prints is the executor's own `redFirst` shape, `{status, basis, at}`, and
 every word it can print is one the schema's enum declares.
 
+### `plugins/audit/scripts/governance/derive-phase-gate.py`
+Observe, derive, record: a PHASE's sign-off gate, computed rather than declared. `_gate_derive.derive()`
+is PURE — every observation it needs arrives through a `facts` dict, and it never shells out or
+reads git — so this is the one caller that gathers those observations for real and hands the
+result to `derive()` unchanged. The runner never derives; it only measures what the phase
+declares.
+
+**`meta.phaseGate.derived.runner` names a `meta.buildCommands` key** — the test runner this
+phase's gate is stated in terms of, carried through only as the DISPLAY label (`entry`) this
+file's own lines and `testGateDerived` name, never resolved or run for a listing.
+**`meta.phaseGate.derived.spelling` is that runner's own path-scoped RUN command**, carrying a
+`{paths}` placeholder — the SECOND shape source `_gate_derive.resolve_shape` tries, read only
+when no sibling task's own gate carries a path-scoped entry: the sibling's entry is EVIDENCE the
+runner already accepted it, so it wins whenever both exist. `{paths}` is filled by LITERAL
+substitution with the shell-quoted, resolved test paths — never through `repointed()`, because
+the placeholder is not a path-shaped token that function would recognize. A `spelling` with no
+`{paths}` placeholder is ignored, with a printed reason; with neither a sibling nor a usable
+`spelling`, the basis is `phase-no-spelling`, unchanged. The printed lines and `testGateDerived
+.shapeSource` name WHICH source supplied the shape — the sibling task's id, or the literal
+`meta.phaseGate.derived.spelling` — so an operator can go read it. **The two listings
+this file actually runs live under `meta.phaseGate.derived.listing`**: `.all` lists every suite
+file the runner would collect, with no path filter — the FULL listing — and `.related` carries a
+`{paths}` placeholder, filled with the shell-quoted union of the phase's own tasks' `files`, for
+the RELATED listing. Both listings write one line of output per path and never execute a test —
+a listing that ran a suite would make derivation as expensive as the thing it exists to narrow —
+and both are TIMED: `fullListing` and `listing` each carry their own `durationMs` in
+`testGateDerived`. Each subprocess runs through `_proc_group`, the same module `run-test-gate.py`
+and `stamp-verification.py red` share, so a listing that hangs is torn down whole rather than left
+running past this process's own patience.
+
+**`meta.phaseGate.mode` ABSENT means no derivation was ever asked for** — this prints why and
+writes nothing, exit 0, before a single subprocess runs.
+
+**A `verifiedOn.command` that cannot be run or exits non-zero is its own printed skip reason**
+("the version command failed"), kept apart from a machine answering a DIFFERENT version:
+folding the first into the second would render as "this machine answers `None`", which reads as
+an actual mismatched answer rather than as no answer at all having been produced.
+
+**`derived-empty` IS reachable from this runner, from TWO triggers, and `_gate_derive.derive()` is
+the ONLY place either is computed.** `meta.phaseGate.derived.listing.all` is the first: an ALL
+listing free to run, exit 0 and name no suite (a sibling-sourced shape can never return an empty
+`test_paths`, so this is what makes the basis reachable at all) — caught before coupling,
+importers, changed or last-failed ever run. `meta.phaseGate.derived.spelling` is the second: when
+the shape came from THAT source and, after every arm has had its turn, `test_paths` is still
+empty, substituting `{paths}` with nothing would make the gate mean either the WHOLE suite or
+NOTHING depending on the runner — so it widens too, with its own reason. Both triggers write the
+SAME basis word and the SAME `attribution: None`.
+
+**A THIRD wide basis, an importer listing resolved to the full suite ("DERIVED = FULL"), gets the
+SAME treatment** — `attribution` is `None` there too: the `test_paths` `derive()` had accumulated
+before deciding the importer listing equalled the full one is real, but it is not what the wide
+gate runs, so a caller reporting it as a per-arm breakdown would be printing a narrowed-looking
+count for a gate that is not narrowed. **This file's renderers
+(`_render_lines`/`_brief_line`/`_testgatederived`) are keyed off `result["narrowed"]` and
+`result["basis"]` — never off whether `result["attribution"]` happens to be `None`**, because a
+second, independent computation of the same arms does not know every widening trigger `derive()`
+knows, and would report a narrowed-looking breakdown for a gate that is actually wide the next
+time one is added — which is why that second computation, `_breakdown()`, calling `_gate_derive`'s
+own arm helpers a SECOND time by hand to answer a question `derive()` already had the answer to,
+is deleted; `attribution` is the only breakdown this plugin computes. The full-suite case's own
+human line is the SAME honest "nothing to narrow to" headline the other two wide bases print,
+with `DERIVED = FULL` and the MEASURED listed-of-full pair (read straight from `facts`, never from
+`attribution`) as advisories — never a fabricated "N test file(s)" count. `testGateDerived.full`
+and `--brief`'s listed/full pair are measured the same way, independent of whether `attribution` is
+present, so they stay correct for a full-suite resolution even though nothing is attributed. A
+RELATED listing that names none while the ALL listing names some is its own printed reason too,
+distinct from a silent "nothing to report" — the importers arm contributes nothing, but says why.
+
+**WRITE, under the index lock, snapshot before, validate after, roll back byte for byte on a
+finding** — the same four-step shape `set-priority.py` and `audit-task.py` already hold, reached
+through `_panel_write` rather than copied, because an entry point may not import another entry
+point. `mode == "shadow"` writes `testGateDerived` and `testGateBasis` only, `phase.testGate`
+untouched — the wide gate still signs a shadow-mode phase off. `mode == "enforce"` writes all
+three. None of the three fields is a `_manifest_io._STUB_KEYS` mirror (`id`, `title`, `status`),
+so the write touches only the phase's own shard in the sharded layout (or the one file, in the
+single-file layout) and never the index — one journal row, `phase.gateDerived`, names the phase,
+the mode, which fields moved and the recorded basis.
+
+**`--brief` prints the reviewer's one-line basis only** — a count of derived vs. full test files,
+the coupling count, the smoke verdict, `testGateBasis` and a timestamp — never a path and never
+runner output: the full human line (and `--json`'s `lines` array) carries the per-arm breakdown,
+`--brief` never does.
+
 ### `plugins/audit/scripts/manifest/audit-task.py` (v0.37.0)
 The non-interactive `/audit:task add` doer. The command used to dictate the conventions'
 15-field new-task template into the model's hands per add — a class of error (a missed field,
@@ -3921,6 +4248,21 @@ doctor and `reconcile` join runs recorded under an old id to the live task. `blo
 `{at, text}` entry to `notes[]`, the one addition a started task takes. Each journals its own row -
 `task.move`, `task.block`, `task.note`.
 
+`finding <phaseId>`, `resolve-finding <findingId>` and `correct <phaseId>` write a sign-off's
+review record, which used to be hand-edited into the shard. `finding` appends entries in the
+finding shape to `review.findings` - one from `--severity`/`--file`/`--issue`/`--resolution`,
+or a review's whole array from `--findings-file PATH|-` in one write - refusing a missing field
+or a severity outside `_phases.FINDING_SEVERITY` before the lock (a batch whole), and refusing a
+phase that has already landed (`mergedAt` set); on a signed-off phase not yet landed it records
+the finding and says which verdict it arrived after. `resolve-finding` sets a finding's
+`fixTask`, `commit` and `resolution` from a DONE fix task's recorded commit; `reopen` of that
+task removes the commit again (`_unresolve_findings`), and a `move` renames `fixTask` with the
+task (`_id_refs.SCALAR_REFS`). `correct` rewrites `review.outcome` or `summary` text on a phase
+that already has a verdict and never re-decides it. Every write of `review.outcome`, the two
+`signoff` paths included, goes through `outcome_with_tally`, which derives the severity tally
+from the list, so no one types it. Each journals its own row - `review.finding` (one per
+finding), `review.resolve`, `review.correct`.
+
 `settle [manifest]` stores every derived value a plan carries stale - a phase's `status`, a bug's
 `status` and `fixedIn` (`_manifest_io.derived_disagreements`), and any index stub fallen behind its
 shard (`_manifest_io.stale_stubs`) - under the index lock, revalidated, rolled back on findings,
@@ -3945,6 +4287,17 @@ written and read with.
 hand as max+1; a moved task no longer is one - `move` takes the same allocator's answer in process. It reads the same allocator every scripted writer does, suffix and
 reservations included, and writes nothing. Not `phase`: a phase is minted only by `add-phase`, which
 writes it under the lock, where a task's phase is fixed before its id is asked for.
+
+`couple --test <path> --sources <comma-separated paths> --basis-run <runId> --basis-head <sha>
+[--phases <comma-separated ids>]` and `uncouple --test <path>` are the only writers of
+`meta.coupling` - the record `derive-phase-gate.py`'s coupling arm reads to widen a derived gate
+past what an importer listing alone would find. `couple` appends a new entry, or unions
+`--sources` into an existing one for the same `test` and keeps that entry's first `learnedAt`
+rather than overwriting it, because the couple is a fact learned once and re-confirmed, not
+re-dated on every call. `uncouple` drops the one entry naming `--test` and refuses, exit 2, when
+no entry names it - the same "an operation on something that is not there is an error, never a
+silent no-op" rule every other verb here holds.
+
 ### `plugins/audit/scripts/usage/audit-usage.py`
 `/audit:usage` — token spend, attributed, rendering its own final ASCII output (no box
 drawing, no ANSI, no emoji) so the command file can print it verbatim without paying a model

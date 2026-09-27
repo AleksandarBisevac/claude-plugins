@@ -42,6 +42,7 @@ This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__doctor_trail.py` - see
 `plugins/audit/tests/_harness.py`.
 """
+import calendar
 import json
 import os
 import pathlib
@@ -74,6 +75,9 @@ _output.install_path()
 import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants)
 import _journal_io  # noqa: E402  (read/verify the audit trail, at layer 1)
 import _evidence_io  # noqa: E402  (the ledger tally, at layer 2)
+import _fmt  # noqa: E402  (human_duration, at layer 1)
+import _manifest_io  # noqa: E402  (signoff_recorded, declared_gate_entries, layer 1)
+import _manifest_vocab  # noqa: E402  (the FULL_STATUS words, one vocabulary)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `audit-doctor.py` unchanged, and an alias keeps them reading the same names
@@ -913,6 +917,67 @@ def check_task_restarts(rep, project, config=None):
              "show` reads them back, or open the task and read `attempts`")
 
 
+def _read_gate_rows(project, manifest_rel):
+    """`(eproject, econfig, rows, failure, unreadable)` off the evidence ledger
+    the manifest at `manifest_rel` points to - the ONE read
+    `check_gate_patterns`, `check_gate_economy` and `check_shadow_recall`
+    all open with, so none of the three can resolve the ledger a different
+    way the day `project_config_for` learns a new rule.
+
+    `failure` is the sentence to warn with, or `None` when the read
+    succeeded - `eproject`/`econfig`/`rows` are `None` exactly when it is not.
+    TWO STEPS, TWO SENTENCES: failing to find where the ledger lives is
+    `_manifest_vocab.LEDGER_LOCATION_FAILED`, failing to read it once found is
+    `LEDGER_READ_FAILED`. Every surface fills those same templates, and one
+    `try` around both steps would word a location failure as a read nobody
+    made. `unreadable` is `_evidence_io.read_rows`'s own count of rows or
+    files it could not parse, always `0` when `failure` is set (nothing was
+    read at all)
+    and NEVER folded into an empty `rows`: a caller that only checked
+    `rows` for zero would read a torn ledger as a clean one that simply has
+    no history yet, which is the exact silence `check_shadow_recall` is
+    written to refuse."""
+    manifest_path = os.path.join(project, manifest_rel or
+                                 "docs/audit/audit-plan.json")
+    try:
+        eproject, econfig = _evidence_io.project_config_for(
+            manifest_path, project_dir=project)
+    except Exception as exc:
+        return (None, None, None,
+                _manifest_vocab.LEDGER_LOCATION_FAILED % (exc,), 0)
+    try:
+        read = _evidence_io.read_rows(eproject, econfig)
+    except Exception as exc:
+        return None, None, None, _manifest_vocab.LEDGER_READ_FAILED % (exc,), 0
+    return (eproject, econfig, read.get("rows") or [], None,
+            read.get("unreadable") or 0)
+
+
+def _gate_tally_classes(rows, names):
+    """Classify every gate `name` in `names` by ONE reading of
+    `_evidence_io.gate_tally` - the per-name tally loop `check_gate_patterns`
+    and `check_gate_economy` both need, walked once so a second walk can
+    never disagree with the first about which names are thin, which never
+    failed and which did.
+
+    `{"thin": [name, ...], "never_failed": [(name, ran), ...],
+      "failed": [name, ...]}`. "thin" is below `MIN_HISTORY_RUNS` - not
+    established either way, in `names` order. "failed" is past the floor
+    with at least one recorded failure - never folded into a never-failed
+    claim by either caller. "never_failed" is past the floor with zero
+    recorded failures, `(name, ran)` in `names` order."""
+    thin, never_failed, failed = [], [], []
+    for name in names:
+        ran, failed_n = _evidence_io.gate_tally(rows, name)
+        if ran < _evidence_io.MIN_HISTORY_RUNS:
+            thin.append(name)
+        elif failed_n == 0:
+            never_failed.append((name, ran))
+        else:
+            failed.append(name)
+    return {"thin": thin, "never_failed": never_failed, "failed": failed}
+
+
 def check_gate_patterns(rep, project, manifest_rel, config=None):
     """Has any gate run enough times to say it has never once failed?
 
@@ -927,15 +992,10 @@ def check_gate_patterns(rep, project, manifest_rel, config=None):
     here either - a gate that has run fewer times than the floor a verdict
     needs is NOT ESTABLISHED, named as such, and never folded into either the
     clean OK or the never-failed warning."""
-    manifest_path = os.path.join(project, manifest_rel or
-                                 "docs/audit/audit-plan.json")
-    try:
-        eproject, econfig = _evidence_io.project_config_for(
-            manifest_path, project_dir=project)
-        rows = _evidence_io.read_rows(eproject, econfig).get("rows") or []
-    except Exception as exc:
-        rep.warn("gate patterns", "could not read the evidence ledger: %s"
-                 % (exc,))
+    eproject, econfig, rows, failure, _unreadable = _read_gate_rows(
+        project, manifest_rel)
+    if failure is not None:
+        rep.warn("gate patterns", failure)
         return
     names = _evidence_io.gate_names_seen(rows)
     if not names:
@@ -945,14 +1005,11 @@ def check_gate_patterns(rep, project, manifest_rel, config=None):
                  "run a phase gate to start recording; a pattern needs "
                  "repeated runs past the floor")
         return
-    never_failed, thin = [], []
-    for name in names:
-        ran, failed = _evidence_io.gate_tally(rows, name)
-        if ran < _evidence_io.MIN_HISTORY_RUNS:
-            thin.append(name)
-        elif failed == 0:
-            never_failed.append("%s (ran %d)" % (name, ran))
-    if never_failed:
+    classes = _gate_tally_classes(rows, names)
+    thin = classes["thin"]
+    if classes["never_failed"]:
+        never_failed = ["%s (ran %d)" % (name, ran)
+                        for name, ran in classes["never_failed"]]
         rep.warn("gate patterns",
                  "past the floor and never failed once, which is a "
                  "candidate to drop rather than keep paying for: %s"
@@ -980,6 +1037,397 @@ def check_gate_patterns(rep, project, manifest_rel, config=None):
     rep.ok("gate patterns",
            "%d gate(s) checked past the floor; none goes without a failure"
            % (checked,))
+
+
+def _gate_economy_remedies(name, phases, phase_gate_always):
+    """The commands that stop the NEXT doctor run from finding `name` again.
+
+    One `/audit:phase retarget <id> --gate-drop <name>` per phase not yet
+    signed off whose `testGate` still carries it (a signed-off phase's gate
+    already ran what it is going to run - retargeting it changes nothing a
+    reader can act on), plus the line that stops a phase that does not exist
+    yet from getting `name` in the first place: a NEW phase's gate is built
+    by `_manifest_phases.phase_gate_default` off `meta.phaseGate.exclude`, so
+    retargeting every phase already on the plan is not enough to keep the
+    next one from repeating this. `meta.phaseGate.always` OUTRANKS
+    `exclude` there (`phase_gate_default`'s own rule: always puts a key back
+    IN even when exclude names it), so an entry still listed in `always`
+    would keep coming back with the exclude line alone - named as its own
+    remedy rather than silently assumed fixed."""
+    out = [
+        "/audit:phase retarget %s --gate-drop %s" % (phase.get("id"), name)
+        for phase in (phases or [])
+        if isinstance(phase, dict) and not _manifest_io.signoff_recorded(phase)
+        and name in _manifest_io.declared_gate_entries(phase.get("testGate"))
+    ]
+    out.append("add it to meta.phaseGate.exclude")
+    if name in (phase_gate_always or []):
+        out.append("take it out of meta.phaseGate.always")
+    return out
+
+
+def check_gate_economy(rep, project, manifest_rel, manifest, config=None):
+    """Has any gate that never fails also gotten too expensive to keep
+    paying for?
+
+    `check_gate_patterns` names a gate that never catches anything; this
+    asks the other question a state can never answer - not "did it ever
+    fail" but "what did it cost" - and grades ONLY the entries the pattern
+    check would already call a candidate to drop, because a gate that has
+    failed at least once earns its keep whatever it costs.
+
+    NO `meta.gateBudgetMs` MEANS NOTHING IS GRADED ON COST, said as an OK
+    row rather than silence: the budget is an opt-in declaration
+    (`_manifest_phases._check_phase_gate`), and a plan that never declared
+    one has not been told its gates are cheap - it has been told nothing.
+
+    MEAN, NEVER TOTAL. `_evidence_io.gate_cost_ms` sums every recorded run;
+    dividing by the number of runs that actually contributed a `durationMs`
+    (`_evidence_io.gate_cost_measured`) is what makes the number comparable
+    to a budget written for one run, and comparing the total instead would
+    flag an entry that has simply run MANY times at a perfectly ordinary
+    cost each. `gate_tally`'s `ran` is NOT that denominator - it counts
+    every matching step whether or not it carries a `durationMs`, so a
+    history mixing measured and unmeasured runs would dilute `total / ran`
+    downward and could hide a gate that is over budget on the runs actually
+    measured.
+
+    UNMEASURED IS NOT CHEAP. A step that never carried a `durationMs` -
+    `gate_cost_ms` returning `None` - says nothing about what it costs, and
+    folding that silence into the OK count would be the same overclaim
+    `gate_cost_ms`'s own docstring refuses: absent means unmeasured, never
+    zero. Named on its own line instead.
+
+    A REMEDY THAT NAMES A COMMAND, not only a fact: `_gate_economy_remedies`
+    is what turns "this costs too much" into something an operator can run.
+
+    ADVISORY, ALWAYS - like every check in this module's second half, this
+    grades a repeated pattern rather than a single moment, and a WARNING
+    here changes nothing about the exit code."""
+    meta = (manifest or {}).get("meta") if isinstance(manifest, dict) else None
+    meta = meta if isinstance(meta, dict) else {}
+    budget = meta.get("gateBudgetMs")
+    if isinstance(budget, bool) or not isinstance(budget, int) or budget <= 0:
+        rep.ok("gate economy",
+               "no budget declared (meta.gateBudgetMs), so no gate entry is "
+               "graded on cost")
+        return
+    eproject, econfig, rows, failure, _unreadable = _read_gate_rows(
+        project, manifest_rel)
+    if failure is not None:
+        rep.warn("gate economy", failure)
+        return
+    names = _evidence_io.gate_names_seen(rows)
+    if not names:
+        rep.warn("gate economy",
+                 "no evidence rows recorded yet, so no gate entry can be "
+                 "graded on cost",
+                 "run a phase gate to start recording; cost is only graded "
+                 "past the floor a pattern needs")
+        return
+    classes = _gate_tally_classes(rows, names)
+    phase_gate = meta.get("phaseGate")
+    phase_gate = phase_gate if isinstance(phase_gate, dict) else {}
+    always = [a for a in (phase_gate.get("always") or []) if isinstance(a, str)]
+    phases = (manifest or {}).get("phases") or []
+    over, graded, unmeasured = [], 0, []
+    for name, ran in classes["never_failed"]:
+        total = _evidence_io.gate_cost_ms(rows, name)
+        measured = _evidence_io.gate_cost_measured(rows, name)
+        if total is None or not measured:
+            unmeasured.append(name)
+            continue
+        graded += 1
+        mean = total / float(measured)
+        if mean > budget:
+            over.append((name, ran, mean))
+    if over:
+        lines, fixes = [], []
+        for name, ran, mean in over:
+            lines.append(
+                "%s (ran %d, mean %s, budget %s)"
+                % (name, ran, _fmt.human_duration(int(round(mean))),
+                   _fmt.human_duration(budget)))
+            fixes.append("%s: %s" % (name, "; ".join(
+                _gate_economy_remedies(name, phases, always))))
+        rep.warn("gate economy",
+                 "past the floor, never failed, and costing more than the "
+                 "declared budget: %s" % ("; ".join(lines),),
+                 " | ".join(fixes))
+        return
+    detail = ("%d gate(s) checked past the floor and never failed; none "
+             "costs more than the %s budget" % (graded,
+                                                 _fmt.human_duration(budget)))
+    if unmeasured:
+        detail += ("; %d unmeasured (no recorded durationMs): %s"
+                   % (len(unmeasured), ", ".join(unmeasured)))
+    rep.ok("gate economy", detail)
+
+
+def _pct(numerator, denominator):
+    """A share as a reader reads one - whole-number percent, never a bare
+    ratio a decimal point could hide a rounding difference inside."""
+    return "%d%%" % round(100.0 * numerator / denominator)
+
+
+def check_shadow_recall(rep, project, manifest_rel, manifest, config=None):
+    """While a phase's sign-off gate is still derived IN SHADOW, would the
+    derived set have caught what actually failed?
+
+    TWO DIFFERENT RECALLS, because they answer two different questions and a
+    single number would blur them - the definitions are Meta's own, from the
+    predictive-test-selection paper this feature's design cites:
+
+      TEST recall   - of every FAILING SUITE seen across every shadow run,
+                      what share did the derived set list? Suite-weighted: a
+                      run with three failing suites contributes three to
+                      both the numerator's ceiling and the denominator, not
+                      one. `sum(listed) / sum(full)` over the ledger.
+      CHANGE recall - of every RED shadow run - `shadow.full > 0`, meaning
+                      at least one failing suite was actually seen, never
+                      every row that merely carries a `shadow` key - what
+                      share had at least one failing suite the derived set
+                      listed? Run-weighted, on purpose: a change either got
+                      SOME signal from the derived set or it got none, and a
+                      run with many failing suites must not outweigh one
+                      with a single failing suite in THIS count the way it
+                      rightly does in the other.
+
+    `run-test-gate.shadow_gate_claim` never records a row with `full == 0`
+    TODAY - it returns `None` on an empty failing-suite list, so every row
+    this reads currently already is red. The filter is kept anyway, because
+    the definition itself says "RED shadow run" and not "every recorded
+    shadow row": a future writer that started recording a green wide run
+    (to carry a `narrowed`-style claim, say) would otherwise silently dilute
+    CHANGE recall's denominator with runs that had nothing to catch,
+    without this file's own tests ever seeing the difference.
+
+    COUNTING RUNS WHERE SUITES ARE OWED IS THE BUG THIS SPLIT EXISTS TO
+    REFUSE. A history with several failing suites in one run and one in
+    another, where every run "caught" at least one, reads as a PERFECT
+    per-run share if the shares are averaged - while the suite-weighted
+    figure is lower whenever a run's uncaught suites outnumber its caught
+    one, and only the second is what an operator deciding whether to trust
+    the derived set for REAL coverage needs. `check_gate_economy`'s
+    mean-vs-total split above is the same lesson about a different pair of
+    numbers.
+
+    COMPUTED FROM THE LEDGER EVERY TIME, NEVER WRITTEN ANYWHERE: this is a
+    read of history, not a new fact stapled onto a phase or a row.
+
+    NO `meta.phaseGate.mode` MEANS NOTHING IS DERIVED, so there is nothing to
+    grade recall over - said as an OK row rather than silence, the same rule
+    `check_gate_economy` follows for `meta.gateBudgetMs`: a row that simply
+    stopped appearing would read as "checked and clean" to a doctor render
+    nobody diffs against yesterday's.
+
+    A MODE DECLARED WITH NO SHADOW ROW YET IS ALSO AN OK ROW, not a warning
+    that recall could not be established - `run-test-gate.shadow_gate_claim`
+    only ever records `shadow` on a row that observed a REAL failure, so a
+    project that has not hit one yet has asked the question honestly and
+    gotten "none recorded" rather than failed to earn an answer.
+
+    AN UNREADABLE LEDGER IS SAID, NEVER READ AS "NO SHADOW RUNS" - the same
+    distinction `check_gate_patterns` and `check_gate_economy` draw for the
+    same evidence read, because folding "could not open the file" into "the
+    file has nothing in it" tells an operator their coverage is thin when
+    the true problem is that this check could not look. TWO WAYS A LEDGER
+    CAN BE UNREADABLE, and both are WARNINGS that print no recall: a read
+    that failed outright (a directory it cannot even list), worded by
+    `_read_gate_rows` through the vocabulary's templates, is one, and
+    `_evidence_io.read_rows`'s own `unreadable` count on an otherwise
+    successful read - a torn line, a file that would not decode - is the
+    other, worded as the partial read it is. A row lost to the second is not
+    a row that never existed, and folding it into "none recorded" is the same
+    overclaim the first branch exists to refuse.
+
+    ADVISORY, ALWAYS, LIKE EVERY CHECK IN THIS MODULE'S SECOND HALF - the row
+    carries the same remedy sentence whatever the two numbers say, because
+    NO THRESHOLD HERE DECIDES ANYTHING: the plan's own `mode` switch is
+    the only thing that turns shadow into enforce, and that is a judgement
+    call this command has no basis to make for its reader."""
+    meta = (manifest or {}).get("meta") if isinstance(manifest, dict) else None
+    meta = meta if isinstance(meta, dict) else {}
+    phase_gate = meta.get("phaseGate")
+    phase_gate = phase_gate if isinstance(phase_gate, dict) else {}
+    mode = phase_gate.get("mode")
+    if not mode:
+        rep.ok("shadow recall",
+               "no meta.phaseGate.mode declared, so no derivation is "
+               "declared and there is nothing to grade recall over")
+        return
+    eproject, econfig, rows, failure, unreadable = _read_gate_rows(
+        project, manifest_rel)
+    if failure is not None:
+        rep.warn("shadow recall", failure)
+        return
+    # A DIFFERENT FACT FROM THE FAILURE ABOVE, so its own words: the ledger
+    # WAS read, and some of it could not be parsed.
+    if unreadable:
+        rep.warn("shadow recall",
+                 "the evidence ledger was only partly readable: %d row(s) or file(s) "
+                 "could not be parsed - recall is not printed over a "
+                 "ledger this check could not fully read"
+                 % (unreadable,))
+        return
+    shadow_rows = [r for r in (rows or [])
+                   if isinstance(r.get("shadow"), dict)]
+    if not shadow_rows:
+        rep.ok("shadow recall",
+               "meta.phaseGate.mode is %r but no shadow run is recorded yet "
+               "- none recorded, so test and change recall cannot be "
+               "measured" % (mode,))
+        return
+    total_listed = sum(r["shadow"].get("listed") or 0 for r in shadow_rows)
+    total_full = sum(r["shadow"].get("full") or 0 for r in shadow_rows)
+    # CHANGE recall's denominator is RED shadow runs - `full > 0` - never
+    # every row carrying a `shadow` key: see the docstring's note on why the
+    # filter is kept even though no writer today emits a green one.
+    red_rows = [r for r in shadow_rows if (r["shadow"].get("full") or 0) > 0]
+    hits = sum(1 for r in red_rows if (r["shadow"].get("listed") or 0) > 0)
+    n_runs = len(red_rows)
+    rep.warn("shadow recall",
+             "test recall %s (%d/%d failing suite(s) across every shadow "
+             "run the derived gate would have listed), change recall %s "
+             "(%d/%d red shadow run(s) with at least one failing suite the "
+             "derived gate listed)"
+             % (_pct(total_listed, total_full) if total_full else "n/a",
+                total_listed, total_full,
+                _pct(hits, n_runs) if n_runs else "n/a", hits, n_runs),
+             "set meta.phaseGate.mode to \"enforce\" when this recall is "
+             "enough - nothing switches it for you")
+
+
+# --- checks: the third place -----------------------------------------------------
+FULL_RUN_CHECK = "full run"
+
+
+def _run_age(ts):
+    """A recorded run's own `ts` (`%Y-%m-%dT%H:%M:%SZ`), read the way `_age`
+    above already turns seconds into a reader's phrase - or None when the
+    timestamp is not that shape, which the caller says out loud rather than
+    printing an age for a run whose `ts` it could not parse."""
+    try:
+        epoch = calendar.timegm(time.strptime(str(ts), "%Y-%m-%dT%H:%M:%SZ"))
+    except Exception:
+        return None
+    return _age(time.time() - epoch)
+
+
+_SETTLE_FIX = ("/audit:review %s --full to record a fresh full run against "
+              "this phase's mergedHead, or run the pre-push/CI step that "
+              "records one")
+
+
+def check_full_run(rep, project, manifest_rel, manifest, git_root, config=None):
+    """Is this plan's THIRD PLACE - a full, out-of-band run - saying every
+    merged phase is WHOLE, or does something here still need settling?
+
+    REUSES `_evidence_io.full_status` RATHER THAN RE-DERIVING IT, the same
+    rule every check in this module follows for the evidence ledger: a
+    second opinion about whether a phase's merge is backed by a whole full
+    run is a second implementation that can disagree with the one that
+    matters (`status`, `report` and the panel all read the same function).
+
+    NO `meta.fullGate` MEANS NOTHING IS ASKED, said as an OK row rather than
+    silence - the same rule `check_gate_economy` and `check_shadow_recall`
+    already follow for their own opt-in switch: a plan that never declared a
+    third place has not been told it is missing one, it has been told there
+    is nothing to ask.
+
+    THE UNREADABLE-LEDGER BRANCH COMES BEFORE ANY FIGURE, exactly where
+    `check_gate_patterns`, `check_gate_economy` and `check_shadow_recall`
+    put it - a torn ledger is not "nothing recorded", and folding it into
+    that silence would tell an operator their merges are unproven when the
+    true problem is that this check could not look.
+
+    EVERY MERGED PHASE - `_evidence_io.merged_phase`, the one predicate the
+    status, the report and the panel call too, never an effective status of
+    done, which a phase can read without ever having merged - IS ASKED,
+    WHOLE OR NOT: a PROVISIONAL phase gets a WARNING
+    naming the command that would settle it, an UNKNOWN phase gets a
+    WARNING naming `full_status`'s own basis (no `mergedHead` recorded, or
+    that git itself could not answer ancestry). Neither is folded into the
+    other, because they are different questions with different remedies -
+    one names a run to go and record, the other names a fact this plan
+    cannot yet ask.
+
+    A ROW THAT FAILED A WHOLE-BEARING RULE IS NAMED WITH THE RULE IT
+    FAILED, and this check never re-derives that sentence: it is already
+    `full_status`'s own basis for a PROVISIONAL answer (the newest full run
+    was on a dirty tree, counted nothing, or ran a different set of
+    commands than `meta.fullGate` declares now) - printing it a second way
+    here would be the second implementation this whole check exists to
+    refuse.
+
+    THE ALLOW ROW NAMES THE RUN: when every merged phase reads WHOLE, one OK
+    row carries the newest whole-bearing full run's id, head and age - a
+    reader told only "everything is fine" has been told less than a reader
+    told which run makes that true and how long ago it ran.
+
+    ADVISORY, ALWAYS - like every check in this module, this changes nothing
+    about the exit code; the release guard is the one place a PROVISIONAL
+    phase actually blocks anything."""
+    manifest = manifest if isinstance(manifest, dict) else {}
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    full_commands = [c for _name, c in
+                     _evidence_io.resolved_commands(manifest, meta.get("fullGate"))]
+    if not full_commands:
+        rep.ok(FULL_RUN_CHECK, "no third place declared (meta.fullGate)")
+        return
+    _eproject, _econfig, rows, failure, unreadable = _read_gate_rows(
+        project, manifest_rel)
+    if failure is not None:
+        rep.warn(FULL_RUN_CHECK, failure)
+        return
+    # A DIFFERENT FACT FROM THE FAILURE ABOVE, so its own words: the ledger
+    # WAS read, and some of it could not be parsed.
+    if unreadable:
+        rep.warn(FULL_RUN_CHECK,
+                 "the evidence ledger was only partly readable: %d row(s) or file(s) "
+                 "could not be parsed - the third place is not graded over "
+                 "a ledger this check could not fully read" % (unreadable,))
+        return
+    merged = [p for p in (manifest.get("phases") or [])
+             if _evidence_io.merged_phase(p)]
+    if not merged:
+        rep.ok(FULL_RUN_CHECK,
+               "meta.fullGate is declared but no phase has merged yet")
+        return
+    results = [(p, _evidence_io.full_status(rows, p, git_root, full_commands))
+              for p in merged]
+    provisional = [(p, r) for p, r in results
+                  if r["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL]
+    unknown = [(p, r) for p, r in results
+              if r["answer"] == _manifest_vocab.FULL_STATUS_UNKNOWN]
+    whole = [(p, r) for p, r in results
+            if r["answer"] == _manifest_vocab.FULL_STATUS_WHOLE]
+    for p, r in provisional:
+        rep.warn(FULL_RUN_CHECK,
+                 "phase %s is PROVISIONAL: %s" % (p.get("id"), r["basis"]),
+                 _SETTLE_FIX % (p.get("id"),))
+    for p, r in unknown:
+        rep.warn(FULL_RUN_CHECK,
+                 "phase %s is UNKNOWN: %s" % (p.get("id"), r["basis"]))
+    if provisional or unknown:
+        return
+    run_ids = set(r.get("runId") for _p, r in whole if r.get("runId"))
+    candidates = [row for row in (rows or [])
+                 if isinstance(row, dict)
+                 and row.get("scope") == _evidence_io.FULL_SCOPE
+                 and row.get("runId") in run_ids]
+    candidates.sort(key=lambda row: str(row.get("ts") or ""), reverse=True)
+    if candidates:
+        newest = candidates[0]
+        head = (newest.get("testedState") or {}).get("head")
+        age = _run_age(newest.get("ts"))
+        rep.ok(FULL_RUN_CHECK,
+               "%d merged phase(s) read whole against the newest "
+               "whole-bearing full run %s (head %s)%s"
+               % (len(whole), newest.get("runId"), head,
+                  ", %s old" % age if age else ""))
+        return
+    rep.ok(FULL_RUN_CHECK, "%d merged phase(s) read whole" % (len(whole),))
 
 
 # --- cli ------------------------------------------------------------------------

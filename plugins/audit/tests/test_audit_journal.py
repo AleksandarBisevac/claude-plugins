@@ -2223,6 +2223,217 @@ def _cases(check):
                 os.environ.pop(M.ENV_SESSION_VAR, None)
             else:
                 os.environ[M.ENV_SESSION_VAR] = _sx_held
+        _evidence_merge_cases(check)
+    finally:
+        _harness.remove_tree(tmp)
+
+
+# --- me: an evidence ledger file that diverged, through the same verb -----------
+def _ev_run(run_id, ts, task, status="passed"):
+    """One recorded run, in the shape `_evidence_io.row_for` writes."""
+    return {"v": 1, "runId": run_id, "ts": ts, "scope": "task",
+            "taskId": task, "phaseId": "P1", "status": status,
+            "steps": [], "failed": []}
+
+
+def _ev_project(root, plan=True):
+    """A project with a config and, unless `plan` is False, a plan whose task
+    P1.2 was moved from P1.9 - the aliases a ledger merge reads."""
+    os.makedirs(os.path.join(root, ".claude"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    if plan:
+        os.makedirs(os.path.join(root, "docs", "audit"))
+        with open(os.path.join(root, "docs", "audit", "audit-plan.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"meta": {}, "phases": [{"id": "P1", "tasks": [
+                {"id": "P1.1"}, {"id": "P1.2", "movedFrom": {"id": "P1.9"}},
+                {"id": "P1.3"}]}]}, fh)
+    return root
+
+
+def _ev_divergence(tmp, name, ours_rows, theirs_rows, plan=True):
+    """A ledger file on two branches: two shared runs, then each side's own,
+    every row appended by the REAL writer. Returns (project, target, ours,
+    theirs) - the target holds the shared prefix, as the file did before the
+    two branches wrote to it."""
+    import shutil
+    base = _ev_project(os.path.join(tmp, name, "base"), plan=plan)
+    _evidence_io.append_row(base, _ev_run("run-a", "2026-06-01T10:00:00Z",
+                                          "P1.1"), session_id="s-ev")
+    target = _evidence_io.append_row(
+        base, _ev_run("run-b", "2026-06-01T11:00:00Z", "P1.1"),
+        session_id="s-ev")
+    sides = []
+    for label, rows in (("ours", ours_rows), ("theirs", theirs_rows)):
+        root = os.path.join(tmp, name, label)
+        shutil.copytree(base, root)
+        for row in rows:
+            _evidence_io.append_row(root, row, session_id="s-ev")
+        sides.append(os.path.join(root, _output.posix_rel(target, base)))
+    return base, target, sides[0], sides[1]
+
+
+def _ev_merge(project, target, ours, theirs, *extra):
+    lines = []
+    code = M.main(["merge", "--file", _output.posix_rel(target, project),
+                   "--ours", ours, "--theirs", theirs, "--project", project]
+                  + list(extra), out=lines.append)
+    return code, "\n".join(lines)
+
+
+def _ev_rows(path):
+    return [r for r in _journal_io.read_file(path)[0]
+            if not r.get("_unparseable")]
+
+
+def _evidence_merge_cases(check):
+    tmp = _harness.fixture_root("audit-journal-evidence-")
+    try:
+        proj, target, ours, theirs = _ev_divergence(
+            tmp, "plain",
+            [_ev_run("run-o1", "2026-06-02T10:00:00Z", "P1.1", "failed"),
+             _ev_run("run-o2", "2026-06-04T10:00:00Z", "P1.1")],
+            [_ev_run("run-t1", "2026-06-03T10:00:00Z", "P1.2")])
+        code, txt = _ev_merge(proj, target, ours, theirs)
+        rows = _ev_rows(target)
+        verdict = _evidence_io.verify(proj)
+        check("me1 `merge --file` takes a file in the EVIDENCE directory and "
+              "resolves it: the union of both sides in timestamp order, "
+              "re-chained so the ledger verifies clean: %r / %r / %r"
+              % (code, [r.get("runId") for r in rows], verdict["findings"]),
+              code == 0
+              and [r.get("runId") for r in rows]
+              == ["run-a", "run-b", "run-o1", "run-t1", "run-o2"]
+              and verdict["ok"] and verdict["rows"] == 5, txt)
+        recorded = [r for r in _journal_io.read_all(proj)
+                    if r.get("action") == _evidence_io.ACTION_MERGED]
+        journal = _journal_io.verify(proj)
+        check("me2 ...and NO row was added to the ledger, whose every row is "
+              "read as a recorded run; the merge is recorded by ONE journal row "
+              "naming the file, whose `stateHash` anchors the re-chained bytes "
+              "so the journal does not report them as an edit it never saw: "
+              "%r / %r" % ([r.get("target") for r in recorded],
+                           journal["warnings"]),
+              len(rows) == 5 and len(recorded) == 1
+              and recorded[0].get("target")
+              == _journal_io.repo_relative_or_token(proj, target)
+              and not any("changed since" in w for w in journal["warnings"]),
+              txt)
+        row_file = ("%s/%s" % (_journal_io.repo_relative_or_token(
+            proj, _journal_io.journal_dir(proj)), recorded[0].get("_file"))
+            if recorded else "\0")
+        check("me2b ...and the output NAMES the journal file that row landed in "
+              "and says to commit it WITH the ledger - the row is the ledger's "
+              "anchor, and a merge commit without it is a clone that reports "
+              "the re-chained file as an unexplained edit: %r / %r"
+              % (row_file, txt),
+              row_file in txt and "`git add` both" in txt)
+
+        _details = (recorded[0].get("details") or {}) if recorded else {}
+        _seams, _why = (_evidence_io.merge_seams(proj)
+                        if hasattr(_evidence_io, "merge_seams") else (None, ""))
+        check("me2c ...and that row records the RE-CHAINED STRETCH - after the "
+              "last run both copies held, through the last row re-chained - which "
+              "is what keeps a reader from taking the re-chain for one writer's "
+              "order, and the ledger's reader reads it back: %r / %r"
+              % (_details, _seams),
+              _details.get("relinkedAfter") == rows[1]["hash"]
+              and _details.get("relinkedThrough") == rows[-1]["hash"]
+              and _seams == [(rows[1]["hash"], rows[-1]["hash"])], txt)
+
+        again_code, again = _ev_merge(proj, target, ours, theirs)
+        recorded = [r for r in _journal_io.read_all(proj)
+                    if r.get("action") == _evidence_io.ACTION_MERGED]
+        check("me3 ...and a re-run over the file it already resolved writes the "
+              "same bytes and records nothing a second time: %r / %d row(s)"
+              % (again_code, len(recorded)),
+              again_code == 0 and len(recorded) == 1
+              and [r.get("runId") for r in _ev_rows(target)]
+              == ["run-a", "run-b", "run-o1", "run-t1", "run-o2"], again)
+
+        proj, target, ours, theirs = _ev_divergence(
+            tmp, "tie-same",
+            [_ev_run("run-o1", "2026-06-02T10:00:00Z", "P1.1", "failed")],
+            [_ev_run("run-t1", "2026-06-02T10:00:00Z", "P1.1")])
+        before = _ev_rows(target)
+        code, txt = _ev_merge(proj, target, ours, theirs)
+        check("me4 REFUSED: two runs of ONE subject in the same second - which "
+              "one is newest is the task's verdict, and nothing records it - and "
+              "nothing is written: %r" % (txt,),
+              code == 1 and "REFUSED" in txt and "key task P1.1" in txt
+              and _ev_rows(target) == before)
+
+        proj, target, ours, theirs = _ev_divergence(
+            tmp, "tie-moved",
+            [_ev_run("run-o1", "2026-06-02T10:00:00Z", "P1.9")],
+            [_ev_run("run-t1", "2026-06-02T10:00:00Z", "P1.2")])
+        before = _ev_rows(target)
+        code, txt = _ev_merge(proj, target, ours, theirs)
+        check("me9 REFUSED: a run under a moved task's OLD id and one under its "
+              "NEW id in one second - the command reads the plan's moved ids, "
+              "so to it they are one subject, as they are to every reader: %r"
+              % (txt,),
+              code == 1 and "REFUSED" in txt and _ev_rows(target) == before)
+
+        proj, target, ours, theirs = _ev_divergence(
+            tmp, "no-plan",
+            [_ev_run("run-o1", "2026-06-02T10:00:00Z", "P1.1")],
+            [_ev_run("run-t1", "2026-06-02T10:00:00Z", "P1.2")], plan=False)
+        code, txt = _ev_merge(proj, target, ours, theirs)
+        check("me10 ...and with NO plan to read, which ids were moved is unknown, "
+              "so even a tie over different tasks is refused - and the output "
+              "says why rather than leaving a refusal nothing explains: %r"
+              % (txt,),
+              code == 1 and "REFUSED" in txt and "could not be read" in txt)
+
+        proj, target, ours, theirs = _ev_divergence(
+            tmp, "torn", [_ev_run("run-o1", "2026-06-02T10:00:00Z", "P1.1")],
+            [_ev_run("run-t1", "2026-06-03T10:00:00Z", "P1.2")])
+        with open(ours, "a", encoding="utf-8") as fh:
+            fh.write('{"v": 1, "runId": "half')
+        code, txt = _ev_merge(proj, target, ours, theirs)
+        check("me5 REFUSED: a side with a torn tail, the journal's refusal word "
+              "for word - a partial line is not a run: %r" % (txt,),
+              code == 1 and "partial line" in txt)
+
+        proj, target, ours, theirs = _ev_divergence(
+            tmp, "rewritten", [_ev_run("run-o1", "2026-06-02T10:00:00Z", "P1.1")],
+            [_ev_run("run-t1", "2026-06-03T10:00:00Z", "P1.2")])
+        edited = _ev_rows(theirs)
+        edited[1]["status"] = "failed"
+        with open(theirs, "w", encoding="utf-8") as fh:
+            fh.write("".join(_journal_io.canonical(r) + "\n" for r in edited))
+        code, txt = _ev_merge(proj, target, ours, theirs)
+        check("me6 REFUSED: a shared-prefix run REWRITTEN on one side - it no "
+              "longer hashes to its own contents, and re-chaining would launder "
+              "it: %r" % (txt,),
+              code == 1 and "does not hash to its own contents" in txt)
+
+        tie = [_ev_run("run-o1", "2026-06-02T10:00:00Z", "P1.1")]
+        other = [_ev_run("run-t1", "2026-06-02T10:00:00Z", "P1.2")]
+        proj, target, ours, theirs = _ev_divergence(tmp, "tie-apart", tie, other)
+        code, txt = _ev_merge(proj, target, ours, theirs)
+        order = [r.get("runId") for r in _ev_rows(target)]
+        summary = [r.get("summary") for r in _journal_io.read_all(proj)
+                   if r.get("action") == _evidence_io.ACTION_MERGED]
+        proj2, target2, ours2, theirs2 = _ev_divergence(tmp, "tie-swapped",
+                                                        tie, other)
+        code2, _txt2 = _ev_merge(proj2, target2, theirs2, ours2)
+        swapped = [r.get("runId") for r in _ev_rows(target2)]
+        check("me7 a same-second tie over DISJOINT subjects is ORDERED, not "
+              "refused, and the order does not depend on which side is ours - "
+              "both branches resolving the conflict get one file: %r / %r"
+              % (order, swapped),
+              code == 0 and code2 == 0 and order == swapped
+              and sorted(order[2:]) == ["run-o1", "run-t1"])
+        check("me8 ...and the order it chose is WRITTEN in the record of the "
+              "merge, naming both runs at that second: %r" % (summary,),
+              len(summary) == 1 and "2026-06-02T10:00:00Z" in summary[0]
+              and "%s(key task %s, " % (order[2], "P1.1" if order[2]
+                                        == "run-o1" else "P1.2") in summary[0]
+              and " before " in summary[0])
     finally:
         _harness.remove_tree(tmp)
 

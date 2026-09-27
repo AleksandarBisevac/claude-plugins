@@ -28,8 +28,9 @@ FOUR EXPRESSIONS READ SOURCE, AND ALL FOUR HAD TO BE RE-POINTED.
     run-status block. That adjacency is a design constraint, not an accident, so
     the slice stays - re-pointed at the subject through
     `_harness.module_source(...)` rather than at a path built off this file's own
-    directory. At U3.1 both defs moved from `_panel_state` to `_panel_runstate`
-    and the slice moved with them: `_panel_state` re-exports both NAMES, so the
+    directory. When this module was split up, both defs moved from `_panel_state`
+    to `_panel_runstate` and the slice moved with them: `_panel_state` re-exports
+    both NAMES, so the
     case would still have run, against a file containing neither marker, and
     `between()` raising by name is the only reason that was noticed rather than
     quietly widening.
@@ -54,6 +55,8 @@ import _loader                                     # noqa: E402
 import _help                                       # noqa: E402  (as panel-server imports it)
 import _manifest_io as _mio                        # noqa: E402  (as panel-server imports it)
 import _panel_runstate                             # noqa: E402  (the `gt` source slice only)
+import _worktrees                                  # noqa: E402  (the runner seam the memo wraps)
+import _evidence_io as _evidence                    # noqa: E402  (the ledger, for the fullRun fixture)
 
 M = _loader.load_script("panel-server.py", modname="panel_server")
 
@@ -113,7 +116,7 @@ def _cases(check):
           "SECRET" not in M._redact_token(None) + M._redact_token("t=SECRET"))
 
     # discovery (_scan_skills/_scan_agents/discover, the front-matter parser and
-    # their fixture-dir cases) moved to _panel_discovery.py's own selftest (P12.2);
+    # their fixture-dir cases) moved to _panel_discovery.py's own selftest;
     # `discover` itself is still exercised indirectly below via `apply_composition`
     # writing a reviewSkill/skills value the same way the panel's picker would.
     tmp = tempfile.mkdtemp(prefix="panel-selftest-")
@@ -125,7 +128,7 @@ def _cases(check):
 
     # The write path's own cases -- the config and composition writers, the sharded
     # write-back, the lock refusal, the areas and policy PUTs, the change rows and
-    # the journal -- moved to _panel_write.py's selftest (P12.4), with their labels.
+    # the journal -- moved to _panel_write.py's selftest, with their labels.
     # The FIXTURE they built stays here: build_state, the viewer, runStatus and the
     # composition view below all read this project, and they are claims about what
     # the server serves rather than about what a save writes.
@@ -241,7 +244,7 @@ def _cases(check):
     check("build_state has runStatus",
           isinstance(st.get("runStatus"), dict) and "phases" in st["runStatus"])
     # _lock_info's own cases (what a lock file says, and whether the run behind it
-    # is alive) moved to _panel_state.py (P12.3).
+    # is alive) moved to _panel_state.py.
     m2 = M._read_json(mpath)
     m2["phases"][0]["claim"] = {"sessionId": "sess-abcd1234", "host": "h", "branch": "audit/p1"}
     M._atomic_write_json(mpath, m2)
@@ -277,8 +280,8 @@ def _cases(check):
           'const TOKEN="abc123"' in M.UI_HTML.replace("__AUDIT_TOKEN__", M._js("abc123")))
     # --- Settings: the whole config, named by what it does ---------------------
     # The coverage checks (SETTINGS_GROUPS/FIELD_HELP derived against
-    # validate-config's own key sets) moved to _panel_settings.py's own selftest
-    # (P12.1) — they need no UI_HTML and no server source. What stays here needs
+    # validate-config's own key sets) moved to _panel_settings.py's own selftest —
+    # they need no UI_HTML and no server source. What stays here needs
     # one or the other.
     _vc = M._cores()[1]
     # `policy` is a root key with no control on this form, on purpose — the one
@@ -300,7 +303,7 @@ def _cases(check):
           # The two defs are ADJACENT in _panel_runstate.py and must stay so: this
           # slice is the design constraint, not an accident of ordering, and
           # `between()` raises rather than widening if either marker moves. Both
-          # left `_panel_state` at U3.1 and the slice followed them; reaching it
+          # left `_panel_state` when the module was split up, and the slice followed them; reaching it
           # through `_panel_state`'s re-export would have taken the slice out of a
           # file that no longer contains either marker.
           _harness.between(_harness.module_source(_panel_runstate),
@@ -402,7 +405,7 @@ def _cases(check):
     # --- report export ------------------------------------------------------------
     # There is deliberately no path parameter on /report: the location is derived
     # from the project's own config, so there is nothing to traverse with. The
-    # cases that RENDER a report moved to _panel_state.py (P12.3); what stays is
+    # cases that RENDER a report moved to _panel_state.py; what stays is
     # the route that reaches it and the button that opens it.
     #
     # This searched the WHOLE of this file's own source, so each literal
@@ -710,9 +713,265 @@ def _cases(check):
 
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)
+    _harness.stage(check, "hr-block", _handler_race_cases)
+
+
+# --- two requests at once, through the real handler ------------------------------
+# The server answers each request on its own thread. Two saves at once used to
+# serialise their WRITES and still lose one change, because each built its write
+# from a read taken before the lock; the proposal door borrowed a process-wide
+# token. Driven over HTTP against `_make_handler` on a ThreadingHTTPServer, with
+# the first write slowed so the second request lands while it is under way.
+def _handler_race_cases(check):
+    import shutil
+    import subprocess
+    import threading
+    import time
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+    import _panel_write
+    tmp = tempfile.mkdtemp(prefix="panel-server-race-")
+    proj = os.path.join(tmp, "proj")
+    os.makedirs(os.path.join(proj, ".claude"), exist_ok=True)
+    real_write, real_save = _panel_write._atomic_write_json, _panel_write._proposals._save
+    httpd = None
+    try:
+        subprocess.run(["git", "init", "-q", proj], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        mpath = _panel_write._manifest_path(proj, _panel_write.read_config(proj))
+        os.makedirs(os.path.dirname(mpath), exist_ok=True)
+
+        def parked(prop_id, pid):
+            return {"id": prop_id, "name": pid, "status": "proposed",
+                    "branch": None, "materializedAs": None, "materializedAt": None,
+                    "payload": {"phase": {"id": pid, "title": pid,
+                                          "status": "pending", "tasks": []}}}
+        real_write(mpath, {"meta": {"version": 2},
+                           "phases": [{"id": "P1", "title": "P", "status": "pending",
+                                       "tasks": [{"id": "P1.1", "title": "a",
+                                                  "status": "pending"},
+                                                 {"id": "P1.2", "title": "b",
+                                                  "status": "pending"}]}],
+                           "fileIndex": {}, "bugs": [],
+                           "proposals": [parked("PROP-1", "P7"),
+                                         parked("PROP-2", "P8")]})
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), M._make_handler(proj, "tk"))
+        port = httpd.server_address[1]
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+        def send(method, route, body):
+            req = urllib.request.Request(
+                "http://127.0.0.1:%d%s" % (port, route),
+                data=json.dumps(body).encode("utf-8"), method=method,
+                headers={"X-Audit-Token": "tk", "Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+
+        def race(first, second):
+            started = threading.Event()
+            got = {}
+
+            def one():
+                got["first"] = first()
+
+            def two():
+                started.wait(5)
+                got["second"] = second()
+            return started, got, [threading.Thread(target=one),
+                                  threading.Thread(target=two)]
+
+        def slowed(fn, started):
+            def slow(*a, **k):
+                started.set()
+                time.sleep(0.5)
+                return fn(*a, **k)
+            return slow
+
+        started, got, threads = race(
+            lambda: send("PUT", "/api/composition", {"tasks": {"P1.1": {"model": "opus"}}}),
+            lambda: send("PUT", "/api/composition", {"tasks": {"P1.2": {"model": "haiku"}}}))
+        _panel_write._atomic_write_json = slowed(real_write, started)
+        try:
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(30)
+        finally:
+            _panel_write._atomic_write_json = real_write
+        with open(mpath, "r", encoding="utf-8") as fh:
+            tasks = dict((t["id"], t.get("model"))
+                         for t in json.load(fh)["phases"][0]["tasks"])
+        check("hr1 RED-FIRST: two PUT /api/composition through the real handler at "
+              "once BOTH land: %r" % ((tasks, sorted((k, v.get("ok"))
+                                                     for k, v in got.items())),),
+              tasks == {"P1.1": "opus", "P1.2": "haiku"}
+              and len(got) == 2 and all(v.get("ok") for v in got.values()))
+
+        started, got, threads = race(
+            lambda: send("POST", "/api/proposal",
+                         {"action": "drop", "id": "PROP-1", "reason": "r1"}),
+            lambda: send("POST", "/api/proposal",
+                         {"action": "drop", "id": "PROP-2", "reason": "r2"}))
+        _panel_write._proposals._save = slowed(real_save, started)
+        try:
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(30)
+        finally:
+            _panel_write._proposals._save = real_save
+        with open(mpath, "r", encoding="utf-8") as fh:
+            props = dict((p["id"], p.get("status"))
+                         for p in json.load(fh).get("proposals") or [])
+        check("hr2 RED-FIRST: two POST /api/proposal drops through the real handler "
+              "at once BOTH land: %r" % ((props, sorted((k, v.get("ok"))
+                                                        for k, v in got.items())),),
+              props == {"PROP-1": "dropped", "PROP-2": "dropped"}
+              and len(got) == 2 and all(v.get("ok") for v in got.values()))
+    finally:
+        _panel_write._atomic_write_json = real_write
+        _panel_write._proposals._save = real_save
+        if httpd is not None:
+            httpd.shutdown()
+            httpd.server_close()
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+
+# --- the process-local memo, held by _make_handler and shared across requests --
+def _fr_repo(root):
+    """A REAL git repository, two sequential commits on `main` -
+    `test__panel_state.py`'s own fixture, for the same reason: ancestry needs
+    two real, different, ancestor-related commits."""
+    import subprocess
+    os.makedirs(root, exist_ok=True)
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+          "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+
+    def sh(*args):
+        subprocess.run(git + list(args), cwd=root, check=True,
+                       capture_output=True, timeout=30)
+
+    def rev():
+        out = subprocess.run(git + ["rev-parse", "HEAD"], cwd=root, check=True,
+                             capture_output=True, timeout=30)
+        return out.stdout.decode("utf-8").strip()
+
+    sh("init", "-q")
+    with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
+        fh.write("1\n")
+    sh("add", "-A")
+    sh("commit", "-qm", "one")
+    first = rev()
+    with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
+        fh.write("2\n")
+    sh("add", "-A")
+    sh("commit", "-qm", "two")
+    second = rev()
+    return {"root": root, "first": first, "second": second}
+
+
+def _full_run_cache_cases(check):
+    """Two `/api/state` requests, through the SERVER's own handler path - the
+    real `Handler` class `_make_handler` builds, driven over a real socket
+    exactly the way a browser reaches it - share ONE `full_run_cache`, so the
+    second request's ancestry check for the same `(gitRoot, mergedHead,
+    runHead)` never reaches git again. Counted at `_worktrees._git`, the
+    ACTUAL runner `_memoizing_runner` falls back to when nobody injects one -
+    which is what panel-server.py itself never does, so this is the seam a
+    real deployment's calls go through."""
+    import http.client
+    import shutil
+    import threading
+    import tempfile
+
+    tmp = tempfile.mkdtemp(prefix="panel-server-fullrun-")
+    try:
+        project = os.path.join(tmp, "proj")
+        os.makedirs(os.path.join(project, ".claude"), exist_ok=True)
+        repo = _fr_repo(os.path.join(project, "repo"))
+        M._atomic_write_json(M._config_path(project),
+                             {"manifestPath": "docs/audit/audit-plan.json",
+                              "gitRoot": "repo"})
+        mpath = M._manifest_path(project, M.read_config(project))
+        os.makedirs(os.path.dirname(mpath), exist_ok=True)
+        M._atomic_write_json(mpath, {
+            "meta": {"version": 2, "fullGate": ["full"],
+                     "buildCommands": {"full": "echo x"}},
+            "phases": [{"id": "P1", "title": "merged", "status": "done",
+                       "mergedAt": "2026-09-02T00:00:00Z",
+                       "mergedHead": repo["first"]}]})
+        evdir = _evidence.evidence_dir(project, M.read_config(project))
+        os.makedirs(evdir, exist_ok=True)
+        row = {"v": _evidence.ROW_VERSION, "runId": "run-whole",
+              "ts": "2026-09-01T00:00:00Z", "scope": _evidence.FULL_SCOPE,
+              "status": "passed",
+              "steps": [{"name": "gate", "command": "echo x", "exit": 0,
+                        "durationMs": 500}],
+              "testedState": {"head": repo["second"]},
+              "observations": {"ranTotal": 3, "countsBasis": "3 checks",
+                               "dirtyOutside": []}}
+        with open(os.path.join(evdir, "2026-09.w1.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(json.dumps(row) + "\n")
+
+        calls = []
+        real_git = _worktrees._git
+
+        def _counting_git(git_root, args, timeout=60):
+            calls.append((git_root,) + tuple(args))
+            return real_git(git_root, args, timeout=timeout)
+
+        token = "test-token-123"
+        handler_cls = M._make_handler(project, token)
+        import http.server
+        srv = http.server.HTTPServer(("127.0.0.1", 0), handler_cls)
+        thread = threading.Thread(target=srv.serve_forever, daemon=True)
+        thread.start()
+        _worktrees._git = _counting_git
+        try:
+            port = srv.server_address[1]
+            conn1 = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            conn1.request("GET", "/api/state", headers={"X-Audit-Token": token})
+            resp1 = conn1.getresponse()
+            body1 = json.loads(resp1.read())
+            conn1.close()
+            after_first = len(calls)
+            conn2 = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            conn2.request("GET", "/api/state", headers={"X-Audit-Token": token})
+            resp2 = conn2.getresponse()
+            body2 = json.loads(resp2.read())
+            conn2.close()
+            after_second = len(calls)
+        finally:
+            _worktrees._git = real_git
+            srv.shutdown()
+            thread.join(timeout=5)
+
+        phases1 = dict((p["id"], p) for p in body1["composition"]["phases"])
+        phases2 = dict((p["id"], p) for p in body2["composition"]["phases"])
+        check("fh1 the first /api/state request through the real handler "
+              "reads WHOLE off real git ancestry: %r"
+              % (phases1.get("P1", {}).get("fullRun"),),
+              phases1.get("P1", {}).get("fullRun", {}).get("answer") == "whole"
+              and after_first == 1)
+        check("fh2 the SECOND request, through the SAME handler instance's "
+              "closure, shares the one full_run_cache - it makes NO repeat "
+              "ancestry call for the same (gitRoot, mergedHead, runHead), "
+              "counted through the runner seam rather than assumed - "
+              "MUTATION: a fresh dict per request -> red: calls after first "
+              "%r, after second %r" % (after_first, after_second),
+              phases2.get("P1", {}).get("fullRun", {}).get("answer") == "whole"
+              and after_second == after_first == 1)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
 
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _full_run_cache_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":
