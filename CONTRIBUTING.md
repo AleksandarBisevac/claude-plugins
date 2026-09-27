@@ -899,8 +899,9 @@ pins point at.
 **Sequencing, because this cannot be executed first.** The 100 `_SCRIPT` pins assert
 **text**, so rewriting 293 `var` and 118 `function ()` turns a large fraction of them
 red mechanically — and they would then be updated to match a rewrite instead of
-reviewed. The order is **U3.3 step C (pins → behaviour) → dialect unification → step
-D**. The decision is still worth making now: it takes effect immediately for **new**
+reviewed. **The order is: migrate the substring pins from asserting text to asserting
+behaviour first, then unify the two surfaces' dialect, then decide on the typed front
+end.** The decision is still worth making now: it takes effect immediately for **new**
 code, so nothing further is written in the dialect being retired.
 
 **Revisit trigger:** a helper is written twice because the two surfaces could not

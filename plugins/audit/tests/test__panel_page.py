@@ -147,7 +147,7 @@ def _cases(check):
 
     # --- Settings: the whole config, named by what it does ---------------------
     # The coverage checks (SETTINGS_GROUPS/FIELD_HELP derived against
-    # validate-config's own key sets) live in _panel_settings.py's own selftest
+    # validate-config's own key sets) live in _panel_settings.py's own selftest;
     # the cases that need a server call (the exempt key's route, the
     # bands key the validator accepts) stayed in panel-server.py. What is here
     # needs the assembled page.

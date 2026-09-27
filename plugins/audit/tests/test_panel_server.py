@@ -278,7 +278,7 @@ def _cases(check):
           'const TOKEN="abc123"' in M.UI_HTML.replace("__AUDIT_TOKEN__", M._js("abc123")))
     # --- Settings: the whole config, named by what it does ---------------------
     # The coverage checks (SETTINGS_GROUPS/FIELD_HELP derived against
-    # validate-config's own key sets) moved to _panel_settings.py's own selftest
+    # validate-config's own key sets) moved to _panel_settings.py's own selftest —
     # they need no UI_HTML and no server source. What stays here needs
     # one or the other.
     _vc = M._cores()[1]
