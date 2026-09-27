@@ -4044,6 +4044,16 @@ doctor and `reconcile` join runs recorded under an old id to the live task. `blo
 `{at, text}` entry to `notes[]`, the one addition a started task takes. Each journals its own row -
 `task.move`, `task.block`, `task.note`.
 
+`finding <phaseId>`, `resolve-finding <findingId>` and `correct <phaseId>` write a sign-off's
+review record, which used to be hand-edited into the shard. `finding` appends one entry in the
+finding shape to `review.findings`, refusing a missing field or a severity outside
+`_phases.FINDING_SEVERITY` before the lock; `resolve-finding` sets its `fixTask`, `commit` and
+`resolution` from the fix task's recorded commit; `correct` rewrites `review.outcome` or
+`summary` text on a phase that already has a verdict and never re-decides it. Every write of
+`review.outcome`, the two `signoff` paths included, goes through `outcome_with_tally`, which
+derives the severity tally from the list, so no one types it. Each journals its own row -
+`review.finding`, `review.resolve`, `review.correct`.
+
 `settle [manifest]` stores every derived value a plan carries stale - a phase's `status`, a bug's
 `status` and `fixedIn` (`_manifest_io.derived_disagreements`), and any index stub fallen behind its
 shard (`_manifest_io.stale_stubs`) - under the index lock, revalidated, rolled back on findings,

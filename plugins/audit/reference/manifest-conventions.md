@@ -397,6 +397,12 @@ The journal's **completion-record actions**:
   `task.complete`: the hook derives `task.blocked` from a status an edit tool moved
 - `task.note` — `audit-task.py note` appended one `{at, text}` entry to a task's `notes[]`
   (details: taskId, phaseId, changes)
+- `review.finding` — `audit-task.py finding` appended one finding to a phase's
+  `review.findings` (details: phaseId, changes)
+- `review.resolve` — `audit-task.py resolve-finding` set a finding's fix task, commit and
+  resolution (details: phaseId, taskId, commit, changes)
+- `review.correct` — `audit-task.py correct` rewrote a phase's `review.outcome` or `summary`
+  text, never its verdict (details: phaseId, changes)
 - `task.reopen` — `audit-task.py reopen` put a done task back to pending (details: taskId, phaseId,
   reason, changes - the task's cleared close and any linked bug moved back to `in_progress`)
 - `plan.settle` — `audit-task.py settle` stored the derived values a plan carried stale (details:

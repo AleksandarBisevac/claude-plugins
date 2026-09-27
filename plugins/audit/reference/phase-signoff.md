@@ -29,10 +29,32 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    context). The mode is what tells it there is no single task description or executor claim to bind
    here: the intent question was already asked per task, against each task's own description and its own
    executor's `outcome`, and this diff cannot say which task produced which line. What sign-off adds is the
-   review skill over the whole phase. Record results in `phase.review.findings` — each one in the
-   **finding shape** (`id`, `severity` from `low|med|high`, `file`, `issue`, `resolution`); the
-   validator warns on a finding missing a field or carrying a severity outside that vocabulary,
-   because a finding nothing can read back is a finding no later run can act on. Then, for each
+   review skill over the whole phase. **Record each finding through the verb, one call per
+   finding:**
+
+   ```
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" finding <phaseId> \
+       --severity low|med|high --file <path[:lines]> --issue - --resolution "<the change>" <<'ISSUE'
+   the reviewer's issue text, verbatim
+   ISSUE
+   ```
+
+   It appends to `phase.review.findings` in the **finding shape** (`id`, `severity`, `file`,
+   `issue`, `resolution`), allocating the id as `<phaseId>-R<n>`, under the index lock with
+   revalidate-or-roll-back, and journals `review.finding`. A finding missing a field, or carrying a
+   severity outside `low|med|high`, is refused before anything is written. A finding's text quotes
+   code, so pass one of `--issue`/`--resolution` on stdin as above (stdin is one stream: the other
+   goes on argv in single quotes). When a finding's fix task lands, record it:
+   `audit-task.py resolve-finding <findingId> --fix-task <taskId>` — the task's own recorded
+   commit is written; `--commit <sha>` supplies one the task has not recorded (and is refused
+   when it contradicts one it has), and a task with neither is refused, because a fix that has
+   not landed has no commit. Every one of these writes, and `signoff`'s
+   `--review-outcome`, ends `review.outcome` with a `[findings: …]` tally **derived** from the
+   list, so never type a count into the outcome: a typed tally at its end is replaced. A later
+   typo in the outcome or the summary is `audit-task.py correct <phaseId> --review-outcome TEXT
+   --summary TEXT`, which rewrites the text with a `review.correct` row and reads no `--verdict`.
+   **Nothing refuses a hand edit of the shard** — the validator's shape warning is the only
+   backstop, and a hand-written finding carries no journal row and no tally. Then, for each
    actionable finding, **create and start its task** (the two commands below) and spawn an
    `audit:audit-executor` fix run (`model = phase.review.model`) that may edit implementation AND tests; loop until
    clean or each remaining finding is explicitly triaged with a written justification. Fall back to a

@@ -7,6 +7,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 ## [Unreleased]
 
 ### Added
+- **A sign-off's review findings are recorded by a verb: `audit-task.py finding`,
+  `resolve-finding` and `correct`.** The findings sign-off step 1 records were a hand edit of
+  the phase shard: no lock, no journal row, and a severity outside the vocabulary written with
+  nothing to refuse it. `finding <phaseId> --severity low|med|high --file <path> --issue TEXT
+  --resolution TEXT` appends one in the schema's shape with the id allocated as
+  `<phaseId>-R<n>`, refuses a missing field or an unknown severity before any write, and
+  journals `review.finding`. `resolve-finding <findingId> --fix-task <taskId> [--commit <sha>]`
+  records the task and commit that fixed it - the task's own recorded commit, and a task with
+  none is refused - and journals `review.resolve`. `correct <phaseId> [--review-outcome TEXT]
+  [--summary TEXT]` rewrites a signed-off phase's text with a `review.correct` row and reads no
+  `--verdict`. Every writer of `review.outcome`, `signoff --review-outcome` included, ends it with
+  a `[findings: ...]` severity tally derived from `review.findings`, so a typed count cannot
+  disagree with the list. `reference/phase-signoff.md` step 1 names the verbs.
 - **Phases built on one branch sign off as a group: `audit-task.py signoff P1,P2 --branch <name>`.**
   Phases whose work sits on one combined branch record no `branch` or `baseRef`, so the single
   sign-off had no diff to review and `close-phase.py` no name to land. `--plan` prints the whole
@@ -434,6 +447,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **The stable-code lint reaches every warning the phase-gate checks emit.** `_check_phase_gate`
+  appended to the validator's `warnings` argument, a shape the walk behind `fc2` never followed,
+  so that whole family could ship a warning with no code and stay green. It now returns its
+  warnings and the caller extends, which is the shape the walk follows; the validator's output is
+  unchanged.
+- **`check-example-ledgers.py` judges pointers and ledgers over the same snapshot.** It read the
+  `testEvidence` pointers off the working-tree manifests while counting only the git-tracked
+  ledgers, so a phase's second task gate in a fresh worktree went red on the first gate's pointer
+  into an evidence file not yet committed. Pointers are now read from the manifests at HEAD and
+  resolved against the ledgers HEAD holds - the committed claim the tool exists to check; a
+  pointer at HEAD naming a run no ledger holds still fails.
 - **run-test-gate's machine line no longer calls runs recorded one after another a crowd.**
   Overlap was inclusive at both ends over whole-second stamps, so a run that started in the second
   the previous row was written always "shared this window". Windows now compare half-open at the

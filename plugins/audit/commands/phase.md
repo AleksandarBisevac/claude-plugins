@@ -470,6 +470,35 @@ words, recorded verbatim on `review.noEvidenceReason` and shown where the eviden
 goes. It is not a run, so `--fail-on no-test-evidence` still names such a phase. `skipped` needs
 neither.
 
+### The review's own record — findings, their fixes, and a text correction
+
+Sign-off's review step records what the reviewer found before the verdict is written, and that
+record has three writes of its own, each a script call with a journal row, under the index lock
+with revalidate-or-roll-back. They are not `/audit:phase` subcommands; `reference/phase-signoff.md`
+step 1 is where they are run.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" finding <phaseId> \
+        --severity low|med|high --file <path[:lines]> --issue - --resolution "<the change>"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" resolve-finding <findingId> \
+        --fix-task <taskId> [--commit <sha>]
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" correct <phaseId> \
+        [--review-outcome TEXT] [--summary TEXT]
+```
+
+`finding` appends one entry to `review.findings` in the schema's shape, with the id allocated as
+`<phaseId>-R<n>`, and journals `review.finding`. It refuses, before any write, a finding missing
+a field and a severity outside `low|med|high`. `resolve-finding` writes the fix task and its
+commit onto the finding — the task's recorded commit, or `--commit` for one it has not recorded —
+and journals `review.resolve`; a fix task with no commit has not landed, and is refused.
+`correct` rewrites the review's outcome or the phase's summary on a phase that already carries a
+verdict, and journals `review.correct`; it never touches the verdict or its `phase.verdict` row,
+and `correct --verdict` is refused as a flag the verb does not read.
+
+**The `[findings: …]` tally at the end of `review.outcome` is derived**, by these three verbs and
+by `signoff --review-outcome`, from `review.findings` as it stands after the write. The text
+before it is kept verbatim; a tally typed at its end is replaced by the derived one.
+
 ### A group of phases built on one branch — `signoff <P1,P2,...> --branch NAME`
 
 Phases whose work was built on **one combined branch** record no branch and no `baseRef` of their
