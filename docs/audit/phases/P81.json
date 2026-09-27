@@ -447,7 +447,7 @@
     {
       "id": "P81.8",
       "title": "Docs: the learning loop, quarantine and flaky",
-      "status": "in_progress",
+      "status": "done",
       "description": "reference/orchestrator.md: the learning loop - a miss at the third place becomes a coupling and a bug through full-gate.py, only from a suite the runner named; removal is uncouple by a person, never automatic. Quarantine: a muted suite is run and recorded, never blocks, never teaches, and blocks again when its until passes; no retry-until-green. reference/manifest-conventions.md: the bug.add, test.muted, test.unmuted and coupling.caught journal actions and their details. commands/doctor.md: the coupling row. commands/review.md: what --full now learns. README: meta.muted and a flaky step, and what a SELECTION MISS asks of the operator. COMPATIBILITY.md: muted absent = nothing quarantined; lastCaught absent = never caught since learned; an expired mute is a warning and why it is not a finding. CHANGELOG.md [Unreleased]. No numbers in prose, no register ids.",
       "files": [
         "plugins/audit/reference/orchestrator.md",
@@ -493,18 +493,24 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6c10da78",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "orchestrator.md (What a red full run teaches; Quarantine; no retry until green names both signal readers), manifest-conventions.md (coupling.caught, bug.add, test.muted, test.unmuted and their details), doctor.md (the coupling row, measured-run ageing), review.md (--full files nothing; points at full-gate.py), README (meta.muted, what a SELECTION MISS asks, quarantine, a flaky step, the restored Azure heading), COMPATIBILITY.md (absence readings, expired mute as a warning, unknown-full-run additive), CHANGELOG [Unreleased] Added, PLUGIN-BUILD-GUIDE (couple --caught, full-gate section), azure-pipelines.yml (unknown-full-run).",
+        "descriptive": "The learning loop, the quarantine, flaky steps, the doctor's coupling row, unknown-full-run and the phase's other additions are documented as the committed code behaves, with CHANGELOG entries under Added and one false earlier claim corrected."
       },
       "startedAt": "2026-09-27T19:40:56Z",
-      "completedAt": null,
+      "completedAt": "2026-09-27T20:44:53Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-27T20:44:30Z.ceb041",
         "status": "passed",
         "at": "2026-09-27T20:44:30Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "6c10da78",
+        "at": "2026-09-27T20:44:53Z",
+        "basis": "delivered every document the description names; review.md says --full files nothing (the code as it stands) instead of what --full learns, with a follow-up task to wire it; the gate printed NO OVERLAP because a docs task's files are graded by the sweep's doc lints (prose numbers, link checks, gate parity), which print no doc paths"
       }
     },
     {
