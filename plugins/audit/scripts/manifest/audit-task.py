@@ -2435,8 +2435,129 @@ def _task_gate(args, phase, assembled, add_paths, files, mode="gate-only"):
                                mode, meta, phase)
 
 
+def _shell_unsafe(path):
+    """Whether `path` holds a control character -- a newline among them --
+    that a gate entry, which is one line of shell, cannot carry."""
+    return any(ord(c) < 32 or ord(c) == 127 for c in path)
+
+
+def _project_relative(spelling, project):
+    """`(path, None)` -- `spelling` normalized and spelled from `project` --
+    or `(None, why)` when it names nothing inside the project.
+
+    NORMALIZED BEFORE ANYTHING READS IT, so `./test_old.py` is `test_old.py`
+    to the disk check and to the resolver alike. An ABSOLUTE spelling inside
+    the project becomes relative to it; one outside it is refused, because a
+    gate entry is written into a committed plan and a machine's own path does
+    not belong there. The directory is resolved through its symlinks and the
+    file name is not, so a suite that is itself a link still counts as the
+    project's.
+    """
+    if os.path.isabs(spelling):
+        root = os.path.realpath(project)
+        full = os.path.join(os.path.realpath(os.path.dirname(spelling)),
+                            os.path.basename(spelling))
+        try:
+            rel = _output.posix_rel(full, root)
+        except ValueError:
+            rel = full
+    else:
+        rel = os.path.normpath(spelling)
+    rel = rel.replace(os.sep, "/")
+    if rel == ".." or rel.startswith("../") or os.path.isabs(rel):
+        return None, ("%s lies outside the project, and a machine's own path "
+                      "is never written into a plan" % (spelling,))
+    if rel == ".":
+        return None, "%s names the project root, not a suite" % (spelling,)
+    return rel, None
+
+
+def _root_spelled_suites(suites, project, run=None):
+    """`(paths, None)` -- each suite a runner named, spelled from `project` --
+    or `(None, why)` when any one of them cannot be.
+
+    THE GATE RUNS FROM THE PROJECT ROOT, AND A RUNNER NEED NOT. A runner that
+    names its suites relative to its own directory reports `test_old.py` for
+    `backend/tests/test_old.py`; written into a gate entry as spelled, that
+    entry cannot open the file it names, so the fix task's gate cannot run.
+    Every spelling is pinned onto the tracked files by
+    `_evidence_io.resolve_named`, the one resolver, which answers only for a
+    single match -- a spelling that exists from the root included, taken as
+    one more candidate. That resolver's rule is that an exact-equal path does
+    not break a tie, because a runner in a subdirectory prints a
+    root-looking path for a deeper file; a short-circuit on the disk would
+    be a second rule for ambiguity that contradicted it.
+
+    ONE UNRESOLVED SUITE REFUSES THEM ALL. A gate narrowed to the suites that
+    did resolve could go green while a failure the run named is never run.
+    So the reason names every suite that could not be pinned, and the caller
+    narrows to none of them -- it gates on the failed step itself instead.
+
+    `git ls-files` is asked from `project` itself, so its answers are already
+    spelled from the directory the gate runs in. When git cannot answer, a
+    spelling that exists from the root is kept as written, because nothing
+    is left that could show it a twin; any other is refused with the listing
+    failure as its reason, since an unlisted tree is not an empty one. A
+    resolved path holding a control character is refused rather than handed
+    to a one-line shell gate.
+    """
+    rels, refused = [], []
+    for spelling in suites:
+        rel, why = _project_relative(spelling, project)
+        if rel is None:
+            refused.append(why)
+        else:
+            rels.append(rel)
+    if refused:
+        return None, ("a suite the run named could not be pinned to one path "
+                      "from the project root: %s" % ("; ".join(refused),))
+    code, said, err = _worktrees._runner(run)(project, ["ls-files", "-z"])
+    tracked = ([p for p in (said or "").split("\0") if p] if code == 0
+               else None)
+    listing_failed = ("the tracked files could not be listed (git ls-files: "
+                      "%s)" % ((err or "").strip() or "exit %s" % (code,)))
+    pinned = []
+    for rel in rels:
+        on_disk = os.path.isfile(os.path.join(project, rel))
+        if tracked is None:
+            path, why = ((rel, None) if on_disk else
+                         (None, "%s is not on disk from the project root, "
+                                "and %s" % (rel, listing_failed)))
+        else:
+            path, why = _evidence_io.resolve_named(
+                rel, tracked + ([rel] if on_disk else []))
+        if path is not None and _shell_unsafe(path):
+            path, why = None, ("%s resolves to %r, which holds a control "
+                               "character no one-line gate can carry"
+                               % (rel, path))
+        if path is None:
+            refused.append(why)
+        else:
+            pinned.append(path)
+    if refused:
+        return None, ("a suite the run named could not be pinned to one path "
+                      "from the project root: %s" % ("; ".join(refused),))
+    return pinned, None
+
+
+def _failed_step_entries(steps):
+    """The gate entry of every failed step whose runner NAMED its suites, in
+    step order, once each -- the recorded `name`, which is the entry the run
+    resolved and ran (`_evidence_io.resolved_commands`), so a gate made of
+    them re-runs exactly the commands that failed. Which steps count is asked
+    of `_evidence_io.named_failing_suites` one step at a time, never a copy
+    of its rule."""
+    out = []
+    for step in steps or []:
+        name = step.get("name") if isinstance(step, dict) else None
+        if (isinstance(name, str) and name.strip() and name not in out
+                and _evidence_io.named_failing_suites([step])):
+            out.append(name)
+    return out
+
+
 def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
-                            failing_row):
+                            failing_row, project=None):
     """`(gate, basis, source)` for `add` ALONE -- `_task_gate` plus the
     failed-first `--failing-from` arm, kept in its own function rather than
     folded into `_task_gate` so `seed` (which shares every other arm) never
@@ -2461,9 +2582,16 @@ def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
     spelling for it) -- a reader compares the word before the colon and looks
     the runId up, never parsing further.
 
+    A NAMED SUITE THAT CANNOT BE PINNED to one path from the project root
+    (`_root_spelled_suites`) narrows nothing, and the gate is the entry of
+    each failed step that named one -- the command that ran the failure --
+    so the failure this task fixes is always inside its gate. Falling
+    through to the ordinary arms instead would narrow to this task's own
+    paths and run none of the named failures.
+
     THE FALL-THROUGH NEVER REACHES AN EMPTY GATE. A row whose failed steps
-    named no suite (a tail excerpt is not a list of failing tests) or a phase
-    with no path-scoped sibling to narrow through falls to
+    named no suite (a tail excerpt is not a list of failing tests), or a
+    phase with no path-scoped sibling to narrow through, falls to
     `_ordinary_task_gate` exactly as a call with no `--failing-from` would,
     with the reason it fell through said FIRST in the returned sentence --
     never silence, and never the empty gate as though `--failing-from` were a
@@ -2480,16 +2608,40 @@ def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
     if shape is not None:
         suites = (_evidence_io.named_failing_suites(failing_row.get("steps"))
                   if failing_row else [])
-        if suites:
-            union = _union_paths(suites, add_paths)
+        pinned, why = ((None, None) if not suites
+                       else _root_spelled_suites(suites, project or "."))
+        if pinned:
+            union = _union_paths(pinned, add_paths)
             return (_repointed(shape, build, union),
                     "narrowed to the suite(s) run %s named as failing, "
                     "union with this task's tests.add paths, in %s's "
                     "spelling" % (args.failing_from, owner),
                     "failing-from-run:%s" % (args.failing_from,))
-        why = ("run %s's failed steps named no suite as failing (a tail "
-               "excerpt is not a list of failing tests)"
-               % (args.failing_from,))
+        if not suites:
+            why = ("run %s's failed steps named no suite as failing (a tail "
+                   "excerpt is not a list of failing tests)"
+                   % (args.failing_from,))
+        else:
+            # THE FAILURE STAYS IN THE GATE. The ordinary arms below would
+            # narrow to this task's own tests.add or files, which run none of
+            # the suites the run named -- so an unpinnable suite gates on the
+            # failed step's own entry, which ran it and failed.
+            why = "--failing-from %s: %s" % (args.failing_from, why)
+            entries = _failed_step_entries(failing_row.get("steps"))
+            if entries:
+                return (entries,
+                        "%s, so no suite is narrowed to: the gate is the "
+                        "entry of each step run %s failed on (%s), which "
+                        "runs the named failure" % (why, args.failing_from,
+                                                    ", ".join(entries)),
+                        "failing-from-run:%s" % (args.failing_from,))
+            if wide:
+                return (wide,
+                        "%s, and run %s recorded no gate entry for its failed "
+                        "step, so the gate is the phase's testGate, wide, "
+                        "which the run was measured against"
+                        % (why, args.failing_from),
+                        "failing-from-run:%s" % (args.failing_from,))
     else:
         why = ("no sibling task in %s declares a path-scoped gate entry to "
                "narrow --failing-from %s against"
@@ -2499,7 +2651,8 @@ def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
     return gate, "%s, so falling through: %s" % (why, basis), source
 
 
-def _build_task(task_id, title, args, phase, assembled, failing_row=None):
+def _build_task(task_id, title, args, phase, assembled, failing_row=None,
+                project=None):
     """`(task, unnamed, gateBasis)` -- the new task, fully template-initialized
     (every field from the conventions' New task template, exactly once, in
     _TEMPLATE_KEYS order), the `tests.add` entries that named no file, and the
@@ -2526,7 +2679,7 @@ def _build_task(task_id, title, args, phase, assembled, failing_row=None):
     # gate needs was produced one line too late and thrown away.
     files = _union_paths(_split_csv(args.files), add_paths)
     gate, gate_basis, gate_source = _failing_from_task_gate(
-        args, phase, assembled, add_paths, files, mode, failing_row)
+        args, phase, assembled, add_paths, files, mode, failing_row, project)
     task = {
         "id": task_id,
         "title": title,
@@ -2646,7 +2799,8 @@ def _locked_add(args, project, config, mpath, title, out):
 
     task_id = _allocate_id(assembled, phase_id, _mint_suffix(mpath, assembled))
     task, unnamed_add, gate_basis = _build_task(task_id, title, args, phase,
-                                                assembled, failing_row)
+                                                assembled, failing_row,
+                                                project)
     # THE STAT IS OF THE FILE THE SUFFIX POINTS AT, NOT OF THE ENTRY'S OWN
     # SPELLING. A schema-legal `a/b.py:12-34` is a real, existing `a/b.py`, and
     # `os.path.exists` asked of the raw string can only ever say no -- reporting

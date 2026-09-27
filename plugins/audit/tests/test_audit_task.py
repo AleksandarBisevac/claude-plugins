@@ -8749,6 +8749,13 @@ def _cases(check):
             }
 
         ff_proj, ff_mp = mk("ff-failing-from", ff_manifest())
+        # ON DISK, because a named suite is only narrowed to when the gate can
+        # open it from the project root; this project is not a git one, so a
+        # spelling it does not hold has no tracked file to be pinned onto.
+        for _ff_rel in ("src/cart.test.ts", "src/spied.test.ts"):
+            os.makedirs(os.path.join(ff_proj, "src"), exist_ok=True)
+            with open(os.path.join(ff_proj, _ff_rel), "w") as fh:
+                fh.write("// a fixture suite\n")
         _ff_ev.append_row(ff_proj, {
             "v": 1, "runId": "RUN-VITEST", "ts": "2026-09-01T00:00:00Z",
             "scope": "phase", "phaseId": "P1", "status": "failed",
@@ -8953,6 +8960,323 @@ def _cases(check):
               == ["src/cart.test.ts"]
               and ff_tests("P1.6").get("gate")
               == ["lint", "vitest run src/spied.test.ts"])
+
+        # ---- a runner's spelling becomes a path FROM THE PROJECT ROOT -------
+        # The gate runs with the project root as its working directory, and a
+        # runner may name a suite relative to its own. A git project whose
+        # sibling spells `python3 -m pytest <path>`, holding suites chosen so
+        # each case's spelling answers differently: one unique suffix match,
+        # one shared by two tracked files, and one that exists from the root
+        # AND shares its suffix with a deeper tracked file.
+        rr_manifest = {
+            "meta": {"version": 2,
+                     "buildCommands": {"test": "python3 -m pytest"}},
+            "phases": [{"id": "P1", "title": "Api", "status": "in_progress",
+                        "testGate": ["test"],
+                        "tasks": [{
+                            "id": "P1.1", "title": "seed", "status": "done",
+                            "files": ["backend/a.py"],
+                            "tests": {"mode": "gate-only", "add": [],
+                                      "expectRedFirst": False,
+                                      "gate": ["python3 -m pytest "
+                                               "backend/tests/test_a.py"]}}]},
+                       # A phase with NO testGate, for ff20's last fallback.
+                       {"id": "P2", "title": "Bare", "status": "in_progress",
+                        "testGate": [],
+                        "tasks": [{
+                            "id": "P2.1", "title": "seed", "status": "done",
+                            "files": ["backend/b.py"],
+                            "tests": {"mode": "gate-only", "add": [],
+                                      "expectRedFirst": False,
+                                      "gate": ["python3 -m pytest "
+                                               "backend/tests/test_a.py"]}}]}],
+            "fileIndex": {"backend/a.py": ["P1.1"], "backend/b.py": ["P2.1"]},
+            "bugs": [],
+        }
+        rr_proj, rr_mp = mk("ff-runner-relative", rr_manifest, git=True)
+        rr_suites = ["backend/tests/test_a.py", "backend/tests/test_old.py",
+                     "backend/tests/test_dup.py", "tools/tests/test_dup.py",
+                     "tests/test_root.py", "backend/tests/test_root.py"]
+        for rel in rr_suites:
+            os.makedirs(os.path.dirname(os.path.join(rr_proj, rel)),
+                        exist_ok=True)
+            with open(os.path.join(rr_proj, rel), "w") as fh:
+                fh.write("def test_x():\n    assert True\n")
+        subprocess.run(["git", "-C", rr_proj, "add", "--"] + rr_suites,
+                       check=True, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL)
+        rr_named = ("the 1 suite file(s) pytest %s, read from its FAILED "
+                    "<path> lines" % (_ff_ev.NAMED_FAILING,))
+        # A file OUTSIDE the project, real on disk, so an absolute spelling of
+        # it is refused for where it lies and not for being missing.
+        rr_outside = os.path.join(tmp, "outside_test_x.py")
+        with open(rr_outside, "w") as fh:
+            fh.write("def test_x():\n    assert True\n")
+        # The step's recorded `name` is the gate entry the run ran; RUN-STEP's
+        # is a literal command distinct from the phase's `test`, so a gate
+        # read off the step and one read off the phase disagree.
+        rr_step_entry = "python3 -m pytest backend/tests"
+        for rr_id, rr_list, rr_name in (
+                ("RUN-REL", ["test_old.py"], "test"),
+                ("RUN-DUP", ["test_dup.py"], "test"),
+                ("RUN-ROOT", ["tests/test_root.py"], "test"),
+                ("RUN-PART", ["test_old.py", "test_dup.py"], "test"),
+                ("RUN-STEP", ["test_dup.py"], rr_step_entry),
+                ("RUN-ABSIN", [os.path.join(rr_proj, "backend", "tests",
+                                            "test_old.py")], "test"),
+                ("RUN-ABSOUT", [rr_outside], "test"),
+                ("RUN-DOT", ["./test_old.py"], "test")):
+            _ff_ev.append_row(rr_proj, {
+                "v": 1, "runId": rr_id, "ts": "2026-09-01T00:00:00Z",
+                "scope": "phase", "phaseId": "P1", "status": "failed",
+                "steps": [{"name": rr_name, "exit": 1,
+                           "failingSuites": rr_list,
+                           "failingSuitesBasis": rr_named}]})
+
+        def rr_tests(tid):
+            return (task_in(rr_mp, tid) or {}).get("tests") or {}
+
+        coderr, txtrr = run(
+            ["add", "Fix the old suite", "--phase", "P1",
+             "--project-dir", rr_proj, "--failing-from", "RUN-REL"])
+        check("ff10 RED-FIRST: a runner that names its suite relative to its "
+              "own directory (`test_old.py`) gets the one tracked path it "
+              "names, spelled from the project root the gate runs in - not "
+              "the runner's spelling, which that directory cannot open: %r"
+              % ((coderr, rr_tests("P1.2").get("gate"),
+                  rr_tests("P1.2").get("gateBasis")),),
+              coderr == 0
+              and rr_tests("P1.2").get("gate")
+              == ["python3 -m pytest backend/tests/test_old.py"]
+              and rr_tests("P1.2").get("gateBasis")
+              == "failing-from-run:RUN-REL")
+
+        coderr, txtrr = run(
+            ["add", "Fix a suite two files could be", "--phase", "P1",
+             "--project-dir", rr_proj, "--failing-from", "RUN-DUP",
+             "--tests-add", "backend/tests/test_new.py: the case it writes"])
+        check("ff11 a spelling two tracked files end in names neither of "
+              "them, and a task WITH tests.add still gets the failed step's "
+              "own entry (`test`) rather than its tests.add narrowing, which "
+              "would run neither suite - the resolver's reason, naming both, "
+              "printed before the basis: %r"
+              % ((coderr, rr_tests("P1.3").get("gate"),
+                  rr_tests("P1.3").get("gateBasis"),
+                  [ln for ln in txtrr.splitlines() if "names each" in ln]),),
+              coderr == 0
+              and rr_tests("P1.3").get("gate") == ["test"]
+              and rr_tests("P1.3").get("gateBasis")
+              == "failing-from-run:RUN-DUP"
+              and "names each of backend/tests/test_dup.py, "
+                  "tools/tests/test_dup.py" in txtrr
+              and "so no suite is narrowed to" in txtrr
+              and txtrr.index("names each of") < txtrr.index(
+                  "so no suite is narrowed to"))
+
+        coderr, txtrr = run(
+            ["add", "Fix the root suite", "--phase", "P1",
+             "--project-dir", rr_proj, "--failing-from", "RUN-ROOT"])
+        check("ff12 ONE RULE FOR AMBIGUITY: a spelling that exists from the "
+              "project root while a deeper tracked file ends in it too is "
+              "ambiguous - the resolver's own rule, that an exact-equal path "
+              "breaks no tie - so it gates on the failed step, naming both: "
+              "%r" % ((coderr, rr_tests("P1.4").get("gate"),
+                       [ln for ln in txtrr.splitlines()
+                        if "names each" in ln]),),
+              coderr == 0
+              and rr_tests("P1.4").get("gate") == ["test"]
+              and rr_tests("P1.4").get("gateBasis")
+              == "failing-from-run:RUN-ROOT"
+              and "names each of backend/tests/test_root.py, "
+                  "tests/test_root.py" in txtrr)
+
+        coderr, txtrr = run(
+            ["add", "Fix one of two", "--phase", "P1",
+             "--project-dir", rr_proj, "--failing-from", "RUN-PART",
+             "--tests-add", "backend/tests/test_part.py: the case it writes"])
+        check("ff13 ONE UNRESOLVED SUITE REFUSES THEM ALL: a run naming one "
+              "pinnable suite and one ambiguous one narrows to NEITHER - a "
+              "gate over the pinnable one alone could pass while the other "
+              "failure never runs: %r"
+              % ((coderr, rr_tests("P1.5").get("gate"),
+                  rr_tests("P1.5").get("gateBasis")),),
+              coderr == 0
+              and rr_tests("P1.5").get("gate") == ["test"]
+              and rr_tests("P1.5").get("gateBasis")
+              == "failing-from-run:RUN-PART"
+              and "names each of" in txtrr
+              and "test_old.py" not in " ".join(
+                  rr_tests("P1.5").get("gate") or []))
+
+        coderr, txtrr = run(
+            ["add", "Fix from a literal step", "--phase", "P1",
+             "--project-dir", rr_proj, "--failing-from", "RUN-STEP",
+             "--files", "backend/a.py",
+             "--tests-add", "backend/tests/test_step.py: the case it writes"])
+        check("ff15 THE FAILURE STAYS IN THE GATE: a task with tests.add AND "
+              "files, from a run whose failed step ran a literal command and "
+              "named an unpinnable suite, is gated on THAT step's recorded "
+              "entry - not its own paths, and not the phase's `test`: %r"
+              % ((coderr, rr_tests("P1.6").get("gate"),
+                  rr_tests("P1.6").get("gateBasis")),),
+              coderr == 0
+              and rr_tests("P1.6").get("gate") == [rr_step_entry]
+              and rr_tests("P1.6").get("gateBasis")
+              == "failing-from-run:RUN-STEP"
+              and "(%s)" % (rr_step_entry,) in txtrr)
+
+        coderr, txtrr = run(
+            ["add", "Fix from an absolute path inside", "--phase", "P1",
+             "--project-dir", rr_proj, "--failing-from", "RUN-ABSIN"])
+        check("ff16 an ABSOLUTE spelling inside the project is written "
+              "relative to it - no machine path reaches the plan: %r"
+              % ((coderr, rr_tests("P1.7").get("gate")),),
+              coderr == 0
+              and rr_tests("P1.7").get("gate")
+              == ["python3 -m pytest backend/tests/test_old.py"]
+              and rr_proj not in " ".join(rr_tests("P1.7").get("gate") or []))
+
+        coderr, txtrr = run(
+            ["add", "Fix from an absolute path outside", "--phase", "P1",
+             "--project-dir", rr_proj, "--failing-from", "RUN-ABSOUT"])
+        check("ff17 an ABSOLUTE spelling OUTSIDE the project is refused with "
+              "the reason and gates on the failed step - the file exists, so "
+              "only where it lies can refuse it: %r"
+              % ((coderr, rr_tests("P1.8").get("gate"),
+                  [ln for ln in txtrr.splitlines() if "outside" in ln]),),
+              coderr == 0
+              and rr_tests("P1.8").get("gate") == ["test"]
+              and "lies outside the project" in txtrr
+              and rr_outside not in " ".join(
+                  rr_tests("P1.8").get("gate") or []))
+
+        coderr, txtrr = run(
+            ["add", "Fix from a dot-slash spelling", "--phase", "P1",
+             "--project-dir", rr_proj, "--failing-from", "RUN-DOT"])
+        check("ff18 `./test_old.py` is normalized before the resolver reads "
+              "it, and pins the one tracked path it names: %r"
+              % ((coderr, rr_tests("P1.9").get("gate")),),
+              coderr == 0
+              and rr_tests("P1.9").get("gate")
+              == ["python3 -m pytest backend/tests/test_old.py"])
+
+        # ---- a failed step with NO recorded `name` -------------------------
+        # Nothing names the entry that ran the failure, so the gate is the
+        # phase's testGate, wide - the gate the run was measured against -
+        # and only a phase with no testGate falls to the ordinary arms.
+        for rr_phase, rr_id in (("P1", "RUN-NONAME"), ("P2", "RUN-NONAME2")):
+            _ff_ev.append_row(rr_proj, {
+                "v": 1, "runId": rr_id, "ts": "2026-09-01T00:00:00Z",
+                "scope": "phase", "phaseId": rr_phase, "status": "failed",
+                "steps": [{"exit": 1, "failingSuites": ["test_dup.py"],
+                           "failingSuitesBasis": rr_named}]})
+        coderr, txtrr = run(
+            ["add", "Fix from a nameless step", "--phase", "P1",
+             "--project-dir", rr_proj, "--failing-from", "RUN-NONAME",
+             "--tests-add", "backend/tests/test_nn.py: the case it writes"])
+        coden2, txtn2 = run(
+            ["add", "Fix from a nameless step, bare phase", "--phase", "P2",
+             "--project-dir", rr_proj, "--failing-from", "RUN-NONAME2",
+             "--tests-add", "backend/tests/test_nn2.py: the case it writes"])
+        check("ff20 a failed step with no recorded name and an unpinnable "
+              "suite gates on the phase's testGate, wide, saying so - not on "
+              "this task's tests.add; with no testGate either, the ordinary "
+              "arms answer, the reason still printed first: %r"
+              % ((coderr, rr_tests("P1.10").get("gate"),
+                  rr_tests("P1.10").get("gateBasis"),
+                  [ln for ln in txtrr.splitlines() if "  gate: " in ln],
+                  coden2,
+                  (task_in(rr_mp, "P2.2") or {}).get("tests", {}).get("gate"),
+                  (task_in(rr_mp, "P2.2") or {}).get("tests", {}).get(
+                      "gateBasis")),),
+              coderr == 0
+              and rr_tests("P1.10").get("gate") == ["test"]
+              and rr_tests("P1.10").get("gateBasis")
+              == "failing-from-run:RUN-NONAME"
+              and "recorded no gate entry for its failed step" in txtrr
+              and coden2 == 0
+              and (task_in(rr_mp, "P2.2") or {}).get("tests", {}).get("gate")
+              == ["python3 -m pytest backend/tests/test_nn2.py"]
+              and (task_in(rr_mp, "P2.2") or {}).get("tests", {}).get(
+                  "gateBasis") == "tests.add"
+              and "names each of" in txtn2 and "so falling through" in txtn2)
+
+        # A NEWLINE IN A TRACKED PATH, at the unit level: a file name holding
+        # one cannot be created on every platform CI runs on, so the listing
+        # is handed in. It is the ONLY suffix match, so the resolver would
+        # answer with it and nothing but the control-character refusal
+        # keeps it out of a one-line shell gate.
+        _nl_path = "nl" + chr(10) + "dir/test_nl.py"
+
+        def _nl_listing(_root, _args, timeout=60):
+            return 0, "backend/a.py\0%s\0" % (_nl_path,), ""
+        _nl_got = M._root_spelled_suites(["test_nl.py"], rr_proj,
+                                         run=_nl_listing)
+        check("ff19 a tracked candidate holding a newline is refused, never "
+              "returned into a gate: %r" % (_nl_got,),
+              _nl_got[0] is None
+              and "control character" in (_nl_got[1] or "")
+              and chr(10) not in (_nl_got[1] or ""))
+
+        # ---- git CANNOT list, so there is no candidate set at all -----------
+        # `ff_proj` is not a git repository. A spelling that is not on disk
+        # there must gate on the failed step naming the listing failure - an
+        # unlisted tree read as an empty one would print a "no candidate"
+        # reason that blames the spelling for what git never said. The spy on
+        # `_git` counts `ls-files` calls: each add asks once, and a suite
+        # that exists from the root is kept as written when git cannot
+        # answer, since nothing is left that could show it a twin.
+        _ff_ev.append_row(ff_proj, {
+            "v": 1, "runId": "RUN-NOGIT", "ts": "2026-09-01T00:30:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "failed",
+            "steps": [{"name": "test", "exit": 1,
+                       "failingSuites": ["gone.test.ts"],
+                       "failingSuitesBasis": ("the 1 suite file(s) vitest "
+                                              "named as failing, read from "
+                                              "vitest's FAIL <file> line(s)")}]})
+        _ls_calls = []
+        _ls_real = M._worktrees._git
+
+        def _ls_spy(git_root, args, timeout=60):
+            if list(args)[:1] == ["ls-files"]:
+                _ls_calls.append(git_root)
+            return _ls_real(git_root, args, timeout=timeout)
+        M._worktrees._git = _ls_spy
+        try:
+            codeng, txtng = run(
+                ["add", "Fix where git cannot list", "--phase", "P1",
+                 "--project-dir", ff_proj, "--failing-from", "RUN-NOGIT",
+                 "--tests-add", "src/nogit.test.ts: the case it writes"])
+            _ls_after_nogit = len(_ls_calls)
+            codeon, _txton = run(
+                ["add", "Fix a suite on disk", "--phase", "P1",
+                 "--project-dir", ff_proj, "--failing-from", "RUN-VITEST"])
+        finally:
+            M._worktrees._git = _ls_real
+        check("ff14 FAIL LOUD: where git cannot list the tracked files, a "
+              "spelling not on disk gates on the failed step's entry with "
+              "the LISTING failure named, and no gate entry carries the "
+              "unresolved spelling; a suite that exists from the root is "
+              "then kept as written, git asked once per add: %r"
+              % ((codeng, ff_tests("P1.7").get("gate"),
+                  ff_tests("P1.7").get("gateBasis"),
+                  [ln for ln in txtng.splitlines() if "could not be listed"
+                   in ln], _ls_calls, codeon,
+                  ff_tests("P1.8").get("gate")),),
+              codeng == 0
+              and ff_tests("P1.7").get("gate") == ["test"]
+              and ff_tests("P1.7").get("gateBasis")
+              == "failing-from-run:RUN-NOGIT"
+              and "gone.test.ts is not on disk from the project root, and "
+                  "the tracked files could not be listed (git ls-files: "
+                  in txtng
+              and "no candidate path" not in txtng
+              and "gone.test.ts" not in " ".join(
+                  ff_tests("P1.7").get("gate") or [])
+              and _ls_after_nogit == 1
+              and codeon == 0 and len(_ls_calls) == 2
+              and ff_tests("P1.8").get("gate")
+              == ["lint", "vitest run src/cart.test.ts"])
 
         # ---- (cp) couple / uncouple: `meta.coupling`, an index-only write --
         import _evidence_io as _cp_ev
