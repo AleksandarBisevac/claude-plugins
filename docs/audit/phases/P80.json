@@ -422,7 +422,7 @@
     {
       "id": "P80.7",
       "title": "Report: the VERIFIED line under each merged phase, and a demo fixture that shows both states",
-      "status": "in_progress",
+      "status": "done",
       "description": "render-report.py computes full_status per phase (the call audit-status makes, with the same inputs) and passes it as data to _evidence_view.load_evidence, _report_html and _report_md; _evidence_view gains the full row family so a full run is listed with the phases it made whole. Under each merged phase, only when meta.fullGate is declared, one line built from _manifest_vocab.VERIFIED: 'sign-off: <derived|wide>, <listed> of <full> suites, <status> <ts>; whole at <sha>', or 'whole: pending - record a full run at <mergedHead> (pre-push, CI, or /audit:review <P> --full)', or 'unknown - <basis>'. Rendered server-side with existing badge classes; a new class is an edit under scripts/ui/report-css, made under the refactoring-the-assembled-ui skill with python3 tools/count-ui-pins.py read first. No fullGate -> no new line and a byte-identical report, so the committed examples/acme-store artefacts do not move. The demo fixture in gen-demo-manifest.py declares meta.fullGate, stamps mergedHead on its merged phases and generates one whole-making full row and one provisional phase through _evidence_io.row_for, so the rendered surfaces show both states; delete the SCHEMA_EXEMPTIONS rows L3.a added for these fields (the stale half of schema_coverage fails otherwise) and regenerate docs/demo-large.html, which tools/check-rendered-artifacts.py compares with a fresh render. Browser gates are the orchestrator's to run, never the executor's (node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html; node tools/capture-screenshots.mjs --check). Red-first: the whole and pending lines render with their SHA; the twin carries the same words; test_render_report.py - a plan without fullGate renders the same bytes as before (mutation: always render the line -> red); test_gen_demo_manifest.py - schema_coverage has no gaps and no stale rows.",
       "files": [
         "plugins/audit/scripts/report/render-report.py",
@@ -467,18 +467,32 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ad3d7799f3cd273e264f7b48f5da6364fdb0ddd5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "render-report._full_run_block (mergedAt predicate, resolved_commands, full_status) threads fullRun into _evidence_view.load_evidence; _report_html._verified_line renders the three lines and _tev_step_rows the could-not-run basis and derived-gap mark; the Markdown twin says the same; gen-demo-manifest declares meta.fullGate and stamps mergedHead, two SCHEMA_EXEMPTIONS rows retired; docs/demo-large.html regenerated; guide fence re-rendered for the new _invariants edge (scope widened after the fact; the executor wrote it through Bash, not the gated Edit path). Committed with a journaled override: the only red was ra23 (the regenerated page not yet carried by a commit); the gate on the committed tree is green. INTENT DIVERGES (task review): the demo shows provisional and unknown but not whole, because check-rendered-artifacts renders the demo with no git repository; carried to sign-off. redFirst proved. inheritedTests not-asked.",
+        "descriptive": "The report now carries, under each merged phase, the sign-off line and whether the phase is whole, provisional or unknown in the same words as the status and panel, and shows why a step could not run; the demo plan declares a third place and the demo page shows provisional and unknown phases."
       },
       "startedAt": "2026-09-27T08:39:12Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-27T09:31:47Z",
+      "verifiedBy": [
+        "vl1",
+        "vl4",
+        "pm1",
+        "pm2",
+        "sr1",
+        "sr2",
+        "rm-vl1",
+        "vl-r3"
+      ],
       "testEvidence": {
-        "runId": "2026-09-27T09:25:12Z.8f1669",
-        "status": "failed",
-        "at": "2026-09-27T09:25:12Z"
+        "runId": "2026-09-27T09:31:36Z.92b346",
+        "status": "passed",
+        "at": "2026-09-27T09:31:36Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "ad3d7799f3cd273e264f7b48f5da6364fdb0ddd5",
+        "at": "2026-09-27T09:31:47Z"
       }
     },
     {
