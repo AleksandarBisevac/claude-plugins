@@ -763,7 +763,7 @@ the measurement that decided so. A stale measurement is therefore YOUR job, not 
 same is true of `the N <noun>` with an ordinary noun — a shape a real stale count has worn before,
 slipping past every scan.
 
-### typing/dataclasses/annotations stay banned (standing since P9.3's AST enforcement)
+### typing/dataclasses/annotations stay banned (standing since the AST enforcement landed)
 
 The 3.8 floor and hooks that must start fast on every tool call rule out the
 import and parse cost of `typing`/`dataclasses`/annotations; enforcement is

@@ -429,10 +429,11 @@ TABLE = (
   "\n\ndef _probe_tests():\n    import test__output\n    return test__output\n",
   DEP, "tb7"),
  # A core module reaching into one of the tracker connector's own doors -
- # exactly the edge the real tree carries none of, and the one `tk7` exists
- # to catch. `_loader.load_script` rather than a static `import` because the
- # door is hyphenated and cannot be spelled the other way - the same reason
- # `tests_import_violations`' probe above is a loader call and not an import.
+ # exactly the edge the real tree carries none of, which is what a case in
+ # `test__deps.py` checks against the live tree. `_loader.load_script` rather
+ # than a static `import` because the door is hyphenated and cannot be
+ # spelled the other way - the same reason `tests_import_violations`' probe
+ # above is a loader call and not an import.
  ("tracker_dependency_violations", S + "_fmt.py", "after", INSTALL,
   "\n\ndef _probe_ado():\n    import _loader\n"
   "    return _loader.load_script(\"fetch-ado-items.py\")\n",
@@ -1301,8 +1302,9 @@ ALLOW = (
   DEP, "tb4"),
  # The direction check, narrowed to nothing. Drop "importer not in doors" and
  # the connector reaching its OWN door - the shape `/audit:sync`'s commands
- # are built from - reads as a violation, which is the known-good input `tk5`
- # exists to keep clean.
+ # are built from - reads as a violation, which is the known-good input
+ # `test__deps.py` keeps clean: one door reaching another inside the same
+ # connector must never be reported.
  ("tracker_dependency_violations", S + "_deps.py", "replace",
   "                  if imported in doors and importer not in doors)",
   "                  if imported in doors)", DEP, "tk5"),

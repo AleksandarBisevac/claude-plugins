@@ -60,7 +60,7 @@ def _base_manifest():
 # Letters taken in this file (NEW file -- fresh letter space): w (the write),
 # u (uniqueness + --force), c (--clear), y (layout: sharded vs single),
 # j (journal + --json), e (usage errors), v (revalidation),
-# tw (P46.2: the tree the caller stands in against the tree the command writes).
+# tw (the tree the caller stands in against the tree the command writes).
 def _cases(check):
     root = tempfile.mkdtemp(prefix="set-priority-selftest-")
 
