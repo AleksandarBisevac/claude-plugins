@@ -19,7 +19,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P87-R1",
@@ -283,9 +283,9 @@
         "commit": "54b492be"
       }
     ],
-    "outcome": "[findings: 29 - 0 high, 3 med, 26 low; 29 with a recorded fix commit]"
+    "outcome": "matches; thirteen review passes, every finding fixed in P87.3-P87.14, the last pass clean [findings: 29 - 0 high, 3 med, 26 low; 29 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "A task that re-renders a published page records a green gate before its commit. Every journal row keeps the details its writer hands over.\n\nPublished pages:\n- The pre-commit sweep, a plain verify.sh run and verify.sh --affected compare published pages with a fresh render only.\n- The comparison with what the commit carries runs where a commit exists: verify.sh --release, and CI's no-flag run.\n- Which run asks which comparison is pinned by exact call lines in verify.sh and ci.yml, each in its place exactly once. A line naming the tool anywhere else is refused by line, and so is a call whose own continuation or YAML context would change what runs.\n- The limits are stated where the rule lives: this is a text check, so it decides neither whether a line is reached nor whether a construct makes the line data.\n- The selftest records every git call it makes against this checkout and fails on any.\n- The tool compiles clean under -W error, and ruff now refuses an invalid escape sequence.\n\nJournal:\n- DETAILS_KEYS gains parent, adoId, mode and basis, and task.blocked hands over `attempt`.\n- A lint over every append site under hooks/ and scripts/ names the next key the allow-list would drop.\n- task.blocked and ado.link are not deduplicated, because nothing in them names one event. A repeated row is possible; a lost row is not.\n\nReviewed thirteen times. Rounds one to twelve returned findings; each was fixed in P87.3 to P87.14 and is recorded with its fix commit. Round thirteen was clean. Main had not moved since the branch was cut. The phase gate is green with the tree unchanged, and the invariant check found no breach.",
   "tasks": [
     {
       "id": "P87.1",
@@ -969,5 +969,10 @@
       ]
     }
   ],
-  "startedAt": "2026-09-27T14:08:20Z"
+  "startedAt": "2026-09-27T14:08:20Z",
+  "testEvidence": {
+    "runId": "2026-09-27T18:05:57Z.1c71cb",
+    "status": "passed",
+    "at": "2026-09-27T18:05:57Z"
+  }
 }
