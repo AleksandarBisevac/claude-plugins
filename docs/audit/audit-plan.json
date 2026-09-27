@@ -1079,7 +1079,8 @@
       "P74.1",
       "P74.2-qq5",
       "P74.3-qq5",
-      "P80.21-rtb"
+      "P80.21-rtb",
+      "P81.5"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
