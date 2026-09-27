@@ -17,7 +17,7 @@ a confident `0%` that reads exactly like a measured one. Both go through
 is not a divide guard, it fabricates a denominator and turns an unmeasurable
 share into a confident one.
 
-`_fmt_tokens` / `_fmt_cost` / `_fmt_pct` delegate to `_fmt` (P10.6), the one
+`_fmt_tokens` / `_fmt_cost` / `_fmt_pct` delegate to `_fmt`, the one
 token/cost/share formatter shared with the panel and /audit:usage. The wrappers
 exist for this section's own defaults, not for a second implementation.
 

@@ -2,7 +2,7 @@
 """
 The audit report's Usage section: the order the block is assembled in.
 
-Moved out of render-report.py (P13.2) — the largest single block in that file —
+Split out of render-report.py — the largest single block in that file —
 and then cut into five, because at 1,477 lines it was five subjects in one file.
 The cut follows the section's own design rule rather than a tidy grouping:
 
@@ -39,7 +39,7 @@ it is about what sits BESIDE the number:
   * A share that stands ALONE as a claim — a tooltip line, a stat tile, a
     sentence — floors. `0%` for a slice that exists reads as "none", which is
     the same lie `$0.00` tells about real spend, and `fmt_cost` has refused to
-    tell that one since P10.6.
+    tell that one.
   * A share printed immediately NEXT TO the two numbers it was divided from —
     a bar's width beside its own token count, a budget label beside `$spent of
     $budget`, a saving beside both dollar figures — does not. The basis is

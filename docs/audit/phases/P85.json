@@ -29,7 +29,7 @@
     {
       "id": "P85.1",
       "title": "Panel comments state their rule, not the register",
-      "status": "in_progress",
+      "status": "done",
       "description": "Rewrite each comment or docstring in this task's files that cites a register id - a phase or task id (P<n>, P<n>.<m>, P<n>.<m>-<suffix>, BF<n>), a bug id (BUG-<n>), a fault id (F<n>) or a design-table label (dg<n>, tk<n>) used as a citation - so that it states the constraint of its block, the thing the id stood for, in plain words. What an id meant can be read in the private register (quality-gates-internal/PLAN.md and its plans/), but the constraint is written fresh and no register text is copied into the public tree. Not citations, and left alone: a test's own case label passed to check(), an id illustrating an id SHAPE (--phase P3, P9 before P10, phases/P1.json), a rendered-output example quoted in backticks, ruff codes in a noqa list, and demo or fixture data. No behaviour changes, no string a test reads changes, and no number is written into prose. The measured occurrences are in /private/tmp/claude-501/-Users-aleksandarbisevac-Desktop-personal-claude-plugins/3b036b96-92a2-4ce4-957f-53d389324eaa/scratchpad/idcite/occurrences.tsv (rows with is_real = yes); treat that as a pointer, verify every line, and report any real citation it missed in these files.",
       "files": [
         "plugins/audit/scripts/panel/_panel_discovery.py",
@@ -64,18 +64,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e0d4e8419104a5571ce8350570065ade84b0a81a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Comment and docstring rewrites only across _panel_discovery, _panel_settings, _panel_state, _panel_write, panel-server and their five test files; the ids the measurement missed (U3.1) were found by re-grepping. Suites green; register_citation_violations() stays at zero.",
+        "descriptive": "The panel modules' and their tests' comments and docstrings state the constraint of their block instead of citing phase or task ids."
       },
       "startedAt": "2026-09-27T01:32:38Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-27T01:46:32Z",
+      "verifiedBy": [
+        "selftests"
+      ],
       "testEvidence": {
         "runId": "2026-09-27T01:42:32Z.01be9c",
         "status": "passed",
         "at": "2026-09-27T01:42:32Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "e0d4e8419104a5571ce8350570065ade84b0a81a",
+        "at": "2026-09-27T01:46:32Z",
+        "basis": "comment-only rewrite with no behaviour change; the phase sign-off review reads every rewritten sentence against its code"
       }
     },
     {
@@ -120,9 +128,9 @@
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-09-27T01:43:33Z.6a38d8",
-        "status": "failed",
-        "at": "2026-09-27T01:43:33Z"
+        "runId": "2026-09-27T01:47:47Z.29a17f",
+        "status": "passed",
+        "at": "2026-09-27T01:47:47Z"
       }
     },
     {
@@ -164,9 +172,9 @@
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-09-27T01:44:30Z.45b919",
-        "status": "failed",
-        "at": "2026-09-27T01:44:30Z"
+        "runId": "2026-09-27T01:48:46Z.0621a4",
+        "status": "passed",
+        "at": "2026-09-27T01:48:46Z"
       }
     },
     {
@@ -212,9 +220,9 @@
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-09-27T01:45:31Z.3c2d97",
-        "status": "failed",
-        "at": "2026-09-27T01:45:31Z"
+        "runId": "2026-09-27T01:49:47Z.c08a95",
+        "status": "passed",
+        "at": "2026-09-27T01:49:47Z"
       }
     }
   ],

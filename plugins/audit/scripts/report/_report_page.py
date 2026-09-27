@@ -2,7 +2,7 @@
 """
 The audit report as a whole document: the vocabulary, the table, and the page.
 
-Moved out of render-report.py (P13.3), which is left holding `main()` — argument
+Split out of render-report.py, which is left holding `main()` — argument
 parsing, the manifest read, the theme resolve, the files it writes — and the
 suite that reads what those files contain. This module is the assembly step in
 between: which optional columns a plan has earned, what holds a phase, the rows
@@ -90,7 +90,7 @@ _CSS = _report_ui.CSS
 _SCRIPT = _report_ui.SCRIPT
 
 # HTML fragment builders (escaping, chips, cells, filter panel) live in
-# _report_html.py (P13.1) — bottom of the report's module graph, imported by
+# _report_html.py — bottom of the report's module graph, imported by
 # nothing upward. Aliased here so the call sites below read as they did when all
 # of this was one file.
 e = _report_html.e
@@ -117,7 +117,7 @@ _seg_of = _report_html._seg_of
 _tasks_by_id = _report_html._tasks_by_id
 
 # The Usage section — the ledger load, every chart in it and the Markdown twin
-# of the whole block — lives in _report_usage.py (P13.2).
+# of the whole block — lives in _report_usage.py.
 _usage_section = _report_usage._usage_section
 
 # The Markdown twin, embedded base64 as the "Download .md" payload. This is the
