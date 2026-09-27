@@ -1,7 +1,7 @@
 {
   "id": "P88",
   "title": "the history and secrets guards say exactly what they do not follow, and their allow cases are pinned",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "SECURITY.md's not-followed list names every shape the P83 round-3 review found the guards do not read, the CHANGELOG claims no broader Perl coverage than the code has, and the compound shapes the history guard now reads have allow twins that fail when the reading over-fires.",
   "testGate": [
@@ -13,21 +13,50 @@
     "lint"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "e96506fb479ac98813e30a90eac10e35642ecc12",
+  "branch": "audit/p88-the-history-and-secrets-guards",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P88-R1",
+        "severity": "low",
+        "file": "SECURITY.md:265-269",
+        "issue": "This bullet says more than the code does. The text: 'an interpreter handed the stdin marker `-`, an option this reading does not know to take a value whose separate value is script-named, or an operand carrying an expansion, is read as running a script file'. Only the middle item has the 'script-named' qualifier. The code (_config.runs_own_program, called only from guard-secrets-read.py:1131) returns True only when the first operand ends in a script extension or is an inline flag. Measured on the P88 export: ['python3','-'] False, ['python3','-','notes.txt'] False, ['python3','-','x.py'] True, ['ruby','-','-e'] True, ['python3','$S'] False, ['python3','\"$S\"'] False, ['python3','$S.py'] True. So `python3 - <<<...` and `python3 \"$X\" <<<...` are still graded as inline eval, but the document says they are exempt. The error is on the conservative side, but the statement is still one the code does not back.",
+        "resolution": "fixed in P88.2-dnb (e4c96d2b): fix task P88.2-dnb (review-P88a.json)",
+        "fixTask": "P88.2-dnb",
+        "commit": "e4c96d2b"
+      },
+      {
+        "id": "P88-R2",
+        "severity": "low",
+        "file": "SECURITY.md:241-282 (open-residuals list); P88 desiredOutcome",
+        "issue": "The desiredOutcome says the not-followed list names 'every shape the P83 round-3 review found the guards do not read'. review-P83c.json preExisting[0] is such a shape, and the list does not name it. The $(...) scanner stops at a `)` inside a comment or inside a heredoc body within the substitution. Measured on the P88 export with guard-history-rewrite._substitution_end: for `echo \"$(echo x # )<nl> echo hello) tail\"` it returns index 17, but the real close is at 30. For a quoted heredoc whose body line is `)`, it returns 18, but the real close is at 22. SECURITY.md:204-205 says of the substitution reading that 'Each of these readings has limits, and the list of open residuals below says where', and the list does not include this one. The task description limited itself to findings 4-6, so the task matches its own description. The gap is between the phase goal and the diff.",
+        "resolution": "fixed in P88.2-dnb (e4c96d2b): fix task P88.2-dnb (review-P88a.json)",
+        "fixTask": "P88.2-dnb",
+        "commit": "e4c96d2b"
+      },
+      {
+        "id": "P88-R3",
+        "severity": "low",
+        "file": "SECURITY.md:263-264",
+        "issue": "This is a claim the code does not keep, so it is filed here even though its severity is low. The error is on the conservative side: the bullet states a wider residual than exists. The new bullet reads: 'inside a `$(…)` body, a `)` in a comment or in a heredoc body is read as the substitution's close, so the rest of the body is not read'. That holds for _substitution_end called on raw text, which is what round 1 and the P83 review measured. It does not hold for the guard's own path. git_calls runs runnable() first and splits the command into stages with _op_tokens. Measured on a `git archive e4c96d2b` export, using git_calls with the benign verb `log`. (a) Comment half. A DOUBLE-QUOTED substitution loses the rest: `echo \"$(echo x # )<nl>git log) tail\"` gives []; the control without `#` gives [log]. An UNQUOTED substitution does not lose it: `echo $(echo x # )<nl> git log)` gives [log], and `x=$(...)` does too. The rest is read as outer command text. `true $(echo x # )<nl> echo hello > .git/hooks/pre-commit)` gives _output_runs True for the hello stage. (b) Heredoc half. runnable_text lifts the body out of the command before the scanner runs, for `<<'E'`, `<<\"E\"`, `<<E`, `<<-E`, a piped head and a nested subshell. Each of those gives [log] with a `)` body line. The rest is lost only when the body stays inline. That happens with a backslash-quoted delimiter (`<<\\E` gives [], and its control gives [log]) and with a second heredoc on the same line (`<<'E' <<'F'` gives [], and its control gives [log]).",
+        "resolution": "fixed in P88.3-dnb (cda6c2c1): fix task P88.3-dnb (review-P88b.json)",
+        "fixTask": "P88.3-dnb",
+        "commit": "cda6c2c1"
+      }
+    ],
+    "outcome": "matches; one phase review and two fix-diff reviews, every finding fixed in P88.2-P88.3 [findings: 3 - 0 high, 0 med, 3 low; 3 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "SECURITY.md now says exactly what the history and secrets guards do not follow, and the history guard's compound readings are pinned by allow cases.\n\nThe Not-followed list names two groups of shapes, each at shape level and measured through the guard's own path:\n- the shapes the P83 round-3 review measured as not read;\n- the three still open and tracked as BUG-12.\n\nA residual bullet names where the substitution scanner closes early, and names only what the guard's path really misses.\n\nThe CHANGELOG's Perl sentence claims only the forms the pattern reads.\n\nAllow twins for the history guard's compound readings go red under the over-fire mutation each one guards.\n\nNo guard's code changed. BUG-12's three medium findings stay open for a Python maintainer. Red tests for them are committed on branch fix/bug-12, with a handoff document in the internal repository.\n\nReviewed once over the phase and once over each fix diff. Every finding was a claim in SECURITY.md the code did not keep, and each was fixed in P88.2 or P88.3 and recorded with its fix commit. Main had not moved. The phase gate is green with the tree unchanged, and the invariant check found no breach.",
   "tasks": [
     {
       "id": "P88.1",
       "title": "the guards' documents claim only what the code reads, and the history guard's compound readings have allow twins",
-      "status": "pending",
+      "status": "done",
       "description": "The three low findings of the P83 round-3 review (quality-gates-internal/probes/fr15-16/reviews/review-P83c.json, findings 4-6). (4) SECURITY.md's Not-followed list for guard-history-rewrite and guard-secrets-read names every shape the review measured as not read and still open: the two it lists (a pass-through filter's own redirect after a pipe; a receiving loop that evals what it read) and the three med findings 1-3 that stay open for a human maintainer (BUG-12), each stated as a shape in general terms. The list is derived from the review, not invented. (5) The CHANGELOG sentence on Perl's open shapes is narrowed to what the pattern reads (the parenthesised forms with an exact '<' mode), and SECURITY.md names the unread idiomatic and layered forms as a residual; the guard's code is not changed here (guard-secrets-read.py is declared by P86.3). (6) Allow twins in test_guard_history_rewrite.py for gp61, gp62, gp64 and gp68-gp71: the same compound shapes writing into notes.md (a then-branch emitter redirected, a loop piped after done into cat, a receiving group in a subshell, an echo of the words into notes.md) are allowed; each proved red against the over-fire mutation it guards (every receiving-group member read as a runner; a compound's redirect given to stages outside it). Benign text only in every fixture; this task adds no refusal case and no new way to evade either guard.",
       "files": [
         "SECURITY.md",
@@ -55,16 +84,112 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "825be9c9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "SECURITY.md Not-followed and BUG-12 bullets; CHANGELOG Perl sentence narrowed; allow twins gp61a gp62a gp64a gp68a-gp71a",
+        "descriptive": "SECURITY.md names every shape the guards do not follow, and the history guard's compound readings are pinned so an over-refusal would fail"
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-27T20:01:18Z",
+      "completedAt": "2026-09-27T20:13:31Z",
+      "verifiedBy": [
+        "test_guard_history_rewrite 248/248",
+        "probe rows red on an export",
+        "full sweep",
+        "gate-parity"
+      ]
+    },
+    {
+      "id": "P88.2-dnb",
+      "title": "SECURITY.md's guard residuals claim exactly what the code reads and name every shape the review found",
+      "status": "done",
+      "description": "Phase review round 1 (review-P88a.json). (1) The BUG-12 bullet in SECURITY.md overstates: runs_own_program (_config.py) exempts `-` only when followed by a script-named or inline-flag word, and an expansion operand only when it ends in a script extension; narrow items 1 and 3 to what the code reads (measured on the export). (2) The desiredOutcome promises every shape the P83 round-3 review found, and the list omits its preExisting[0]: the $(...) scanner closes early on a `)` inside a comment or a heredoc body; add one shape-level bullet. Also, from the low list: L1 the case-arm `in` bullet says 'its pipe or redirect'; L2 the eval residual says 'a receiving group or loop'; L4 the test comment lists the twin ids explicitly instead of the range gp61a-gp71a. L3 stays with BUG-12. Documentation and a test comment only; no guard code changes; shape-level wording, no recipe; prose-number lints clean.",
+      "files": [
+        "SECURITY.md",
+        "plugins/audit/tests/test_guard_history_rewrite.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "e4c96d2b",
+      "outcome": {
+        "technical": "BUG-12 bullet narrowed to runs_own_program; substitution early-close bullet; case-arm and eval wording; twin ids listed",
+        "descriptive": "The guard residuals in SECURITY.md say only what the code does and name every shape the review found"
+      },
+      "startedAt": "2026-09-27T20:21:15Z",
+      "completedAt": "2026-09-27T20:27:19Z",
+      "verifiedBy": [
+        "prose-number lints",
+        "sweep 305/305",
+        "probe rows still red on an export"
+      ]
+    },
+    {
+      "id": "P88.3-dnb",
+      "title": "the substitution-scanner residual names only the shapes the guard's own path misses",
+      "status": "done",
+      "description": "Fix-diff review of P88.2 (review-P88b.json). The new $(...) bullet in SECURITY.md is broader than the guard's own path: measured through git_calls/_output_runs (runnable() first), a comment's `)` loses the rest only inside a DOUBLE-QUOTED substitution (an unquoted one is still read), and a heredoc body's `)` loses the rest only when the body stays in place - a backslash-quoted delimiter or a second heredoc on the same line - because runnable_text moves the other heredoc bodies out first. Narrow the bullet to exactly those shapes, measured through the guard's path (not _substitution_end on raw text), at shape level. Also the BUG-12 interpreter bullet: 'followed by' becomes 'whose next word is', because the code reads only the first plain word after `-`. Documentation only.",
+      "files": [
+        "SECURITY.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "cda6c2c1",
+      "outcome": {
+        "technical": "bullet narrowed to double-quoted substitution comment and in-place heredoc body; interpreter item names the first operand",
+        "descriptive": "The substitution residual in SECURITY.md names only what the guard really misses"
+      },
+      "startedAt": "2026-09-27T20:32:46Z",
+      "completedAt": "2026-09-27T20:38:51Z",
+      "verifiedBy": [
+        "prose-number lints",
+        "sweep 305/305",
+        "probe rows still red on an export"
+      ]
     }
-  ]
+  ],
+  "startedAt": "2026-09-27T20:01:18Z",
+  "testEvidence": {
+    "runId": "2026-09-27T20:42:01Z.15d601",
+    "status": "passed",
+    "at": "2026-09-27T20:42:01Z"
+  }
 }

@@ -254,9 +254,37 @@ base refused:
   within it prints, and a compound command (a group, a loop, `if`, `case`) carries
   its pipe or redirect to every stage inside it. Not followed: a file run by a
   LATER command; a `core.hooksPath` directory whose name does not say it holds
-  hooks; a file written by another program (`dd`, `cp`, an editor); a phrase
-  assembled at run time (a `printf` format, a variable's value); and output that
-  reaches a shell through a descriptor or a named pipe.
+  hooks; a file written by another program (`dd`, `cp`, an editor), and that
+  includes a pass-through filter other than `tee` (`cat`) writing what it was piped
+  through its own redirect after the pipe; a receiving group or loop that reads a
+  line into a variable and `eval`s it; a phrase assembled at run time (a `printf`
+  format, a variable's value); and output that reaches a shell through a
+  descriptor or a named pipe;
+- inside a double-quoted `$(…)`, a `)` in a comment is read as the substitution's
+  close, and so is one in a heredoc body the heredoc reading leaves in place (a
+  backslash-quoted delimiter, the second of two heredocs on one line); the rest of
+  the body is not read as commands;
+- open and tracked as BUG-12 — shapes the widened reading's own review measured as
+  not read, each waiting on a fix rather than accepted:
+  - an interpreter handed the stdin marker `-` whose first operand after it is
+    script-named or spelled as its own inline flag, an option this reading does not know
+    to take a value whose separate value is script-named, or an operand carrying an
+    expansion that ends in a script extension, is read as running a script file, so
+    a here-string fed to it is graded as that script's input although the
+    interpreter still reads its program from stdin (`guard-secrets-read`);
+  - a `case` arm whose body holds the word `in` as an ordinary argument before a
+    parenthesised group: the group is lost, so its pipe or redirect is not
+    followed;
+  - the shapes the narrowings of this reading dropped: a process substitution
+    whose own command writes, through `tee` or a redirect, into a hook or an
+    unresolvable target; a bare hook name written after a `cd` into the hooks
+    directory; and a program named by a variable behind a wrapper option that
+    takes a separate value, the exception to the variable-program rule above;
+- in `guard-secrets-read`, Perl's `open` is read as a read only in its
+  parenthesised forms: two-argument, the path string carrying an optional `<`, and
+  three-argument with a mode of exactly `'<'`; the idiomatic call without
+  parentheses, and a three-argument mode carrying a layer (`'<:raw'`, an
+  encoding), name no read target.
 
 **The plan a git command answers to is the one of the tree it runs in.** `git -C
 <dir>`, a `cd` before it, or the payload's own directory names each invocation's
