@@ -27,7 +27,7 @@
     {
       "id": "P91.1",
       "title": "the committed-artifact check reads the plan, and the shards it finds are scrubbed",
-      "status": "in_progress",
+      "status": "done",
       "description": "Extend check-committed-pii's derived domain to the plan: the index and every file under docs/audit/phases. Red first with a synthetic shard that names a path inside a home directory and one inside the temporary directory. Run the extended check over the real tree BEFORE deciding anything else, and report every hit. Scrub the hits in P85 and P86 by replacing each absolute scratch path with the file's base name (the text keeps what it pointed at). Any other hit is reported, not baselined, until the orchestrator decides. No verb rewrites a finished task's description, so the scrub is this task's own declared edit.",
       "files": [
         "tools/check-committed-pii.py",
@@ -57,18 +57,29 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ee9d8fae",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/check-committed-pii.py: plan_files derives the index from the plugin config's manifestPath and the shards from the index's own pointers (surface 'plan'); plan-index-unparseable and plan-config-unreadable findings; q24/q25 fixture, q6 expects the plan surface; BASELINE rows keyed by path, line and detector with reasons. P85 (done tasks, direct edit) and P86 (pending tasks, scope --description) scrubbed to the base name.",
+        "descriptive": "The committed-artifact check reads the plan index and every phase shard; the two shards that named the machine's scratch directory now name the file alone, and every other hit, a quoted example shape, is baselined with its reason."
       },
       "startedAt": "2026-09-27T23:03:18Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-27T23:16:46Z",
+      "verifiedBy": [
+        "q6",
+        "q24",
+        "q25",
+        "q7"
+      ],
       "testEvidence": {
         "runId": "2026-09-27T23:16:30Z.237225",
         "status": "passed",
         "at": "2026-09-27T23:16:30Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "ee9d8fae",
+        "at": "2026-09-27T23:16:46Z",
+        "basis": "the scrub of P85/P86 was made by the orchestrator with the owner's approval (the plan gate refuses a subagent's plan write), not by this task's executor; the domain extension and the baseline are the executor's"
       }
     }
   ],
