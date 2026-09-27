@@ -118,15 +118,13 @@ not need to.
      task's declared test files from the working tree over it, runs the command there,
      removes the throwaway in a `finally` and reports whether the removal held, and prints
      the `redFirst` block, naming the failing case it rests on — which must be one of the
-     task's own: a case that HEAD's own test files, run with the same command in the same
-     throwaway, did not name. That run is made only when the first is red, and it needs a
-     command that names every case, passing ones included (the house harness does; pytest
-     wants `-rA` or `-v`, unittest `-v`) — otherwise the answer is `could-not-prove`. When
-     HEAD's own run is itself red, a case is credited only if that run printed a count of
-     every case it had (the house tally, pytest's `collected N items`) equal to the cases it
-     named; unittest prints none, so a red HEAD run under unittest is `could-not-prove`.
-     `--case` narrows to the ids or labels it names, held to that same test, so naming a case
-     HEAD's run already named proves nothing. Its
+     task's own. A red counts only against a GREEN baseline: HEAD's own test files, run with
+     the same command on HEAD's code in the throwaway reset to HEAD, must be green, and the
+     fix run (the task's test files on the working tree's code) must turn every failure
+     green — then every failure is the task's own, a new case or an edited one. A command
+     already red at HEAD is `could-not-prove`: narrow the command to the task's cases.
+     `--case` narrows to the ids or labels it names, held to that same test: it must name a
+     case that failed an assertion in the task's run. Its
      `--introduces <symbol>` is where "the task introduces the symbol" is decided: an
      identifier absent from HEAD's copy of every declared implementation file and present
      in the working tree's, a final import/attribute/name error naming it, and a second run

@@ -544,6 +544,53 @@
         "test_stamp_verification sr122",
         "test_stamp_verification sr124"
       ]
+    },
+    {
+      "id": "P82.9-fye",
+      "title": "red-first proves only against a green, isolated baseline, and every failure then is the task's own",
+      "status": "in_progress",
+      "description": "Seven review rounds each found another way to credit a case past a RED baseline (probe20 (A), (C) this round). Every one of them depends on crediting while HEAD's own run is red, so the rule changes instead of growing another reader. New rule, one mechanism: (1) the task's tests run against HEAD's code and must be red with an assertion failure (as now). (2) HEAD's own test files run against HEAD's code in an ISOLATED checkout - a clean throwaway (checkout -f of HEAD plus clean -ffdx, so nothing the task's run wrote survives), PYTHONNOUSERSITE=1, its own TMPDIR - and must be GREEN: a tally, no failure, no error. Anything else is could-not-prove with the reason \"the command is already red (or unreadable) at HEAD - narrow it to the task's cases\". (3) the task's tests run against the working tree's code (the fix run) and every case that failed in (1) must pass there; otherwise could-not-prove. (4) with (2) green, every failure in (1) comes from the task's change to the tests, so all of (1)'s failures are the task's own; --case must name one of them. Remove what this makes unnecessary - label matching and pairing (compare_runs, changed_reds, _uncovered, _hopcroft_karp and its SCC pass, the stop-first readers) - keeping one mechanism. Rewrite or remove the cases of removed functions with a reason each; every probe (probe5-probe21) must answer correctly, and a red baseline must now read could-not-prove with the narrowing reason. The docs, audit-executor.md and execute-task.md state the new rule and the narrowing instruction.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/reference/execute-task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: repro that FAILS on current code - a house suite that stops quietly after its first red at HEAD credits a case that never passes"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T03:38:13Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-26T09:47:10Z"

@@ -304,48 +304,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   test file already held, was refused as not the task's own, and the red read `could-not-prove`
   while the run held exactly that one failing case. A house case is now named by its full label,
   with a leading id-shaped token (`me1`, `ga9b`, `pc-sd0` - the shape the harness's `case_id()`
-  hands out) as its id only when present. Whether a failing case is the task's own is now MEASURED
-  rather than read off the test file's source: when the run is red, HEAD's own copies of the test
-  files are put back in the same throwaway and the same command runs again, and a failing case is
-  the task's own exactly when that run of HEAD did not name it, and any case the two runs cannot
-  match one to one is refused rather than credited: a case HEAD printed that the task's run does not
-  print again under any label it may carry (a rename, a removal, a label carrying a per-run value), a
-  declared test file HEAD has and the working tree does not, a HEAD run that collected no case or is
-  red and may have stopped early (a pytest stop or interrupt line, `-x`, `--maxfail`, `-f`,
-  `--failfast` and their kin), and an edited case beside a new passing case of the same label. A
-  failing house line one reading of which HEAD printed is credited only by a fix run - the task's
-  test files with the working tree's implementation - that pairs it one to one to a label HEAD never
-  printed, and HEAD's lines are then paired again against the settled labels, so a rename by an
-  appended ` (as read)` is refused. The pairing is an iterative Hopcroft-Karp under the one deadline
-  and an edge budget; an overrun is `could-not-prove`. A stop-first option is read in every spelling
-  the runner accepts (clustered short options, unambiguous long prefixes), and a red HEAD run under a
-  command that is not a direct runner invocation (a shell, `make`, a wrapper) is `could-not-prove`.
-  HEAD's file list is read NUL-separated, so a path git would quote (not plain ASCII) is not taken
-  as new at HEAD. unittest names are qualified by class, HEAD's files are put back byte for byte,
-  every git call before the throwaway's removal runs under the one deadline, and every run is made
-  with `PYTHONDONTWRITEBYTECODE=1` so a swapped file cannot be shadowed by stale cached bytecode.
-  Each red line at HEAD is paired one to one with a DIFFERENT failing line of the task's run; a red
-  at HEAD left without a partner means its test was changed, and beside a credited failing line
-  that is `could-not-prove`, so a red already there before the task - one or several, sharing a
-  label or not - cannot be credited by relabelling it. A red HEAD run is credited only on positive
-  evidence that it covered every case (the house tally's total, pytest's `collected N items`, equal
-  to the cases named), since a stop-first setting can live where no option reader sees it -
-  `unittest.main(failfast=True)` in the file, a runner config; a red HEAD run under unittest, which
-  prints no such count, is `could-not-prove`. The pairing's candidate pairs are bounded from the
-  label counts before any graph is built. The limits that remain are listed in the guide: a case
-  passing at HEAD that is given a new label and edited to fail, its old label reused by a new passing
-  case, is credited - that red comes from the task's own edit, as an edited test's red does - and
-  every other limit refuses. A label built by a wrapper, looked up
-  in a dict, or spelled again by an unrelated literal - each a shape some reading of the source got
-  wrong - is therefore decided the same way as any other. The command must name every case it runs,
-  passing ones included: the house harness does, pytest does under `-rA` or `-v`, unittest under
-  `-v`; a HEAD run naming fewer cases than it collected, or with no tally while the test file exists
-  at HEAD, is `could-not-prove` with that reason, and a test file new at HEAD names nothing. The
-  extra run is paid only when the first is red; `--json` records its exit and seconds under
-  `run.head`. The FAIL line's detail is set aside at every ` (`, so a detail spanning lines no
-  longer hides the label. `--case` takes the id or the full label (the usage line, the flag's help
-  and the executor brief say so), and is held to the same measurement, so a pytest nodeid is judged
-  as its test.
+  hands out) as its id only when present. A red is now credited only against a GREEN baseline:
+  after the task's run (its test files on HEAD's implementation) is red on an assertion, HEAD's own
+  test files run with the same command on HEAD's implementation in the throwaway reset to HEAD
+  (a forced checkout and a clean of untracked and ignored files, `PYTHONNOUSERSITE=1`, a TMPDIR of
+  its own, and a fresh home under every name a home lookup reads - the table
+  `tools/sweep-selftests.py` isolates its children with; the fix run gets a fresh home too) and must
+  be green - a tally counting no failure and no error. Then every failure of the
+  task's run comes from the task's change to the tests, a new case or an edited one, and all of
+  them are its own; a fix run (the task's test files on the working tree's implementation) must then
+  be green too, with no fewer cases, and `--case` must name one of the failures. A command red or
+  unreadable at HEAD is `could-not-prove` with the instruction to narrow it to the task's cases.
+  Seven review rounds each found another way to credit a case past a red baseline by reading two
+  runs' output - a relabelled case, a quiet stop, a failfast set in the file, a file the task's run
+  rewrote - and the rule removes the reading rather than adding another reader: the label matching,
+  the pairing and the stop-first readers are gone. HEAD's file list is read NUL-separated, so a
+  declared test file whose path git would quote (not plain ASCII) is found at HEAD; every git call
+  before the throwaway's removal runs under the one deadline; and every run is made with
+  `PYTHONDONTWRITEBYTECODE=1` so a swapped file cannot be shadowed by stale cached bytecode.
+  `--json` records the baseline and the fix run under `run.head` and `run.fix`. The FAIL line's
+  detail is set aside at every ` (`, so a detail spanning lines no longer hides the label.
+  `--case` takes the id or the full label (the usage line, the flag's help and the executor brief
+  say so).
   Cases are now read only from the runner whose tally the verdict was read from; when tallies of
   more than one runner appear, the test command decides if it names one (`pytest`, `-m unittest`,
   a house `--selftest`), and otherwise the red is `could-not-prove` naming every tally. So an

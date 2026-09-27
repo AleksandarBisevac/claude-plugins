@@ -3628,8 +3628,8 @@ refused before anything is built, because it would run the shared files and grad
 `run-test-gate.py` and `red` share: the child starts a session of its own, a timeout or an
 interrupt tears the whole group down, and SIGINT/SIGTERM raise so the `finally` runs.
 ONE deadline, `--timeout`, starts before anything runs and covers every git call that builds or
-reads the throwaway, every run - the task's, the second (`--introduces`), HEAD's own and the fix
-run - and the pairing that compares them, each getting what the earlier ones left; at most one run
+reads the throwaway and every run - the task's, the second (`--introduces`), HEAD's own and the fix
+run - each getting what the earlier ones left; at most one run
 can time out, because each later run is made only when the one before it finished. What follows the
 deadline is bounded and summed in `TEARDOWN_MARGIN` - one teardown and the removal's two git
 calls, each capped at `REMOVE_GIT_TIMEOUT` - and `--timeout` is refused above `MAX_TIMEOUT`, the
@@ -3660,66 +3660,35 @@ output carries the tallies of more than one runner, the command decides if it na
 `could-not-prove` and names every tally it saw:
 a house `FAIL` that is not a build escape or a duplicated id, a pytest `FAILED` whose reason is an
 `assert`, a unittest `FAIL:`. A pytest body exception and a unittest `ERROR:` are named but are not
-assertions. `proved` needs one of those failures to be the TASK'S OWN, and that is MEASURED, not
-read off the source: when the run is red, HEAD's own copies of the test files are put back in the
-same throwaway and the SAME command runs again, and a failing case is the task's own exactly when
-that run of HEAD did not name it (`head_names()`, `compare_runs()`, `own_failures()`). A FALSE
-PROVED IS REFUSED WHEREVER THE RUNS CAN SHOW IT, so any case the two runs cannot match one to one
-is refused, never credited. Every case HEAD's run named must be printed again by the task's run -
-pytest node ids and unittest `Class.test` names exactly, an id-led house label by its id, any other
-house line paired one to one with a different task line that may carry its label (a house FAIL line
-may carry its own text or the text before any ` (`, since where its detail starts cannot be read off
-the line) - or the whole comparison is refused: a renamed or removed case, a label carrying a
-per-run value. A failing house line is HEAD's when any label it may carry is one
-HEAD printed; where one reading is HEAD's and another is not, only a FIX RUN - the task's test
-files with the working tree's implementation, where a case that now passes prints its label bare -
-can credit it, by pairing every line one to one and finding the line left exactly one label HEAD
-never printed; HEAD's lines are then paired again against those settled labels, so a rename made by
-appending ` (as read)` is refused, and an edited case beside a new passing case of the same label
-pairs to HEAD's label and is refused. The pairing is Hopcroft-Karp with Tarjan's components,
-iterative and checked against the deadline; its candidate pairs are bounded from the label counts
-before any graph is built and refused past `PAIRING_EDGE_BUDGET`, and pairing HEAD's reds runs
-through the same label index, so a comparison it cannot finish is `could-not-prove`. HEAD's run itself is refused when it could not be made, when it printed no tally or a
-tally of no case while a declared test file exists at HEAD, when it names fewer cases than it
-collected (pytest names passing cases only under `-rA` or `-v`, unittest only under `-v`), and when
-it is red and may have stopped early: a pytest stop or interrupt line; a stop-first option in any
-spelling the runner accepts - clustered (`-vf`, `-v -cf`, `-vx`), or an unambiguous prefix of
-`--failfast`, `--exitfirst`, `--maxfail`, `--stepwise`, `--sw`; or a command that is not a direct
-runner invocation (`pytest`, `python -m pytest|unittest`, `python <file>.py`), since a shell, `make`
-or a wrapper can pass a stop-first option unseen. Reading options cannot be the whole answer - a
-stop-first setting can live in a runner config, an environment variable or the test file itself
-(`unittest.main(failfast=True)`) - so a red HEAD run is credited only on POSITIVE evidence that it
-covered every case: the house tally's total, or pytest's `collected N items` less any deselected,
-equal to the cases it named (`_uncovered()`). unittest prints how many it ran, never how many it
-had, so a red HEAD run under unittest is `could-not-prove`. HEAD's file list is read NUL-separated
-(`ls-tree -z`), so a path git would quote is found like any other. A declared test file
-HEAD has and the working tree does not - a rename or a delete - refuses the comparison. HEAD's
-copies are put back byte for byte (`git checkout HEAD --`), and every run is made with `PYTHONDONTWRITEBYTECODE=1`, so a swapped file of the same size
-written in the same second cannot be shadowed by a stale cached bytecode file. A test file new at HEAD
-names nothing, so every case in it is new. The extra runs are paid only when the first run is red
-(the fix run only when nothing else would be credited), and the payload records each one's exit
-and seconds.
+assertions. `proved` needs one of those failures to be the TASK'S OWN, and that is decided by a
+GREEN BASELINE, not by reading output (`baseline_problem()`, `fix_problem()`, `own_failures()`):
 
-**What the measurement still cannot see.** One shape is credited, and it is the task's own: a case
-PASSING at HEAD that the task gives a new label, edits to fail, and whose old label it reuses for a
-new passing case - HEAD's case reappears under its old label and the failing line carries a label
-HEAD never printed. That red comes from the task's own edit, exactly as an edited test's red does.
-The same shape over a case already FAILING at HEAD would credit a red that was there before the
-task, so it is refused: `changed_reds()` pairs each red line at HEAD one to one with a DIFFERENT
-failing line of the task's run that may carry its label (an id-led one by its id), and a red at
-HEAD left without a partner means its test was changed - the task's run runs HEAD's code - which
-beside a credited failing line is `could-not-prove`. Every other limit refuses: a new case whose
-label shares a reading with one HEAD printed is refused unless the fix run tells them apart, which
-needs the case to pass with the fix; a new case given an id an existing family already uses is
-refused; a task that renames or removes any case or declared test file HEAD's run printed is refused
-whole, as is one whose labels carry per-run values without an id to key them; a HEAD test file that
-genuinely holds no case refuses, because a run collecting none cannot be told from one that failed
-before collecting; a red HEAD run with no count showing it covered every case - any red unittest
-run, a stop-first option, a command this cannot read whole - refuses even when every case did run;
-a runner told to name only failures (`pytest -q`, unittest without `-v`) refuses; and a pairing
-whose candidate pairs, counted from the labels before any graph is built, pass the edge budget, or
-that the deadline overtakes, refuses. `--case` narrows to the ids or labels it names and is held to the same
-measurement, because the flag is chosen by the party being checked; the
+1. the task's run - its test files on HEAD's implementation - is red on an assertion;
+2. HEAD's own test files run with the same command on HEAD's implementation, in the throwaway reset
+   to HEAD (a forced checkout and a clean of untracked and ignored files, so nothing the task's run
+   wrote or rewrote survives), with `PYTHONNOUSERSITE=1`, a TMPDIR of its own and a fresh home set
+   under every name a home lookup reads (`HOME_VARS`, the table `tools/sweep-selftests.py` isolates
+   its children with), and must be GREEN:
+   exit 0 and a tally counting no failure and no error. Anything else - already red, stopped,
+   unreadable, a file the command names that HEAD does not have - is `could-not-prove` with the
+   instruction to narrow the command to the task's cases. A declared test file new at HEAD has
+   nothing of HEAD's to run;
+3. the fix run - the task's test files on the working tree's implementation, in the throwaway reset
+   again, with a fresh home of its own - must be green, with no fewer cases than the task's run, so every failure turns green;
+4. with the baseline green, every failure of step 1 comes from the task's change to the tests - a new
+   case or an edited one, the task's own edit either way - and `--case` must name one of them.
+
+Seven review rounds each found another way to credit a case past a RED baseline by reading two runs'
+output - a relabelled case, a label carrying a per-run value, a quiet stop, a failfast set in the
+file, a file the task's run rewrote - so the rule stopped crediting against a red baseline at all
+rather than adding an eighth reader. What that costs is stated plainly: a command already red at HEAD
+must be narrowed to the task's cases before it can prove anything, and a case whose red the fix does
+not turn green is not proved. HEAD's file list is read NUL-separated (`ls-tree -z`), so a declared
+test file whose path git would quote is found like any other, and every run is made with
+`PYTHONDONTWRITEBYTECODE=1`, so a swapped file of the same size written in the same second cannot be
+shadowed by a stale cached bytecode file. The extra runs are paid only when the first is red, and the
+payload records each one's exit and seconds. `--case` narrows to the ids or labels it names and must
+name a case that failed an assertion, because the flag is chosen by the party being checked; the
 basis names the case and says whether it was named or derived. A house suite whose every failure is a block that raised while being built, a
 run with errors and nothing asserted, zero collected, and a bare traceback ending in a compile or
 import error are `collection-error`, which prints `could-not-prove` — unless the task

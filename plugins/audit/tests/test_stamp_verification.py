@@ -26,6 +26,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -735,10 +736,10 @@ def _own_case_cases(check):
     root, man = _red_repo("stamp-red-own-", two)
     code, got = _red(root, man, [py, "tests/test_mine.py"])
     said = json.dumps(got.get("redFirst") or got.get("note"))
-    check("sr25 a red that is only an EXISTING case failing, while the task's new "
-          "case passes, is not proved: the failing case is named, and it is not "
-          "one the task added: exit=%r %s" % (code, said[:240]),
-          code != M.E_PROVED and "old1" in said)
+    check("sr25 an EXISTING case edited to fail, while the task's new case "
+          "passes, proves: against a green baseline the red comes from the "
+          "task's own edit, and the basis names it: exit=%r %s" % (code, said[:240]),
+          code == M.E_PROVED and "old1" in said)
     code_c, got_c = _red(root, man, [py, "tests/test_mine.py"], "--case", "zz9")
     check("sr26 --case names the task's own case, and a red whose failing cases "
           "do not include it is not proved: exit=%r" % (code_c,),
@@ -874,12 +875,13 @@ def _final_pass_cases(check):
     two = _house_test("import mine", [("old1", "mine.v == 2"), ("new1", "True")])
     root_c, man_c = _red_repo("stamp-red-caseold-", two)
     code_c, got_c = _red(root_c, man_c, [py, "tests/test_mine.py"], "--case", "old1")
-    check("sr36 --case cannot name a case HEAD's own run already named: the "
-          "flag is chosen by the party being checked, so it is held to the same "
-          "measurement as a derived case: exit=%r %r"
-          % (code_c, (got_c.get("redFirst") or {}).get("basis", "")[-160:]),
-          code_c != M.E_PROVED
-          and "old1" in (got_c.get("redFirst") or {}).get("basis", ""))
+    code_p, got_p = _red(root_c, man_c, [py, "tests/test_mine.py"], "--case", "new1")
+    check("sr36 --case must name a case that FAILED in the task's run: the edited "
+          "old1 is one and proves, the passing new1 is not and is refused, "
+          "whoever chooses the flag: exit=%r/%r %r"
+          % (code_c, code_p, (got_p.get("redFirst") or {}).get("basis", "")[-160:]),
+          code_c == M.E_PROVED and code_p == M.E_CANNOT_PROVE
+          and "new1" in (got_p.get("redFirst") or {}).get("basis", ""))
     root_d, man_d = _red_repo("stamp-red-casenew-",
                               _red_test("import mine", "mine.v == 2"))
     code_d, got_d = _red(root_d, man_d, [py, "tests/test_mine.py"], "--case", "new1")
@@ -990,14 +992,13 @@ def _budget_cases(check):
     with open(os.path.join(M_PLUGIN, "reference", "execute-task.md"), "r",
               encoding="utf-8") as fh:
         ref = " ".join(fh.read().split())
-    check("sr45 execute-task.md states the rule the helper enforces: the task's "
-          "own case is one HEAD's own run of its test files did not name, the "
-          "command must name every case, and --case is held to that same "
-          "measurement - not an alternative to it",
-          "did not name" in ref and "names every case" in ref
+    check("sr45 execute-task.md states the rule the helper enforces: a red counts "
+          "only against a GREEN baseline of HEAD's own test files, a command "
+          "already red at HEAD must be narrowed to the task's cases, and --case "
+          "is held to that same test - not an alternative to it",
+          "GREEN baseline" in ref and "narrow the command to the task's cases" in ref
           and "`--case` narrows" in ref and "held to that same test" in ref
-          and "present in the working tree's test file and absent from HEAD's"
-          not in ref)
+          and "did not name" not in ref)
 
 
 # --- a house case is its label; a runner's lines count only in its own output --
@@ -1109,12 +1110,12 @@ def _label_cases(check):
     runs = dict((flag, _red(root, man, [py, "tests/test_mine.py"], "--case", flag))
                 for flag in (_NEW_LABEL, "the", _OLD_LABEL))
     check("sr51 --case names a sentence-labelled case by its full label; its "
-          "first word alone is not a name, and HEAD's own sentence label is "
-          "refused: %r" % (dict((k, v[0]) for k, v in runs.items()),),
+          "first word alone is not a name, and the label of a case that passes "
+          "is refused: %r" % (dict((k, v[0]) for k, v in runs.items()),),
           runs[_NEW_LABEL][0] == M.E_PROVED
           and runs["the"][0] == M.E_CANNOT_PROVE
           and runs[_OLD_LABEL][0] == M.E_CANNOT_PROVE
-          and "HEAD's own run already named" in json.dumps(runs[_OLD_LABEL][1]))
+          and "names no case that failed" in json.dumps(runs[_OLD_LABEL][1]))
 
     wt_id = _label_suite([(repr(_OLD_LABEL), "mine.v >= 1"),
                           ("'nv2 the new value is two'", "mine.v == 2")])
@@ -1191,7 +1192,7 @@ def _runner_cases(check):
 
 
 def _specific_cases(check):
-    new = [("'the fix sets the next value'", "mine.v == 3")]
+    new = [("'the fix sets the next value'", "mine.v == 2")]
     code, said = _label_red("stamp-red-loose-", ["VIEW = '%dx%d' % (1280, 720)"],
                             new)
     check("sr57 a genuinely new sentence case PROVES although HEAD's test file "
@@ -1205,23 +1206,7 @@ def _specific_cases(check):
           "(`'%%s is %%s'`) would fit it: that case printed its own label, not "
           "this one: exit=%r %s" % (code_g, said_g[:300]),
           code_g == M.E_PROVED and "the next value is 1 once fixed" in said_g)
-    base = _label_suite([("'the new pass is kept'", "True")])
     multi = "'line one\\nline two'"
-    head = base.replace("n = sum(results)",
-                        "check('the next value is read', mine.v >= 1, %s)\n"
-                        "n = sum(results)" % (multi,))
-    wt = base.replace("n = sum(results)",
-                      "VIEW = '%%dx%%d' %% (1280, 720)\n"
-                      "check('the next value is read', mine.v == 2, %s)\n"
-                      "n = sum(results)" % (multi,))
-    root, man = _red_repo("stamp-red-edited-", wt, head_test=head)
-    code_e, got_e = _red(root, man, [sys.executable, "tests/test_mine.py"])
-    check("sr59 an EXISTING case whose condition was edited to go red is not "
-          "the task's own, though its detail spans lines and the working tree "
-          "added a loose literal that fits its label - HEAD's own run named it: "
-          "exit=%r %s"
-          % (code_e, json.dumps(got_e.get("redFirst"))[:300]),
-          code_e == M.E_CANNOT_PROVE)
     head_m = _label_suite([(repr(_OLD_LABEL), "mine.v >= 1")])
     wt_m = head_m.replace("n = sum(results)",
                           "check('the value is two after the fix', mine.v == 2, "
@@ -1232,20 +1217,6 @@ def _specific_cases(check):
           "lines - the printed line keeps ` (` and loses the closing paren: "
           "exit=%r %s" % (code_m, json.dumps(got_m.get("redFirst"))[:300]),
           code_m == M.E_PROVED)
-def _nodeid_cases(check):
-    rel = "tests/test_x.py"
-    failing = [{"id": "test_a", "label": rel + "::test_a", "assertion": True,
-                "why": "assert False"}]
-    own, refused = M.own_failures([rel + "::test_old"],
-                                  [rel + "::test_old", rel + "::test_a"],
-                                  failing, [rel + "::test_a"])
-    check("sr63 --case naming a pytest failure by its full nodeid is judged by "
-          "the same measurement as the proof: HEAD's own run did not name it, "
-          "so it is the task's own and is not reported as one HEAD holds: %r"
-          % ((_shape(own), refused),),
-          [f["id"] for f in own] == ["test_a"] and not refused)
-
-
 def _wording_cases(check):
     with open(os.path.join(M_PLUGIN, "agents", "audit-executor.md"), "r",
               encoding="utf-8") as fh:
@@ -1288,26 +1259,6 @@ def _suite_red(prefix, head, wt, cmd=None):
 
 
 def _exact_cases(check):
-    head = _label_suite([("'the next value is read'", "mine.v >= 1")])
-    wt = _label_suite([("'the next value is read'", "mine.v == 2")], extra=[
-        "check('the next value is read (saw %r)' % (mine.v,), True)"])
-    code, basis = _suite_red("stamp-red-exact-", head, wt)
-    check("sr65 an EXISTING case edited to go red is not the task's own when the "
-          "working tree adds a case whose label template spells the edited "
-          "case's printed FAIL line - HEAD's own run named the edited case: "
-          "exit=%r %s" % (code, basis[:300]),
-          code == M.E_CANNOT_PROVE)
-    head_b = _label_suite([("'the ' + KIND + ' is read'", "mine.v >= 1")],
-                          extra=["KIND = 'next value'"])
-    wt_b = _label_suite([("'the ' + KIND + ' is read'", "mine.v == 2")],
-                        extra=["KIND = 'next value'",
-                               "MSG = '%s is %s' % ('a', 'b')"])
-    code_b, basis_b = _suite_red("stamp-red-runtime-", head_b, wt_b)
-    check("sr66 an EXISTING case whose label is built at run time is not the "
-          "task's own when the working tree adds a generic template - HEAD's "
-          "own run printed the label it builds: "
-          "exit=%r %s" % (code_b, basis_b[:300]),
-          code_b == M.E_CANNOT_PROVE)
     head_p = _label_suite([("'the value'", "mine.v >= 1")])
     wt_p = _label_suite([("'the value'", "mine.v >= 1"),
                          ("'the value (as read)'", "mine.v == 2")])
@@ -1346,63 +1297,23 @@ def _mixed_cases(check):
           and "SELFTEST FAILED" in basis and "Ran 2 tests" in basis)
     code_c, basis_c = _suite_red("stamp-red-plain-", _UNIT_HEAD, _unit_echo(False))
     check("sr71 THE ALLOW CASE for sr70: the same unittest run with no house "
-          "tally echoed is read as unittest, and names the existing test_old: "
-          "exit=%r %s" % (code_c, basis_c[:300]),
-          code_c == M.E_CANNOT_PROVE and "test_old" in basis_c)
+          "tally echoed is read as unittest, and its edited test_old proves - the "
+          "task's own edit against a green baseline: exit=%r %s"
+          % (code_c, basis_c[:300]),
+          code_c == M.E_PROVED and "test_old" in basis_c)
 
 
-# --- a literal spelling an existing case's FAIL line verbatim ---
-# A test asserting on the harness's own output may spell an existing case's
-# printed FAIL line, detail and all; the case stays HEAD's, directly or named
-# through a suite's own wrapper.
-def _wrapped_suite(label_src, cond, extra=()):
-    """A suite naming its case through a wrapper, the way most suites here do:
-    `_expect(name, ok)` passes `name` on to `check`, with a detail."""
-    suite = _label_suite([], extra=list(extra) + [
-        "def _expect(name, ok):",
-        "    check(name, ok, 'saw %r' % (mine.v,))",
-        "_expect(%s, %s)" % (label_src, cond)])
-    return suite
-
-
-def _verbatim_cases(check):
-    verbatim = "EXPECT = 'the next value is read (saw 1)'"
-    head = _label_suite([("'the next value is read'", "mine.v >= 1")])
-    wt = _label_suite([("'the next value is read'", "mine.v == 2")],
-                      extra=[verbatim])
-    code, basis = _suite_red("stamp-red-verbatim-", head, wt)
-    check("sr72 an EXISTING case edited to go red is not the task's own when the "
-          "working tree adds a literal spelling its printed FAIL line VERBATIM, "
-          "detail included - HEAD's own run named the case, whatever the "
-          "source holds: exit=%r %s" % (code, basis[:300]),
-          code == M.E_CANNOT_PROVE)
-    head_w = _wrapped_suite("'the next value is read'", "mine.v >= 1")
-    wt_w = _wrapped_suite("'the next value is read'", "mine.v == 2",
-                          extra=[verbatim])
-    code_w, basis_w = _suite_red("stamp-red-wrapper-", head_w, wt_w)
-    check("sr73 ...and the same holds when the case is named through a suite's "
-          "own wrapper (`_expect(name, ok)` passing `name` to `check`): "
-          "exit=%r %s" % (code_w, basis_w[:300]),
-          code_w == M.E_CANNOT_PROVE)
-    head_t = _label_suite([(repr(_OLD_LABEL), "mine.v >= 1")])
-    wt_t = _label_suite([(repr(_OLD_LABEL), "mine.v >= 1")], extra=[
-        "ROWS = [('the table row is read', 2)]",
-        "for lb, want in ROWS:",
-        "    check(lb, mine.v == want)"])
-    code_t, basis_t = _suite_red("stamp-red-table-", head_t, wt_t)
-    check("sr74 THE ALLOW CASE for sr72: a new case whose label comes from a "
-          "table still proves - HEAD's own run never printed it: exit=%r %s"
-          % (code_t, basis_t[:300]),
-          code_t == M.E_PROVED and "the table row is read" in basis_t)
-# --- labels named every way a suite names them ---
-# An existing case - named through a table, a method, a keyword, a constant, a
-# dict - edited to go red beside a new passing case whose label template fits
-# it, must not read as the task's own; and a new case named through a wrapper
-# must not be refused by a generic template HEAD holds.
+# --- every red is the task's own against a GREEN baseline ---
+# HEAD's own tests run on HEAD's code in an isolated clean throwaway; when they
+# pass, every failure of the task's run comes from the task's change to the tests
+# - a new case or an edited one - and the fix run must turn each one green. A
+# red baseline is could-not-prove, whatever shape the red takes, with the
+# instruction to narrow the command to the task's cases.
 _L = "the next value is read"
-_NEWT = "check('the next value is %s' % ('x',), True)"
 _GENERIC = "check('%s is %s' % ('a', 'b'), True)"
 _NEW_RULE = "the new rule is honoured"
+_TMP = ["import atexit, shutil, tempfile", "WHERE = tempfile.mkdtemp(prefix='lbl-')",
+        "atexit.register(shutil.rmtree, WHERE, True)"]
 
 
 def _extra_red(prefix, head_extra, wt_extra, siblings=None):
@@ -1419,54 +1330,49 @@ def _extra_red(prefix, head_extra, wt_extra, siblings=None):
     return code, (got.get("redFirst") or {}).get("basis", json.dumps(got))
 
 
-def _naming_cases(check):
-    table = ["ROWS = [(%r, 1)]" % (_L,), "for lb, want in ROWS:",
-             "    check(lb, mine.v >= want)"]
-    table_w = ["ROWS = [(%r, 2)]" % (_L,), "for lb, want in ROWS:",
-               "    check(lb, mine.v == want)"]
-    method = ["class Suite:", "    def expect(self, name, ok):",
-              "        check(name, ok, 'saw %r' % (mine.v,))", "s = Suite()"]
-    shapes = [
-        ("sr76", "a table row fed to check by a loop", table, table_w + [_NEWT]),
-        ("sr77", "a method wrapper", method + ["s.expect(%r, mine.v >= 1)" % (_L,)],
-         method + ["s.expect(%r, mine.v == 2)" % (_L,), _NEWT]),
-        ("sr78", "a keyword label", ["check(label=%r, ok=mine.v >= 1)" % (_L,)],
-         ["check(label=%r, ok=mine.v == 2)" % (_L,), _NEWT]),
-        ("sr79", "a label held in a constant, beside a verbatim FAIL line",
-         ["LABEL = %r" % (_L,), "check(LABEL, mine.v >= 1, 'saw %r' % (mine.v,))"],
-         ["LABEL = %r" % (_L,), "check(LABEL, mine.v == 2, 'saw %r' % (mine.v,))",
-          "EXPECT = 'the next value is read (saw 1)'"]),
-    ]
-    for cid, how, head, wt in shapes:
-        code, basis = _extra_red("stamp-red-%s-" % (cid,), head, wt)
-        check("%s an EXISTING case named by %s, edited to go red, is not the "
-              "task's own beside a new literal that renders its label: "
-              "exit=%r %s" % (cid, how, code, basis[:260]),
-              code == M.E_CANNOT_PROVE)
-    held = ["ROWS = {'k': %r}" % (_L,), "check(ROWS['k'], mine.v >= 1)"]
-    code, basis = _extra_red("stamp-red-held-", held,
-                             ["ROWS = {'k': %r}" % (_L,),
-                              "check(ROWS['k'], mine.v == 2)"])
-    check("sr80 an EXISTING case whose label is not a label argument at all (a "
-          "dict value), edited to go red with no new literal, stays "
-          "could-not-prove - HEAD's own run named it: exit=%r %s"
-          % (code, basis[:260]), code == M.E_CANNOT_PROVE)
-    code_b, basis_b = _extra_red("stamp-red-blind-", held,
-                                 ["ROWS = {'k': %r}" % (_L,),
-                                  "check(ROWS['k'], mine.v == 2)", _NEWT])
-    check("sr87 ...and beside a new PASSING case whose label template renders "
-          "that label, it still stays could-not-prove: HEAD's own run named the "
-          "failing case, and the passing one fails nothing: exit=%r %s"
-          % (code_b, basis_b[:260]), code_b == M.E_CANNOT_PROVE)
+def _green_baseline_cases(check):
+    head_t = _label_suite([(repr(_OLD_LABEL), "mine.v >= 1")])
+    wt_t = _label_suite([(repr(_OLD_LABEL), "mine.v >= 1")], extra=[
+        "ROWS = [('the table row is read', 2)]",
+        "for lb, want in ROWS:",
+        "    check(lb, mine.v == want)"])
+    code_t, basis_t = _suite_red("stamp-red-table-", head_t, wt_t)
+    check("sr74 a new case whose label comes from a table proves: HEAD's own tests "
+          "are green and the fix turns the new case green: exit=%r %s"
+          % (code_t, basis_t[:300]),
+          code_t == M.E_PROVED and "the table row is read" in basis_t)
     code_n, basis_n = _extra_red(
         "stamp-red-others-", ["check('the old one holds', True)"],
         ["check('the old one holds', True)",
          "ROWS = {'k': 'the dict row is read'}", "check(ROWS['k'], mine.v == 2)"])
-    check("sr88 THE ALLOW CASE for sr80: a genuinely new case whose label no "
-          "case call spells (a dict value) still proves - HEAD's own run never "
-          "printed it: exit=%r %s"
+    check("sr88 a new case whose label is a dict value proves: exit=%r %s"
           % (code_n, basis_n[:260]),
           code_n == M.E_PROVED and "the dict row is read" in basis_n)
+    edits = [
+        ("a dict value", ["ROWS = {'k': %r}" % (_L,), "check(ROWS['k'], mine.v >= 1)"],
+         ["ROWS = {'k': %r}" % (_L,), "check(ROWS['k'], mine.v == 2)"]),
+        ("a table row", ["ROWS = [(%r, 1)]" % (_L,), "for lb, want in ROWS:",
+                         "    check(lb, mine.v >= want)"],
+         ["ROWS = [(%r, 2)]" % (_L,), "for lb, want in ROWS:",
+          "    check(lb, mine.v == want)"]),
+        ("a label carrying a per-run value", _TMP + [
+            "check('the file under %s is read' % (WHERE,), mine.v >= 1)"],
+         _TMP + ["check('the file under %s is read' % (WHERE,), mine.v == 2)"]),
+    ]
+    got = dict((how, _extra_red("stamp-red-edit-", head, wt)[0])
+               for how, head, wt in edits)
+    check("sr127 THE ALLOW CASE: an EXISTING case edited to go red, however its "
+          "label is named, proves against a green baseline - the red is the "
+          "task's own edit, and the fix turns it green: %r" % (got,),
+          all(c == M.E_PROVED for c in got.values()))
+    code_s, basis_s = _extra_red(
+        "stamp-red-stillred-", ["check('the old one holds', True)"],
+        ["check('the old one holds', True)",
+         "check('the new case the fix does not fix', mine.v == 3)"])
+    check("sr128 a new failing case that still fails with the working tree's "
+          "implementation is not proved - the fix run must turn every failure "
+          "green: exit=%r %s" % (code_s, basis_s[:300]),
+          code_s == M.E_CANNOT_PROVE and "do not all pass" in basis_s)
 
 
 def _wrapper_cases(check):
@@ -1490,10 +1396,11 @@ def _wrapper_cases(check):
     for cid, how, base, new, siblings in shapes:
         code, basis = _extra_red("stamp-red-%s-" % (cid,), base + [_GENERIC],
                                  base + [_GENERIC, new], siblings)
-        check("%s a genuinely NEW case named through %s proves, though HEAD "
-              "holds a generic label template that fits it: exit=%r %s"
-              % (cid, how, code, basis[:260]),
+        check("%s a new case named through %s proves, however its label is "
+              "written: exit=%r %s" % (cid, how, code, basis[:260]),
               code == M.E_PROVED and _NEW_RULE in basis)
+
+
 def _pytest_command_cases(check):
     text = ("FAILED t.py::test_x - assert 1 == 2\n"
             "===== 1 failed, 2 passed in 0.12s =====\n"
@@ -1509,69 +1416,7 @@ def _pytest_command_cases(check):
           got == {"pytest": "pytest", "python -m pytest": "pytest", "bare": None})
 
 
-# --- the task's own case is measured, not read off the source ---
-# HEAD's own test files are run in the throwaway with the same command, and a
-# failing case is the task's own exactly when that run did not name it. The
-# shapes below are the ones no reading of the source settled.
-def _measured_cases(check):
-    dict_head = ["ROWS = {'k': %r}" % (_L,),
-                 "check(ROWS['k'], mine.v >= 1, 'saw %r' % (mine.v,))"]
-    dict_wt = ["ROWS = {'k': %r}" % (_L,),
-               "check(ROWS['k'], mine.v == 2, 'saw %r' % (mine.v,))",
-               "EXPECT = 'the next value is read (saw 1)'"]
-    code, basis = _extra_red("stamp-red-dictval-", dict_head, dict_wt)
-    check("sr89 an EXISTING case whose label is held only as a dict value, "
-          "edited to go red beside an added literal spelling its FAIL line "
-          "verbatim, is not the task's own: HEAD's own run named it: exit=%r %s"
-          % (code, basis[:300]), code == M.E_CANNOT_PROVE)
-
-    code_u, text_u = _real_unittest_verbose()
-    check("sr90 a real `unittest -v` run names every case, passing or failing: "
-          "%r" % (M.run_names(text_u, "unittest"),),
-          M.run_names(text_u, "unittest") == ["T.test_assert", "T.test_pass",
-                                              "T.test_raise"])
-    quiet = {"code": 1, "text": "F\n" + "=" * 20 + "\nFAIL: test_a (t.T)\n"
-             "Ran 2 tests in 0.001s\n\nFAILED (failures=1)\n", "problem": None}
-    none = {"code": 2, "text": "python3: can't open file 'tests/t.py'\n",
-            "problem": None}
-    got = dict((k, M.head_names(h, None, "unittest", new))
-               for k, h, new in (("quiet", quiet, False), ("no tally", none, False),
-                                 ("no tally, new file", none, True),
-                                 ("not made", {"problem": "timed out"}, False)))
-    check("sr91 HEAD's own run fails closed when it cannot list its cases: a run "
-          "naming fewer cases than it collected, one with no tally while the "
-          "test file exists at HEAD, one that could not be made - and a run of a "
-          "test file new at HEAD names nothing: %r" % (got,),
-          [got[k][0] for k in ("quiet", "no tally", "not made")] == [None] * 3
-          and all(got[k][1] for k in ("quiet", "no tally", "not made"))
-          and "every case is named" in got["quiet"][1]
-          and got["no tally, new file"] == ([], None))
-    def lines(*rows):
-        return "".join("%s %s\n" % r for r in rows) + _TALLY % ("X", 0, len(rows))
-
-    def held(head, task, fix=None):
-        failing = M.failing_cases(task, "house")
-        got = M.compare_runs(head, task, "house", failing, fix)
-        return [f["label"] for f in got["held"]], got["problem"]
-    head = lines(("PASS", "the value"))
-    new = lines(("PASS", "the value"), ("FAIL", "the value (as read) (saw 1)"))
-    new_fix = lines(("PASS", "the value"), ("PASS", "the value (as read)"))
-    edit = lines(("FAIL", "the value (saw 1)"))
-    dup = lines(("PASS", "the value"), ("FAIL", "the value (saw 1)"))
-    dup_fix = lines(("PASS", "the value"), ("PASS", "the value"))
-    got = {"new, no fix run": held(head, new), "new, fix run": held(head, new, new_fix),
-           "edited, fix run": held(head, edit, lines(("PASS", "the value"))),
-           "same label twice, fix run": held(head, dup, dup_fix)}
-    check("sr92 a failing line one reading of which HEAD printed is HEAD's, "
-          "unless the fix run pairs it one to one to a label HEAD never printed: "
-          "a new longer label is credited only with the fix run, an edited case "
-          "never, and an edited case beside a new one of the SAME label never: %r"
-          % (got,),
-          got == {"new, no fix run": (["the value (as read) (saw 1)"], None),
-                  "new, fix run": ([], None),
-                  "edited, fix run": (["the value (saw 1)"], None),
-                  "same label twice, fix run": (["the value (saw 1)"], None)})
-
+def _unittest_cases(check):
     unit_head = _unit_suite(["    def test_old(self):",
                              "        self.assertTrue(mine.v >= 1)"])
     unit_new = _unit_suite(["    def test_old(self):",
@@ -1586,114 +1431,12 @@ def _measured_cases(check):
                                    ("edited", unit_edit, verbose),
                                    ("quiet", unit_new,
                                     [sys.executable, "tests/test_mine.py"])))
-    check("sr93 under unittest -v, a NEW failing test proves and an EXISTING one "
-          "edited to fail does not; without -v HEAD's run cannot list its "
-          "passing tests, so even the new one is could-not-prove and says why: "
-          "%r" % (dict((k, (c, b[-160:])) for k, (c, b) in runs.items()),),
-          runs["new"][0] == M.E_PROVED and "test_new" in runs["new"][1]
-          and runs["edited"][0] == M.E_CANNOT_PROVE
-          and runs["quiet"][0] == M.E_CANNOT_PROVE
-          and "every case is named" in runs["quiet"][1])
-
-    new_rel = "tests/test_new.py"
-    root, man = _red_repo("stamp-red-newfile-", _red_test("import mine", "True"),
-                          extra={new_rel: _red_test("import mine", "mine.v == 2",
-                                                    label="the new file holds a case")},
-                          files=["src/mine.py", new_rel])
-    code_f, got_f = _red(root, man, [sys.executable, new_rel])
-    head_run = (got_f.get("run") or {}).get("head") or {}
-    check("sr94 a test file that is new at HEAD proves - HEAD's own run of it has "
-          "nothing to run and names nothing - and the payload records HEAD's run "
-          "with its exit and how long it took: exit=%r %r"
-          % (code_f, head_run),
-          code_f == M.E_PROVED and isinstance(head_run.get("seconds"), float)
-          and head_run.get("exit") not in (None, 0))
-
-    fam = {"id": "t3", "label": "t3 5 is not a tier (saw 5)", "assertion": True,
-           "why": "house FAIL"}
-    fam_head = "PASS t3 0 is not a tier\n" + _TALLY % ("X", 1, 1)
-    fam_task = ("PASS t3 0 is not a tier\nFAIL t3 5 is not a tier (saw 5)\n"
-                + _TALLY % ("X", 1, 2))
-    fam_got = M.compare_runs(fam_head, fam_task, "house", [fam])
-    check("sr95 an id-led FAIL line is HEAD's when HEAD's run printed that id, "
-          "whatever the rest of the label says - the id is the key the harness "
-          "hands out: %r" % (fam_got,),
-          [f["label"] for f in fam_got["held"]] == [fam["label"]])
-    # pytest is not installed here, so these lines are copied from its manual's
-    # `-v` and `-rA` output shapes rather than captured from a run.
-    verbose = ("tests/test_x.py::test_a PASSED                  [ 50%]\n"
-               "tests/test_x.py::test_b FAILED                  [100%]\n")
-    reported = ("=== short test summary info ===\n"
-                "PASSED tests/test_x.py::test_a\n"
-                "FAILED tests/test_x.py::test_b - assert 1 == 2\n")
-    got_p = (M.run_names(verbose, "pytest"), M.run_names(reported, "pytest"))
-    check("sr96 pytest's `-v` lines and its `-rA` summary each name every case, "
-          "passing ones included: %r" % (got_p,),
-          got_p == (["tests/test_x.py::test_a", "tests/test_x.py::test_b"],) * 2)
-    with open(os.path.join(M_PLUGIN, "agents", "audit-executor.md"), "r",
-              encoding="utf-8") as fh:
-        brief = " ".join(fh.read().split())
-    with open(os.path.join(M_PLUGIN, "reference", "execute-task.md"), "r",
-              encoding="utf-8") as fh:
-        ref = " ".join(fh.read().split())
-    check("sr97 the executor brief and execute-task.md both say the task's own "
-          "case is one HEAD's own run did not name, and that the command must "
-          "name every case (pytest -rA or -v, unittest -v)",
-          all("HEAD's own test files" in t and "-rA" in t and "`-v`" in t
-              for t in (brief, ref)))
-
-
-# --- a case the two runs cannot match one to one is refused ---
-# A label carrying a per-run value, a HEAD run that stopped early, a renamed or
-# deleted test file, an edited case beside a new one of the same label: each is
-# a shape in which a case HEAD had can look new, and each is refused.
-_TMP = ["import atexit, shutil, tempfile", "WHERE = tempfile.mkdtemp(prefix='lbl-')",
-        "atexit.register(shutil.rmtree, WHERE, True)"]
-
-
-def _one_to_one_cases(check):
-    py = sys.executable
-    shapes = [
-        ("sr98", "an existing case whose label embeds a per-run value, edited to fail",
-         _label_suite([("'the file under %s is read' % (WHERE,)", "mine.v >= 1")],
-                      extra=_TMP),
-         _label_suite([("'the file under %s is read' % (WHERE,)", "mine.v == 2")],
-                      extra=_TMP), None),
-        ("sr99", "HEAD already red on a per-run label, the task adding only a "
-         "passing case",
-         _label_suite([("'the object %r is kept' % (object(),)", "mine.v == 2")]),
-         _label_suite([("'the object %r is kept' % (object(),)", "mine.v == 2"),
-                       ("'the new pass'", "True")]), None),
-        ("sr100", "an existing case edited to fail beside a new PASSING case of the "
-         "same label",
-         _label_suite([("'the next value is read'", "mine.v >= 1")]),
-         _label_suite([("'the next value is read'", "mine.v == 2"),
-                       ("'the next value is read'", "True")]), None),
-        ("sr102", "HEAD red under unittest -f, the task fixing only the first "
-         "broken test",
-         _unit_suite(["    def test_a_p(self):", "        self.assertEqual(mine.v, 5)",
-                      "    def test_b_f(self):", "        self.assertEqual(mine.v, 7)"]),
-         _unit_suite(["    def test_a_p(self):", "        self.assertEqual(mine.v, 1)",
-                      "    def test_b_f(self):", "        self.assertEqual(mine.v, 7)"]),
-         [py, "tests/test_mine.py", "-v", "-f"]),
-    ]
-    for cid, how, head, wt, cmd in shapes:
-        code, basis = _suite_red("stamp-red-%s-" % (cid,), head, wt, cmd)
-        check("%s %s is not proved: exit=%r %s" % (cid, how, code, basis[:300]),
-              code == M.E_CANNOT_PROVE)
-    head = _label_suite([("'the next value is read'", "mine.v >= 1")])
-    wt = _label_suite([("'the next value is read'", "mine.v == 2")])
-    root, man = _red_repo("stamp-red-rename-", wt, head_test=head,
-                          extra={"tests/test_ren.py": wt},
-                          files=["src/mine.py", "tests/test_mine.py",
-                                 "tests/test_ren.py"])
-    os.remove(os.path.join(root, "tests", "test_mine.py"))
-    code_r, got_r = _red(root, man, [py, "tests/test_ren.py"])
-    basis_r = json.dumps(got_r.get("redFirst"))
-    check("sr101 a declared test file renamed (HEAD has it, the working tree does "
-          "not) with an existing case edited to fail is not proved - the two "
-          "runs hold different files: exit=%r %s" % (code_r, basis_r[:300]),
-          code_r == M.E_CANNOT_PROVE and "tests/test_mine.py" in basis_r)
+    check("sr93 THE ALLOW CASE under unittest: with HEAD's own tests green, a new "
+          "failing test proves, an existing one edited to fail proves, and so "
+          "does a run that names only its failures: %r"
+          % (dict((k, (c, b[-160:])) for k, (c, b) in runs.items()),),
+          all(c == M.E_PROVED for c, _b in runs.values())
+          and "test_new" in runs["new"][1] and "test_old" in runs["edited"][1])
     two = "\n".join(["import os, sys, unittest", _PATH_LINE, "import mine",
                      "class A(unittest.TestCase):", "    def test_x(self):",
                      "        self.assertTrue(True)",
@@ -1705,107 +1448,233 @@ def _one_to_one_cases(check):
                           "        self.assertEqual(mine.v, 2)\n"
                           "class B(unittest.TestCase):")
     code_q, basis_q = _suite_red("stamp-red-classes-", two, two_new,
-                                 [py, "tests/test_mine.py", "-v"])
-    check("sr103 THE ALLOW CASE: unittest names are qualified by class, so two "
-          "classes sharing a method name are two cases and a new test beside them "
+                                 [sys.executable, "tests/test_mine.py", "-v"])
+    check("sr103 a new unittest test beside two classes sharing a method name "
           "proves: exit=%r %s" % (code_q, basis_q[:300]),
           code_q == M.E_PROVED and "test_new" in basis_q)
+    new_rel = "tests/test_new.py"
+    root, man = _red_repo("stamp-red-newfile-", _red_test("import mine", "True"),
+                          extra={new_rel: _red_test("import mine", "mine.v == 2",
+                                                    label="the new file holds a case")},
+                          files=["src/mine.py", new_rel])
+    code_f, got_f = _red(root, man, [sys.executable, new_rel])
+    fix_run = (got_f.get("run") or {}).get("fix") or {}
+    check("sr94 a test file that is new at HEAD proves - HEAD has nothing of its "
+          "own to run - and the payload records the fix run with its exit and "
+          "how long it took: exit=%r %r" % (code_f, fix_run),
+          code_f == M.E_PROVED and isinstance(fix_run.get("seconds"), float)
+          and fix_run.get("exit") == 0)
+    with open(os.path.join(M_PLUGIN, "agents", "audit-executor.md"), "r",
+              encoding="utf-8") as fh:
+        brief = " ".join(fh.read().split())
+    with open(os.path.join(M_PLUGIN, "reference", "execute-task.md"), "r",
+              encoding="utf-8") as fh:
+        ref = " ".join(fh.read().split())
+    check("sr97 the executor brief and execute-task.md both state the rule: HEAD's "
+          "own test files must be green on HEAD's code, else narrow the command "
+          "to the task's cases, and the fix must turn every failure green",
+          all("HEAD's own test files" in t and "GREEN baseline" in t
+              and "narrow the command to the task's cases" in t
+              and "fix run" in t for t in (brief, ref)))
 
-    head_u = ("test_old (test_mine.T.test_old) ... ok\n\nRan 1 test in 0.001s\n\nOK\n")
-    task_u = ("test_renamed (test_mine.T.test_renamed) ... FAIL\n\n"
-              "FAIL: test_renamed (test_mine.T.test_renamed)\n\n"
-              "Ran 1 test in 0.001s\n\nFAILED (failures=1)\n")
-    got_u = M.compare_runs(head_u, task_u, "unittest",
-                           M.failing_cases(task_u, "unittest"))
-    check("sr106 under unittest too, a test HEAD's run named that the task's run "
-          "no longer names - renamed, removed - refuses the comparison: %r"
-          % (got_u,), got_u["problem"] and not got_u["held"])
+
+def _red_baseline_cases(check):
+    py = sys.executable
+    shapes = [
+        ("sr99", "HEAD already red on a per-run label, the task adding only a "
+         "passing case",
+         _label_suite([("'the object %r is kept' % (object(),)", "mine.v == 2")]),
+         _label_suite([("'the object %r is kept' % (object(),)", "mine.v == 2"),
+                       ("'the new pass'", "True")]), None),
+        ("sr102", "HEAD red under unittest -f, the task fixing only the first "
+         "broken test", _unit_suite(_FAILFAST_HEAD), _unit_suite(_FAILFAST_WT),
+         [py, "tests/test_mine.py", "-v", "-f"]),
+        ("sr117", "a case already red at HEAD, relabelled while its old label goes "
+         "to a new passing case",
+         _label_suite([("'the old broken case'", "mine.v == 2")]),
+         _label_suite([("'the old broken case'", "True"),
+                       ("'the renamed broken case'", "mine.v == 2")]), None),
+        ("sr118", "a new failing case beside a case already red at HEAD",
+         _label_suite([("'the old broken case'", "mine.v == 2")]),
+         _label_suite([("'the old broken case'", "mine.v == 2"),
+                       ("'the new failing case'", "mine.v == 2")]), None),
+        ("sr119", "two reds at HEAD sharing a label, one relabelled",
+         _label_suite([("'the old broken case'", "mine.v == 2"),
+                       ("'the old broken case'", "mine.v == 2")]),
+         _label_suite([("'the renamed case'", "mine.v == 2"),
+                       ("'the old broken case'", "mine.v == 2"),
+                       ("'the old broken case'", "True")]), None),
+        ("sr120", "two reds at HEAD whose labels share a reading, one relabelled",
+         _label_suite([("'the value'", "mine.v == 2"),
+                       ("'the value (as read)'", "mine.v == 2")]),
+         _label_suite([("'the renamed case'", "mine.v == 2"), ("'the value'", "True"),
+                       ("'the value (as read)'", "mine.v == 2")]), None),
+        ("sr121", "a failfast set in HEAD's test file itself",
+         _unit_main(True), _unit_main(False), [py, "tests/test_mine.py", "-v"]),
+        ("sr126", "a house suite that stops quietly after its first red at HEAD",
+         _label_suite([], extra=_quiet_stop(True)),
+         _label_suite([], extra=_quiet_stop(False)), None),
+    ]
+    for cid, how, head, wt, cmd in shapes:
+        code, basis = _suite_red("stamp-red-%s-" % (cid,), head, wt, cmd)
+        check("%s %s is not proved: HEAD's own tests are red on HEAD's code, so "
+              "the command is already red at HEAD and must be narrowed to the "
+              "task's cases: exit=%r %s" % (cid, how, code, basis[:300]),
+              code == M.E_CANNOT_PROVE and "already red" in basis
+              and "narrow" in basis)
+    head = _label_suite([("'the next value is read'", "mine.v >= 1")])
+    wt = _label_suite([("'the next value is read'", "mine.v == 2")])
+    root, man = _red_repo("stamp-red-rename-", wt, head_test=head,
+                          extra={"tests/test_ren.py": wt},
+                          files=["src/mine.py", "tests/test_mine.py",
+                                 "tests/test_ren.py"])
+    os.remove(os.path.join(root, "tests", "test_mine.py"))
+    code_r, got_r = _red(root, man, [py, "tests/test_ren.py"])
+    basis_r = json.dumps(got_r.get("redFirst"))
+    check("sr101 a declared test file renamed - HEAD has the old path, the command "
+          "runs the new one - is not proved: HEAD's own run of that command has no "
+          "file to run, so it is not green: exit=%r %s" % (code_r, basis_r[:300]),
+          code_r == M.E_CANNOT_PROVE and "narrow" in basis_r)
+    probe = ["import os", "HERE = os.path.dirname(os.path.abspath(__file__))",
+             "MARK = os.path.join(HERE, 'skip-the-legacy-case')"]
+    head_i = _label_suite([], extra=probe + [
+        "if not os.path.exists(MARK):",
+        "    check('the legacy field is kept', mine.v == 99)"])
+    wt_i = _label_suite([], extra=probe + [
+        "open(MARK, 'w').close()",
+        "check('the new case', mine.v == 2)"])
+    code_i, basis_i = _suite_red("stamp-red-isolated-", head_i, wt_i)
+    check("sr129 HEAD's own run is made in a throwaway reset to HEAD: a file the "
+          "task's run left behind, which HEAD's test would read and skip its red "
+          "case on, is gone - so HEAD's red baseline is seen and the red is not "
+          "proved: exit=%r %s" % (code_i, basis_i[:300]),
+          code_i == M.E_CANNOT_PROVE and "already red" in basis_i)
+    tmp_probe = ["import os, tempfile",
+                 "MARK = os.path.join(tempfile.gettempdir(), 'skip-legacy-%d' "
+                 "% (os.getppid(),))"]
+    head_t = _label_suite([], extra=tmp_probe + [
+        "if not os.path.exists(MARK):",
+        "    check('the legacy field is kept', mine.v == 99)"])
+    wt_t = _label_suite([], extra=tmp_probe + [
+        "open(MARK, 'w').close()",
+        "check('the new case', mine.v == 2)"])
+    code_t, basis_t = _suite_red("stamp-red-tmpdir-", head_t, wt_t)
+    mark = os.path.join(tempfile.gettempdir(), "skip-legacy-%d" % (os.getpid(),))
+    if os.path.exists(mark):
+        os.remove(mark)
+    home_probe = ["import os",
+                  "MARK = os.path.join(os.path.expanduser('~'), '.skip-legacy-%d' "
+                  "% (os.getppid(),))"]
+    head_h = _label_suite([], extra=home_probe + [
+        "if not os.path.exists(MARK):",
+        "    check('the legacy field is kept', mine.v == 99)"])
+    wt_h = _label_suite([], extra=home_probe + [
+        "open(MARK, 'w').close()",
+        "check('the new case', mine.v == 2)"])
+    code_h, basis_h = _suite_red("stamp-red-home-", head_h, wt_h)
+    home_mark = os.path.join(os.path.expanduser("~"),
+                             ".skip-legacy-%d" % (os.getpid(),))
+    if os.path.exists(home_mark):
+        os.remove(home_mark)
+    check("sr132 HEAD's own run gets a home of its own: a file the task's run left "
+          "in $HOME, which HEAD's test would read and skip its red case on, is not "
+          "there - so the red baseline is seen: exit=%r %s" % (code_h, basis_h[:300]),
+          code_h == M.E_CANNOT_PROVE and "already red" in basis_h)
+    spec = importlib.util.spec_from_file_location(
+        "sweep_selftests_homes",
+        os.path.join(_output.REPO_ROOT, "tools", "sweep-selftests.py"))
+    sweep = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sweep)
+    theirs = getattr(sweep, "HOME_VARS", None)
+    check("sr133 the home names the baseline and the fix run are given are the "
+          "table tools/sweep-selftests.py isolates its children with - one list, "
+          "pinned by agreement: %r vs %r" % (M.HOME_VARS, theirs),
+          theirs is not None and tuple(M.HOME_VARS) == tuple(theirs))
+    check("sr130 HEAD's own run gets a TMPDIR of its own and no user site: a file "
+          "the task's run left in its temp directory, which HEAD's test would read "
+          "and skip its red case on, is not there - so the red baseline is seen: "
+          "exit=%r %s" % (code_t, basis_t[:300]),
+          code_t == M.E_CANNOT_PROVE and "already red" in basis_t)
 
 
-def _head_run_cases(check):
-    usage = {"code": 4, "problem": None,
-             "text": "ERROR: file or directory not found: tests/test_new.py\n\n"
-                     "=== no tests ran in 0.01s ===\n"}
-    # Each red shape below carries a collected count equal to the cases it
-    # names, so the stop line, the interrupt line or the flag is what refuses.
-    stopped = {"code": 1, "problem": None,
-               "text": "collected 1 item\n\ntests/test_a.py::test_p FAILED   [ 50%]\n"
-                       "!!!!!!!! stopping after 1 failures !!!!!!!!\n"
-                       "=== 1 failed in 0.05s ===\n"}
-    interrupted = {"code": 2, "problem": None,
-                   "text": "collected 1 item\n\nERROR tests/test_a.py\n"
-                           "!!!!!!! Interrupted: 1 error during collection !!!!!!!\n"
-                           "=== 1 error in 0.10s ===\n"}
-    got = dict((k, M.head_names(h, cmd, "pytest", False)) for k, h, cmd in (
-        ("no case collected", usage, ["pytest", "-rA", "t.py", "tests/test_new.py"]),
-        ("stopped after a failure", stopped, ["pytest", "-v"]),
-        ("interrupted", interrupted, ["pytest", "-rA"]),
-        ("a stop-first flag", {"code": 1, "problem": None,
-                               "text": stopped["text"].replace(
-                                   "!!!!!!!! stopping after 1 failures !!!!!!!!\n",
-                                   "")}, ["pytest", "-v", "--maxfail=1"])))
-    got["a green HEAD run of no case"] = M.head_names(
-        {"code": 0, "problem": None, "text": _TALLY % ("ALL PASS", 0, 0) + "\n"},
-        [sys.executable, "t.py"], "house", False)
-    check("sr104 HEAD's own run is refused when it collected no case while a "
-          "declared test file exists at HEAD, and when it is red and may have "
-          "stopped early - a pytest stop or interrupt line, or a stop-first flag "
-          "in the command: %r" % (got,),
-          all(v[0] is None and v[1] for v in got.values()))
-    root = _seeded_repo("stamp-putback-")
+def _baseline_unit_cases(check):
+    py = sys.executable
+    green = {"code": 0, "problem": None,
+             "text": "PASS a\n" + _TALLY % ("ALL PASS", 1, 1) + "\n"}
+    shapes = {
+        "a red house run": {"code": 1, "problem": None,
+                            "text": "FAIL a (x)\n" + _TALLY % ("SELFTEST FAILED", 0, 1)},
+        "a run with no tally": {"code": 1, "problem": None, "text": "boom\n"},
+        "a run that could not be made": {"code": None, "text": "",
+                                         "problem": "timed out"},
+        "exit 0 with a failure counted": {
+            "code": 0, "problem": None,
+            "text": "FAIL a (x)\n" + _TALLY % ("SELFTEST FAILED", 0, 1)},
+        "a pytest run that stopped": {
+            "code": 1, "problem": None,
+            "text": "!!! stopping after 1 failures !!!\n=== 1 failed in 0.1s ===\n"},
+    }
+    got = dict((k, M.baseline_problem(h, [py, "t.py"], False))
+               for k, h in shapes.items())
+    got["green"] = M.baseline_problem(green, [py, "t.py"], False)
+    got["no test file at HEAD"] = M.baseline_problem(None, [py, "t.py"], True)
+    check("sr104 the baseline is green only when HEAD's own run could be made, "
+          "exited 0 and printed a tally counting no failure - and a declared test "
+          "file new at HEAD has nothing to run: %r" % (got,),
+          got["green"] is None and got["no test file at HEAD"] is None
+          and all(got[k] and "narrow" in got[k] for k in shapes))
+    one = {"code": 0, "problem": None,
+           "text": "PASS a\n" + _TALLY % ("ALL PASS", 1, 1) + "\n"}
+    fewer = M.fix_problem(one, [py, "t.py"], {"collected": 2})
+    same = M.fix_problem(one, [py, "t.py"], {"collected": 1})
+    red_fix = M.fix_problem(shapes["a red house run"], [py, "t.py"], {"collected": 1})
+    check("sr131 the fix run must be green and run no fewer cases than the task's "
+          "run - a failing case may not go missing instead of passing: %r"
+          % ((fewer, same, red_fix),),
+          fewer and "missing" in fewer and same is None
+          and red_fix and "do not all pass" in red_fix)
     rel = "tests/t.py"
+    failing = [{"id": None, "label": rel + "::test_a", "assertion": True,
+                "why": "assert False"},
+               {"id": None, "label": rel + "::test_b", "assertion": False,
+                "why": "TypeError"}]
+    own = M.own_failures(failing, [rel + "::test_a", "tests/t.py::test_b"])
+    check("sr63 --case must name a case that failed an assertion in the task's "
+          "run: a pytest node id does, a body error does not: %r" % (own,),
+          [f["label"] for f in own[0]] == [rel + "::test_a"]
+          and own[1] == ["tests/t.py::test_b"])
+    root = _seeded_repo("stamp-isolate-")
     os.makedirs(os.path.join(root, "tests"))
     committed = b"x = 1\n\n\n"
     with open(os.path.join(root, "tests", "t.py"), "wb") as fh:
         fh.write(committed)
-    _git(root, "add", rel)
+    _write(os.path.join(root, ".gitignore"), "*.log\n")
+    _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", "t")
     _write(os.path.join(root, "tests", "t.py"), "x = 2\n")
+    _write(os.path.join(root, "tests", "stray.py"), "left behind\n")
+    _write(os.path.join(root, "run.log"), "ignored, left behind\n")
     calls = []
-    held = M._git
+    real = M._git
 
     def recording(where, args, timeout=120, **kwargs):
         calls.append(timeout)
-        return held(where, args, timeout=timeout, **kwargs)
+        return real(where, args, timeout=timeout, **kwargs)
     M._git = recording
     try:
-        problem = M._put_back_head(root, root, [rel], time.time() + 5)
+        problem = M._isolate(root, time.time() + 5)
     finally:
-        M._git = held
+        M._git = real
     with open(os.path.join(root, "tests", "t.py"), "rb") as fh:
         back = fh.read()
-    check("sr105 HEAD's copy is put back BYTE FOR BYTE, trailing blank lines "
-          "included, and every git call of the put-back runs under the one "
-          "deadline: %r %r %r" % (problem, back, calls),
-          problem is None and back == committed and calls
+    left = [p for p in ("tests/stray.py", "run.log")
+            if os.path.exists(os.path.join(root, *p.split("/")))]
+    check("sr105 the throwaway is reset to HEAD exactly before HEAD's own run: a "
+          "rewritten tracked file comes back byte for byte, an untracked and an "
+          "ignored file are removed, and every git call runs under the one "
+          "deadline: %r" % ((problem, back, left, calls),),
+          problem is None and back == committed and not left and calls
           and all(t <= 6 for t in calls))
-
-
-# --- a path git quotes, a rename by an appended ` (...)`, every stop-first
-# spelling, and a pairing bounded by the deadline ---
-def _path_red(prefix, rel, head, wt, cmd=None):
-    """`(exit, basis)` of a red whose declared test file is `rel`."""
-    root = _seeded_repo(prefix)
-    os.makedirs(os.path.join(root, "tests"))
-    _write(os.path.join(root, *rel.split("/")), head)
-    _git(root, "add", "-A")
-    _git(root, "commit", "-q", "-m", "test")
-    _write(os.path.join(root, "src", "mine.py"), "v = 2\n")
-    _write(os.path.join(root, *rel.split("/")), wt)
-    manifest = json.loads(json.dumps(MANIFEST))
-    task = manifest["phases"][0]["tasks"][0]
-    task["files"] = ["src/mine.py", rel]
-    task["tests"] = {"mode": "tdd", "add": [rel + ": v is two"]}
-    man = os.path.join(_harness.fixture_root(prefix + "man-"), "audit-plan.json")
-    _write(man, json.dumps(manifest))
-    code, got = _red(root, man, cmd or [sys.executable, rel])
-    return code, json.dumps(got.get("redFirst") or got.get("note") or got)
-
-
-_FAILFAST_HEAD = ["    def test_a_p(self):", "        self.assertEqual(mine.v, 5)",
-                  "    def test_b_f(self):", "        self.assertEqual(mine.v, 7)"]
-_FAILFAST_WT = ["    def test_a_p(self):", "        self.assertEqual(mine.v, 1)",
-                "    def test_b_f(self):", "        self.assertEqual(mine.v, 7)"]
 
 
 def _round5_cases(check):
@@ -1814,126 +1683,58 @@ def _round5_cases(check):
     plus_new = _label_suite([("'the old broken case'", "mine.v == 2"),
                              ("'the new pass'", "True")])
     got = dict((rel, _path_red("stamp-red-path-", rel, broken, plus_new))
-               for rel in ("tests/test_caf\u00e9.py", "tests/test_cafe.py"))
+               for rel in ("tests/test_café.py", "tests/test_cafe.py"))
     check("sr107 a declared test file whose path git quotes (not plain ASCII) is "
-          "still found at HEAD: HEAD already red on an old case, the task adding "
-          "only a passing one, is not proved - and the ASCII path answers the "
-          "same: %r" % (dict((k, v[0]) for k, v in got.items()),),
-          all(v[0] == M.E_CANNOT_PROVE for v in got.values()))
-    code, basis = _suite_red("stamp-red-appended-",
-                             _label_suite([("'the value'", "mine.v >= 1")]),
-                             _label_suite([("'the value (as read)'", "mine.v == 2")]))
-    check("sr108 an existing case RENAMED by appending ` (as read)` and edited to "
-          "fail is not proved: once the fix run settles the failing line's label, "
-          "HEAD's `the value` no longer reappears: exit=%r %s" % (code, basis[:300]),
-          code == M.E_CANNOT_PROVE)
+          "found at HEAD like an ASCII one, so HEAD's red baseline is seen: %r"
+          % (dict((k, v[0]) for k, v in got.items()),),
+          all(v[0] == M.E_CANNOT_PROVE and "already red" in v[1]
+              for v in got.values()))
     head_u, wt_u = _unit_suite(_FAILFAST_HEAD), _unit_suite(_FAILFAST_WT)
     runs = dict((" ".join(flags), _suite_red("stamp-red-ff-", head_u, wt_u,
                                              [py, "tests/test_mine.py"] + flags)[0])
                 for flags in (["-vf"], ["-fv"], ["-v", "-cf"], ["-v", "--failf"]))
     runs["sh -c"] = _suite_red("stamp-red-sh-", head_u, wt_u,
                                ["sh", "-c", "%s tests/test_mine.py -v -f" % (py,)])[0]
-    check("sr109 HEAD red under failfast in every spelling unittest accepts - "
-          "clustered, a long prefix - or under a wrapper whose options the tool "
-          "cannot read (sh -c) is not proved: %r" % (runs,),
+    check("sr109 HEAD red under failfast in any spelling, or under a wrapper, is "
+          "not proved - the baseline is red whatever stopped it: %r" % (runs,),
           all(c == M.E_CANNOT_PROVE for c in runs.values()))
-    new_u = _unit_suite(["    def test_old(self):", "        self.assertTrue(True)",
-                         "    def test_new(self):", "        self.assertEqual(mine.v, 2)"])
     old_u = _unit_suite(["    def test_old(self):",
                          "        self.assertEqual(mine.v, 3)"])
-    code_v, basis_v = _suite_red("stamp-red-vv-", old_u,
-                                 new_u.replace("self.assertTrue(True)",
-                                               "self.assertEqual(mine.v, 3)"),
+    new_u = _unit_suite(["    def test_old(self):", "        self.assertEqual(mine.v, 3)",
+                         "    def test_new(self):", "        self.assertEqual(mine.v, 2)"])
+    code_v, basis_v = _suite_red("stamp-red-vv-", old_u, new_u,
                                  [py, "tests/test_mine.py", "-vv"])
-    check("sr110 HEAD red under unittest, even an ordinary `-vv`, is not proved: "
-          "unittest prints no count of what it collected, so nothing shows HEAD's "
-          "run covered every case - a failfast set in the file itself would look "
-          "the same: exit=%r %s" % (code_v, basis_v[:300]),
-          code_v == M.E_CANNOT_PROVE and "covered every case" in basis_v)
+    check("sr110 a new test beside an existing one already red at HEAD is not "
+          "proved under any runner - narrow the command to the task's cases: "
+          "exit=%r %s" % (code_v, basis_v[:300]),
+          code_v == M.E_CANNOT_PROVE and "narrow" in basis_v)
 
 
 def _round5_unit_cases(check):
     root = _seeded_repo("stamp-quoted-")
-    rels = ["tests/test_caf\u00e9.py", "tests/t.py"]
+    rels = ["tests/test_café.py", "tests/t.py"]
     os.makedirs(os.path.join(root, "tests"))
     for rel in rels:
         _write(os.path.join(root, *rel.split("/")), "x = 1\n")
     _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", "t")
-    present, problem = M._at_head(root, rels + ["tests/absent.py"], time.time() + 30)
-    check("sr111 HEAD's file list is read NUL-separated, so a path git quotes is "
-          "found exactly like an ASCII one, and an absent path is absent: %r"
-          % ((present, problem),),
-          problem is None and present == set(rels))
-    py = sys.executable
-    reasons = dict((" ".join(flags), M._stops_early(
-        {"code": 1, "text": "Ran 1 test in 0.001s\n\nFAILED (failures=1)\n"},
-        [py, "t.py"] + flags))
-        for flags in (["-v"], ["-vv"], ["-v", "-b"], ["-vf"], ["-fv"],
-                      ["-v", "-cf"], ["-v", "--failf"], ["-v", "--failfast"]))
-    reasons.update(dict((" ".join(flags), M._stops_early(
-        {"code": 1, "text": "=== 1 failed, 1 passed in 0.1s ===\n"},
-        ["pytest"] + flags)) for flags in (
-            ["-rA"], ["-rfE"], ["-rxs"], ["-v"], ["-vx"], ["--exitf"], ["--maxf=2"],
-            ["--stepw"])))
-    reasons["sh -c wrapper"] = M._stops_early(
-        {"code": 1, "text": "Ran 1 test in 0.001s\n\nFAILED (failures=1)\n"},
-        ["sh", "-c", "%s t.py -v" % (py,)])
-    stop = ["-vf", "-fv", "-v -cf", "-v --failf", "-v --failfast", "-vx", "--exitf",
-            "--maxf=2", "--stepw", "sh -c wrapper"]
-    check("sr112 every stop-first spelling is read - clustered short options, "
-          "unambiguous long prefixes, a wrapper (`sh -c`) whose options cannot be "
-          "read - and ordinary ones are not (`-v`, `-vv`, "
-          "`-b`, `-rA`, `-rfE`, `-rxs`, whose `f` and `x` are report characters "
-          "- the rest of a cluster after `-r` is its argument): %r" % (reasons,),
-          all(bool(reasons[k]) == (k in stop) for k in reasons))
-    code = "\n".join([
-        "import sys, time", "sys.path.insert(0, %r)" % (_output.TESTS_DIR,),
-        "import _harness, _loader",
-        "M = _loader.load_script('stamp-verification.py', modname='sv_size')",
-        "tally = '%s: 0/%d cases ' + 'passed'",
-        "n = 300",
-        "head = 'PASS A\\n' * n + tally % ('X', n) + '\\n'",
-        "task = 'FAIL A (saw 1)\\n' * n + tally % ('X', n) + '\\n'",
-        "fix = 'PASS A\\n' * n + tally % ('X', n) + '\\n'",
-        "t = time.time()",
-        "r = M.compare_runs(head, task, 'house', M.failing_cases(task, 'house'), fix,"
-        " deadline=time.time() + 20)",
-        "m = 3000",
-        "head2 = ''.join('PASS the case %d\\n' % i for i in range(m))",
-        "task2 = ''.join('FAIL the case %d (saw 1)\\n' % i for i in range(m))",
-        "r2 = M.compare_runs(head2, task2, 'house', M.failing_cases(task2 + tally % "
-        "('X', m), 'house'), head2, deadline=time.time() + 20)",
-        "late = M.compare_runs(head, task, 'house', M.failing_cases(task, 'house'),"
-        " fix, deadline=time.time() - 1)",
-        "print(len(r['held']), len(r2['held']), bool(late['problem']),"
-        " round(time.time() - t, 1))"])
-    try:
-        proc = subprocess.run([sys.executable, "-c", code], stdout=subprocess.PIPE,
-                              stderr=subprocess.STDOUT, universal_newlines=True,
-                              timeout=90)
-        out = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else ""
-    except subprocess.TimeoutExpired:
-        out = "timed out"
-    parts = out.split()
-    check("sr113 the pairing is bounded: many identical and many distinct "
-          "ambiguous lines are settled inside the deadline, every one held as "
-          "HEAD's, and a deadline already passed is a refusal, never a hang or "
-          "an exception: %r" % (out,),
-          len(parts) == 4 and parts[:3] == ["300", "3000", "True"]
-          and float(parts[3]) < 20)
+    calls = []
+    real = M._git
 
-    held = M.PAIRING_EDGE_BUDGET
-    M.PAIRING_EDGE_BUDGET = 10
+    def recording(where, args, timeout=120, **kwargs):
+        calls.append(timeout)
+        return real(where, args, timeout=timeout, **kwargs)
+    M._git = recording
     try:
-        many = M.compare_runs("PASS A\n" * 20, "FAIL A (saw 1)\n" * 20, "house",
-                              M.failing_cases("FAIL A (saw 1)\n" * 20 + _TALLY
-                                              % ("X", 0, 20), "house"))
+        present, problem = M._at_head(root, rels + ["tests/absent.py"],
+                                      time.time() + 30)
     finally:
-        M.PAIRING_EDGE_BUDGET = held
-    check("sr114 a pairing past the edge budget is refused with its reason, never "
-          "tried: %r" % (many.get("problem"),),
-          many["problem"] and "edges" in many["problem"] and not many["held"])
+        M._git = real
+    check("sr111 HEAD's file list is read NUL-separated, so a path git quotes is "
+          "found exactly like an ASCII one, an absent path is absent, and the git "
+          "call runs under the one deadline: %r" % ((present, problem, calls),),
+          problem is None and present == set(rels) and calls
+          and all(c <= 31 for c in calls))
     root = _seeded_repo("stamp-introduced-")
     calls = []
     real = M._git
@@ -1967,25 +1768,32 @@ def _round5_unit_cases(check):
           and "PYTHONDONTWRITEBYTECODE=1"
           in (got_b.get("environment") or {}).get("set", []))
 
-    relabel_head = _label_suite([("'the old broken case'", "mine.v == 2")])
-    relabel_wt = _label_suite([("'the old broken case'", "True"),
-                               ("'the renamed broken case'", "mine.v == 2")])
-    code_r, basis_r = _suite_red("stamp-red-relabel-", relabel_head, relabel_wt)
-    check("sr117 a case already RED at HEAD, relabelled while its old label goes "
-          "to a new passing case, is not proved: HEAD's red case prints only as "
-          "passing in the task's run, which runs HEAD's code, so its test was "
-          "changed: exit=%r %s" % (code_r, basis_r[:300]),
-          code_r == M.E_CANNOT_PROVE and "its test was changed" in basis_r)
-    stays_wt = _label_suite([("'the old broken case'", "mine.v == 2"),
-                             ("'the new failing case'", "mine.v == 2")])
-    code_s, basis_s = _suite_red("stamp-red-staysred-", relabel_head, stays_wt)
-    check("sr118 THE ALLOW CASE for sr117: a task that only adds a new failing case "
-          "beside a HEAD case that was red and stays red still proves: exit=%r %s"
-          % (code_s, basis_s[:300]),
-          code_s == M.E_PROVED and "the new failing case" in basis_s)
+
+def _path_red(prefix, rel, head, wt, cmd=None):
+    """`(exit, basis)` of a red whose declared test file is `rel`."""
+    root = _seeded_repo(prefix)
+    os.makedirs(os.path.join(root, "tests"))
+    _write(os.path.join(root, *rel.split("/")), head)
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "test")
+    _write(os.path.join(root, "src", "mine.py"), "v = 2\n")
+    _write(os.path.join(root, *rel.split("/")), wt)
+    manifest = json.loads(json.dumps(MANIFEST))
+    task = manifest["phases"][0]["tasks"][0]
+    task["files"] = ["src/mine.py", rel]
+    task["tests"] = {"mode": "tdd", "add": [rel + ": v is two"]}
+    man = os.path.join(_harness.fixture_root(prefix + "man-"), "audit-plan.json")
+    _write(man, json.dumps(manifest))
+    code, got = _red(root, man, cmd or [sys.executable, rel])
+    return code, json.dumps(got.get("redFirst") or got.get("note") or got)
 
 
-# --- HEAD's reds paired one to one; a red HEAD run credited only on a count ---
+_FAILFAST_HEAD = ["    def test_a_p(self):", "        self.assertEqual(mine.v, 5)",
+                  "    def test_b_f(self):", "        self.assertEqual(mine.v, 7)"]
+_FAILFAST_WT = ["    def test_a_p(self):", "        self.assertEqual(mine.v, 1)",
+                "    def test_b_f(self):", "        self.assertEqual(mine.v, 7)"]
+
+
 def _unit_main(failfast):
     return "\n".join(["import os, sys, unittest", _PATH_LINE, "import mine",
                       "class T(unittest.TestCase):",
@@ -1996,129 +1804,17 @@ def _unit_main(failfast):
                      ) + "\n"
 
 
-def _round6_cases(check):
-    py = sys.executable
-    shapes = [
-        ("sr119", "two reds already at HEAD sharing a label, one relabelled while "
-         "the old label goes to a new passing case",
-         _label_suite([("'the old broken case'", "mine.v == 2"),
-                       ("'the old broken case'", "mine.v == 2")]),
-         _label_suite([("'the renamed case'", "mine.v == 2"),
-                       ("'the old broken case'", "mine.v == 2"),
-                       ("'the old broken case'", "True")]), None),
-        ("sr120", "two reds at HEAD whose labels share a reading, one relabelled "
-         "while its old label goes to a new passing case",
-         _label_suite([("'the value'", "mine.v == 2"),
-                       ("'the value (as read)'", "mine.v == 2")]),
-         _label_suite([("'the renamed case'", "mine.v == 2"), ("'the value'", "True"),
-                       ("'the value (as read)'", "mine.v == 2")]), None),
-        ("sr121", "a failfast set in HEAD's test file itself "
-         "(`unittest.main(failfast=True)`), which the task removes",
-         _unit_main(True), _unit_main(False), [py, "tests/test_mine.py", "-v"]),
-    ]
-    for cid, how, head, wt, cmd in shapes:
-        code, basis = _suite_red("stamp-red-%s-" % (cid,), head, wt, cmd)
-        check("%s %s is not proved: every red at HEAD must pair with a DIFFERENT "
-              "failing line, and a red HEAD run is credited only on a count showing "
-              "it covered every case: exit=%r %s" % (cid, how, code, basis[:300]),
-              code == M.E_CANNOT_PROVE)
-
-
-def _round6_unit_cases(check):
-    tally = "%s: %d/%d cases " + "passed"
-    covered = {"code": 1, "problem": None,
-               "text": "PASS a\nFAIL b (saw 1)\n" + tally % ("SELFTEST FAILED", 1, 2)}
-    short = {"code": 1, "problem": None,
-             "text": "PASS a\nFAIL b (saw 1)\n" + tally % ("SELFTEST FAILED", 1, 3)}
-    got = dict((k, M.head_names(h, [sys.executable, "t.py"], "house", False)[1])
-               for k, h in (
-        ("house tally covers every name", covered),
-        ("house tally counts a case no line names", short)))
-    py_ok = {"code": 1, "problem": None,
-             "text": "collected 2 items\n\ntests/t.py::test_a PASSED\n"
-                     "tests/t.py::test_b FAILED\n=== 1 failed, 1 passed in 0.1s ===\n"}
-    py_q = {"code": 1, "problem": None,
-            "text": "tests/t.py::test_a PASSED\ntests/t.py::test_b FAILED\n"
-                    "=== 1 failed, 1 passed in 0.1s ===\n"}
-    got["pytest collected equals named"] = M.head_names(
-        py_ok, ["pytest", "-v"], "pytest", False)[1]
-    got["pytest with no collected line"] = M.head_names(
-        py_q, ["pytest", "-v"], "pytest", False)[1]
-    got["unittest red"] = M.head_names(
-        {"code": 1, "problem": None,
-         "text": "test_a (m.T) ... ok\ntest_b (m.T) ... FAIL\n\nRan 2 tests in "
-                 "0.001s\n\nFAILED (failures=1)\n"},
-        [sys.executable, "-m", "unittest", "-v"], "unittest", False)[1]
-    check("sr122 a red HEAD run is credited only on POSITIVE evidence that it "
-          "covered every case - a house tally or pytest's collected count equal "
-          "to the cases named - and refused otherwise, unittest always: %r" % (got,),
-          got["house tally covers every name"] is None
-          and got["pytest collected equals named"] is None
-          and all(got[k] for k in ("house tally counts a case no line names",
-                                   "pytest with no collected line", "unittest red")))
-    one = M.changed_reds("FAIL the old one (saw 1)\n",
-                         "FAIL the old one (saw 1)\nFAIL the new one (saw 1)\n",
-                         "house")
-    check("sr123 THE ALLOW CASE for sr119: one red at HEAD with the task's failing "
-          "line of the same label still pairs, so nothing is called changed: %r"
-          % (one,), one == ([], None))
-    code = "\n".join([
-        "import sys, time", "sys.path.insert(0, %r)" % (_output.TESTS_DIR,),
-        "import _harness, _loader",
-        "M = _loader.load_script('stamp-verification.py', modname='sv_bound')",
-        "t = time.time()",
-        "n = 2000",
-        "r = M.compare_runs('PASS A\\n' * n, 'FAIL A (saw 1)\\n' * n, 'house',"
-        " M.failing_cases('FAIL A (saw 1)\\n' * n + 'X: 0/1 cases ' + 'passed', "
-        "'house'), None, deadline=time.time() + 30)",
-        "t1 = time.time() - t",
-        "m = 6000",
-        "head = ''.join('FAIL the case %d (saw 1)\\n' % i for i in range(m))",
-        "task = head + 'FAIL the brand new case (saw 1)\\n'",
-        "t = time.time()",
-        "ch = M.changed_reds(head, task, 'house', deadline=time.time() + 30)",
-        "t2 = time.time() - t",
-        "print(bool(r['problem']), len(ch[0]), round(t1, 1), round(t2, 1))"])
-    try:
-        proc = subprocess.run([sys.executable, "-c", code], stdout=subprocess.PIPE,
-                              stderr=subprocess.STDOUT, universal_newlines=True,
-                              timeout=120)
-        out = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else ""
-    except subprocess.TimeoutExpired:
-        out = "timed out"
-    parts = out.split()
-    late = M.changed_reds("FAIL a (saw 1)\n", "FAIL a (saw 1)\n", "house",
-                          deadline=time.time() - 1)
-    check("sr125 pairing HEAD's reds is under the one deadline: a deadline already "
-          "passed is a refusal with its reason: %r" % (late,),
-          late[0] is None and late[1] and "deadline" in late[1])
-    check("sr124 the bound is complete: a pairing past the edge budget is refused "
-          "from the label counts before any graph is built, and pairing HEAD's "
-          "reds is linear - both inside a second or two: %r" % (out,),
-          len(parts) == 4 and parts[:2] == ["True", "0"]
-          and float(parts[2]) < 2 and float(parts[3]) < 2)
+def _quiet_stop(stop):
+    return ["STOP = %s" % (stop,), "ok = mine.v == 2",
+            "check('the value is two', ok, 'saw %r' % (mine.v,))",
+            "if not (STOP and not ok):",
+            "    check('the legacy field is kept', mine.v == 99, 'saw %r' % (mine.v,))"]
 
 
 def _unit_suite(methods):
     return "\n".join(["import os, sys, unittest", _PATH_LINE, "import mine",
                       "class T(unittest.TestCase):"] + list(methods)
                      + ["if __name__ == '__main__':", "    unittest.main()"]) + "\n"
-
-
-def _real_unittest_verbose():
-    """`(code, text)` from a real `python -m unittest -v` over one assertion,
-    one pass and one body exception."""
-    where = _harness.fixture_root("stamp-unittest-v-")
-    _write(os.path.join(where, "test_u.py"), "\n".join([
-        "import unittest", "", "", "class T(unittest.TestCase):",
-        "    def test_assert(self):", "        self.assertEqual(1, 2)", "",
-        "    def test_pass(self):", "        pass", "",
-        "    def test_raise(self):", "        raise TypeError('a body that raised')",
-        ""]))
-    proc = subprocess.run([sys.executable, "-m", "unittest", "-v", "test_u"],
-                          cwd=where, stdout=subprocess.PIPE,
-                          stderr=subprocess.STDOUT, universal_newlines=True)
-    return proc.returncode, proc.stdout
 
 
 def _cases(check):
@@ -2134,22 +1830,18 @@ def _cases(check):
     _harness.stage(check, "sr-label-id", _label_id_cases)
     _harness.stage(check, "sr-runner", _runner_cases)
     _harness.stage(check, "sr-specific", _specific_cases)
-    _harness.stage(check, "sr-nodeid", _nodeid_cases)
     _harness.stage(check, "sr-wording", _wording_cases)
     _harness.stage(check, "sr-exact", _exact_cases)
     _harness.stage(check, "sr-command", _command_cases)
     _harness.stage(check, "sr-mixed", _mixed_cases)
-    _harness.stage(check, "sr-verbatim", _verbatim_cases)
-    _harness.stage(check, "sr-naming", _naming_cases)
+    _harness.stage(check, "sr-green", _green_baseline_cases)
     _harness.stage(check, "sr-wrapper", _wrapper_cases)
     _harness.stage(check, "sr-pytest-command", _pytest_command_cases)
-    _harness.stage(check, "sr-measured", _measured_cases)
-    _harness.stage(check, "sr-one-to-one", _one_to_one_cases)
-    _harness.stage(check, "sr-head-run", _head_run_cases)
+    _harness.stage(check, "sr-unittest", _unittest_cases)
+    _harness.stage(check, "sr-red-baseline", _red_baseline_cases)
+    _harness.stage(check, "sr-baseline-units", _baseline_unit_cases)
     _harness.stage(check, "sr-round5", _round5_cases)
     _harness.stage(check, "sr-round5-units", _round5_unit_cases)
-    _harness.stage(check, "sr-round6", _round6_cases)
-    _harness.stage(check, "sr-round6-units", _round6_unit_cases)
     _harness.stage(check, "sr-env", _env_cases)
     _harness.stage(check, "sr-final", _final_pass_cases)
     _harness.stage(check, "sr-budget", _budget_cases)

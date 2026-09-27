@@ -110,17 +110,15 @@ Hard rules (non-negotiable):
   beside a sibling's uncommitted work. Nothing mechanically stops the overwrite — the
   plan gate grades which files you touch, not why — so this is kept by reading it.
 - **`proved` means one of YOUR cases failed an assertion.** The helper names the
-  failing cases, and a red counts only when one of them is the task's own: a case
-  that HEAD's own test files, run with the same command in the same throwaway, did not
-  name. The helper makes that run itself when yours is red, so the command must name
-  every case it runs, passing ones included — the house harness does; pass `-rA` or
-  `-v` to pytest and `-v` to unittest, or the answer is `could-not-prove` and says so.
-  When HEAD's own run is itself red, a case is credited only if that run printed a count
-  of every case it had — the house tally, pytest's `collected N items` — equal to the cases
-  it named; unittest prints no such count, so a red HEAD run under unittest is
-  `could-not-prove`. `--case` narrows to the ids or labels you name and is held to that same measurement,
-  so naming a case HEAD's run already named proves nothing. An existing case going red, or a test body raising an
-  exception, is not a proof about your test. A compile error, an import error or
+  failing cases, and a red counts only against a GREEN baseline: the helper also runs
+  HEAD's own test files with the same command on HEAD's code, in the throwaway reset to
+  HEAD, and they must be green; then every failure of your run — a new case or one you
+  edited — is yours, and the fix run (your test files on the working tree's code) must
+  turn each one green. If HEAD's own tests are already red under your command, the answer
+  is `could-not-prove`: narrow the command to the task's cases (one test file, one `-k`
+  selection) and run it again. `--case` narrows to the ids or labels you name, and must
+  name a case that failed an assertion in your run. A test body raising an exception is
+  not a proof about your test. A compile error, an import error or
   zero tests collected exits non-zero with no assertion ever evaluated, so it is
   `could-not-prove`, not `proved` — unless the task introduces the symbol the run
   fails on. The helper decides that and not you: pass `--introduces <symbol>` (an
