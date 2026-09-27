@@ -577,6 +577,12 @@
       "title": "the committed-identity check accounts for the one journal row it misreads",
       "status": "done",
       "shard": "phases/P90.json"
+    },
+    {
+      "id": "P91",
+      "title": "committed plan records carry no machine path, and the committed-artifact check reads the plan",
+      "status": "pending",
+      "shard": "phases/P91.json"
     }
   ],
   "fileIndex": {
@@ -4004,7 +4010,8 @@
     "tools/check-committed-pii.py": [
       "P51.4",
       "P72.5-ttl",
-      "P90.1"
+      "P90.1",
+      "P91.1"
     ],
     "tools/check-example-ledgers.py": [
       "P32.10",
@@ -4390,6 +4397,12 @@
     "tools/affected.py": [
       "P87.1",
       "P87.3-bpl"
+    ],
+    "docs/audit/phases/P85.json": [
+      "P91.1"
+    ],
+    "docs/audit/phases/P86.json": [
+      "P91.1"
     ]
   },
   "bugs": [
