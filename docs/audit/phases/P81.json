@@ -97,7 +97,9 @@
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/commands/bug.md",
         "plugins/audit/commands/task.md",
-        "plugins/audit/README.md"
+        "plugins/audit/README.md",
+        "plugins/audit/tests/test__refs.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -132,7 +134,12 @@
       },
       "startedAt": "2026-09-27T14:42:17Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T16:38:40Z.fab1c8",
+        "status": "passed",
+        "at": "2026-09-27T16:38:40Z"
+      }
     },
     {
       "id": "P81.3",
@@ -143,7 +150,11 @@
         "plugins/audit/scripts/governance/run-test-gate.py",
         "plugins/audit/scripts/governance/_evidence_io.py",
         "plugins/audit/tests/test_run_test_gate.py",
-        "plugins/audit/tests/test__evidence_io.py"
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/tests/test_derive_phase_gate.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -178,7 +189,12 @@
       },
       "startedAt": "2026-09-27T14:42:17Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T16:40:07Z.256405",
+        "status": "passed",
+        "at": "2026-09-27T16:40:07Z"
+      }
     },
     {
       "id": "P81.4",
@@ -230,7 +246,7 @@
       "id": "P81.5",
       "title": "couple --caught refreshes a coupling's lastCaught from a named third-place failure",
       "status": "pending",
-      "description": "couple --test <path> --caught <runId> on an already-coupled test sets lastCaught to that run's ts and journals coupling.caught. The run must be a scope full row whose failingSuites, with a named basis, include the test (looked up with _evidence_io.row_by_run); otherwise refused exit 2 naming which. A coupling first written from a miss carries no lastCaught. --caught never creates a coupling (a test that is not coupled is refused) and never changes sources. Add the dest to VERB_FLAGS['couple'] and commands/task.md. Red-first: --caught on a coupled test named failing in a full row sets lastCaught to the row's ts and writes one journal row; mutation: accept a row whose basis is a tail -> red. Allow cases: an uncoupled test refused; a phase-scope row refused.",
+      "description": "couple --test <path> --caught <runId> on an already-coupled test sets lastCaught to that run's ts and journals coupling.caught. The run must be a scope full row whose failingSuites, with a named basis, include the test (looked up with _evidence_io.row_by_run); otherwise refused exit 2 naming which. A coupling first written from a miss carries no lastCaught. --caught never creates a coupling (a test that is not coupled is refused) and never changes sources. Add the dest to VERB_FLAGS['couple'] and commands/task.md. Red-first: --caught on a coupled test named failing in a full row sets lastCaught to the row's ts and writes one journal row; mutation: accept a row whose basis is a tail -> red. Allow cases: an uncoupled test refused; a phase-scope row refused. Also, in the same file: audit-task's `_named_failing_suites` (the reader behind a fix task's --failing-from gate) must skip a step the committed row marks muted (the step-level `muted` marker P81.3 adds to STEP_KEYS), so a quarantined suite never narrows a fix task's gate; correct its docstring that says it reads a failed step the way run-test-gate.failed_steps does. Red-first: a failed row whose only failing suite is a muted step yields no failing-from paths.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/tests/test_audit_task.py",
@@ -314,7 +330,12 @@
       },
       "startedAt": "2026-09-27T14:42:17Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T16:41:33Z.499595",
+        "status": "passed",
+        "at": "2026-09-27T16:41:33Z"
+      }
     },
     {
       "id": "P81.7",
@@ -598,7 +619,12 @@
       },
       "startedAt": "2026-09-27T14:42:17Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T16:43:14Z.63f0b9",
+        "status": "passed",
+        "at": "2026-09-27T16:43:14Z"
+      }
     }
   ],
   "startedAt": "2026-09-27T14:08:52Z"

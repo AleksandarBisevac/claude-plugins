@@ -228,6 +228,15 @@ def _cases(check):
                  if "shadow recall" in names else names,),
               "shadow recall" in names and "full run" in names
               and names.index("full run") == names.index("shadow recall") + 1)
+        # The repro this pins: BEFORE check_couplings existed, this row was
+        # simply absent, so `names` carries no "coupling" entry at all.
+        check("the coupling row is wired into diagnose() and sits directly "
+              "after the full-run row whose runs age it: %r"
+              % (names[max(0, names.index("full run")):][:2]
+                 if "full run" in names else names,),
+              "full run" in names and "coupling" in names
+              and names.index("coupling")
+                  == len(names) - names[::-1].index("full run"))
         # An absent ledger DIRECTORY used to read "<path> exists but
         # holds no rows yet" - a diagnostic asserting the existence of a
         # directory nothing ever created. Missing and empty are two branches.

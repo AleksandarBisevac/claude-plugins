@@ -167,6 +167,7 @@ check_gate_patterns = _trail.check_gate_patterns
 check_gate_economy = _trail.check_gate_economy
 check_shadow_recall = _trail.check_shadow_recall
 check_full_run = _trail.check_full_run
+check_couplings = _trail.check_couplings
 
 _hours_between = _completions._hours_between
 check_completions = _completions.check_completions
@@ -257,6 +258,11 @@ def diagnose(project, deep=False):
     # whether a merged phase's own full run is WHOLE, PROVISIONAL or
     # UNKNOWN, the fact the release guard actually blocks a tag on.
     check_full_run(rep, project, manifest_rel, manifest, git_root, cfg)
+    # Directly after: the couplings the third place taught, graded against
+    # the same whole-bearing full runs the row above reads - a coupling whose
+    # file git no longer tracks, or one those runs have long stopped catching
+    # anything with, named with the command that drops it and never dropped.
+    check_couplings(rep, project, manifest_rel, manifest, git_root, cfg)
     check_completions(rep, project, cfg, manifest, manifest_rel, git_root,
                       deep=deep)
     check_evidence_pointers(rep, project, manifest)
