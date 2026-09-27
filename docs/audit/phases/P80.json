@@ -1,7 +1,7 @@
 {
   "id": "P80",
   "title": "The third place",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "With meta.fullGate declared, run-test-gate.py --full --record - by hand, from full-gate.py in a pre-push hook, or in CI with --writer and brought back by import-evidence.py - records a full-scope row on HEAD, and a merged phase reads whole only when a green, measured, clean, verbatim full run's head contains its mergedHead, otherwise provisional or unknown with the reason, the same words on status, report, panel and doctor, while this repository's release guard refuses a release over a provisional phase.",
   "testGate": [
@@ -21,7 +21,7 @@
   ],
   "baseRef": "98c783dd07c321180e23ac4377354b0f446fd318",
   "branch": "audit/p80-the-third-place",
-  "mergedAt": null,
+  "mergedAt": "2026-09-27T14:05:43Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -1637,5 +1637,6 @@
     "runId": "2026-09-27T13:55:36Z.77c010",
     "status": "passed",
     "at": "2026-09-27T13:55:36Z"
-  }
+  },
+  "mergedHead": "fc6cba9234172e28425d94b42877d851b3bbb024"
 }
