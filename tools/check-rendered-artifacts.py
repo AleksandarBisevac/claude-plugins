@@ -76,6 +76,7 @@ either way, and a run that could look up NONE of them exits 1 saying so. Nothing
 written to the repo -- it renders into a temporary directory.
 """
 
+import ast
 import calendar
 import io
 import os
@@ -694,28 +695,35 @@ def arms_for(argv):
 # an array literal, arithmetic, or another key's block text. The second only
 # matters if the real call is also removed, because ra29 pins each exact line to
 # exactly one place - a second copy fails it too. Lines are split the way the shell
-# splits them, at a newline only (`shell_lines`).
+# splits them, at a newline only (`shell_lines`), and only space and tab count as
+# blanks anywhere in the reader (`_BLANKS`).
 _THIS_TOOL = "tools/check-rendered-artifacts.py"
 _VERIFY_REL = "tools/verify.sh"
 _CI_REL = ".github/workflows/ci.yml"
-_RELEASE_OPEN = re.compile(r'^if \[ "\$RELEASE" -eq 1 \]; then\s*$')
+# THE SHELL'S BLANKS: space and tab, and nothing else. Every strip, split and
+# pattern in the runner reader names them, because Python's no-argument forms and a
+# regex's `\s` also take NBSP, a form feed, the Unicode separators and a carriage
+# return - none of which the shell treats as a blank. ra29k reads the reader's AST
+# for a helper that forgets.
+_BLANKS = " \t"
+_RELEASE_OPEN = re.compile(r'^if \[ "\$RELEASE" -eq 1 \]; then[ \t]*$')
 _CALL_LINES = (("python3 %s" % (_THIS_TOOL,), ALL_ARMS),
                ("python3 %s --before-commit" % (_THIS_TOOL,), BEFORE_COMMIT_ARMS),
                ("python3 %s --against-commit" % (_THIS_TOOL,), AGAINST_COMMIT_ARMS))
-_YAML_ONE_LINE = re.compile(r"^(\s*(?:-\s+)?)run:\s+(?P<call>.*)$")
-_YAML_LITERAL = re.compile(r"^\s*(?:-\s+)?run:[ \t]*\|[-+]?[ \t]*$")
+_YAML_ONE_LINE = re.compile(r"^([ \t]*(?:-[ \t]+)?)run:[ \t]+(?P<call>.*)$")
+_YAML_LITERAL = re.compile(r"^[ \t]*(?:-[ \t]+)?run:[ \t]*\|[-+]?[ \t]*$")
 _RUNNER_WRAPPER = re.compile(r'^run "[^"]*" \\$')
 
 
 def _indent(line):
-    return len(line) - len(line.lstrip())
+    return len(line) - len(line.lstrip(_BLANKS))
 
 
 def _next_value_line(lines, index):
     """The first line after `index` that is neither blank nor a full-line comment,
     or None."""
     for line in lines[index + 1:]:
-        if line.strip() and not line.strip().startswith("#"):
+        if line.strip(_BLANKS) and not _is_full_line_comment(line):
             return line
     return None
 
@@ -724,7 +732,7 @@ def _opener(lines, index):
     """The nearest earlier non-blank line indented less than line `index`, or None."""
     depth = _indent(lines[index])
     for line in reversed(lines[:index]):
-        if line.strip() and _indent(line) < depth:
+        if line.strip(_BLANKS) and _indent(line) < depth:
             return line
     return None
 
@@ -741,7 +749,7 @@ def _code_above(lines, index):
     """The index of the nearest earlier line that is neither blank nor a full-line
     comment, or None."""
     for k in range(index - 1, -1, -1):
-        if lines[k].strip() and not _is_full_line_comment(lines[k]):
+        if lines[k].strip(_BLANKS) and not _is_full_line_comment(lines[k]):
             return k
     return None
 
@@ -749,7 +757,7 @@ def _code_above(lines, index):
 def _is_full_line_comment(line):
     """A line whose first non-space character is `#` - in shell it never continues
     a command, whatever it ends in."""
-    return line.strip().startswith("#")
+    return line.lstrip(_BLANKS).startswith("#")
 
 
 def _context_problem(lines, index, yaml):
@@ -766,7 +774,7 @@ def _context_problem(lines, index, yaml):
     """
     number = index + 1
     first = index
-    if index > 0 and _RUNNER_WRAPPER.match(lines[index - 1].strip()):
+    if index > 0 and _RUNNER_WRAPPER.match(lines[index - 1].strip(_BLANKS)):
         first = index - 1
     before = _code_above(lines, first)
     if (before is not None and yaml and _YAML_LITERAL.match(lines[before])):
@@ -819,13 +827,13 @@ def call_lines(text, yaml=False):
     out = []
     for index, line in enumerate(lines):
         number = index + 1
-        bare = line.strip(" \t")
+        bare = line.strip(_BLANKS)
         if not bare or bare.startswith("#") or _THIS_TOOL not in bare:
             continue
         if yaml:
             one = _YAML_ONE_LINE.match(line)
-            bare = (one.group("call").strip(" \t") if one
-                    else re.sub(r"^-\s+", "", bare, count=1))
+            bare = (one.group("call").strip(_BLANKS) if one
+                    else re.sub(r"^-[ \t]+", "", bare, count=1))
         arms = known.get(bare)
         if arms is None:
             out.append((number,
@@ -1394,6 +1402,23 @@ def _arm_cases(check):
           and "line 2 " in _cr_runs["plain"][0][1]
           and [c for _n, c in _cr_runs["release"] or []] == [AGAINST_COMMIT_ARMS]
           and [c for _n, c in _cr_runs["ci"] or []] == [ALL_ARMS])
+    # THE SHELL'S BLANKS ARE SPACE AND TAB, AND NOTHING ELSE. Python's no-argument
+    # strip and split, and a regex's `\s`, also take NBSP, a form feed, the Unicode
+    # separators and a carriage return - so every helper the runner reader reaches
+    # must name its blanks. Read off the AST, so the next helper is covered too.
+    _blank_leaks = _reader_blank_leaks()
+    check("ra29k no function the runner reader reaches strips, splits or matches "
+          "whitespace the shell does not: no argument-less strip/lstrip/rstrip/split, "
+          "no splitlines, and no `\\s` in the reader's patterns: %r" % (_blank_leaks,),
+          _blank_leaks == [])
+    _planted_leak = ("def call_lines(text):\n    return _helper(text)\n"
+                     "def _helper(text):\n    return text.strip()\n"
+                     "def unrelated(text):\n    return text.split()\n")
+    _seen = _reader_blank_leaks(_planted_leak)
+    check("ra29l ...and that walk follows the reader's calls: a no-argument strip in a "
+          "helper `call_lines` reaches is reported by its function and line, while "
+          "the same kind of call in a function the reader never reaches is not: %r"
+          % (_seen,), _seen == ["_helper:4 .strip()"])
     check("ra29b the release block is found by its opening and closing lines, and a "
           "runner with none reads as None rather than as a release asking nothing: "
           "%r" % ((release_lines(_fx_runner),),),
@@ -1550,6 +1575,19 @@ def _arm_cases(check):
             "      - run: python3 %s --against-commit\r\n" % (_t,), yaml=True)),
         "a CRLF call line": (1, _pinned(
             "python3 %s --against-commit\r\n" % (_t,))),
+        "NBSP before `# n \\` above the wrapper": (1, _pinned(
+            '\u00a0# n \\\nrun "y" \\\n  python3 %s --against-commit\n' % (_t,))),
+        "FF before `# n \\` above the wrapper": (1, _pinned(
+            '\x0c# n \\\nrun "y" \\\n  python3 %s --against-commit\n' % (_t,))),
+        "NBSP before `# n \\` above the call": (1, _pinned(
+            "\u00a0# n \\\n  python3 %s --against-commit\n" % (_t,))),
+        "FF before `# n \\` above the call": (1, _pinned(
+            "\x0c# n \\\n  python3 %s --against-commit\n" % (_t,))),
+        "an NBSP-indented wrapper": (1, _pinned(
+            '\u00a0run "y" \\\n  python3 %s --against-commit\n' % (_t,))),
+        "FF before `# n \\` in a run: | body": (2, _pinned(
+            "      - run: |\n          \x0c# n \\\n          python3 %s\n" % (_t,),
+            yaml=True)),
         "false && in a run: | body": (2, _pinned(
             "      - run: |\n          false &&\n          python3 %s\n" % (_t,),
             yaml=True)),
@@ -1679,6 +1717,48 @@ def _recorded_cases(check):
     check("ra30 no case asked git about THIS checkout while the suite ran - the "
           "pre-commit sweep runs it, so a HEAD question here is the one this file "
           "moved out of it: %r" % (calls,), calls == [])
+
+
+_READER_ROOTS = ("call_lines", "release_lines", "run_arms")
+_READER_PATTERNS = ("_RELEASE_OPEN", "_YAML_ONE_LINE", "_YAML_LITERAL",
+                    "_RUNNER_WRAPPER")
+
+
+def _reader_blank_leaks(source=None):
+    """["<function>:<line> <call>"] - a whitespace test the shell would not make,
+    in any module-level function the runner reader reaches from `_READER_ROOTS`,
+    plus any reader pattern that uses `\\s`."""
+    if source is None:
+        with io.open(os.path.abspath(__file__), encoding="utf-8") as fh:
+            source = fh.read()
+    tree = ast.parse(source)
+    funcs = dict((node.name, node) for node in tree.body
+                 if isinstance(node, ast.FunctionDef))
+    reached, todo = set(), list(_READER_ROOTS)
+    while todo:
+        name = todo.pop()
+        if name in reached or name not in funcs:
+            continue
+        reached.add(name)
+        todo.extend(n.func.id for n in ast.walk(funcs[name])
+                    if isinstance(n, ast.Call) and isinstance(n.func, ast.Name))
+    out = []
+    for name in sorted(reached):
+        for node in ast.walk(funcs[name]):
+            if not (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)):
+                continue
+            attr = node.func.attr
+            if (attr in ("strip", "lstrip", "rstrip", "split") and not node.args) \
+                    or attr == "splitlines":
+                out.append("%s:%d .%s()" % (name, node.lineno, attr))
+        out.extend("%s:%d a pattern using \\s" % (name, node.lineno)
+                   for node in ast.walk(funcs[name])
+                   if isinstance(node, ast.Constant) and isinstance(node.value, str)
+                   and "\\s" in node.value)
+    out.extend("%s uses \\s" % (name,) for name in _READER_PATTERNS
+               if "\\s" in globals()[name].pattern)
+    return out
 
 
 def _pinned(text, yaml=False):
