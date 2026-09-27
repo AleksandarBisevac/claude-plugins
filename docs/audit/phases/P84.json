@@ -286,7 +286,7 @@
     {
       "id": "P84.5-791",
       "title": "check-example-ledgers judges the working tree's pointers against every ledger the working tree holds",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase review of P84 (review-P84.json), finding 2. P84.3 moved the whole pointer half and the commit-reference check to HEAD, so a defect in an uncommitted manifest (a wrong cached status, a fake commit) now passes before the commit and goes red only after it - the gate stops seeing what it exists to catch. Judge the working tree instead, over one consistent set: the working tree's manifests' pointers against every ledger file the working tree holds, tracked or untracked, and the working tree's commit references - which is what fixes the original fault (a pointer into a still-untracked ledger) without hiding pre-commit defects. Red-first: the reviewer's shape (a wrong cached status and a fake commit in a working-tree manifest) fails; the original P84.3 case (a working-tree pointer into an untracked ledger) still passes; the tool passes on this repository. The CHANGELOG line for this lands with P84.4's commit (the orchestrator adds it).",
       "files": [
         "tools/check-example-ledgers.py"
@@ -316,14 +316,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d09559f4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "check-example-ledgers judges the working tree's tracked manifests against every ledger file it holds, tracked or not.",
+        "descriptive": "A defect in an uncommitted plan file is caught before its commit again, and a pointer into an evidence file not yet committed still resolves."
       },
       "startedAt": "2026-09-27T06:46:18Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T07:32:28Z",
+      "verifiedBy": [
+        "check-example-ledgers el23",
+        "check-example-ledgers el24",
+        "check-example-ledgers el25"
+      ]
     },
     {
       "id": "P84.6-791",
