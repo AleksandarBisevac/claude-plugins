@@ -854,7 +854,8 @@
       "P80.21-rtb",
       "P80.19-rtb",
       "P80.22-rtb",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P81.2"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2687,7 +2688,8 @@
       "P78.10",
       "P76.4-6qa",
       "P78.14-msc",
-      "P80.13"
+      "P80.13",
+      "P81.3"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -3269,7 +3271,8 @@
       "P75.5-j5h",
       "P76.1",
       "P77.3-6u9",
-      "P79.4"
+      "P79.4",
+      "P81.2"
     ],
     "plugins/audit/tests/test__report_html.py": [
       "P25.1",
@@ -3385,7 +3388,8 @@
       "P69.3",
       "P78.10",
       "P76.4-6qa",
-      "P80.13"
+      "P80.13",
+      "P81.3"
     ],
     "plugins/audit/tests/test_audit_status.py": [
       "P25.2",
@@ -4006,11 +4010,13 @@
     "plugins/audit/scripts/governance/derive-phase-gate.py": [
       "P79.3",
       "P79.8-5bh",
-      "P85.4"
+      "P85.4",
+      "P81.3"
     ],
     "plugins/audit/tests/test_derive_phase_gate.py": [
       "P79.3",
-      "P79.8-5bh"
+      "P79.8-5bh",
+      "P81.3"
     ],
     "plugins/audit/scripts/governance/import-evidence.py": [
       "P80.5",
