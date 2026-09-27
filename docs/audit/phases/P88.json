@@ -1,7 +1,7 @@
 {
   "id": "P88",
   "title": "the history and secrets guards say exactly what they do not follow, and their allow cases are pinned",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "SECURITY.md's not-followed list names every shape the P83 round-3 review found the guards do not read, the CHANGELOG claims no broader Perl coverage than the code has, and the compound shapes the history guard now reads have allow twins that fail when the reading over-fires.",
   "testGate": [
@@ -13,8 +13,8 @@
     "lint"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "e96506fb479ac98813e30a90eac10e35642ecc12",
+  "branch": "audit/p88-the-history-and-secrets-guards",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -27,7 +27,7 @@
     {
       "id": "P88.1",
       "title": "the guards' documents claim only what the code reads, and the history guard's compound readings have allow twins",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The three low findings of the P83 round-3 review (quality-gates-internal/probes/fr15-16/reviews/review-P83c.json, findings 4-6). (4) SECURITY.md's Not-followed list for guard-history-rewrite and guard-secrets-read names every shape the review measured as not read and still open: the two it lists (a pass-through filter's own redirect after a pipe; a receiving loop that evals what it read) and the three med findings 1-3 that stay open for a human maintainer (BUG-12), each stated as a shape in general terms. The list is derived from the review, not invented. (5) The CHANGELOG sentence on Perl's open shapes is narrowed to what the pattern reads (the parenthesised forms with an exact '<' mode), and SECURITY.md names the unread idiomatic and layered forms as a residual; the guard's code is not changed here (guard-secrets-read.py is declared by P86.3). (6) Allow twins in test_guard_history_rewrite.py for gp61, gp62, gp64 and gp68-gp71: the same compound shapes writing into notes.md (a then-branch emitter redirected, a loop piped after done into cat, a receiving group in a subshell, an echo of the words into notes.md) are allowed; each proved red against the over-fire mutation it guards (every receiving-group member read as a runner; a compound's redirect given to stages outside it). Benign text only in every fixture; this task adds no refusal case and no new way to evade either guard.",
       "files": [
         "SECURITY.md",
@@ -55,16 +55,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T20:01:18Z",
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-27T20:01:18Z"
 }

@@ -722,8 +722,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   the inline-eval arm, the same capability as `-c`, with a refusal that names the here-string; one
   fed to an interpreter already running a script file, or its own inline program, is that
   script's input, decided per interpreter (`perl -c` compiles stdin and `python -E` names no
-  program, so neither exempts it). Perl's own `open` shapes - two-argument, with or without a
-  `<` mode, and three-argument with `'<'` - are reads the inline-eval arm names.
+  program, so neither exempts it). Perl's `open` is a read the inline-eval arm names in its
+  parenthesised forms only - two-argument, with or without a `<` mode, and three-argument with a
+  mode of exactly `'<'`; the call without parentheses and a mode carrying a layer are not read,
+  a residual `SECURITY.md` names.
 - **A squash merge of a phase branch no longer reads as a scope breach.** A `git merge --squash`
   keeps the squashed messages, `Audit-Row` trailers included, so the row naming an index or
   audit-state commit resolved to the squash commit, and `index-scope` / `audit-state-scope` graded

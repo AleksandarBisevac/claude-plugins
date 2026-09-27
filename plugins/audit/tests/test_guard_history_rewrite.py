@@ -742,12 +742,29 @@ def _cases(check):
                 # Compound commands, comments and receiving groups.
                 ("gp61", "if true; then echo '" + _G + "' > .git/hooks/pre-commit; fi",
                  "deny", "an emitter after a reserved word is still an emitter"),
+                # The allow twins (gp61a-gp71a) pin the compound reading against
+                # OVER-firing. Each writes the phrase into notes.md or pipes it
+                # into cat, and each goes red under one mutation: every member
+                # of a receiving group read as a runner (gp64a), or a compound's
+                # redirect and pipe handed to the stages before it as well as
+                # its own (the rest, whose trailing group carries plain text).
+                ("gp61a", "if true; then echo '" + _G + "'; fi > notes.md; "
+                 "( echo hello ) > .git/hooks/pre-commit", "allow",
+                 "...while a then-branch emitter redirected into notes.md is "
+                 "text, and a later group's redirect is not its own"),
                 ("gp62", "for x in 1; do echo '" + _G + "'; done | sh", "deny",
                  "...and a loop's output piped after `done` reaches every stage"),
+                ("gp62a", "for x in 1; do echo '" + _G + "'; done | cat; "
+                 "( echo hello ) | sh", "allow",
+                 "...while a loop piped after `done` into cat is text, and a "
+                 "later group's pipe is not the loop's"),
                 ("gp63", "echo 'never " + _G + "' # see > $X", "allow",
                  "a comment's `>` is not a redirect"),
                 ("gp64", "echo '" + _G + "' | (cd /tmp && sh)", "deny",
                  "a pipe into a group reaches every stage of it"),
+                ("gp64a", "echo '" + _G + "' | (cd /tmp && cat)", "allow",
+                 "...while a receiving group whose members only print runs "
+                 "nothing"),
                 ("gp65", "echo '" + _G + "' | sudo grep -c x \"$F\"", "allow",
                  "a wrapper's operand holding `$` is not the program"),
                 ("gp66", "echo '" + _G + "' > docs/Update", "allow",
@@ -759,12 +776,21 @@ def _cases(check):
                 ("gp68", "echo 'git push' '--force origin main' | sh", "deny",
                  "an emitter's words print as one line, so a phrase split "
                  "across arguments is read whole"),
+                ("gp68a", "echo 'git push' '--force origin main' > notes.md; "
+                 "( echo hello ) | sh", "allow",
+                 "...while the same words written into notes.md are text"),
                 ("gp69", "cat <<< '" + _G + "' | sh", "deny",
                  "cat fed a here-string prints it"),
+                ("gp69a", "cat <<< '" + _G + "' > notes.md; ( echo hello ) | sh",
+                 "allow", "...into notes.md, text"),
                 ("gp70", "builtin echo '" + _G + "' | sh", "deny",
                  "`builtin` runs its argument"),
+                ("gp70a", "builtin echo '" + _G + "' > notes.md; "
+                 "( echo hello ) | sh", "allow", "...into notes.md, text"),
                 ("gp71", "echo \"$(echo '" + _G + "')\" | sh", "deny",
                  "an inner emitter's substitution contributes what it prints"),
+                ("gp71a", "echo \"$(echo '" + _G + "')\" > notes.md; "
+                 "( echo hello ) | sh", "allow", "...into notes.md, text"),
                 # A `case` read in command position only; the body is READ.
                 ("gs19", 'echo "$(echo worst case)"; echo stash | xargs git',
                  "deny", "a bare word `case` in a substitution does not make "
