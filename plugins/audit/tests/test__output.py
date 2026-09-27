@@ -2479,14 +2479,22 @@ def _module_names(tree, paths):
     return names
 
 
-def validator_reach():
-    """`{(module, function): FunctionDef}` - everything `validate()` calls."""
+def validator_reach(sources=None):
+    """`{(module, function): FunctionDef}` - everything `validate()` calls.
+
+    `sources` maps a module name to source text read in place of its file, so a
+    case can walk a mutated module without writing it into the tree.
+    """
     paths, trees, reach = _module_paths(), {}, {}
+    sources = sources or {}
 
     def tree(mod):
         if mod not in trees:
-            with open(paths[mod], encoding="utf-8") as fh:
-                trees[mod] = ast.parse(fh.read())
+            if mod in sources:
+                trees[mod] = ast.parse(sources[mod])
+            else:
+                with open(paths[mod], encoding="utf-8") as fh:
+                    trees[mod] = ast.parse(fh.read())
         return trees[mod]
 
     todo = [VALIDATE_ROOT]
@@ -2548,17 +2556,19 @@ def _feeding_functions(reach):
     return out
 
 
-def finding_sites():
+def finding_sites(sources=None):
     """`(visited, uncoded, codes)` over every finding site `validate()` reaches.
 
     A FINDING LIST is `f`, `findings`, or the first half of any `(x, w)` a
     reached function returns. A SITE is each item that enters one: an `append`,
     an `extend` or `+=` of a literal list or comprehension, an assignment of
-    one, or a list returned in place. An `extend` of a list another reached
-    function built is a pass-through, and that function's own sites are walked.
+    one, or a list returned in place - the first half of a returned pair, or,
+    in a function whose whole return is extended into a finding list, a literal
+    list it returns early. An `extend` of a list another reached function built
+    is a pass-through, and that function's own sites are walked.
     """
     visited, uncoded, codes = 0, [], {}
-    reach = validator_reach()
+    reach = validator_reach(sources)
     feeds = _feeding_functions(reach)
     for (mod, name), fn in sorted(reach.items()):
         lists = set(("f", "findings"))
@@ -2592,6 +2602,11 @@ def finding_sites():
             elif (isinstance(node, ast.Return)
                   and isinstance(node.value, ast.Tuple) and node.value.elts):
                 items.extend(_items(node.value.elts[0]) or [])
+            # ...and a function whose whole return is a finding list may return
+            # a literal one early, before it names the list it builds.
+            elif ((mod, name) in feeds and isinstance(node, ast.Return)
+                  and node.value is not None):
+                items.extend(_items(node.value) or [])
         for arg in items:
             visited += 1
             where = "%s.%s:%d" % (mod, name, arg.lineno)
@@ -2623,6 +2638,39 @@ def _finding_code_cases(check):
     check("fc3 ...and no literal code names two sites - a code is one rule, so "
           "a second site under it would let two rules key as one: %r" % (shared,),
           codes and shared == {})
+    # The phase-gate family - `meta.phaseGate`, `meta.gateBudgetMs`,
+    # `meta.coupling` - reaches the validator as warnings, through a check that
+    # once wrote into the caller's list, a shape the walk never follows. So a
+    # code stripped from one of its sites left fc2 green.
+    family = ("_check_phase_gate", "_check_coupling",
+              "_check_phase_gate_derived", "_comma_joined_gate")
+    reached = sorted(set(w.split(":")[0].split(".")[1]
+                         for ws in codes.values() for w in ws
+                         if w.startswith("_manifest_phases.")) & set(family))
+    check("fc5 the walk reaches every check of the phase-gate family and finds "
+          "each coded: reached %r of %r" % (reached, sorted(family)),
+          reached == sorted(family))
+    phases_path = _module_paths()["_manifest_phases"]
+    with open(phases_path, encoding="utf-8") as fh:
+        phases_src = fh.read()
+    coded = '_output.finding(\n                    "phases.coupling.head-shape",\n'
+    stripped = phases_src.replace(coded, "(\n")
+    _v, bare_sites, _c = finding_sites({"_manifest_phases": stripped})
+    check("fc6 ...so a _check_coupling warning stripped of its code turns the "
+          "walk red at that site (the mutation landed: %r): uncoded %r"
+          % (phases_src.count(coded) == 1 and coded not in stripped, bare_sites),
+          phases_src.count(coded) == 1 and coded not in stripped
+          and [w.rsplit(":", 1)[0] for w in bare_sites]
+          == ["_manifest_phases._check_coupling"])
+    early = '[_output.finding(\n            "phases.coupling.array",\n'
+    stripped = phases_src.replace(early, "[(\n")
+    _v, bare_sites, _c = finding_sites({"_manifest_phases": stripped})
+    check("fc7 ...and so does one returned early as a literal list, before the "
+          "check names the list it builds (the mutation landed: %r): uncoded %r"
+          % (phases_src.count(early) == 1 and early not in stripped, bare_sites),
+          phases_src.count(early) == 1 and early not in stripped
+          and [w.rsplit(":", 1)[0] for w in bare_sites]
+          == ["_manifest_phases._check_coupling"])
     import _manifest_io as _mio
     import _manifest_rules
     acme = _mio.load_manifest(os.path.join(M.REPO_ROOT, "examples", "acme-store",

@@ -307,15 +307,30 @@ def _review_findings(area, pi, tasks):
     the demo shows the preferred one, because a fixture is also documentation of
     what to write. Each finding names a real file from the phase it belongs to -
     a `file` pointing nowhere is the kind of detail a reader checks first.
+
+    BOTH SHAPES A REVIEW HOLDS, one each: the first finding RESOLVED the way
+    `audit-task.py resolve-finding` writes it - `fixTask` a task of this phase,
+    `commit` that task's own recorded commit, the resolution led by the fix - and
+    the second still open, carrying neither field. Ids are `<phaseId>-R<n>`, the
+    shape the `finding` verb allocates.
     """
     graded = ("low", "med", "high")
-    return [{"id": i + 1,
-             "severity": graded[(pi + i) % len(graded)],
-             "file": "%s:%d-%d" % (task["files"][0], 12 + 7 * i, 20 + 7 * i),
-             "issue": "The %s path is not covered for the empty-input case."
-                      % area,
-             "resolution": "Covered by the gate added in %s." % task["id"]}
-            for i, task in enumerate(tasks[:2])]
+    pid = str(tasks[0]["id"]).rsplit(".", 1)[0] if tasks else "P0"
+    out = []
+    for i, task in enumerate(tasks[:2]):
+        asked = "Cover it with a gate on the empty input."
+        finding = {"id": "%s-R%d" % (pid, i + 1),
+                   "severity": graded[(pi + i) % len(graded)],
+                   "file": "%s:%d-%d" % (task["files"][0], 12 + 7 * i, 20 + 7 * i),
+                   "issue": "The %s path is not covered for the empty-input case."
+                            % area,
+                   "resolution": asked}
+        if i == 0 and task.get("commit"):
+            finding.update(fixTask=task["id"], commit=task["commit"],
+                           resolution="fixed in %s (%s): %s"
+                           % (task["id"], task["commit"][:12], asked))
+        out.append(finding)
+    return out
 
 
 def _phase_model(tasks):
@@ -695,9 +710,12 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
             }
             if pi % 4 == 1:
                 phase["review"]["findings"] = _review_findings(area, pi, tasks)
+                fixed = [f for f in phase["review"]["findings"] if f.get("fixTask")]
                 phase["review"]["outcome"] = (
-                    "%d finding(s) raised on the phase diff and resolved before "
-                    "sign-off." % len(phase["review"]["findings"]))
+                    "%d finding(s) raised on the phase diff: %d fixed before "
+                    "sign-off, %d triaged as a follow-up."
+                    % (len(phase["review"]["findings"]), len(fixed),
+                       len(phase["review"]["findings"]) - len(fixed)))
         elif pstatus == "in_progress":
             phase["baseRef"] = _sha(rng)
             phase["branch"] = "audit/%s-%s" % (pid.lower(), area)

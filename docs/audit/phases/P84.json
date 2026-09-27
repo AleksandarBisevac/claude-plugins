@@ -1,7 +1,7 @@
 {
   "id": "P84",
   "title": "review findings are written by a verb, every validator warning family carries a code the lint can see, and a fresh worktree's evidence is counted",
-  "status": "pending",
+  "status": "done",
   "description": "",
   "desiredOutcome": "A sign-off's findings and their resolutions are recorded through a verb under the lock with a journal row, and the outcome's tally is derived from them; the stable-code lint reaches every warning _check_phase_gate emits; check-example-ledgers judges pointers and ledgers over the same set, so a phase's second task gate in a fresh worktree is not red on the first gate's pointer.",
   "testGate": [
@@ -15,28 +15,144 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
-  "mergedAt": null,
+  "baseRef": "72caceb122f3eeee054885d84342bf14d8af9329",
+  "branch": "audit/p84-review-findings-are-written-by",
+  "mergedAt": "2026-09-27T09:19:02Z",
   "review": {
-    "tool": null,
+    "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P84-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "resolve-finding marks a finding as fixed by a task that has not landed. _fix_commit checks only that a commit exists and that it agrees with task.commit. A task in `pending` status, with no commit recorded, is accepted whenever --commit is passed. I reproduced this on a scratch copy of docs/audit: `finding P86 ...` then `resolve-finding P86-R1 --fix-task P86.1 --commit <scratch HEAD>` exited 0 alt",
+        "resolution": "fix task P84.6-791"
+      },
+      {
+        "id": "P84-R2",
+        "severity": "med",
+        "file": "tools/check-example-ledgers.py",
+        "issue": "A defect in an uncommitted manifest is no longer caught until it is committed, and the OK line does not say so. I tested this on a clone of HEAD. I edited docs/audit/phases/P78.json in the working tree: P78.1's cached status changed from passed to failed against its ledger run, and its commit changed to deadbeef…. The base tool exited 1 with two FINDINGs, a cache disagreement and an unresolvable c",
+        "resolution": "fix task P84.5"
+      },
+      {
+        "id": "P84-R3",
+        "severity": "med",
+        "file": "plugins/audit/reference/phase-signoff.md",
+        "issue": "Findings written by concurrent `finding` calls from one session are lost, and each call still reports success. When the session already holds the lock, _acquire_lock says 'already yours -- nothing was taken', so calls from one session are not serialized. I ran six `finding P81` calls in parallel with the same CLAUDE_CODE_SESSION_ID on a scratch plan. All six exited 0 and each printed 'P81-R1 recor",
+        "resolution": "fix task P84.6-791"
+      },
+      {
+        "id": "P84-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The tally's 'N with a fix commit' clause counts only entries carrying fixTask and commit, which only resolve-finding writes. The existing plan records 242 object findings, and none of them carries either field, because their fixes were recorded in the resolution text. So the first verb write to any older phase produces a derived clause that contradicts the phase's own prose. I ran `correct P74 --r",
+        "resolution": "fix task P84.6-791"
+      },
+      {
+        "id": "P84-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "_review_target refuses only a cancelled phase. `finding` therefore appends to a phase that is already signed off and merged, and rewrites that phase's review.outcome with no note. I confirmed this on P85, which is passed and done. A tally the verdict was never given against is written into a closed record, and the output does not say the phase already has a verdict.",
+        "resolution": "fix task P84.6-791"
+      },
+      {
+        "id": "P84-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The group sign-off path (`signoff P1,P2 --branch`) now derives the tally, and the task claims 'both signoff paths'. No case asserts it: the rv cases (rv7) drive only the single-phase signoff. Reverting line 7348 to `args.review_outcome.strip()` would leave test_audit_task green.",
+        "resolution": "fix task P84.6-791"
+      },
+      {
+        "id": "P84-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "A finding's fixTask and commit are copies taken when resolve-finding runs, and the tally derives from those copies. `reopen` clears task.commit (audit-task.py:4153 puts None) but does not touch review.findings. After the fix task is reopened, the finding still says 'fixed in X (sha)' and the tally still counts it. I found this by reading the code; I did not run it.",
+        "resolution": "fix task P84.6-791"
+      },
+      {
+        "id": "P84-R8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py",
+        "issue": "The journal row records review.outcome from and to in full, but _journal_row truncates long values ('… [truncated]'). The tally sits at the end of the outcome, so for any real outcome the two values print identically and the row does not show what changed. I saw this in the P85 review.finding row on the scratch copy.",
+        "resolution": "fix task P84.6-791"
+      },
+      {
+        "id": "P84-S1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py",
+        "issue": "The fix to finding 3 changed the re-entry rule in _locks.held_by_us. It left a second copy of the old rule in place. _evidence_io.lock_state, which pointer_lock_state and the evidence-boundary writer call, still returns 'ours' for any claim whose sessionId matches, and it never calls acquire. The two now disagree about the same claim. I wrote a phase-P9 claim of the new kind (token set, handedOff ",
+        "resolution": "fix task P84.7-791"
+      },
+      {
+        "id": "P84-S2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_id_refs.py",
+        "issue": "P84.1 added fixTask, a finding field that holds another record's id. It is not in _id_refs.SCALAR_REFS, the one list of fields the renames rewrite. It is not declared in the schema's finding definition either, which _id_refs says its list comes from, and no validator check resolves it. I reproduced the result on a scratch clone. `finding P84`, then `resolve-finding P84-R9 --fix-task P84.5-791`, th",
+        "resolution": "fix task P84.7-791"
+      },
+      {
+        "id": "P84-S3",
+        "severity": "low",
+        "file": "CHANGELOG.md",
+        "issue": "Three documents describe behaviour the phase no longer has. (a) CHANGELOG's P84.3 entry still says 'Pointers are now read from the manifests at HEAD and resolved against the ledgers HEAD holds'. P84.5 replaced that: working-tree manifests are resolved against every ledger in the working tree, tracked or not. P84.5's files list only the tool, so the sentence could not be corrected in that task. (b)",
+        "resolution": "fix task P84.7-791"
+      },
+      {
+        "id": "P84-S4",
+        "severity": "low",
+        "file": "tools/check-example-ledgers.py",
+        "issue": "The ledger set now includes untracked files, but the manifest set does not. A new phase shard that is not yet committed is written by `phase add`, and task gates write pointers into it before the first commit, yet it is never read. I tested this on a scratch clone. I added an untracked docs/audit/phases/P99.json whose first task caches 'failed' against a run that recorded 'passed' and names the co",
+        "resolution": "fix task P84.7-791"
+      },
+      {
+        "id": "P84-S5",
+        "severity": "low",
+        "file": "plugins/audit/reference/manifest-conventions.md",
+        "issue": "The hand-held exception is stated honestly, but only in phase-signoff.md step 1, CHANGELOG and the _locks docstring. The two documents that prescribe the hand-held flow do not say that verbs run under that hold must not run as parallel tool calls. Those are manifest-conventions.md ('Before your first index write: take it with the script', used by init, task, bug, propose and sync) and orchestrator",
+        "resolution": "fix task P84.7-791"
+      },
+      {
+        "id": "P84-T1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/panel/_panel_write.py",
+        "issue": "The per-call claim now serialises the WRITE of two concurrent panel saves, but every save builds its document from a read made BEFORE _acquire_write_lock. So the second save still writes a copy that predates the first, and the first save's change is lost while both responses say ok. I measured this through the real handler: I ran panel-server._make_handler on a ThreadingHTTPServer with _atomic_wri",
+        "resolution": "fix task P84.8-791"
+      },
+      {
+        "id": "P84-T2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/_proposals.py",
+        "issue": "The P84.7 claim 'A panel write now takes a per-call claim' covers the three _acquire_write_lock callers only. The panel's proposal door calls _proposals.run in-process on a server thread, and that takes an ordinary claim. The claim records pid os.getpid() and _carry puts its token into the process-wide os.environ, so every other request thread passes held_by_us as 'ours'. Measured through the real",
+        "resolution": "fix task P84.8-791"
+      },
+      {
+        "id": "P84-T1",
+        "severity": "low",
+        "file": "plugins/audit/scripts/panel/_panel_write.py",
+        "issue": "A crashed panel's claim is reported honestly: `audit-lock.py status` prints 'abandoned - pid N is gone', and the next save answers lockStale. But the recovery line the panel prints, 'Release it with: audit-lock.py release index --project .', always refuses (exit 3, 'NOT yours to release -- held by pid N ... You were taken over'). _release_conflict counts the dead holder pid as a mismatch, and with",
+        "resolution": "fix task P84.8-791"
+      }
+    ],
+    "outcome": "matches; four review passes, every finding fixed in P84.5-P84.9 [findings: 16 - 0 high, 6 med, 10 low; 0 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "Review findings are written by a verb, every validator warning family carries a code the lint can see, check-example-ledgers judges one consistent set, and the lock has one rule that every reader asks.\n\nReview verbs:\n- finding (per finding, or a whole review with --findings-file), resolve-finding (the fix task must be done) and correct (text only, the verdict untouched) write the review record under the index lock, each with its own journal row.\n- The severity tally is derived from the list on every write of review.outcome.\n- A finding's fixTask follows its task through a move and is checked by crossrefs.\n- reopen takes a fix commit back off every finding that recorded it.\n- A landed phase refuses a new finding.\n\nLock:\n- A claim a process takes for its own write is re-entered only by that process or by a child carrying its token.\n- A claim taken by hand stays re-enterable by its session, and the docs say so where they prescribe the hand-held flow.\n- A panel write takes a per-call claim.\n- Every panel door and the proposal door read what they patch under the lock they write with, so two simultaneous saves both land.\n- A crashed panel's recovery line works.\n\nThe phase-gate checks return their coded findings, so the stable-code lint reaches every one of them.\n\ncheck-example-ledgers judges the working tree's manifests, tracked or not, against every ledger file the working tree holds.\n\nReviewed four times; every finding was fixed in P84.5 through P84.9. P84.4 was cancelled for a wrong declared path, and its work continued as P84.6. Main was merged in before the gate. The phase gate is green with the tree unchanged, and the invariant check found no breach.",
   "tasks": [
     {
       "id": "P84.1",
       "title": "a verb records a sign-off finding and its resolution, and the outcome's tally is derived from the findings",
-      "status": "pending",
+      "status": "done",
       "description": "F516 (quality-gates-internal PLAN.md). Add a verb that appends a finding in the schema's shape (id, severity low|med|high, file, issue, resolution) under the index lock, revalidating or rolling back, with a review.finding journal row; a way to set a finding's resolution to its fix task and commit when the fix lands; and derive the severity tally in review.outcome from review.findings when the verb writes it, so no one types it. A text-only correction of review.outcome or summary goes through a verb with its own journal row and never re-decides the verdict. phase-signoff.md step 1 names the verb. Red-first: a malformed finding (missing severity, severity outside the vocabulary) is refused before any write; allow: a well-formed one is appended and journaled; a correction leaves the verdict and its row untouched.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/reference/phase-signoff.md",
         "plugins/audit/commands/phase.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/manifest-conventions.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -61,27 +177,35 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7c0972b7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "finding, resolve-finding and correct verbs under the index lock with journal rows; outcome_with_tally on every review.outcome write.",
+        "descriptive": "Sign-off findings and their fixes are recorded by a command instead of a hand edit, and the outcome's tally can no longer disagree with the list."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-27T04:18:45Z",
+      "completedAt": "2026-09-27T06:32:40Z",
+      "verifiedBy": [
+        "test_audit_task rv1",
+        "test_audit_task rv3",
+        "test_audit_task rv5",
+        "test_audit_task rv8",
+        "test_audit_task rv9",
+        "test_audit_task rv11"
+      ]
     },
     {
       "id": "P84.2",
       "title": "the stable-code lint reaches every warning the phase-gate checks emit",
-      "status": "pending",
+      "status": "done",
       "description": "F517 (quality-gates-internal PLAN.md). _check_phase_gate mutates the validator's warnings parameter, a shape fc2's walk never follows, so the whole family can ship uncoded. Give _check_phase_gate (and its helpers) the return shape the walk already follows - it returns its findings and the caller extends - rather than adding a new seed rule. Red-first: strip the code from one _check_coupling warning and fc2 goes red; allow: every coded site stays green and the validator's output is byte-identical before and after.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_phases.py",
         "plugins/audit/tests/test__manifest_phases.py",
         "plugins/audit/tests/test__output.py",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "plugins/audit/scripts/manifest/_manifest_rules.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -106,21 +230,27 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "19bd1533",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_check_phase_gate returns its findings for the caller to extend; the walk reads a feeder's early literal return.",
+        "descriptive": "Every warning the phase-gate checks emit now carries a stable code, and the lint would catch one that does not."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-27T04:18:45Z",
+      "completedAt": "2026-09-27T06:32:39Z",
+      "verifiedBy": [
+        "test__output fc5",
+        "test__output fc6",
+        "test__output fc7",
+        "test__manifest_phases gf1",
+        "test__manifest_phases gf3"
+      ]
     },
     {
       "id": "P84.3",
       "title": "check-example-ledgers judges pointers and ledgers over the same set",
-      "status": "pending",
+      "status": "done",
       "description": "F519 (quality-gates-internal PLAN.md). The tool reads pointers from the working-tree manifests but counts only git-tracked ledgers, so a phase's second task gate in a fresh worktree goes red on the first gate's pointer into the still-untracked evidence file. Judge both halves over the same set - read pointers from manifests at HEAD (the committed claim this tool exists to check). Red-first: a fixture repo whose tracked manifest at HEAD has no pointer to the untracked ledger while the working-tree manifest does passes; allow: a manifest at HEAD pointing at a run no ledger holds still fails.",
       "files": [
         "tools/check-example-ledgers.py",
@@ -149,16 +279,376 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "6781d48b",
+      "outcome": {
+        "technical": "check-example-ledgers reads pointers and ledger rows at HEAD through one git cat-file batch.",
+        "descriptive": "A task gate in a fresh worktree no longer fails because an earlier gate's evidence file is not committed yet."
+      },
+      "startedAt": "2026-09-27T04:18:45Z",
+      "completedAt": "2026-09-27T06:32:39Z",
+      "verifiedBy": [
+        "check-example-ledgers el23",
+        "check-example-ledgers el24"
+      ]
+    },
+    {
+      "id": "P84.4-791",
+      "title": "the review verbs refuse an unlanded fix, write safely in parallel, say what their tally counts, and stay true after a reopen",
+      "status": "cancelled",
+      "description": "Phase review of P84 (review-P84.json), findings 1, 3-8. (1) resolve-finding refuses a fix task that is not done, --commit or not; a case. (3) parallel calls from one session lost findings because the lock lets its own session back in (_locks.py:889): find why re-entry is keyed on the session; make it re-entrant only for a child process that carries the holder's token (so a verb's own subprocess still gets in) and serialise every other caller, including another process of the same session; add `finding --findings-file` that records several findings in one write; phase-signoff.md step 1 names the batch form and says the per-finding form is one at a time; a real parallel case (several processes, one session id) where every finding lands. (4) the tally's clause says exactly what it counts (\"k with a recorded fix commit\"), never implying the rest are unfixed. (5) `finding` refuses a phase that has landed (mergedAt set) with the reason; on a signed-off, unlanded phase it records the finding and says so in the row. (6) a case for the group sign-off tally path. (7) reopen clears the fix task's commit from every finding that recorded it, so the tally stops counting it; a case. (8) the journal row's from/to of a long outcome is shortened from the middle so the tally at its end stays visible.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/reference/phase-signoff.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - resolve-finding with --commit resolves a finding to a pending fix task"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: declared scripts/_locks.py, a path that does not exist (the module is scripts/governance/_locks.py); scope cannot drop a path from an attempted task, so the same work continues as a new task with the corrected files"
       },
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-09-27T06:46:17Z",
+      "completedAt": "2026-09-27T06:53:39Z",
       "verifiedBy": []
+    },
+    {
+      "id": "P84.5-791",
+      "title": "check-example-ledgers judges the working tree's pointers against every ledger the working tree holds",
+      "status": "done",
+      "description": "Phase review of P84 (review-P84.json), finding 2. P84.3 moved the whole pointer half and the commit-reference check to HEAD, so a defect in an uncommitted manifest (a wrong cached status, a fake commit) now passes before the commit and goes red only after it - the gate stops seeing what it exists to catch. Judge the working tree instead, over one consistent set: the working tree's manifests' pointers against every ledger file the working tree holds, tracked or untracked, and the working tree's commit references - which is what fixes the original fault (a pointer into a still-untracked ledger) without hiding pre-commit defects. Red-first: the reviewer's shape (a wrong cached status and a fake commit in a working-tree manifest) fails; the original P84.3 case (a working-tree pointer into an untracked ledger) still passes; the tool passes on this repository. The CHANGELOG line for this lands with P84.4's commit (the orchestrator adds it).",
+      "files": [
+        "tools/check-example-ledgers.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-example-ledgers.py: repro that FAILS on current code - an uncommitted manifest edit giving a task a wrong cached status and a fake commit passes"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "d09559f4",
+      "outcome": {
+        "technical": "check-example-ledgers judges the working tree's tracked manifests against every ledger file it holds, tracked or not.",
+        "descriptive": "A defect in an uncommitted plan file is caught before its commit again, and a pointer into an evidence file not yet committed still resolves."
+      },
+      "startedAt": "2026-09-27T06:46:18Z",
+      "completedAt": "2026-09-27T07:32:28Z",
+      "verifiedBy": [
+        "check-example-ledgers el23",
+        "check-example-ledgers el24",
+        "check-example-ledgers el25"
+      ]
+    },
+    {
+      "id": "P84.6-791",
+      "title": "the review verbs refuse an unlanded fix, write safely in parallel, say what their tally counts, and stay true after a reopen",
+      "status": "done",
+      "description": "Phase review of P84 (review-P84.json), findings 1, 3-8. (1) resolve-finding refuses a fix task that is not done, --commit or not; a case. (3) parallel calls from one session lost findings because the lock lets its own session back in (_locks.py:889): find why re-entry is keyed on the session; make it re-entrant only for a child process that carries the holder's token (so a verb's own subprocess still gets in) and serialise every other caller, including another process of the same session; add `finding --findings-file` that records several findings in one write; phase-signoff.md step 1 names the batch form and says the per-finding form is one at a time; a real parallel case (several processes, one session id) where every finding lands. (4) the tally's clause says exactly what it counts (\"k with a recorded fix commit\"), never implying the rest are unfixed. (5) `finding` refuses a phase that has landed (mergedAt set) with the reason; on a signed-off, unlanded phase it records the finding and says so in the row. (6) a case for the group sign-off tally path. (7) reopen clears the fix task's commit from every finding that recorded it, so the tally stops counting it; a case. (8) the journal row's from/to of a long outcome is shortened from the middle so the tally at its end stays visible.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/reference/phase-signoff.md",
+        "CHANGELOG.md",
+        "plugins/audit/commands/phase.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - resolve-finding with --commit resolves a finding to a pending fix task"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "5cbb1590",
+      "outcome": {
+        "technical": "Token-keyed lock re-entry with hand-held claims kept; finding --findings-file; done required for resolve-finding; reopen clears fix commits.",
+        "descriptive": "Review findings no longer vanish when recorded in parallel, and a finding shows a fix only once that fix has landed and while it stays landed."
+      },
+      "startedAt": "2026-09-27T06:53:39Z",
+      "completedAt": "2026-09-27T07:32:29Z",
+      "verifiedBy": [
+        "test_audit_task rv5",
+        "test_audit_task rv13",
+        "test_audit_task rv14",
+        "test_audit_task rv16",
+        "test__locks rk1",
+        "test__locks rk2",
+        "test__locks rk4"
+      ]
+    },
+    {
+      "id": "P84.7-791",
+      "title": "every lock reader asks one rule, fixTask follows a move, the ledger check reads new shards, and the docs say what the lock does now",
+      "status": "done",
+      "description": "Round-2 phase review of P84 (review-P84b.json), findings 1-5 plus its preExisting panel item. (1) _evidence_io.lock_state asks _locks.held_by_us - one rule for \"is this lock ours\" - instead of its own same-session test, and its docstring says why; a case that fails first. (2) fixTask is renamed on move: added to _id_refs.SCALAR_REFS and to the schema, with a move case. (3) CHANGELOG's P84.3 entry states what the tool reads after P84.5 (the working tree, tracked and untracked ledgers); ledger_rels' docstring stops saying tracked; the build guide names finding --findings-file, the landed-phase refusal and reopen clearing a finding's commit, and the lock's token rule and handed-off claims. (4) check-example-ledgers also reads untracked manifest shards (the shape it already matches) so a new shard's contradicting cached status and fake commit fail; a case. (5) manifest-conventions.md and orchestrator.md state the hand-held exception where they prescribe taking a lock by hand, and say exit 3 can now be a parallel call from the same session. The CHANGELOG notes that a killed verb's new-kind claim now answers stale (4) to its own session. (6, pre-existing) two simultaneous panel writes in the ThreadingHTTPServer re-enter each other: give each write its own claim (a token per request, not per process) so they serialise; a real two-thread case.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/manifest/_id_refs.py",
+        "plugins/audit/tests/test__id_refs.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "tools/check-example-ledgers.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/tests/test__locks.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/reference/orchestrator.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        "plugins/audit/scripts/manifest/_manifest_crossrefs.py",
+        "plugins/audit/tests/test__manifest_crossrefs.py",
+        "docs/demo-large.html",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/demo-gate.gif",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/mobile.png",
+        "docs/screenshots/overview.png",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__evidence_io.py: repro that FAILS on current code - lock_state answers ours for a claim another live process of the same session holds"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "f22fc606",
+      "outcome": {
+        "technical": "lock_state via held_by_us; per-call claims for panel writes; fixTask in _id_refs and the schema with a crossref warning; untracked shards read; demo re-rendered.",
+        "descriptive": "Lock ownership is decided by one rule everywhere, panel saves no longer overwrite each other, and a finding's fix task is checked and follows moves."
+      },
+      "startedAt": "2026-09-27T07:44:42Z",
+      "completedAt": "2026-09-27T08:18:03Z",
+      "verifiedBy": [
+        "test__evidence_io ed8b",
+        "test__id_refs ir13",
+        "check-example-ledgers el26",
+        "test__panel_write wl9",
+        "test__manifest_crossrefs mc45",
+        "test__locks rk5"
+      ]
+    },
+    {
+      "id": "P84.8-791",
+      "title": "a panel save reads what it patches under the lock it writes with, on every door, and a crashed panel's recovery line works",
+      "status": "done",
+      "description": "Round-3 phase review of P84 (review-P84c.json). (1) Every panel save builds its document from a read taken before _acquire_write_lock, so a serialised second save writes a stale copy and the first save's change is lost while both answer ok (measured through the real handler: composition and policy/theme). Take the lock FIRST, then read and patch inside the held region - apply_composition reads the manifest under the lock; write_config takes a mutator applied to the config it reads under the lock (policy, theme, ado). A real two-thread case per door asserting BOTH changes land, proved red against the current read order. (2) POST /api/proposal runs _proposals.run in-process with an ordinary claim whose token _carry puts in the process-wide environment, so concurrent request threads borrow it and a drop is lost. The proposal door holds the panel's per-call lock around run, locked before run loads the manifest, and _carry never exports a token into a server process's environment for a per-call claim; a two-thread proposal case. (3, pre-existing) the recovery line the panel prints for a crashed panel's claim ('audit-lock.py release index') always refuses because the dead holder pid counts as a mismatch, and '(this lock records taking over from you)' prints when both sessions are None: release accepts a claim whose holder pid is dead on this host, or the panel prints the command that works; the takenOverFrom comparison requires a non-empty session; a case that follows the printed instruction and succeeds.",
+      "files": [
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "plugins/audit/scripts/manifest/_proposals.py",
+        "plugins/audit/tests/test__proposals.py",
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/scripts/governance/audit-lock.py",
+        "plugins/audit/tests/test_audit_lock.py",
+        "plugins/audit/tests/test_panel_server.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__panel_write.py: repro that FAILS on current code - two concurrent composition saves both return ok and the first change is lost"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "e6d43450",
+      "outcome": {
+        "technical": "Lock-first reads in apply_composition and write_config; the proposal door under a per-call lock; release accepts a dead local holder.",
+        "descriptive": "Two panel saves made at once both land now, and the recovery command printed for a crashed panel works."
+      },
+      "startedAt": "2026-09-27T08:31:05Z",
+      "completedAt": "2026-09-27T08:50:08Z",
+      "verifiedBy": [
+        "test__panel_write lu1",
+        "test__panel_write lu2",
+        "test__panel_write lu3",
+        "test__panel_write lu6",
+        "test_panel_server hr1",
+        "test_panel_server hr2",
+        "test__locks rk7"
+      ]
+    },
+    {
+      "id": "P84.9-791",
+      "title": "the lock-first reads, the host check and the save-again refusal each have a case that fails when they break",
+      "status": "done",
+      "description": "Round-4 phase review of P84 (review-P84d.json). Three paths survived a mutation with every suite green, and one docstring is false. (1) a two-process drop race on the command-line materialize path, asserting both drops land - red when the read moves back above the acquire. (2) a release case with a claim recorded from another host and a dead pid, which must be refused - red when _holder_dead_here's host check is removed. (3) a case that changes the manifest between apply_composition's two passes so the save reaches an unasked phase lock, asserting the save-again refusal - red when the refusal is disabled. (4) proposal_action's docstring says the panel's per-call lock is what it adds. Each new case proven red by the mutation named.",
+      "files": [
+        "plugins/audit/tests/test__proposals.py",
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "plugins/audit/scripts/panel/_panel_write.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__locks.py: a claim from another host with a dead pid is refused on release"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "a242e3fe",
+      "outcome": {
+        "technical": "rc1 two-process CLI race, rk8 remote dead-pid release refused, lu8 save-again refusal; proposal_action docstring corrected.",
+        "descriptive": "Three safety checks in the lock and panel code now have tests that would fail if they were removed."
+      },
+      "startedAt": "2026-09-27T09:01:00Z",
+      "completedAt": "2026-09-27T09:09:44Z",
+      "verifiedBy": [
+        "test__proposals rc1",
+        "test__locks rk8",
+        "test__panel_write lu8"
+      ]
     }
-  ]
+  ],
+  "startedAt": "2026-09-27T04:18:45Z",
+  "testEvidence": {
+    "runId": "2026-09-27T09:18:18Z.f14cc8",
+    "status": "passed",
+    "at": "2026-09-27T09:18:18Z"
+  }
 }

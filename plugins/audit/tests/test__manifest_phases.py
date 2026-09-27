@@ -22,6 +22,7 @@ where FINISHED means done or cancelled, since a cancelled task is settled.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import json
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -1123,6 +1124,53 @@ def _cases(check):
           and M._output.finding_code(_dl_all_haspaths[0])
           == "phases.phase_gate_derived.listing-all-paths-present"
           and "list-all {paths}" in _dl_all_haspaths[0])
+
+    # --- the phase-gate family as one check: it RETURNS its lines, each coded,
+    # rather than writing into a list the caller hands it ----------------------
+    _gf_meta = {"buildCommands": {"lint": "x", "test": "y"},
+                "phaseGate": {"always": ["lint,test", "nope", "lint"],
+                              "exclude": ["lint", "zz"], "mode": "loud",
+                              "derived": 5, "smoke": ""},
+                "gateBudgetMs": -1,
+                "coupling": [5, {"test": "t", "sources": ["a"],
+                                 "basis": {"runId": "r"}},
+                             {"test": "t", "sources": ["a"],
+                              "basis": {"runId": "r"}}]}
+    _gf_manifest = {"meta": _gf_meta, "phases": [{"id": "P1"}]}
+    _gf_before = json.dumps(_gf_manifest, sort_keys=True)
+    _gf = M._check_phase_gate(_gf_manifest)
+    _gf_codes = [M._output.finding_code(x) for x in _gf]
+    check("gf1 _check_phase_gate takes the manifest alone and RETURNS every "
+          "line of the family, each carrying its own code, in the order the "
+          "checks run: %r" % (_gf_codes,),
+          isinstance(_gf, list) and _gf_codes == [
+              "phases.comma_joined_gate.joined-keys",
+              "phases.phase_gate.unknown-key",
+              "phases.phase_gate.unknown-key",
+              "phases.phase_gate.always-and-exclude",
+              "phases.phase_gate.mode",
+              "phases.phase_gate_derived.object",
+              "phases.phase_gate.smoke-shape",
+              "phases.phase_gate.budget-greater-than",
+              "phases.coupling.entry-object",
+              "phases.coupling.duplicate-test"])
+    check("gf2 ...and leaves the manifest it read exactly as it was",
+          json.dumps(_gf_manifest, sort_keys=True) == _gf_before)
+    # The over-fire direction: a check that coded every line by emitting one
+    # unconditionally would pass gf1; a plan with none of the three keys, and
+    # one with all three well formed, must draw nothing.
+    _gf_clean = M._check_phase_gate(
+        {"meta": {"buildCommands": {"lint": "x"},
+                  "phaseGate": {"always": ["lint"], "mode": "shadow"},
+                  "gateBudgetMs": 60000,
+                  "coupling": [{"test": "t", "sources": ["a"],
+                                "basis": {"runId": "r"}}]},
+         "phases": []})
+    check("gf3 SECOND DIRECTION: a plan whose phaseGate, gateBudgetMs and "
+          "coupling are all well formed draws nothing, and neither does one "
+          "carrying none of them: %r" % (_gf_clean,),
+          _gf_clean == [] and M._check_phase_gate({"meta": {}}) == []
+          and M._check_phase_gate({}) == [])
 
 
 def _selftest():

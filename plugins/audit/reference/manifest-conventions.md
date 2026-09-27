@@ -43,10 +43,19 @@ directory, `bugs[]`, `proposals[]`, `fileIndex`, id counters). Before your
            --project <gitRoot> --note "<command>"
    ```
    **0** → proceed. **5** → you already hold it: proceed, and release nothing —
-   the claim belongs to the hold that took it. **3** → another `/audit:*` session
-   is mutating this manifest and the script has already waited for it: print the
-   output and STOP. **4** → the holder is not alive: ask the human
-   (AskUserQuestion) to confirm, then rerun with `--takeover`.
+   the claim belongs to the hold that took it. **3** → another run is mutating
+   this manifest and the script has already waited for it: print the output and
+   STOP. That run can be **your own session's parallel call** - a verb takes the
+   index lock for its own write, and another process of the same session waits
+   for it and is refused once the wait runs out. **4** → the holder is not alive:
+   ask the human (AskUserQuestion) to confirm, then rerun with `--takeover`.
+
+   **Under a hold taken this way, run the verbs one at a time, never as parallel
+   tool calls.** A claim taken by hand with `audit-lock.py acquire` is recorded
+   `handedOff`, and every process of the session that took it is let back in
+   (exit 5 inside the verb) - so two verbs run side by side under it are not
+   serialised, and the later write replaces the earlier. `_locks.held_by_us` is
+   the rule; nothing refuses the parallel calls.
 2. **Release** at the END of the command, including failure paths you control —
    unless the acquire answered **5**:
    `audit-lock.py release index --project <gitRoot>`. AskUserQuestion pauses keep
@@ -397,6 +406,12 @@ The journal's **completion-record actions**:
   `task.complete`: the hook derives `task.blocked` from a status an edit tool moved
 - `task.note` — `audit-task.py note` appended one `{at, text}` entry to a task's `notes[]`
   (details: taskId, phaseId, changes)
+- `review.finding` — `audit-task.py finding` appended one finding to a phase's
+  `review.findings` (details: phaseId, changes)
+- `review.resolve` — `audit-task.py resolve-finding` set a finding's fix task, commit and
+  resolution (details: phaseId, taskId, commit, changes)
+- `review.correct` — `audit-task.py correct` rewrote a phase's `review.outcome` or `summary`
+  text, never its verdict (details: phaseId, changes)
 - `task.reopen` — `audit-task.py reopen` put a done task back to pending (details: taskId, phaseId,
   reason, changes - the task's cleared close and any linked bug moved back to `in_progress`)
 - `plan.settle` — `audit-task.py settle` stored the derived values a plan carried stale (details:

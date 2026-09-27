@@ -30,6 +30,7 @@ import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
+import _output                                     # noqa: E402  (finding_code: the rule a line carries)
 import _manifest_crossrefs as M                    # noqa: E402
 import _manifest_vocab as _vocab                   # noqa: E402
 import _manifest_rules as _rules                   # noqa: E402
@@ -113,6 +114,33 @@ def _cases(check):
     check("mc12 ...and an acyclic plan is silent, which is the case that "
           "fails if the cycle walk starts reporting every visited edge",
           f == [] and w == [], (f, w))
+
+    # --- a review finding's fixTask names a task ---
+    phases = [{"id": "P0", "status": "in_progress",
+               "tasks": [{"id": "P0.1", "status": "done"}],
+               "review": {"findings": [
+                   {"id": "P0-R1", "fixTask": "P0.9", "commit": "a" * 40},
+                   {"id": "P0-R2"}],
+                   "preExistingNotCharged": [{"id": "X1", "fixTask": "P7.3"}]}}]
+    f, w = M._check_refs_and_cycles(phases, _index(phase_ids=["P0"],
+                                                  task_ids=["P0.1"]))
+    _fx = [x for x in w if "fixTask" in x]
+    check("mc45 RED-FIRST: a finding whose fixTask names no task is a WARNING with "
+          "a stable code, one per finding and in both of a review's lists - a "
+          "finding pointing at a task nobody can find is one `reopen` can never "
+          "reach: %r" % (_fx,),
+          f == [] and len(_fx) == 2
+          and all(_output.finding_code(x) == "crossrefs.fix_task.unresolved"
+                  for x in _fx)
+          and any("P0-R1" in x and "P0.9" in x for x in _fx)
+          and any("X1" in x and "P7.3" in x for x in _fx))
+    phases[0]["review"]["findings"][0]["fixTask"] = "P0.1"
+    phases[0]["review"]["preExistingNotCharged"] = []
+    f, w = M._check_refs_and_cycles(phases, _index(phase_ids=["P0"],
+                                                  task_ids=["P0.1"]))
+    check("mc46 ALLOW: a fixTask that names a task of the plan, and a finding with "
+          "no fixTask at all, are silent: %r" % ((f, w),),
+          f == [] and w == [])
 
     # --- fileIndex, both directions ---
     f, w = M._check_file_index({"fileIndex": {"src/a.ts": ["P0.9"]}},

@@ -3886,13 +3886,17 @@ def _cases(check):
               "of a task's `outcome` are the operator's own sentence, one "
               "rendered by every report surface and one quoted back to the next "
               "executor. `--intent-basis` and a note's `--text` are the same "
-              "again, and `move --to` is an id, which is why it is not: %r"
+              "again, and so are a finding's `--issue` and `--resolution`; "
+              "`move --to`, `--fix-task` and `--severity` are an id and a word, "
+              "which is why they are not: %r"
               % (sorted(M.PROSE_FLAGS),),
               sorted(M.PROSE_FLAGS)
-              == ["description", "descriptive", "intent_basis",
+              == ["description", "descriptive", "intent_basis", "issue",
                   "no_evidence_reason", "outcome", "reason", "rename",
-                  "review_outcome", "summary", "technical", "text"]
+                  "resolution", "review_outcome", "summary", "technical", "text"]
               and "to" not in M.PROSE_FLAGS
+              and "fix_task" not in M.PROSE_FLAGS
+              and "severity" not in M.PROSE_FLAGS
               and "gate" not in M.PROSE_FLAGS
               and "commit" not in M.PROSE_FLAGS
               and "verified_by" not in M.PROSE_FLAGS
@@ -4025,7 +4029,15 @@ def _cases(check):
                    # check this grid drives fires BEFORE either verb's own
                    # body runs, so a bare `--test` is enough to reach it.
                    "couple": ["couple", "--test", "src/a.ts"],
-                   "uncouple": ["uncouple", "--test", "src/a.ts"]}
+                   "uncouple": ["uncouple", "--test", "src/a.ts"],
+                   # The three review verbs each with the flags their door
+                   # requires, so a stray flag is what the call bounces on.
+                   "finding": ["finding", "P2", "--severity", "low",
+                               "--file", "src/a.ts", "--issue", "i",
+                               "--resolution", "r"],
+                   "resolve-finding": ["resolve-finding", "P2-R1",
+                                       "--fix-task", "P2.1"],
+                   "correct": ["correct", "P2", "--summary", "s"]}
         _vf_leaks = []
         for _vfv in sorted(M.VERB_FLAGS):
             _vfknown = set(M.VERB_FLAGS[_vfv]) | set(M.UNIVERSAL_FLAGS)
@@ -4120,6 +4132,24 @@ def _cases(check):
                 (["note", "P2.3", "--text", "t", "--json"], "note/--text")):
             _vf_own_proj, _vf_own_mp = mk("vf-%s" % _vfargv[0], base_manifest())
             _vf_ok[_vfwhat] = run(_vfargv + ["--project-dir", _vf_own_proj])[0]
+        # The review verbs against a phase in sign-off: `finding` appends, then
+        # `resolve-finding` settles it with the commit P2.1 is given here, and
+        # `correct` rewrites the text once `signoff` has recorded a verdict.
+        _vf_rv = base_manifest()
+        _vf_rv["phases"][1]["tasks"][1]["status"] = "done"
+        _vf_rv_proj, _vf_rv_mp = mk("vf-review", _vf_rv)
+        _vf_ok["finding/--severity"] = run(
+            ["finding", "P2", "--severity", "med", "--file", "src/a.ts",
+             "--issue", "i", "--resolution", "r", "--json",
+             "--project-dir", _vf_rv_proj])[0]
+        _vf_ok["resolve-finding/--fix-task"] = run(
+            ["resolve-finding", "P2-R1", "--fix-task", "P2.1",
+             "--commit", _VF_SHA, "--json", "--project-dir", _vf_rv_proj])[0]
+        run(["signoff", "P2", "--verdict", "skipped", "--summary", "s",
+             "--project-dir", _vf_rv_proj])
+        _vf_ok["correct/--summary"] = run(
+            ["correct", "P2", "--summary", "restated", "--review-outcome", "o",
+             "--json", "--project-dir", _vf_rv_proj])[0]
         # `done`'s no-change close reads `--no-change` and `--reason`, the half of
         # its row the close with a commit above does not reach.
         _vf_nc = base_manifest()
@@ -5690,6 +5720,18 @@ def _cases(check):
         # reason -- its row has to stand in a tree that diverges from a
         # PROJECT that is still empty.
         tw_seed_proj, _tw_seed_mp, tw_seed_tree = mk_pair_empty("tw-seed")
+        # The review verbs get a pair of their own, whose P2 already carries a
+        # verdict: `correct` needs one, and the fix commit `resolve-finding`
+        # names has to be one this pair's git can resolve.
+        _tw_rv = base_manifest()
+        _tw_rv["phases"][1]["tasks"][1]["status"] = "done"
+        _tw_rv["phases"][1]["review"] = {"status": "skipped"}
+        _tw_rv["phases"][1]["summary"] = "s"
+        tw_rv_proj, _tw_rv_mp, tw_rv_tree = mk_pair("tw-review", _tw_rv)
+        _tw_rv_sha = subprocess.run(
+            ["git", "-C", tw_rv_proj, "rev-parse", "HEAD"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+        ).stdout.decode("utf-8", "replace").strip()
         _tw_argv = (
             ("add", ["add", "Fresh", "--phase", "P2"]),
             ("add-phase", ["add-phase", "Later", "--outcome", "it ships"]),
@@ -5719,6 +5761,11 @@ def _cases(check):
                         "--basis-head", _tw_sha]),
             ("uncouple", ["uncouple", "--test",
                           "tests/test_tw.py"]),
+            ("finding", ["finding", "P2", "--severity", "low", "--file",
+                         "src/a.ts", "--issue", "i", "--resolution", "r"]),
+            ("resolve-finding", ["resolve-finding", "P2-R1", "--fix-task", "P2.1",
+                                 "--commit", _tw_rv_sha]),
+            ("correct", ["correct", "P2", "--summary", "restated"]),
         )
         # `signoff` gets its own pair too: by its row every other row has left P2
         # with open work, which it rightly refuses.
@@ -5726,7 +5773,10 @@ def _cases(check):
         _tw_sign["phases"][1]["tasks"][1]["status"] = "done"
         tw_sign_proj, _tw_sign_mp, tw_sign_tree = mk_pair("tw-sign", _tw_sign)
         _tw_pairs = {"seed": (tw_seed_tree, tw_seed_proj),
-                     "signoff": (tw_sign_tree, tw_sign_proj)}
+                     "signoff": (tw_sign_tree, tw_sign_proj),
+                     "finding": (tw_rv_tree, tw_rv_proj),
+                     "resolve-finding": (tw_rv_tree, tw_rv_proj),
+                     "correct": (tw_rv_tree, tw_rv_proj)}
         _tw_silent = []
         for _label, _argv in _tw_argv:
             _tw_tree, _tw_proj = _tw_pairs.get(_label, (tw_all_tree, tw_all))
@@ -6157,6 +6207,30 @@ def _cases(check):
               % ([(r.get("details") or {}).get("phaseId") for r in _gs_rows],),
               sorted((r.get("details") or {}).get("phaseId") for r in _gs_rows)
               == ["P1", "P2"])
+        # THE GROUP PATH DERIVES THE TALLY TOO, per member: P2 holds a finding,
+        # P1 holds none, and the typed tally in the shared outcome is replaced
+        # on the one and dropped on the other, since nothing under it counts.
+        gt_proj, gt_mp, _gt_shas = gs_fixture("gs-tally")
+        _gt_f = run(["finding", "P2", "--severity", "med", "--file", "src/p2.py",
+                     "--issue", "i", "--resolution", "r", "--project-dir", gt_proj])
+        run(["signoff", "P1,P2", "--branch", "combined", "--bind",
+             "--project-dir", gt_proj])
+        _gt_code = run(["signoff", "P1,P2", "--branch", "combined",
+                        "--verdict", "skipped", "--summary", "s",
+                        "--review-outcome", "matches [findings: 7 - 7 high, 0 med, "
+                        "0 low; 7 with a recorded fix commit]",
+                        "--project-dir", gt_proj])
+        _gt_ph = dict((p["id"], p) for p in _mio.load_manifest(gt_mp)["phases"])
+        check("gs6t the GROUP sign-off derives each member's tally from its own "
+              "findings - the typed one is replaced where a finding stands under "
+              "it and dropped where none does: %r"
+              % ((_gt_f[0], _gt_code, [(_gt_ph[p].get("review") or {}).get("outcome")
+                                       for p in ("P1", "P2")]),),
+              _gt_f[0] == 0 and _gt_code[0] == 0
+              and (_gt_ph["P2"].get("review") or {}).get("outcome")
+              == "matches [findings: 1 - 0 high, 1 med, 0 low; "
+                 "0 with a recorded fix commit]"
+              and (_gt_ph["P1"].get("review") or {}).get("outcome") == "matches")
         g4_proj, g4_mp, g4_shas = gs_fixture("gs-stray")
         _g4 = _mio.load_manifest(g4_mp)
         _g4["phases"][1]["tasks"][0]["commit"] = g4_shas["stray"]
@@ -7493,6 +7567,421 @@ def _cases(check):
         check("nt2 an empty note and a phase id are refused, nothing written: %r"
               % ((_nt_empty[0], _nt_phase[0]),),
               _nt_empty[0] == 2 and _nt_phase[0] == 2 and _nt_after == _nt_before)
+
+        # ---- (rv) review findings: recorded by a verb, the tally derived ----------
+        # Sign-off step 1 records the reviewer's findings, and until these verbs
+        # that record was a hand edit of the phase shard - no lock, no journal row,
+        # and a severity outside the vocabulary written with nothing to refuse it.
+        # The fixture is a phase in sign-off: every task done, no verdict yet.
+        def rv_fixture():
+            fx = base_manifest()
+            fx["phases"][1]["tasks"][1].update(
+                status="done", commit="abcdef1234567890abcdef1234567890abcdef12")
+            # A fix task that has NOT landed, in a phase of its own so P2's
+            # sign-off is not held up by it.
+            fx["phases"][2]["tasks"] = [{"id": "P3.1", "title": "fix, not landed",
+                                         "status": "pending"}]
+            return fx
+
+        def rv_phase(mp, pid="P2"):
+            return [p for p in _mio.load_manifest(mp)["phases"]
+                    if p["id"] == pid][0]
+
+        def rv_rows(proj, action):
+            return [r for r in _journal_io.read_all(proj)
+                    if r.get("action") == action]
+
+        def rv_bytes(mp):
+            with open(mp, "rb") as _fh:
+                return _fh.read()
+
+        _RV_ARGS = ["--file", "src/a.ts:12-30",
+                    "--issue", "the guard reads the spelling, not the operation",
+                    "--resolution", "decide from the resolved path"]
+        projrv, mprv = mk("rv-findings", rv_fixture())
+        _rv_before = rv_bytes(mprv)
+        with open(os.devnull, "w") as _null, contextlib.redirect_stderr(_null):
+            _rv_nosev = run(["finding", "P2"] + _RV_ARGS + ["--project-dir", projrv])
+            _rv_badsev = run(["finding", "P2", "--severity", "medium"] + _RV_ARGS
+                             + ["--project-dir", projrv])
+            _rv_bare = run(["finding", "P2", "--severity", "high",
+                            "--project-dir", projrv])
+        check("rv1 RED-FIRST: a finding with no --severity is refused exit 2 naming "
+              "the missing field, BEFORE any write - the manifest is byte "
+              "identical and no review.finding row was written: %r"
+              % (_rv_nosev[1][:200],),
+              _rv_nosev[0] == 2 and "--severity" in _rv_nosev[1]
+              and rv_bytes(mprv) == _rv_before
+              and rv_rows(projrv, "review.finding") == [])
+        check("rv2 RED-FIRST: a severity outside the vocabulary is refused naming "
+              "the vocabulary the validator grades against, nothing written: %r"
+              % (_rv_badsev[1][:200],),
+              _rv_badsev[0] == 2 and "'medium'" in _rv_badsev[1]
+              and "low, med, high" in _rv_badsev[1]
+              and rv_bytes(mprv) == _rv_before)
+        check("rv2b ...and a finding missing several fields names EVERY one of them "
+              "in one refusal - one round trip, not one per field: %r"
+              % (_rv_bare[1][:200],),
+              _rv_bare[0] == 2 and "--file" in _rv_bare[1]
+              and "--issue" in _rv_bare[1] and "--resolution" in _rv_bare[1]
+              and rv_bytes(mprv) == _rv_before)
+        _rv_one = run(["finding", "P2", "--severity", "high"] + _RV_ARGS
+                      + ["--project-dir", projrv])
+        _rv_two = run(["finding", "P2", "--severity", "med", "--file", "src/b.ts",
+                       "--issue", "the retry arm is unbounded",
+                       "--resolution", "cap it", "--project-dir", projrv])
+        _rv_ph = rv_phase(mprv)
+        _rv_f = (_rv_ph.get("review") or {}).get("findings") or []
+        _rv_frows = rv_rows(projrv, "review.finding")
+        check("rv3 ALLOW: a well-formed finding is APPENDED in the schema's shape "
+              "with an allocated id, in FINDING_FIELDS order, and each call writes "
+              "one review.finding row naming the phase: %r"
+              % ((_rv_one[0], _rv_two[0], _rv_f),),
+              _rv_one[0] == 0 and _rv_two[0] == 0
+              and [list(f.keys()) for f in _rv_f]
+              == [list(_phases.FINDING_FIELDS)] * 2
+              and [f["id"] for f in _rv_f] == ["P2-R1", "P2-R2"]
+              and _rv_f[0]["severity"] == "high"
+              and _rv_f[0]["file"] == "src/a.ts:12-30"
+              and _rv_f[0]["resolution"] == "decide from the resolved path"
+              and len(_rv_frows) == 2
+              and all((r.get("details") or {}).get("phaseId") == "P2"
+                      for r in _rv_frows))
+        _rv_w = _rules.validate(_mio.load_manifest(mprv))[1]
+        check("rv3b ...and the written findings draw none of the validator's "
+              "finding-shape warnings - the verb writes the shape the warning "
+              "asks for: %r" % ([w for w in _rv_w if "review." in str(w)],),
+              not [w for w in _rv_w if "review.findings" in str(w)])
+        check("rv4 the TALLY is derived from review.findings on every write: two "
+              "findings, one high and one med, none fixed: %r"
+              % (_rv_ph.get("review", {}).get("outcome"),),
+              (_rv_ph.get("review") or {}).get("outcome")
+              == "[findings: 2 - 1 high, 1 med, 0 low; 0 with a recorded fix commit]")
+        _RV_SHA = "0123456789abcdef0123456789abcdef01234567"
+        _rv_res = run(["resolve-finding", "P2-R1", "--fix-task", "P2.1",
+                       "--commit", _RV_SHA, "--project-dir", projrv])
+        _rv_ph = rv_phase(mprv)
+        _rv_r1 = ((_rv_ph.get("review") or {}).get("findings") or [{}])[0]
+        _rv_rrows = rv_rows(projrv, "review.resolve")
+        check("rv5 RED-FIRST: `resolve-finding` records the fix task and commit on "
+              "the finding, keeps what the reviewer asked for in the resolution "
+              "text, and writes one review.resolve row: %r" % ((_rv_res, _rv_r1),),
+              _rv_res[0] == 0 and _rv_r1.get("fixTask") == "P2.1"
+              and _rv_r1.get("commit") == _RV_SHA
+              and _rv_r1.get("resolution")
+              == "fixed in P2.1 (%s): decide from the resolved path" % (_RV_SHA[:12],)
+              and len(_rv_rrows) == 1
+              and (_rv_rrows[0].get("details") or {}).get("taskId") == "P2.1"
+              and (_rv_rrows[0].get("details") or {}).get("commit") == _RV_SHA)
+        check("rv5b ...and the tally counts it as fixed, derived again: %r"
+              % ((_rv_ph.get("review") or {}).get("outcome"),),
+              (_rv_ph.get("review") or {}).get("outcome")
+              == "[findings: 2 - 1 high, 1 med, 0 low; 1 with a recorded fix commit]")
+        _rv_own = run(["resolve-finding", "P2-R2", "--fix-task", "P2.3",
+                       "--json", "--project-dir", projrv])
+        try:
+            _rv_own_j = json.loads(_rv_own[1])
+        except ValueError:
+            _rv_own_j = {}
+        _rv_r2 = ((rv_phase(mprv).get("review") or {}).get("findings") or [{}, {}])[1]
+        check("rv5c with no --commit the fix task's OWN recorded commit is the one "
+              "written - the SHA the close already fixed, not a second typing of "
+              "it - and --json says so: %r" % (_rv_own_j,),
+              _rv_own[0] == 0 and _rv_own_j.get("ok") is True
+              and _rv_r2.get("commit") == "abcdef1234567890abcdef1234567890abcdef12")
+        _rv_before2 = rv_bytes(mprv)
+        _rv_ref = [run(argv + ["--project-dir", projrv])[0] for argv in (
+            ["resolve-finding", "P2-R9", "--fix-task", "P2.3", "--commit", _RV_SHA],
+            ["resolve-finding", "P2-R1", "--fix-task", "P9.9", "--commit", _RV_SHA],
+            ["resolve-finding", "P2-R1", "--fix-task", "P2", "--commit", _RV_SHA],
+            ["resolve-finding", "P2-R1", "--fix-task", "P2.1"],
+            ["resolve-finding", "P2-R1", "--fix-task", "P2.3", "--commit", "HEAD"],
+            ["resolve-finding", "P2-R1", "--fix-task", "P2.3",
+             "--commit", "fedcba9876543210fedcba9876543210fedcba98"],
+            ["resolve-finding", "P2-R1", "--commit", _RV_SHA])]
+        check("rv6 a finding no phase holds, a fix task the plan does not hold, a "
+              "PHASE id as the fix task, a fix that has not landed (no --commit and "
+              "none recorded), a ref name for a SHA, a commit contradicting the one "
+              "the task recorded, and no --fix-task are each refused exit 2 with "
+              "nothing written: %r" % (_rv_ref,),
+              _rv_ref == [2] * 7 and rv_bytes(mprv) == _rv_before2)
+
+        _rv_before2b = rv_bytes(mprv)
+        _rv_pend = run(["resolve-finding", "P2-R1", "--fix-task", "P3.1",
+                        "--commit", _RV_SHA, "--project-dir", projrv])
+        check("rv6b RED-FIRST: a fix task that has not landed is refused even with "
+              "--commit - the SHA a caller types for a pending task is a claim "
+              "about work nobody has closed: %r" % (_rv_pend,),
+              _rv_pend[0] == 2 and "P3.1" in _rv_pend[1]
+              and "pending" in _rv_pend[1] and rv_bytes(mprv) == _rv_before2b)
+
+        # A CORRECTION IS TEXT ONLY. The verdict and its phase.verdict row are
+        # the reviewer's call recorded once; a typo in the outcome must not cost
+        # a re-sign-off, and fixing it must not be a way to re-decide anything.
+        _rv_sign = run(["signoff", "P2", "--verdict", "passed",
+                        "--summary", "Search sanitized end to end.",
+                        "--review-outcome", "matches",
+                        "--no-evidence-reason", "fixture: no gate is run here",
+                        "--project-dir", projrv])
+        _rv_ph = rv_phase(mprv)
+        check("rv7 signoff's --review-outcome carries the DERIVED tally too - every "
+              "writer of review.outcome derives it, or the verb that writes it last "
+              "decides whether it is true: %r"
+              % ((_rv_sign[0], (_rv_ph.get("review") or {}).get("outcome")),),
+              _rv_sign[0] == 0
+              and (_rv_ph.get("review") or {}).get("outcome")
+              == "matches [findings: 2 - 1 high, 1 med, 0 low; 2 with a recorded fix commit]")
+        _rv_vrows = rv_rows(projrv, "phase.verdict")
+        _rv_status = (_rv_ph.get("review") or {}).get("status")
+        _rv_cor = run(["correct", "P2",
+                       "--review-outcome", "matches after two fixes",
+                       "--summary", "Search sanitized end to end, both paths.",
+                       "--project-dir", projrv])
+        _rv_ph2 = rv_phase(mprv)
+        _rv_crows = rv_rows(projrv, "review.correct")
+        check("rv8 RED-FIRST: `correct` rewrites the outcome and the summary as "
+              "TEXT, with one review.correct row of its own: %r"
+              % ((_rv_cor, (_rv_ph2.get("review") or {}).get("outcome"),
+                  _rv_ph2.get("summary")),),
+              _rv_cor[0] == 0
+              and (_rv_ph2.get("review") or {}).get("outcome")
+              == "matches after two fixes [findings: 2 - 1 high, 1 med, 0 low; "
+                 "2 with a recorded fix commit]"
+              and _rv_ph2.get("summary") == "Search sanitized end to end, both paths."
+              and len(_rv_crows) == 1)
+        check("rv8b ...and the VERDICT and ITS ROW are untouched: review.status is "
+              "what signoff wrote, the phase.verdict rows are the same rows, no new "
+              "one - a correction never re-decides the verdict: %r"
+              % ((_rv_status, (_rv_ph2.get("review") or {}).get("status"),
+                  len(_rv_vrows)),),
+              _rv_status == "passed"
+              and (_rv_ph2.get("review") or {}).get("status") == "passed"
+              and len(_rv_vrows) == 1
+              and rv_rows(projrv, "phase.verdict") == _rv_vrows)
+        # THE OVER-FIRE DIRECTION: a tally typed into the text is prose, never
+        # the count. A version that read the numbers back out of the outcome
+        # would keep the nine; the list holds two.
+        _rv_typed = run(["correct", "P2", "--review-outcome",
+                         "matches [findings: 9 - 9 high, 0 med, 0 low; "
+                         "9 with a recorded fix commit]", "--project-dir", projrv])
+        _rv_out = (rv_phase(mprv).get("review") or {}).get("outcome") or ""
+        check("rv9 a tally TYPED into the outcome is replaced by the one the "
+              "findings derive, and there is exactly one: %r" % (_rv_out,),
+              _rv_typed[0] == 0 and _rv_out.count("[findings:") == 1
+              and _rv_out == "matches [findings: 2 - 1 high, 1 med, 0 low; "
+                             "2 with a recorded fix commit]")
+        _rv_before3 = rv_bytes(mprv)
+        with open(os.devnull, "w") as _null, contextlib.redirect_stderr(_null):
+            _rv_cref = [run(argv + ["--project-dir", projrv])[0] for argv in (
+                ["correct", "P2", "--verdict", "skipped", "--summary", "s"],
+                ["correct", "P2"],
+                ["correct", "P2", "--summary", ""],
+                ["correct", "P2.1", "--summary", "s"])]
+        check("rv10 `correct` refuses --verdict (it does not read it), a call with "
+              "nothing to correct, an empty text and a task id - nothing written: %r"
+              % (_rv_cref,),
+              _rv_cref == [2] * 4 and rv_bytes(mprv) == _rv_before3)
+        projrv2, mprv2 = mk("rv-unsigned", rv_fixture())
+        _rv_pre = run(["correct", "P2", "--summary", "s", "--project-dir", projrv2])
+        check("rv10b ...and a phase with no verdict yet: there is no record to "
+              "correct, and the one that writes it is signoff: %r" % (_rv_pre,),
+              _rv_pre[0] == 2 and "signoff" in _rv_pre[1])
+        _rv_leg = rv_fixture()
+        _rv_leg["phases"][1]["review"] = {"status": "pending",
+                                          "findings": ["a legacy free-text note"]}
+        projrv3, mprv3 = mk("rv-legacy", _rv_leg)
+        _rv_l = run(["finding", "P2", "--severity", "low", "--file", "README.md",
+                     "--issue", "typo", "--resolution", "fix it", "--json",
+                     "--project-dir", projrv3])
+        try:
+            _rv_lj = json.loads(_rv_l[1])
+        except ValueError:
+            _rv_lj = {}
+        _rv_lr = rv_phase(mprv3).get("review") or {}
+        _rv_lw = _rules.validate(_mio.load_manifest(mprv3))[1]
+        check("rv11 a legacy string finding stays where it is, the new one is "
+              "numbered past it, and the tally names the entry outside the "
+              "vocabulary rather than dropping it; --json carries the finding: %r"
+              % ((_rv_lj.get("finding"), _rv_lr.get("outcome")),),
+              _rv_l[0] == 0 and (_rv_lj.get("finding") or {}).get("id") == "P2-R1"
+              and _rv_lr.get("findings", [None])[0] == "a legacy free-text note"
+              # ...and the validator DOES warn on this plan, which is what keeps
+              # rv3b's silence from being the silence of a warning that never fires.
+              and [w for w in _rv_lw if "review.findings" in str(w)] != []
+              and _rv_lr.get("outcome")
+              == "[findings: 2 - 0 high, 0 med, 1 low, 1 outside low|med|high; "
+                 "0 with a recorded fix commit]")
+
+        # ---- the batch form, the landed phase, reopen, and the journal's view ------
+        # A batch is ONE lock and ONE write for every finding a review returned,
+        # which is what parallel single-finding calls could never be.
+        projrb, mprb = mk("rv-batch", rv_fixture())
+        _rb_file = os.path.join(tmp, "rv-batch-findings.json")
+        with open(_rb_file, "w", encoding="utf-8") as _fh:
+            json.dump([{"id": 1, "severity": "high", "file": "src/a.ts:3",
+                        "issue": "reads `argv` as prose", "resolution": "read the path"},
+                       {"severity": "low", "file": "src/b.ts",
+                        "issue": "i2", "resolution": "r2"},
+                       {"severity": "low", "file": "README.md",
+                        "issue": "i3", "resolution": "r3"}], _fh)
+        _rb = run(["finding", "P2", "--findings-file", _rb_file,
+                   "--project-dir", projrb])
+        _rb_f = (rv_phase(mprb).get("review") or {}).get("findings") or []
+        _rb_rows = rv_rows(projrb, "review.finding")
+        check("rv12 `finding --findings-file` records EVERY finding a review "
+              "returned in one write, each with an allocated id (the reviewer's "
+              "own number is not the plan's id), one review.finding row each: %r"
+              % ((_rb[0], [f.get("id") for f in _rb_f], len(_rb_rows)),),
+              _rb[0] == 0 and [f.get("id") for f in _rb_f] == ["P2-R1", "P2-R2", "P2-R3"]
+              and _rb_f[0].get("issue") == "reads `argv` as prose"
+              and len(_rb_rows) == 3
+              and (rv_phase(mprb).get("review") or {}).get("outcome")
+              == "[findings: 3 - 1 high, 0 med, 2 low; 0 with a recorded fix commit]")
+        _rb_before = rv_bytes(mprb)
+        _rb_bad = os.path.join(tmp, "rv-batch-bad.json")
+        with open(_rb_bad, "w", encoding="utf-8") as _fh:
+            json.dump([{"severity": "low", "file": "a", "issue": "i", "resolution": "r"},
+                       {"severity": "medium", "file": "b", "issue": "i",
+                        "resolution": "r"}], _fh)
+        _rb_badr = run(["finding", "P2", "--findings-file", _rb_bad,
+                        "--project-dir", projrb])
+        _rb_mix = run(["finding", "P2", "--findings-file", _rb_file,
+                       "--severity", "low", "--project-dir", projrb])
+        with open(_rb_bad, "w", encoding="utf-8") as _fh:
+            _fh.write("{not json")
+        _rb_torn = run(["finding", "P2", "--findings-file", _rb_bad,
+                        "--project-dir", projrb])
+        check("rv12b ...and a batch with ONE bad entry is refused WHOLE, naming the "
+              "entry; a batch beside the per-field flags and a file that is not "
+              "a JSON list are refused too - nothing written: %r"
+              % ((_rb_badr, _rb_mix[0], _rb_torn[0]),),
+              _rb_badr[0] == 2 and "entry 2" in _rb_badr[1]
+              and "'medium'" in _rb_badr[1]
+              and _rb_mix[0] == 2 and _rb_torn[0] == 2
+              and rv_bytes(mprb) == _rb_before)
+
+        projrs, mprs = mk("rv-batch-stdin", rv_fixture())
+        _rs = run_on_stdin(["finding", "P2", "--findings-file", "-",
+                            "--project-dir", projrs],
+                           json.dumps([{"severity": "med", "file": "a",
+                                        "issue": "quotes `code` and 'text'",
+                                        "resolution": "r"}]))
+        _rs_f = (rv_phase(mprs).get("review") or {}).get("findings") or []
+        check("rv12c ...and `--findings-file -` reads the batch off stdin verbatim, "
+              "backticks and quotes intact - the route step 1 prescribes: %r"
+              % ((_rs[0], _rs_f),),
+              _rs[0] == 0 and [f.get("issue") for f in _rs_f]
+              == ["quotes `code` and 'text'"])
+
+        # PARALLEL CALLS FROM ONE SESSION. Several processes carrying one session
+        # id and one CLAUDE_PID is what several Bash calls in one message are; the
+        # lock let each of them back in as "already yours", so every one wrote
+        # over the others and reported success.
+        projpar, mppar = mk("rv-parallel", rv_fixture(), git=True)
+        _par_env = dict(os.environ, CLAUDE_CODE_SESSION_ID="s-one-session",
+                        CLAUDE_PID=str(os.getpid()))
+        _par_env.pop("AUDIT_LOCK_TOKENS", None)
+        _par_script = os.path.join(_output.SCRIPTS_DIR, "manifest", "audit-task.py")
+        _par_procs = [subprocess.Popen(
+            [sys.executable, _par_script, "finding", "P2", "--severity", "low",
+             "--file", "src/p%d.ts" % n, "--issue", "issue %d" % n,
+             "--resolution", "fix %d" % n, "--project-dir", projpar],
+            env=_par_env, cwd=projpar, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT) for n in range(4)]
+        _par_out = [(pr.wait(), pr.stdout.read().decode("utf-8", "replace"))
+                    for pr in _par_procs]
+        for pr in _par_procs:
+            pr.stdout.close()
+        _par_f = (rv_phase(mppar).get("review") or {}).get("findings") or []
+        check("rv13 RED-FIRST: four `finding` processes of ONE session run at once "
+              "and EVERY finding lands, under four distinct ids - the lock "
+              "serialises another process of the same session instead of letting "
+              "it back in: %r"
+              % (([c for c, _t in _par_out], sorted(f.get("file") for f in _par_f)),),
+              [c for c, _t in _par_out] == [0] * 4
+              and sorted(f.get("file") for f in _par_f)
+              == ["src/p%d.ts" % n for n in range(4)]
+              and sorted(f.get("id") for f in _par_f)
+              == ["P2-R%d" % n for n in range(1, 5)])
+
+        # A LANDED PHASE IS A CLOSED RECORD; a signed-off one still in flight
+        # takes the finding and the row says it arrived after the verdict.
+        _rl = rv_fixture()
+        _rl["phases"][1].update(review={"status": "passed"}, summary="s",
+                                branch="audit/p2", mergedAt="2026-09-01T00:00:00Z")
+        projrl, mprl = mk("rv-landed", _rl)
+        _rl_before = rv_bytes(mprl)
+        _rl_code = run(["finding", "P2", "--severity", "low", "--file", "a",
+                        "--issue", "i", "--resolution", "r", "--project-dir", projrl])
+        check("rv14 RED-FIRST: `finding` refuses a phase that has LANDED (mergedAt "
+              "set), naming when and the verb that re-opens review: %r" % (_rl_code,),
+              _rl_code[0] == 2 and "2026-09-01T00:00:00Z" in _rl_code[1]
+              and "/audit:review" in _rl_code[1] and rv_bytes(mprl) == _rl_before)
+        _ru = rv_fixture()
+        _ru["phases"][1].update(review={"status": "passed"}, summary="s",
+                                branch="audit/p2")
+        projru, mpru = mk("rv-unlanded", _ru)
+        _ru_code = run(["finding", "P2", "--severity", "low", "--file", "a",
+                        "--issue", "i", "--resolution", "r", "--project-dir", projru])
+        _ru_rows = rv_rows(projru, "review.finding")
+        check("rv14b ALLOW: a signed-off phase that has NOT landed still takes a "
+              "finding, and both the output and the row say the verdict was "
+              "already on record: %r" % ((_ru_code, [r.get("summary") for r in _ru_rows]),),
+              _ru_code[0] == 0 and "verdict passed" in _ru_code[1]
+              and len(_ru_rows) == 1
+              and "verdict passed" in (_ru_rows[0].get("summary") or ""))
+
+        # REOPEN takes the fix back, so the finding stops saying it was fixed.
+        projro, mpro = mk("rv-reopen", rv_fixture())
+        run(["finding", "P2", "--severity", "med", "--file", "a", "--issue", "i",
+             "--resolution", "decide", "--project-dir", projro])
+        run(["resolve-finding", "P2-R1", "--fix-task", "P2.3",
+             "--project-dir", projro])
+        _ro_code = run(["reopen", "P2.3", "--reason", "the fix was wrong",
+                        "--project-dir", projro])
+        _ro_ph = rv_phase(mpro)
+        _ro_f = ((_ro_ph.get("review") or {}).get("findings") or [{}])[0]
+        check("rv15 RED-FIRST: `reopen` of a fix task clears the commit from every "
+              "finding that recorded it, restores the reviewer's resolution, and "
+              "the tally stops counting it: %r"
+              % ((_ro_code[0], _ro_f, (_ro_ph.get("review") or {}).get("outcome")),),
+              _ro_code[0] == 0 and not _ro_f.get("commit")
+              and _ro_f.get("resolution") == "decide"
+              and (_ro_ph.get("review") or {}).get("outcome")
+              == "[findings: 1 - 0 high, 1 med, 0 low; 0 with a recorded fix commit]")
+
+        # THE JOURNAL'S VIEW OF A LONG OUTCOME keeps its END, where the tally is.
+        projrj, mprj = mk("rv-journal", rv_fixture())
+        run(["signoff", "P2", "--verdict", "skipped", "--summary", "s",
+             "--review-outcome", "x" * 300, "--project-dir", projrj])
+        run(["finding", "P2", "--severity", "high", "--file", "a", "--issue", "i",
+             "--resolution", "r", "--project-dir", projrj])
+        _rj_ch = [c for r in rv_rows(projrj, "review.finding")
+                  for c in ((r.get("details") or {}).get("changes") or [])
+                  if c.get("field") == "review.outcome"]
+        check("rv16 RED-FIRST: a long outcome is shortened from the MIDDLE in the "
+              "journal row, so the tally at its end is what the row shows "
+              "changing: %r" % (_rj_ch,),
+              len(_rj_ch) == 1
+              and str(_rj_ch[0].get("to")).endswith(
+                  "[findings: 1 - 1 high, 0 med, 0 low; 0 with a recorded fix commit]")
+              and "truncated" not in str(_rj_ch[0].get("to")))
+
+        # A FIX RECORDED BY HAND is prose; the clause counts only what it names.
+        _rh = rv_fixture()
+        _rh["phases"][1]["review"] = {"status": "pending", "findings": [
+            {"id": "P2-R1", "severity": "med", "file": "a", "issue": "i",
+             "resolution": "fixed in P2.3 (abcdef123456)"}]}
+        projrh, mprh = mk("rv-hand", _rh)
+        run(["finding", "P2", "--severity", "low", "--file", "b", "--issue", "i",
+             "--resolution", "r", "--project-dir", projrh])
+        _rh_out = (rv_phase(mprh).get("review") or {}).get("outcome") or ""
+        check("rv17 the clause says exactly what it counts - a fix recorded by hand "
+              "in the resolution text is not one the fields recorded, so it reads "
+              "`0 with a recorded fix commit` and nothing calls it unfixed: %r"
+              % (_rh_out,),
+              _rh_out == "[findings: 2 - 0 high, 1 med, 1 low; "
+                         "0 with a recorded fix commit]")
 
         # ---- (mv) move: the hand procedure, as a verb ------------------------------
         def mv_fixture():

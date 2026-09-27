@@ -1508,10 +1508,13 @@ def lock_state(project, name, label, session_id=None, hint=""):
 
     `free` | `ours` | `held` | `stale` | `unlockable`.
 
-    `ours` EXISTS BECAUSE `_locks.acquire` IS NOT RE-ENTRANT. A gate recorded from
-    inside its own phase run meets the lock that run already holds, and acquiring
-    would refuse it -- which is every in-phase recording there is. So the holder's
-    session is COMPARED rather than the lock re-taken.
+    `ours` IS `_locks.held_by_us`'s ANSWER, asked rather than re-derived. A gate
+    recorded from inside its own phase run meets the lock that run holds, and this
+    reads the claim instead of taking it; whose claim it is has one rule, the
+    lock's own. A copy here that compared the session alone went on calling a
+    claim another live process of this session took for its own write "ours"
+    after the lock stopped doing so - and a pointer written under it raced that
+    process's write of the same shard.
 
     `unlockable` is the panel's documented third answer, kept for its reason: a
     project with no `.git` has no lock scheme and never had one, and refusing
@@ -1533,9 +1536,9 @@ def lock_state(project, name, label, session_id=None, hint=""):
         if not os.path.exists(path):
             return "free", ""
         info = _locks.read_lock(path)
-        holder = info.get("sessionId")
-        if holder and session_id and str(holder) == str(session_id):
-            return "ours", "held by this session"
+        mine = _locks.held_by_us(info, session=session_id)
+        if mine["ours"]:
+            return "ours", mine["why"]
         live, basis = _locks.judge(info, path)
         if live:
             return "held", ("the %s lock is held by another live run (%s); %s"
