@@ -535,6 +535,18 @@
       "title": "the history and secrets guards close the residuals SECURITY.md states as open",
       "status": "done",
       "shard": "phases/P83.json"
+    },
+    {
+      "id": "P85",
+      "title": "Comments state their rule, not the register",
+      "status": "pending",
+      "shard": "phases/P85.json"
+    },
+    {
+      "id": "P86",
+      "title": "No register id in a comment, held by the lint",
+      "status": "pending",
+      "shard": "phases/P86.json"
     }
   ],
   "fileIndex": {
@@ -705,7 +717,8 @@
       "P15.5",
       "P19.2",
       "P32.10",
-      "P37.2"
+      "P37.2",
+      "P85.4"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -1391,7 +1404,8 @@
       "P72.5-ttl",
       "P72.6-ttl",
       "P72.7-ttl",
-      "P72.8-ttl"
+      "P72.8-ttl",
+      "P85.3"
     ],
     "plugins/audit/hooks/meter-usage.py": [
       "P15.4",
@@ -1663,7 +1677,8 @@
       "P57.3",
       "P59.6",
       "P77.1",
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P85.4"
     ],
     "plugins/audit/scripts/_ui_theme.py": [
       "P20.5",
@@ -2252,7 +2267,8 @@
       "P80.8"
     ],
     "plugins/audit/scripts/panel/_panel_discovery.py": [
-      "P12.2"
+      "P12.2",
+      "P85.1"
     ],
     "plugins/audit/scripts/panel/_panel_page.py": [
       "P47.3"
@@ -2269,11 +2285,13 @@
       "P12.1",
       "P15.4",
       "P18.7",
-      "P44.1"
+      "P44.1",
+      "P85.1"
     ],
     "plugins/audit/scripts/panel/_panel_state.py": [
       "P12.3",
-      "P18.7"
+      "P18.7",
+      "P85.1"
     ],
     "plugins/audit/scripts/panel/_panel_ui.py": [
       "P11.1",
@@ -2296,7 +2314,8 @@
       "P47.3",
       "P53.7",
       "P63.7",
-      "P69.4-j6r"
+      "P69.4-j6r",
+      "P85.1"
     ],
     "plugins/audit/scripts/panel/panel-server.py": [
       "P10.2",
@@ -2311,7 +2330,8 @@
       "P14.1",
       "P18.7",
       "P49.3",
-      "P53.7"
+      "P53.7",
+      "P85.1"
     ],
     "plugins/audit/scripts/report/_evidence_view.py": [
       "P32.7",
@@ -2337,7 +2357,8 @@
       "P80.7"
     ],
     "plugins/audit/scripts/report/_report_page.py": [
-      "P63.6"
+      "P63.6",
+      "P85.2"
     ],
     "plugins/audit/scripts/report/_report_ui.py": [
       "P11.2",
@@ -2349,7 +2370,8 @@
       "P13.2",
       "P15.4",
       "P16.1",
-      "P36.14"
+      "P36.14",
+      "P85.2"
     ],
     "plugins/audit/scripts/report/render-report.py": [
       "P3.3",
@@ -2545,7 +2567,8 @@
       "P10.6",
       "P14.2",
       "P53.7",
-      "P56.6"
+      "P56.6",
+      "P85.2"
     ],
     "plugins/audit/scripts/usage/usage_ledger.py": [
       "P14.1",
@@ -2908,7 +2931,8 @@
       "P18.9",
       "P32.7",
       "P63.9",
-      "P63.12"
+      "P63.12",
+      "P85.1"
     ],
     "plugins/audit/tests/test__panel_policy.py": [
       "P59.10",
@@ -2919,14 +2943,16 @@
       "P75.2-j5h"
     ],
     "plugins/audit/tests/test__panel_state.py": [
-      "P18.7"
+      "P18.7",
+      "P85.1"
     ],
     "plugins/audit/tests/test__panel_write.py": [
       "P18.7",
       "P21.2",
       "P22.11",
       "P53.7",
-      "P69.4-j6r"
+      "P69.4-j6r",
+      "P85.1"
     ],
     "plugins/audit/tests/test__priority.py": [
       "P63.8"
@@ -3317,7 +3343,8 @@
       "P72.5-ttl",
       "P72.6-ttl",
       "P72.7-ttl",
-      "P72.8-ttl"
+      "P72.8-ttl",
+      "P85.3"
     ],
     "plugins/audit/tests/test_manage_worktrees.py": [
       "P18.4",
@@ -3344,7 +3371,8 @@
       "P63.8"
     ],
     "plugins/audit/tests/test_panel_server.py": [
-      "P18.7"
+      "P18.7",
+      "P85.1"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6",
@@ -3441,7 +3469,8 @@
     ],
     "plugins/audit/tests/test_set_priority.py": [
       "P22.11",
-      "P59.12"
+      "P59.12",
+      "P85.4"
     ],
     "plugins/audit/tests/test_stamp_verification.py": [
       "P43.4",
@@ -3599,7 +3628,8 @@
       "P72.1",
       "P72.2-ttl",
       "P72.5-ttl",
-      "P77.1"
+      "P77.1",
+      "P85.4"
     ],
     "tools/redfirst.sh": [
       "P55.13"
@@ -3625,7 +3655,8 @@
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
-      "P79.8-5bh"
+      "P79.8-5bh",
+      "P85.4"
     ],
     "plugins/audit/tests/test__gate_derive.py": [
       "P79.2",
@@ -3633,7 +3664,8 @@
     ],
     "plugins/audit/scripts/governance/derive-phase-gate.py": [
       "P79.3",
-      "P79.8-5bh"
+      "P79.8-5bh",
+      "P85.4"
     ],
     "plugins/audit/tests/test_derive_phase_gate.py": [
       "P79.3",
@@ -3699,6 +3731,15 @@
     ],
     "plugins/audit/tests/test__proc_group.py": [
       "P77.3-6u9"
+    ],
+    "plugins/audit/tests/test__panel_discovery.py": [
+      "P85.1"
+    ],
+    "plugins/audit/scripts/report/_usage_viz.py": [
+      "P85.2"
+    ],
+    "plugins/audit/tests/test__report_usage.py": [
+      "P85.2"
     ]
   },
   "bugs": [
