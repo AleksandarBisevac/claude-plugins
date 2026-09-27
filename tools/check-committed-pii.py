@@ -406,6 +406,21 @@ BASELINE = (
      "journal-actor-host",
      "the second row of the same file, for the same reason: the chain runs through "
      "it, so it can be superseded by later rows but never corrected in place."),
+    ("docs/audit/journal/2026-09.24c1c300-045e-45b9-beaf.wt-cbe2f966.jsonl", 95,
+     "posix-home",
+     "a review.finding row whose prose says 'the isolated home/TMPDIR' - a phrase "
+     "about the sweep's scratch environment, not a directory of any machine. "
+     "posix-home matches `home/` before a word by design, and the row is chained and "
+     "already merged elsewhere, so it is recorded here rather than rewritten."),
+    ("docs/audit/journal/2026-09.24c1c300-045e-45b9-beaf.jsonl", 1419,
+     "posix-home",
+     "the phase.add row of the phase that adds the entry above: its outcome quotes "
+     "the same phrase 'home/TMPDIR' while naming the false positive it fixes. No "
+     "machine path is in it, and the chain runs through it, so it stays."),
+    ("docs/audit/journal/2026-09.24c1c300-045e-45b9-beaf.jsonl", 1420,
+     "posix-home",
+     "the task.add row beside it, whose title quotes the same phrase for the same "
+     "reason. A phrase, not a directory; chained, so recorded rather than rewritten."),
 )
 
 _MIN_REASON = 60          # a reason short enough to be a label is not a reason
