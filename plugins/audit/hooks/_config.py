@@ -1443,12 +1443,16 @@ def is_shell(word):
 # is not read as the script. Anything else before the first operand is an
 # option; the first operand is the script when it carries a script extension.
 _OWN_PROGRAM = (
-    (re.compile(r"^python(?:3(?:\.\d+)?)?$"), ("-c", "-m"), ("-W", "-X", "-Q")),
+    (re.compile(r"^python(?:3(?:\.\d+)?)?$"), ("-c", "-m"), ("-W", "-X", "-Q"),
+     ("-B", "-E", "-I", "-O", "-OO", "-q", "-s", "-S", "-u", "-v", "-x")),
     (re.compile(r"^(?:node|nodejs)$"), ("-e", "-p", "--eval", "--print"),
-     ("-r", "--require", "--import", "--loader", "--experimental-loader")),
-    (re.compile(r"^ruby$"), ("-e",), ("-r", "-I", "-C", "-E")),
-    (re.compile(r"^perl$"), ("-e", "-E"), ("-I", "-M", "-m")),
-    (re.compile(r"^php$"), ("-r",), ("-c", "-d")),
+     ("-r", "--require", "--import", "--loader", "--experimental-loader"),
+     ("--no-warnings", "--trace-warnings")),
+    (re.compile(r"^ruby$"), ("-e",), ("-r", "-I", "-C", "-E"),
+     ("-a", "-c", "-d", "-l", "-n", "-p", "-v", "-w")),
+    (re.compile(r"^perl$"), ("-e", "-E"), ("-I", "-M", "-m"),
+     ("-c", "-d", "-n", "-p", "-s", "-v", "-w")),
+    (re.compile(r"^php$"), ("-r",), ("-c", "-d"), ("-n", "-v")),
 )
 _SCRIPT_EXTS = (".py", ".js", ".mjs", ".cjs", ".ts", ".rb", ".pl", ".pm",
                 ".php")
@@ -1460,7 +1464,7 @@ def runs_own_program(words):
     on its stdin is input. Decided per interpreter: `perl -c` compiles stdin
     and `python -E` is not a program flag, so neither counts."""
     program = _program_of(words[0]) if words else ""
-    for pattern, inline, takes_value in _OWN_PROGRAM:
+    for pattern, inline, takes_value, no_value in _OWN_PROGRAM:
         if not pattern.match(program):
             continue
         skip = False
@@ -1468,16 +1472,72 @@ def runs_own_program(words):
             if skip:
                 skip = False
                 continue
+            if word == "--":
+                skip = True
+                continue
+            if word == "-" or any(ch in word for ch in "'\"$`()<>*?["):
+                return False
             if word in inline:
                 return True
             if word in takes_value:
                 skip = True
                 continue
-            if word.startswith("-"):
+            if word in no_value:
                 continue
+            if word.startswith("-"):
+                return False
             return word.lower().endswith(_SCRIPT_EXTS)
         return False
     return False
+
+
+_WRAPPER_VALUE_OPTIONS = {
+    "sudo": ("-u", "-g", "-h", "-p", "-r", "-t", "-C", "--user", "--group",
+             "--host", "--prompt", "--role", "--type", "--close-from"),
+    "doas": ("-u", "-C", "--user", "--config"),
+    "env": ("-C", "-u", "--chdir", "--unset"),
+    "xargs": ("-E", "-e", "-I", "-i", "-L", "-l", "-n", "-P", "-s", "-S",
+              "--eof", "--replace", "--max-lines", "--max-args",
+              "--max-procs", "--max-chars", "--arg-file"),
+    "timeout": ("-k", "--kill-after"),
+    "nice": ("-n", "--adjustment"),
+    "ionice": ("-c", "-n", "-t", "--class", "--classdata"),
+    "stdbuf": ("-i", "-o", "-e", "--input", "--output", "--error"),
+    "chrt": ("-R", "-T", "-P", "-D", "--runtime", "--period", "--deadline"),
+}
+
+
+def _wrapper_rest(name, words):
+    """The command past one known wrapper, or None when its options are not
+    known well enough to identify that command."""
+    index, duration = 0, name == "timeout"
+    value_options = _WRAPPER_VALUE_OPTIONS.get(name, ())
+    while index < len(words):
+        word = words[index]
+        if word == "--":
+            return words[index + 1:]
+        if word in value_options:
+            if index + 1 >= len(words):
+                return None
+            index += 2
+            continue
+        if any(word.startswith(option + "=") for option in value_options
+               if option.startswith("--")):
+            index += 1
+            continue
+        if word.startswith("-"):
+            if word in ("-0", "-a", "-b", "-f", "-i", "-l", "-n", "-p", "-s",
+                        "-v", "-w", "-x", "--preserve-status", "--foreground",
+                        "--verbose", "--help", "--version"):
+                index += 1
+                continue
+            return None
+        if duration:
+            duration = False
+            index += 1
+            continue
+        return words[index:]
+    return []
 
 
 def program_candidates(words):
@@ -1490,15 +1550,14 @@ def program_candidates(words):
     every remaining word is a candidate - the reading that grades rather than
     drops."""
     words = list(words)
-    wrapped = False
-    while words and (re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0])
-                     or _program_of(words[0]) in _HEAD_WRAPPERS):
-        wrapped = wrapped or _program_of(words[0]) in _HEAD_WRAPPERS
+    while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
         words = words[1:]
-        while wrapped and words and (words[0].startswith("-")
-                                     or words[0].isdigit()):
-            words = words[1:]
-    return (words, words if wrapped else words[:1])
+    while words and _program_of(words[0]) in _HEAD_WRAPPERS:
+        rest = _wrapper_rest(_program_of(words[0]), words[1:])
+        if rest is None:
+            return (words[1:], words[1:])
+        words = rest
+    return (words, words[:1] if words else [])
 
 
 def _head_runs_body(head):
