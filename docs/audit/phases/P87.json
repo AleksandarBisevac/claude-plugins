@@ -661,7 +661,7 @@
     {
       "id": "P87.14-bpl",
       "title": "the runner reader treats only space and tab as blanks, everywhere, and a case forbids a bare strip in it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase review round 12 (review-P87l.json). The same class as round 11, one layer down: call_lines strips only spaces and tabs, but the helpers it calls (_is_full_line_comment, _code_above, the _RUNNER_WRAPPER match in _context_problem, _indent, _next_value_line, _opener) use str.strip()/lstrip() with no argument, which also strips NBSP, FF, VT, FS, NEL, U+2028 and CR. So `<NBSP># n \\` above a wrapper reads as a skipped comment, and `<NBSP>run \"y\" \\` reads as the wrapper, while the shell runs neither (verify.sh has no set -e, so the step silently drops out). Define one module constant for the shell's blanks (space and tab) and use it in every helper of the runner reader. Close the class: a case walks the AST of the reader's functions (the ones call_lines, release_lines and run_arms reach) and fails on any strip/lstrip/rstrip/split call with no argument, naming the function and line. ra29i rows, red first on the P87.13 code: NBSP and FF before `# n \\` above a wrapper and a call, `<NBSP>run \"y\" \\` + call, and a run: | block with `<FF># n \\` above the call - each refused naming the line. The CHANGELOG sentence about separators must claim only what the code does.",
       "files": [
         "tools/check-rendered-artifacts.py",
@@ -690,14 +690,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "54b492be",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_BLANKS in every reader helper, [ \\t] patterns; ra29k AST walk from the reader roots; ra29l; ra29i rows",
+        "descriptive": "No invisible character can make a line read as a comment, indentation or the runner wrapper, and a case over the reader's own code keeps it that way"
       },
       "startedAt": "2026-09-27T17:47:56Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T17:57:04Z",
+      "verifiedBy": [
+        "check-rendered-artifacts 40/40",
+        "py_compile -W error",
+        "probe 8/8 red on an export",
+        "full sweep",
+        "gate-parity"
+      ]
     }
   ],
   "startedAt": "2026-09-27T14:08:20Z"
