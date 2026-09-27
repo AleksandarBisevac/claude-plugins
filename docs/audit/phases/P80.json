@@ -671,7 +671,7 @@
     {
       "id": "P80.11",
       "title": "This repository's release guard refuses a release over a provisional phase",
-      "status": "in_progress",
+      "status": "done",
       "description": "This repository's own .claude/hooks/guard-release.py (configuration, not product) refuses the publishing commands it already refuses when the plan carries a PROVISIONAL phase, as a second list beside the open bugs. read_provisional(project) loads _evidence_io and _worktrees lazily, the way _effective loads _manifest_io, reads the assembled manifest and the ledger, and returns the provisional phases with their bases, or a problem string: unreadable is a refusal, never 'nothing provisional' (fail-loud, the file's own rule). The manifest's tree comes from the plugin hooks' _config.tree_for(payload, target=<the command's effective cwd>) (P72) instead of CLAUDE_PROJECT_DIR, so a release typed in a linked worktree is judged against that worktree's plan; loaded lazily from plugins/audit/hooks/, inside the branch that already knows the command publishes. _deps.hook_tree_violations scans plugins/audit/hooks/ only, so this file's tree resolution is held by its own selftest, not by that lint. With no meta.fullGate nothing is provisional and the guard behaves exactly as today; git push origin main stays untouched (dg13 allow). arm-release-bypass.py prints the provisional phases it arms over beside the bugs, through the same function. The refusal sentence names both lists and the keyword. Red-first in the inline _selftest (.claude/hooks files keep theirs and the sweep runs them): no open bug plus one provisional phase refuses git tag v1 (dg13; mutation: read only the bugs -> red). Allow cases: the same plan with the phase whole releases; git push origin main is not refused; an unreadable ledger refuses with the problem named. SECURITY.md: the row for this fail-loud refusal. CLAUDE.md's Releasing section describes this guard's refusal set, and the user decided (2026-09-27) that it is updated in this same commit: the refusal names provisional phases beside open bugs, what makes a phase provisional (no green full run on a head containing its mergedHead) and the command that settles one, and that the #release-with-bugs slot arms over both lists and prints both - worded from the code as it lands, with no number in prose.",
       "files": [
         ".claude/hooks/guard-release.py",
@@ -704,18 +704,31 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "97611c64282b4f3ce9d13fed07ec30b469625ab7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "guard-release.read_provisional (lazy _evidence_io, _worktrees, _manifest_vocab; resolved_commands; unreadable is a refusal), resolved_tree via _config.tree_for, refusal/decide combine both lists; arm-release-bypass prints both; SECURITY.md fail-loud section; CLAUDE.md Releasing paragraphs. Cases gr22-gr34, rb12-rb14. Task review: intent matches, redFirst proved. Carried to sign-off: a merged phase whose answer is UNKNOWN (no mergedHead) is dropped instead of holding the release (med); plan and design-table ids in the new comments, 'two lists' in SECURITY.md prose, and a refusal that calls both lists unknown when only one failed to read (low). inheritedTests not-asked.",
+        "descriptive": "This repository's release guard now refuses to publish while a merged phase is provisional, beside the open bugs, judging the plan of the tree the command runs in; the bypass arms over and prints both lists, and CLAUDE.md's Releasing section says so."
       },
       "startedAt": "2026-09-27T07:28:12Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-27T08:43:03Z",
+      "verifiedBy": [
+        "gr24",
+        "gr25",
+        "gr26",
+        "gr27",
+        "gr29",
+        "gr34",
+        "rb13"
+      ],
       "testEvidence": {
         "runId": "2026-09-27T08:26:33Z.f048f5",
         "status": "passed",
         "at": "2026-09-27T08:26:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "97611c64282b4f3ce9d13fed07ec30b469625ab7",
+        "at": "2026-09-27T08:43:03Z"
       }
     },
     {

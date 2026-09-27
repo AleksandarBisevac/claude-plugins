@@ -55,6 +55,8 @@ import _loader                                     # noqa: E402
 import _help                                       # noqa: E402  (as panel-server imports it)
 import _manifest_io as _mio                        # noqa: E402  (as panel-server imports it)
 import _panel_runstate                             # noqa: E402  (the `gt` source slice only)
+import _worktrees                                  # noqa: E402  (the runner seam the memo wraps)
+import _evidence_io as _evidence                    # noqa: E402  (the ledger, for the fullRun fixture)
 
 M = _loader.load_script("panel-server.py", modname="panel_server")
 
@@ -712,8 +714,141 @@ def _cases(check):
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)
 
+
+# --- the process-local memo, held by _make_handler and shared across requests --
+def _fr_repo(root):
+    """A REAL git repository, two sequential commits on `main` -
+    `test__panel_state.py`'s own fixture, for the same reason: ancestry needs
+    two real, different, ancestor-related commits."""
+    import subprocess
+    os.makedirs(root, exist_ok=True)
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+          "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+
+    def sh(*args):
+        subprocess.run(git + list(args), cwd=root, check=True,
+                       capture_output=True, timeout=30)
+
+    def rev():
+        out = subprocess.run(git + ["rev-parse", "HEAD"], cwd=root, check=True,
+                             capture_output=True, timeout=30)
+        return out.stdout.decode("utf-8").strip()
+
+    sh("init", "-q")
+    with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
+        fh.write("1\n")
+    sh("add", "-A")
+    sh("commit", "-qm", "one")
+    first = rev()
+    with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
+        fh.write("2\n")
+    sh("add", "-A")
+    sh("commit", "-qm", "two")
+    second = rev()
+    return {"root": root, "first": first, "second": second}
+
+
+def _full_run_cache_cases(check):
+    """Two `/api/state` requests, through the SERVER's own handler path - the
+    real `Handler` class `_make_handler` builds, driven over a real socket
+    exactly the way a browser reaches it - share ONE `full_run_cache`, so the
+    second request's ancestry check for the same `(gitRoot, mergedHead,
+    runHead)` never reaches git again. Counted at `_worktrees._git`, the
+    ACTUAL runner `_memoizing_runner` falls back to when nobody injects one -
+    which is what panel-server.py itself never does, so this is the seam a
+    real deployment's calls go through."""
+    import http.client
+    import shutil
+    import threading
+    import tempfile
+
+    tmp = tempfile.mkdtemp(prefix="panel-server-fullrun-")
+    try:
+        project = os.path.join(tmp, "proj")
+        os.makedirs(os.path.join(project, ".claude"), exist_ok=True)
+        repo = _fr_repo(os.path.join(project, "repo"))
+        M._atomic_write_json(M._config_path(project),
+                             {"manifestPath": "docs/audit/audit-plan.json",
+                              "gitRoot": "repo"})
+        mpath = M._manifest_path(project, M.read_config(project))
+        os.makedirs(os.path.dirname(mpath), exist_ok=True)
+        M._atomic_write_json(mpath, {
+            "meta": {"version": 2, "fullGate": ["full"],
+                     "buildCommands": {"full": "echo x"}},
+            "phases": [{"id": "P1", "title": "merged", "status": "done",
+                       "mergedAt": "2026-09-02T00:00:00Z",
+                       "mergedHead": repo["first"]}]})
+        evdir = _evidence.evidence_dir(project, M.read_config(project))
+        os.makedirs(evdir, exist_ok=True)
+        row = {"v": _evidence.ROW_VERSION, "runId": "run-whole",
+              "ts": "2026-09-01T00:00:00Z", "scope": _evidence.FULL_SCOPE,
+              "status": "passed",
+              "steps": [{"name": "gate", "command": "echo x", "exit": 0,
+                        "durationMs": 500}],
+              "testedState": {"head": repo["second"]},
+              "observations": {"ranTotal": 3, "countsBasis": "3 checks",
+                               "dirtyOutside": []}}
+        with open(os.path.join(evdir, "2026-09.w1.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(json.dumps(row) + "\n")
+
+        calls = []
+        real_git = _worktrees._git
+
+        def _counting_git(git_root, args, timeout=60):
+            calls.append((git_root,) + tuple(args))
+            return real_git(git_root, args, timeout=timeout)
+
+        token = "test-token-123"
+        handler_cls = M._make_handler(project, token)
+        import http.server
+        srv = http.server.HTTPServer(("127.0.0.1", 0), handler_cls)
+        thread = threading.Thread(target=srv.serve_forever, daemon=True)
+        thread.start()
+        _worktrees._git = _counting_git
+        try:
+            port = srv.server_address[1]
+            conn1 = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            conn1.request("GET", "/api/state", headers={"X-Audit-Token": token})
+            resp1 = conn1.getresponse()
+            body1 = json.loads(resp1.read())
+            conn1.close()
+            after_first = len(calls)
+            conn2 = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            conn2.request("GET", "/api/state", headers={"X-Audit-Token": token})
+            resp2 = conn2.getresponse()
+            body2 = json.loads(resp2.read())
+            conn2.close()
+            after_second = len(calls)
+        finally:
+            _worktrees._git = real_git
+            srv.shutdown()
+            thread.join(timeout=5)
+
+        phases1 = dict((p["id"], p) for p in body1["composition"]["phases"])
+        phases2 = dict((p["id"], p) for p in body2["composition"]["phases"])
+        check("fh1 the first /api/state request through the real handler "
+              "reads WHOLE off real git ancestry: %r"
+              % (phases1.get("P1", {}).get("fullRun"),),
+              phases1.get("P1", {}).get("fullRun", {}).get("answer") == "whole"
+              and after_first == 1)
+        check("fh2 the SECOND request, through the SAME handler instance's "
+              "closure, shares the one full_run_cache - it makes NO repeat "
+              "ancestry call for the same (gitRoot, mergedHead, runHead), "
+              "counted through the runner seam rather than assumed - "
+              "MUTATION: a fresh dict per request -> red: calls after first "
+              "%r, after second %r" % (after_first, after_second),
+              phases2.get("P1", {}).get("fullRun", {}).get("answer") == "whole"
+              and after_second == after_first == 1)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _full_run_cache_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

@@ -623,6 +623,62 @@ function evRollCells(tasks,ev,basis){
 const evLine=(lbl,...parts)=>el('div',{class:'evline','data-evline':lbl},
  el('span',{class:'evlbl'},lbl),parts);
 /**
+ * @type {Object<string,string>} the word for the third place's own verdict —
+ * `_evidence_io.full_status`'s four answers, spelled for a reader. These are
+ * NOT `EVWORD`'s vocabulary: a task's own gate and a phase's sign-off gate are
+ * PASSED or FAILED, but the third place asks a different question — whether a
+ * green, measured run's HEAD contains this phase's merge at all — so it needs
+ * its own four words rather than a fifth meaning borrowed from `passed`.
+ */
+const FULLWORD={whole:'Verified — full run',provisional:'Provisional',
+ unknown:'Unknown',not_declared:'Not declared'};
+/**
+ * The word for one `fullRun.answer`.
+ * @param {string} a - `_manifest_vocab.FULL_STATUS_*`, or anything unfamiliar
+ * @returns {string} the table's word; an answer this build does not recognise
+ *   is shown as itself rather than as a blank, the same rule `evWord` keeps
+ */
+function fullRunWord(a){
+ if(Object.prototype.hasOwnProperty.call(FULLWORD,a))return FULLWORD[a];
+ return a||'Unknown';}
+/**
+ * `{key, word, basis}` for one phase's `fullRun` payload, or null when the
+ * row carries none at all — the FACTS the line paints, kept apart from the
+ * painting itself for `evState`'s own reason: a DOM tree cannot be asked what
+ * it says, only a plain object can.
+ * @param {{fullRun: *}} cph - the composition phase row
+ * @returns {{key: string, word: string, basis: string}|null} null for a plan
+ *   naming no third place, or a phase that has not merged - `_phase_full_run`
+ *   already refused those, so this only has to notice the key's absence
+ */
+function evFullRunFacts(cph){
+ const fr=(cph||{}).fullRun;
+ if(!fr||typeof fr!=='object')return null;
+ return {key:fr.answer||'',word:fullRunWord(fr.answer),basis:fr.basis||''};}
+/**
+ * The full-run line beside a merged phase's evidence — the word and the basis
+ * sentence the SERVER computed (`_panel_composition._phase_full_run`), never
+ * recomputed here: this file asks no git and reads no ledger.
+ *
+ * NOT BUILT THROUGH `evLine`: that helper is pinned to exactly two calls
+ * inside `ovDetail`, one per measurement the composition ships regardless of
+ * `meta.fullGate`. This is a THIRD, present only when the plan names a third
+ * place at all and this phase has merged — which is why it is its own line
+ * rather than a third argument squeezed into one of the other two.
+ * @param {{fullRun: *}} cph - the composition phase row
+ * @returns {Node|null} null when the row carries no `fullRun` key
+ */
+function evFullRunLine(cph){
+ try{
+  const facts=evFullRunFacts(cph);
+  if(!facts)return null;
+  return el('div',{class:'evline','data-evline':'full run'},
+    el('span',{class:'evlbl'},'full run'),
+    el('span',{class:'st','data-fullrun':facts.key,title:facts.basis},facts.word),
+    facts.basis?el('div',{class:'mut small'},facts.basis):null);
+ }catch(cause){console.error('full-run line failed',cause);
+  return el('span',{class:'mut small'},'full run unavailable');}}
+/**
  * A phase's tasks, in the columns the report's table uses and in ITS order — id,
  * title, status, risk (coloured TEXT, not a pill), commit, when it finished, and
  * then `tests` — led by what the phase is FOR.
@@ -663,6 +719,11 @@ function ovDetail(p){
  const pcell=evCell(p.id,cph,ev,evbas);
  box.append(evLine('phase sign-off',pcell.badge));
  if(pcell.detail)box.append(pcell.detail);
+ // THE THIRD MEASUREMENT, beside the two above rather than folded into
+ // either: the sign-off gate and the full run answer different questions,
+ // and this line is absent whenever the payload carries no `fullRun` at all.
+ const frl=evFullRunLine(cph);
+ if(frl)box.append(frl);
  box.append(evLine('tasks',evRollCells(tasks,ev,evbas)));
  if(!tasks.length)box.append(el('div',{class:'mut small'},'This phase has no tasks.'));
  else{

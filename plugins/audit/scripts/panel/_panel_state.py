@@ -155,6 +155,19 @@ _empty_evidence = _composition.empty_evidence
 areas_state = _composition.areas_state
 
 
+def _git_root(project, config):
+    """The git root every reader here resolves the SAME way -
+    `config['gitRoot']` relative to `project`, defaulting to `project` itself.
+
+    THE ONE RESOLUTION. `worktrees_state` and `build_state`'s `fullRun` wiring
+    both need this, and two copies of the same three-line expression is how
+    they would eventually disagree about which tree a phase's ancestry is
+    asked against.
+    """
+    return os.path.realpath(os.path.join(project,
+                                         (config or {}).get("gitRoot") or "."))
+
+
 def worktrees_state(project):
     """`GET /api/worktrees` — the live worktree table for the Branch card.
 
@@ -171,9 +184,7 @@ def worktrees_state(project):
             manifest = _mio.load_manifest(mpath) or {}
         except Exception:
             manifest = {}
-    git_root = os.path.realpath(os.path.join(project,
-                                             (config or {}).get("gitRoot") or "."))
-    return _composition.worktree_rows(git_root, manifest)
+    return _composition.worktree_rows(_git_root(project, config), manifest)
 
 # NOT `_composition._proposals_view` any more. The Proposals tab and
 # `/audit:propose list` render the same array, so the derivation belongs to the
@@ -406,7 +417,22 @@ def render_report(project):
             "href": "/report", "exists": os.path.isfile(html_path)}
 
 # --- the whole of /api/state ----------------------------------------------------
-def build_state(project):
+def build_state(project, run=None, full_run_cache=None):
+    """`GET /api/state` — the whole panel payload, off one manifest read.
+
+    `run` AND `full_run_cache` EXIST FOR THE THIRD PLACE ALONE, and both
+    default to today's behaviour when omitted. `run` is the injected git
+    runner `_evidence_io.full_status` (through `_panel_composition`) ends up
+    asking ancestry with — a test's seam, never something a real request
+    supplies. `full_run_cache`, when given, is a dict `_memoizing_runner`
+    reads and writes through `_panel_composition._phase_full_run` — ancestry
+    between two fixed commits never changes, so the SAME `(gitRoot,
+    mergedHead, runHead)` asked on a later poll is free the second time. It
+    is an EXPLICIT ARGUMENT rather than a module global on purpose (the
+    dialect here for a memo that must persist), which is what makes holding
+    ONE dict across polls and passing it in each time the caller's whole job
+    — this function neither creates nor keeps one of its own.
+    """
     vm, vc, as_, _ = _cores()
     config = read_config(project)
     cfg_findings, cfg_warnings = vc.validate_config(config)
@@ -450,11 +476,49 @@ def build_state(project):
             boundary = _evidence_io.boundary_for(mpath, project)
             rollup = as_.rollup(manifest, m_findings, m_warn,
                                 boundary=boundary)
-            composition = _composition_view(manifest, boundary=boundary)
+            # THE LEDGER IS READ ONCE, HERE, AND HANDED TO BOTH THE EVIDENCE
+            # TAB AND THE THIRD PLACE'S ANCESTRY CHECK - `boundary`'s pattern
+            # one call over, and for the same reason: two reads of a ledger a
+            # parallel run may have grown between could disagree, and a read
+            # that failed would otherwise fail TWICE, in two different
+            # shapes, for one cause. This read is unconditional because
+            # `evidence_view` already needed it before the third place
+            # existed; caught here rather than left to raise, because an
+            # unreadable ledger must not break the payload.
+            try:
+                ledger_read = _evidence_io.read_rows(project, config=config)
+                ledger_error = None
+            except Exception as exc:
+                ledger_read = {"rows": [], "files": 0, "unreadable": 0,
+                              "unreadableFiles": []}
+                ledger_error = "%s" % (exc,)
+            # THE THIRD PLACE'S OWN INPUTS, GATED ON WHETHER THERE IS ONE TO
+            # ASK ABOUT AT ALL. `full_gate_commands` is the SAME resolution
+            # `_composition_view` uses internally, asked here first so a plan
+            # naming no `meta.fullGate` never resolves a git root and never
+            # reaches a single git call for it - the read above happens
+            # regardless (the Evidence tab still needs it), but nothing
+            # downstream of THIS gate does when there is no third place.
+            # `full_run_error` carries a read failure to `_phase_full_run`'s
+            # honest UNKNOWN rather than a silent PROVISIONAL built from rows
+            # nobody actually read - and only when there was a third place to
+            # be honest UNKNOWN about.
+            full_run_rows, full_run_git_root, full_run_error = None, None, None
+            if _composition.full_gate_commands(manifest):
+                full_run_git_root = _git_root(project, config)
+                if ledger_error is None:
+                    full_run_rows = ledger_read["rows"]
+                else:
+                    full_run_error = ledger_error
+            composition = _composition_view(
+                manifest, boundary=boundary, full_run_rows=full_run_rows,
+                git_root=full_run_git_root, full_run_error=full_run_error,
+                run=run, full_run_cache=full_run_cache)
             # AFTER the composition and off its rows, not off the manifest: the
             # pointers are already on those rows, and the runs worth shipping are
             # exactly the ones they name.
-            evidence = _evidence_view(project, composition, config=config)
+            evidence = _evidence_view(project, composition, config=config,
+                                      read=ledger_read)
             bugs = _bugs_view(manifest)
             proposals = _proposals_view(manifest)
     return {

@@ -261,6 +261,18 @@ ASSEMBLED_VERSION = _output.plugin_version()
 # --- HTTP server ----------------------------------------------------------------
 def _make_handler(project, token):
     _local = {"127.0.0.1", "localhost", "[::1]"}
+    # ONE DICT FOR THE LIFE OF THIS SERVER PROCESS, closed over by every
+    # request the way `_local` and `token` already are - never a module
+    # global, which is this repo's own rule for a memo (an explicit object
+    # the owner holds, not a hidden mutable name two callers could disagree
+    # about). `_make_handler` runs ONCE per `serve()` launch and the `Handler`
+    # class it returns answers every request after that, which is exactly the
+    # lifetime commit ancestry needs: two fixed commits never change their
+    # relationship, so the SAME `(gitRoot, mergedHead, runHead)` asked on a
+    # later poll is free the second time. `_panel_composition._memoizing_runner`
+    # is what reads and writes it; UNKNOWN answers never land here, because
+    # "git could not be asked" may succeed on the very next poll.
+    _full_run_cache = {}
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "AuditPanel/1.0"
@@ -323,7 +335,8 @@ def _make_handler(project, token):
             if not self._guard():
                 return
             if path == "/api/state":
-                self._json(200, build_state(project)); return
+                self._json(200, build_state(
+                    project, full_run_cache=_full_run_cache)); return
             if path == "/api/runstatus":
                 # Deliberately NOT `/api/state` on a timer. Two reasons, and the
                 # second is correctness rather than cost: build_state computes the
@@ -412,7 +425,7 @@ def _make_handler(project, token):
                 return
             path = self.path.split("?", 1)[0]
             if path == "/api/validate":
-                st = build_state(project)
+                st = build_state(project, full_run_cache=_full_run_cache)
                 self._json(200, {"config": st["configFindings"],
                                  "manifest": st["manifestFindings"]}); return
             if path == "/api/report":
