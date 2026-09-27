@@ -539,7 +539,7 @@
     {
       "id": "P85",
       "title": "Comments state their rule, not the register",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P85.json"
     },
     {
