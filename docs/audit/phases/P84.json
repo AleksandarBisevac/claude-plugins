@@ -77,7 +77,7 @@
     {
       "id": "P84.2",
       "title": "the stable-code lint reaches every warning the phase-gate checks emit",
-      "status": "in_progress",
+      "status": "done",
       "description": "F517 (quality-gates-internal PLAN.md). _check_phase_gate mutates the validator's warnings parameter, a shape fc2's walk never follows, so the whole family can ship uncoded. Give _check_phase_gate (and its helpers) the return shape the walk already follows - it returns its findings and the caller extends - rather than adding a new seed rule. Red-first: strip the code from one _check_coupling warning and fc2 goes red; allow: every coded site stays green and the validator's output is byte-identical before and after.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_phases.py",
@@ -111,14 +111,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "19bd1533",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_check_phase_gate returns its findings for the caller to extend; the walk reads a feeder's early literal return.",
+        "descriptive": "Every warning the phase-gate checks emit now carries a stable code, and the lint would catch one that does not."
       },
       "startedAt": "2026-09-27T04:18:45Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T06:32:39Z",
+      "verifiedBy": [
+        "test__output fc5",
+        "test__output fc6",
+        "test__output fc7",
+        "test__manifest_phases gf1",
+        "test__manifest_phases gf3"
+      ]
     },
     {
       "id": "P84.3",
