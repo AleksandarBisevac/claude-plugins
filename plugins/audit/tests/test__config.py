@@ -1426,7 +1426,21 @@ def _cases(check):
                  (["python3", "-E"], False), (["perl", "-c"], False),
                  (["perl", "-e", "x"], True), (["ruby", "tools/x.rb"], True),
                  (["node", "--no-warnings", "x.mjs"], True),
-                 (["node", "-r", "x.js"], False), (["node"], False))
+                 (["node", "-r", "x.js"], False), (["node"], False),
+                 (["python3", "-", "x.py"], False),
+                 (["node", "--title", "x.js"], False),
+                 (["python3", "$SCRIPT"], False),
+                 (["python3", "-u", "tools/x.py"], True))
+    _pc = M.program_candidates
+    check("pc1 behind a wrapper whose options are known, the program is exact",
+          _pc(["sudo", "-u", "root", "$SH"])[1] == ["$SH"]
+          and _pc(["timeout", "5", "grep", "x"])[1] == ["grep"]
+          and _pc(["xargs", "-0", "printf", "%s"])[1] == ["printf"],
+          repr([_pc(["sudo", "-u", "root", "$SH"]), _pc(["timeout", "5", "grep", "x"]),
+                _pc(["xargs", "-0", "printf", "%s"])]))
+    check("pc2 ...while an unknown wrapper option leaves every word a candidate",
+          "bash" in _pc(["sudo", "--frobnicate", "x", "bash"])[1],
+          repr(_pc(["sudo", "--frobnicate", "x", "bash"])))
     check("ro1 an interpreter runs a program of its own only through its own "
           "inline flag or a script operand after its options",
           all(_ro(w) is want for w, want in _ro_cases),
