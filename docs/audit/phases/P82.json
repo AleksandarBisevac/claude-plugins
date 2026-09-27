@@ -656,7 +656,7 @@
     {
       "id": "P82.11-fye",
       "title": "red-first always runs the baseline with the task's new test files as empty stubs, and credits only a failure located in a declared test file",
-      "status": "in_progress",
+      "status": "done",
       "description": "Round-9 review (review-P82i.json; probe23, probe24). (1) baseline_skip read argv and was evaded by a second argument, a wrapper, a node id, a glob, a working-tree/HEAD mismatch. Remove the argv reader. HEAD's baseline is ALWAYS made, in its isolated throwaway, with every declared test file that is new at HEAD laid over as an EMPTY file and nothing else of the task's, so the same command reaches exactly what the task's run reaches minus the task's cases, however it is spelled. Green = exit 0 with no failure counted, or the runner's own no-tests-ran shape (unittest/pytest exit 5, nothing collected). Delete baseline_skip and the 'no HEAD run' basis. This also ends the over-refusal where a command naming a new file and an edited old one could never get a green baseline. (2) A new test file that imports or subclasses HEAD's cases carries them into its run. Credit only a failure the runner locates in a declared test file: pytest's node id path; unittest -v's module (3.11+ prints it); a house run whose command runs exactly one declared test file. A runner output that locates no failure is could-not-prove with that reason. (3) sr139 measures with tracemalloc, not the resource module (absent on Windows, which CI runs). (4) sr134 and sr135 pin E_NOT_RED and the note; sr140's replacement rows cover a dotted name, a node id into an old file and an sh -c script. (5) No further isolated run is made once less than a second of the deadline is left; the budget comment describes the code. Each probe23/probe24 shape (E1, E2, E2s, E3, E6, node id) a red case proved first; an allow case in sr138's shape (a command naming only a new test file) still proves, now with a stub baseline. The four documents state the rule the code enforces.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -691,14 +691,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "492339ce",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "baseline_skip removed; new declared test files overlaid as empty stubs for HEAD's isolated baseline; located() restricts credit to failures the runner places in a declared file that defines them; deadline floor; tracemalloc in sr139",
+        "descriptive": "Red-first always compares against a real green run of HEAD's tests, and credits only failures the task's own test files contain"
       },
       "startedAt": "2026-09-27T08:49:41Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T10:59:40Z",
+      "verifiedBy": [
+        "stamp-verification selftest 136/136 plus probe/mutations.py 42/42 red on an export; full sweep"
+      ]
     }
   ],
   "startedAt": "2026-09-26T09:47:10Z"
