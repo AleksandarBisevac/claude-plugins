@@ -700,7 +700,8 @@
       "P84.4-791",
       "P84.6-791",
       "P84.7-791",
-      "P84.8-791"
+      "P84.8-791",
+      "P80.22-rtb"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -735,7 +736,8 @@
       "P74.4-qq5",
       "P74.5-qq5",
       "P74.6-qq5",
-      "P79.11-5bh"
+      "P79.11-5bh",
+      "P80.22-rtb"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -838,7 +840,9 @@
       "P80.3",
       "P80.7",
       "P84.1",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.21-rtb",
+      "P80.19-rtb"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1256,7 +1260,8 @@
       "P57.4",
       "P70.3-fos",
       "P80.6",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P80.17-rtb"
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1",
@@ -1552,7 +1557,8 @@
       "P76.1",
       "P73.1",
       "P84.1",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.17-rtb"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -1632,7 +1638,8 @@
       "P79.11-5bh",
       "P84.1",
       "P84.4-791",
-      "P84.6-791"
+      "P84.6-791",
+      "P80.17-rtb"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
@@ -1673,7 +1680,9 @@
       "P74.5-qq5",
       "P74.6-qq5",
       "P79.12-5bh",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.21-rtb",
+      "P80.17-rtb"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -1719,7 +1728,8 @@
       "P77.2",
       "P77.3-6u9",
       "P74.3-qq5",
-      "P86.4"
+      "P86.4",
+      "P80.21-rtb"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -1898,7 +1908,9 @@
       "P74.11-qq5",
       "P80.13",
       "P84.7-791",
-      "P80.14-rtb"
+      "P80.14-rtb",
+      "P80.19-rtb",
+      "P80.22-rtb"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -2243,7 +2255,8 @@
       "P81.1",
       "P75.4-j5h",
       "P76.1",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P80.21-rtb"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -2615,7 +2628,9 @@
       "P80.6",
       "P74.2-qq5",
       "P74.3-qq5",
-      "P76.1"
+      "P76.1",
+      "P80.14-rtb",
+      "P80.17-rtb"
     ],
     "plugins/audit/scripts/status/audit-doctor.py": [
       "P10.3",
@@ -2926,7 +2941,8 @@
       "P74.11-qq5",
       "P80.13",
       "P84.7-791",
-      "P80.14-rtb"
+      "P80.14-rtb",
+      "P80.19-rtb"
     ],
     "plugins/audit/tests/test__evidence_view.py": [
       "P32.7",
@@ -3247,7 +3263,9 @@
       "P70.3-fos",
       "P80.6",
       "P74.2-qq5",
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P80.14-rtb",
+      "P80.17-rtb"
     ],
     "plugins/audit/tests/test__status_facts.py: --fail-on failing-tests refuses a run whose record says the tree was mutated": [
       "P32.7"
