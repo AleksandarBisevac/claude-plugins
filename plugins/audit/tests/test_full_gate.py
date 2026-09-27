@@ -28,6 +28,13 @@ import _evidence_io as _ev_io                      # noqa: E402  (read_rows, evi
 
 M = _loader.load_script("full-gate.py", "full_gate")
 
+# THE SUITES A FAKED RUNNER NAMES ARE TRACKED FILES of the fixture, as a real
+# runner's are: a miss is filed under the one tracked path its spelling pins
+# to (`_evidence_io.pin_suite`), so a suite git does not track couples nothing.
+_TRACKED_SUITES = ("tests/test_cart.py", "tests/test_old.py",
+                   "tests/test_stale.py", "backend/tests/test_x.py",
+                   "pkg1/tests/x.test.js", "pkg2/tests/x.test.js")
+
 
 def _full_repo(name, fullgate=("ok",), buildcommands=None):
     """A committed git repository whose plan declares `meta.fullGate` (or does
@@ -35,11 +42,16 @@ def _full_repo(name, fullgate=("ok",), buildcommands=None):
     `test_run_test_gate.py`'s `_full_repo` builds, kept independent here
     rather than imported: a test file reaching into another test file's
     private helper is the same sideways edge `_deps.layer_violations()`
-    refuses between production modules.
+    refuses between production modules. `_TRACKED_SUITES` are committed
+    beside the plan.
     """
     root = _harness.fixture_root("full-gate-")
     os.makedirs(os.path.join(root, "docs", "audit"))
     os.makedirs(os.path.join(root, ".claude"))
+    for suite in _TRACKED_SUITES:
+        os.makedirs(os.path.join(root, os.path.dirname(suite)), exist_ok=True)
+        with open(os.path.join(root, suite), "w") as fh:
+            fh.write("# %s\n" % (suite,))
     with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
         json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
     mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
@@ -53,7 +65,8 @@ def _full_repo(name, fullgate=("ok",), buildcommands=None):
                              "tasks": []}]}, fh)
     subprocess.run(["git", "init", "-q", root], check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    for arg in (["add", "--", "docs", ".claude"],
+    tops = sorted(set(s.split("/", 1)[0] for s in _TRACKED_SUITES))
+    for arg in (["add", "--", "docs", ".claude"] + tops,
                 ["-c", "user.email=fixture@example.com",
                  "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
                  "commit", "-qm", "fixture"]):
@@ -177,7 +190,7 @@ def _end_to_end_cases(check):
 
 # --- learning from a red full run ---------------------------------------------
 # THE RUNNER IS FAKED, THE VERBS ARE REAL. A real selection miss needs merged
-# phases, derived gates and an earlier whole-bearing run - the runner's own
+# phases, derived gates and an earlier measured full run - the runner's own
 # suite owns that question. What THIS file owes is the second half: given the
 # row a full run recorded, does it file the coupling and the bug through the
 # real `audit-task.py`, and nothing else. So the seam below plays the runner
@@ -482,7 +495,8 @@ def _learning_cases(check):
     rtg = _loader.load_script("run-test-gate.py", "run_test_gate_for_full")
     miss = {"test": "tests/test_cart.py", "phases": ["P1", "P2"],
             "sources": ["src/cart.py"]}
-    remedy = rtg._miss_remedy(miss, "RUN-X", "abc1234")
+    remedy = rtg._miss_remedy(miss, "RUN-X", "abc1234",
+                              "/plan/docs/audit/audit-plan.json", "/plan")
     import shlex
     check("fgl9 the bug full-gate files carries the title and description "
           "the runner's printed remedy spells, so a bug filed by hand from "
@@ -966,6 +980,121 @@ def _catch_rule_cases(check):
         _harness.remove_tree(root_a)
 
 
+# --- a runner's spelling, pinned to one tracked path before anything is filed --
+def _pinned_learning_cases(check):
+    # --- the runner names the suite from its own directory -----------------
+    # The plan already couples backend/tests/test_x.py; the runner (started in
+    # backend/tests) printed test_x.py, and the row's miss carries that
+    # spelling. The one tracked path it pins to is what gets coupled and filed.
+    root, mpath = _learn_repo("pin-relative")
+    try:
+        with open(mpath) as fh:
+            plan = json.load(fh)
+        plan["meta"]["coupling"].append({
+            "test": "backend/tests/test_x.py", "sources": ["src/old.py"],
+            "basis": {"runId": "RUN-EARLIER", "head": _git_head(root),
+                      "phases": ["P1"]},
+            "learnedAt": "2026-01-01T00:00:00Z"})
+        with open(mpath, "w") as fh:
+            json.dump(plan, fh)
+        _imported_row(root, "RUN-PIN-REL", steps=[
+            {"name": "ok", "exit": 1, "failingSuites": ["test_x.py"],
+             "failingSuitesBasis": _NAMED_BASIS}], misses=[
+            {"test": "test_x.py", "phases": ["P1"], "sources": ["src/new.py"]}])
+        code, lines, _runner = _learn_from(root, mpath, "RUN-PIN-REL")
+        coupling, bugs, actions = _plan_facts(root, mpath)
+        check("fgp1 RED-FIRST: a miss the runner spelled test_x.py WIDENS the "
+              "plan's backend/tests/test_x.py coupling and files its bug under "
+              "that tracked path - no coupling and no bug file is ever the "
+              "raw spelling: %r"
+              % ((code, sorted(coupling),
+                  (coupling.get("backend/tests/test_x.py") or {})
+                  .get("sources"), [(b.get("title"), b.get("files"))
+                                    for b in bugs], actions),),
+              code == M.E_OK and "test_x.py" not in coupling
+              and (coupling.get("backend/tests/test_x.py") or {})
+              .get("sources") == ["src/old.py", "src/new.py"]
+              and [(b.get("title"), b.get("files")) for b in bugs]
+              == [("SELECTION MISS: backend/tests/test_x.py",
+                   ["backend/tests/test_x.py"])]
+              and "lastCaught" not in coupling["backend/tests/test_x.py"])
+    finally:
+        _harness.remove_tree(root)
+
+    # --- one spelling, two sibling packages --------------------------------
+    root_s, mpath_s = _learn_repo("pin-sibling")
+    try:
+        _imported_row(root_s, "RUN-PIN-SIB", steps=[
+            {"name": "ok", "exit": 1, "failingSuites": ["tests/x.test.js"],
+             "failingSuitesBasis": _NAMED_BASIS}], misses=[
+            {"test": "tests/x.test.js", "phases": ["P1"],
+             "sources": ["pkg1/src/x.js"]}])
+        code, lines, _runner = _learn_from(root_s, mpath_s, "RUN-PIN-SIB")
+        coupling, bugs, actions = _plan_facts(root_s, mpath_s)
+        said = [ln for ln in lines if ln.startswith(
+            "%s no couple for tests/x.test.js" % (M.PREFIX,))]
+        check("fgp2 RED-FIRST: a miss spelled tests/x.test.js, which both "
+              "pkg1/ and pkg2/tests/x.test.js end in, couples NOTHING, still "
+              "files its bug naming no file, and one line says why naming "
+              "both candidates: %r"
+              % ((code, sorted(coupling), [(b.get("title"), b.get("files"))
+                                          for b in bugs], said),),
+              code == M.E_OK and sorted(coupling) == ["tests/test_old.py"]
+              and actions.count("coupling.learned") == 0
+              and [(b.get("title"), b.get("files")) for b in bugs]
+              == [("SELECTION MISS: tests/x.test.js", [])]
+              and len(said) == 1 and "pkg1/tests/x.test.js" in said[0]
+              and "pkg2/tests/x.test.js" in said[0])
+    finally:
+        _harness.remove_tree(root_s)
+
+    # --- the red branch names a ledger file it could not read in full ------
+    rows = [{"runId": "RUN-OTHER", "scope": "full",
+             "ts": "2026-09-27T18:05:46Z"}]
+    lost = ["docs/audit/evidence/2026-09.ci-1.jsonl"]
+    started = _parse("2026-09-27T18:05:40Z")
+    _row, rec = M.find_row(rows, ["  evidence: recorded RUN-GONE"], started,
+                           lost)
+    _row, since = M.find_row([], ["  (no evidence line)"], started, lost)
+    _row, clean = M.find_row(rows, ["  evidence: recorded RUN-GONE"], started,
+                             [])
+    check("fgp3 RED-FIRST: a run the readable rows do not hold is never "
+          "called absent while a ledger file was read with losses - both "
+          "lookups name the file; with none lost, no such clause: %r"
+          % ((rec, since, clean),),
+          lost[0] in (rec or "") and lost[0] in (since or "")
+          and "could not be read in full" in (rec or "")
+          and "could not be read in full" not in (clean or "x"))
+
+    # --- which project a manifest outside the default layout belongs to ----
+    root_p = _harness.fixture_root("full-gate-layout-")
+    try:
+        os.makedirs(os.path.join(root_p, "plans"))
+        os.makedirs(os.path.join(root_p, ".claude"))
+        mpath_p = os.path.join(root_p, "plans", "plan.json")
+        with open(mpath_p, "w") as fh:
+            json.dump({"meta": {"version": 3, "fullGate": ["ok"],
+                                "buildCommands": {"ok": "true"}},
+                       "phases": []}, fh)
+        called = []
+        real = M._stream_subprocess
+        M._stream_subprocess = lambda cmd, out: called.append(cmd) or 0
+        try:
+            code = M.main([mpath_p], out=(lambda _l: None))
+        finally:
+            M._stream_subprocess = real
+        cmd = called[0] if called else []
+        at = cmd.index("--project-dir") + 1 if "--project-dir" in cmd else 0
+        check("fgp4 RED-FIRST: a manifest at <root>/plans/plan.json, <root> "
+              "holding .claude/, resolves the project the plugin's way "
+              "(`_panel_write.project_of_manifest`) and hands it to the "
+              "runner - never the directory three levels up: %r" % (cmd,),
+              code == M.E_OK and at
+              and os.path.realpath(cmd[at]) == os.path.realpath(root_p))
+    finally:
+        _harness.remove_tree(root_p)
+
+
 # --- --learn-from's exit when learning itself goes wrong -----------------------
 def _learn_from_exit_cases(check):
     # --- a row whose learning raises -----------------------------------------
@@ -1041,6 +1170,7 @@ def _selftest():
         _learning_cases(check)
         _learn_from_cases(check)
         _catch_rule_cases(check)
+        _pinned_learning_cases(check)
         _learn_from_exit_cases(check)
     return _harness.run(body)
 

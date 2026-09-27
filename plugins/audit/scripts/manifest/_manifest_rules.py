@@ -97,6 +97,8 @@ import _manifest_ado as _ado  # noqa: E402  (meta.ado: the connector config, one
 import _manifest_typos as _typos  # noqa: E402  (the did-you-mean detectors)
 import _manifest_crossrefs as _crossrefs  # noqa: E402  (ids, refs, cycles, fileIndex, bugs)
 import _branch as _branch  # noqa: E402  (where a phase branches from, and its name)
+import _status_facts  # noqa: E402  (CLOSED_BUG: the one reading of "not open", for a
+#                                    mute whose bug is closed)
 
 # --- the re-exported surface ------------------------------------------------------
 # ALIASES, NOT COPIES. Each name below is the SAME object the module beside it
@@ -351,6 +353,31 @@ def _mute_commands(test):
             "to extend it" % (test, test))
 
 
+def _unmute_command(test):
+    """The verb that lifts a mute whose bug is closed, spelled for `test` -
+    or, with no test to spell it with, the sentence saying to remove the
+    entry, since `--test None` would lift nothing."""
+    if _named(test):
+        return "run `audit-task.py unmute --test %s` to lift it" % (test,)
+    return "remove the entry; it names no test, so no unmute can reach it"
+
+
+def _closed_bugs(manifest):
+    """`{bug id: effective status}` for each bug whose EFFECTIVE status
+    (`_manifest_io.effective_bug_status`) is in `_status_facts.CLOSED_BUG` -
+    the reading the runner withholds a mute by, so the warning and the
+    refusal cannot disagree about which bug is closed."""
+    by_id = _mio.tasks_by_id(manifest)
+    closed = {}
+    for bug in manifest.get("bugs") or []:
+        if not isinstance(bug, dict) or not bug.get("id"):
+            continue
+        status = _mio.effective_bug_status(bug, by_id)
+        if status in _status_facts.CLOSED_BUG:
+            closed[bug["id"]] = status
+    return closed
+
+
 def _check_muted(manifest, index, today=None):
     """FINDINGS for a mute no bug tracks, WARNINGS for everything else about one.
 
@@ -366,6 +393,11 @@ def _check_muted(manifest, index, today=None):
     mute, so the failure blocks again on its own. Turning this into a finding
     means changing `warnings` to `findings` below AND exempting the mute verbs
     from their own pre-check.
+
+    A mute naming a bug that is CLOSED by its effective status is a WARNING
+    carrying the unmute command, for the expiry's reason: the runner stops
+    honouring it (`run-test-gate.withheld_mutes`), so the failure already
+    blocks, and a finding would freeze the verb that lifts it.
 
     A duplicate `test`, a missing `test`/`reason`/`owner`, an unreadable `until`
     and a malformed container are warnings: the additive lane every other
@@ -387,6 +419,7 @@ def _check_muted(manifest, index, today=None):
         return (f, w)
     today = _vocab.mute_today() if today is None else today
     bug_ids = set(index.get("bug_ids") or ())
+    closed = _closed_bugs(manifest)
     seen, dup = set(), []
     for i, entry in enumerate(muted):
         where = "meta.muted[%d]" % (i,)
@@ -407,6 +440,12 @@ def _check_muted(manifest, index, today=None):
                 "rules.muted.bug-unknown",
                 "%s: `bugId` %r names no bug in bugs[] - a mute must name the "
                 "bug tracking the failure it hides" % (where, bug)))
+        elif bug in closed:
+            w.append(_output.finding(
+                "rules.muted.bug-closed",
+                "%s: `bugId` %s is closed (%s), so the runner no longer "
+                "honours this mute and that suite's failure blocks again - %s"
+                % (where, bug, closed[bug], _unmute_command(entry.get("test")))))
         missing = [k for k in MUTE_FIELDS
                    if not (isinstance(entry.get(k), str) and entry[k].strip())]
         if missing:

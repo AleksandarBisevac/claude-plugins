@@ -8845,6 +8845,28 @@ def _cases(check):
               codeff == 2 and "no run with this id" in txtff
               and task_in(ff_mp, "P1.5") is None)
 
+        # ---- a torn ledger line: the run is not called absent ---------------
+        # It may be the very line the read lost, so the refusal names the
+        # file that could not be read in full, as --caught's does.
+        fl_proj, fl_mp = mk("ff-torn", ff_manifest())
+        _ff_ev.append_row(fl_proj, {
+            "v": 1, "runId": "RUN-FL", "ts": "2026-09-01T00:00:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "failed",
+            "steps": []})
+        _fl_ledger = _ff_ev.ledger_files(fl_proj)[-1]
+        with open(_fl_ledger, "a", encoding="utf-8") as _fl_fh:
+            _fl_fh.write('{"v": 1, "runId": "RUN-FL-LOST", "ts": "2026-09\n')
+        codefl, txtfl = run(
+            ["add", "Fix from a lost run", "--phase", "P1",
+             "--project-dir", fl_proj, "--failing-from", "RUN-FL-LOST"])
+        check("ff4b RED-FIRST: --failing-from a run not among the readable "
+              "rows, with a ledger line torn, is refused exit 2 naming the "
+              "file that could not be read in full - never 'no such run': %r"
+              % ((codefl, txtfl[:300]),),
+              codefl == 2 and os.path.basename(_fl_ledger) in txtfl
+              and "could not be read" in txtfl
+              and "is in the evidence ledger" not in txtfl)
+
         # ---- ALLOW CASE: a PASSED row is refused, exit 2 --------------------
         _ff_ev.append_row(ff_proj, {
             "v": 1, "runId": "RUN-GREEN", "ts": "2026-09-01T00:15:00Z",
@@ -9789,6 +9811,61 @@ def _cases(check):
               and "pkg_b/tests/test_c.py" in txtcc18
               and not any(e.get("lastCaught") for e in cp_coupling(am_mp))
               and cp_journal(am_proj, "coupling.caught") == [])
+
+        # ---- a row listing the suite as its OWN miss is no catch of it -----
+        # `full-gate.py` credits no catch off such a row; the verb must refuse
+        # it by the same reading (`_evidence_io.own_miss`), whichever of the
+        # runner's spelling or the plan's key the row recorded the miss under.
+        _cc_before_own = len(cp_journal(cc_proj, "coupling.caught"))
+        for _own_id, _own_spelled in (("RUN-CC-OWN", "tests/test_c.py"),
+                                      ("RUN-CC-OWN-REL", "test_c.py")):
+            _cp_ev.append_row(cc_proj, {
+                "v": 1, "runId": _own_id, "ts": "2026-09-13T00:00:00Z",
+                "scope": "full", "status": "failed",
+                "steps": [{"name": "test", "exit": 1,
+                           "failingSuites": [_own_spelled],
+                           "failingSuitesBasis": _cc_named}],
+                "selectionMiss": [{"test": _own_spelled, "phases": ["P2"],
+                                   "sources": ["src/c.ts"]}]})
+        codecc19, txtcc19 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught", "RUN-CC-OWN",
+             "--project-dir", cc_proj])
+        codecc19r, txtcc19r = run(
+            ["couple", "--test", "tests/test_c.py", "--caught",
+             "RUN-CC-OWN-REL", "--project-dir", cc_proj])
+        check("cc19 RED-FIRST: --caught off a full row whose own "
+              "selectionMiss lists the suite - under the plan's key or the "
+              "runner's own spelling - is refused exit 2, saying so, and "
+              "lastCaught stays where cc16 put it: %r"
+              % ((codecc19, txtcc19[:240], codecc19r, txtcc19r[:240]),),
+              codecc19 == 2 and "its own selection miss" in txtcc19
+              and codecc19r == 2 and "its own selection miss" in txtcc19r
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-10T00:00:00Z"
+              and len(cp_journal(cc_proj, "coupling.caught"))
+              == _cc_before_own)
+
+        # ---- a date-only ts is placed where the ledger places it -----------
+        # `_evidence_io.stamp_moment` reads `2026-09-20` as that day's start,
+        # the reading the ledger orders its rows by.
+        cc_row("RUN-CC-DAY", "2026-09-20", "full", ["tests/test_c.py"],
+               _cc_named)
+        codecc20, txtcc20 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught", "RUN-CC-DAY",
+             "--project-dir", cc_proj])
+        cc_row("RUN-CC-DAY-OLD", "2026-09-19", "full", ["tests/test_c.py"],
+               _cc_named)
+        codecc20b, txtcc20b = run(
+            ["couple", "--test", "tests/test_c.py", "--caught",
+             "RUN-CC-DAY-OLD", "--project-dir", cc_proj])
+        check("cc20 RED-FIRST: a full row stamped with a date alone is a "
+              "catch at that day's start (lastCaught 2026-09-20), and an "
+              "older date-only row after it writes nothing: %r"
+              % ((codecc20, txtcc20[:200], codecc20b, txtcc20b[:200],
+                  (cc_entry() or {}).get("lastCaught")),),
+              codecc20 == 0 and codecc20b == 0
+              and (cc_entry() or {}).get("lastCaught") == "2026-09-20"
+              and "nothing written" in txtcc20b)
 
         # ---- (cp) --basis-head is asked of git, exactly as `done --commit` -
         cp_projg, cp_mpg, cp_head = cp_repo("cp-git", base_manifest())

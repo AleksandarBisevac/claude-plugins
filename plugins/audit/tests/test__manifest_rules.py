@@ -1151,6 +1151,37 @@ def _cases_muted(record):
            and "None" not in nl_lines[0] and "--test" not in nl_lines[0]
            and "names no test" in nl_lines[0])
 
+    closed_lines = {}
+    for verdict in ("wontfix", "fixed"):
+        closed = _plan(_entry())
+        closed["bugs"][0]["status"] = verdict
+        f_cl, w_cl = M.validate(closed, today=day)
+        closed_lines[verdict] = (_codes(f_cl), _codes(w_cl),
+                                 [str(x) for x in w_cl if "muted" in str(x)])
+    record("mu8 RED-FIRST: a mute naming a bug that is CLOSED (a human "
+           "verdict, or fixed) is ONE bug-closed warning naming the status "
+           "and the unmute command, and no finding - mu1 is its allow case, "
+           "the same entry over an open bug saying nothing: %r"
+           % (closed_lines,),
+           all(closed_lines[v][0] == []
+               and closed_lines[v][1] == ["rules.muted.bug-closed"]
+               and "is closed (%s)" % (v,) in closed_lines[v][2][0]
+               and "audit-task.py unmute --test e2e/cart.spec.ts"
+               in closed_lines[v][2][0]
+               for v in ("wontfix", "fixed")))
+
+    by_task = _plan(_entry())
+    for task in by_task["phases"][0]["tasks"]:
+        if task.get("bugId") == "BUG-1":
+            task["status"] = "done"
+            task["commit"] = "a" * 40
+    _f_bt, w_bt = M.validate(by_task, today=day)
+    record("mu9 the bug is read by its EFFECTIVE status: stored in_progress, "
+           "its fix task done, it is closed (fixed) and the mute is warned: "
+           "%r" % ([str(x) for x in w_bt if "muted" in str(x)],),
+           "rules.muted.bug-closed" in _codes(w_bt)
+           and any("is closed (fixed)" in str(x) for x in w_bt))
+
     plain = M.validate(_valid_manifest(), today=day)
     record("mu6 ALLOW: `validate()` with a pinned day and no `meta.muted` is the "
            "same answer as without the pin - `today` changes nothing but the "

@@ -2814,15 +2814,15 @@ def _full_answer(full_rows, phase, git_root, declared, run):
     if newest_whole_bearing is not None:
         head = (newest_whole_bearing.get("testedState") or {}).get("head")
         return {"answer": _manifest_vocab.FULL_STATUS_PROVISIONAL,
-                "basis": ("the newest measured full run (%s, head %s) does "
-                         "not contain %s"
+                "basis": ("the newest whole-bearing full run (%s, head %s) "
+                         "does not contain %s"
                          % (newest_whole_bearing.get("runId"), head,
                             merged_head)),
                 "runId": newest_whole_bearing.get("runId")}
     if undated_whole_bearing is not None:
         head = (undated_whole_bearing.get("testedState") or {}).get("head")
         return {"answer": _manifest_vocab.FULL_STATUS_PROVISIONAL,
-                "basis": ("no measured full run carries a readable ts; run "
+                "basis": ("no whole-bearing full run carries a readable ts; run "
                          "%s (ts %r, head %s) does not contain %s"
                          % (undated_whole_bearing.get("runId"),
                             undated_whole_bearing.get("ts"), head,
@@ -2843,7 +2843,7 @@ def _full_answer(full_rows, phase, git_root, declared, run):
 # --- a failing suite no derived gate selected: the selection miss -------------
 # A PHASE SIGNED OFF ON A DERIVED GATE RAN A SUBSET OF THE SUITES, and the
 # third place runs all of them. A suite that fails there and that no derived
-# gate of the work merged since the last counting full run listed is a
+# gate of the work merged since the newest earlier measured full run listed is a
 # selection the derivation got wrong - which is only worth learning from when
 # the RUNNER named that suite. A tail of output is not a list of failing
 # suites, so a failure read only off one is said to be unlearned instead.
@@ -2930,6 +2930,188 @@ def resolve_named(spelling, candidates):
                   "names none of them" % (spelling, ", ".join(matches)))
 
 
+# --- a runner's spelling, pinned to one tracked path ---------------------------
+# A RUNNER NAMES A SUITE THE WAY IT SEES IT, from whatever directory it was
+# started in, while a derived gate, a coupling and a bug spell it from the
+# project root. Every reader that turns the first into the second pins it here,
+# onto the files git tracks, so no two readers can place one name on two paths
+# - and a name that fits several tracked suites is placed on none, with the
+# candidates said, rather than counted as whichever one a suffix happened to
+# reach first.
+def shell_unsafe(path):
+    """Whether `path` holds a control character -- a newline among them --
+    that a gate entry, which is one line of shell, cannot carry."""
+    return any(ord(c) < 32 or ord(c) == 127 for c in path)
+
+
+def project_relative(spelling, project):
+    """`(path, None)` -- `spelling` normalized and spelled from `project` --
+    or `(None, why)` when it names nothing inside the project.
+
+    NORMALIZED BEFORE ANYTHING READS IT, so `./test_old.py` is `test_old.py`
+    to the disk check and to the resolver alike. An ABSOLUTE spelling inside
+    the project becomes relative to it; one outside it is refused, because a
+    gate entry is written into a committed plan and a machine's own path does
+    not belong there. The directory is resolved through its symlinks and the
+    file name is not, so a suite that is itself a link still counts as the
+    project's.
+    """
+    if os.path.isabs(spelling):
+        root = os.path.realpath(project)
+        full = os.path.join(os.path.realpath(os.path.dirname(spelling)),
+                            os.path.basename(spelling))
+        try:
+            rel = _output.posix_rel(full, root)
+        except ValueError:
+            rel = full
+    else:
+        rel = os.path.normpath(spelling)
+    rel = rel.replace(os.sep, "/")
+    if rel == ".." or rel.startswith("../") or os.path.isabs(rel):
+        return None, ("%s lies outside the project, and a machine's own path "
+                      "is never written into a plan" % (spelling,))
+    if rel == ".":
+        return None, "%s names the project root, not a suite" % (spelling,)
+    return rel, None
+
+
+def suite_listing(project, run=None):
+    """`{"project", "tracked", "listingFailed"}` - what `pin_suite` pins
+    onto: every path `git ls-files` lists from `project`, already spelled
+    from the directory a gate runs in, or `tracked: None` and the sentence
+    saying why git could not list them. `run` is `_worktrees`' injectable
+    git runner.
+
+    ASKED ONCE PER READER, never once per name: every name one run printed
+    is pinned against the same tree. An unlisted tree is not an empty one,
+    so a listing failure is carried as a sentence rather than as `[]`.
+    """
+    code, said, err = _worktrees._runner(run)(project, ["ls-files", "-z"])
+    if code == 0:
+        return {"project": project, "listingFailed": None,
+                "tracked": [p for p in (said or "").split("\0") if p]}
+    return {"project": project, "tracked": None,
+            "listingFailed": ("the tracked files could not be listed (git "
+                              "ls-files: %s)" % ((err or "").strip()
+                                                 or "exit %s" % (code,)))}
+
+
+def _pin_relative(rel, listing):
+    """`pin_suite` for a spelling already made project-relative."""
+    on_disk = os.path.isfile(os.path.join(listing["project"], rel))
+    tracked = listing.get("tracked")
+    if tracked is None:
+        path, why = ((rel, None) if on_disk else
+                     (None, "%s is not on disk from the project root, and %s"
+                      % (rel, listing.get("listingFailed"))))
+    else:
+        path, why = resolve_named(rel, tracked + ([rel] if on_disk else []))
+    if path is not None and shell_unsafe(path):
+        path, why = None, ("%s resolves to %r, which holds a control "
+                           "character no one-line gate can carry" % (rel, path))
+    return path, why
+
+
+def pin_suite(spelling, listing):
+    """`(path, None)` - the ONE tracked path a runner's `spelling` names,
+    spelled from the project root - or `(None, why)` when it names none or
+    several. `listing` is `suite_listing`'s answer.
+
+    THE MATCH IS `resolve_named`'s over every tracked file, plus the
+    spelling itself when it exists from the root: a runner working from a
+    subdirectory prints `tests/x.test.js` for `pkg1/tests/x.test.js`, and a
+    sibling `pkg2/tests/x.test.js` makes that name two suites, so it pins to
+    neither. When git cannot list, a spelling that exists from the root is
+    kept as written - nothing is left that could show it a twin - and any
+    other is refused naming the listing failure. A path holding a control
+    character is refused rather than handed to a one-line shell gate.
+    """
+    if not isinstance(spelling, str) or not spelling.strip():
+        return None, "%r names no suite" % (spelling,)
+    rel, why = project_relative(spelling, listing["project"])
+    if rel is None:
+        return None, why
+    return _pin_relative(rel, listing)
+
+
+def pin_suites(suites, project, run=None):
+    """`(paths, None)` -- each suite a runner named, pinned by `pin_suite` --
+    or `(None, why)` when any one of them cannot be.
+
+    ONE UNRESOLVED SUITE REFUSES THEM ALL. A gate narrowed to the suites that
+    did resolve could go green while a failure the run named is never run,
+    so the reason names every suite that could not be pinned. A spelling
+    outside the project is refused before git is asked anything at all.
+    """
+    rels, refused = [], []
+    for spelling in suites:
+        rel, why = project_relative(spelling, project)
+        if rel is None:
+            refused.append(why)
+        else:
+            rels.append(rel)
+    if refused:
+        return None, ("a suite the run named could not be pinned to one path "
+                      "from the project root: %s" % ("; ".join(refused),))
+    listing = suite_listing(project, run)
+    pinned = []
+    for rel in rels:
+        path, why = _pin_relative(rel, listing)
+        if path is None:
+            refused.append(why)
+        else:
+            pinned.append(path)
+    if refused:
+        return None, ("a suite the run named could not be pinned to one path "
+                      "from the project root: %s" % ("; ".join(refused),))
+    return pinned, None
+
+
+def _suite_names(name, listing):
+    """`name` and the tracked path it pins to, when it pins to one."""
+    path, _why = pin_suite(name, listing)
+    return set([name] + ([path] if path is not None else []))
+
+
+def same_suite(one, other, listing):
+    """Whether two spellings name one suite: they are equal, or one pins
+    (`pin_suite`) to the other, or both pin to the same tracked path.
+
+    NEVER A SUFFIX ALONE. `listed_by` would call `tests/x.test.js` and
+    `pkg2/tests/x.test.js` one suite while the runner meant
+    `pkg1/tests/x.test.js`; only the pinned path can say which one failed.
+    """
+    return bool(_suite_names(one, listing) & _suite_names(other, listing))
+
+
+def own_miss(row, names, listing):
+    """The `selectionMiss` entry of `row` naming the suite one of `names`
+    names (`same_suite`), or None.
+
+    THE ONE READING OF "THIS RUN LISTS THAT SUITE AS ITS OWN MISS", shared by
+    `full-gate.py`'s catch credit and `audit-task.py couple --caught`: a row
+    saying no derived gate ran a suite cannot also be the run a coupling of
+    that suite caught something in, and two copies of the comparison are
+    how one verb came to credit a catch the other refused.
+    """
+    wanted = [n for n in names or [] if isinstance(n, str) and n]
+    for miss in row.get("selectionMiss") or []:
+        test = miss.get("test") if isinstance(miss, dict) else None
+        if not isinstance(test, str) or not test:
+            continue
+        if any(same_suite(test, name, listing) for name in wanted):
+            return miss
+    return None
+
+
+def unreadable_names(ledger, project):
+    """Each ledger file `read_rows` could not read in full (`ledger` is its
+    answer), spelled from `project` - the names a reader owes when a run it
+    looked for may be on a line that read lost."""
+    return [_output.posix_rel(p, project) if os.path.isabs(p) else p
+            for p in ledger.get("unreadableFiles") or []]
+
+
 def _ancestry(git_root, merged_head, head, run):
     """`(answer, unasked_sentence)` - `_worktrees.merged_into` of `merged_head`
     into `head`, with the sentence to report when git could not answer."""
@@ -3001,14 +3183,20 @@ def _distinct_files(phases):
 
 
 def selection_miss(steps, phases, head, git_root, earlier_rows, full_commands,
-                   run=None):
+                   run=None, unreadable=None, listing=None):
     """`{"misses", "unnamed", "phases", "underived", "since", "unasked",
     "reasons"}` - the post-pass a full run's steps are put through. Reads
-    and returns; writes nothing.
+    and returns; writes nothing but the one `git ls-files` it asks.
 
     `misses` is `[{test, phases, sources}]`: each suite the runner NAMED as
-    failing (`named_failing_suites`) that no `testGateDerived.tests` of the
-    counted phases lists. A phase is counted when it is merged
+    failing (`named_failing_suites`), pinned to its one tracked path
+    (`pin_suite` over `listing`, `suite_listing(git_root, run)` when None),
+    that no `testGateDerived.tests` of the counted phases lists - `test` is
+    that pinned path. A name that pins to no tracked path, or to several,
+    is never counted as listed: it is `unasked`, the subject the runner's
+    own spelling and the sentence naming the candidates, since a suffix
+    match would let a sibling package's suite answer for the one that
+    failed. A phase is counted when it is merged
     (`merged_phase`), the run's `head` contains its `mergedHead`, the newest
     earlier measured full run (`newest_measured_full_run` over
     `earlier_rows`, `since`) does not, and it carries a derived gate -
@@ -3024,12 +3212,25 @@ def selection_miss(steps, phases, head, git_root, earlier_rows, full_commands,
     `unasked`, for a bounding run with no head) says why. `unnamed` holds
     the basis of every failed step whose runner named no suite; `unasked`
     holds `[subject, sentence]` for every ancestry that could not be put.
+
+    A LEDGER READ WITH LOSSES BOUNDS NOTHING. `unreadable` names each file
+    `read_rows` could not read in full (`unreadable_names`); the newest
+    measured run may sit on the line that read lost, and bounding by the
+    next one down would widen "the work since" in silence - so no miss is
+    asked, and `reasons` names the files.
     """
     named = named_failing_suites(steps)
     result = {"misses": [], "unnamed": unnamed_failure_bases(steps),
               "phases": [], "underived": [], "since": None, "unasked": [],
               "reasons": []}
     if not named:
+        return result
+    if unreadable:
+        result["reasons"].append(
+            "the evidence ledger could not be read in full (%s), so the "
+            "newest earlier measured full run may be on a line that read "
+            "lost and no bound on the work since can be trusted; repair it "
+            "and run again" % (", ".join(unreadable),))
         return result
     if not head:
         result["reasons"].append("this run recorded no head, so what it "
@@ -3076,11 +3277,19 @@ def selection_miss(steps, phases, head, git_root, earlier_rows, full_commands,
     listed = []
     for phase in counted:
         tests = phase["testGateDerived"].get("tests")
-        listed.extend(t for t in (tests or []) if isinstance(t, str))
+        listed.extend(project_relative(t, git_root)[0] or t
+                      for t in (tests or []) if isinstance(t, str))
     sources = _distinct_files(counted)
+    listing = suite_listing(git_root, run) if listing is None else listing
+    missed = []
+    for spelling in named:
+        path, why = pin_suite(spelling, listing)
+        if path is None:
+            result["unasked"].append([spelling, why])
+        elif path not in listed and path not in missed:
+            missed.append(path)
     result["misses"] = [{"test": path, "phases": list(result["phases"]),
-                         "sources": list(sources)}
-                        for path in named if not listed_by(path, listed)]
+                         "sources": list(sources)} for path in missed]
     return result
 
 

@@ -24,7 +24,121 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P81-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py:3083 (selection_miss, listed_by)",
+        "issue": "A failed suite the runner names relative to its own directory counts as listed when any derived-gate test ends with that spelling, even a sibling package's suite, so a real selection miss prints nothing (driven live: vitest --root pkg1, derived gate listed pkg2/tests/x.test.js, no SELECTION MISS line).",
+        "resolution": "Pin each named spelling to one tracked path before the listed test (the resolver --failing-from uses, moved to _evidence_io); a spelling that pins to none or several prints a 'SELECTION MISS not asked of <spelling>' reason instead of counting as listed."
+      },
+      {
+        "id": "P81-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/full-gate.py:338-353 (learning_plan); run-test-gate.py:4390-4427 (_miss_remedy)",
+        "issue": "A selection miss is coupled and bug-filed under the runner's verbatim spelling, a path git may not track, while the catch path in the same run resolves the same name (driven live: coupling for tests/x.test.js that doctor then reports as untracked; _couple_skip misses the root-spelled entry).",
+        "resolution": "Resolve each miss's test to one tracked path before couple/bug-add and in the printed remedy; on none or several, file the bug, couple nothing, and name the candidates."
+      },
+      {
+        "id": "P81-R3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:3055-3116 (mute_decision); _manifest_rules.py:354 (_check_muted)",
+        "issue": "A mute holds inside the gate of its own bug's fix task, so that gate cannot prove the fix, and the validator stays silent on a mute whose bug is effectively closed.",
+        "resolution": "The runner does not honour a mute whose bug is the bug of the task under test, or whose bug is effectively closed; the validator warns on a mute naming a closed bug with the unmute command; commands/bug.md says so."
+      },
+      {
+        "id": "P81-R4",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:4526-4534 (_run_full post-pass)",
+        "issue": "selection_miss is handed only readable rows; a lost line or file holding the newest measured run silently moves the bound to an older run, widening 'merged since' with nothing printed.",
+        "resolution": "When the ledger is not fully readable, ask no miss and print a 'SELECTION MISS not asked' reason naming the files, as _ledger_run does."
+      },
+      {
+        "id": "P81-R5",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/import-evidence.py:361,388-392",
+        "issue": "--project-dir defaults to the cwd, so an import run outside the project writes the shard under <cwd>/docs/audit/evidence and prints a --learn-from command pairing the manifest's project with the cwd (driven live: coupling and bug written into a plan whose ledger lacks the basis run).",
+        "resolution": "Without --project-dir take the project from the manifest path, as full-gate does; refuse when the manifest is not under --project-dir; a case imports from another directory."
+      },
+      {
+        "id": "P81-R6",
+        "severity": "med",
+        "file": "CHANGELOG.md:471",
+        "issue": "The entry says every reader of the evidence ledger orders rows by one moment; _gate_derive.newest_red_phase_row and _evidence_view._rows_for still compare ts as text (recorded for their own phase).",
+        "resolution": "Narrow the sentence to the readers that do (the ledger module and the verdict binding) and leave the remaining sites to their recorded fault."
+      },
+      {
+        "id": "P81-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/_doctor_trail.py:1602-1630 (_measured_run_moments)",
+        "issue": "A full run whose coupled suite failed but was muted comes out passed and ages that coupling as 'caught nothing', so doctor proposes uncoupling a suite that failed every run.",
+        "resolution": "A row whose muted list names the coupling's test does not age it; case."
+      },
+      {
+        "id": "P81-R8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:8252-8307 (_caught_refusal)",
+        "issue": "couple --caught credits a row whose own selectionMiss lists the suite, which full-gate refuses; one question, two answers.",
+        "resolution": "One own-miss helper in _evidence_io used by learning_plan and _caught_refusal (exit 2)."
+      },
+      {
+        "id": "P81-R9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:2271-2279; full-gate.py:258-264 (find_row)",
+        "issue": "--failing-from and full-gate's red-branch find_row say a run is absent when a ledger file holding it could not be read.",
+        "resolution": "Both name the unreadable files, as _ledger_run and _missing_row do."
+      },
+      {
+        "id": "P81-R10",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/_doctor_trail.py:1440; audit-doctor.py:261-265; run-test-gate.py:4527-4528; _evidence_io.py:2817,2825",
+        "issue": "Comments and full_status basis strings still say whole-bearing where the code reads measured runs, or say measured where they name the whole-bearing run.",
+        "resolution": "Reword each to the rule it reads."
+      },
+      {
+        "id": "P81-R11",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/_doctor_trail.py:1596,1622; audit-task.py:8279,8377-8378",
+        "issue": "Doctor ageing and couple --caught read row ts with parse_ts while the ledger orders by stamp_moment; they disagree on a date-only stamp.",
+        "resolution": "Read row ts through _evidence_io.stamp_moment in both."
+      },
+      {
+        "id": "P81-R12",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:4390-4427 (_miss_remedy); README.md:1612",
+        "issue": "The SELECTION MISS remedy prints bare audit-task.py commands that a shell cannot run as printed, unlike the import's printed command.",
+        "resolution": "Print python3 with the shell-quoted absolute path through _loader.script_path, as learn_from_commands does."
+      },
+      {
+        "id": "P81-R13",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/_doctor_trail.py:1639-1650 (_relearn_fix)",
+        "issue": "The printed relearn command lacks --basis-head, which couple requires (exit 2).",
+        "resolution": "Add --basis-head (and --phases) to the template; case."
+      },
+      {
+        "id": "P81-R14",
+        "severity": "low",
+        "file": "plugins/audit/commands/task.md:678-683",
+        "issue": "The couple --caught refused list omits the ambiguity refusal.",
+        "resolution": "Add it."
+      },
+      {
+        "id": "P81-R15",
+        "severity": "low",
+        "file": "plugins/audit/commands/review.md:64-66",
+        "issue": "Tells the reader to read a full-status line the runner does not print.",
+        "resolution": "Point at /audit:status's tests column and /audit:doctor's full run row."
+      },
+      {
+        "id": "P81-R16",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:1971,2009",
+        "issue": "Two inline copies of listed_by's suffix rule remain (preexisting).",
+        "resolution": "Use _evidence_io.listed_by."
+      }
+    ],
+    "outcome": "[findings: 16 - 0 high, 6 med, 10 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -935,6 +1049,159 @@
         "at": "2026-09-27T20:36:54Z",
         "basis": "delivered as described, and widened on the executor's finding so gate_entry_paths and path_scoped_sibling read an entry's words through the same reader as repointed"
       }
+    },
+    {
+      "id": "P81.16-j7p",
+      "title": "a runner's suite name is pinned once, and every third-place reader uses the pinned path, the whole ledger and one own-miss rule",
+      "status": "in_progress",
+      "description": "Phase review fix task. Pin a runner's suite spelling to one tracked path in one _evidence_io resolver (moved from audit-task's --failing-from) and use it in selection_miss's listed test, full-gate's couple/bug-add, the printed SELECTION MISS remedy (python3 plus absolute path) and --failing-from; one own-miss helper for full-gate and couple --caught; selection_miss asks nothing and says why when the ledger is not fully readable; --failing-from and find_row name lost files; couple --caught reads ts through stamp_moment; the runner does not honour a mute whose bug is the task's own bug or is closed, and the validator warns on a mute naming a closed bug; stale whole-bearing/measured wording in these files; run-test-gate's inline suffix-rule copies use listed_by.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/full-gate.py",
+        "plugins/audit/tests/test_full_gate.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "plugins/audit/tests/test__manifest_rules.py",
+        "plugins/audit/tests/test_validate_manifest.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__evidence_io.py: repro that FAILS on current code - a runner-relative failing suite beside a sibling package's same-named derived suite yields a SELECTION MISS or a not-asked reason, never silence"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T21:50:22Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T22:35:08Z.e1dad8",
+        "status": "passed",
+        "at": "2026-09-27T22:35:08Z"
+      }
+    },
+    {
+      "id": "P81.17-j7p",
+      "title": "the import reads its project from the manifest, and the doctor ages and repairs couplings the verbs accept",
+      "status": "in_progress",
+      "description": "Phase review fix task. import-evidence takes the project from the manifest when --project-dir is not given and refuses a manifest outside --project-dir; a full run whose muted list names a coupling's test does not age it; doctor reads row ts through _evidence_io.stamp_moment; the printed relearn command carries --basis-head (and --phases) so couple accepts it; audit-doctor and _doctor_trail comments say measured where they read measured runs; commands/task.md lists couple --caught's ambiguity refusal.",
+      "files": [
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/tests/test_audit_doctor.py",
+        "plugins/audit/scripts/governance/import-evidence.py",
+        "plugins/audit/tests/test_import_evidence.py",
+        "plugins/audit/commands/task.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_import_evidence.py: repro that FAILS on current code - an import run from outside the project writes the shard under the project the manifest names and prints a --learn-from command whose project is that one"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T21:50:22Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T22:36:29Z.3c4187",
+        "status": "passed",
+        "at": "2026-09-27T22:36:29Z"
+      }
+    },
+    {
+      "id": "P81.18-j7p",
+      "title": "the phase's documents say what the review fixes made true",
+      "status": "pending",
+      "description": "Phase review fix task (docs). CHANGELOG: narrow the one-moment-order sentence to the readers that order by moment; entries for the pinned suite spelling, the ledger-completeness rule in selection_miss, the mute that does not hold in its own bug's fix task, the import's project from the manifest. review.md: point at /audit:status's tests column and /audit:doctor's full run row instead of a full-status line the runner does not print. bug.md: a muted suite is not quarantined inside its own fix task's gate. README and orchestrator.md: the SELECTION MISS remedy spelling and the import's project rule, as the committed code prints them.",
+      "files": [
+        "CHANGELOG.md",
+        "plugins/audit/README.md",
+        "plugins/audit/commands/review.md",
+        "plugins/audit/commands/bug.md",
+        "plugins/audit/reference/orchestrator.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P81.16-j7p",
+        "P81.17-j7p"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-27T14:08:52Z"

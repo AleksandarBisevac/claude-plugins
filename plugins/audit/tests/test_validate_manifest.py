@@ -738,6 +738,21 @@ def _cases_muted(record, path):
            code_ok == 0
            and _muted_lines(f_ok) == [] and _muted_lines(w_ok) == [])
 
+    closed = _muted_plan(_mute())
+    closed["bugs"][0]["status"] = "wontfix"
+    f_cl, w_cl = M.validate(closed)
+    code_cl, out_cl = _cli(closed)
+    cl_lines = [x for x in w_cl if "meta.muted[0]" in x and "closed" in x]
+    record("c48 RED-FIRST: a mute naming a CLOSED bug is a WARNING, never a "
+           "finding - exit 0 - and the one warning names the bug, its status "
+           "and the unmute command, and the command prints it: %r"
+           % ((code_cl, cl_lines),),
+           code_cl == 0 and _muted_lines(f_cl) == []
+           and len(cl_lines) == 1
+           and "BUG-1 is closed (wontfix)" in cl_lines[0]
+           and "unmute --test e2e/cart.spec.ts" in cl_lines[0]
+           and "BUG-1 is closed (wontfix)" in (out_cl or ""))
+
     absent = _valid_manifest()
     f_ab, w_ab = M.validate(absent)
     record("c47 ALLOW: no meta.muted at all says nothing about it - absent "

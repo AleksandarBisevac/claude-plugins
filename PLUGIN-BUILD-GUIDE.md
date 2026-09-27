@@ -336,7 +336,7 @@ L3:
   _doctor_hygiene -> _branch, _locks, _output, _worktrees
   _evidence_view -> _evidence_io, _manifest_io, _output, _report_html, _status_facts
   _gate_derive -> _evidence_io, _manifest_io, _manifest_phases, _manifest_vocab, _output
-  _manifest_rules -> _branch, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output
+  _manifest_rules -> _branch, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output, _status_facts
   _panel_discovery -> _help, _manifest_io, _output, _policy
   _panel_paths -> _config_rules, _loader, _manifest_io, _output, _status_facts
   _panel_settings -> _config_rules, _output
@@ -349,7 +349,7 @@ L4:
   _doctor_completions -> _commit_trail, _doctor_report, _evidence_io, _journal_io, _manifest_vocab, _output
   _doctor_policy -> _branch, _doctor_report, _manifest_io, _output, _worktrees
   _doctor_setup -> _claude_home, _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _merge_install, _output, _status_facts, _warning_groups
-  _doctor_trail -> _doctor_report, _evidence_io, _fmt, _journal_io, _manifest_io, _manifest_vocab, _output, _usage_core, _worktrees
+  _doctor_trail -> _doctor_report, _evidence_io, _fmt, _journal_io, _manifest_io, _manifest_vocab, _output, _worktrees
   _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _locks, _manifest_crossrefs, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
   _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _manifest_vocab, _output, _panel_paths, _priority, _status_facts, _worktrees
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
@@ -381,7 +381,7 @@ L7:
   audit-logs -> _gate_feed, _output
   audit-lookup -> _evidence_io, _journal_io, _manifest_io, _manifest_vocab, _output
   audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
-  audit-task -> _areas, _branch, _commit_trail, _evidence_io, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _usage_core, _verdict_binding, _warning_groups, _worktrees
+  audit-task -> _areas, _branch, _commit_trail, _evidence_io, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
@@ -392,10 +392,10 @@ L7:
   derive-phase-gate -> _evidence_io, _gate_derive, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
-  full-gate -> _evidence_io, _loader, _manifest_io, _output, _status_facts
+  full-gate -> _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
   gen-demo-manifest -> _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
   gen-demo-usage -> _demo_cast, _loader, _output
-  import-evidence -> _evidence_io, _journal_io, _loader, _manifest_io, _output
+  import-evidence -> _evidence_io, _journal_io, _loader, _manifest_io, _output, _panel_write
   manage-worktrees -> _branch, _manifest_io, _output, _worktrees
   materialize-proposal -> _manifest_io, _output, _proposals, _warning_groups
   merge-manifest -> _id_refs, _id_shape, _locks, _manifest_io, _manifest_merge, _manifest_rules, _merge_install, _output
@@ -412,7 +412,7 @@ L7:
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
-  run-test-gate -> _evidence_io, _fmt, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _proc_group, _tree_stamp
+  run-test-gate -> _evidence_io, _fmt, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _status_facts, _tree_stamp
   set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
   stamp-verification -> _locks, _manifest_io, _output, _proc_group, _tree_stamp
   validate-config -> _config_rules, _output
@@ -3105,6 +3105,21 @@ produced yet, or none at all, is red rather than a pass nobody measured. The mea
 above, `full-gate.py`'s `--learn-from` refusal and `import-evidence.py`'s printed command all ask
 it rather than comparing the word themselves.
 
+**`pin_suite()` is the one place a runner's spelling of a suite becomes a path.** A runner names
+a suite from whatever directory it was started in, and a derived gate, a coupling and a bug spell
+it from the project root. `suite_listing()` asks `git ls-files` once from the project, and
+`pin_suite()` normalizes the spelling (`project_relative()`: an absolute one inside the project
+becomes relative, one outside it is refused), then keeps the ONE tracked path `resolve_named()`
+matches — a spelling two sibling packages both end in pins to neither, and says so naming them.
+Where git cannot list, a spelling on disk from the root is kept as written and any other is
+refused naming the listing failure; a path holding a control character is refused
+(`shell_unsafe()`). `pin_suites()` is the all-or-none form `audit-task.py add --failing-from`
+narrows a fix task's gate with. `selection_miss()` pins each named suite before asking whether a
+derived gate listed it, so a name that pins to nothing is a `SELECTION MISS not asked of` line
+rather than a listed suite; `full-gate.py` pins each miss before `couple` and `bug-add`; and
+`own_miss()` is the one reading of "this row lists that suite as its own miss", which
+`full-gate.py`'s catch credit and `couple --caught`'s refusal both ask.
+
 ### `plugins/audit/scripts/governance/_gate_derive.py`
 The gate helpers' one home, and a pure `derive()`.
 
@@ -4251,7 +4266,9 @@ name the run gave that fits several coupled tests (`_evidence_io.resolve_named`)
 them. It never creates an entry (a test with none is refused, exit 2), never changes `sources` or
 `basis` (`--sources`/`--basis-run`/`--basis-head`/`--phases` beside it are refused), and never
 moves `lastCaught` back: a catch at or before the recorded one, compared as moments through
-`_usage_core.parse_ts`, writes nothing and exits 0 saying so. Journaled as `coupling.caught`.
+`_evidence_io.stamp_moment`, writes nothing and exits 0 saying so. A row whose own
+`selectionMiss` lists the test (`_evidence_io.own_miss`) is refused, exit 2, as `full-gate.py`
+credits it no catch. Journaled as `coupling.caught`.
 
 `bug-add "<title>" --severity low|med|high --description TEXT` (with optional `--files`,
 `--repro`, `--expected` and `--actual`) is the only writer `/audit:bug add` uses for `bugs[]`: it

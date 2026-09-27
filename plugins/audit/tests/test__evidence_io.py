@@ -2584,6 +2584,76 @@ def _cases(check):
     _narrowed_shadow_cases(check)
     _selection_miss_row_cases(check)
     _resolve_named_cases(check)
+    _pin_suite_cases(check)
+
+
+def _pin_suite_cases(check):
+    """(ps) one tracked path for a runner's spelling, and the one own-miss
+    reading every third-place reader shares."""
+    tmp = _harness.fixture_root("audit-evidence-pin-")
+    try:
+        tracked = ["pkg1/tests/x.test.js", "pkg2/tests/x.test.js",
+                   "backend/tests/test_x.py"]
+        listing = {"project": tmp, "tracked": tracked, "listingFailed": None}
+        got = [M.pin_suite(s, listing) for s in
+               ("tests/x.test.js", "test_x.py", "./backend/tests/test_x.py",
+                "../elsewhere.py", "tests/none.py")]
+        check("ps1 RED-FIRST: a spelling two tracked siblings end in pins to "
+              "NEITHER, naming both; one only one tracked path ends in pins "
+              "to it; a normalized root spelling pins to itself; a path "
+              "outside the project and a name nothing tracks pin to nothing, "
+              "each with its reason: %r" % (got,),
+              got[0][0] is None and "pkg1/tests/x.test.js" in got[0][1]
+              and "pkg2/tests/x.test.js" in got[0][1]
+              and got[1] == ("backend/tests/test_x.py", None)
+              and got[2] == ("backend/tests/test_x.py", None)
+              and got[3][0] is None and "outside the project" in got[3][1]
+              and got[4][0] is None and "no candidate path" in got[4][1])
+        unlisted = {"project": tmp, "tracked": None,
+                    "listingFailed": "the tracked files could not be listed"}
+        os.makedirs(os.path.join(tmp, "tests"))
+        with open(os.path.join(tmp, "tests", "on_disk.py"), "w") as fh:
+            fh.write("")
+        check("ps2 where git cannot list, a spelling on disk from the root "
+              "is kept as written and any other is refused NAMING the listing "
+              "failure - an unlisted tree is not an empty one",
+              M.pin_suite("tests/on_disk.py", unlisted)
+              == ("tests/on_disk.py", None)
+              and "could not be listed"
+              in (M.pin_suite("tests/gone.py", unlisted)[1] or ""))
+        check("ps3 same_suite: equal, or pinned to one tracked path - never a "
+              "suffix alone, so the relative spelling of pkg1's suite is not "
+              "pkg2's",
+              M.same_suite("test_x.py", "backend/tests/test_x.py", listing)
+              and M.same_suite("tests/x.test.js", "tests/x.test.js", listing)
+              and not M.same_suite("tests/x.test.js", "pkg2/tests/x.test.js",
+                                   listing))
+        row = {"selectionMiss": [{"test": "test_x.py"}, "junk", {}]}
+        check("ps4 RED-FIRST: own_miss finds the miss a row recorded under "
+              "the runner's spelling for the plan's key, and none for a "
+              "suite the row does not list: %r"
+              % ((M.own_miss(row, ["backend/tests/test_x.py"], listing),
+                  M.own_miss(row, ["pkg1/tests/x.test.js"], listing)),),
+              M.own_miss(row, ["backend/tests/test_x.py"], listing)
+              == {"test": "test_x.py"}
+              and M.own_miss(row, ["pkg1/tests/x.test.js"], listing) is None
+              and M.own_miss({}, ["test_x.py"], listing) is None)
+        ledger = {"unreadableFiles": [os.path.join(tmp, "docs", "e.jsonl"),
+                                      "rel.jsonl"]}
+        check("ps5 unreadable_names spells each lost file from the project",
+              M.unreadable_names(ledger, tmp) == ["docs/e.jsonl", "rel.jsonl"]
+              and M.unreadable_names({}, tmp) == [])
+        ok, bad = (M.pin_suites(["test_x.py"], tmp, run=lambda *_a, **_k: (
+                       0, "backend/tests/test_x.py\0", "")),
+                   M.pin_suites(["test_x.py", "tests/x.test.js"], tmp,
+                                run=lambda *_a, **_k: (
+                                    0, "\0".join(tracked) + "\0", "")))
+        check("ps6 pin_suites pins every suite or none, naming each it could "
+              "not: %r" % ((ok, bad),),
+              ok == (["backend/tests/test_x.py"], None)
+              and bad[0] is None and "tests/x.test.js names each of" in bad[1])
+    finally:
+        _harness.remove_tree(tmp)
 
 
 def _resolve_named_cases(check):
@@ -3307,9 +3377,11 @@ def _full_status_cases(check):
                                run=_fake_git(
                                    {"merge-base --is-ancestor": (1, "", "")}))
         check("fs5 a whole-bearing run whose head does not contain mergedHead "
-              "is PROVISIONAL, naming that run: %r" % (res_un,),
+              "is PROVISIONAL, naming that run AS whole-bearing - the rule "
+              "the walk chose it by, not 'measured': %r" % (res_un,),
               res_un["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
-              and "run-unrelated" in res_un["basis"])
+              and res_un["basis"].startswith(
+                  "the newest whole-bearing full run (run-unrelated, "))
 
         # --- RED-FIRST: a dirty tree certifies nothing --------------------------
         dirty_row = _fs_row("run-dirty", "2026-01-02T00:00:00Z", repo["second"],
@@ -3541,7 +3613,9 @@ def _full_status_cases(check):
               and res_only["runId"] == "run-undated"
               and res_only.get("wholeRunId") is None
               and res_only.get("wholeRunTs") is None
-              and "never been recorded" not in res_only["basis"])
+              and "never been recorded" not in res_only["basis"]
+              and res_only["basis"].startswith(
+                  "no whole-bearing full run carries a readable ts"))
 
         contains = _fake_git({"merge-base --is-ancestor": (0, "", "")})
         res_und_whole = M.full_status([undated], phase, repo["root"],

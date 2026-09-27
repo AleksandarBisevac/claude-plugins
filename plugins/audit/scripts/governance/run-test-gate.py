@@ -142,6 +142,9 @@ import _fmt  # noqa: E402  (human_duration: a recorded durationMs, in the one sp
 import _loader  # noqa: E402  (load_hooks_config: logs_dir/ensure_local_dir, for --own's
 #                              raw log - the same self-ignoring local directory every
 #                              hook already makes state and logs under)
+import _status_facts  # noqa: E402  (CLOSED_BUG: the one reading of "not open", for a
+#                                    mute whose bug is closed)
+import _panel_write  # noqa: E402  (project_of_manifest: the project a named manifest is in)
 
 E_OK, E_FAIL, E_ASK = 0, 1, 2
 
@@ -1968,9 +1971,7 @@ def suite_breadth(task_files, named):
                     and not any(seg in _VENDOR_DIRS for seg in _segments(n)))
 
     def _theirs(path):
-        return (any(path == f or path.endswith("/" + f) or f.endswith("/" + path)
-                    for f in owned)
-                or _subject_of(path) in stems)
+        return _ev.listed_by(path, owned) or _subject_of(path) in stems
 
     extra = [n for n in suites if not _theirs(n)]
     if not extra:
@@ -2006,9 +2007,7 @@ def _names_declared(f, named, subjects):
     not named by the run" about a file the run named exactly.
     """
     path = _vocab._strip_line_suffix(f)
-    return (any(n == path or n.endswith("/" + path) or path.endswith("/" + n)
-                for n in named)
-            or _declared_stem(f) in subjects)
+    return _ev.listed_by(path, named) or _declared_stem(f) in subjects
 
 
 def derived_step_gap(step, listed):
@@ -2793,6 +2792,42 @@ def declared_mutes(manifest):
     return list(muted) if isinstance(muted, list) else []
 
 
+def withheld_mutes(manifest, task_id):
+    """`{bugId: why}` - each bug whose mute this run may not honour, and the
+    sentence saying why.
+
+    A MUTE NEVER HOLDS INSIDE THE GATE OF ITS OWN BUG'S FIX TASK. The bug
+    whose `taskId` is the task under test (`--task`) is the failure that
+    task exists to clear, and a gate that quarantined it would go green
+    whether the fix worked or not - the one verdict the task is graded on.
+
+    NOR ONCE ITS BUG IS CLOSED. A mute is justified by an open bug; one whose
+    EFFECTIVE status (`_manifest_io.effective_bug_status`) is in
+    `_status_facts.CLOSED_BUG` has nothing left to justify it, and the
+    validator warns about the entry with the command that lifts it.
+
+    Every other mute is decided exactly as before, by `mute_decision`.
+    """
+    by_id = _mio.tasks_by_id(manifest if isinstance(manifest, dict) else {})
+    withheld = {}
+    for bug in (manifest or {}).get("bugs") or []:
+        if not isinstance(bug, dict) or not bug.get("id"):
+            continue
+        bug_id = str(bug["id"])
+        status = _mio.effective_bug_status(bug, by_id)
+        if task_id is not None and bug.get("taskId") == task_id:
+            withheld[bug_id] = (
+                "not honoured: bug %s is the one task %s fixes, and a mute "
+                "inside that task's own gate would hide the failure the fix "
+                "must be seen to clear" % (bug_id, task_id))
+        elif status in _status_facts.CLOSED_BUG:
+            withheld[bug_id] = (
+                "not honoured: bug %s is closed (%s), so the quarantine it "
+                "justified is over - lift it with audit-task.py unmute"
+                % (bug_id, status))
+    return withheld
+
+
 def declared_preamble(manifest):
     """`meta.nodePreamble` when it is a string, else None."""
     meta = manifest.get("meta") if isinstance(manifest, dict) else None
@@ -3052,10 +3087,15 @@ def mute_ineligible(command, code, text, preamble=None, runners=None):
     return None
 
 
-def mute_decision(step, text, entries, today, preamble=None, runners=None):
+def mute_decision(step, text, entries, today, preamble=None, runners=None,
+                  withheld=None):
     """`(honoured, refused, unmatched)` - the mutes that excuse this step, the
     ones that name one of its failing suites and may not, and the ones that
     named no path the runner blamed at all.
+
+    `withheld` is `withheld_mutes`' answer: an entry whose `bugId` it holds
+    is refused with that sentence as its `why`, exactly as an expired one
+    is, whatever its `until` says.
 
     `honoured` is non-empty ONLY when the whole step is excused: a step
     with one failing file no live entry names fails exactly as it did before
@@ -3091,7 +3131,10 @@ def mute_decision(step, text, entries, today, preamble=None, runners=None):
             if _norm(entry.get("test")) != path:
                 continue
             until = _vocab.mute_until(entry.get("until"))
-            if until is None:
+            held_back = (withheld or {}).get(str(entry.get("bugId")))
+            if held_back:
+                stale.append(dict(_mute_record(entry), why=held_back))
+            elif until is None:
                 stale.append(dict(_mute_record(entry), why=MUTE_UNREADABLE))
             elif _vocab.mute_expired(until, today):
                 stale.append(dict(_mute_record(entry), why=MUTE_EXPIRED))
@@ -3341,7 +3384,8 @@ def observed_step(name, command, code, text, facts, duration_ms):
 
 def run_gate(project, commands, runner=None, owns=None, timeout=None,
              recorded=None, task_scope=False, keep_text=False,
-             derived_check=None, muted=None, today=None, preamble=None):
+             derived_check=None, muted=None, today=None, preamble=None,
+             withheld=None):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
     A dict rather than an exit code, for `verify-invariants.py`'s reason: a
@@ -3381,6 +3425,8 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     expiry is graded against, and None asks `_manifest_vocab.mute_today`
     rather than choosing a clock here. `preamble` is `meta.nodePreamble`,
     read off a command before the one-runner rule asks about separators.
+    `withheld` is `withheld_mutes`' `{bugId: why}`, the mutes this run may
+    not honour whatever their `until`.
     `res["muted"]` is every mute that excused a step, `[]` when none did.
     """
     runner = runner or _shell
@@ -3501,8 +3547,8 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
             # LAST, AFTER EVERY OUTCOME IS SETTLED: a mute excuses a measured
             # failure and nothing else, so a step any arm above graded
             # `could-not-run` is never one it may touch.
-            honoured, refused, unmatched = mute_decision(step, text, muted,
-                                                         today, preamble)
+            honoured, refused, unmatched = mute_decision(
+                step, text, muted, today, preamble, withheld=withheld)
             if honoured:
                 step["muted"] = honoured
             if refused:
@@ -4387,7 +4433,7 @@ def _record_full_run(project, args, res, commands, run_id, out=print):
     return {"recorded": True, "path": recorded["path"]}
 
 
-def _miss_remedy(miss, run_id, head):
+def _miss_remedy(miss, run_id, head, manifest_path, project):
     """The two `audit-task.py` commands that file what a miss taught, in the
     spelling its parser accepts - or the sentence saying why one cannot be
     printed. Printed, never run: `full-gate.py` is what acts on a miss.
@@ -4397,19 +4443,32 @@ def _miss_remedy(miss, run_id, head):
     to paste. `--sources` is bounded by `_evidence_io.MAX_PATHS`, the same
     cut the row takes; past it no couple is printed, and the line points at
     the row and the plan instead of printing an unbounded argument.
+
+    RUNNABLE AS PRINTED, from any directory: the interpreter is spelled out,
+    the script is the absolute path `_loader.script_path` resolves by
+    basename, and the plan and project are named - a bare `audit-task.py` is
+    'command not found' in a shell. Every argument is shell-quoted.
+    `import-evidence.py`'s printed `--learn-from` commands take the same form.
+
+    THE SUITE IS THE PINNED PATH: `miss["test"]` is what
+    `_evidence_io.selection_miss` pinned the runner's spelling to
+    (`pin_suite`), so the coupling and the bug name a file the plan can open.
     """
     test = miss["test"]
     phases = ", ".join(miss["phases"])
     if run_id is None:
         return ("remedy: none printed - this run was not recorded, so no "
                 "--basis-run could name it; re-run with --record")
-    bug = ("audit-task.py bug-add %s --severity med --description %s "
-           "--files %s"
-           % (shlex.quote("SELECTION MISS: %s" % (test,)),
+    lead = "python3 %s" % (shlex.quote(_loader.script_path("audit-task.py")),)
+    tail = " %s --project-dir %s" % (
+        shlex.quote(os.path.abspath(manifest_path)),
+        shlex.quote(os.path.abspath(project)))
+    bug = ("%s bug-add %s --severity med --description %s --files %s%s"
+           % (lead, shlex.quote("SELECTION MISS: %s" % (test,)),
               shlex.quote("full run %s at %s failed %s, and no derived "
                           "sign-off gate in %s listed it"
                           % (run_id, head, test, phases)),
-              shlex.quote(test)))
+              shlex.quote(test), tail))
     sources = miss["sources"]
     if not sources:
         return ("remedy (no couple: the tasks of %s declare no files to "
@@ -4421,13 +4480,14 @@ def _miss_remedy(miss, run_id, head):
                 "the full list is those tasks' files in the plan): %s"
                 % (phases, len(sources), _ev.MAX_PATHS, run_id,
                    _ev.MAX_PATHS, bug))
-    return ("remedy: audit-task.py couple --test %s --sources %s --basis-run "
-            "%s --basis-head %s --phases %s; %s"
-            % (shlex.quote(test), shlex.quote(",".join(sources)),
-               run_id, head, ",".join(miss["phases"]), bug))
+    return ("remedy: %s couple --test %s --sources %s --basis-run %s "
+            "--basis-head %s --phases %s%s; %s"
+            % (lead, shlex.quote(test), shlex.quote(",".join(sources)),
+               shlex.quote(str(run_id)), shlex.quote(str(head)),
+               shlex.quote(",".join(miss["phases"])), tail, bug))
 
 
-def selection_lines(selection, run_id, head):
+def selection_lines(selection, run_id, head, manifest_path, project):
     """What a full run's post-pass (`_evidence_io.selection_miss`) prints.
 
     One SELECTION MISS line per suite the runner named that no counted
@@ -4441,7 +4501,7 @@ def selection_lines(selection, run_id, head):
     lines = ["SELECTION MISS: %s failed at the third place and no derived "
              "sign-off gate in %s listed it. %s"
              % (miss["test"], ", ".join(miss["phases"]),
-                _miss_remedy(miss, run_id, head))
+                _miss_remedy(miss, run_id, head, manifest_path, project))
              for miss in selection.get("misses") or []]
     lines.extend("not learned: the runner did not name the failing suites "
                  "(basis: %s)" % (basis,)
@@ -4492,7 +4552,8 @@ def _run_full(project, args, manifest, out=print):
         res = run_gate(project, commands, owns=[], timeout=args.timeout,
                        recorded=recorded_excl, task_scope=False,
                        keep_text=False, muted=declared_mutes(manifest),
-                       preamble=declared_preamble(manifest))
+                       preamble=declared_preamble(manifest),
+                       withheld=withheld_mutes(manifest, None))
     finally:
         _disarm_interrupt(previous)
     res["dirtyOutside"] = dirty_paths
@@ -4525,13 +4586,17 @@ def _run_full(project, args, manifest, out=print):
     res["coverageBasis"] = None
     # THE POST-PASS, BEFORE THE ROW IS BUILT so the row can carry what it
     # found, and over the ledger as it stood BEFORE this run was appended -
-    # "the newest earlier whole-bearing run" must not be this one. The run id
-    # is minted here for the same reason: the remedy names it.
+    # "the newest earlier measured full run" that bounds the work since must
+    # not be this one. The run id is minted here for the same reason: the
+    # remedy names it. The WHOLE read goes in, lost lines included: a ledger
+    # file read with losses may hold the bounding run, and the post-pass
+    # then asks nothing and names the file rather than bound by an older one.
     run_id = _ev.new_run_id()
+    ledger = _ev.read_rows(project)
     selection = _ev.selection_miss(
         res.get("steps"), manifest.get("phases") or [], head, project,
-        _ev.read_rows(project)["rows"],
-        [c for _name, c in commands])
+        ledger["rows"], [c for _name, c in commands],
+        unreadable=_ev.unreadable_names(ledger, project))
     # `selectionMiss` is what `row_for` allow-lists onto the row;
     # `selectionPass` is the whole answer, for `--json` alone.
     res["selectionMiss"] = selection["misses"]
@@ -4547,7 +4612,8 @@ def _run_full(project, args, manifest, out=print):
     out("[run-test-gate] full gate: %d command(s)" % (len(commands),))
     code = (render_quiet if args.quiet else render)(res, out=out)
     recorded = (res.get("recorded") or {}).get("recorded")
-    for line in selection_lines(selection, run_id if recorded else None, head):
+    for line in selection_lines(selection, run_id if recorded else None, head,
+                                args.manifest, project):
         out(line)
     out("FULL GATE GREEN at %s" % (head,) if code == E_OK else "FULL GATE RED")
     return code
@@ -4653,8 +4719,13 @@ def main(argv, out=print):
             out("[run-test-gate] --own refuses --reconcile - there is no "
                 "pointer from this path for it to repair")
             return E_ASK
-    project = args.project_dir or os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(args.manifest))))
+    # THE PLUGIN'S ONE ANSWER to which project a named manifest belongs to
+    # (`_panel_write.project_of_manifest`), the one `full-gate.py`,
+    # `import-evidence.py` and `audit-task.py` ask - never a count of
+    # directories, which is right only for `<T>/docs/audit/<file>` and records
+    # anywhere else into a ledger outside the project.
+    project = args.project_dir or _panel_write.project_of_manifest(
+        args.manifest)
     try:
         manifest = _mio.load_manifest(args.manifest)
     except Exception as exc:
@@ -4801,7 +4872,8 @@ def main(argv, out=print):
                                derived_gate_check(manifest, args.phase)
                                if args.task is None else None),
                            muted=declared_mutes(manifest),
-                           preamble=declared_preamble(manifest))
+                           preamble=declared_preamble(manifest),
+                           withheld=withheld_mutes(manifest, args.task))
         finally:
             _disarm_interrupt(previous)
         # ON THE MEASURED RUN AND NOT ON THE REPEAT'S SOURCE. `run_gate` takes no

@@ -166,7 +166,8 @@ Usage:
   row examined; a coupling with no run to point at teaches nothing.
   `couple --caught <runId>` records that an already-coupled test earned its
   place: the run must be a `full` row whose runner NAMED the test as failing
-  on a step no mute excused, and the entry's `lastCaught` becomes that row's
+  on a step no mute excused, whose own `selectionMiss` does not list it, and
+  the entry's `lastCaught` becomes that row's
   `ts`. It never creates an entry and never touches `sources` or `basis`;
   a run no newer than the `lastCaught` already recorded (compared as a
   moment, not as text) writes nothing and exits 0 saying so.
@@ -366,8 +367,6 @@ import _id_shape              # noqa: E402  (the one answer to which id comes ne
                               # branch suffix that keeps two branches from minting it twice)
 import _evidence_io           # noqa: E402  (read_rows: the runs a move leaves keyed
                               # to the old id, which `move` reports)
-import _usage_core            # noqa: E402  (parse_ts: the one reading of a row's ts as a
-                              # moment, the one `lastCaught`'s reader ages a coupling by)
 import _gate_derive           # noqa: E402  (is_shared_key, path_scoped_sibling,
                               # repointed: a TASK's own gate and a PHASE's derived
                               # one ask the same three questions, so both entry
@@ -2267,16 +2266,17 @@ def _failing_from_lookup(project, phase, run_id):
     and it must carry `status: "failed"` (a fix task opened from a run that
     PASSED is not failed-first, and the sentence names the status the row
     actually holds, never merely "not failed").
+
+    A RUN NOT AMONG THE READABLE ROWS IS NOT CALLED ABSENT when a ledger
+    file could not be read in full: `_ledger_run`, the lookup `--caught` and
+    `--basis-run` share, names that file instead, since the run may be on
+    the line that read lost.
     """
-    try:
-        rows = _evidence_io.read_rows(project)["rows"]
-    except Exception as exc:
-        return None, ("[audit-task] --failing-from %s: the evidence ledger "
-                      "could not be read (%s)" % (run_id, exc))
-    row = _evidence_io.row_by_run(rows, run_id)
-    if row is None:
-        return None, ("[audit-task] --failing-from %s: no run with this id is "
-                      "in the evidence ledger" % (run_id,))
+    row, refusal = _ledger_run(
+        project, "--failing-from", run_id,
+        "a failed-first fix task names the phase run that failed")
+    if refusal:
+        return None, refusal
     phase_id = phase.get("id")
     if row.get("scope") != "phase" or str(row.get("phaseId")) != str(phase_id):
         subject = ("task %s" % row.get("taskId") if row.get("scope") == "task"
@@ -2435,109 +2435,12 @@ def _task_gate(args, phase, assembled, add_paths, files, mode="gate-only"):
                                mode, meta, phase)
 
 
-def _shell_unsafe(path):
-    """Whether `path` holds a control character -- a newline among them --
-    that a gate entry, which is one line of shell, cannot carry."""
-    return any(ord(c) < 32 or ord(c) == 127 for c in path)
-
-
-def _project_relative(spelling, project):
-    """`(path, None)` -- `spelling` normalized and spelled from `project` --
-    or `(None, why)` when it names nothing inside the project.
-
-    NORMALIZED BEFORE ANYTHING READS IT, so `./test_old.py` is `test_old.py`
-    to the disk check and to the resolver alike. An ABSOLUTE spelling inside
-    the project becomes relative to it; one outside it is refused, because a
-    gate entry is written into a committed plan and a machine's own path does
-    not belong there. The directory is resolved through its symlinks and the
-    file name is not, so a suite that is itself a link still counts as the
-    project's.
-    """
-    if os.path.isabs(spelling):
-        root = os.path.realpath(project)
-        full = os.path.join(os.path.realpath(os.path.dirname(spelling)),
-                            os.path.basename(spelling))
-        try:
-            rel = _output.posix_rel(full, root)
-        except ValueError:
-            rel = full
-    else:
-        rel = os.path.normpath(spelling)
-    rel = rel.replace(os.sep, "/")
-    if rel == ".." or rel.startswith("../") or os.path.isabs(rel):
-        return None, ("%s lies outside the project, and a machine's own path "
-                      "is never written into a plan" % (spelling,))
-    if rel == ".":
-        return None, "%s names the project root, not a suite" % (spelling,)
-    return rel, None
-
-
-def _root_spelled_suites(suites, project, run=None):
-    """`(paths, None)` -- each suite a runner named, spelled from `project` --
-    or `(None, why)` when any one of them cannot be.
-
-    THE GATE RUNS FROM THE PROJECT ROOT, AND A RUNNER NEED NOT. A runner that
-    names its suites relative to its own directory reports `test_old.py` for
-    `backend/tests/test_old.py`; written into a gate entry as spelled, that
-    entry cannot open the file it names, so the fix task's gate cannot run.
-    Every spelling is pinned onto the tracked files by
-    `_evidence_io.resolve_named`, the one resolver, which answers only for a
-    single match -- a spelling that exists from the root included, taken as
-    one more candidate. That resolver's rule is that an exact-equal path does
-    not break a tie, because a runner in a subdirectory prints a
-    root-looking path for a deeper file; a short-circuit on the disk would
-    be a second rule for ambiguity that contradicted it.
-
-    ONE UNRESOLVED SUITE REFUSES THEM ALL. A gate narrowed to the suites that
-    did resolve could go green while a failure the run named is never run.
-    So the reason names every suite that could not be pinned, and the caller
-    narrows to none of them -- it gates on the failed step itself instead.
-
-    `git ls-files` is asked from `project` itself, so its answers are already
-    spelled from the directory the gate runs in. When git cannot answer, a
-    spelling that exists from the root is kept as written, because nothing
-    is left that could show it a twin; any other is refused with the listing
-    failure as its reason, since an unlisted tree is not an empty one. A
-    resolved path holding a control character is refused rather than handed
-    to a one-line shell gate.
-    """
-    rels, refused = [], []
-    for spelling in suites:
-        rel, why = _project_relative(spelling, project)
-        if rel is None:
-            refused.append(why)
-        else:
-            rels.append(rel)
-    if refused:
-        return None, ("a suite the run named could not be pinned to one path "
-                      "from the project root: %s" % ("; ".join(refused),))
-    code, said, err = _worktrees._runner(run)(project, ["ls-files", "-z"])
-    tracked = ([p for p in (said or "").split("\0") if p] if code == 0
-               else None)
-    listing_failed = ("the tracked files could not be listed (git ls-files: "
-                      "%s)" % ((err or "").strip() or "exit %s" % (code,)))
-    pinned = []
-    for rel in rels:
-        on_disk = os.path.isfile(os.path.join(project, rel))
-        if tracked is None:
-            path, why = ((rel, None) if on_disk else
-                         (None, "%s is not on disk from the project root, "
-                                "and %s" % (rel, listing_failed)))
-        else:
-            path, why = _evidence_io.resolve_named(
-                rel, tracked + ([rel] if on_disk else []))
-        if path is not None and _shell_unsafe(path):
-            path, why = None, ("%s resolves to %r, which holds a control "
-                               "character no one-line gate can carry"
-                               % (rel, path))
-        if path is None:
-            refused.append(why)
-        else:
-            pinned.append(path)
-    if refused:
-        return None, ("a suite the run named could not be pinned to one path "
-                      "from the project root: %s" % ("; ".join(refused),))
-    return pinned, None
+# A THIN ALIAS, NOT A COPY. The gate runs from the project root and a runner
+# need not: pinning each suite a run named onto one tracked path is
+# `_evidence_io.pin_suites`, the resolver the full-run post-pass, full-gate's
+# learning and the printed remedy read too, so `--failing-from` cannot place
+# a name somewhere they would not. See that module for the rules.
+_root_spelled_suites = _evidence_io.pin_suites
 
 
 def _failed_step_entries(steps):
@@ -8249,21 +8152,26 @@ def _ledger_run(project, flag, run_id, why):
                   "evidence ledger -- %s" % (flag, run_id, why))
 
 
-def _caught_refusal(row, run_id, test):
+def _caught_refusal(row, run_id, test, listing):
     """Why the evidence row `run_id` names cannot be a catch of `test`, or
     None. A catch is a THIRD-PLACE run (scope `full`) whose runner named
     `test` as failing on a step no mute excused. That reading is
     `_evidence_io.named_failing_suites`, the one a fix task's
     `--failing-from` gate and the gate runner take, so a tail excerpt and a
-    quarantined step are refused here for the reason they are refused there. Its `ts` must read as a moment through
-    `_usage_core.parse_ts`, the reading `lastCaught`'s own reader ages a
-    coupling by.
+    quarantined step are refused here for the reason they are refused there.
+    Its `ts` must read as a moment through `_evidence_io.stamp_moment`, the
+    one moment read the ledger orders its rows by, so a date-only stamp is
+    placed here where the ledger places it.
 
-    WHETHER `test` IS ONE OF THE NAMED SUITES is `_evidence_io.listed_by`,
-    the reading `full-gate.py` and `selection_miss` take: a runner may print
-    a suite relative to its own directory while the coupling spells it from
-    the repository root. The catch is still written under `test`, the
-    plan's key, never under the runner's spelling."""
+    WHETHER `test` IS ONE OF THE NAMED SUITES is `_evidence_io.listed_by`:
+    a runner may print a suite relative to its own directory while the
+    coupling spells it from the repository root. The catch is still written
+    under `test`, the plan's key, never under the runner's spelling.
+
+    A ROW LISTING `test` AS ITS OWN SELECTION MISS IS NO CATCH OF IT
+    (`_evidence_io.own_miss`, pinned through `listing`, `full-gate.py`'s
+    reading): that row says no derived gate ran the suite, so no coupling
+    caught anything in it."""
     if row.get("scope") != _evidence_io.FULL_SCOPE:
         return ("[audit-task] --caught %s is a run of scope %r, not %r -- "
                 "only a third-place run is a catch the coupling earned; a "
@@ -8276,7 +8184,20 @@ def _caught_refusal(row, run_id, test):
                 "excused (it named: %s) -- a tail excerpt or a quarantined "
                 "failure is not a catch"
                 % (run_id, test, ", ".join(named) if named else "none"))
-    if _usage_core.parse_ts(row.get("ts")) is None:
+    # THE KEY AND EVERY SPELLING OF IT THE RUNNER PRINTED, as `full-gate.py`
+    # asks with the coupled key and the spelling that resolved to it - so a
+    # miss the row recorded under the runner's spelling withholds the catch
+    # here exactly as it does there, even where git cannot pin that spelling.
+    own = _evidence_io.own_miss(
+        row, [test] + [s for s in named if _evidence_io.listed_by(test, [s])],
+        listing)
+    if own is not None:
+        return ("[audit-task] --caught %s lists %s as its own selection miss "
+                "(selectionMiss names %s) -- no derived gate ran that suite, "
+                "so no coupling caught anything in it; full-gate.py credits "
+                "no catch from this row either" % (run_id, test,
+                                                   own.get("test")))
+    if _evidence_io.stamp_moment(row.get("ts")) is None:
         return ("[audit-task] --caught %s carries ts %r, which does not read "
                 "as a moment, so there is nothing to record as lastCaught"
                 % (run_id, row.get("ts")))
@@ -8322,8 +8243,9 @@ def _locked_couple_caught(args, test, project, config, mpath, out):
     well-formed catch at or before the recorded one -- an older run imported
     late, or the same run replayed by a retry -- writes nothing and adds no
     journal row, and still exits 0 saying so: the fact it offers is already
-    covered. Both sides are compared as MOMENTS through `_usage_core.parse_ts`,
-    never as text, because an offset against `Z` or a fractional second
+    covered. Both sides are compared as MOMENTS through
+    `_evidence_io.stamp_moment`, the ledger's own moment read, never as
+    text, because an offset against `Z` or a fractional second
     sorts differently as a string than in time. A recorded `lastCaught` no
     parser reads is replaced by the catch offered, which does read.
     """
@@ -8346,7 +8268,8 @@ def _locked_couple_caught(args, test, project, config, mpath, out):
     if refusal:
         out(refusal)
         return E_USAGE
-    refusal = _caught_refusal(row, run_id, test)
+    refusal = _caught_refusal(row, run_id, test,
+                              _evidence_io.suite_listing(project))
     if refusal:
         out(refusal)
         return E_USAGE
@@ -8374,8 +8297,8 @@ def _locked_couple_caught(args, test, project, config, mpath, out):
         out(refusal)
         return E_USAGE
     was = coupling[idx].get("lastCaught")
-    was_at = _usage_core.parse_ts(was)
-    if was_at is not None and was_at >= _usage_core.parse_ts(ts):
+    was_at = _evidence_io.stamp_moment(was)
+    if was_at is not None and was_at >= _evidence_io.stamp_moment(ts):
         if args.as_json:
             out(json.dumps({"ok": True, "test": test,
                             "entry": coupling[idx], "written": [],

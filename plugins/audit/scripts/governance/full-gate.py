@@ -114,6 +114,7 @@ import _loader  # noqa: E402  (script_path: resolves run-test-gate.py and
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR shards)
 import _evidence_io as _ev  # noqa: E402  (row_by_run, named_failing_suites)
 import _status_facts  # noqa: E402  (CLOSED_BUG: the one reading of "not open")
+import _panel_write  # noqa: E402  (project_of_manifest: the project a named manifest is in)
 
 # --- delegating the run -----------------------------------------------------------
 E_OK, E_FAIL, E_USAGE = 0, 1, 2
@@ -167,9 +168,11 @@ def _run_full_gate(manifest_path, writer, project_dir, out):
 
     NEVER RE-IMPLEMENTS THE RUN. Every flag here is `run-test-gate.py`'s own:
     `--full --record` is the measurement this file exists to make easy to
-    reach, and `--writer`/`--project-dir` pass through unchanged rather than
-    being re-parsed and re-validated a second time by a second parser that
-    could drift from the first.
+    reach, and `--writer` passes through unchanged rather than being re-parsed
+    and re-validated a second time by a second parser that could drift from
+    the first. `project_dir` is ALWAYS passed - the caller's `--project-dir`,
+    or the project `main` resolved for the manifest - so the runner records
+    into the very ledger the red branch then reads.
     """
     cmd = [sys.executable, _loader.script_path("run-test-gate.py"),
           manifest_path, "--full", "--record"]
@@ -248,9 +251,15 @@ def _stamped_since(row, started):
     return moment is not None and moment >= started
 
 
-def find_row(rows, lines, started):
+def find_row(rows, lines, started, lost):
     """`(row, why)` - the row this run recorded, or None and the sentence
-    saying why nothing can be acted on."""
+    saying why nothing can be acted on.
+
+    `lost` names each ledger file `read_rows` could not read in full
+    (`_evidence_io.unreadable_names`). A row not among the readable ones is
+    then never called absent: the run may sit on the line that read lost,
+    so the sentence names those files, as `--learn-from`'s own refusal
+    does."""
     state, value = recorded_run(lines)
     if state == "not-recorded":
         return None, ("the runner printed %r, so there is no row of this run "
@@ -260,14 +269,24 @@ def find_row(rows, lines, started):
         row = _ev.row_by_run(rows, value)
         if row is None:
             return None, ("the runner printed that it recorded %s, and the "
-                          "evidence ledger holds no row with that id" % (value,))
+                          "readable rows of the evidence ledger hold no row "
+                          "with that id%s" % (value, _lost_note(lost)))
         return row, None
     row = _newest_full_since(rows, started)
     if row is None:
-        return None, ("the runner printed no evidence line, and the ledger "
-                      "holds no full row stamped since %s"
-                      % (_moment_text(started),))
+        return None, ("the runner printed no evidence line, and the readable "
+                      "rows of the ledger hold no full row stamped since %s%s"
+                      % (_moment_text(started), _lost_note(lost)))
     return row, None
+
+
+def _lost_note(lost):
+    """`find_row`'s tail naming the files read with losses, or ""."""
+    if not lost:
+        return ""
+    return ("; %s could not be read in full - the run may be on a line that "
+            "read lost, so repair it before asking again (full-gate.py "
+            "--learn-from <runId>)" % (", ".join(lost),))
 
 
 def _couple_skip(miss, run_id, head, coupled):
@@ -308,19 +327,28 @@ def _described(miss, run_id, head):
     return text
 
 
-def learning_plan(row, coupled, open_titles):
+def learning_plan(row, coupled, open_titles, listing):
     """What a red row teaches: `{"verbs": [(label, test, argv)], "notes":
     [line]}`.
 
     `coupled` maps each test the plan already couples to its sources, read
     BEFORE anything here writes - so a suite coupled by this run is not also
     credited with a catch by it. `open_titles` maps an open bug's title to
-    its id. Pure: nothing is run and nothing is read.
+    its id. `listing` is `_evidence_io.suite_listing` of the project, the
+    tracked files each miss is pinned onto. Nothing is run and nothing else
+    is read.
 
     EVERY MISS IS RE-ASKED, never trusted off the row: a suite counts only
     when a step whose runner NAMED its failing suites names it
-    (`_evidence_io.named_failing_suites`), so a failure read off a tail of
-    output is a note, never a verb."""
+    (`_evidence_io.named_failing_suites`, compared by `same_suite`), so a
+    failure read off a tail of output is a note, never a verb.
+
+    A MISS IS FILED UNDER ITS ONE TRACKED PATH (`_evidence_io.pin_suite`),
+    never under the runner's spelling: `couple --test` and `bug-add --files`
+    name a path the plan can open, and the existing-coupling check reads the
+    key the plan holds. A spelling that pins to none or several still files
+    its bug - the failure happened - with no `--files` and no coupling, and
+    a note naming why."""
     run_id = str(row.get("runId") or "")
     head = (row.get("testedState") or {}).get("head")
     steps = row.get("steps") or []
@@ -336,31 +364,38 @@ def learning_plan(row, coupled, open_titles):
                      "rest are named nowhere this file can read"
                      % (run_id, len(misses), row["selectionMissDropped"]))
     for miss in misses:
-        test = miss.get("test")
-        if not test or not _ev.listed_by(test, named):
+        spelled = miss.get("test")
+        if not spelled or not any(_ev.same_suite(spelled, s, listing)
+                                  for s in named):
             notes.append("not learned from run %s: it records a miss for %s, "
                          "and no step whose runner named its failing suites "
-                         "names it" % (run_id, test))
+                         "names it" % (run_id, spelled))
             continue
-        skip = _couple_skip(miss, run_id, head, coupled)
-        if skip:
-            notes.append(skip)
+        test, why = _ev.pin_suite(spelled, listing)
+        pinned = dict(miss, test=test if test is not None else spelled)
+        if test is None:
+            notes.append("no couple for %s: it pins to no one tracked path - "
+                         "%s; the bug is filed naming no file" % (spelled, why))
         else:
-            verbs.append(("couple", test, [
-                "couple", "--test", test,
-                "--sources", ",".join(miss["sources"]),
-                "--basis-run", run_id, "--basis-head", head,
-                "--phases", ",".join(miss.get("phases") or [])]))
-        title = bug_title(test)
+            skip = _couple_skip(pinned, run_id, head, coupled)
+            if skip:
+                notes.append(skip)
+            else:
+                verbs.append(("couple", test, [
+                    "couple", "--test", test,
+                    "--sources", ",".join(miss["sources"]),
+                    "--basis-run", run_id, "--basis-head", head,
+                    "--phases", ",".join(miss.get("phases") or [])]))
+        title = bug_title(pinned["test"])
         if title in open_titles:
             notes.append("no bug for %s: %s is already open under the title "
-                         "%r" % (test, open_titles[title], title))
+                         "%r" % (pinned["test"], open_titles[title], title))
             continue
-        verbs.append(("bug-add", test, [
+        verbs.append(("bug-add", pinned["test"], [
             "bug-add", title, "--severity", "med",
             "--description",
-            _described(miss, run_id, head or "an unrecorded head"),
-            "--files", test]))
+            _described(pinned, run_id, head or "an unrecorded head")]
+            + (["--files", test] if test is not None else [])))
     # EACH NAMED SUITE IS PINNED TO ONE COUPLED KEY OR TO NONE
     # (`_evidence_io.resolve_named`): a runner may print a suite relative to
     # its own directory, and a name that fits several coupled suites cannot
@@ -371,13 +406,13 @@ def learning_plan(row, coupled, open_titles):
     # no derived gate ran it, so no coupling did the work a catch credits -
     # whichever run taught the coupling, in whatever order imported rows are
     # learned from, and whether this row's `couple` created it or widened it.
-    # Matched on the exact spelling or the coupled key, never a suffix, so a
-    # miss spelled one way cannot withhold a catch from a different suite.
-    missed = [m.get("test") for m in misses if m.get("test")]
+    # Asked of `_evidence_io.own_miss`, the reading `couple --caught` refuses
+    # by: equal or pinned to one tracked path, never a suffix, so a miss
+    # spelled one way cannot withhold a catch from a different suite.
     caught, own = [], []
     for spelling in named:
         key, why = _ev.resolve_named(spelling, list(coupled))
-        if key is not None and (key in missed or spelling in missed):
+        if key is not None and _ev.own_miss(row, [key, spelling], listing):
             if key not in own:
                 own.append(key)
                 notes.append("no catch credited for %s in run %s: its own "
@@ -446,7 +481,8 @@ def learn_from_row(row, manifest_path, project, out):
             % (PREFIX, row.get("runId"), why))
         return {"verbs": 0, "failed": 0, "error": why}
     coupled, open_titles = _plan_state(manifest)
-    plan = learning_plan(row, coupled, open_titles)
+    plan = learning_plan(row, coupled, open_titles,
+                         _ev.suite_listing(project))
     for note in plan["notes"]:
         out("%s %s" % (PREFIX, note))
     if not plan["verbs"]:
@@ -466,12 +502,13 @@ def learn_from_row(row, manifest_path, project, out):
 def learn(manifest_path, project, lines, started, out):
     """Act on the row a red run recorded; return how many verbs failed."""
     try:
-        rows = _ev.read_rows(project)["rows"]
+        ledger = _ev.read_rows(project)
     except Exception as exc:
         out("%s learned nothing: the evidence ledger could not be read (%s)"
             % (PREFIX, exc))
         return 0
-    row, why = find_row(rows, lines, started)
+    row, why = find_row(ledger.get("rows") or [], lines, started,
+                        _ev.unreadable_names(ledger, project))
     if row is None:
         out("%s learned nothing: %s" % (PREFIX, why))
         return 0
@@ -503,8 +540,7 @@ def _missing_row(ledger, run_id, project):
     """The refusal for a run id the readable rows do not hold - naming each
     ledger file that could not be read in full, because the run may sit on
     the line that read lost, and 'no such run' would then be a false answer."""
-    lost = [_output.posix_rel(p, project) if os.path.isabs(p) else p
-            for p in ledger.get("unreadableFiles") or []]
+    lost = _ev.unreadable_names(ledger, project)
     if lost:
         return ("no run %s is among the readable rows of the evidence "
                 "ledger, and %s could not be read in full - the run may be "
@@ -573,10 +609,14 @@ def main(argv, out=print):
     except Exception as exc:
         out("%s cannot read the manifest: %s" % (PREFIX, exc))
         return E_USAGE
-    # THE RUNNER'S OWN DERIVATION of the project a manifest belongs to, so
-    # the ledger read here is the one the run was recorded into.
-    project = args.project_dir or os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(args.manifest))))
+    # THE PLUGIN'S ONE ANSWER to which project a named manifest belongs to
+    # (`_panel_write.project_of_manifest`: the first ancestor holding
+    # `.claude/` or `.git`, the default layout's root, else the manifest's own
+    # directory) - never a count of directories, which is right only for
+    # `<T>/docs/audit/<file>`. It is handed to the runner as `--project-dir`
+    # below, so the ledger read here is the one the run was recorded into.
+    project = args.project_dir or _panel_write.project_of_manifest(
+        args.manifest)
     if args.learn_from is not None:
         return learn_from(args.manifest, project, args.learn_from, out)
     if not declares_full_gate(manifest):
@@ -589,7 +629,7 @@ def main(argv, out=print):
         out(line)
 
     started = start_moment()
-    code = _run_full_gate(args.manifest, args.writer, args.project_dir, tee)
+    code = _run_full_gate(args.manifest, args.writer, project, tee)
     if code == E_OK:
         return code
     # LEARNING IS ADVISORY, THE VERDICT IS NOT: a row this file cannot read
