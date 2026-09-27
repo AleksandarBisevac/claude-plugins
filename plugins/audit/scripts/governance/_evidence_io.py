@@ -442,10 +442,25 @@ MAX_FAILING = 10
 # string-matching the basis sentence would break the moment its wording
 # changed -- `run-test-gate.run_gate` sets the marker and composes the
 # sentence in the same place, so the two cannot drift apart.
+#
+# `flaky` AND `flakyBasis` ARE THE TESTS A RUNNER REPORTED AS FLAKY - failed,
+# then passed on retry - and the sentence saying where they were read. The
+# names are a runner's own bytes, so `_step` cuts and redacts them as `failing`.
+# They are an OBSERVATION and deliberately not an `outcome`: `_step_failed`
+# and every tally built on it read any outcome as not-passed, and a
+# flaky-but-green step is a pass with a named doubt.
+#
+# `muted` IS THE MUTE THAT EXCUSED THIS STEP'S FAILURE, on the step itself and
+# not only on the row, because the readers that count failures read steps:
+# `_step_failed` does not count a muted step, and neither does anything that
+# learns failing suites off a row. A quarantined, known failure is not
+# something the gate caught. Kept to suite, bug and day, cut at `MAX_PATHS`
+# and each suite path redacted as `failingSuites` is.
 STEP_KEYS = ("name", "exit", "ran", "measured", "durationMs", "outcome",
              "timeoutSeconds", "teardown", "failing", "failingBasis",
              "failingSuites", "failingSuitesBasis", "suiteReader",
-             "retriedAfterSignal", "retryBasis", "outcomeBasis", "derivedGap")
+             "retriedAfterSignal", "retryBasis", "outcomeBasis", "derivedGap",
+             "flaky", "flakyBasis", "muted")
 STATE_KEYS = ("head", "headBasis", "scopeDigest", "scopeBasis",
               "scopeListDigest", "dirtyDigest", "dirtyBasis")
 _PORCELAIN_RENAME = " -> "
@@ -531,6 +546,19 @@ def _paths(project, entries):
     return kept, max(0, len(entries or []) - MAX_PATHS)
 
 
+def _mute_rows(project, mutes):
+    """Mutes as a committed row keeps them: suite, bug and day, nothing else,
+    cut at `MAX_PATHS`, each suite path redacted as `failingSuites` is and the
+    bug and the day cut to the bound a runner string gets (`redacted_text`) -
+    a manifest value is still a value this row did not compose."""
+    if not isinstance(mutes, list):
+        return []
+    return [{"test": repo_relative_or_token(project, str(m.get("test"))),
+             "bugId": redacted_text(project, str(m.get("bugId"))),
+             "until": redacted_text(project, str(m.get("until")))}
+            for m in mutes if isinstance(m, dict)][:MAX_PATHS]
+
+
 def _step(project, step, published):
     """One step of the run, allow-listed - and its command decided, not copied.
 
@@ -550,7 +578,7 @@ def _step(project, step, published):
         # "absent", which is the one reading a reader could mistake for zero.
         if step[key] is None and key not in ("exit", "ran"):
             continue
-        if key == "failing":
+        if key in ("failing", "flaky"):
             # THE ONE FIELD WHOSE CONTENT A RUNNER WROTE, so both rules that keep
             # a committed row safe land here and nowhere else in this loop. The
             # cut is taken by the WRITER rather than trusted from the caller,
@@ -570,6 +598,9 @@ def _step(project, step, published):
             # an absolute suite path names somebody's machine.
             out[key] = [repo_relative_or_token(project, p)
                         for p in step[key][:MAX_PATHS]]
+            continue
+        if key == "muted":
+            out[key] = _mute_rows(project, step[key])
             continue
         if key == "outcomeBasis":
             # WHY THIS `could-not-run` STEP HAS NO VERDICT, bounded and
@@ -685,6 +716,14 @@ def row_for(project, result, scope, ids, identity, published=None):
     # when there is something to write, like the key above it.
     if result.get("attributionBasis") is not None:
         row["attributionBasis"] = str(result["attributionBasis"])
+    # THE MUTES THAT EXCUSED A FAILING STEP. The step itself keeps its exit and
+    # its failing names, so without this a `passed` beside a red step would be
+    # a verdict the row cannot be read back for. Allow-listed to the suite,
+    # the bug and the day, cut at `MAX_PATHS` and each suite path redacted as
+    # `failingSuites` is; written only when a mute was honoured.
+    muted = _mute_rows(project, result.get("muted"))
+    if muted:
+        row["muted"] = muted
     # WHERE THE `steps` LIST CAME FROM. `steps` names the entries that
     # executed and carries no declaration beside them, and the manifest that
     # declared them is not on the row -- so two rows with different `steps` differ
@@ -1252,7 +1291,13 @@ def _step_failed(step):
     `outcome` is the three-valued field a runner sets for what `exit` alone
     cannot say (a timeout, a signal, a step that could not run at all); an
     `exit` other than zero is the ordinary failure a runner reports without
-    ever reaching for that field."""
+    ever reaching for that field.
+
+    A MUTED step is not one, whatever its exit: its failure is quarantined
+    and known, so counting it would credit the gate with a catch on every
+    run the mute holds."""
+    if step.get("muted"):
+        return False
     if step.get("outcome"):
         return True
     exitcode = step.get("exit")
@@ -1271,6 +1316,7 @@ def _matching_steps(rows, key, value):
             if isinstance(step, dict) and step.get(key) == value:
                 out.append({"ts": row.get("ts"), "runId": row.get("runId"),
                             "exit": step.get("exit"), "outcome": step.get("outcome"),
+                            "muted": step.get("muted"),
                             "durationMs": step.get("durationMs")})
     return out
 
@@ -2214,10 +2260,10 @@ def _same_subject(row, ids):
 def reusable_run(rows, scope, ids, key, statuses):
     """The newest recorded run a caller may repeat instead of measuring, or None.
 
-    FIVE CONDITIONS AND EVERY ONE OF THEM NARROWS. The identity has to match, the
+    EVERY CONDITION NARROWS. The identity has to match, the
     subject has to be the same work, the row has to be a MEASUREMENT rather than
-    another repeat, and the verdict has to be one the caller says may be
-    repeated. Drop any of them and this returns a run that answers a different
+    another repeat, the verdict has to be one the caller says may be
+    repeated, and no mute may have excused it. Drop any of them and this returns a run that answers a different
     question.
 
     THE IDENTITY IS NOT THE SUBJECT, which is why both are asked. Two tasks can
@@ -2246,6 +2292,10 @@ def reusable_run(rows, scope, ids, key, statuses):
         if row.get(VERDICT_SOURCE) == REUSED:
             continue
         if row.get("status") not in statuses:
+            continue
+        # A VERDICT A MUTE EXCUSED holds only while the mute does, and whether
+        # it still does depends on the day - which no content identity sees.
+        if row.get("muted"):
             continue
         if str(row.get("scope") or "") != str(scope or ""):
             continue

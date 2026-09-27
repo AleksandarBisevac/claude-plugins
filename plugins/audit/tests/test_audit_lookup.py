@@ -270,6 +270,34 @@ def _cases(check):
           and payload["verdictSource"] == "reused"
           and payload["reusedFrom"]["runId"] == "R-1")
 
+    # A PASSED run can carry a step that exited 1 with failing lines: the
+    # failure a mute quarantined. The lookup says which mute, or the row reads
+    # as a contradiction.
+    r_muted = {"v": 1, "runId": "R-M", "ts": "2026-06-04T10:00:00Z",
+               "scope": "task", "taskId": "P1.2", "status": "passed",
+               "failed": [],
+               "steps": [{"name": "unit", "exit": 1, "durationMs": 40,
+                          "failing": ["cart > rejects a negative quantity"],
+                          "failingSuites": ["src/cart.test.ts"],
+                          "muted": [{"test": "src/cart.test.ts",
+                                     "bugId": "B1", "until": "2026-10-01"}]}],
+               "muted": [{"test": "src/cart.test.ts", "bugId": "B1",
+                          "until": "2026-10-01"}]}
+    found_m, payload_m = M.run_lookup([r_muted], "R-M")
+    muted_lines = M._render_human("run", "R-M", found_m, payload_m)
+    check("rl1m a MUTED step is explained: the run lookup prints "
+          "`muted: <test> (bug <id>, until <date>)` under the step, so a "
+          "passed run showing exit=1 and failing lines is not a "
+          "contradiction: %r" % (muted_lines,),
+          found_m is True
+          and "    muted: src/cart.test.ts (bug B1, until 2026-10-01)"
+          in muted_lines)
+    check("rl1n ALLOW: a step no mute excused prints no `muted:` line: %r"
+          % (M._render_human("run", "R-2", True,
+                             M.run_lookup(run_rows, "R-2")[1]),),
+          not any("muted:" in ln for ln in M._render_human(
+              "run", "R-2", True, M.run_lookup(run_rows, "R-2")[1])))
+
     found, msg = M.run_lookup(run_rows, "R-9")
     check("rl2 an unknown runId is a miss worded like `bug`'s own unknown-id "
           "miss - never 'no such run', which reads as a stronger claim than "

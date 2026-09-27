@@ -196,9 +196,9 @@
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-09-27T16:40:07Z.256405",
+        "runId": "2026-09-27T17:07:15Z.706819",
         "status": "passed",
-        "at": "2026-09-27T16:40:07Z"
+        "at": "2026-09-27T17:07:15Z"
       }
     },
     {
@@ -255,7 +255,8 @@
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/tests/test_audit_task.py",
-        "plugins/audit/commands/task.md"
+        "plugins/audit/commands/task.md",
+        "plugins/audit/README.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -290,7 +291,12 @@
       },
       "startedAt": "2026-09-27T16:44:22Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T17:08:42Z.d01987",
+        "status": "passed",
+        "at": "2026-09-27T17:08:42Z"
+      }
     },
     {
       "id": "P81.6",

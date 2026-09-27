@@ -22,6 +22,7 @@ installed, which is to say there would be no cases.
 faking that would test the arithmetic rather than the question -- so the fixture
 is an actual repository and the "mutation" is an actual file appearing in it.
 """
+import datetime
 import json
 import os
 import signal
@@ -398,6 +399,1056 @@ FAIL node_modules/some-pkg/dist/index.test.js
 
 Tests:       1 failed, 0 passed, 1 total
 """
+
+# --- fixtures: what Playwright Test really prints ----------------------------
+# CAPTURED, NOT WRITTEN. `@playwright/test` 1.56.0 (the version of the
+# `playwright` library package.json pins), installed into a scratch directory
+# and run as `npx playwright test --retries=1 --reporter=list` and again with
+# `--reporter=line`, with `CI` unset and `FORCE_COLOR=0`. The spec holds one
+# test that throws while `testInfo.retry === 0` and passes on its retry, one
+# plain passing test and - for the RED captures - one test that always fails;
+# the PROJECT capture adds a `playwright.config.js` declaring a single project
+# named `alpha`. The one edit to the bytes: the absolute scratch directory on
+# each `at ...` stack line is replaced by `<scratch>`, because the capture
+# machine's home directory is not a thing this repository may carry. Everything
+# else, the line reporter's cursor escapes included, is as it was printed.
+PW_LIST_FLAKY = (
+    '\n'
+    'Running 2 tests using 1 worker\n'
+    '\n'
+    '  ✘  1 tests/flaky.spec.js:2:1 › settles on retry (1ms)\n'
+    '  ✓  2 tests/flaky.spec.js:2:1 › settles on retry (retry #1) (3ms)\n'
+    '  ✓  3 tests/flaky.spec.js:6:1 › always passes (0ms)\n'
+    '\n'
+    '\n'
+    '  1) tests/flaky.spec.js:2:1 › settles on retry ────────────────────────────────────────────────────\n'
+    '\n'
+    '    Error: first attempt fails\n'
+    '\n'
+    "      1 | const { test, expect } = require('@playwright/test');\n"
+    "      2 | test('settles on retry', async ({}, testInfo) => {\n"
+    "    > 3 |   if (testInfo.retry === 0) throw new Error('first attempt fails');\n"
+    '        |                                   ^\n'
+    '      4 |   expect(1).toBe(1);\n'
+    '      5 | });\n'
+    "      6 | test('always passes', async () => {\n"
+    '        at <scratch>/tests/flaky.spec.js:3:35\n'
+    '\n'
+    '  1 flaky\n'
+    '    tests/flaky.spec.js:2:1 › settles on retry ─────────────────────────────────────────────────────\n'
+    '  1 passed (599ms)\n'
+)
+
+PW_LINE_FLAKY = (
+    '\n'
+    'Running 2 tests using 1 worker\n'
+    '\n'
+    '\x1b[1A\x1b[2K[1/2] tests/flaky.spec.js:2:1 › settles on retry\n'
+    '\x1b[1A\x1b[2K[2/2] tests/flaky.spec.js:2:1 › settles on retry (retry #1)\n'
+    '\x1b[1A\x1b[2K  1) tests/flaky.spec.js:2:1 › settles on retry ────────────────────────────────────────────────────\n'
+    '\n'
+    '    Error: first attempt fails\n'
+    '\n'
+    "      1 | const { test, expect } = require('@playwright/test');\n"
+    "      2 | test('settles on retry', async ({}, testInfo) => {\n"
+    "    > 3 |   if (testInfo.retry === 0) throw new Error('first attempt fails');\n"
+    '        |                                   ^\n'
+    '      4 |   expect(1).toBe(1);\n'
+    '      5 | });\n'
+    "      6 | test('always passes', async () => {\n"
+    '        at <scratch>/tests/flaky.spec.js:3:35\n'
+    '\n'
+    '\n'
+    '\x1b[1A\x1b[2K[3/2] (retries) tests/flaky.spec.js:6:1 › always passes\n'
+    '\x1b[1A\x1b[2K  1 flaky\n'
+    '    tests/flaky.spec.js:2:1 › settles on retry ─────────────────────────────────────────────────────\n'
+    '  1 passed (560ms)\n'
+)
+
+PW_LIST_RED = (
+    '\n'
+    'Running 3 tests using 2 workers\n'
+    '\n'
+    '  ✘  2 tests/flaky.spec.js:2:1 › settles on retry (1ms)\n'
+    '  ✘  1 tests/hard.spec.js:2:1 › always fails (3ms)\n'
+    '  ✓  4 tests/flaky.spec.js:2:1 › settles on retry (retry #1) (2ms)\n'
+    '  ✘  3 tests/hard.spec.js:2:1 › always fails (retry #1) (3ms)\n'
+    '  ✓  5 tests/flaky.spec.js:6:1 › always passes (1ms)\n'
+    '\n'
+    '\n'
+    '  1) tests/hard.spec.js:2:1 › always fails ─────────────────────────────────────────────────────────\n'
+    '\n'
+    '    Error: \x1b[2mexpect(\x1b[22m\x1b[31mreceived\x1b[39m\x1b[2m).\x1b[22mtoBe\x1b[2m(\x1b[22m\x1b[32mexpected\x1b[39m\x1b[2m) // Object.is equality\x1b[22m\n'
+    '\n'
+    '    Expected: \x1b[32m2\x1b[39m\n'
+    '    Received: \x1b[31m1\x1b[39m\n'
+    '\n'
+    "      1 | const { test, expect } = require('@playwright/test');\n"
+    "      2 | test('always fails', async () => {\n"
+    '    > 3 |   expect(1).toBe(2);\n'
+    '        |             ^\n'
+    '      4 | });\n'
+    '      5 |\n'
+    '        at <scratch>/tests/hard.spec.js:3:13\n'
+    '\n'
+    '    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────\n'
+    '\n'
+    '    Error: \x1b[2mexpect(\x1b[22m\x1b[31mreceived\x1b[39m\x1b[2m).\x1b[22mtoBe\x1b[2m(\x1b[22m\x1b[32mexpected\x1b[39m\x1b[2m) // Object.is equality\x1b[22m\n'
+    '\n'
+    '    Expected: \x1b[32m2\x1b[39m\n'
+    '    Received: \x1b[31m1\x1b[39m\n'
+    '\n'
+    "      1 | const { test, expect } = require('@playwright/test');\n"
+    "      2 | test('always fails', async () => {\n"
+    '    > 3 |   expect(1).toBe(2);\n'
+    '        |             ^\n'
+    '      4 | });\n'
+    '      5 |\n'
+    '        at <scratch>/tests/hard.spec.js:3:13\n'
+    '\n'
+    '  2) tests/flaky.spec.js:2:1 › settles on retry ────────────────────────────────────────────────────\n'
+    '\n'
+    '    Error: first attempt fails\n'
+    '\n'
+    "      1 | const { test, expect } = require('@playwright/test');\n"
+    "      2 | test('settles on retry', async ({}, testInfo) => {\n"
+    "    > 3 |   if (testInfo.retry === 0) throw new Error('first attempt fails');\n"
+    '        |                                   ^\n'
+    '      4 |   expect(1).toBe(1);\n'
+    '      5 | });\n'
+    "      6 | test('always passes', async () => {\n"
+    '        at <scratch>/tests/flaky.spec.js:3:35\n'
+    '\n'
+    '  1 failed\n'
+    '    tests/hard.spec.js:2:1 › always fails ──────────────────────────────────────────────────────────\n'
+    '  1 flaky\n'
+    '    tests/flaky.spec.js:2:1 › settles on retry ─────────────────────────────────────────────────────\n'
+    '  1 passed (578ms)\n'
+)
+
+PW_LINE_RED = (
+    '\n'
+    'Running 3 tests using 2 workers\n'
+    '\n'
+    '\x1b[1A\x1b[2K[1/3] tests/hard.spec.js:2:1 › always fails\n'
+    '\x1b[1A\x1b[2K[2/3] tests/flaky.spec.js:2:1 › settles on retry\n'
+    '\x1b[1A\x1b[2K[3/3] tests/hard.spec.js:2:1 › always fails (retry #1)\n'
+    '\x1b[1A\x1b[2K[4/3] (retries) tests/flaky.spec.js:2:1 › settles on retry (retry #1)\n'
+    '\x1b[1A\x1b[2K  1) tests/flaky.spec.js:2:1 › settles on retry ────────────────────────────────────────────────────\n'
+    '\n'
+    '    Error: first attempt fails\n'
+    '\n'
+    "      1 | const { test, expect } = require('@playwright/test');\n"
+    "      2 | test('settles on retry', async ({}, testInfo) => {\n"
+    "    > 3 |   if (testInfo.retry === 0) throw new Error('first attempt fails');\n"
+    '        |                                   ^\n'
+    '      4 |   expect(1).toBe(1);\n'
+    '      5 | });\n'
+    "      6 | test('always passes', async () => {\n"
+    '        at <scratch>/tests/flaky.spec.js:3:35\n'
+    '\n'
+    '\n'
+    '\x1b[1A\x1b[2K[5/3] (retries) tests/flaky.spec.js:6:1 › always passes\n'
+    '\x1b[1A\x1b[2K  2) tests/hard.spec.js:2:1 › always fails ─────────────────────────────────────────────────────────\n'
+    '\n'
+    '    Error: \x1b[2mexpect(\x1b[22m\x1b[31mreceived\x1b[39m\x1b[2m).\x1b[22mtoBe\x1b[2m(\x1b[22m\x1b[32mexpected\x1b[39m\x1b[2m) // Object.is equality\x1b[22m\n'
+    '\n'
+    '    Expected: \x1b[32m2\x1b[39m\n'
+    '    Received: \x1b[31m1\x1b[39m\n'
+    '\n'
+    "      1 | const { test, expect } = require('@playwright/test');\n"
+    "      2 | test('always fails', async () => {\n"
+    '    > 3 |   expect(1).toBe(2);\n'
+    '        |             ^\n'
+    '      4 | });\n'
+    '      5 |\n'
+    '        at <scratch>/tests/hard.spec.js:3:13\n'
+    '\n'
+    '    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────\n'
+    '\n'
+    '    Error: \x1b[2mexpect(\x1b[22m\x1b[31mreceived\x1b[39m\x1b[2m).\x1b[22mtoBe\x1b[2m(\x1b[22m\x1b[32mexpected\x1b[39m\x1b[2m) // Object.is equality\x1b[22m\n'
+    '\n'
+    '    Expected: \x1b[32m2\x1b[39m\n'
+    '    Received: \x1b[31m1\x1b[39m\n'
+    '\n'
+    "      1 | const { test, expect } = require('@playwright/test');\n"
+    "      2 | test('always fails', async () => {\n"
+    '    > 3 |   expect(1).toBe(2);\n'
+    '        |             ^\n'
+    '      4 | });\n'
+    '      5 |\n'
+    '        at <scratch>/tests/hard.spec.js:3:13\n'
+    '\n'
+    '\n'
+    '\x1b[1A\x1b[2K  1 failed\n'
+    '    tests/hard.spec.js:2:1 › always fails ──────────────────────────────────────────────────────────\n'
+    '  1 flaky\n'
+    '    tests/flaky.spec.js:2:1 › settles on retry ─────────────────────────────────────────────────────\n'
+    '  1 passed (590ms)\n'
+)
+
+PW_LIST_PROJECT_RED = (
+    '\n'
+    'Running 3 tests using 2 workers\n'
+    '\n'
+    '  ✘  2 [alpha] › tests/flaky.spec.js:2:1 › settles on retry (1ms)\n'
+    '  ✘  1 [alpha] › tests/hard.spec.js:2:1 › always fails (3ms)\n'
+    '  ✓  4 [alpha] › tests/flaky.spec.js:2:1 › settles on retry (retry #1) (2ms)\n'
+    '  ✘  3 [alpha] › tests/hard.spec.js:2:1 › always fails (retry #1) (3ms)\n'
+    '  ✓  5 [alpha] › tests/flaky.spec.js:6:1 › always passes (1ms)\n'
+    '\n'
+    '\n'
+    '  1) [alpha] › tests/hard.spec.js:2:1 › always fails ───────────────────────────────────────────────\n'
+    '\n'
+    '    Error: \x1b[2mexpect(\x1b[22m\x1b[31mreceived\x1b[39m\x1b[2m).\x1b[22mtoBe\x1b[2m(\x1b[22m\x1b[32mexpected\x1b[39m\x1b[2m) // Object.is equality\x1b[22m\n'
+    '\n'
+    '    Expected: \x1b[32m2\x1b[39m\n'
+    '    Received: \x1b[31m1\x1b[39m\n'
+    '\n'
+    "      1 | const { test, expect } = require('@playwright/test');\n"
+    "      2 | test('always fails', async () => {\n"
+    '    > 3 |   expect(1).toBe(2);\n'
+    '        |             ^\n'
+    '      4 | });\n'
+    '      5 |\n'
+    '        at <scratch>/tests/hard.spec.js:3:13\n'
+    '\n'
+    '    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────\n'
+    '\n'
+    '    Error: \x1b[2mexpect(\x1b[22m\x1b[31mreceived\x1b[39m\x1b[2m).\x1b[22mtoBe\x1b[2m(\x1b[22m\x1b[32mexpected\x1b[39m\x1b[2m) // Object.is equality\x1b[22m\n'
+    '\n'
+    '    Expected: \x1b[32m2\x1b[39m\n'
+    '    Received: \x1b[31m1\x1b[39m\n'
+    '\n'
+    "      1 | const { test, expect } = require('@playwright/test');\n"
+    "      2 | test('always fails', async () => {\n"
+    '    > 3 |   expect(1).toBe(2);\n'
+    '        |             ^\n'
+    '      4 | });\n'
+    '      5 |\n'
+    '        at <scratch>/tests/hard.spec.js:3:13\n'
+    '\n'
+    '  2) [alpha] › tests/flaky.spec.js:2:1 › settles on retry ──────────────────────────────────────────\n'
+    '\n'
+    '    Error: first attempt fails\n'
+    '\n'
+    "      1 | const { test, expect } = require('@playwright/test');\n"
+    "      2 | test('settles on retry', async ({}, testInfo) => {\n"
+    "    > 3 |   if (testInfo.retry === 0) throw new Error('first attempt fails');\n"
+    '        |                                   ^\n'
+    '      4 |   expect(1).toBe(1);\n'
+    '      5 | });\n'
+    "      6 | test('always passes', async () => {\n"
+    '        at <scratch>/tests/flaky.spec.js:3:35\n'
+    '\n'
+    '  1 failed\n'
+    '    [alpha] › tests/hard.spec.js:2:1 › always fails ────────────────────────────────────────────────\n'
+    '  1 flaky\n'
+    '    [alpha] › tests/flaky.spec.js:2:1 › settles on retry ───────────────────────────────────────────\n'
+    '  1 passed (612ms)\n'
+)
+
+# --- fixtures: a muted failure beside a failure nobody named -----------------
+# CAPTURED, NOT WRITTEN, by the routine the Playwright block above states
+# (`@playwright/test` 1.56.0 in a scratch directory, `CI` unset,
+# `FORCE_COLOR=0`, `--reporter=list`, the scratch path on each stack line
+# replaced by `<scratch>`). Each pairs `tests/hard.spec.js` - or, for the first,
+# the failing step of a serial group - with something the named failure does
+# not account for:
+#   DID_NOT_RUN   `test.describe.serial` whose first step fails, so the rest
+#                 never run; `npx playwright test --workers=1`, exit 1.
+#   INTERRUPTED   a five-second test beside the failing one, the run sent
+#                 SIGINT after about two and a half seconds;
+#                 `node .../@playwright/test/cli.js test --workers=2`, exit 130.
+#   STRAY_ERROR   a passing test that throws from a `setTimeout` after it
+#                 returns; `npx playwright test --workers=1`, exit 1.
+PW_LIST_DID_NOT_RUN = (
+    '\n'
+    'Running 4 tests using 1 worker\n'
+    '\n'
+    '  ✘  1 tests/serial.spec.js:3:3 › checkout flow › step one breaks (3ms)\n'
+    '  -  2 tests/serial.spec.js:4:3 › checkout flow › step two\n'
+    '  -  3 tests/serial.spec.js:5:3 › checkout flow › step three\n'
+    '  -  4 tests/serial.spec.js:6:3 › checkout flow › step four\n'
+    '\n'
+    '\n'
+    '  1) tests/serial.spec.js:3:3 › checkout flow › step one breaks ────────────────────────────────────\n'
+    '\n'
+    '    Error: \x1b[2mexpect(\x1b[22m\x1b[31mreceived\x1b[39m\x1b[2m).\x1b[22mtoBe\x1b[2m(\x1b[22m\x1b[32mexpected\x1b[39m\x1b[2m) // Object.is equality\x1b[22m\n'
+    '\n'
+    '    Expected: \x1b[32m2\x1b[39m\n'
+    '    Received: \x1b[31m1\x1b[39m\n'
+    '\n'
+    "      1 | const { test, expect } = require('@playwright/test');\n"
+    "      2 | test.describe.serial('checkout flow', () => {\n"
+    "    > 3 |   test('step one breaks', async () => { expect(1).toBe(2); });\n"
+    '        |                                                   ^\n'
+    "      4 |   test('step two', async () => { expect(1).toBe(1); });\n"
+    "      5 |   test('step three', async () => { expect(1).toBe(1); });\n"
+    "      6 |   test('step four', async () => { expect(1).toBe(1); });\n"
+    '        at <scratch>/tests/serial.spec.js:3:51\n'
+    '\n'
+    '  1 failed\n'
+    '    tests/serial.spec.js:3:3 › checkout flow › step one breaks ─────────────────────────────────────\n'
+    '  3 did not run\n'
+)
+
+PW_LIST_INTERRUPTED = (
+    '\n'
+    'Running 2 tests using 2 workers\n'
+    '\n'
+    '  ✘  2 tests/hard.spec.js:2:1 › always fails (3ms)\n'
+    '  ✘  1 tests/slow.spec.js:2:1 › slow one (1.9s)\n'
+    '\n'
+    '\n'
+    '  1) tests/hard.spec.js:2:1 › always fails ─────────────────────────────────────────────────────────\n'
+    '\n'
+    '    Error: \x1b[2mexpect(\x1b[22m\x1b[31mreceived\x1b[39m\x1b[2m).\x1b[22mtoBe\x1b[2m(\x1b[22m\x1b[32mexpected\x1b[39m\x1b[2m) // Object.is equality\x1b[22m\n'
+    '\n'
+    '    Expected: \x1b[32m2\x1b[39m\n'
+    '    Received: \x1b[31m1\x1b[39m\n'
+    '\n'
+    "      1 | const { test, expect } = require('@playwright/test');\n"
+    "      2 | test('always fails', async () => {\n"
+    '    > 3 |   expect(1).toBe(2);\n'
+    '        |             ^\n'
+    '      4 | });\n'
+    '      5 |\n'
+    '        at <scratch>/tests/hard.spec.js:3:13\n'
+    '\n'
+    '  1 failed\n'
+    '    tests/hard.spec.js:2:1 › always fails ──────────────────────────────────────────────────────────\n'
+    '  1 interrupted\n'
+    '    tests/slow.spec.js:2:1 › slow one ──────────────────────────────────────────────────────────────\n'
+)
+
+PW_LIST_STRAY_ERROR = (
+    '\n'
+    'Running 2 tests using 1 worker\n'
+    '\n'
+    '  ✘  1 tests/hard.spec.js:2:1 › always fails (3ms)\n'
+    '  ✓  2 tests/stray.spec.js:2:1 › leaves a stray error behind (3ms)\n'
+    'Error: stray error after the test\n'
+    '\n'
+    '\x1b[31mFailed worker ran 1 test:\x1b[39m\n'
+    'tests/stray.spec.js:2:1 › leaves a stray error behind\n'
+    '\n'
+    '   at tests/stray.spec.js:3\n'
+    '\n'
+    "  1 | const { test, expect } = require('@playwright/test');\n"
+    "  2 | test('leaves a stray error behind', async () => {\n"
+    "> 3 |   setTimeout(() => { throw new Error('stray error after the test'); }, 0);\n"
+    '    |                            ^\n'
+    '  4 |   expect(1).toBe(1);\n'
+    '  5 | });\n'
+    '  6 |\n'
+    '    at Timeout._onTimeout (<scratch>/tests/stray.spec.js:3:28)\n'
+    '\n'
+    '\n'
+    '  1) tests/hard.spec.js:2:1 › always fails ─────────────────────────────────────────────────────────\n'
+    '\n'
+    '    Error: \x1b[2mexpect(\x1b[22m\x1b[31mreceived\x1b[39m\x1b[2m).\x1b[22mtoBe\x1b[2m(\x1b[22m\x1b[32mexpected\x1b[39m\x1b[2m) // Object.is equality\x1b[22m\n'
+    '\n'
+    '    Expected: \x1b[32m2\x1b[39m\n'
+    '    Received: \x1b[31m1\x1b[39m\n'
+    '\n'
+    "      1 | const { test, expect } = require('@playwright/test');\n"
+    "      2 | test('always fails', async () => {\n"
+    '    > 3 |   expect(1).toBe(2);\n'
+    '        |             ^\n'
+    '      4 | });\n'
+    '      5 |\n'
+    '        at <scratch>/tests/hard.spec.js:3:13\n'
+    '\n'
+    '  1 failed\n'
+    '    tests/hard.spec.js:2:1 › always fails ──────────────────────────────────────────────────────────\n'
+    '  1 passed (1.1s)\n'
+    '  1 error was not a part of any test, see above for details\n'
+)
+
+# vitest 4.1.10, the copy this repository installs, run from a scratch
+# directory as `node <repo>/node_modules/vitest/vitest.mjs run` with
+# `NO_COLOR=1`, exit 1: `src/cart.test.js` fails, and `src/stray.test.js`
+# passes while throwing from a `setTimeout` - vitest's `Errors  1 error`.
+# The scratch path on the `RUN` line is replaced by `<scratch>`.
+VITEST_STRAY_ERROR = (
+    '\n'
+    ' RUN  v4.1.10 <scratch>\n'
+    '\n'
+    ' ❯ src/cart.test.js (1 test | 1 failed) 4ms\n'
+    '   × rejects a negative quantity 3ms\n'
+    '\n'
+    '⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n'
+    '\n'
+    ' FAIL  src/cart.test.js > rejects a negative quantity\n'
+    'AssertionError: expected true to be false // Object.is equality\n'
+    '\n'
+    '- Expected\n'
+    '+ Received\n'
+    '\n'
+    '- false\n'
+    '+ true\n'
+    '\n'
+    ' ❯ src/cart.test.js:2:58\n'
+    "      1| import { test, expect } from 'vitest';\n"
+    "      2| test('rejects a negative quantity', () => { expect(true).toBe(false); …\n"
+    '       |                                                          ^\n'
+    '      3|\n'
+    '\n'
+    '⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯\n'
+    '\n'
+    '⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯\n'
+    '\n'
+    'Vitest caught 1 unhandled error during the test run.\n'
+    'This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.\n'
+    '\n'
+    '⎯⎯⎯⎯⎯ Uncaught Exception ⎯⎯⎯⎯⎯\n'
+    'Error: stray error after the test\n'
+    ' ❯ Timeout._onTimeout src/stray.test.js:3:28\n'
+    "      1| import { test, expect } from 'vitest';\n"
+    "      2| test('leaves a stray error behind', () => {\n"
+    "      3|   setTimeout(() => { throw new Error('stray error after the test'); },…\n"
+    '       |                            ^\n'
+    '      4|   expect(1).toBe(1);\n'
+    '      5| });\n'
+    ' ❯ listOnTimeout node:internal/timers:585:17\n'
+    ' ❯ processTimers node:internal/timers:521:7\n'
+    '\n'
+    'This error originated in "src/stray.test.js" test file. It doesn\'t mean the error was thrown inside the file itself, but while it was running.\n'
+    '⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n'
+    '\n'
+    '\n'
+    ' Test Files  1 failed | 1 passed (2)\n'
+    '      Tests  1 failed | 1 passed (2)\n'
+    '     Errors  1 error\n'
+    '   Start at  17:34:42\n'
+    '   Duration  104ms (transform 18ms, setup 0ms, import 31ms, tests 5ms, environment 0ms)\n'
+    '\n'
+)
+
+# jest 30.5.2 (not pinned by this repository - installed into a scratch
+# directory for this capture alone), `npx jest` with `collectCoverage` and a
+# global lines threshold of 100, exit 1: the one failing test is named and the
+# threshold failure beneath the coverage table is not a test at all.
+JEST_THRESHOLD_FAIL = (
+    'FAIL src/cart.test.js\n'
+    '  ● rejects a negative quantity\n'
+    '\n'
+    '    expect(received).toBe(expected) // Object.is equality\n'
+    '\n'
+    '    Expected: 0\n'
+    '    Received: null\n'
+    '\n'
+    "      1 | const { price } = require('./price');\n"
+    "    > 2 | test('rejects a negative quantity', () => { expect(price(-1)).toBe(0); });\n"
+    '        |                                                               ^\n'
+    '      3 |\n'
+    '\n'
+    '      at Object.toBe (src/cart.test.js:2:63)\n'
+    '\n'
+    '----------|---------|----------|---------|---------|-------------------\n'
+    'File      | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s \n'
+    '----------|---------|----------|---------|---------|-------------------\n'
+    'All files |      75 |       50 |     100 |   66.66 |                   \n'
+    ' price.js |      75 |       50 |     100 |   66.66 | 3                 \n'
+    '----------|---------|----------|---------|---------|-------------------\n'
+    'Jest: Coverage for lines (66.66%) does not meet "global" threshold (100%)\n'
+    'Test Suites: 1 failed, 1 total\n'
+    'Tests:       1 failed, 1 total\n'
+    'Snapshots:   0 total\n'
+    'Time:        0.196 s\n'
+    'Ran all test suites.\n'
+)
+
+# HAND-BUILT, and the only fixture in this block that is: the summary counts
+# two failures and the short summary names one. No runner run here could be
+# made to print that pair, and it is the shape of every reporter that names
+# fewer failures than it counts.
+PYTEST_COUNTS_MORE_THAN_NAMED = """\
+FAILED tests/test_cart.py::test_negative - AssertionError
+=== 2 failed, 3 passed in 0.12s ===
+"""
+
+# --- fixtures: what a mute must refuse, and what it may honour ---------------
+# CAPTURED, NOT WRITTEN, each with the scratch directory it ran in replaced by
+# `<scratch>` and nothing else changed. Every install was made for this capture
+# alone and deleted after it.
+#   pytest 9.1.1 and pytest-cov 7.1.0, in a fresh venv (`python -m pytest`):
+#     PYTEST_REAL_FAIL      `pytest -q`, one failing test beside a passing one;
+#                           exit 1.
+#     PYTEST_RF_WITH_ERROR  `pytest -q -rf`, a failing test and a fixture that
+#                           errors at setup - the short summary names only the
+#                           failure; exit 1.
+#     PYTEST_STOPPED_EARLY  `pytest -q -x`, two failing tests; exit 1.
+#     PYTEST_COV_THRESHOLD  `pytest -q --cov=shop --cov-fail-under=100`; exit 1.
+# Two lines are BUILT rather than written, with bytes unchanged: ruff's rule
+# code, which reads to this tree's citation lint as a register id, and jest's
+# suites ratio, which reads to the prose-number lint as a count claim.
+#   pre-commit 4.6.2, two `repo: local` hooks (`python -m pytest -q` and
+#   `ruff check`), `pre-commit run --all-files`; exit 1:
+#     PRECOMMIT_PYTEST_AND_RUFF
+#   the same tree, `sh -c 'pytest -q; ruff check .'`; exit 1:
+#     PYTEST_THEN_RUFF
+#   jest 30.5.2 and mocha 12.0.2, `CI` unset, `FORCE_COLOR=0`:
+#     JEST_REAL_FAIL        `npx jest src/cart.test.js`; exit 1.
+#     JEST_BAIL             `npx jest --bail -i`, two failing suites; exit 1.
+#     MOCHA_THEN_JEST       `sh -c 'npx mocha ...; npx jest src/cart.test.js'`
+#                           with `NO_COLOR=1` - one step's output carrying two
+#                           runners' summaries; exit 1 (jest's).
+#   vitest 4.1.10 with @vitest/coverage-v8 4.1.10, `NO_COLOR=1`:
+#     VITEST_REAL_FAIL      `npx vitest run src/cart.test.js`; exit 1.
+#     VITEST_BAIL           `npx vitest run --bail=1 --no-file-parallelism`,
+#                           two failing files; exit 1.
+#     VITEST_COV_THRESHOLD  `npx vitest run src/cart.test.js --coverage.enabled
+#                           --coverage.reportOnFailure --coverage.include=...
+#                           --coverage.thresholds.lines=100`; exit 1. Without
+#                           `reportOnFailure` this version prints no coverage
+#                           at all once a test fails.
+PYTEST_REAL_FAIL = (
+    'F.                                                                       [100%]\n'
+    '=================================== FAILURES ===================================\n'
+    '________________________________ test_negative _________________________________\n'
+    '\n'
+    '    def test_negative():\n'
+    '>       assert -1 > 0\n'
+    'E       assert -1 > 0\n'
+    '\n'
+    'tests/test_cart.py:2: AssertionError\n'
+    '=========================== short test summary info ============================\n'
+    'FAILED tests/test_cart.py::test_negative - assert -1 > 0\n'
+    '1 failed, 1 passed in 0.01s\n'
+)
+
+PYTEST_RF_WITH_ERROR = (
+    'FE                                                                       [100%]\n'
+    '==================================== ERRORS ====================================\n'
+    '______________________ ERROR at setup of test_uses_basket ______________________\n'
+    '\n'
+    '    @pytest.fixture\n'
+    '    def basket():\n'
+    '>       raise RuntimeError("fixture setup fails")\n'
+    'E       RuntimeError: fixture setup fails\n'
+    '\n'
+    'tests/test_cart.py:6: RuntimeError\n'
+    '=================================== FAILURES ===================================\n'
+    '________________________________ test_negative _________________________________\n'
+    '\n'
+    '    def test_negative():\n'
+    '>       assert -1 > 0\n'
+    'E       assert -1 > 0\n'
+    '\n'
+    'tests/test_cart.py:10: AssertionError\n'
+    '=========================== short test summary info ============================\n'
+    'FAILED tests/test_cart.py::test_negative - assert -1 > 0\n'
+    '1 failed, 1 error in 0.01s\n'
+)
+
+PYTEST_STOPPED_EARLY = (
+    'F\n'
+    '=================================== FAILURES ===================================\n'
+    '________________________________ test_negative _________________________________\n'
+    '\n'
+    '    def test_negative():\n'
+    '>       assert -1 > 0\n'
+    'E       assert -1 > 0\n'
+    '\n'
+    'tests/test_cart.py:2: AssertionError\n'
+    '=========================== short test summary info ============================\n'
+    'FAILED tests/test_cart.py::test_negative - assert -1 > 0\n'
+    '!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!\n'
+    '1 failed in 0.01s\n'
+)
+
+PYTEST_COV_THRESHOLD = (
+    'F\n'
+    'ERROR: Coverage failure: total of 75 is less than fail-under=100\n'
+    '                                                                         [100%]\n'
+    '=================================== FAILURES ===================================\n'
+    '________________________________ test_negative _________________________________\n'
+    '\n'
+    '    def test_negative():\n'
+    '>       assert price(-1) == 0\n'
+    'E       assert None == 0\n'
+    'E        +  where None = price(-1)\n'
+    '\n'
+    'tests/test_cart.py:5: AssertionError\n'
+    '================================ tests coverage ================================\n'
+    '_______________ coverage: platform darwin, python 3.14.7-final-0 _______________\n'
+    '\n'
+    'Name               Stmts   Miss  Cover\n'
+    '--------------------------------------\n'
+    'shop/__init__.py       0      0   100%\n'
+    'shop/price.py          4      1    75%\n'
+    '--------------------------------------\n'
+    'TOTAL                  4      1    75%\n'
+    'FAIL Required test coverage of 100% not reached. Total coverage: 75.00%\n'
+    '=========================== short test summary info ============================\n'
+    'FAILED tests/test_cart.py::test_negative - assert None == 0\n'
+    '1 failed in 0.01s\n'
+)
+
+PRECOMMIT_PYTEST_AND_RUFF = (
+    'pytest...................................................................Failed\n'
+    '- hook id: pytest\n'
+    '- exit code: 1\n'
+    '\n'
+    'F.                                                                       [100%]\n'
+    '=================================== FAILURES ===================================\n'
+    '________________________________ test_negative _________________________________\n'
+    '\n'
+    '    def test_negative():\n'
+    '>       assert -1 > 0\n'
+    'E       assert -1 > 0\n'
+    '\n'
+    'tests/test_cart.py:2: AssertionError\n'
+    '=========================== short test summary info ============================\n'
+    'FAILED tests/test_cart.py::test_negative - assert -1 > 0\n'
+    '1 failed, 1 passed in 0.01s\n'
+    '\n'
+    'ruff.....................................................................Failed\n'
+    '- hook id: ruff\n'
+    '- exit code: 1\n'
+    '\n'
+    + ("F%d" % (401,)) + ' [*] `os` imported but unused\n'
+    ' --> lint_me.py:1:8\n'
+    '  |\n'
+    '1 | import os\n'
+    '  |        ^^\n'
+    'help: Remove unused import: `os`\n'
+    '  |\n'
+    '  - import os\n'
+    '  |\n'
+    '\n'
+    'PLR0133 Two constants compared in a comparison, consider replacing `1 > 0`\n'
+    ' --> tests/test_cart.py:6:12\n'
+    '  |\n'
+    '5 | def test_positive():\n'
+    '6 |     assert 1 > 0\n'
+    '  |            ^\n'
+    '\n'
+    'Found 2 errors.\n'
+    '[*] 1 fixable with the `--fix` option.\n'
+    '\n'
+)
+
+PYTEST_THEN_RUFF = (
+    'F.                                                                       [100%]\n'
+    '=================================== FAILURES ===================================\n'
+    '________________________________ test_negative _________________________________\n'
+    '\n'
+    '    def test_negative():\n'
+    '>       assert -1 > 0\n'
+    'E       assert -1 > 0\n'
+    '\n'
+    'tests/test_cart.py:2: AssertionError\n'
+    '=========================== short test summary info ============================\n'
+    'FAILED tests/test_cart.py::test_negative - assert -1 > 0\n'
+    '1 failed, 1 passed in 0.01s\n'
+    + ("F%d" % (401,)) + ' [*] `os` imported but unused\n'
+    ' --> lint_me.py:1:8\n'
+    '  |\n'
+    '1 | import os\n'
+    '  |        ^^\n'
+    'help: Remove unused import: `os`\n'
+    '  |\n'
+    '  - import os\n'
+    '  |\n'
+    '\n'
+    'PLR0133 Two constants compared in a comparison, consider replacing `1 > 0`\n'
+    ' --> tests/test_cart.py:6:12\n'
+    '  |\n'
+    '5 | def test_positive():\n'
+    '6 |     assert 1 > 0\n'
+    '  |            ^\n'
+    '\n'
+    'Found 2 errors.\n'
+    '[*] 1 fixable with the `--fix` option.\n'
+)
+
+JEST_REAL_FAIL = (
+    'FAIL src/cart.test.js\n'
+    '  ● rejects a negative quantity\n'
+    '\n'
+    '    expect(received).toBe(expected) // Object.is equality\n'
+    '\n'
+    '    Expected: 0\n'
+    '    Received: null\n'
+    '\n'
+    "      1 | const { price } = require('./price');\n"
+    "    > 2 | test('rejects a negative quantity', () => { expect(price(-1)).toBe(0); });\n"
+    '        |                                                               ^\n'
+    '      3 |\n'
+    '\n'
+    '      at Object.toBe (src/cart.test.js:2:63)\n'
+    '\n'
+    'Test Suites: 1 failed, 1 total\n'
+    'Tests:       1 failed, 1 total\n'
+    'Snapshots:   0 total\n'
+    'Time:        0.27 s\n'
+    'Ran all test suites matching src/cart.test.js.\n'
+)
+
+JEST_BAIL = (
+    'FAIL src/cart.test.js\n'
+    '  ● rejects a negative quantity\n'
+    '\n'
+    '    expect(received).toBe(expected) // Object.is equality\n'
+    '\n'
+    '    Expected: 0\n'
+    '    Received: null\n'
+    '\n'
+    "      1 | const { price } = require('./price');\n"
+    "    > 2 | test('rejects a negative quantity', () => { expect(price(-1)).toBe(0); });\n"
+    '        |                                                               ^\n'
+    '      3 |\n'
+    '\n'
+    '      at Object.toBe (src/cart.test.js:2:63)\n'
+    '\n'
+    'Test Suites: 1 failed, ' + ("%d of %d total\n" % (1, 2)) +
+    'Tests:       1 failed, 1 total\n'
+    'Snapshots:   0 total\n'
+    'Time:        0.115 s, estimated 1 s\n'
+    'Ran all test suites.\n'
+)
+
+MOCHA_THEN_JEST = (
+    '\n'
+    '\n'
+    '  ✔ adds tax\n'
+    '\n'
+    '  1 passing (1ms)\n'
+    '\n'
+    'FAIL src/cart.test.js\n'
+    '  ● rejects a negative quantity\n'
+    '\n'
+    '    expect(received).toBe(expected) // Object.is equality\n'
+    '\n'
+    '    Expected: 0\n'
+    '    Received: null\n'
+    '\n'
+    "      1 | const { price } = require('./price');\n"
+    "    > 2 | test('rejects a negative quantity', () => { expect(price(-1)).toBe(0); });\n"
+    '        |                                                               ^\n'
+    '      3 |\n'
+    '\n'
+    '      at Object.toBe (src/cart.test.js:2:63)\n'
+    '\n'
+    'Test Suites: 1 failed, 1 total\n'
+    'Tests:       1 failed, 1 total\n'
+    'Snapshots:   0 total\n'
+    'Time:        0.163 s, estimated 1 s\n'
+    'Ran all test suites matching src/cart.test.js.\n'
+)
+
+VITEST_REAL_FAIL = (
+    '\n'
+    ' RUN  v4.1.10 <scratch>\n'
+    '\n'
+    ' ❯ src/cart.test.js (1 test | 1 failed) 3ms\n'
+    '   × rejects a negative quantity 3ms\n'
+    '\n'
+    '⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n'
+    '\n'
+    ' FAIL  src/cart.test.js > rejects a negative quantity\n'
+    'AssertionError: expected null to be +0 // Object.is equality\n'
+    '\n'
+    '- Expected:\n'
+    '0\n'
+    '\n'
+    '+ Received:\n'
+    'null\n'
+    '\n'
+    ' ❯ src/cart.test.js:3:63\n'
+    "      1| import { test, expect } from 'vitest';\n"
+    "      2| import { price } from './price.js';\n"
+    "      3| test('rejects a negative quantity', () => { expect(price(-1)).toBe(0);…\n"
+    '       |                                                               ^\n'
+    '      4|\n'
+    '\n'
+    '⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯\n'
+    '\n'
+    '\n'
+    ' Test Files  1 failed (1)\n'
+    '      Tests  1 failed (1)\n'
+    '   Start at  18:01:54\n'
+    '   Duration  97ms (transform 10ms, setup 0ms, import 17ms, tests 3ms, environment 0ms)\n'
+    '\n'
+)
+
+VITEST_BAIL = (
+    '\n'
+    ' RUN  v4.1.10 <scratch>\n'
+    '\n'
+    ' ❯ src/cart.test.js (1 test | 1 failed) 4ms\n'
+    '   × rejects a negative quantity 3ms\n'
+    '\n'
+    '⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n'
+    '\n'
+    ' FAIL  src/cart.test.js > rejects a negative quantity\n'
+    'AssertionError: expected null to be +0 // Object.is equality\n'
+    '\n'
+    '- Expected:\n'
+    '0\n'
+    '\n'
+    '+ Received:\n'
+    'null\n'
+    '\n'
+    ' ❯ src/cart.test.js:3:63\n'
+    "      1| import { test, expect } from 'vitest';\n"
+    "      2| import { price } from './price.js';\n"
+    "      3| test('rejects a negative quantity', () => { expect(price(-1)).toBe(0);…\n"
+    '       |                                                               ^\n'
+    '      4|\n'
+    '\n'
+    '⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯\n'
+    '\n'
+    '\n'
+    ' Test Files  1 failed (2)\n'
+    '      Tests  1 failed (1)\n'
+    '   Start at  18:01:55\n'
+    '   Duration  93ms (transform 10ms, setup 0ms, import 17ms, tests 4ms, environment 0ms)\n'
+    '\n'
+)
+
+VITEST_COV_THRESHOLD = (
+    '\n'
+    ' RUN  v4.1.10 <scratch>\n'
+    '      Coverage enabled with v8\n'
+    '\n'
+    ' ❯ src/cart.test.js (1 test | 1 failed) 4ms\n'
+    '   × rejects a negative quantity 3ms\n'
+    '\n'
+    '⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯\n'
+    '\n'
+    ' FAIL  src/cart.test.js > rejects a negative quantity\n'
+    'AssertionError: expected null to be +0 // Object.is equality\n'
+    '\n'
+    '- Expected:\n'
+    '0\n'
+    '\n'
+    '+ Received:\n'
+    'null\n'
+    '\n'
+    ' ❯ src/cart.test.js:3:63\n'
+    "      1| import { test, expect } from 'vitest';\n"
+    "      2| import { price } from './price.js';\n"
+    "      3| test('rejects a negative quantity', () => { expect(price(-1)).toBe(0);…\n"
+    '       |                                                               ^\n'
+    '      4|\n'
+    '\n'
+    '⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯\n'
+    '\n'
+    '\n'
+    ' Test Files  1 failed (1)\n'
+    '      Tests  1 failed (1)\n'
+    '   Start at  18:02:06\n'
+    '   Duration  123ms (transform 11ms, setup 0ms, import 19ms, tests 4ms, environment 0ms)\n'
+    '\n'
+    ' % Coverage report from v8\n'
+    '----------|---------|----------|---------|---------|-------------------\n'
+    'File      | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s \n'
+    '----------|---------|----------|---------|---------|-------------------\n'
+    'All files |   66.66 |       50 |     100 |      50 |                   \n'
+    ' price.js |   66.66 |       50 |     100 |      50 | 3                 \n'
+    '----------|---------|----------|---------|---------|-------------------\n'
+    '\n'
+    '=============================== Coverage summary ===============================\n'
+    'Statements   : 66.66% ( 2/3 )\n'
+    'Branches     : 50% ( 1/2 )\n'
+    'Functions    : 100% ( 1/1 )\n'
+    'Lines        : 50% ( 1/2 )\n'
+    '================================================================================\n'
+    'ERROR: Coverage for lines (50%) does not meet global threshold (100%)\n'
+)
+
+# --- fixtures: what a direct runner call still hides -------------------------
+# CAPTURED, NOT WRITTEN; the scratch directory is replaced by `<scratch>` and
+# nothing else changed, and every install was deleted after its capture.
+#   playwright 1.56.0, `CI` unset, `FORCE_COLOR=0`, `--reporter=list`:
+#     PW_LIST_RED_NO_FLAKY   `npx playwright test --retries=1 --workers=1`,
+#                            one failing test beside a passing one; exit 1.
+#     PW_LIST_FAIL_ON_FLAKY  the same plus a test that passes on retry, with
+#                            `--fail-on-flaky-tests`; exit 1.
+#   jest 30.5.2, `CI` unset, `FORCE_COLOR=0`, `npx jest`:
+#     JEST_OBSOLETE_SNAPSHOT       a failing test beside a snapshot file
+#                                  holding an entry no test writes; exit 1.
+#     JEST_OVER_SUMMARY_THRESHOLD  one failing suite among more suites than
+#                                  jest's `summaryThreshold`, so the failure is
+#                                  printed again under `Summary of all failing
+#                                  tests`; exit 1.
+PW_LIST_RED_NO_FLAKY = (
+    '\n'
+    'Running 2 tests using 1 worker\n'
+    '\n'
+    '  ✓  1 tests/fine.spec.js:2:1 › always passes (5ms)\n'
+    '  ✘  2 tests/hard.spec.js:2:1 › always fails (1ms)\n'
+    '  ✘  3 tests/hard.spec.js:2:1 › always fails (retry #1) (3ms)\n'
+    '\n'
+    '\n'
+    '  1) tests/hard.spec.js:2:1 › always fails ─────────────────────────────────────────────────────────\n'
+    '\n'
+    '    Error: \x1b[2mexpect(\x1b[22m\x1b[31mreceived\x1b[39m\x1b[2m).\x1b[22mtoBe\x1b[2m(\x1b[22m\x1b[32mexpected\x1b[39m\x1b[2m) // Object.is equality\x1b[22m\n'
+    '\n'
+    '    Expected: \x1b[32m2\x1b[39m\n'
+    '    Received: \x1b[31m1\x1b[39m\n'
+    '\n'
+    "      1 | const { test, expect } = require('@playwright/test');\n"
+    "      2 | test('always fails', async () => {\n"
+    '    > 3 |   expect(1).toBe(2);\n'
+    '        |             ^\n'
+    '      4 | });\n'
+    '      5 |\n'
+    '        at <scratch>/tests/hard.spec.js:3:13\n'
+    '\n'
+    '    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────\n'
+    '\n'
+    '    Error: \x1b[2mexpect(\x1b[22m\x1b[31mreceived\x1b[39m\x1b[2m).\x1b[22mtoBe\x1b[2m(\x1b[22m\x1b[32mexpected\x1b[39m\x1b[2m) // Object.is equality\x1b[22m\n'
+    '\n'
+    '    Expected: \x1b[32m2\x1b[39m\n'
+    '    Received: \x1b[31m1\x1b[39m\n'
+    '\n'
+    "      1 | const { test, expect } = require('@playwright/test');\n"
+    "      2 | test('always fails', async () => {\n"
+    '    > 3 |   expect(1).toBe(2);\n'
+    '        |             ^\n'
+    '      4 | });\n'
+    '      5 |\n'
+    '        at <scratch>/tests/hard.spec.js:3:13\n'
+    '\n'
+    '  1 failed\n'
+    '    tests/hard.spec.js:2:1 › always fails ──────────────────────────────────────────────────────────\n'
+    '  1 passed (585ms)\n'
+)
+
+PW_LIST_FAIL_ON_FLAKY = (
+    '\n'
+    'Running 3 tests using 1 worker\n'
+    '\n'
+    '  ✓  1 tests/fine.spec.js:2:1 › always passes (2ms)\n'
+    '  ✘  2 tests/flaky.spec.js:2:1 › settles on retry (0ms)\n'
+    '  ✓  3 tests/flaky.spec.js:2:1 › settles on retry (retry #1) (6ms)\n'
+    '  ✘  4 tests/hard.spec.js:2:1 › always fails (1ms)\n'
+    '  ✘  5 tests/hard.spec.js:2:1 › always fails (retry #1) (3ms)\n'
+    '\n'
+    '\n'
+    '  1) tests/hard.spec.js:2:1 › always fails ─────────────────────────────────────────────────────────\n'
+    '\n'
+    '    Error: \x1b[2mexpect(\x1b[22m\x1b[31mreceived\x1b[39m\x1b[2m).\x1b[22mtoBe\x1b[2m(\x1b[22m\x1b[32mexpected\x1b[39m\x1b[2m) // Object.is equality\x1b[22m\n'
+    '\n'
+    '    Expected: \x1b[32m2\x1b[39m\n'
+    '    Received: \x1b[31m1\x1b[39m\n'
+    '\n'
+    "      1 | const { test, expect } = require('@playwright/test');\n"
+    "      2 | test('always fails', async () => {\n"
+    '    > 3 |   expect(1).toBe(2);\n'
+    '        |             ^\n'
+    '      4 | });\n'
+    '      5 |\n'
+    '        at <scratch>/tests/hard.spec.js:3:13\n'
+    '\n'
+    '    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────\n'
+    '\n'
+    '    Error: \x1b[2mexpect(\x1b[22m\x1b[31mreceived\x1b[39m\x1b[2m).\x1b[22mtoBe\x1b[2m(\x1b[22m\x1b[32mexpected\x1b[39m\x1b[2m) // Object.is equality\x1b[22m\n'
+    '\n'
+    '    Expected: \x1b[32m2\x1b[39m\n'
+    '    Received: \x1b[31m1\x1b[39m\n'
+    '\n'
+    "      1 | const { test, expect } = require('@playwright/test');\n"
+    "      2 | test('always fails', async () => {\n"
+    '    > 3 |   expect(1).toBe(2);\n'
+    '        |             ^\n'
+    '      4 | });\n'
+    '      5 |\n'
+    '        at <scratch>/tests/hard.spec.js:3:13\n'
+    '\n'
+    '  2) tests/flaky.spec.js:2:1 › settles on retry ────────────────────────────────────────────────────\n'
+    '\n'
+    '    Error: first attempt fails\n'
+    '\n'
+    "      1 | const { test, expect } = require('@playwright/test');\n"
+    "      2 | test('settles on retry', async ({}, testInfo) => {\n"
+    "    > 3 |   if (testInfo.retry === 0) throw new Error('first attempt fails');\n"
+    '        |                                   ^\n'
+    '      4 |   expect(1).toBe(1);\n'
+    '      5 | });\n'
+    '      6 |\n'
+    '        at <scratch>/tests/flaky.spec.js:3:35\n'
+    '\n'
+    '  1 failed\n'
+    '    tests/hard.spec.js:2:1 › always fails ──────────────────────────────────────────────────────────\n'
+    '  1 flaky\n'
+    '    tests/flaky.spec.js:2:1 › settles on retry ─────────────────────────────────────────────────────\n'
+    '  1 passed (888ms)\n'
+)
+
+JEST_OBSOLETE_SNAPSHOT = (
+    'FAIL src/cart.test.js\n'
+    '  ● rejects a negative quantity\n'
+    '\n'
+    '    expect(received).toBe(expected) // Object.is equality\n'
+    '\n'
+    '    Expected: 0\n'
+    '    Received: -1\n'
+    '\n'
+    "    > 1 | test('rejects a negative quantity', () => { expect(-1).toBe(0); });\n"
+    '        |                                                        ^\n'
+    "      2 | test('renders a label', () => { expect('label').toMatchSnapshot(); });\n"
+    '      3 |\n'
+    '\n'
+    '      at Object.toBe (src/cart.test.js:1:56)\n'
+    '\n'
+    ' › 1 snapshot obsolete.\n'
+    '   • a test that no longer exists 1\n'
+    'Snapshot Summary\n'
+    ' › 1 snapshot obsolete from 1 test suite. To remove it, run `npm run npx -- -u`.\n'
+    '   ↳ src/cart.test.js\n'
+    '       • a test that no longer exists 1\n'
+    '\n'
+    'Test Suites: 1 failed, 1 total\n'
+    'Tests:       1 failed, 1 passed, 2 total\n'
+    'Snapshots:   1 obsolete, 1 passed, 1 total\n'
+    'Time:        0.154 s\n'
+    'Ran all test suites.\n'
+)
+
+JEST_OVER_SUMMARY_THRESHOLD = (
+    'FAIL src/cart.test.js\n'
+    '  ● rejects a negative quantity\n'
+    '\n'
+    '    expect(received).toBe(expected) // Object.is equality\n'
+    '\n'
+    '    Expected: 0\n'
+    '    Received: -1\n'
+    '\n'
+    "    > 1 | test('rejects a negative quantity', () => { expect(-1).toBe(0); });\n"
+    '        |                                                        ^\n'
+    '      2 |\n'
+    '\n'
+    '      at Object.toBe (src/cart.test.js:1:56)\n'
+    '\n'
+    '\n'
+    'Summary of all failing tests\n'
+    'FAIL src/cart.test.js\n'
+    '  ● rejects a negative quantity\n'
+    '\n'
+    '    expect(received).toBe(expected) // Object.is equality\n'
+    '\n'
+    '    Expected: 0\n'
+    '    Received: -1\n'
+    '\n'
+    "    > 1 | test('rejects a negative quantity', () => { expect(-1).toBe(0); });\n"
+    '        |                                                        ^\n'
+    '      2 |\n'
+    '\n'
+    '      at Object.toBe (src/cart.test.js:1:56)\n'
+    '\n'
+    '\n'
+    'Test Suites: 1 failed, 21 passed, 22 total\n'
+    'Tests:       1 failed, 21 passed, 22 total\n'
+    'Snapshots:   0 total\n'
+    'Time:        0.611 s\n'
+    'Ran all test suites.\n'
+)
 
 
 def _step(python, script, *args):
@@ -4243,6 +5294,8 @@ def _cases(check):
     _harness.stage(check, "ce0 the empty-and-retry block",
                    _empty_and_retry_cases)
     _harness.stage(check, "sf0 the suite-files block", _suite_files_cases)
+    _harness.stage(check, "mu0 the muted-suite block", _muted_cases)
+    _harness.stage(check, "pw0 the playwright-flaky block", _playwright_cases)
     _harness.stage(check, "rv0 the remedy-line block", _remedy_cases)
     _harness.stage(check, "dg0 the record-before-render block", _record_order_cases)
     _harness.stage(check, "xg0 the excluded/no-suite block", _excluded_cases)
@@ -4864,6 +5917,491 @@ def _suite_files_cases(check):
           "still `none` here: %r" % (precommit_step.get("measured"),),
           precommit_step.get("measured") is not None
           and precommit_step.get("suiteReader") == "none")
+
+
+def _mini_repo(prefix):
+    """A real, empty git repository: `run_gate` asks git for the tree bracket."""
+    root = _harness.fixture_root(prefix)
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return root
+
+
+def _scripted(outputs, calls=None):
+    """A runner answering each command from `outputs[command]`, counting calls."""
+    def run(_project, command, _timeout=None):
+        if calls is not None:
+            calls.append(command)
+        code, text = outputs[command]
+        return code, text, {}
+    return run
+
+
+# Two suites fail in ONE jest step, and a mute names only the first of them.
+JEST_TWO_SUITES_FAIL = """\
+FAIL src/cart.test.ts
+  ● cart > rejects a negative quantity
+FAIL src/pay.test.ts
+  ● pay > declines an expired card
+
+Tests:       2 failed, 3 passed, 5 total
+"""
+
+
+def _muted_cases(check):
+    """A muted suite's failure is recorded and does not fail the run - only
+    when every suite the runner NAMED as failing is muted by an entry that
+    still holds. Everything else blocks exactly as it did before a mute
+    existed: an expired entry, a second failing suite nobody muted, and a
+    failure whose names could not be read at all.
+    """
+    repo = _mini_repo("run-test-gate-muted-")
+    today = datetime.date(2026, 9, 27)
+    mute = {"test": "src/cart.test.ts", "bugId": "B1", "until": "2026-10-01",
+            "reason": "flaky on the shared runner", "owner": "shop team"}
+    outputs = {"ruff check .": (0, "All checks passed!\n"),
+               "npx jest": (1, JEST_CART_FAIL)}
+    commands = [("lint", "ruff check ."), ("test", "npx jest")]
+
+    calls = []
+    res = M.run_gate(repo, commands, runner=_scripted(outputs, calls),
+                     muted=[mute], today=today)
+    test_step = [st for st in res["steps"] if st["name"] == "test"][0]
+    check("mu1 THE FAULT: a run whose ONLY failing suite is muted by an "
+          "unexpired entry comes back `passed`, and the failing step keeps its "
+          "exit, its failing names and its failing suites: %r"
+          % ((res["status"], res["failed"], test_step.get("exit"),
+              test_step.get("failingSuites")),),
+          res["status"] == "passed" and res["failed"] == []
+          and test_step["exit"] == 1
+          and test_step.get("failing") == ["cart > rejects a negative quantity"]
+          and test_step.get("failingSuites") == ["src/cart.test.ts"])
+    check("mu2 ...and the run carries the mute it honoured as "
+          "`{test, bugId, until}`: %r" % (res.get("muted"),),
+          res.get("muted") == [{"test": "src/cart.test.ts", "bugId": "B1",
+                                "until": "2026-10-01"}])
+    lines = []
+    code = M.render(res, out=lines.append)
+    text = "\n".join(lines)
+    check("mu3 ...the terminal says so in its own line, and the exit code is "
+          "the green one: %r" % ((code, [ln for ln in lines if "muted" in ln]),),
+          code == M.E_OK
+          and "muted: src/cart.test.ts failed (bug B1, until 2026-10-01)"
+          in text)
+    check("mu4 THE RUNNER NEVER RETRIES A FAILURE, muted or not - a retry "
+          "stays reserved for a signal death: %r" % (calls,),
+          calls == ["ruff check .", "npx jest"])
+
+    same_day = M.run_gate(repo, commands, runner=_scripted(outputs),
+                          muted=[dict(mute, until="2026-09-27")], today=today)
+    check("mu5 `until` IS INCLUSIVE: a mute until today still holds today: %r"
+          % ((same_day["status"], same_day.get("muted")),),
+          same_day["status"] == "passed" and same_day["failed"] == [])
+
+    expired = M.run_gate(repo, commands, runner=_scripted(outputs),
+                         muted=[dict(mute, until="2026-09-26")], today=today)
+    exp_lines = []
+    exp_code = M.render(expired, out=exp_lines.append)
+    check("mu6 ALLOW: an EXPIRED entry is not honoured - the failure blocks "
+          "and the line says why: %r"
+          % ((expired["status"], expired["failed"],
+              [ln for ln in exp_lines if "muted" in ln]),),
+          expired["status"] == "failed" and expired["failed"] == ["test"]
+          and not expired.get("muted") and exp_code != M.E_OK
+          and "muted until 2026-09-26 - expired, so this failure blocks"
+          in "\n".join(exp_lines))
+
+    two = M.run_gate(repo, [("test", "npx jest")],
+                     runner=_scripted({"npx jest": (1, JEST_TWO_SUITES_FAIL)}),
+                     muted=[mute], today=today)
+    check("mu7 ALLOW: a muted suite BESIDE an unmuted failing suite in the "
+          "same step fails as it always did - a mute covers what it names "
+          "and nothing next to it: %r" % ((two["status"], two["failed"]),),
+          two["status"] == "failed" and two["failed"] == ["test"]
+          and not two.get("muted"))
+
+    tail = M.run_gate(repo, [("test", "make check")],
+                      runner=_scripted({"make check": (
+                          1, "src/cart.test.ts\nmake: *** [check] Error 1\n")}),
+                      muted=[mute], today=today)
+    check("mu8 ALLOW: a failure whose names could not be READ (a tail, not "
+          "a runner's failure lines) fails as today - a mute is never "
+          "assumed, even when the muted path appears in the output: %r"
+          % ((tail["status"], tail["failed"],
+              tail["steps"][0].get("failingBasis")),),
+          tail["status"] == "failed" and tail["failed"] == ["test"]
+          and not tail.get("muted"))
+
+    unmuted = M.run_gate(repo, commands, runner=_scripted(outputs),
+                         muted=[], today=today)
+    check("mu9 ALLOW: with no mute at all the same output is `failed`, which "
+          "is what makes `mu1` a statement about the mute: %r"
+          % ((unmuted["status"], unmuted["failed"]),),
+          unmuted["status"] == "failed" and unmuted["failed"] == ["test"]
+          and not unmuted.get("muted"))
+
+    old = M.run_gate(repo, commands, runner=_scripted(outputs),
+                     muted=[dict(mute, until="2000-01-01")])
+    far = M.run_gate(repo, commands, runner=_scripted(outputs),
+                     muted=[dict(mute, until="9999-12-31")])
+    check("mu10 WITH NO `today` THE RUNNER ASKS THE ONE CLOCK the validator "
+          "asks (`_manifest_vocab.mute_today`), never none at all: a mute "
+          "long past blocks, one far ahead holds: %r"
+          % ((old["status"], far["status"]),),
+          old["status"] == "failed" and far["status"] == "passed")
+
+    bad = M.run_gate(repo, commands, runner=_scripted(outputs),
+                     muted=[dict(mute, until="soon")], today=today)
+    check("mu11 ALLOW: an `until` that is not a day is not honoured - an "
+          "unreadable expiry is not read as a live one: %r"
+          % ((bad["status"],),),
+          bad["status"] == "failed" and not bad.get("muted"))
+
+    _row = _ev_io.row_for(repo, res, "task", {"taskId": "P1.2"},
+                          {"runId": "R-mute"}, published=["npx jest"])
+    check("mu12 THE COMMITTED ROW carries the mute beside the failing step "
+          "it excused: %r" % ((_row.get("status"), _row.get("muted")),),
+          _row.get("status") == "passed"
+          and _row.get("muted") == res.get("muted")
+          and [s["exit"] for s in _row["steps"]] == [0, 1])
+
+    # --- a mute applies only when the NAMED failures are the whole failure ---
+    def _one(label, command, code, text, test):
+        """One step, one mute naming `test`: `(result, step, rendered)`."""
+        got = M.run_gate(repo, [("e2e", command)],
+                         runner=_scripted({command: (code, text)}),
+                         muted=[dict(mute, test=test)], today=today)
+        shown = []
+        M.render(got, out=shown.append)
+        return got, got["steps"][0], "\n".join(shown)
+
+    pw_red, pw_red_step, _t = _one("pw", "npx playwright test", 1,
+                                   PW_LIST_RED, "tests/hard.spec.js")
+    check("mu13 A FLAKY TEST BESIDE A MUTED FAILURE REFUSES THE MUTE: "
+          "playwright fails a run on flaky tests when `failOnFlakyTests` is "
+          "set, and the config form of that is invisible from the command - "
+          "so a non-zero flaky count is a failure this cannot rule out: %r"
+          % ((pw_red["status"], [r.get("why") for r in
+                                  pw_red_step.get("muteRefused") or []]),),
+          pw_red["status"] == "failed" and not pw_red_step.get("muted")
+          and any("flaky" in (r.get("why") or "")
+                  for r in pw_red_step.get("muteRefused") or []))
+    for case, command, code, text, test, word in (
+            ("mu14 playwright `did not run`", "npx playwright test", 1,
+             PW_LIST_DID_NOT_RUN, "tests/serial.spec.js", "did not run"),
+            ("mu15 playwright `error was not a part of any test`",
+             "npx playwright test", 1, PW_LIST_STRAY_ERROR,
+             "tests/hard.spec.js", "not a part of any test"),
+            ("mu16 vitest's `Errors` summary", "npx vitest run", 1,
+             VITEST_STRAY_ERROR, "src/cart.test.js", "error"),
+            ("mu17 jest's failed coverage threshold", "npx jest", 1,
+             JEST_THRESHOLD_FAIL, "src/cart.test.js", "threshold"),
+            ("mu18 a summary counting more failures than were named",
+             "pytest -q", 1, PYTEST_COUNTS_MORE_THAN_NAMED,
+             "tests/test_cart.py", "named")):
+        got, step, shown = _one(case, command, code, text, test)
+        refused = step.get("muteRefused") or []
+        check("%s: ALLOW - the named failure is muted and the runner reported "
+              "a failure beyond it, so the mute is REFUSED with its own `why` "
+              "and the failure blocks: %r"
+              % (case, (got["status"], got["failed"],
+                        [r.get("why") for r in refused]),),
+              got["status"] == "failed" and got["failed"] == ["e2e"]
+              and not got.get("muted") and not step.get("muted")
+              and any(word in (r.get("why") or "") for r in refused)
+              and "so this failure blocks" in shown)
+
+    # The interrupted capture exited 130, the code a shell gives a SIGINT, so
+    # the whole run is judged before any mute is asked; the refusal itself is
+    # read off the same bytes with the exit a `--max-failures` stop gives.
+    intr, intr_step, _t = _one("intr", "npx playwright test", 130,
+                               PW_LIST_INTERRUPTED, "tests/hard.spec.js")
+    _h, _r, _u = M.mute_decision(
+        {"exit": 1, "command": "npx playwright test"}, PW_LIST_INTERRUPTED,
+        [dict(mute, test="tests/hard.spec.js")], today)
+    check("mu19 playwright `interrupted`: the captured run is not green, and "
+          "a muted failure beside an interrupted test is REFUSED: %r"
+          % ((intr["status"], _h, [r.get("why") for r in _r]),),
+          intr["status"] != "passed" and not intr.get("muted")
+          and _h == [] and any("interrupted" in (r.get("why") or "")
+                               for r in _r))
+
+    rel, rel_step, rel_text = _one(
+        "rel", "npx jest", 1, JEST_CART_FAIL.replace("src/cart", "cart"),
+        "src/cart.test.ts")
+    check("mu20 A MUTE THAT MATCHES NO PATH THE RUNNER NAMED says so - the "
+          "runner printed paths relative to its own directory and the mute "
+          "spells them from the repository root: %r"
+          % ([ln for ln in rel_text.splitlines() if "mute" in ln],),
+          rel["status"] == "failed"
+          and "the mute on src/cart.test.ts (bug B1) matches no path the "
+          "runner named" in rel_text
+          and "cart.test.ts" in rel_text)
+    check("mu21 ALLOW: a mute that DID match is never reported as matching "
+          "nothing: %r" % ([ln for ln in lines if "mute" in ln],),
+          "matches no path" not in text)
+
+    # --- FAIL CLOSED: a mute is honoured only when the step is ONE listed
+    # runner, exiting with its failed-tests code, whose named failures are its
+    # whole tally, with no early stop and no coverage threshold. Every shape
+    # below breaks exactly one of those, and each is a real capture.
+    for case, command, code, text, test, word in (
+            ("mu22 a pre-commit WRAPPER step", "pre-commit run --all-files", 1,
+             PRECOMMIT_PYTEST_AND_RUFF, "tests/test_cart.py", "wraps"),
+            ("mu23 a COMPOUND command", "pytest -q; ruff check .", 1,
+             PYTEST_THEN_RUFF, "tests/test_cart.py", "shell clause"),
+            ("mu24 TWO runners' summaries in one step", "npx jest", 1,
+             MOCHA_THEN_JEST, "src/cart.test.js", "more than one runner"),
+            ("mu25 a pytest-cov threshold", "pytest -q --cov=shop "
+             "--cov-fail-under=100", 1, PYTEST_COV_THRESHOLD,
+             "tests/test_cart.py", "coverage threshold"),
+            ("mu26 a vitest coverage threshold", "npx vitest run "
+             "src/cart.test.js --coverage.enabled", 1, VITEST_COV_THRESHOLD,
+             "src/cart.test.js", "coverage threshold"),
+            ("mu27 pytest -x", "pytest -q -x", 1, PYTEST_STOPPED_EARLY,
+             "tests/test_cart.py", "stopped early"),
+            ("mu28 jest --bail", "npx jest --bail -i", 1, JEST_BAIL,
+             "src/cart.test.js", "stopped early"),
+            ("mu29 vitest --bail", "npx vitest run --bail=1", 1, VITEST_BAIL,
+             "src/cart.test.js", "stopped early"),
+            ("mu30 pytest -rf with an error the short summary leaves out",
+             "pytest -q -rf", 1, PYTEST_RF_WITH_ERROR, "tests/test_cart.py",
+             "named"),
+            ("mu31 an exit code that is not the runner's failed-tests code",
+             "npx jest src/cart.test.js", 3, JEST_REAL_FAIL,
+             "src/cart.test.js", "failed-tests code")):
+        got, step, shown = _one(case, command, code, text, test)
+        refused = step.get("muteRefused") or []
+        check("%s: ALLOW - the named failure is muted and the mute is REFUSED "
+              "with its own `why`, so the failure blocks: %r"
+              % (case, (got["status"], got["failed"],
+                        [r.get("why") for r in refused]),),
+              got["status"] == "failed" and got["failed"] == ["e2e"]
+              and not got.get("muted") and not step.get("muted")
+              and any(word in (r.get("why") or "") for r in refused)
+              and "so this failure blocks" in shown)
+
+    _hc, _rc, _uc = M.mute_decision(
+        {"exit": 1, "command": "npx jest src/cart.test.js"}, JEST_REAL_FAIL,
+        [dict(mute, test="src/cart.test.js")], today, runners={})
+    check("mu32 ALLOW: a runner NOT on the allow-list never mutes, however "
+          "clean its output: %r" % ([r.get("why") for r in _rc],),
+          _hc == [] and any("allow-list" in (r.get("why") or "") for r in _rc))
+    check("mu33 THE ALLOW-LIST says which runners' failed-tests exit was read "
+          "off a real run, and what that code is: %r" % (M.MUTE_RUNNERS,),
+          M.MUTE_RUNNERS == {"pytest": 1, "jest": 1, "vitest": 1,
+                             "playwright": 1})
+
+    for case, command, text, test in (
+            ("mu34 pytest", "pytest -q", PYTEST_REAL_FAIL,
+             "tests/test_cart.py"),
+            ("mu35 jest", "npx jest src/cart.test.js", JEST_REAL_FAIL,
+             "src/cart.test.js"),
+            ("mu36 vitest", "npx vitest run src/cart.test.js",
+             VITEST_REAL_FAIL, "src/cart.test.js"),
+            ("mu37 playwright", "npx playwright test", PW_LIST_RED_NO_FLAKY,
+             "tests/hard.spec.js")):
+        got, step, _shown = _one(case, command, 1, text, test)
+        check("%s: a bare, muted-only failure from an allow-listed runner "
+              "STAYS passed - the refusals above are about what surrounds "
+              "the failure, never the failure itself: %r"
+              % (case, (got["status"], step.get("muteRefused"))),
+              got["status"] == "passed" and step.get("muted")
+              and not step.get("muteRefused"))
+
+    # --- FAIL CLOSED ON THE COMMAND: only a DIRECT runner call mutes -------
+    for case, command, text, test, word in (
+            ("mu40 npm test", "npm test", JEST_REAL_FAIL,
+             "src/cart.test.js", "package script"),
+            ("mu41 npm run", "npm run test:unit", JEST_REAL_FAIL,
+             "src/cart.test.js", "package script"),
+            ("mu42 yarn test", "yarn test", JEST_REAL_FAIL,
+             "src/cart.test.js", "package script"),
+            ("mu43 yarn jest (a same-named script runs first)", "yarn jest",
+             JEST_REAL_FAIL, "src/cart.test.js", "package script"),
+            ("mu44 pnpm test", "pnpm test", JEST_REAL_FAIL,
+             "src/cart.test.js", "package script"),
+            ("mu45 a script file", "./scripts/test.sh", PYTEST_REAL_FAIL,
+             "tests/test_cart.py", "script file"),
+            ("mu46 make", "make test", PYTEST_REAL_FAIL, "tests/test_cart.py",
+             "task runner"),
+            ("mu47 tox", "tox -e py", PYTEST_REAL_FAIL, "tests/test_cart.py",
+             "task runner"),
+            ("mu48 nox", "nox -s tests", PYTEST_REAL_FAIL,
+             "tests/test_cart.py", "task runner"),
+            ("mu49 run-s behind npx", "npx run-s -c lint test:unit",
+             JEST_REAL_FAIL, "src/cart.test.js", "task runner"),
+            ("mu50 npm-run-all", "npx npm-run-all test", JEST_REAL_FAIL,
+             "src/cart.test.js", "task runner"),
+            ("mu51 turbo", "npx turbo run test", JEST_REAL_FAIL,
+             "src/cart.test.js", "task runner"),
+            ("mu52 nx", "npx nx test shop", JEST_REAL_FAIL,
+             "src/cart.test.js", "task runner"),
+            ("mu53 a DIFFERENT runner than the output names",
+             "npx vitest run", JEST_REAL_FAIL, "src/cart.test.js",
+             "not a direct call of jest"),
+            ("mu54 anything unrecognised", "bash run-tests", JEST_REAL_FAIL,
+             "src/cart.test.js", "not a direct call of jest")):
+        got, step, shown = _one(case, command, 1, text, test)
+        refused = step.get("muteRefused") or []
+        check("%s: ALLOW - the command is not a direct runner call, so the "
+              "mute is REFUSED with its own `why` and the failure blocks: %r"
+              % (case, (got["status"], [r.get("why") for r in refused]),),
+              got["status"] == "failed" and not step.get("muted")
+              and any(word in (r.get("why") or "") for r in refused)
+              and "so this failure blocks" in shown)
+
+    for case, command, text, test in (
+            ("mu55 a leading VAR=value word", "CI=1 npx jest src/cart.test.js",
+             JEST_REAL_FAIL, "src/cart.test.js"),
+            ("mu56 python3 -m pytest", "python3 -m pytest -q",
+             PYTEST_REAL_FAIL, "tests/test_cart.py"),
+            ("mu57 python -m pytest", "python -m pytest -q", PYTEST_REAL_FAIL,
+             "tests/test_cart.py"),
+            ("mu58 yarn exec", "yarn exec jest src/cart.test.js",
+             JEST_REAL_FAIL, "src/cart.test.js"),
+            ("mu59 pnpm exec", "pnpm exec vitest run src/cart.test.js",
+             VITEST_REAL_FAIL, "src/cart.test.js"),
+            ("mu60 a bare runner binary", "jest src/cart.test.js",
+             JEST_REAL_FAIL, "src/cart.test.js"),
+            ("mu61 jest past its summary threshold", "npx jest",
+             JEST_OVER_SUMMARY_THRESHOLD, "src/cart.test.js")):
+        got, step, _shown = _one(case, command, 1, text, test)
+        check("%s: a DIRECT call of the runner the output names mutes: %r"
+              % (case, (got["status"], [r.get("why") for r in
+                                        step.get("muteRefused") or []])),
+              got["status"] == "passed" and step.get("muted")
+              and not step.get("muteRefused"))
+
+    for case, command, text, test, word in (
+            ("mu62 playwright --fail-on-flaky-tests",
+             "npx playwright test --fail-on-flaky-tests",
+             PW_LIST_FAIL_ON_FLAKY, "tests/hard.spec.js", "flaky"),
+            ("mu63 an obsolete jest snapshot", "npx jest",
+             JEST_OBSOLETE_SNAPSHOT, "src/cart.test.js", "snapshot")):
+        got, step, shown = _one(case, command, 1, text, test)
+        refused = step.get("muteRefused") or []
+        check("%s: ALLOW - the runner fails the run for something its test "
+              "tally does not count, so the mute is REFUSED: %r"
+              % (case, (got["status"], [r.get("why") for r in refused]),),
+              got["status"] == "failed" and not step.get("muted")
+              and any(word in (r.get("why") or "") for r in refused))
+
+    pre = "source ~/.nvm/nvm.sh && nvm use"
+    with_pre = M.run_gate(
+        repo, [("unit", "%s && npx jest src/cart.test.js" % (pre,))],
+        runner=_scripted({"%s && npx jest src/cart.test.js" % (pre,):
+                          (1, JEST_REAL_FAIL)}),
+        muted=[dict(mute, test="src/cart.test.js")], today=today, preamble=pre)
+    no_pre = M.run_gate(
+        repo, [("unit", "%s && npx jest src/cart.test.js" % (pre,))],
+        runner=_scripted({"%s && npx jest src/cart.test.js" % (pre,):
+                          (1, JEST_REAL_FAIL)}),
+        muted=[dict(mute, test="src/cart.test.js")], today=today)
+    check("mu38 `meta.nodePreamble` IS NOT A SECOND CLAUSE: the exact "
+          "preamble the manifest prefixes is read off before the one-runner "
+          "rule, and the same command with it undeclared is refused: %r"
+          % ((with_pre["status"], no_pre["status"]),),
+          with_pre["status"] == "passed" and no_pre["status"] == "failed")
+
+    _shadow_man = {"meta": {"phaseGate": {"mode": "shadow"}},
+                   "phases": [{"id": "P1", "testGateBasis": "declared",
+                               "testGateDerived": {"tests": ["tests/a.py"]}}]}
+    _muted_only = [{"name": "unit", "exit": 1,
+                    "failingSuites": ["src/cart.test.js"],
+                    "failingSuitesBasis": "named as failing",
+                    "muted": [{"test": "src/cart.test.js", "bugId": "B1",
+                               "until": "2026-10-01"}]}]
+    _unmuted = [dict(_muted_only[0], muted=None)]
+    check("mu39 A SHADOW RUN WHOSE ONLY FAILURE IS MUTED has nothing the "
+          "derived gate 'would have missed' - a quarantined failure is not a "
+          "catch: %r" % (M.shadow_gate_claim(_shadow_man, "P1", _muted_only),),
+          M.shadow_gate_claim(_shadow_man, "P1", _muted_only) is None
+          and M.shadow_gate_claim(_shadow_man, "P1", _unmuted) is not None)
+
+
+def _playwright_cases(check):
+    """Playwright Test is a runner this gate can count, and a test it reports
+    as FLAKY - failed, then passed on retry - is named on the step as an
+    observation: the step exited 0 and the run passed, with a named doubt.
+    Every fixture is a captured run (see the fixture block's header).
+    """
+    def _obs(code, text):
+        return M.observed_step("e2e", "npx playwright test", code, text, {}, 1)
+
+    flaky_name = "tests/flaky.spec.js:2:1 › settles on retry"
+    green = _obs(0, PW_LIST_FLAKY)
+    check("pw1 THE FAULT: Playwright's list output reporting one flaky test "
+          "records a step that NAMES it, on a step that exited 0: %r"
+          % ((green.get("flaky"), green.get("flakyBasis")),),
+          green.get("flaky") == [flaky_name]
+          and "playwright" in (green.get("flakyBasis") or ""))
+    check("pw2 ...and FLAKY IS NOT AN OUTCOME: no `outcome`, no `failing`, "
+          "and the count reads the summary - the flaky test and the passing "
+          "one both ran: %r"
+          % ((green.get("outcome"), green.get("failing"), green.get("ran"),
+              green.get("suiteReader")),),
+          green.get("outcome") is None and green.get("failing") is None
+          and green.get("ran") == 2 and green.get("suiteReader") == "playwright")
+    line = _obs(0, PW_LINE_FLAKY)
+    check("pw3 ...the LINE reporter, cursor escapes and all, answers the same: "
+          "%r" % ((line.get("flaky"), line.get("ran")),),
+          line.get("flaky") == [flaky_name] and line.get("ran") == 2)
+
+    repo = _mini_repo("run-test-gate-playwright-")
+    res = M.run_gate(repo, [("e2e", "npx playwright test")],
+                     runner=_scripted({"npx playwright test":
+                                       (0, PW_LIST_FLAKY)}))
+    row = _ev_io.row_for(repo, res, "task", {"taskId": "P1.2"},
+                         {"runId": "R-pw"}, published=["npx playwright test"])
+    check("pw4 THE RUN PASSES, and the committed row keeps the flaky name "
+          "while every tally still counts the step as a pass - "
+          "`gate_tally` reads any `outcome` as not-passed: %r"
+          % ((res["status"], row["steps"][0].get("flaky"),
+              _ev_io.gate_tally([row], "e2e")),),
+          res["status"] == "passed" and res["failed"] == []
+          and row["steps"][0].get("flaky") == [flaky_name]
+          and _ev_io.gate_tally([row], "e2e") == (1, 0))
+    lines = []
+    M.render(res, out=lines.append)
+    check("pw5 ...and the terminal names the flaky test under its step: %r"
+          % ([ln for ln in lines if "flaky" in ln],),
+          any(flaky_name in ln for ln in lines))
+
+    for label, text in (("pw6 list", PW_LIST_RED), ("pw7 line", PW_LINE_RED)):
+        red = _obs(1, text)
+        check("%s reporter, a HARD failure beside a flaky one: the failing "
+              "check and its suite are named off the `N failed` block, the "
+              "flaky one off the `N flaky` block, and the count reads all "
+              "three tests: %r"
+              % (label, (red.get("failing"), red.get("failingSuites"),
+                         red.get("flaky"), red.get("ran"))),
+              red.get("failing") == ["tests/hard.spec.js:2:1 › always fails"]
+              and red.get("failingSuites") == ["tests/hard.spec.js"]
+              and red.get("flaky") == [flaky_name]
+              and red.get("ran") == 3 and red.get("outcome") is None
+              and "playwright" in (red.get("failingBasis") or ""))
+
+    proj = _obs(1, PW_LIST_PROJECT_RED)
+    check("pw8 a PROJECT-prefixed name keeps its project, and the suite is "
+          "still the file: %r"
+          % ((proj.get("failing"), proj.get("failingSuites")),),
+          proj.get("failing")
+          == ["[alpha] › tests/hard.spec.js:2:1 › always fails"]
+          and proj.get("failingSuites") == ["tests/hard.spec.js"]
+          and proj.get("flaky")
+          == ["[alpha] › tests/flaky.spec.js:2:1 › settles on retry"])
+
+    plain = _obs(0, "  3 passed (1.2s)\n")
+    check("pw9 ALLOW: a run with nothing flaky carries NO `flaky` key - an "
+          "empty list would read as a claim somebody measured: %r"
+          % (sorted(k for k in plain if k.startswith("flaky")),),
+          "flaky" not in plain and "flakyBasis" not in plain
+          and plain.get("ran") == 3)
+    jest_green = _obs(0, "Tests:       4 passed, 4 total\n")
+    check("pw10 ALLOW: another runner's summary is still read as that runner "
+          "and grows no `flaky` key: %r" % (jest_green.get("suiteReader"),),
+          jest_green.get("suiteReader") == "jest" and "flaky" not in jest_green)
 
 
 def _remedy_cases(check):

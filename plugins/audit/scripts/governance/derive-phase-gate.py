@@ -202,16 +202,22 @@ def _named_failing_suites(row):
     two entry points, neither importing the other, asking the identical
     question of the identical row shape. A step counts as failed the same way
     `run-test-gate.failed_steps` reads one (a non-zero exit, no no-verdict
-    `outcome`), and ONLY a `failingSuitesBasis` that says the runner named
-    them counts -- a capped tail of raw output is not a list of failing
-    suites, and learning suites off it would point a derived gate at whatever
-    lines happened to scroll past last.
+    `outcome`, and no `muted` marker), and ONLY a `failingSuitesBasis` that
+    says the runner named them counts -- a capped tail of raw output is not a
+    list of failing suites, and learning suites off it would point a derived
+    gate at whatever lines happened to scroll past last.
+
+    A MUTED STEP IS SKIPPED because its failure is quarantined and known: it
+    is on the row as a record, not as something the gate caught, and
+    learning it would point every derived gate at a suite a bug already owns.
     """
     suites = []
     for step in (row.get("steps") or []) if isinstance(row, dict) else []:
         if not isinstance(step, dict):
             continue
         if step.get("exit") in (0, None) or step.get("outcome"):
+            continue
+        if step.get("muted"):
             continue
         if "named as failing" not in (step.get("failingSuitesBasis") or ""):
             continue

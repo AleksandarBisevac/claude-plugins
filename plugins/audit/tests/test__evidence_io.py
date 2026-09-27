@@ -447,6 +447,145 @@ def _cases(check):
               % (len(_rofs["steps"][0]["failingSuites"]),),
               len(_rofs["steps"][0]["failingSuites"]) == M.MAX_PATHS)
 
+        # --- fk: a flaky test is an OBSERVATION on the step -------------------
+        # Playwright reports a test that failed and then passed on retry as
+        # `flaky`, and the step still exits 0. The names are the runner's own
+        # bytes, so they are cut and redacted as `failing` is; never an `outcome`,
+        # because every tally here reads any outcome as not-passed.
+        _fk_leak = "%s/elsewhere/cart.spec.js:2:1 > settles" % (tmp,)
+        _fk_names = ["tests/s%d.spec.js:2:1 › settles on retry" % (n,)
+                     for n in range(M.MAX_FAILING + 3)] + [_fk_leak]
+        _fk_step = dict(RESULT["steps"][0], exit=0, flaky=_fk_names,
+                        flakyBasis="the test(s) playwright named as flaky")
+        _rfk = M.row_for(plain, dict(RESULT, status="passed", failed=[],
+                                     steps=[_fk_step]),
+                         "task", {"taskId": "P1.2"}, IDENT,
+                         published=["pytest -q"])
+        _fk_row_step = _rfk["steps"][0]
+        check("fk1 `flaky` and `flakyBasis` CROSS INTO THE ROW on a step that "
+              "exited 0 - `STEP_KEYS` names both: %r"
+              % (sorted(k for k in _fk_row_step if k.startswith("flaky")),),
+              "flaky" in M.STEP_KEYS and "flakyBasis" in M.STEP_KEYS
+              and _fk_row_step.get("flaky", [None])[0]
+              == "tests/s0.spec.js:2:1 › settles on retry"
+              and "playwright" in (_fk_row_step.get("flakyBasis") or ""))
+        check("fk2 ...CUT BY THE WRITER at `MAX_FAILING`, the bound `failing` "
+              "carries, never trusted from the caller: %r"
+              % (len(_fk_row_step.get("flaky") or []),),
+              len(_fk_row_step.get("flaky") or []) == M.MAX_FAILING)
+        _fk_red = M.row_for(plain, dict(RESULT, status="passed", failed=[],
+                                        steps=[dict(_fk_step,
+                                                    flaky=[_fk_leak])]),
+                            "task", {"taskId": "P1.2"}, IDENT,
+                            published=["pytest -q"])
+        check("fk3 ...and REDACTED on the way in, by `failing`'s redactor - an "
+              "absolute path in a flaky name is the same leak: %r"
+              % (_fk_red["steps"][0].get("flaky"),),
+              bool(_fk_red["steps"][0].get("flaky"))
+              and tmp not in _journal_io.canonical(_fk_red["steps"][0]))
+        check("fk4 A FLAKY-BUT-GREEN STEP IS A PASS in every tally: "
+              "`gate_tally` counts it ran and NOT failed, which is what an "
+              "`outcome` would have broken: %r"
+              % (M.gate_tally([_rfk], "unit"),),
+              M.gate_tally([_rfk], "unit") == (1, 0))
+
+        # --- mq: a muted failure is on the row, with its mute -----------------
+        _mq_step = dict(RESULT["steps"][0], exit=1,
+                        failingSuites=["src/cart.test.ts"],
+                        failingSuitesBasis="the suite file(s) jest named")
+        _mq_entries = [{"test": "src/cart.test.ts", "bugId": "B1",
+                        "until": "2026-10-01", "reason": "not carried",
+                        "owner": "not carried either"}]
+        _rmq = M.row_for(plain, dict(RESULT, status="passed", failed=[],
+                                     steps=[_mq_step], muted=_mq_entries),
+                         "task", {"taskId": "P1.2"}, IDENT,
+                         published=["pytest -q"])
+        check("mq1 `muted` CROSSES INTO THE ROW as `{test, bugId, until}` and "
+              "nothing else, beside a step that keeps its own exit and "
+              "failing suites: %r" % ((_rmq.get("muted"), _rmq["steps"][0]),),
+              _rmq.get("muted") == [{"test": "src/cart.test.ts",
+                                     "bugId": "B1", "until": "2026-10-01"}]
+              and _rmq["steps"][0]["exit"] == 1
+              and _rmq["steps"][0]["failingSuites"] == ["src/cart.test.ts"])
+        check("mq2 ALLOW: a run nothing muted carries NO `muted` key - a key "
+              "on every row could not be told from one a build does not "
+              "write: %r" % (sorted(row),),
+              "muted" not in row)
+        _mq_over = [dict(_mq_entries[0], test="%s/out/s%d.test.ts" % (tmp, n))
+                    for n in range(M.MAX_PATHS + 4)]
+        _rmqo = M.row_for(plain, dict(RESULT, status="passed", failed=[],
+                                      steps=[_mq_step], muted=_mq_over),
+                          "task", {"taskId": "P1.2"}, IDENT,
+                          published=["pytest -q"])
+        check("mq3 ...CUT at `MAX_PATHS` and each `test` redacted as a suite "
+              "path is: %r" % (len(_rmqo.get("muted") or []),),
+              len(_rmqo.get("muted") or []) == M.MAX_PATHS
+              and tmp not in _journal_io.canonical(_rmqo.get("muted")))
+        _mr_rows = [dict(_rmq, **{M.REUSE_KEY: "k-mute", "ts": "2026-09-01T00:00:00Z"})]
+        check("mq4 A VERDICT A MUTE EXCUSED IS NOT REPEATED: whether the mute "
+              "still holds depends on the day it is graded, which no content "
+              "identity can see - so `reusable_run` measures again: %r"
+              % (M.reusable_run(_mr_rows, "task", {"taskId": "P1.2"},
+                                "k-mute", ("passed", "failed")),),
+              M.reusable_run(_mr_rows, "task", {"taskId": "P1.2"}, "k-mute",
+                             ("passed", "failed")) is None
+              and M.reusable_run([dict(_mr_rows[0], muted=None)], "task",
+                                 {"taskId": "P1.2"}, "k-mute",
+                                 ("passed", "failed")) is not None)
+
+        # --- mq5-: the STEP carries its mute, and no tally counts it ----------
+        _mq_marked = dict(_mq_step, muted=[
+            {"test": "%s/out/s%d.test.ts" % (tmp, n), "bugId": "B1",
+             "until": "2026-10-01", "reason": "dropped"}
+            for n in range(M.MAX_PATHS + 2)])
+        _rmm = M.row_for(plain, dict(RESULT, status="passed", failed=[],
+                                     steps=[_mq_marked], muted=_mq_entries),
+                         "task", {"taskId": "P1.2"}, IDENT,
+                         published=["pytest -q"])
+        _mm = _rmm["steps"][0].get("muted") or []
+        check("mq5 `muted` IS A STEP KEY: the committed step says which mute "
+              "excused it, cut at `MAX_PATHS`, each `test` redacted and each "
+              "entry kept to suite, bug and day: %r" % (_mm[:1],),
+              "muted" in M.STEP_KEYS and len(_mm) == M.MAX_PATHS
+              and tmp not in _journal_io.canonical(_mm)
+              and all(sorted(m) == ["bugId", "test", "until"] for m in _mm))
+        _huge_bug = "B" + "x" * (_journal_io.MAX_VALUE_CHARS * 3)
+        _rhb = M.row_for(plain, dict(RESULT, status="passed", failed=[],
+                                     steps=[dict(_mq_step, muted=[dict(
+                                         _mq_entries[0], bugId=_huge_bug,
+                                         until="9" * (_journal_io.MAX_VALUE_CHARS * 3))])],
+                                     muted=[dict(_mq_entries[0], bugId=_huge_bug)]),
+                         "task", {"taskId": "P1.2"}, IDENT,
+                         published=["pytest -q"])
+        check("mq5b an oversized `bugId` or `until` is CUT to the bound every "
+              "runner string on this row gets, on the row and on the step: %r"
+              % ((len(_rhb["muted"][0]["bugId"]),
+                  len(_rhb["steps"][0]["muted"][0]["bugId"]),
+                  len(_rhb["steps"][0]["muted"][0]["until"])),),
+              len(_rhb["muted"][0]["bugId"]) < len(_huge_bug)
+              and len(_rhb["steps"][0]["muted"][0]["bugId"]) < len(_huge_bug)
+              and len(_rhb["steps"][0]["muted"][0]["until"])
+              < _journal_io.MAX_VALUE_CHARS * 3)
+        _unmuted_row = M.row_for(plain, dict(RESULT, steps=[_mq_step]), "task",
+                                 {"taskId": "P1.2"}, IDENT,
+                                 published=["pytest -q"])
+        check("mq6 A QUARANTINED FAILURE IS NOT A GATE CATCH: `gate_tally`, "
+              "`command_tally` and `gate_last_caught` all read a muted step as "
+              "ran and not failed: %r"
+              % ((M.gate_tally([_rmm], "unit"),
+                  M.command_tally([_rmm], "pytest -q"),
+                  M.gate_last_caught([_rmm], "unit")),),
+              M.gate_tally([_rmm], "unit") == (1, 0)
+              and M.command_tally([_rmm], "pytest -q") == (1, 0)
+              and M.gate_last_caught([_rmm], "unit") is None)
+        check("mq7 ALLOW: the same failed step with no mute is counted as it "
+              "always was: %r"
+              % ((M.gate_tally([_unmuted_row], "unit"),
+                  M.gate_last_caught([_unmuted_row], "unit")),),
+              M.gate_tally([_unmuted_row], "unit") == (1, 1)
+              and M.command_tally([_unmuted_row], "pytest -q") == (1, 1)
+              and M.gate_last_caught([_unmuted_row], "unit") is not None)
+
         # --- og1-og5: WHY a step could not run, kept beside the verdict ---------
         # A `could-not-run` step already carries `outcome`, and until now nothing
         # else - a derived run that skipped a listed suite, a missing interpreter

@@ -453,6 +453,28 @@ def _cases(check):
           code13 == 0
           and ph13.get("testGate") == ["pytest 'tests/my file.test.ts'"])
 
+    # --- dp-muted: a quarantined failure is not a suite to learn -------------
+    _named = "the suite file(s) jest named as failing, read from jest's FAIL"
+    _red_row = {"steps": [
+        {"name": "unit", "exit": 1, "failingSuites": ["src/cart.test.ts"],
+         "failingSuitesBasis": _named,
+         "muted": [{"test": "src/cart.test.ts", "bugId": "B1",
+                    "until": "2026-10-01"}]},
+        {"name": "e2e", "exit": 1, "failingSuites": ["src/pay.test.ts"],
+         "failingSuitesBasis": _named}]}
+    check("dp-muted a MUTED step's suite is not learned as last-failed - its "
+          "failure is quarantined and a bug owns it - while the unmuted "
+          "failed step beside it still is (mutation: drop the muted skip -> "
+          "red): %r" % (M._named_failing_suites(_red_row),),
+          M._named_failing_suites(_red_row) == ["src/pay.test.ts"])
+    check("dp-muted-allow ALLOW: with no marker the same step is read as "
+          "before: %r"
+          % (M._named_failing_suites({"steps": [dict(_red_row["steps"][0],
+                                                     muted=None)]}),),
+          M._named_failing_suites({"steps": [dict(_red_row["steps"][0],
+                                                  muted=None)]})
+          == ["src/cart.test.ts"])
+
     # --- dp-usage: unknown phase is an error, never a silent fallback ---------
     d7, m7, _base7 = _project(root, mode="shadow")
     code7, out7 = _run([m7, "NOPE"])
