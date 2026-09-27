@@ -551,7 +551,7 @@
     {
       "id": "P84",
       "title": "review findings are written by a verb, every validator warning family carries a code the lint can see, and a fresh worktree's evidence is counted",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P84.json"
     }
   ],
@@ -830,7 +830,8 @@
       "P78.10",
       "P78.7",
       "P79.8-5bh",
-      "P86.1"
+      "P86.1",
+      "P84.1"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1534,7 +1535,8 @@
       "P79.7",
       "P81.8",
       "P76.1",
-      "P73.1"
+      "P73.1",
+      "P84.1"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -2189,7 +2191,8 @@
       "P81.1",
       "P75.3-j5h",
       "P75.4-j5h",
-      "P75.5-j5h"
+      "P75.5-j5h",
+      "P84.2"
     ],
     "plugins/audit/scripts/manifest/_manifest_vocab.py": [
       "P18.2",
