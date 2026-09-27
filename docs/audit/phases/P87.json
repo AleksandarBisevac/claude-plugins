@@ -20,7 +20,270 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P87-R1",
+        "severity": "med",
+        "file": "plugins/audit/hooks/journal-writes.py:840 (key), :629-639 (writer); plugins/audit/scripts/manifest/audit-task.py:4193",
+        "issue": "The newly working dedup keys task.blocked on (taskId, attempt). The attempt number does not identify one blocking. `reopen` resets attempts to 0 (audit-task.py:4193 put(node, tid, \"attempts\", 0)), so this sequence reuses a key: block at attempt 1, start, done, reopen, start (attempt 1 again), block. On the Bash sweep lane, where every /audit:task verb lands, the second task.blocked row is then withheld. The manifest.edit row then says 'the journal already holds the same record, written where the work ran', which is false. manifest-conventions.md says 'an old, unrelated completion of the same task is a different record' and 'a repeated row, never a lost one', and this breaks both. The key was already documented this way before this phase, but it could never match until this diff, so the diff is what turns it into a lost row.",
+        "resolution": "fixed in P87.3-bpl (a86689ab): fix task P87.3-bpl (review-P87a.json)",
+        "fixTask": "P87.3-bpl",
+        "commit": "a86689ab"
+      },
+      {
+        "id": "P87-R2",
+        "severity": "low",
+        "file": "plugins/audit/hooks/journal-writes.py:660-667, :722-729, :841",
+        "issue": "ado.link is keyed on (taskId, phaseId, adoId). If a task or phase is unlinked and then linked again to the same work item, the second ado.link row is withheld. The row notes that the trail 'already holds the same record, written where the work ran', but that record was an earlier link that has since been undone.",
+        "resolution": "fixed in P87.3-bpl (a86689ab): fix task P87.3-bpl (review-P87a.json)",
+        "fixTask": "P87.3-bpl",
+        "commit": "a86689ab"
+      },
+      {
+        "id": "P87-R3",
+        "severity": "med",
+        "file": "tools/verify.sh:539-540; .github/workflows/ci.yml:505; tools/gate-parity.py:114",
+        "issue": "Nothing enforces which run asks the HEAD arm. gate-parity identifies a gate by script path (_SCRIPT_RE) and ignores its flags. Reading it, deleting verify.sh's `--against-commit` line, or changing CI's call to `--before-commit`, would leave gate-parity and every selftest green: the plain verify.sh line still names the script, and no test reads verify.sh or ci.yml for these flags (git grep finds them only in affected.py's own ARTIFACTS). ra27 calls arms_for() with an argv the test writes itself, so it never looks at the commands CI or --release actually run. The claim 'CI and release still check that the commit carries the page' exists only in prose.",
+        "resolution": "fixed in P87.3-bpl (a86689ab): fix task P87.3-bpl (review-P87a.json)",
+        "fixTask": "P87.3-bpl",
+        "commit": "a86689ab"
+      },
+      {
+        "id": "P87-R4",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:696-700 (NOT ASKED line), CONTRIBUTING.md:197-204, CHANGELOG.md, .github/workflows/ci.yml:497-504",
+        "issue": "ci.yml's own comment says that on a runner the HEAD arm 'is a no-op here' because the checkout is the commit. So 'CI ... runs it' in the NOT ASKED line, the docstring, CONTRIBUTING and the CHANGELOG describes a check that cannot fail there. In practice only `verify.sh --release` or a by-hand run with no flag can find a re-render that was committed without its page staged, before the push. After the push, CI's fresh-render arm still catches the stale committed page. Separately, 'before a commit exists that answer is red by construction' is too broad: it is red only while a page that was re-rendered is still uncommitted.",
+        "resolution": "fixed in P87.3-bpl (a86689ab): fix task P87.3-bpl (review-P87a.json)",
+        "fixTask": "P87.3-bpl",
+        "commit": "a86689ab"
+      },
+      {
+        "id": "P87-R5",
+        "severity": "low",
+        "file": "CLAUDE.md:201; tools/check-rendered-artifacts.py:1143-1146 (--how text)",
+        "issue": "CLAUDE.md lists 'the commands it [verify.sh] calls' as `python3 tools/check-rendered-artifacts.py  # the artifacts vs a fresh render AND vs HEAD`, but verify.sh:306 now calls `--before-commit`. gate-parity does not notice because it matches by path. The `--how` output still says, with no condition, that 'every page above is also compared with what HEAD tracks', which is false for --before-commit runs.",
+        "resolution": "fixed in P87.3-bpl (a86689ab): fix task P87.3-bpl (review-P87a.json)",
+        "fixTask": "P87.3-bpl",
+        "commit": "a86689ab"
+      },
+      {
+        "id": "P87-R6",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:824-828, :1086-1093",
+        "issue": "The comment says 'ra25 is what fails if that question comes back'. ra25 only checks the BEFORE_COMMIT_ARMS constant on a fixture. If ra5 were changed to arm_verdict(ALL_ARMS), or a live uncommitted() case were added back to _head_cases, the pre-commit sweep would ask HEAD again and ra25 would still pass.",
+        "resolution": "fixed in P87.3-bpl (a86689ab): fix task P87.3-bpl (review-P87a.json)",
+        "fixTask": "P87.3-bpl",
+        "commit": "a86689ab"
+      },
+      {
+        "id": "P87-R7",
+        "severity": "low",
+        "file": "tools/affected.py:698; plugins/audit/tests/test__journal_io.py:~3198",
+        "issue": "Hygiene. The diff adds a stray whitespace edit, `shot =sel(`, to an unrelated line, and ruff's default rules do not catch it. A new comment says 'The same four shapes', a count written into prose that will go wrong when a fifth shape is added to the lint (the kind of number the CLAUDE.md rule leaves to the author).",
+        "resolution": "fixed in P87.3-bpl (a86689ab): fix task P87.3-bpl (review-P87a.json)",
+        "fixTask": "P87.3-bpl",
+        "commit": "a86689ab"
+      },
+      {
+        "id": "P87-R8",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:1249-1273 (_selftest_head_calls), :1243-1246 (ra30)",
+        "issue": "ra30 checks whether a root argument is spelled, not where the root points. I passed planted source to _selftest_head_calls(), and it returned [] for `uncommitted(REPO)`, `uncommitted(repo_root=None)`, `arm_verdict(ALL_ARMS, root=REPO)` and `head_text(REPO, 'x')`. Each of those asks this checkout's HEAD from inside the pre-commit sweep, which is the thing ra30 says it forbids ('no selftest call asks THIS checkout's HEAD'). The rule also only knows the names `uncommitted` and `arm_verdict`, so head_text, head_unavailable and _git are not covered. Separately, the docstring says '`source` lets a case hand it a planted text', but no case passes `source`. ra30 only ever reads the live file, which is clean, so a _selftest_head_calls() that always returned [] would stay green. The claim that it can go red rests on the orchestrator's out-of-tree probe (mutations3.py), not on a case in the suite.",
+        "resolution": "fixed in P87.4-bpl (db045077): fix task P87.4-bpl (review-P87b.json)",
+        "fixTask": "P87.4-bpl",
+        "commit": "db045077"
+      },
+      {
+        "id": "P87-R9",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:681-707 (invocations), :489 (_SHELL_STOPS)",
+        "issue": "The ra29 reader takes shell redirections as tool arguments. `python3 tools/check-rendered-artifacts.py --before-commit 2>&1` reads as ['--before-commit', '2>&1'], so arms_for returns 'unknown argument(s): 2>&1' and ra29 goes red on a correct runner. `>/dev/null` does the same. I confirmed this by calling invocations() directly. That failure is loud, so it is only a false red. The one reformat that reads wrong silently is a YAML folded scalar in ci.yml (`run: >` with the flag on the next line). YAML joins that line into the command, but the reader sees the tool with no flag and reports ALL_ARMS. Other reformats either work or fail loudly: a quoted flag and a `\\` continuation are read correctly, and a `$FLAG` variable or an `sh -c` wrapper turns ra29 red.",
+        "resolution": "fixed in P87.4-bpl (db045077): fix task P87.4-bpl (review-P87b.json)",
+        "fixTask": "P87.4-bpl",
+        "commit": "db045077"
+      },
+      {
+        "id": "P87-R10",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:1338-1346 (_recording_git); CHANGELOG.md:577-579",
+        "issue": "The recorder decides what 'this checkout' means by path equality: `os.path.realpath(git_root) == realpath(REPO)`. A root inside the checkout is not equal to REPO, but `git -C <subdir>` still asks the checkout's own repository and HEAD. `git -C <worktree>/tools rev-parse --show-toplevel` returns the worktree root. I tested this in a scratch export of HEAD by planting `head_unavailable(os.path.join(REPO, 'tools'))` as the first line of `_cases`: ra30 stayed PASS and the run ended ALL PASS 34/34, exit 0. A plausible real spelling is `os.path.join(REPO, 'examples', 'acme-store')`, the directory the artifacts live in. So the check is still keyed on how the root is spelled, just more loosely. The CHANGELOG line 'records every git call the tool makes against the checkout' and the commit's claim 1 ('any git call through _git against this checkout ... fails ra30') both overstate what it catches. Symlinks and `..` are handled. A symlink to the checkout, running the tool through a symlinked path, and `REPO/tools/..` all went red.",
+        "resolution": "fixed in P87.5-bpl (88c77d5b): fix task P87.5-bpl (review-P87c.json)",
+        "fixTask": "P87.5-bpl",
+        "commit": "88c77d5b"
+      },
+      {
+        "id": "P87-R11",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:680 (_FOLDED_RUN), :685-701 (_folded_blocks), :704-750 (invocations)",
+        "issue": "Two YAML shapes still get silently read as a call with no flag. That is the one direction ci.yml's expectation (`== [ALL_ARMS]`) cannot catch: a flag moved onto a continuation line reads as 'asks both arms'. I called invocations() on each shape: (a) `- run: > # fold` followed by `python3 <tool>` / `--against-commit` gives [[]], which becomes ('fresh','head'), because `_FOLDED_RUN` requires end-of-line after the indicator and so misses a trailing comment. (b) A plain multi-line scalar, `- run: python3 <tool>` then an indented `--against-commit`, also gives [[]] and ('fresh','head'). YAML folds a plain scalar across lines just as it folds `>`. For contrast: a multi-line double-quoted scalar is refused loudly (the lexer error), and all the redirection shapes (`2>&1`, `>/dev/null`, `&>log`, `2>>log`, `>&2`) are now read correctly.",
+        "resolution": "fixed in P87.5-bpl (88c77d5b): fix task P87.5-bpl (review-P87c.json)",
+        "fixTask": "P87.5-bpl",
+        "commit": "88c77d5b"
+      },
+      {
+        "id": "P87-R12",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:1322-1323",
+        "issue": "The WHAT IT CANNOT SEE comment says git run outside `_git` ('a subprocess spelled by hand ...') is something 'this file does not do today'. The file does spell git by hand, in `_head_fixture` (:1055, `init`/`add`/`commit`) and in ra17's `git add` (:1122). Both are against fixture roots, not this checkout, so what the comment means is true, but what it says is false. Planted `subprocess.call(['git','-C',REPO,'rev-parse','HEAD'])` stays green (34/34, exit 0), as the comment warns, and a reader told the file has no such calls will not look for them.",
+        "resolution": "fixed in P87.5-bpl (88c77d5b): fix task P87.5-bpl (review-P87c.json)",
+        "fixTask": "P87.5-bpl",
+        "commit": "88c77d5b"
+      },
+      {
+        "id": "P87-R13",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:682 (_RUN_KEY), :724-731 (invocations docstring), :750-760 (the line reader); CHANGELOG.md:577-578",
+        "issue": "The docstring says 'In YAML, a call is read only from a one-line `run:` or a literal `run: |` block', and the CHANGELOG says a multi-line `run:` value that calls the tool is refused unless it is a literal block. The code does the reverse. It reads every non-comment line that mentions the tool, and exempts only the spans whose key matches the single spelling `^\\s*(-\\s+)?run:`. A `run` key spelled any other legal way falls through to line-by-line reading. A folded body under that key then reads as a call with NO flag, [[]], which is ALL_ARMS, ci.yml's expected answer, so ra29 stays green. This is the silent direction round 3 was about. I checked it with invocations() on a fresh export of HEAD. `- \"run\": >`, `- 'run': >`, `- run : >` and `- &k run: >`, each followed by `python3 tools/check-rendered-artifacts.py` / `--against-commit`, all return [[]]. Ruby's Psych parses each one to run = 'python3 tools/check-rendered-artifacts.py --against-commit'. The same root cause drops a call in the other direction: `- run: \"python3 <tool> --against-commit\"` (a quoted one-line value) returns [], because shlex yields one word that does not end in the tool name. ra29's `== [ALL_ARMS]` would catch that loudly in ci.yml. Commit claim 6 ('keys on YAML's block styles and indentation, not a list of spellings') does not hold for the key itself. The shapes are rare, so the severity is low. The problem is that the claim is stated as a property.",
+        "resolution": "fixed in P87.6-bpl (4093d3cd): fix task P87.6-bpl (review-P87d.json)",
+        "fixTask": "P87.6-bpl",
+        "commit": "4093d3cd"
+      },
+      {
+        "id": "P87-R14",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:700-713 (_run_blocks: body extent and style)",
+        "issue": "Two real YAML shapes make the reader refuse a call it could have read, and the refusal message describes the call wrongly. (a) An anchor or tag before the indicator: `- run: &cra |` (GitHub Actions accepts anchors) or `- run: !!str >`. `rest.startswith('|')` is false, so the style is 'plain', and the call is refused as 'a `run:` plain value continued onto deeper lines'. YAML reads the anchored one as a literal block, and Psych parses it to the one-line command. (b) A comment line indented deeper than the key after a one-line `run:`, e.g. `run: python3 <tool> --before-commit` followed by `  # note`. The comment is counted as body, so a valid one-line call is refused. When that deeper comment mentions the tool under `run: make test`, the refusal says a `run:` 'calls tools/check-rendered-artifacts.py', although that `run:` does not. Psych parses both shapes to their one-line values. These are loud: ra29 goes red on ci.yml, and nothing is silently misread. But the message sends the author to rewrite a correct step.",
+        "resolution": "fixed in P87.6-bpl (4093d3cd): fix task P87.6-bpl (review-P87d.json)",
+        "fixTask": "P87.6-bpl",
+        "commit": "4093d3cd"
+      },
+      {
+        "id": "P87-R15",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:750-772 (_yaml_invocations: the one-line branch at :765), :680-685 (the allow-list comment); CHANGELOG.md:577-579",
+        "issue": "The YAML reader checks line shapes and ignores YAML context. It does not know which lines lie inside another key's block scalar, so a line shaped like `run: <call>` inside that body is read as a step call. I probed invocations(text, yaml=True) on a `git archive HEAD` export. `- name: >` / `    run: python3 tools/check-rendered-artifacts.py --against-commit` / `  run: echo` returns [['--against-commit']]. Ruby Psych parses the same text to {name: 'run: python3 ... --against-commit\\n', run: 'echo'}, so the tool is never called. A `run:`-shaped line in the body of an action's `with: script: |` input also returns [['--against-commit']], and so does a `with: run:` input. This is a silent misread in the direction the question is about: an argv read where YAML gives none. The docstring comment (:680-684), the CHANGELOG ('reads a call only from a one-line unquoted `run:` ... refusing by line any other line that names the tool') and commit claim 3 ('an unlisted spelling is refused by construction') all state the allow-list as a property of YAML `run:` keys. It is actually a property of line shapes. For ra29 to go wrong, the real call has to be gone and one of these lines has to be present, so the practical risk is small.",
+        "resolution": "fixed in P87.7-bpl (8b4100ee): fix task P87.7-bpl (review-P87e.json)",
+        "fixTask": "P87.7-bpl",
+        "commit": "8b4100ee"
+      },
+      {
+        "id": "P87-R16",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:718 (_shell_invocations: `at = [i for i, w in enumerate(words) if w.endswith(_THIS_TOOL)]`)",
+        "issue": "Any word that ends in the tool's path counts as the call, whatever command it is an argument of. On the export, `- run: ls tools/check-rendered-artifacts.py`, `- run: git diff --exit-code -- tools/check-rendered-artifacts.py` and a `run: |` line `echo see tools/check-rendered-artifacts.py` each return [[]]. That value is a call with no flag, which is ALL_ARMS, which is exactly ci.yml's expected answer in ra29 (`_runs['ci'] == [ALL_ARMS]`). Psych gives `ls tools/check-rendered-artifacts.py`, so the tool is not run. The same reader serves verify.sh in shell mode. The failure is silent when ci.yml's real call becomes one this reader cannot see and a path mention stays behind. Invisible calls include `cd tools && python3 check-rendered-artifacts.py ...` and `python3 tools/check-rendered-artifacts.py;echo`, both of which return [] on the export. In that case ra29 stays green and reports both arms asked. If the real call is still present, the mention adds a second entry and ra29 goes red, which is loud but names a call that does not exist. This reader came in with the phase (P87.3). P87.6 did not change it.",
+        "resolution": "fixed in P87.7-bpl (8b4100ee): fix task P87.7-bpl (review-P87e.json)",
+        "fixTask": "P87.7-bpl",
+        "commit": "8b4100ee"
+      },
+      {
+        "id": "P87-R17",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:714-723 (_is_call_word: `i > 0 and _INTERPRETER.match(words[i - 1])`); CHANGELOG.md:580-581",
+        "issue": "The interpreter arm checks that the word before the tool is a python interpreter. It never checks that the interpreter is itself in command position, so a mention after an `echo python3` is still read as a call. On a `git archive HEAD` export, invocations(yaml=True) of `      - run: echo python3 tools/check-rendered-artifacts.py` returns [[]]. That is ALL_ARMS, which is exactly ci.yml's expected answer. Shell `echo Running: python3 tools/check-rendered-artifacts.py --against-commit` returns [['--against-commit']], and `git diff -- python3 tools/check-rendered-artifacts.py` returns [[]]. The shell runs echo or git in each case, and the tool never runs. This contradicts the new CHANGELOG sentence ('a word naming the tool counts as the call only as the command word or right after a python interpreter, so `ls`, `git diff --` or `echo` beside it is no call') and P87.7 claim 1 ('a mention outside command position is no call').",
+        "resolution": "fixed in P87.8-bpl (1942532b): fix task P87.8-bpl (review-P87f.json)",
+        "fixTask": "P87.8-bpl",
+        "commit": "1942532b"
+      },
+      {
+        "id": "P87-R18",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:684-694 (comment and _BLOCK_OPEN), :786 (`_block_end(lines, i, len(opened.group(1)))`)",
+        "issue": "The indentation rule is wrong for a bare list-item block scalar (`- |`, `- >`, `- &a >`). The reader ends the body at the column after `- `. YAML's parent indentation for a sequence entry is the dash column, so a body line at dash column + 1 is still scalar text. The reader closes the block early and then reads that line as a step `run:`. Probed on the export and checked against Ruby Psych 3.1.0: `      - >` / `       run: python3 <tool> --against-commit` / `      - run: echo` reads [['--against-commit']], and Psych gives steps: ['run: python3 ... --against-commit\\n', {run: echo}]. `with: args:` / `- |` with the body one column past the dash, and `x:` / `- &a >`, misread the same way. A nested `- - >` opener does not match _BLOCK_OPEN at all, so its body `run:` line reads [['--against-commit']], while Psych gives [[\"run: ...\\n\"]]. The comment at :685 says that 'any key, or a bare list item' is tracked. The keyed case is right: `- name: >` with a body at col 2 reads the same as Psych, which gives name '' and run as a key.",
+        "resolution": "fixed in P87.8-bpl (1942532b): fix task P87.8-bpl (review-P87f.json)",
+        "fixTask": "P87.8-bpl",
+        "commit": "1942532b"
+      },
+      {
+        "id": "P87-R19",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:778-803 (_yaml_invocations), :680-688 (comment); CHANGELOG.md:577-579",
+        "issue": "A multi-line QUOTED scalar is YAML context that the reader does not track. `      - name: \"a` / `          run: python3 <tool> --against-commit` / `          b\"` / `        run: echo` reads [['--against-commit']]. Psych gives {name: 'a run: python3 ... --against-commit b', run: 'echo'}. The single-quoted form reads the same way. Round-5 #1 has the same root cause, which is reading line shapes without their YAML context. P87.7 closed only the block-scalar half. Even so, the comment calls the allow-list one 'over YAML CONTEXT', and the CHANGELOG says 'Any other line that names the tool is refused by line'.",
+        "resolution": "fixed in P87.8-bpl (1942532b): fix task P87.8-bpl (review-P87f.json)",
+        "fixTask": "P87.8-bpl",
+        "commit": "1942532b"
+      },
+      {
+        "id": "P87-R20",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:726-755 (_shell_invocations: `for line in re.sub(...).splitlines()` lexes each line alone)",
+        "issue": "The shell reader drops shell context that spans lines, and this applies to both a `run: |` body and verify.sh. A line inside a heredoc, or inside a double-quoted string opened on an earlier line, is read as a call. The `run: |` body `cat <<EOF` / `python3 <tool> --against-commit` / `EOF` reads [['--against-commit']]. The body `echo \"start` / `python3 <tool> --against-commit` / `end\"` reads [['--against-commit']] as well. Psych gives that run value as one echo command. Fed to bash with python3 stubbed, the script only prints the line, and the stub is never called. The tool name sits first on these lines, so the P87.7 command-position rule accepts them. This came in with the phase (P87.3).",
+        "resolution": "fixed in P87.8-bpl (1942532b): fix task P87.8-bpl (review-P87f.json)",
+        "fixTask": "P87.8-bpl",
+        "commit": "1942532b"
+      },
+      {
+        "id": "P87-R21",
+        "severity": "med",
+        "file": "tools/check-rendered-artifacts.py:691-715 (_YAML_LEAD, call_lines yaml=True), :1235-1300 (ra29c/ra29d deleted, not replaced in ra29h); CHANGELOG.md:577-580; CONTRIBUTING.md:207-208",
+        "issue": "A flag that sits on a line of the run's OWN multi-line value is dropped without a word. call_lines reads only lines that name the tool. So in `      - run: >` / `          python3 tools/check-rendered-artifacts.py` / `          --against-commit` the second line equals the no-flag call line and reads as ALL_ARMS, and the third line names nothing, so it is never looked at. The same happens with `>-`, and with a plain `- run: python3 <tool>` that continues on a deeper `--against-commit` line. Probed on a `git archive HEAD` export: call_lines(..., yaml=True) returns [('fresh','head')] for all three. Ruby Psych gives the run value as `python3 tools/check-rendered-artifacts.py --against-commit` in each case. ALL_ARMS is exactly ci.yml's expected answer, so ra29 stays green while CI runs --against-commit only. That is the arm the docs say cannot fire on CI, so CI silently loses its fresh-render comparison. This is outside the stated limit. The limit covers a heredoc, a quoted string or ANOTHER key's block text, and its defence ('matters only if the real call is also removed') does not apply, because the misread line IS the real call. P87.8 deleted ra29c and ra29d, the cases that pinned this refusal, so the regression is unguarded. It also falsifies the CHANGELOG ('so a moved or deleted flag fails a case') and CONTRIBUTING ('moving a flag fails a case').",
+        "resolution": "fixed in P87.9-bpl (b466a522): fix task P87.9-bpl (review-P87g.json)",
+        "fixTask": "P87.9-bpl",
+        "commit": "b466a522"
+      },
+      {
+        "id": "P87-R22",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:694-715 (call_lines reads each physical line alone; the old `\\\\\\n` join is gone and nothing replaced it); tools/verify.sh:305-306",
+        "issue": "The round-6 echo is loud only on one line. Its two-line form is silent. The runner's real shape is `run \"label\" \\` above the exact call line, and call_lines never looks at the line the call continues from. `echo \"Running:\" \\` / `  python3 tools/check-rendered-artifacts.py --before-commit` returns [(2, ('fresh',))], and the shell prints the call instead of running it. Probed on a copy of the export with verify.sh:305's `run` replaced by `echo`: run_arms() gave {plain: [fresh], release: [head], ci: [fresh, head]}, which is ra29's expected answer, so ra29 stays green while verify.sh never runs the tool. The same holds for `: \\` or any other command word on the preceding line. This is outside the stated limit (heredoc, quoted string, foreign block text). The misread line is the real call, so the 'only if the real call is also removed' defence does not apply.",
+        "resolution": "fixed in P87.9-bpl (b466a522): fix task P87.9-bpl (review-P87g.json)",
+        "fixTask": "P87.9-bpl",
+        "commit": "b466a522"
+      },
+      {
+        "id": "P87-R23",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:727-729 (_context_problem docstring)",
+        "issue": "P87.9 added an invalid escape sequence. The docstring ends `runner's wrapper, `run \"<label>\" \\``. — a backslash followed by a backtick in a non-raw string. On Python 3.12+ every uncached compile prints `SyntaxWarning: \"\\`\" is an invalid escape sequence` to stderr. The tool always runs as a script (`python3 tools/check-rendered-artifacts.py ...` in verify.sh:306, verify.sh:540 and ci.yml:505), and a __main__ script is never read from a .pyc, so the warning prints on every run, including CI (python-version 3.12, ci.yml:42/450). Under `-W error` the file does not compile (observed on 3.14.7: SyntaxError at line 729), and Python says such sequences will stop working in a future release. The parent 51306a26 compiled cleanly under `-W error`, and a compile sweep of every .py under tools/, plugins/ and .claude/ with SyntaxWarning set to error flags only this file. `ruff check` passes because W605 is not in its selected rules; `ruff check --select W605 tools/check-rendered-artifacts.py` reports 1 error.",
+        "resolution": "fixed in P87.10-bpl (74b28d2e): fix task P87.10-bpl (review-P87h.json)",
+        "fixTask": "P87.10-bpl",
+        "commit": "74b28d2e"
+      },
+      {
+        "id": "P87-R24",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:730-736 (_context_problem: `above` is only lines[index-1]); tools/verify.sh:305-306, :539-540",
+        "issue": "Round-7 finding 2 is closed for one line only, one line above the real shape. The runner's real call is two physical lines: `run \"<label>\" \\` followed by the call. `_context_problem` checks only that the call's own previous line is the wrapper. It never checks whether the wrapper line is itself continued. Probed on a `git archive HEAD` export copy with verify.sh:305 preceded by `echo \"skipped for now:\" \\`. run_arms('.') returned {plain: [(307, fresh)], release: [(541, head)], ci: [(505, fresh+head)]}, the tool's --selftest was ALL PASS 37/37 (ra29, ra29g, ra29h and ra29i green), and `sh` with a stand-in `run` printed the call instead of running it. call_lines gives the same silent read for `: \\` above the wrapper, and for the other shell line-joiners, which the check does not look at: `true ||` above the wrapper, or directly above a call (shell or a `run: |` block), and `false &&` above a call in a `run: |` block. Each one reads as the call's arms while the tool never runs. This is outside the stated limit (a heredoc, a quoted string, another key's block text), and the misread line is the real call.",
+        "resolution": "fixed in P87.10-bpl (74b28d2e): fix task P87.10-bpl (review-P87h.json)",
+        "fixTask": "P87.10-bpl",
+        "commit": "74b28d2e"
+      },
+      {
+        "id": "P87-R25",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:726-735 (_continues_with), used by _context_problem:772-782",
+        "issue": "A trailing shell comment hides the continuation token, so the chain check P87.10 added misses its own class. `_continues_with` tests `line.rstrip().endswith(token)`, and `false && # skip for now` ends in `now`, not `&&`. The shell still joins the next command onto it, because a comment and a newline after `&&`, `||` or `|` are allowed. Probed on a `git archive HEAD` (71e5142d) export. Inserting `false && # skip for now` above verify.sh:305 (the runner's wrapper) gives run_arms plain [(307, ('fresh',))]. The tool's --selftest on that mutated copy exits 0, ALL PASS 37/37, with ra29 PASS. `sh` and `bash` with a stand-in `run` never run the wrapper and print only the next command. The same silent read comes back for `true || # c` and `echo x | # c` above verify.sh:305, for `false && # c` above the release wrapper (release [(541, ('head',))]), and for `false && # c` directly above ci.yml:505 or above its comment block (ci [(506, ('fresh','head'))]). The same lines without the comment are refused, naming the line. The commit's claim 1, 'a call continued from any line of its chain is refused', does not hold for this spelling.",
+        "resolution": "fixed in P87.11-bpl (3f104f7c): fix task P87.11-bpl (review-P87i.json)",
+        "fixTask": "P87.11-bpl",
+        "commit": "3f104f7c"
+      },
+      {
+        "id": "P87-R26",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:677-686 (the section comment and THE LIMIT); CHANGELOG.md:582-591",
+        "issue": "The stated limit is narrower than what the check misses. The section comment says 'An exact line is also refused when the lines around it mean it is not what runs'. THE LIMIT (and the CHANGELOG sentence) names only a heredoc, a quoted string or another key's block text. Control flow that never reaches the real call also leaves it read with ra29 green, and the real call does not have to be removed. Probed on the export: `false && {` or `exit 0` inserted above verify.sh:305 gives plain [(307, ('fresh',))]. `if false; then` ... `fi` around it reads the same way by construction. A text check cannot decide reachability, and the release arm itself depends on reading a call inside an `if` body. So the fix is to state the limit, not to add more patterns.",
+        "resolution": "fixed in P87.11-bpl (3f104f7c): fix task P87.11-bpl (review-P87i.json)",
+        "fixTask": "P87.11-bpl",
+        "commit": "3f104f7c"
+      },
+      {
+        "id": "P87-R27",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:731-764 (_without_trailing_comment, _continues_with), read by _context_problem:797-808; CHANGELOG.md:587",
+        "issue": "The comment cut only recognises one spelling of 'operator, then a comment', so some of the class P87.11 claims to close is still read silently. `_without_trailing_comment` starts a comment only at a `#` that follows whitespace. It ignores backslash escapes when it tracks quotes. And `_continues_with` tests for a trailing `\\` BEFORE the comment is cut. Probed on a `git archive HEAD` (33053b40) export by inserting a line above verify.sh:305, the runner's wrapper. Each spelling below gives plain [(307, ('fresh',))], or 308 where two lines were inserted, with no refusal. With a stand-in `run`, bash and sh never run the call; they print only `END`. (a) `false &&# c`. The shell starts a comment at a `#` directly after an operator. The same happens with `false ||# c` and `echo x |# c`, and with `false &&# c` above ci.yml:505 (ci [(506, ('fresh','head'))]) and above the release wrapper (release [(541, ('head',))]). (b) An escaped quote outside quotes opens a false 'quote', so the real `# c` is never cut. Examples: `false \\\" && # c`, `false \\' && # c`, `false \"a \\\" b\" && # c`. (c) `false \\ #x &&`. Here `\\ ` escapes the space, so `#x` is not a comment and `&&` is the real last token. The scanner cuts at that `#` and loses the `&&`. The new docstring sentence 'a backslash followed by a space and a comment escapes the space' has the same misreading: there is no comment after an escaped space. (d) `false && # note \\` followed by a blank line or a comment line, then the wrapper. `_continues_with` returns `\\` because the comment ends in a backslash. `_context_problem` ignores a backslash that is not directly above, so the `&&` is never seen. The same happens above ci.yml:505 (ci [(507, ...)]). The same line directly above the wrapper IS refused, but it is named as a backslash. None of these involves control flow above the call, a heredoc or string, or removing the real call. They are the chain check itself, and the CHANGELOG now claims it covers them: '`&&`, `||` or `|` (a trailing comment after the operator included)'. The export's --selftest stays ALL PASS 37/37.",
+        "resolution": "fixed in P87.12-bpl (7e630f10): fix task P87.12-bpl (review-P87j.json)",
+        "fixTask": "P87.12-bpl",
+        "commit": "7e630f10"
+      },
+      {
+        "id": "P87-R28",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:858-860 (run_arms reads with io.open universal newlines), :807 (call_lines: text.splitlines()), :837 (release_lines: text.splitlines())",
+        "issue": "The reader breaks lines where the shell does not. That lets text in front of the REAL call, on the same shell line, go unseen, and it is not the chain rule's limit or any stated limit. `run_arms` opens each file with the default newline=None, which turns a lone `\\r` into `\\n`. `call_lines` and `release_lines` then call `str.splitlines()`, which also breaks at `\\x0b`, `\\x0c`, `\\x1c`-`\\x1e`, `\\x85`, `\\u2028` and `\\u2029`. bash and sh break only at `\\n`. Probed on a `git archive HEAD` (f6fe3702) export with scratchpad/probe11.py and probe11b.py. I replaced verify.sh's real release call `    python3 tools/check-rendered-artifacts.py --against-commit` with `  : <SEP>  python3 tools/check-rendered-artifacts.py --against-commit`, with no other change. For each SEP in \\x0c, \\x0b, \\x1c, \\x85, \\u2028 and \\r, run_arms() gives release [(541, ('head',))] with no refusal. Python sees `  : ` as a plain code line with none of `_FORBIDDEN_ABOVE`, then the exact call line. The same mutation on the plain `--before-commit` call gives plain [(307, ('fresh',))]. ra29 compares arms only, so it stays green. With a stand-in `run`/`python3`, `run \"y\" \\` + `: <SEP>  python3 ... --against-commit` under bash and sh prints RUN-OK and END, and python3 never runs. The whole call is arguments to `:`, and the runner records the step as ok. This is not reachability, not a heredoc/string/block text, and it leaves the real call line in place. The separator is invisible in most editors and diffs.",
+        "resolution": "fixed in P87.13-bpl (9c41dbd8): fix task P87.13-bpl (review-P87k.json)",
+        "fixTask": "P87.13-bpl",
+        "commit": "9c41dbd8"
+      },
+      {
+        "id": "P87-R29",
+        "severity": "low",
+        "file": "tools/check-rendered-artifacts.py:749-752 (_is_full_line_comment: line.strip()), :743-745 (_code_above: lines[k].strip()), :769 (_RUNNER_WRAPPER.match(lines[index - 1].strip())); also :711 _indent, :718 _next_value_line, :727 _opener",
+        "issue": "P87.13 closes the round-11 splitter, but only half of the class. Python and the shell still disagree about which characters are blanks. The commit says 'only spaces and tabs are stripped from a line', and that holds in call_lines only. The helpers that decide what counts as a full-line comment, a blank line or the runner's wrapper still call str.strip(). That strips NBSP, FF, VT, FS-US, NEL, U+2028/2029 and CR. The shell's lexer treats none of these as a blank. Probed on a `git archive HEAD` (9d702e8b) export with scratchpad/probe12.py; the REAL tree reads {plain: [(306, fresh)], release: [(540, head)], ci: [(505, fresh+head)]}. (A) Insert `<SEP># note \\` directly above the real wrapper `run \"committed artifacts match a fresh render\" \\`. (B) Prefix the real release wrapper with <SEP>, as `  <SEP>run \"HEAD carries the published pages\" \\`. (C) Insert `          <SEP># note \\` directly above ci.yml:505. For each SEP in NBSP, FF, VT, FS, NEL, U+2028 and CR, run_arms() reads the call as before with no refusal: plain [(307, fresh)], release [(541, head)] / [(540, head)], ci [(506, fresh+head)]. Python sees (A) and (C) as a full-line comment and skips them, and sees (B) as the wrapper. The line (A) would otherwise be refused, because it carries both `#` and `\\` from _FORBIDDEN_ABOVE. The shell sees `<SEP>#` / `<SEP>run` as a WORD. In (A) the trailing backslash continues onto the next line, so the whole wrapper and call become arguments to a command named `<SEP>#`. Checked with bash and sh, using stand-in `run`/`python3` functions: every SEP prints only `<SEP>#: command not found` / `<SEP>run: command not found` and then END, with exit 0. python3 never runs and `run` is never entered. verify.sh is `#!/bin/sh` with `set -u` and no `set -e`, so that failure lands outside `run`. FAILED is not incremented, the step drops out of RESULTS, and verify.sh still ends green. ra29 compares arms only and stays green. This is not reachability, not a construct that makes the call line data, not shadowing (no command named `python3` or `run` is redefined), and the real call line stays in place. NBSP is the easiest of these separators to introduce by accident, from a paste, and it is invisible in editors and diffs. The CHANGELOG sentence 'so a carriage return, form feed or Unicode line separator inside a line cannot make part of it read as a call of its own' overstates what the check does while this remains.",
+        "resolution": "fixed in P87.14-bpl (54b492be): fix task P87.14-bpl (review-P87l.json)",
+        "fixTask": "P87.14-bpl",
+        "commit": "54b492be"
+      }
+    ],
+    "outcome": "[findings: 29 - 0 high, 3 med, 26 low; 29 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
