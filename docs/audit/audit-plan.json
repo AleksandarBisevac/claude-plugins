@@ -557,7 +557,7 @@
     {
       "id": "P87",
       "title": "a task that regenerates a published page can record a green gate before its commit, and a journal row keeps every detail its writer passed",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P87.json"
     }
   ],
