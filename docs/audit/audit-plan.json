@@ -4011,7 +4011,8 @@
       "P51.4",
       "P72.5-ttl",
       "P90.1",
-      "P91.1"
+      "P91.1",
+      "P91.2-htp"
     ],
     "tools/check-example-ledgers.py": [
       "P32.10",
