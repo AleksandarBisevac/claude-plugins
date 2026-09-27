@@ -25,7 +25,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P80-R1",
@@ -127,9 +127,9 @@
         "commit": "11dd3e6526ff"
       }
     ],
-    "outcome": "[findings: 11 - 3 high, 4 med, 4 low; 11 with a recorded fix commit]"
+    "outcome": "code-review phase review: 11 findings (3 high, 4 med, 4 low), each fixed in its own sign-off task and re-reviewed until clean; the task reviews found further defects that were fixed in the same tasks (nested-merge recovery, an unsafe out-of-repository release-guard narrowing that was reverted, a report overflow at a narrow width, a screenshot-capture race) and faults recorded for other phases (F522-F527 in the plan) [findings: 11 - 3 high, 4 med, 4 low; 11 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "The third place exists: with meta.fullGate declared, run-test-gate.py --full --record (by hand, from full-gate.py at pre-push, or a CI shard brought in by import-evidence.py) records a full-scope row on a head, close-phase stamps phase.mergedHead (recovered from the parent's first-parent chain, or after the fact with phase.mergedHeadAt over contained task commits), and _evidence_io.full_status answers whole, provisional, unknown or not_declared from the ledger alone. Status, report, panel and doctor select merged phases with one predicate and word an unreadable ledger with one sentence; this repository's release guard holds over a provisional or unknown phase. Phase gate 2026-09-27T13:55:36Z.77c010 green on every entry; tools/verify.sh green; invariants clean.",
   "tasks": [
     {
       "id": "P80.1",
@@ -1632,5 +1632,10 @@
       }
     }
   ],
-  "startedAt": "2026-09-27T04:18:48Z"
+  "startedAt": "2026-09-27T04:18:48Z",
+  "testEvidence": {
+    "runId": "2026-09-27T13:55:36Z.77c010",
+    "status": "passed",
+    "at": "2026-09-27T13:55:36Z"
+  }
 }
