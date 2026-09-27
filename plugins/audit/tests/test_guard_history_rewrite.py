@@ -1071,6 +1071,11 @@ def _cases(check):
     check("se7 ...while a subshell's `)` inside an open case arm closes the "
           "subshell, not a pattern", M._substitution_end(_body, 0)
           == _body.index(") tail"), repr(M._substitution_end(_body, 0)))
+    _body = "case x in a) echo 1;; b) echo 2;; esac) tail"
+    check("se8 ...and every arm's pattern is a pattern, not only the first: a "
+          "second arm's `)` does not close the substitution",
+          M._substitution_end(_body, 0) == _body.index("esac)") + 4,
+          repr(M._substitution_end(_body, 0)))
     check("se3 ...and one with no `esac` never closes, which is unreadable",
           M._substitution_end("case x in x) date", 0) is None,
           repr(M._substitution_end("case x in x) date", 0)))

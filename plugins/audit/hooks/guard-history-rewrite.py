@@ -842,15 +842,10 @@ def _substitution_end(text, start):
             if word:
                 done = "".join(word)
                 if word_cmd and done == "case":
-                    open_at.append([depth, 0, False])
+                    open_at.append(depth)
                 elif word_cmd and done == "esac" and open_at \
-                        and open_at[-1][0] == depth:
+                        and open_at[-1] == depth:
                     open_at.pop()
-                elif open_at and open_at[-1][0] == depth:
-                    if done == "in" and open_at[-1][1] == 1:
-                        open_at[-1][2] = True
-                    elif not open_at[-1][2]:
-                        open_at[-1][1] += 1
                 cmd_pos = done in _OPENS_COMMAND
                 word = []
             if ch in "\n;&|(":
@@ -858,15 +853,14 @@ def _substitution_end(text, start):
             if ch == "(":
                 depth += 1
             elif ch == ")":
-                if open_at and open_at[-1][0] == depth and open_at[-1][2]:
-                    open_at[-1][2] = False
+                if open_at and open_at[-1] == depth:
                     cmd_pos = True
                 else:
                     depth -= 1
                     cmd_pos = False
                     if depth == 0:
                         return j
-                    if open_at and open_at[-1][0] == depth:
+                    if open_at and open_at[-1] == depth:
                         cmd_pos = True
         else:
             if not word:
