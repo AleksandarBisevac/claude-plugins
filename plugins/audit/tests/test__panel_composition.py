@@ -1299,21 +1299,61 @@ def _full_run_cases(check):
             run.calls = calls
             return run
 
-        contained_run = _counting_run({("root", "A", "B"): (0, "", "")})
+        sha_a, sha_b = "a" * 40, "b" * 40
+        contained_run = _counting_run({("root", sha_a, sha_b): (0, "", "")})
         cache = {}
         wrapped = M._memoizing_runner(cache, contained_run)
-        ask = lambda: wrapped("root", ["merge-base", "--is-ancestor", "A", "B"])
+        ask = lambda: wrapped("root", ["merge-base", "--is-ancestor",
+                                       sha_a, sha_b])
         r1, r2 = ask(), ask()
-        check("fr7 a CONTAINED answer is memoized - the second identical ask "
-              "of the same (git_root, mergedHead, runHead) never reaches the "
-              "runner at all: %r" % (contained_run.calls,),
+        check("fr7 ALLOW: a CONTAINED answer between two full commit SHAs is "
+              "memoized - the second identical ask of the same (git_root, "
+              "mergedHead, runHead) never reaches the runner at all: %r"
+              % (contained_run.calls,),
               r1 == (0, "", "") and r2 == (0, "", "")
               and len(contained_run.calls) == 1)
 
-        unknown_run = _counting_run({("root", "A", "B"): (128, "", "boom")})
+        # A SHA-256 repository names a commit by a longer full object id; it
+        # is just as fixed, so its answer is memoized too.
+        sha256_a, sha256_b = "c" * 64, "d" * 64
+        long_run = _counting_run({("root", sha256_a, sha256_b): (0, "", "")})
+        long_wrapped = M._memoizing_runner({}, long_run)
+        for _i in range(2):
+            long_wrapped("root", ["merge-base", "--is-ancestor",
+                                  sha256_a, sha256_b])
+        check("fr11 RED-FIRST: an ancestry answer between two full SHA-256 "
+              "object ids is memoized, exactly as a SHA-1 pair is in fr7: %r"
+              % (long_run.calls,),
+              len(long_run.calls) == 1)
+
+        # A branch name, an abbreviated SHA, or anything else that is not a
+        # full commit SHA names a commit that can MOVE, so an answer about it
+        # is only true until the ref does. Each such pair is asked twice and
+        # must reach git both times; fr7 above is the allow case that keeps
+        # the memo from being dropped altogether.
+        moving = [("main", sha_b), (sha_a, "feature/x"), (sha_a[:12], sha_b),
+                  (sha_a + "0", sha_b), ("g" * 40, sha_b)]
+        memo_hits = []
+        for left, right in moving:
+            mv_run = _counting_run({("root", left, right): (1, "", "")})
+            mv_wrapped = M._memoizing_runner({}, mv_run)
+            for _i in range(2):
+                mv_wrapped("root", ["merge-base", "--is-ancestor", left, right])
+            if len(mv_run.calls) != 2:
+                memo_hits.append((left, right, len(mv_run.calls)))
+        check("fr10 RED-FIRST: an ancestry answer whose operands are not both "
+              "full commit SHAs is never memoized - every ask reaches git: %r"
+              % (memo_hits,),
+              not memo_hits)
+
+        # Full SHAs on purpose: a pair of anything else never reaches the
+        # cache at all, so this case could not see whether an UNKNOWN answer
+        # is kept out of it.
+        unknown_run = _counting_run({("root", sha_a, sha_b): (128, "", "boom")})
         cache2 = {}
         wrapped2 = M._memoizing_runner(cache2, unknown_run)
-        ask2 = lambda: wrapped2("root", ["merge-base", "--is-ancestor", "A", "B"])
+        ask2 = lambda: wrapped2("root", ["merge-base", "--is-ancestor",
+                                         sha_a, sha_b])
         ask2(), ask2()
         check("fr8 an UNKNOWN answer (git could not be asked) is NEVER cached "
               "- MUTATION: cache it too -> red, because 'could not ask' may "

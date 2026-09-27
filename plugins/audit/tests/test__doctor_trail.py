@@ -18,6 +18,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -29,6 +30,7 @@ import _doctor_trail as M                          # noqa: E402
 import _doctor_report as base                      # noqa: E402  (the collector)
 import _journal_io                                 # noqa: E402
 import _evidence_io                                # noqa: E402
+import _panel_composition                          # noqa: E402
 import _loader                                     # noqa: E402
 import _output                                     # noqa: E402  (the anchor: PLUGIN_ROOT, plugin_version)
 
@@ -1532,8 +1534,10 @@ def _cases(check):
         # carries the settle command.
         two_phase = {"meta": {"fullGate": ["echo x"]},
                     "phases": [{"id": "P1", "status": "done",
+                               "mergedAt": "2026-01-01T00:00:00Z",
                                "mergedHead": "a" * 40},
-                              {"id": "P2", "status": "done"}]}
+                              {"id": "P2", "status": "done",
+                               "mergedAt": "2026-01-01T00:00:00Z"}]}
         rep = base.Report()
         M.check_full_run(rep, full1, mrel, two_phase, full1)
         check("dfr3 RED-FIRST: a provisional phase and an unknown phase each "
@@ -1557,6 +1561,7 @@ def _cases(check):
                  ["echo x"], dirty_outside=["src/app.ts"])
         dirty_phase = {"meta": {"fullGate": ["echo x"]},
                       "phases": [{"id": "P3", "status": "done",
+                                 "mergedAt": "2026-01-01T00:00:00Z",
                                  "mergedHead": "b" * 40}]}
         rep = base.Report()
         M.check_full_run(rep, full1, mrel, dirty_phase, full1)
@@ -1583,6 +1588,7 @@ def _cases(check):
         M.check_full_run(rep, full_unread, mrel,
                          {"meta": {"fullGate": ["echo x"]},
                           "phases": [{"id": "P1", "status": "done",
+                                     "mergedAt": "2026-01-01T00:00:00Z",
                                      "mergedHead": "c" * 40}]},
                          full_unread)
         check("dfr5 RED-FIRST: an unparseable ledger line is a WARNING that "
@@ -1638,6 +1644,7 @@ def _cases(check):
                  repo["second"], ["echo x"])
         whole_phase = {"meta": {"fullGate": ["echo x"]},
                       "phases": [{"id": "P1", "status": "done",
+                                 "mergedAt": "2026-01-01T00:00:00Z",
                                  "mergedHead": repo["first"]}]}
         rep = base.Report()
         M.check_full_run(rep, full_whole, mrel, whole_phase, repo["root"])
@@ -1649,6 +1656,72 @@ def _cases(check):
               and repo["second"] in _detail(rep, "full run"))
     finally:
         shutil.rmtree(full_whole, ignore_errors=True)
+
+    # --- check_full_run: the SAME phases every other surface asks about -------
+    # The doctor, the status, the report and the panel all read this same
+    # fixture. It carries the phases a second reading of "merged" would
+    # disagree about: one with mergedAt whose effective status is still in
+    # progress (merged, not done), one done without mergedAt (done, not
+    # merged), and an id-less phase with mergedAt that no surface can name.
+    # The ledger is empty, so every merged phase reads PROVISIONAL without
+    # git being asked anything.
+    full_same = _harness.fixture_root("doctor-trail-full-run-same-")
+    try:
+        os.makedirs(os.path.join(full_same, "docs", "audit"))
+        mrel = "docs/audit/audit-plan.json"
+        same_plan = {
+            "meta": {"version": 2, "title": "t", "fullGate": ["echo x"]},
+            "phases": [
+                {"id": "PA", "title": "a", "status": "in_progress",
+                 "mergedAt": "2026-01-01T00:00:00Z", "mergedHead": "a" * 40,
+                 "tasks": [{"id": "PA.1", "title": "t", "status": "pending"}]},
+                {"id": "PD", "title": "d", "status": "done",
+                 "mergedHead": "b" * 40,
+                 "tasks": [{"id": "PD.1", "title": "t", "status": "done"}]},
+                {"title": "no id", "status": "done",
+                 "mergedAt": "2026-01-01T00:00:00Z", "mergedHead": "c" * 40,
+                 "tasks": []}],
+            "fileIndex": {}}
+        same_path = os.path.join(full_same, mrel)
+        with open(same_path, "w", encoding="utf-8") as fh:
+            json.dump(same_plan, fh)
+
+        rep = base.Report()
+        M.check_full_run(rep, full_same, mrel, same_plan, full_same)
+        doctor_ids = sorted(set(re.findall(
+            r"phase (\S+) is (?:PROVISIONAL|UNKNOWN)", _detail(rep, "full run"))))
+
+        def _asked(select):
+            # A surface that raises on this fixture (an id-less phase it
+            # tried to key a verdict by) is reported as what it raised, so
+            # the case below names the surface rather than aborting the suite.
+            try:
+                return sorted(str(k) for k in select())
+            except Exception as exc:
+                return ["raised %s" % (type(exc).__name__,)]
+
+        status_mod = _loader.load_script("audit-status.py",
+                                         modname="dt_audit_status")
+        status_ids = _asked(lambda: status_mod.full_run_block(
+            same_plan, same_path, full_same))
+        report_mod = _loader.load_script("render-report.py",
+                                         modname="dt_render_report")
+        report_ids = _asked(lambda: report_mod._full_run_block(
+            same_plan, same_path, full_same))
+        panel_cmds = _panel_composition.full_gate_commands(same_plan)
+        panel_ids = _asked(lambda: [
+            p.get("id") for p in same_plan["phases"]
+            if _panel_composition._phase_full_run(
+                p, panel_cmds, [], full_same) is not None])
+        check("dfr7 RED-FIRST: the doctor, the status, the report and the "
+              "panel ask about exactly the same phases - the one carrying "
+              "mergedAt though it does not read done, never the done one "
+              "without mergedAt, never the one with no id: doctor %r, status "
+              "%r, report %r, panel %r"
+              % (doctor_ids, status_ids, report_ids, panel_ids),
+              doctor_ids == status_ids == report_ids == panel_ids == ["PA"])
+    finally:
+        shutil.rmtree(full_same, ignore_errors=True)
 
 
 def _selftest():

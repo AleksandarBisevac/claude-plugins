@@ -1008,7 +1008,8 @@
         "plugins/audit/tests/test__panel_composition.py",
         "plugins/audit/scripts/report/render-report.py",
         "plugins/audit/tests/test_render_report.py",
-        "plugins/audit/scripts/status/_status_facts.py"
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/tests/test__status_facts.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1043,9 +1044,9 @@
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-09-27T10:40:56Z.bb4f1e",
+        "runId": "2026-09-27T11:19:49Z.2a56e0",
         "status": "passed",
-        "at": "2026-09-27T10:40:56Z"
+        "at": "2026-09-27T11:19:49Z"
       }
     },
     {
@@ -1183,15 +1184,15 @@
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-09-27T10:42:16Z.c1d9ad",
+        "runId": "2026-09-27T11:07:22Z.0271ae",
         "status": "passed",
-        "at": "2026-09-27T10:42:16Z"
+        "at": "2026-09-27T11:07:22Z"
       }
     },
     {
       "id": "P80.18-rtb",
       "title": "the full-run case checks the recorded command against a literal",
-      "status": "in_progress",
+      "status": "done",
       "description": "Sign-off finding P80-R4. fg10 derives its expected commands from resolved_commands, the function under test. Add a comparison against a hand-written literal command for the fixture's declared gate (no nodePreamble), and one with a nodePreamble, so a regression in resolved_commands cannot pass on both sides. Mutation: make resolved_commands drop the preamble and see the literal case go red.",
       "files": [
         "plugins/audit/tests/test_run_test_gate.py"
@@ -1219,18 +1220,23 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7850a65fb9cd",
       "outcome": {
         "technical": null,
         "descriptive": null
       },
       "startedAt": "2026-09-27T10:22:33Z",
-      "completedAt": null,
+      "completedAt": "2026-09-27T10:52:06Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-27T10:51:40Z.227d24",
         "status": "passed",
         "at": "2026-09-27T10:51:40Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7850a65fb9cd",
+        "at": "2026-09-27T10:52:06Z"
       }
     },
     {
@@ -1338,7 +1344,11 @@
         "plugins/audit/scripts/manifest/_areas.py",
         "plugins/audit/tests/test__areas.py",
         "plugins/audit/commands/init.md",
-        "plugins/audit/README.md"
+        "plugins/audit/README.md",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/_deps.py"
       ],
       "tests": {
         "mode": "gate-only",
@@ -1370,9 +1380,9 @@
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-09-27T10:46:10Z.92048f",
+        "runId": "2026-09-27T11:21:03Z.9c4631",
         "status": "passed",
-        "at": "2026-09-27T10:46:10Z"
+        "at": "2026-09-27T11:21:03Z"
       }
     }
   ],

@@ -9,6 +9,7 @@ Split out of `_panel_state.py` (U3.1). Layer 4, above `_panel_paths` (3).
 Stdlib only, Python 3.8 compatible.
 """
 import os
+import re
 import sys
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -894,11 +895,27 @@ def full_gate_commands(manifest):
     return [c for _name, c in _ev.resolved_commands(manifest, meta.get("fullGate"))]
 
 
+_FULL_SHA = re.compile(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}")
+
+
+def _is_full_sha(value):
+    """Whether `value` is a full SHA-1 or SHA-256 object id, and so a name
+    for one fixed commit."""
+    return isinstance(value, str) and _FULL_SHA.fullmatch(value) is not None
+
+
 def _memoizing_runner(cache, run=None):
     """Wrap a git runner so `git merge-base --is-ancestor <a> <b>` is asked at
     most once per `(git_root, a, b)` for as long as `cache` lives - commit
     ancestry between two fixed commits never changes, so the SAME question
     asked twice is free the second time.
+
+    ONLY WHEN BOTH OPERANDS ARE FULL COMMIT OBJECT IDS (SHA-1 or SHA-256). `mergedHead` is warned
+    about, not refused, when it is something else, and a branch name, a tag
+    or an abbreviated SHA names a commit that can MOVE: an answer about it is
+    true only until the ref does, so caching it would keep serving the old
+    answer after the ref moved. Anything that is not a full SHA on both sides
+    is asked of git every time.
 
     AN UNKNOWN ANSWER IS NEVER CACHED. `code` 0 (contained) and 1 (not
     contained) are the two real answers `_worktrees.merged_into` reads;
@@ -914,7 +931,9 @@ def _memoizing_runner(cache, run=None):
     fn = run if run is not None else _worktrees._git
 
     def wrapped(git_root, args):
-        if len(args) == 4 and args[0] == "merge-base" and args[1] == "--is-ancestor":
+        if (len(args) == 4 and args[0] == "merge-base"
+                and args[1] == "--is-ancestor"
+                and _is_full_sha(args[2]) and _is_full_sha(args[3])):
             key = (git_root, args[2], args[3])
             if key in cache:
                 return cache[key]
@@ -931,8 +950,10 @@ def _phase_full_run(ph, full_commands, rows, git_root, run=None, cache=None,
     """One merged phase's third-place verdict, or None when the question does
     not apply to this phase at all.
 
-    MERGED MEANS `mergedAt`, THE FIELD close-phase STAMPS TOGETHER WITH
-    `mergedHead` -- never merely `done` or `terminal`. A phase that has not
+    MERGED IS `_ev.merged_phase` -- `mergedAt`, the field close-phase stamps
+    together with `mergedHead`, and an id -- never merely `done` or
+    `terminal`, and never a reading of its own that the status, the report
+    and the doctor do not share. A phase that has not
     merged carries no claim here whatsoever, rather than the UNKNOWN
     `full_status` would hand back for a phase that merged but recorded no
     `mergedHead` - those are different silences and only the second is this
@@ -959,7 +980,7 @@ def _phase_full_run(ph, full_commands, rows, git_root, run=None, cache=None,
     about what those words mean would be the exact defect `_evidence_gap_of`
     is written against one field over.
     """
-    if not (isinstance(ph, dict) and ph.get("mergedAt")):
+    if not _ev.merged_phase(ph):
         return None
     if not full_commands:
         return None

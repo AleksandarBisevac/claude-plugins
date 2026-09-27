@@ -2588,7 +2588,8 @@ def _cases(_record):
                                  "dirtyOutside": []}}
 
     if not _sh_fr.which("git"):
-        for _lbl in ("fr10", "fr11", "fr12", "fr13", "fr14", "fr15"):
+        for _lbl in ("fr10", "fr11", "fr12", "fr13", "fr14", "fr14b",
+                     "fr14c", "fr15"):
             _harness.skip(check, _lbl, "git is not on PATH, and full_status "
                           "needs a real repository to ask ancestry of", True)
     else:
@@ -2684,6 +2685,44 @@ def _cases(_record):
                   and "r2" in _o5 and "2026-03-01T00:00:00Z" in _o5
                   and "2026-05-01T00:00:00Z" in _o5,
                   repr(_o5.strip()[-260:]))
+
+            # --- a DISQUALIFIED run after the merge is not "a full run
+            # happened": status passed and scope full, but measured on a dirty
+            # tree. It leaves the phase provisional and never makes it stale ---
+            _fr_dirty = _fr_row("r3", "2026-05-01T00:00:00Z", _fr_first)
+            _fr_dirty["observations"]["dirtyOutside"] = ["src/app.ts"]
+            _fr_write([_fr_dirty])
+            _c7, _o7, _e7 = _fr_cli([_fr_path, "--gate", "--fail-on",
+                                     "provisional,stale-full-run"])
+            check("fr14b RED-FIRST: a passed full run on a dirty tree, recorded "
+                  "after mergedAt, reads provisional but never trips "
+                  "stale-full-run - its moment is not a whole-bearing run's",
+                  _c7 == 1 and "GATE FAILED: provisional" in _o7
+                  and "GATE FAILED: stale-full-run" not in _o7,
+                  repr(_o7.strip()[-260:]))
+
+            # --- a WHOLE answer from an OLDER run, beside a NEWER whole-bearing
+            # run that does not contain the merge: the answer's run and the
+            # newest whole-bearing run are different runs, and the row must
+            # never hand a reader one run's id beside the other's moment ------
+            _fr_write([_fr_row("r-old", "2026-04-01T00:00:00Z", _fr_second),
+                       _fr_row("r-new", "2026-05-01T00:00:00Z", _fr_first)])
+            _c8, _o8, _e8 = _fr_cli([_fr_path, "--gate", "--json",
+                                     "--fail-on", "stale-full-run"])
+            try:
+                _fr_json = json.loads(_o8).get("fullRun", {}).get("P1", {})
+            except ValueError:
+                _fr_json = {"unparsed": _o8[-200:]}
+            check("fr14c RED-FIRST: a WHOLE row whose runId is an older run "
+                  "carries the newest whole-bearing run's moment only under "
+                  "that run's own id, and no runTs a reader would pair with "
+                  "runId: %r" % (_fr_json,),
+                  _c8 == 0
+                  and _fr_json.get("answer") == "whole"
+                  and _fr_json.get("runId") == "r-old"
+                  and _fr_json.get("wholeRunId") == "r-new"
+                  and _fr_json.get("wholeRunTs") == "2026-05-01T00:00:00Z"
+                  and "runTs" not in _fr_json)
 
             # --- THE ALLOW CASE: no meta.fullGate at all renders BYTE-IDENTICAL
             # to a plan that never named a third place - no "not_declared" text

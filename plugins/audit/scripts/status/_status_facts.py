@@ -1159,13 +1159,22 @@ def stale_full_runs(summary):
     contain it" - a plan actively falling behind its own third place rather
     than one that has not reached it yet. `full_run_block` carries the ONLY
     evidence this needs beside the phase's own `mergedAt` (already on the
-    rollup): `runTs`, the moment of the run `full_status` named, written ONLY
-    when that run itself measured clean (`status: passed`, `scope: full`) - a
-    disqualified run is not "a full run happened", so its moment is left off
-    rather than misread as staleness.
+    rollup): `wholeRunTs`, the moment of the newest full run
+    `_full_disqualification` accepts, and `wholeRunId`, that same run's id -
+    both `full_status`'s own keys, carried through `full_run_block` untouched,
+    and both None when the ledger holds no such run. A run that passed but ran
+    on a dirty tree, counted nothing or ran other commands is not "a full run
+    happened", so it never supplies the moment, and no rule here re-decides
+    which run counts.
+
+    THE MOMENT AND THE RUN IT NAMES COME FROM ONE PAIR OF KEYS. `runId` is
+    the run `full_status`'s answer is about, which on a WHOLE answer can be
+    an older run than the newest accepted one; reading the moment from one
+    run and printing the other's id would describe a run nobody recorded, so
+    the message names `wholeRunId` beside `wholeRunTs` and never `runId`.
 
     THE STAMPS ARE PARSED, NOT COMPARED AS TEXT, for `_gap_of`'s own reason:
-    `mergedAt` and `runTs` are both written by this plugin's own commands in
+    `mergedAt` and `wholeRunTs` are both written by this plugin's own commands in
     one UTC spelling today, but a hand-edited `mergedAt` need not agree, and a
     stamp neither side can parse dates nothing rather than being read for or
     against staleness.
@@ -1183,7 +1192,7 @@ def stale_full_runs(summary):
         if not (isinstance(row, dict)
                 and row.get("answer") == _manifest_vocab.FULL_STATUS_PROVISIONAL):
             continue
-        run_when = _usage_core.parse_ts(row.get("runTs"))
+        run_when = _usage_core.parse_ts(row.get("wholeRunTs"))
         if run_when is None:
             continue
         merge_when = _usage_core.parse_ts((by_id.get(pid) or {}).get("mergedAt"))
@@ -1192,7 +1201,7 @@ def stale_full_runs(summary):
         out.append("phase %s: merged %s, but full run %s (%s) ran after and "
                    "still does not contain it"
                    % (pid, (by_id.get(pid) or {}).get("mergedAt"),
-                      row.get("runId"), row.get("runTs")))
+                      row.get("wholeRunId"), row.get("wholeRunTs")))
     return out or None
 
 

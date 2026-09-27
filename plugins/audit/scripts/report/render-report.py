@@ -178,13 +178,10 @@ def _full_run_block(manifest, manifest_path, project):
     ask, so the word a reader sees here cannot disagree with the one they see
     on the CLI or the panel.
 
-    MERGED MEANS `phase.get("mergedAt")` TRUTHY AND `phase.get("id") IS NOT
-    None` - exactly that predicate and no other. `effective_phase_status ==
-    "done"` is NOT this: a phase can be done without ever having merged, and a
-    phase reads merged before its status catches up to `done`. `audit-status.py`
-    uses this same one-line predicate; a shared helper beside
-    `_evidence_io.full_status` is a later task's to add, and this stays a single,
-    obvious line on purpose so that move is easy.
+    MERGED IS `_evidence_io.merged_phase` - `mergedAt` set and an id - the one
+    predicate the status, the panel and the doctor call too. An effective
+    status of done is NOT this: a phase can be done without ever having
+    merged, and a phase reads merged before its status catches up to done.
 
     THE ONE RESOLUTION OF THE GATE and THE ONE READ OF THE LEDGER, exactly as
     `audit-status.py`'s docstring states them - this file re-derives neither, it
@@ -209,7 +206,7 @@ def _full_run_block(manifest, manifest_path, project):
         return {"error": "the full-gate ledger could not be read: %s" % (exc,)}
     out = {}
     for p in (manifest.get("phases") or []):
-        if not isinstance(p, dict) or not p.get("mergedAt") or p.get("id") is None:
+        if not _evidence_io.merged_phase(p):
             continue
         res = dict(_evidence_io.full_status(rows, p, git_root, full_commands))
         res["mergedHead"] = p.get("mergedHead")

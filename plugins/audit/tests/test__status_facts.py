@@ -367,25 +367,28 @@ def _cases(check):
                                   "runId": None}},
                "phases": [{"id": "P1"}]},
               ("provisional",)) == [])
-    check("fr5 stale-full-run needs `runTs` on the row - a PROVISIONAL phase "
+    check("fr5 stale-full-run needs `wholeRunTs` on the row - a PROVISIONAL phase "
           "with no run named at all (never measured, ever) is not YET stale, "
           "only unwritten",
           M.evaluate_gate(_fr_prov, ("stale-full-run",)) == []
           and M.stale_full_runs(_fr_prov) is None)
     _fr_stale = {
         "fullRun": {"P1": {"answer": "provisional", "basis": "does not contain X",
-                           "runId": "r2", "runTs": "2026-04-01T00:00:00Z"}},
+                           "runId": "r-answer", "wholeRunId": "r2",
+                           "wholeRunTs": "2026-04-01T00:00:00Z"}},
         "phases": [{"id": "P1", "mergedAt": "2026-03-01T00:00:00Z"}],
     }
     check("fr6 THE SHARPER CLAIM: a full run recorded AFTER this phase merged "
           "and still not containing it IS stale, naming the run and both moments",
           M.evaluate_gate(_fr_stale, ("stale-full-run",)) == ["stale-full-run"]
           and "r2" in " ".join(M.stale_full_runs(_fr_stale))
+          and "r-answer" not in " ".join(M.stale_full_runs(_fr_stale))
           and "2026-03-01T00:00:00Z" in " ".join(M.stale_full_runs(_fr_stale))
           and "2026-04-01T00:00:00Z" in " ".join(M.stale_full_runs(_fr_stale)))
     _fr_before = {
         "fullRun": {"P1": {"answer": "provisional", "basis": "does not contain X",
-                           "runId": "r0", "runTs": "2026-01-01T00:00:00Z"}},
+                           "runId": "r0", "wholeRunId": "r0",
+                           "wholeRunTs": "2026-01-01T00:00:00Z"}},
         "phases": [{"id": "P1", "mergedAt": "2026-03-01T00:00:00Z"}],
     }
     check("fr7 SECOND DIRECTION: a full run recorded BEFORE the merge is not "

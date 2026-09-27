@@ -85,6 +85,7 @@ import _locks  # noqa: E402  (whose phase lock, and is it live)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; the atomic write)
 import _manifest_vocab  # noqa: E402  (the FULL_STATUS words, one vocabulary)
 import _worktrees  # noqa: E402  (git ancestry: merged_into, the three answers)
+import _usage_core  # noqa: E402  (parse_ts: a full run's ts read as a moment, at layer 1)
 from _journal_io import (command_facts, redacted_paths,  # noqa: E402
                          redacted_text, repo_relative_or_token)
 
@@ -2385,9 +2386,82 @@ def _full_disqualification(row, full_commands):
     return None
 
 
+def merged_phase(phase):
+    """Whether `phase` is one the third place is asked about: a dict carrying a
+    truthy `mergedAt` and an `id` that is not None.
+
+    MERGED IS THE FIELD THE MERGE STAMPS, NEVER A STATUS. `close-phase.py`
+    writes `mergedAt` together with `mergedHead` and never touches `status`,
+    so a phase reads merged before its effective status catches up to done,
+    and a done phase need never have merged at all. An id-less phase has no
+    name any surface could print a verdict under, so none asks about it.
+
+    ONE PREDICATE FOR EVERY SURFACE. The status, the report, the panel and
+    the doctor each call this rather than spelling their own reading, so the
+    set of phases they grade cannot drift apart.
+    """
+    return (isinstance(phase, dict) and bool(phase.get("mergedAt"))
+            and phase.get("id") is not None)
+
+
+def _ts_moment(row):
+    """A row's `ts` as epoch seconds, or None when it will not parse."""
+    return _usage_core.parse_ts(row.get("ts"))
+
+
+def _newest_first(full_rows):
+    """`full_rows` ordered by the MOMENT each `ts` names, newest first, with
+    every row whose `ts` will not parse after all of them, in ledger order.
+
+    PARSED, NEVER COMPARED AS TEXT. A stamp carrying an offset or a
+    fractional second sorts as text against a plain UTC one by its spelling
+    rather than its moment, so "newest" would be whichever string is
+    greatest. An unreadable `ts` has no place in that order at all; it goes
+    last so it is still walked for the answer - its head is as measured as
+    any other - but `_is_dated` keeps it from ever being called newest.
+    """
+    keyed = [(_ts_moment(r), r) for r in full_rows]
+    dated = [pair for pair in keyed if pair[0] is not None]
+    dated.sort(key=lambda pair: pair[0], reverse=True)
+    return ([r for _m, r in dated]
+            + [r for m, r in keyed if m is None])
+
+
+def _is_dated(row):
+    """Whether `row`'s `ts` names a moment - the condition for being the
+    newest whole-bearing run, since a run with no readable moment cannot be
+    placed before or after any other."""
+    return _ts_moment(row) is not None
+
+
+def _newest_whole_bearing(full_rows, full_commands):
+    """The newest DATED row of `full_rows` (already in `_newest_first` order)
+    that `_full_disqualification` passes, or None when none does."""
+    for row in full_rows:
+        if _is_dated(row) and _full_disqualification(row, full_commands) is None:
+            return row
+    return None
+
+
 def full_status(rows, phase, git_root, full_commands, run=None):
-    """`{"answer", "basis", "runId"}` -- is this phase's merge WHOLE, PROVISIONAL,
-    UNKNOWN, or NOT_DECLARED, from the ledger alone.
+    """`{"answer", "basis", "runId", "wholeRunId", "wholeRunTs"}` -- is this
+    phase's merge WHOLE, PROVISIONAL, UNKNOWN, or NOT_DECLARED, from the ledger
+    alone, and which recorded run is the newest one that COULD bear whole.
+
+    `runId` IS THE RUN THE ANSWER'S BASIS IS ABOUT, which for a PROVISIONAL
+    answer over a ledger holding no whole-bearing run is the nearest
+    DISQUALIFIED one - the run the basis names the failed rule of.
+
+    `wholeRunId` AND `wholeRunTs` NAME THE NEWEST WHOLE-BEARING FULL RUN (one
+    `_full_disqualification` finds nothing wrong with, whose `ts` parses to a
+    moment) and that recorded `ts`, or None for both when no such run
+    exists. They always describe ONE run, and on a WHOLE answer it can be a
+    different run from `runId`'s. They are carried on every
+    answer, so a caller asking "has a run that counts happened since this
+    phase merged" reads them and never re-derives which run counts: a run
+    that was red, repeated a verdict, measured the wrong scope, counted
+    nothing, ran on a dirty tree or ran other commands is not "a full run
+    happened", and its moment must not be read as one.
 
     `full_commands` IS THE BARE COMMAND HALF OF `resolved_commands(manifest,
     meta.fullGate)` -- `[c for _name, c in resolved_commands(manifest,
@@ -2404,7 +2478,9 @@ def full_status(rows, phase, git_root, full_commands, run=None):
     one, so it is never PROVISIONAL, which would claim a specific gap this
     plan has no way to measure.
 
-    OTHERWISE, every scope-`full` row is walked NEWEST FIRST, and only the
+    OTHERWISE, every scope-`full` row is walked NEWEST FIRST by the moment
+    its `ts` names (`_newest_first`; a row whose `ts` will not parse is
+    walked last and is never the newest), and only the
     WHOLE-BEARING ones (`_full_disqualification` finds nothing wrong) are asked
     of git: `_worktrees.merged_into(git_root, mergedHead, row's head, run=run)`.
     CONTAINED answers WHOLE, naming the run. NOT_CONTAINED moves on to an
@@ -2416,11 +2492,26 @@ def full_status(rows, phase, git_root, full_commands, run=None):
     If nothing was CONTAINED: any remembered UNKNOWN wins, because a could-not-
     ask is never folded into a definite answer. Otherwise PROVISIONAL, whose
     basis names the newest whole-bearing run and that its head does not
-    contain `mergedHead` -- or, when not one recorded full run was
-    whole-bearing at all, the nearest disqualified one and why.
+    contain `mergedHead` -- or, when the only whole-bearing runs carry no
+    readable `ts`, the nearest of those, saying so -- or, when not one
+    recorded full run was whole-bearing at all, the nearest disqualified one
+    and why.
     """
     phase = phase if isinstance(phase, dict) else {}
     declared = list(full_commands or [])
+    full_rows = _newest_first([r for r in (rows or [])
+                              if isinstance(r, dict)
+                              and r.get("scope") == FULL_SCOPE])
+    whole = _newest_whole_bearing(full_rows, declared) if declared else None
+    whole_ts = whole.get("ts") if whole is not None else None
+    return dict(_full_answer(full_rows, phase, git_root, declared, run),
+                wholeRunId=whole.get("runId") if whole is not None else None,
+                wholeRunTs=str(whole_ts) if whole_ts else None)
+
+
+def _full_answer(full_rows, phase, git_root, declared, run):
+    """`full_status`'s `{"answer", "basis", "runId"}` over the scope-`full`
+    rows it already sorted newest first - the walk its docstring describes."""
     if not declared:
         return {"answer": _manifest_vocab.FULL_STATUS_NOT_DECLARED,
                 "basis": "this plan names no meta.fullGate, so there is no "
@@ -2432,17 +2523,18 @@ def full_status(rows, phase, git_root, full_commands, run=None):
                 "basis": "phase %s records no mergedHead, so ancestry cannot "
                          "be asked at all" % (phase.get("id"),),
                 "runId": None}
-    full_rows = [r for r in (rows or [])
-                if isinstance(r, dict) and r.get("scope") == FULL_SCOPE]
-    full_rows.sort(key=lambda r: str(r.get("ts") or ""), reverse=True)
     newest_whole_bearing, nearest_disqualified, newest_unknown = None, None, None
+    undated_whole_bearing = None
     for row in full_rows:
         reason = _full_disqualification(row, declared)
         if reason is not None:
             if nearest_disqualified is None:
                 nearest_disqualified = (row, reason)
             continue
-        if newest_whole_bearing is None:
+        if not _is_dated(row):
+            if undated_whole_bearing is None:
+                undated_whole_bearing = row
+        elif newest_whole_bearing is None:
             newest_whole_bearing = row
         head = (row.get("testedState") or {}).get("head")
         answer = _worktrees.merged_into(git_root, merged_head, head, run=run)
@@ -2473,6 +2565,15 @@ def full_status(rows, phase, git_root, full_commands, run=None):
                          % (newest_whole_bearing.get("runId"), head,
                             merged_head)),
                 "runId": newest_whole_bearing.get("runId")}
+    if undated_whole_bearing is not None:
+        head = (undated_whole_bearing.get("testedState") or {}).get("head")
+        return {"answer": _manifest_vocab.FULL_STATUS_PROVISIONAL,
+                "basis": ("no measured full run carries a readable ts; run "
+                         "%s (ts %r, head %s) does not contain %s"
+                         % (undated_whole_bearing.get("runId"),
+                            undated_whole_bearing.get("ts"), head,
+                            merged_head)),
+                "runId": undated_whole_bearing.get("runId")}
     if nearest_disqualified is not None:
         row, reason = nearest_disqualified
         return {"answer": _manifest_vocab.FULL_STATUS_PROVISIONAL,

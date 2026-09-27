@@ -2913,6 +2913,120 @@ def _full_status_cases(check):
               % (res_none,),
               res_none["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL)
 
+        # --- the newest WHOLE-BEARING run, named beside the answer ------------
+        # The fixture separates "the run full_status's answer names" from "the
+        # newest run that could bear whole": the newest row is disqualified (a
+        # dirty tree, status still passed), so a reading that took the moment
+        # off `runId` in the disqualified-only ledger, or off the newest row
+        # of any kind, answers the dirty run and goes red here.
+        newest_dirty = _fs_row("run-dirty-newest", "2026-01-03T00:00:00Z",
+                               repo["second"], ["echo x"],
+                               dirty_outside=["src/app.ts"])
+        older_bearing = _fs_row("run-bearing", "2026-01-01T00:00:00Z",
+                                "0" * 40, ["echo x"])
+        not_contained = _fake_git({"merge-base --is-ancestor": (1, "", "")})
+        res_wb = M.full_status([older_bearing, newest_dirty], phase,
+                               repo["root"], ["echo x"], run=not_contained)
+        check("fs19 RED-FIRST: full_status names the newest WHOLE-BEARING run "
+              "and its moment beside its answer, passing over a newer run on "
+              "a dirty tree: %r" % (res_wb,),
+              res_wb.get("wholeRunId") == "run-bearing"
+              and res_wb.get("wholeRunTs") == "2026-01-01T00:00:00Z"
+              and res_wb["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL)
+
+        res_dq = M.full_status([newest_dirty], phase, repo["root"], ["echo x"])
+        check("fs20 RED-FIRST: a ledger holding only a disqualified passed run "
+              "names NO whole-bearing run and no moment, while `runId` still "
+              "names the disqualified run its basis is about: %r" % (res_dq,),
+              "wholeRunId" in res_dq and res_dq["wholeRunId"] is None
+              and "wholeRunTs" in res_dq and res_dq["wholeRunTs"] is None
+              and res_dq["runId"] == "run-dirty-newest")
+
+        res_wh = M.full_status([whole_row], phase, repo["root"], ["echo x"])
+        check("fs21 ALLOW: a WHOLE answer names its run as the newest "
+              "whole-bearing one too, with that run's own moment: %r"
+              % (res_wh,),
+              res_wh.get("wholeRunId") == "run-whole"
+              and res_wh.get("wholeRunTs") == "2026-01-02T00:00:00Z")
+
+        # --- which phases are merged: one predicate every surface calls -------
+        cases = [
+            ({"id": "P1", "mergedAt": "2026-01-01T00:00:00Z"}, True),
+            ({"id": "P1", "mergedAt": "2026-01-01T00:00:00Z",
+              "status": "in_progress"}, True),
+            ({"mergedAt": "2026-01-01T00:00:00Z", "status": "done"}, False),
+            ({"id": None, "mergedAt": "2026-01-01T00:00:00Z"}, False),
+            ({"id": "P1", "status": "done"}, False),
+            ({"id": "P1", "mergedAt": ""}, False),
+            ("P1", False),
+            (None, False),
+        ]
+        wrong = [(p, want) for p, want in cases
+                 if M.merged_phase(p) is not want]
+        check("mp1 RED-FIRST: a phase is merged exactly when it carries "
+              "mergedAt and an id - a stored status of done without mergedAt "
+              "is not merged, an in_progress one with mergedAt is, and an "
+              "id-less one never is: %r" % (wrong,),
+              not wrong)
+
+        # --- "newest" is the newest MOMENT, never the greatest string -------
+        # Each pair below is ordered one way as text and the other way as
+        # time, so an ordering by the stamp's spelling picks the wrong run.
+        offset_later = _fs_row("run-offset", "2026-01-02T01:00:00+02:00",
+                               "0" * 40, ["echo x"])
+        utc_newer = _fs_row("run-utc", "2026-01-01T23:30:00Z", "0" * 40,
+                            ["echo x"])
+        res_off = M.full_status([offset_later, utc_newer], phase, repo["root"],
+                                ["echo x"], run=not_contained)
+        check("fs22 RED-FIRST: a stamp with an offset is ordered by the moment "
+              "it names - the UTC run half an hour later is the newest, though "
+              "its text sorts first the other way: %r" % (res_off,),
+              res_off.get("wholeRunId") == "run-utc"
+              and res_off["runId"] == "run-utc")
+
+        frac_newer = _fs_row("run-frac", "2026-01-01T10:00:00.500Z", "0" * 40,
+                             ["echo x"])
+        whole_second = _fs_row("run-whole-second", "2026-01-01T10:00:00Z",
+                               "0" * 40, ["echo x"])
+        res_frac = M.full_status([whole_second, frac_newer], phase,
+                                 repo["root"], ["echo x"], run=not_contained)
+        check("fs23 RED-FIRST: a fractional second is later than the whole "
+              "second it extends, though a text sort puts it first: %r"
+              % (res_frac,),
+              res_frac.get("wholeRunId") == "run-frac"
+              and res_frac.get("wholeRunTs") == "2026-01-01T10:00:00.500Z")
+
+        undated = _fs_row("run-undated", "not-a-moment", "0" * 40, ["echo x"])
+        dated = _fs_row("run-dated", "2026-01-01T00:00:00Z", "0" * 40,
+                        ["echo x"])
+        res_und = M.full_status([dated, undated], phase, repo["root"],
+                                ["echo x"], run=not_contained)
+        check("fs24 RED-FIRST: a run whose ts will not parse is never the "
+              "newest whole-bearing run, though its text sorts above every "
+              "real stamp: %r" % (res_und,),
+              res_und.get("wholeRunId") == "run-dated"
+              and res_und["runId"] == "run-dated")
+
+        res_only = M.full_status([undated], phase, repo["root"], ["echo x"],
+                                 run=not_contained)
+        check("fs25 a ledger whose only whole-bearing run has no readable ts "
+              "names no whole-bearing moment, yet the answer still names that "
+              "run rather than claiming none was recorded: %r" % (res_only,),
+              res_only["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
+              and res_only["runId"] == "run-undated"
+              and res_only.get("wholeRunId") is None
+              and res_only.get("wholeRunTs") is None
+              and "never been recorded" not in res_only["basis"])
+
+        contains = _fake_git({"merge-base --is-ancestor": (0, "", "")})
+        res_und_whole = M.full_status([undated], phase, repo["root"],
+                                      ["echo x"], run=contains)
+        check("fs26 ALLOW: a run with no readable ts still answers the "
+              "ancestry question it measured - an unreadable moment says "
+              "nothing about the head it ran on: %r" % (res_und_whole,),
+              res_und_whole["answer"] == _manifest_vocab.FULL_STATUS_WHOLE
+              and res_und_whole["runId"] == "run-undated")
+
         # --- reconcile: a full row moves nothing and refuses nothing -----------
         proj = _project(os.path.join(tmp, "recon"),
                         {"manifestPath": "docs/audit/audit-plan.json"})

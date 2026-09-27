@@ -329,7 +329,8 @@ def _unfinished_detail(summary):
 
 
 def full_run_block(manifest, manifest_path, project):
-    """`{phaseId: {"answer", "basis", "runId"[, "runTs"]}}` — the third
+    """`{phaseId: full_status(...)}` — `full_status`'s own dict, unchanged
+    (`answer`, `basis`, `runId`, `wholeRunId`, `wholeRunTs`) — the third
     place's own answer for every MERGED phase, or `{}` when this plan names no
     `meta.fullGate` at all (there is nothing to ask, and reading the ledger to
     say so would be a cost paid for a silence — the reading `provisional` and
@@ -343,14 +344,18 @@ def full_run_block(manifest, manifest_path, project):
     a plan whose config points its evidence somewhere unusual is read from the
     one place its report and its gate already agree on.
 
-    `runTs` NAMES THE MOMENT OF THE RUN `full_status` POINTS AT, and it is the
-    one thing this function adds beside that call's own contract. `full_status`
-    carries no timestamp — its job is ancestry, not scheduling — so
-    `stale_full_runs` needs it looked back up by the `runId` already returned,
-    ONLY when that run itself measured clean (`status: passed`, its OWN scope
-    is the third place's). A disqualified run — red, or measuring the wrong
-    thing — is not "a full run happened", so its moment is left off rather than
-    misread as staleness evidence.
+    NOTHING IS ADDED TO THAT DICT. Which run counts as "a full run happened"
+    is `_full_disqualification`'s question and nobody else's, and
+    `full_status` already names that run and its moment together as
+    `wholeRunId` and `wholeRunTs`. A moment copied here under a key of its
+    own would sit beside `runId`, which on a WHOLE answer can be an older
+    run than the one the moment belongs to, and a reader would pair the two
+    as one run. A second reading of the run here, checking only its status
+    and scope, is also how a run on a dirty tree once made a phase read
+    stale.
+
+    WHICH PHASES ARE ASKED is `_evidence_io.merged_phase`, the one predicate
+    the report, the panel and the doctor call too.
 
     AN EXCEPTION COMES BACK AS A BLOCK WITH NO PHASE KEYS AT ALL, the same shape
     `invariants_block` and `portability_block` answer with for the reason their
@@ -372,17 +377,10 @@ def full_run_block(manifest, manifest_path, project):
         return {"error": "the full-gate ledger could not be read: %s" % (exc,)}
     out = {}
     for p in (manifest.get("phases") or []):
-        if not isinstance(p, dict) or not p.get("mergedAt") or p.get("id") is None:
+        if not _evidence_io.merged_phase(p):
             continue
-        res = _evidence_io.full_status(rows, p, git_root, full_commands)
-        run_id = res.get("runId")
-        if run_id:
-            run_row = _evidence_io.row_by_run(rows, run_id)
-            if (isinstance(run_row, dict) and run_row.get("status") == "passed"
-                    and run_row.get("scope") == _evidence_io.FULL_SCOPE
-                    and run_row.get("ts")):
-                res = dict(res, runTs=str(run_row["ts"]))
-        out[p["id"]] = res
+        out[p["id"]] = _evidence_io.full_status(rows, p, git_root,
+                                                 full_commands)
     return out
 
 

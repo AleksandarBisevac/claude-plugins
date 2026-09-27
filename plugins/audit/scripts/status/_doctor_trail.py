@@ -1332,8 +1332,10 @@ def check_full_run(rep, project, manifest_rel, manifest, git_root, config=None):
     that silence would tell an operator their merges are unproven when the
     true problem is that this check could not look.
 
-    EVERY MERGED PHASE - `_manifest_io.effective_phase_status(phase) ==
-    "done"` - IS ASKED, WHOLE OR NOT: a PROVISIONAL phase gets a WARNING
+    EVERY MERGED PHASE - `_evidence_io.merged_phase`, the one predicate the
+    status, the report and the panel call too, never an effective status of
+    done, which a phase can read without ever having merged - IS ASKED,
+    WHOLE OR NOT: a PROVISIONAL phase gets a WARNING
     naming the command that would settle it, an UNKNOWN phase gets a
     WARNING naming `full_status`'s own basis (no `mergedHead` recorded, or
     that git itself could not answer ancestry). Neither is folded into the
@@ -1377,8 +1379,7 @@ def check_full_run(rep, project, manifest_rel, manifest, git_root, config=None):
                  "a ledger this check could not fully read" % (unreadable,))
         return
     merged = [p for p in (manifest.get("phases") or [])
-             if isinstance(p, dict) and _manifest_io.effective_phase_status(p)
-             == "done"]
+             if _evidence_io.merged_phase(p)]
     if not merged:
         rep.ok(FULL_RUN_CHECK,
                "meta.fullGate is declared but no phase has merged yet")
