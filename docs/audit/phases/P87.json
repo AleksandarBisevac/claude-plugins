@@ -283,7 +283,7 @@
     {
       "id": "P87.6-bpl",
       "title": "the ci.yml reader accepts only the call shapes it can read and refuses every other line that names the tool",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase review round 4 (review-P87d.json). The reader still reads every line naming the tool and only exempts blocks whose key is spelled exactly `run:`, so \"run\": >, 'run': >, `run : >`, `&k run: >` read silently as no-flag (ci.yml's expected answer), a quoted one-line value is dropped, and `run: &a |`, `run: !!str >` or a deeper comment under a one-line run: are refused with a wrong message. Invert the rule into an allow-list: in YAML mode a line naming the tool is accepted only as (a) a one-line `run:` (optionally after `- `) whose unquoted value is the call, or (b) a line in the body of a block opened by a plain `run: |` (optionally `|-`/`|+`, trailing comment allowed). Every other non-comment line that names the tool is refused by line with the two accepted shapes named. A full-line comment is never a call and never extends a value. Pin each review shape (quoted keys, spaced key, anchored key, quoted value, anchored/tagged indicator, deeper comment) in ra29d or a new case: each is either read correctly or refused, none read silently. Re-wrap the manifest-conventions.md phase.merged bullet. Red first.",
       "files": [
         "tools/check-rendered-artifacts.py",
@@ -313,14 +313,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4093d3cd",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "invocations dispatches shell/YAML readers; YAML allow-list of one-line run: and plain run: | body; ra29e",
+        "descriptive": "ci.yml calls are read only from two known shapes, and any other line naming the tool is refused by line"
       },
       "startedAt": "2026-09-27T15:57:33Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T16:05:46Z",
+      "verifiedBy": [
+        "check-rendered-artifacts 37/37",
+        "probe 7/7 red on an export",
+        "full sweep",
+        "gate-parity"
+      ]
     }
   ],
   "startedAt": "2026-09-27T14:08:20Z"
