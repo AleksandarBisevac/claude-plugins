@@ -91,6 +91,48 @@ from _journal_io import (command_facts, redacted_paths,  # noqa: E402
 DEFAULT_DIRNAME = "evidence"
 
 
+# --- one resolution of a gate entry, for every reader that needs one -----------
+def resolved_commands(manifest, entries):
+    """`[(name, command)]` -- every entry through `meta.buildCommands`, once,
+    with `meta.nodePreamble` in front.
+
+    THE ONE HOME. `run-test-gate.py` used to be the only place that knew how
+    to turn a `meta.buildCommands` KEY into a shell command, which made it the
+    only caller that could ask `full_status` the question it needs asked:
+    `full_status`'s `full_commands` argument is exactly this function's answer
+    for `meta.fullGate`, and it is the SAME resolution a recorded run's
+    `published` list comes from -- so a plan judged whole is judged against
+    the identical list its own row was measured against, never a second
+    reading of `meta.buildCommands` that could drift from it. `doctor.py`, the
+    panel and the release guard all need that same question answered and none
+    of them may import a hyphen-named entry point, which is what put this here
+    rather than where it was written first.
+
+    AN ENTRY NAMING NO BUILD COMMAND IS CARRIED VERBATIM, because it may be a
+    literal shell command and refusing it would make this function decide
+    what a gate is allowed to be. A BLANK `nodePreamble` IS NOT A PREAMBLE --
+    prefixing `   && ` would make every gate on the manifest die of a shell
+    syntax error, which is the false red this guards against. Joined with
+    `&&` rather than a pipe: `reference/orchestrator.md`'s "un-piped" asks for
+    exactly that, because a pipe hands the gate's exit status to the
+    preamble's tail and loses the verdict.
+    """
+    manifest = manifest if isinstance(manifest, dict) else {}
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    build = meta.get("buildCommands")
+    build = build if isinstance(build, dict) else {}
+    preamble = meta.get("nodePreamble")
+    lead = preamble.strip() if isinstance(preamble, str) else ""
+    resolved = []
+    for entry in entries or []:
+        if not (isinstance(entry, str) and entry.strip()):
+            continue
+        command = build.get(entry, entry)
+        resolved.append(
+            (entry, ("%s && %s" % (lead, command)) if lead else command))
+    return resolved
+
+
 # --- where it lives -----------------------------------------------------------
 def evidence_dir(project, config=None):
     """Absolute path of the evidence directory.
@@ -568,6 +610,18 @@ def row_for(project, result, scope, ids, identity, published=None):
                 else redacted_paths(project, result.get("coverageBasis"))),
         },
     }
+    # THE THIRD PLACE'S OWN OBSERVATION, WRITTEN ONLY WHEN A CALLER MEASURED IT.
+    # `full_status`'s `_full_disqualification` reads its ABSENCE as "cannot be
+    # told clean", which is a different claim from an empty list ("measured,
+    # and nothing was dirty") - so this key is added only when
+    # `run-test-gate.py`'s `--full` path actually computed it, exactly as
+    # `treeMutated`/`overlap` above are bounded and repo-relative rather than
+    # absolute paths naming somebody's machine in a committed file.
+    if result.get("dirtyOutside") is not None:
+        dirty, dirty_dropped = _paths(project, result.get("dirtyOutside"))
+        row["observations"]["dirtyOutside"] = dirty
+        if dirty_dropped:
+            row["dirtyOutsideDropped"] = dirty_dropped
     # THE BASIS FOR THE ONE STATUS WORD THAT HAS NO OTHER. `failed` is read back
     # off the steps, `timed-out` off a step's `outcome` and its `timeoutSeconds`,
     # `no-checks` off `ranTotal`, `gate-mutated` off `observations.treeMutated`
@@ -1022,7 +1076,7 @@ def merge_seams(project, config=None):
 
 
 # --- writing and reading ------------------------------------------------------
-def append_row(project, row, session_id=None, config=None):
+def append_row(project, row, session_id=None, config=None, writer=None):
     """Append one row, chained onto the file's tail; return the file it landed in.
 
     THE LOCK IS THE CHAIN'S, and it is why this is no longer the bare O_APPEND the
@@ -1032,18 +1086,29 @@ def append_row(project, row, session_id=None, config=None):
     lock is taken rather than a second one written here; when it cannot be taken
     the append RAISES, because a false tamper verdict is worse than a missing row
     and `record()` already declines to report a run whose evidence was not stored.
+
+    `writer`, WHEN GIVEN, NAMES THE FILE AND WINS OVER A SESSION ID. A CI build
+    has no `CLAUDE_CODE_SESSION_ID` most of the time, but even where it does, a
+    build's own identity should not be split across files by which session
+    happened to invoke the shard - `--writer ci-42` is the caller SAYING that
+    name is the writer, so `session_id` is left out of the lookup entirely
+    rather than merely offered as a fallback that a session would still beat.
     """
     config = _journal_io.load_config(project) if config is None else config
     directory = evidence_dir(project, config)
     os.makedirs(directory, exist_ok=True)
-    actor = {"sessionId": session_id} if session_id else {}
+    writer = writer.strip() if isinstance(writer, str) else ""
+    if writer:
+        actor, fallback = {}, writer
+    else:
+        actor = {"sessionId": session_id} if session_id else {}
+        fallback = (None if _journal_io.has_session(actor)
+                   else _journal_io.writer_token(project, config))
     # The trail's own key, for the trail's reason: one writer per file, and one
     # session driving two linked worktrees is two writers - their branches would
     # otherwise each append the same basename and meet as a conflict on merge.
     path = _journal_io.file_for(
-        directory, row.get("ts") or _now(), actor,
-        fallback=None if _journal_io.has_session(actor)
-        else _journal_io.writer_token(project, config),
+        directory, row.get("ts") or _now(), actor, fallback=fallback,
         worktree=_journal_io.worktree_key(project, config))
     lock = _journal_io._acquire(path, record="the evidence ledger")
     try:
@@ -1335,7 +1400,8 @@ def verify(project, config=None):
     return out
 
 
-def record(project, result, scope, ids, identity, published=None, config=None):
+def record(project, result, scope, ids, identity, published=None, config=None,
+           writer=None):
     """Append the row, then anchor it in the journal. Returns both outcomes.
 
     ORDER IS THE POINT. The ledger row is written FIRST and the journal row
@@ -1359,11 +1425,15 @@ def record(project, result, scope, ids, identity, published=None, config=None):
     caches identity, verdict and moment, and a hash cached beside the row it
     digests would be this repository's most repeated defect wearing a new field
     name. Hash the file, not the return value.
+
+    `writer` PASSES THROUGH TO `append_row` UNCHANGED - see that function for
+    why it wins over `identity["sessionId"]` rather than merely falling back
+    to it.
     """
     config = _journal_io.load_config(project) if config is None else config
     row = row_for(project, result, scope, ids, identity, published=published)
     path = append_row(project, row, session_id=identity.get("sessionId"),
-                      config=config)
+                      config=config, writer=writer)
     details = {"runId": row["runId"]}
     for key in ("taskId", "phaseId"):
         if row.get(key):
@@ -2286,6 +2356,15 @@ def _full_disqualification(row, full_commands):
 def full_status(rows, phase, git_root, full_commands, run=None):
     """`{"answer", "basis", "runId"}` -- is this phase's merge WHOLE, PROVISIONAL,
     UNKNOWN, or NOT_DECLARED, from the ledger alone.
+
+    `full_commands` IS THE BARE COMMAND HALF OF `resolved_commands(manifest,
+    meta.fullGate)` -- `[c for _name, c in resolved_commands(manifest,
+    meta.fullGate)]`, EXACTLY. That is the same list a recorded run's
+    `published` argument carries (`run-test-gate._record_full_run` builds it
+    the identical way), which is what a row's `steps[].command` stores
+    verbatim - so a run measured through that resolution is judged against
+    the identical commands it was measured against, and never a second
+    reading of `meta.buildCommands` that could drift from it.
 
     NOT_DECLARED when `full_commands` (the resolved `meta.fullGate`) is empty --
     a plan naming no third place has nothing to ask. UNKNOWN when the phase

@@ -49,6 +49,32 @@ def _project(root, config=None):
 def _cases(check):
     tmp = _harness.fixture_root("audit-evidence-")
     try:
+        # --- resolved_commands: the one home for a gate entry's resolution -----
+        rc_man = {"meta": {"buildCommands": {"lint": "ruff check .",
+                                             "test": "pytest -q"},
+                           "nodePreamble": "source ~/.nvm/nvm.sh && nvm use"}}
+        check("rc0 every entry resolves through meta.buildCommands with "
+              "meta.nodePreamble in front - the ONE resolution `full_status` "
+              "and `run-test-gate.py` both have to share: %r"
+              % (M.resolved_commands(rc_man, ["lint", "test"]),),
+              M.resolved_commands(rc_man, ["lint", "test"]) == [
+                  ("lint", "source ~/.nvm/nvm.sh && nvm use && ruff check ."),
+                  ("test", "source ~/.nvm/nvm.sh && nvm use && pytest -q")])
+        check("rc0b an entry naming no build command is carried VERBATIM, and a "
+              "blank preamble is not one: %r"
+              % (M.resolved_commands({"meta": {"nodePreamble": "  "}},
+                                     ["echo literal"]),),
+              M.resolved_commands({"meta": {"nodePreamble": "  "}},
+                                  ["echo literal"])
+              == [("echo literal", "echo literal")])
+        check("rc0c the bare command half of THIS SAME function's answer is "
+              "the one `full_status`'s `full_commands` argument reads - "
+              "pinned here so the two never drift into two different shapes "
+              "of the same word: %r"
+              % ([c for _n, c in M.resolved_commands(rc_man, ["lint"])],),
+              [c for _n, c in M.resolved_commands(rc_man, ["lint"])]
+              == ["source ~/.nvm/nvm.sh && nvm use && ruff check ."])
+
         # --- where it lives ---------------------------------------------------
         plain = _project(os.path.join(tmp, "plain"), {})
         got = M.evidence_dir(plain)
@@ -633,6 +659,31 @@ def _cases(check):
               "once, and one shared file would conflict on every merge: %r"
               % ((os.path.basename(path), os.path.basename(p2)),),
               p2 != path and os.path.dirname(p2) == edir)
+
+        # --- RED-FIRST: a CI writer names its own ledger file -------------------
+        # A SEPARATE PROJECT, not `plain` - every case below this point counts
+        # evidence FILES and ROWS in `plain`, and a write here would shift
+        # both counts out from under them.
+        writer_proj = _project(os.path.join(tmp, "writer"), {})
+        with_session = dict(row)
+        with_session["runId"] = "R-writer-session"
+        p_named = M.append_row(writer_proj, with_session, session_id="sess-9",
+                               writer="ci-42")
+        check("ev18b RED-FIRST: `--writer` reaches `append_row` and WINS over a "
+              "session id - a build's own name should not be split across files "
+              "by which session happened to invoke the shard: %r"
+              % (os.path.basename(p_named),),
+              "ci-42" in os.path.basename(p_named)
+              and "sess-9" not in os.path.basename(p_named))
+
+        rec_result = {"status": "passed", "steps": [], "testedState": {}}
+        recorded = M.record(writer_proj, rec_result, "full", {},
+                            {"runId": "R-writer-record", "sessionId": "sess-10"},
+                            writer="ci-99")
+        check("ev18c ...and the SAME name reaches a ledger file through "
+              "`record()`, not only through `append_row` called by hand: %r"
+              % (os.path.basename(recorded["path"]),),
+              "ci-99" in os.path.basename(recorded["path"]))
 
         back = M.read_rows(plain)
         check("ev19 both rows read back, and the reader says how many files it "
@@ -2631,7 +2682,7 @@ def _full_status_cases(check):
               M.full_status([], {"id": "P9"}, tmp, ["echo x"])["answer"]
               == _manifest_vocab.FULL_STATUS_UNKNOWN)
 
-        # --- RED-FIRST: ancestry, never a string comparison (dg6) --------------
+        # --- RED-FIRST: ancestry, never a string comparison ---------------------
         repo = _real_two_commits(os.path.join(tmp, "repo"))
         phase = {"id": "P1", "mergedHead": repo["first"]}
         whole_row = _fs_row("run-whole", "2026-01-02T00:00:00Z", repo["second"],
@@ -2668,7 +2719,7 @@ def _full_status_cases(check):
               res_un["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
               and "run-unrelated" in res_un["basis"])
 
-        # --- RED-FIRST: a dirty tree certifies nothing (dg7) -------------------
+        # --- RED-FIRST: a dirty tree certifies nothing --------------------------
         dirty_row = _fs_row("run-dirty", "2026-01-02T00:00:00Z", repo["second"],
                             ["echo x"], dirty_outside=["src/app.ts"])
         res_dirty = M.full_status([dirty_row], phase, repo["root"], ["echo x"])
@@ -2688,7 +2739,7 @@ def _full_status_cases(check):
               "so it is disqualified too: %r" % (res_nokey,),
               res_nokey["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL)
 
-        # --- RED-FIRST: a hand-typed row that counted nothing (dg8) ------------
+        # --- RED-FIRST: a hand-typed row that counted nothing -------------------
         no_count_row = {"v": M.ROW_VERSION, "runId": "run-empty",
                         "ts": "2026-01-02T00:00:00Z", "scope": M.FULL_SCOPE,
                         "status": "passed", "steps": [],
@@ -2700,7 +2751,7 @@ def _full_status_cases(check):
               res_empty["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
               and "counted nothing" in res_empty["basis"])
 
-        # --- RED-FIRST: subset and reordering never satisfy fullGate (dg9) -----
+        # --- RED-FIRST: subset and reordering never satisfy fullGate ------------
         subset_row = _fs_row("run-subset", "2026-01-02T00:00:00Z", repo["second"],
                              ["echo a", "echo b"])
         res_subset = M.full_status([subset_row], phase, repo["root"],
@@ -2722,7 +2773,7 @@ def _full_status_cases(check):
               res_reorder["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
               and "verbatim" in res_reorder["basis"])
 
-        # --- RED-FIRST: the ledger is the only source (dg14) --------------------
+        # --- RED-FIRST: the ledger is the only source ---------------------------
         phase_with_stale_cache = {"id": "P1", "mergedHead": repo["first"],
                                   "fullEvidence": {"status": "whole",
                                                     "runId": "some-old-run"}}

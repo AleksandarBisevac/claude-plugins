@@ -36,6 +36,7 @@ import _loader                                     # noqa: E402  (script_path: r
 import _proc_group as _pg                          # noqa: E402  (the teardown `_tear_down` is)
 import _journal_io                                 # noqa: E402  (the rows a stamp anchors)
 import _evidence_io as _ev_io                      # noqa: E402  (STEP_KEYS: what a row keeps)
+import _manifest_vocab                             # noqa: E402  (FULL_STATUS_WHOLE, for --full)
 import _fmt as _rtg_fmt                            # noqa: E402  (where human_duration lives now)
 import _manifest_phases as _phases                 # noqa: E402  (the identity pin below: an
 #                                  alias, not a second body)
@@ -6541,11 +6542,191 @@ def _crowd_cases(check):
         _harness.remove_tree(root)
 
 
+def _full_repo(name, fullgate=("ok",), buildcommands=None, mergedhead=None,
+              extra_phases=()):
+    """A committed git repository whose plan declares `meta.fullGate`.
+
+    Returns `(root, mpath)`. `fullgate=None` builds a manifest that names no
+    third place at all, for the refusal case. `mergedhead`, when given, is
+    written onto phase `P1` so a WHOLE claim can be asked of the SAME commit
+    this fixture just made - a commit is its own ancestor.
+    """
+    root = _harness.fixture_root("run-test-gate-full-")
+    os.makedirs(os.path.join(root, "docs", "audit"))
+    os.makedirs(os.path.join(root, ".claude"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    meta = {"version": 3,
+           "buildCommands": buildcommands or {"ok": "true", "bad": "false"}}
+    if fullgate is not None:
+        meta["fullGate"] = list(fullgate)
+    phases = [{"id": "P1", "title": "one", "status": "in_progress", "tasks": []}]
+    if mergedhead is not None:
+        phases[0]["mergedHead"] = mergedhead
+    phases.extend(extra_phases)
+    with open(mpath, "w") as fh:
+        json.dump({"meta": meta, "phases": phases}, fh)
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for arg in (["add", "--", "docs", ".claude"],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        subprocess.run(["git", "-C", root] + arg, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    head = subprocess.run(["git", "-C", root, "rev-parse", "HEAD"],
+                          capture_output=True, text=True, check=True).stdout.strip()
+    return root, mpath, head
+
+
+def _full_scope_cases(check):
+    # --- the third arm's own refusals: no git, no manifest needed at all ----
+    lines = []
+    code = M.main(["nowhere.json", "P1", "--full"], out=lines.append)
+    check("fg1 RED-FIRST: --full and a phase positional are refused together - "
+          "the whole product is never one phase's claim: %r" % (lines,),
+          code == M.E_ASK and any("--full" in ln for ln in lines))
+
+    lines = []
+    code = M.main(["nowhere.json", "--full", "--task", "P1.1"], out=lines.append)
+    check("fg2 RED-FIRST: --full and --task are refused together for the same "
+          "reason: %r" % (lines,),
+          code == M.E_ASK and any("--task" in ln for ln in lines))
+
+    lines = []
+    code = M.main(["nowhere.json", "--project-dir", "/nowhere"], out=lines.append)
+    check("fg3 a phase is required unless --full is given - dropping BOTH is "
+          "refused rather than reading as one of them: %r" % (lines,),
+          code == M.E_ASK)
+
+    # --- no meta.fullGate: exit 2, the sentence this plan names no third place -
+    root_none, mpath_none, _head_none = _full_repo("no-fullgate", fullgate=None)
+    try:
+        lines = []
+        code = M.main([mpath_none, "--full", "--project-dir", root_none],
+                      out=lines.append)
+        check("fg4 RED-FIRST: --full over a plan with no meta.fullGate exits 2 "
+              "with the sentence naming what is missing, rather than running "
+              "anyway: %r" % (lines,),
+              code == M.E_ASK
+              and any("no meta.fullGate declared" in ln for ln in lines))
+    finally:
+        _harness.remove_tree(root_none)
+
+    # --- the ordinary run: scope full, ids {}, no pointer, no boundary ------
+    root, mpath, _head = _full_repo("ok")
+    try:
+        lines = []
+        code = M.main([mpath, "--full", "--project-dir", root, "--record"],
+                      out=lines.append)
+        text = "\n".join(lines)
+        rows = _ev_io.read_rows(root)["rows"]
+        full_rows = [r for r in rows if r.get("scope") == "full"]
+        check("fg5 RED-FIRST: a declared fullGate records a scope-full row "
+              "with the head it measured and a clean dirtyOutside, prints "
+              "FULL GATE GREEN, and writes no pointer at all: %r"
+              % (full_rows and full_rows[0],),
+              code == M.E_OK and "FULL GATE GREEN at" in text
+              and len(full_rows) == 1)
+        row = full_rows[0]
+        check("fg5b ...and the row itself carries no taskId/phaseId (ids={}), "
+              "an empty dirtyOutside, and the ONE resolution both places use "
+              "for its published commands: %r"
+              % ({k: row.get(k) for k in ("taskId", "phaseId")},),
+              "taskId" not in row and "phaseId" not in row
+              and row["observations"]["dirtyOutside"] == []
+              and row["steps"][0]["command"] == "true")
+        manifest_after = json.loads(open(mpath).read())
+        check("fg6 ...NO pointer (write_pointer is never called for scope "
+              "full) and NO evidence boundary stamp: %r"
+              % (manifest_after["phases"][0].get("testEvidence"),),
+              "testEvidence" not in manifest_after["phases"][0]
+              and "evidenceSince" not in manifest_after["meta"])
+
+        # --- ordering: the row is written before the summary is printed ----
+        recorded_at = next(i for i, ln in enumerate(lines)
+                           if ln.startswith("  evidence: recorded"))
+        banner_at = next(i for i, ln in enumerate(lines)
+                         if ln.startswith("FULL GATE"))
+        check("fg7 the evidence line is printed BEFORE the FULL GATE banner - "
+              "the row must survive an operator's own tool timeout landing "
+              "between the run finishing and this process finishing its "
+              "summary: recorded@%d banner@%d" % (recorded_at, banner_at),
+              recorded_at < banner_at)
+    finally:
+        _harness.remove_tree(root)
+
+    # --- a dirty tree certifies nothing, but the run still happens ---------
+    root_d, mpath_d, _head_d = _full_repo("dirty")
+    try:
+        with open(os.path.join(root_d, "untracked.txt"), "w") as fh:
+            fh.write("uncommitted\n")
+        lines = []
+        code = M.main([mpath_d, "--full", "--project-dir", root_d, "--record"],
+                      out=lines.append)
+        text = "\n".join(lines)
+        rows = _ev_io.read_rows(root_d)["rows"]
+        row = [r for r in rows if r.get("scope") == "full"][0]
+        check("fg8 RED-FIRST: a dirty tree outside the recorder's own paths "
+              "prints FULL RUN ON A DIRTY TREE and is carried onto the row - "
+              "the run still happens and is still recorded: %r"
+              % (row["observations"]["dirtyOutside"],),
+              "FULL RUN ON A DIRTY TREE" in text
+              and code == M.E_OK
+              and any("untracked.txt" in p
+                     for p in row["observations"]["dirtyOutside"]))
+    finally:
+        _harness.remove_tree(root_d)
+
+    # --- --writer names a CI shard's own ledger file ------------------------
+    root_w, mpath_w, _head_w = _full_repo("writer")
+    try:
+        code = M.main([mpath_w, "--full", "--project-dir", root_w, "--record",
+                      "--writer", "ci-42"], out=(lambda _l: None))
+        ev_dir = _ev_io.evidence_dir(root_w)
+        names = os.listdir(ev_dir)
+        check("fg9 RED-FIRST: --writer ci-42 lands in a file named for it - a "
+              "CI build's identity must not be split by session: %r" % (names,),
+              code == M.E_OK and any("ci-42" in n for n in names))
+    finally:
+        _harness.remove_tree(root_w)
+
+    # --- a full run recorded by --full is judged WHOLE by full_status ------
+    # A COUNTABLE COMMAND, unlike the bare `true` the other fixtures use:
+    # `_full_disqualification` refuses a row whose `ranTotal` is not knowable
+    # ("the full run counted nothing"), so a whole-bearing row needs a summary
+    # this gate's own reader can count.
+    root_w2, mpath_w2, head_full = _full_repo(
+        "whole", buildcommands={"ok": "echo '1 passed in 0.01s'"})
+    try:
+        code = M.main([mpath_w2, "--full", "--project-dir", root_w2, "--record"],
+                      out=(lambda _l: None))
+        manifest_now = json.loads(open(mpath_w2).read())
+        phase = dict(manifest_now["phases"][0], mergedHead=head_full)
+        rows = _ev_io.read_rows(root_w2)["rows"]
+        # `full_commands` IS THE BARE COMMAND HALF of `resolved_commands` -
+        # see `_evidence_io.full_status`'s own docstring for why that, and
+        # not the (name, command) pairs, is the contract.
+        full_commands = [c for _n, c in M._ev.resolved_commands(
+            manifest_now, manifest_now["meta"]["fullGate"])]
+        status = M._ev.full_status(rows, phase, root_w2, full_commands)
+        check("fg10 a full run recorded by --full, measured at this repo's own "
+              "HEAD, is judged WHOLE by full_status once the phase's own "
+              "mergedHead is that same commit - the SAME resolution and the "
+              "SAME rows a real /audit:phase would read: %r" % (status,),
+              code == M.E_OK
+              and status["answer"] == _manifest_vocab.FULL_STATUS_WHOLE)
+    finally:
+        _harness.remove_tree(root_w2)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _group_cases(check)
         _crowd_cases(check)
+        _full_scope_cases(check)
     return _harness.run(body)
 
 

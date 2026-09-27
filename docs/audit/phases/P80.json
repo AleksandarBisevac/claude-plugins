@@ -161,7 +161,7 @@
     {
       "id": "P80.3",
       "title": "full_status: whole, provisional, unknown or not declared, from the ledger alone",
-      "status": "in_progress",
+      "status": "done",
       "description": "full_status(rows, phase, git_root, full_commands, run=None) in _evidence_io.py returns {answer, basis, runId}. NOT_DECLARED when full_commands (the resolved meta.fullGate) is empty; UNKNOWN when the phase has no mergedHead; otherwise walk scope full rows newest first, keeping only WHOLE-BEARING ones: status passed; not a repeat (no verdictSource); observations.ranTotal > 0 with a countsBasis; every step carrying durationMs; observations.dirtyOutside present and empty (the paths dirty outside recorded_paths before the first command, which the runner task writes); the steps' published commands equal to full_commands verbatim and in order (the published rule _record_run applies). For each, ask _worktrees.merged_into(git_root, mergedHead, row.testedState.head, run=run) (a SHA is a ref to git; run is that module's injectable seam): CONTAINED -> WHOLE with the runId; NOT_CONTAINED -> keep looking; UNKNOWN -> remember it and keep looking. None contains: any UNKNOWN -> UNKNOWN with git's sentence; else PROVISIONAL, whose basis names the newest shape-valid run and that its head does not contain mergedHead, or, when no row is whole-bearing, the nearest disqualified row and why: 'FULL RUN ON A DIRTY TREE: certifies nothing about <head>' (dg7), 'the full run counted nothing' (dg8), 'FULL RUN RAN k OF n DECLARED ENTRIES' (dg9). The ledger is the only source: no manifest pointer is consulted (dg14). DO NOT add a full arm to latest_by_subject: its docstring keys it for a pointer write and its readers treat every key as a pointer subject - reconcile writes a PHASE pointer for any non-task scope, _doctor_completions.check_evidence_pointers would report every full row as 'record ahead of the plan', and gen-demo-manifest._stamp_pointers stamps from it. A full row carries no phaseId, so it is already skipped there; a case pins that it stays skipped. _same_subject gains a head arm comparing testedState.head, so reusable_run matches a full row only on the same head (dg16: a green phase-scope row never satisfies full scope, widen-only pin). Red-first with a real git fixture: dg6 (mutation: compare head == mergedHead -> red on a head that contains it without being it); dg7; dg8 (mutation: drop the ranTotal check -> red); dg9 (mutation: compare lengths -> red on the same length with a different command); dg14; a git answer of 128 -> UNKNOWN (mutation: fold it into provisional -> red); NOT_DECLARED without fullGate; reconcile over a ledger holding a full row moves and refuses nothing (mutation: add the arm to latest_by_subject -> red).",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -194,24 +194,40 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "5b169685ac19a9ed045c9e24eb3fc1687f3c0e2a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_evidence_io.full_status(rows, phase, git_root, full_commands) and _full_disqualification; ancestry through _worktrees.merged_into (contained / not / unknown); ledger only, never phase.fullEvidence; _same_subject gains a head arm for scope full only. Module-map fence re-rendered for the new edge. Cases fs1-fs17. Task review: intent matches, redFirst proved. Handed to P80.4, whose files these are: drop the dg labels from five test__evidence_io section markers, and state in full_status's docstring that full_commands must be resolved as run-test-gate resolves a gate (meta.nodePreamble applied). inheritedTests not-asked.",
+        "descriptive": "Whether a merged phase is whole, provisional, unknown or has no third place declared is now derived from the evidence ledger alone, with the basis for each answer, and a full run counts only if it measured the declared full gate on a clean tree whose head contains the phase."
       },
       "startedAt": "2026-09-27T04:40:59Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-27T06:49:12Z",
+      "verifiedBy": [
+        "fs1",
+        "fs3",
+        "fs5",
+        "fs6",
+        "fs8",
+        "fs9",
+        "fs10",
+        "fs11",
+        "fs12",
+        "fs15"
+      ],
       "testEvidence": {
         "runId": "2026-09-27T06:39:04Z.bf6d79",
         "status": "passed",
         "at": "2026-09-27T06:39:04Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "5b169685ac19a9ed045c9e24eb3fc1687f3c0e2a",
+        "at": "2026-09-27T06:49:12Z"
       }
     },
     {
       "id": "P80.4",
       "title": "run-test-gate --full records a full-scope row on HEAD; --writer names a CI shard",
-      "status": "pending",
+      "status": "in_progress",
       "description": "run-test-gate.py <manifest> --full [--record] [--writer <name>]: the phase positional becomes optional and is refused together with --full, and --full with --task is refused (exit 2). --full without meta.fullGate exits 2 'no meta.fullGate declared - this plan names no third place'. Commands: _resolved(meta.fullGate, build, preamble), the one resolution both scopes share (P71 run-test-gate.py). Scope full, ids {} and the subject is testedState.head, which the row already records; owns is empty, so no coverage question is asked of a whole-product run and the declared-coverage line is not printed. Before the first command record observations.dirtyOutside = the paths git status shows outside _evidence_io.recorded_paths (P70's dirty_outside(before, owns) with the recorder's own paths as the owned set), bounded and redacted like _paths, and print 'FULL RUN ON A DIRTY TREE: certifies nothing about <head>' when it is non-empty; the run still happens and is recorded, it just cannot bear whole. --record writes the row and NO pointer (write_pointer is not called for scope full) and no evidence boundary stamp. --writer <name> reaches _evidence_io.record / append_row and is handed to _journal_io.file_for as the fallback, winning over a session id, so a CI build writes <month>.ci-<buildId>.jsonl (writer_id sanitises and bounds it); absent, today's writer token. The verdict prints 'FULL GATE GREEN at <head>' or 'FULL GATE RED' beside the ordinary banners orchestrator.md routes on, which stay unchanged. The NARROWED line of the previous phase now names meta.fullGate as what is owed. Red-first: --full over a declared fullGate records a scope full row with head and dirtyOutside [] and writes no pointer; a dirty source file outside the recorder's paths is recorded and printed (mutation: exclude nothing -> red on the allow case, a tree dirty only under the evidence directory, which records []); --writer ci-42 lands in a file named for it; no fullGate -> exit 2 with the sentence; --full --task refused.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -243,16 +259,21 @@
       "dependsOn": [
         "P80.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T06:49:12Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T07:28:10Z.994adb",
+        "status": "passed",
+        "at": "2026-09-27T07:28:10Z"
+      }
     },
     {
       "id": "P80.5",
@@ -318,7 +339,7 @@
     {
       "id": "P80.6",
       "title": "Status: the tests column says whole / provisional / unknown, and provisional and stale-full-run are opt-in conditions",
-      "status": "pending",
+      "status": "in_progress",
       "description": "audit-status.py computes _evidence_io.full_status for each merged phase (git root and the resolved meta.fullGate passed in; _status_facts is a layer-mate of _evidence_io and receives the answers as data) into summary['fullRun'] {phaseId: {answer, basis, runId}}. _status_facts.CONDITIONS += provisional (a phase whose answer is PROVISIONAL) and stale-full-run (a PROVISIONAL phase whose mergedAt is older than the ts of the newest whole-bearing green full run: a full run happened after the phase landed and still does not contain it). DEFAULT_GATE is unchanged: both are opt-in for the reason the tuple's own comment gives for no-test-evidence. evaluate_gate grades them off summary['fullRun']. UNKNOWN never fails either condition (a phase merged before mergedHead existed has nothing ancestry can be asked of); it is reported. The table's tests column renders from _manifest_vocab.VERIFIED and the answers: 'whole', 'provisional (since <mergedAt>)', 'unknown - <basis>'; with no meta.fullGate the column is exactly what it is today, with no 'full: not declared' text (a basis with no claim is noise). The GATE FAILED detail names the phases and their bases; the condition help texts join the dict beside no-test-evidence. commands/status.md lists both conditions and why they are opt-in. Red-first: test__status_facts.py pins DEFAULT_GATE unchanged and that provisional fails on a PROVISIONAL phase and passes on WHOLE; test_audit_status.py: --gate --fail-on provisional exits non-zero on a provisional fixture and zero without the flag (mutation: add it to DEFAULT_GATE -> red). Allow case: a plan without fullGate renders a byte-identical table.",
       "files": [
         "plugins/audit/scripts/status/_status_facts.py",
@@ -351,14 +372,14 @@
       "dependsOn": [
         "P80.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T07:28:10Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -421,7 +442,7 @@
     {
       "id": "P80.8",
       "title": "Panel: the same VERIFIED word and basis beside a merged phase's evidence",
-      "status": "pending",
+      "status": "in_progress",
       "description": "_panel_composition carries, per merged phase and only when meta.fullGate is declared, fullRun {answer, basis, runId} from _evidence_io.full_status and the VERIFIED word the report uses; scripts/ui/panel/overview.js renders that word and the basis sentence beside the phase's evidence from the payload, never recomputing it. Read the refactoring-the-assembled-ui and writing-javascript skills first and print python3 tools/count-ui-pins.py before editing: overview.js is one ordered part of one inline script, and substring pins in plugins/audit/tests guard the assembled output. Red-first: test__panel_composition.py - a whole and a provisional phase carry their answers, and a plan without fullGate carries no fullRun key (mutation: always emit it -> red); tools/ui-tests/full-run-verified.test.mjs (vitest) - the renderer maps each answer to its word and prints the basis (mutation: map UNKNOWN to provisional -> red). The panel's browser gates, and a local look before any PR, are the orchestrator's: a panel selftest cannot see a page whose script died.",
       "files": [
         "plugins/audit/scripts/panel/_panel_composition.py",
@@ -455,21 +476,21 @@
       "dependsOn": [
         "P80.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T07:28:11Z",
       "completedAt": null,
       "verifiedBy": []
     },
     {
       "id": "P80.9",
       "title": "The doctor's full-run row: provisional and unknown phases, with the command that settles each",
-      "status": "pending",
+      "status": "in_progress",
       "description": "check_full_run(rep, project, manifest_rel, manifest, git_root, config=None) in _doctor_trail.py, wired after the recall row. No meta.fullGate: an OK row 'no third place declared (meta.fullGate)'. Otherwise: the newest whole-bearing full run (runId, head, age); each PROVISIONAL phase as a WARNING with the command that would settle it (/audit:review <P> --full, or the pre-push/CI step); each UNKNOWN phase as a WARNING with its basis (no mergedHead, or git's answer); a full row that failed a whole-bearing rule named with the rule it failed (dirty, counted nothing, ran k of n declared entries). Reuses _evidence_io.full_status; advisory, exit status unchanged. Red-first: a fixture with one provisional and one unknown phase produces both warnings with their commands; mutation: skip UNKNOWN phases -> red. Allow case: every merged phase whole -> one OK row naming the run.",
       "files": [
         "plugins/audit/scripts/status/_doctor_trail.py",
@@ -500,14 +521,14 @@
       "dependsOn": [
         "P80.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T07:28:11Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -564,7 +585,7 @@
     {
       "id": "P80.11",
       "title": "This repository's release guard refuses a release over a provisional phase",
-      "status": "pending",
+      "status": "in_progress",
       "description": "This repository's own .claude/hooks/guard-release.py (configuration, not product) refuses the publishing commands it already refuses when the plan carries a PROVISIONAL phase, as a second list beside the open bugs. read_provisional(project) loads _evidence_io and _worktrees lazily, the way _effective loads _manifest_io, reads the assembled manifest and the ledger, and returns the provisional phases with their bases, or a problem string: unreadable is a refusal, never 'nothing provisional' (fail-loud, the file's own rule). The manifest's tree comes from the plugin hooks' _config.tree_for(payload, target=<the command's effective cwd>) (P72) instead of CLAUDE_PROJECT_DIR, so a release typed in a linked worktree is judged against that worktree's plan; loaded lazily from plugins/audit/hooks/, inside the branch that already knows the command publishes. _deps.hook_tree_violations scans plugins/audit/hooks/ only, so this file's tree resolution is held by its own selftest, not by that lint. With no meta.fullGate nothing is provisional and the guard behaves exactly as today; git push origin main stays untouched (dg13 allow). arm-release-bypass.py prints the provisional phases it arms over beside the bugs, through the same function. The refusal sentence names both lists and the keyword. Red-first in the inline _selftest (.claude/hooks files keep theirs and the sweep runs them): no open bug plus one provisional phase refuses git tag v1 (dg13; mutation: read only the bugs -> red). Allow cases: the same plan with the phase whole releases; git push origin main is not refused; an unreadable ledger refuses with the problem named. SECURITY.md: the row for this fail-loud refusal. CLAUDE.md's Releasing section describes this guard's refusal set, and the user decided (2026-09-27) that it is updated in this same commit: the refusal names provisional phases beside open bugs, what makes a phase provisional (no green full run on a head containing its mergedHead) and the command that settles one, and that the #release-with-bugs slot arms over both lists and prints both - worded from the code as it lands, with no number in prose.",
       "files": [
         ".claude/hooks/guard-release.py",
@@ -595,14 +616,14 @@
       "dependsOn": [
         "P80.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T07:28:12Z",
       "completedAt": null,
       "verifiedBy": []
     },

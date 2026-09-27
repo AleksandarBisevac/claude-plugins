@@ -2195,30 +2195,18 @@ def declared_gate(entries, build):
 def _resolved(entries, build, preamble=None):
     """`[(name, command)]` - gate entries through `meta.buildCommands`, once.
 
-    THE ONE RESOLUTION, shared by both scopes on purpose. A task gate and a phase
-    gate are two declarations of the same kind, and resolving them in two places
-    would be two answers to "what is a gate entry" the first time the map grew a
-    rule. An entry naming no build command is carried VERBATIM, because it may be
-    a literal shell command and refusing it would make this script decide what a
-    gate is allowed to be.
-
-    `meta.nodePreamble` IS APPLIED HERE, and it was applied nowhere. The
-    document has instructed callers to run it before every build gate since it
-    shipped; this script spawns its OWN shell per command, so a preamble the caller
-    exported into a different one reaches nothing. Measured on a live run: two gate
-    rows recorded exit 127 for a `PATH` problem, so a committed ledger carries two
-    false failures permanently. A gate that records a false red is worse than a gate
-    that does not run, because the row outlives the session that could explain it.
-
-    JOINED WITH `&&`, which is what "un-piped" in `orchestrator.md` asks for: a pipe
-    would hand the gate's exit status to the preamble's tail and lose the verdict.
-    A whitespace-only value is not a preamble - prefixing it would make every gate
-    on that manifest die of a shell syntax error, which is the same false red one
-    door along.
+    A THIN ALIAS, KEPT BECAUSE `gate_of` AND `own_gate_of` STILL CALL IT BY
+    NAME. The resolution itself moved to `_evidence_io.resolved_commands` -
+    `full_status` needs to ask the identical question of `meta.fullGate`, and
+    `doctor.py`, the panel and the release guard all need the same answer
+    without importing a hyphen-named entry point, which a second copy here
+    could only ever answer for THIS script. `build` and `preamble` arrive
+    already split out of the manifest at both call sites, so they are folded
+    back into the small manifest shape that function reads - behaviour is
+    byte-identical, only the home moved.
     """
-    lead = (preamble or "").strip() if isinstance(preamble, str) else ""
-    return [(e, ("%s && %s" % (lead, command)) if lead else command)
-            for e, command in declared_gate(entries, build)]
+    return _ev.resolved_commands(
+        {"meta": {"buildCommands": build, "nodePreamble": preamble}}, entries)
 
 
 def gate_of(manifest, phase_id, task_id=None):
@@ -3510,7 +3498,7 @@ def _render_verdict(res, out):
             out("NARROWED sign-off: this run measured the DERIVED gate (%d of "
                 "%d listed checks; basis on phase.testGateBasis). It is "
                 "evidence about this phase's own tests and their recorded "
-                "couplings. The full suite was not run here and is owed "
+                "couplings. meta.fullGate was not run here and is owed "
                 "before %s is whole."
                 % (narrowed["listed"], narrowed["full"], res.get("subject")))
     shadow = res.get("shadow")
@@ -3835,12 +3823,139 @@ def _write_own_log(manifest_path, project_dir, step_text):
     return str(path)
 
 
+# --- the third place: --full, against the whole product -----------------------
+def _record_full_run(project, args, res, commands, out=print):
+    """Record a scope-`full` row: no ids, no pointer, no evidence boundary.
+
+    THE TWO WRITES A PHASE OR TASK RUN MAKES ARE BOTH ABSENT ON PURPOSE.
+    `write_pointer` caches a verdict onto ONE phase or task's own runtime
+    fields, and a full run names neither - `subject_ids` for this scope is
+    `{}`, so there is nothing for a pointer to be filed under. The evidence
+    boundary is a plan-wide "when could ANY run have been recorded", already
+    written by the first phase or task run this plan ever records; a full
+    run repeating that write would be a second writer of a fact one writer
+    already owns.
+
+    RECORDED STRICTLY BEFORE THE SUMMARY IS PRINTED, for the same reason the
+    phase/task path already keeps that order: a long full run can be cut off
+    by an operator's own tool timeout after `run_gate` returns and before this
+    process would otherwise finish printing, and a run that happened is worse
+    lost than a run whose summary the operator never saw.
+    """
+    identity = {"runId": _ev.new_run_id(), "via": "cli",
+                "sessionId": os.environ.get("CLAUDE_CODE_SESSION_ID") or None,
+                "attempt": None, _ev.STARTED_KEY: res.get("startedAt")}
+    published = [command for _name, command in (commands or [])]
+    try:
+        recorded = _ev.record(project, res, _ev.FULL_SCOPE, {}, identity,
+                              published=published, writer=args.writer)
+    except Exception as exc:
+        out("  evidence: NOT recorded - %s" % (exc,))
+        return {"recorded": False}
+    out("  evidence: recorded %s" % (identity["runId"],))
+    return {"recorded": True, "path": recorded["path"]}
+
+
+def _run_full(project, args, manifest, out=print):
+    """The `--full` path: `meta.fullGate`, measured against the whole product.
+
+    SCOPE `full`, IDS `{}` - the subject is `testedState.head`, which the row
+    already records, and neither a phase nor a task is asked about. `owns` is
+    EMPTY for the same reason: no coverage question is asked of a whole-product
+    run, and the declared-coverage line `_render_verdict` would otherwise print
+    for an empty declaration is suppressed here (`res["coverageBasis"] = None`)
+    rather than printed as if this run had nothing to relate to - it has
+    everything to relate to, and the question does not apply.
+
+    THE DIRTY-TREE OBSERVATION IS TAKEN BEFORE THE FIRST COMMAND, off the SAME
+    `dirty_outside` a phase/task run uses for its own excused-red question -
+    but asked with the RECORDER'S OWN PATHS as the owned set
+    (`_evidence_io.recorded_paths`), because a full run owns nothing of its
+    own to exclude a dirty path by. A non-empty answer is printed immediately
+    and carried onto the row as `observations.dirtyOutside`: the run still
+    happens and is still recorded, it just cannot bear WHOLE
+    (`_evidence_io._full_disqualification` reads exactly this key).
+    """
+    entries = ((manifest.get("meta") or {}).get("fullGate") or [])
+    commands = _ev.resolved_commands(manifest, entries)
+    if not commands:
+        out("[run-test-gate] no meta.fullGate declared - this plan names no "
+            "third place")
+        return E_ASK
+    recorded_excl, _unexcluded = _ev.recorded_paths(project, args.manifest)
+    # TAKEN BEFORE THE FIRST COMMAND RUNS - `run_gate` below takes its OWN,
+    # later snapshot for the ordinary tree-mutation bracket, and this is a
+    # separate question asked of the SAME moment: what the tree already
+    # carried when this run started, against the recorder's own paths rather
+    # than against `owns` (which is empty for a full run).
+    before = _tree_stamp.porcelain(project)
+    dirty_paths, dirty_basis = dirty_outside(before, recorded_excl)
+    previous = _arm_interrupt()
+    try:
+        res = run_gate(project, commands, owns=[], timeout=args.timeout,
+                       recorded=recorded_excl, task_scope=False,
+                       keep_text=False)
+    finally:
+        _disarm_interrupt(previous)
+    res["dirtyOutside"] = dirty_paths
+    res["dirtyOutsideBasis"] = dirty_basis
+    res["subject"] = None
+    # NAMED ABSENT, NOT LEFT UNSET. Every one of these is a claim only a
+    # phase- or task-scope row can make - which gate provenance graded it
+    # (`gateSource`), which other phases one group run owned (`groupWith`),
+    # what the resolved gate digests to (`_ev.GATE_DIGEST_KEY`), an identity a
+    # later run could repeat against (`_ev.REUSE_KEY`), whether this row
+    # repeats an earlier verdict (`_ev.VERDICT_SOURCE`, `reusedFrom`), or a
+    # derived gate's own coverage (`narrowed`, `shadow`). A full run is none
+    # of those, so this SAYS so rather than leaving `row_for` to read an
+    # absent key off a result nothing here ever populates.
+    res["gateSource"] = None
+    res["groupWith"] = None
+    res[_ev.GATE_DIGEST_KEY] = None
+    res[_ev.REUSE_KEY] = None
+    res[_ev.VERDICT_SOURCE] = None
+    res["reusedFrom"] = None
+    res["narrowed"] = None
+    res["shadow"] = None
+    head = (res.get("testedState") or {}).get("head")
+    if dirty_paths:
+        out("FULL RUN ON A DIRTY TREE: certifies nothing about %s" % (head,))
+    # SUPPRESSED, NOT ANSWERED. `declared_coverage_answer([])` reads "the work
+    # under test declares no files" - true of the DECLARATION, and false of
+    # what a full run means: it is the whole product's own claim, not an
+    # empty one.
+    res["coverageBasis"] = None
+    if args.record:
+        # STRICTLY BEFORE render()/render_quiet() PRINT ANYTHING - see
+        # `_record_full_run`'s own docstring for why.
+        res["recorded"] = _record_full_run(project, args, res, commands, out=out)
+    if args.as_json:
+        out(json.dumps(res, indent=2, sort_keys=True))
+        return E_OK if res["status"] == "passed" else E_FAIL
+    out("[run-test-gate] full gate: %d command(s)" % (len(commands),))
+    code = (render_quiet if args.quiet else render)(res, out=out)
+    out("FULL GATE GREEN at %s" % (head,) if code == E_OK else "FULL GATE RED")
+    return code
+
+
 def main(argv, out=print):
     p = argparse.ArgumentParser(prog="run-test-gate.py", add_help=True)
     p.add_argument("manifest")
-    p.add_argument("phase")
+    # OPTIONAL, because `--full` names no phase at all - it asks about the
+    # whole product, and the third arm below refuses whichever side left the
+    # other out.
+    p.add_argument("phase", nargs="?", default=None)
     p.add_argument("--project-dir", dest="project_dir", default=None)
     p.add_argument("--json", action="store_true", dest="as_json")
+    # THE THIRD PLACE. `meta.fullGate`, measured against the whole product and
+    # recorded with `scope=full` - never one phase's or one task's claim, so it
+    # takes no `phase` and refuses `--task` outright rather than silently
+    # narrowing to either.
+    p.add_argument("--full", dest="full", action="store_true")
+    # NAMES A CI SHARD'S OWN LEDGER FILE, reaching `_evidence_io.record` and
+    # winning over a session id - see `_evidence_io.append_row` for why a
+    # build's identity must not be split by which session invoked it.
+    p.add_argument("--writer", dest="writer", default=None)
     # NARROWS the coverage question to one task. Without it the question is asked
     # of the PHASE, which is where this script is invoked from - a task-level
     # gate needs this flag, since one with no caller states nothing.
@@ -3886,6 +4001,23 @@ def main(argv, out=print):
         args = p.parse_args(argv)
     except SystemExit as exc:
         return E_ASK if exc.code else E_OK
+    # THE THIRD ARM, BEFORE ANYTHING ELSE IS ASKED. `--full` asks about the
+    # whole product rather than one phase or one task, so a phase positional
+    # beside it and a `--task` beside it are both a caller asking two
+    # different questions in one invocation - refused rather than one side
+    # silently winning. Its ABSENCE, symmetrically, still needs a phase: this
+    # positional was optional only so `--full` could omit it.
+    if args.full and args.phase is not None:
+        out("[run-test-gate] --full asks about the whole product and takes "
+            "no phase - drop %r or drop --full" % (args.phase,))
+        return E_ASK
+    if args.full and args.task is not None:
+        out("[run-test-gate] --full and --task are refused together - the "
+            "whole product is never one task's claim")
+        return E_ASK
+    if not args.full and args.phase is None:
+        out("[run-test-gate] a phase is required unless --full is given")
+        return E_ASK
     if args.own:
         # THREE REFUSALS, EACH NAMED, BEFORE ANYTHING ELSE IS ASKED. `--task`
         # is not optional: an executor's own tests are a TASK's claim, never
@@ -3913,6 +4045,8 @@ def main(argv, out=print):
     except Exception as exc:
         out("[run-test-gate] cannot read the manifest: %s" % exc)
         return E_ASK
+    if args.full:
+        return _run_full(project, args, manifest, out=out)
     if args.reconcile:
         report = _ev.reconcile(project, args.manifest,
                                session_id=os.environ.get("CLAUDE_CODE_SESSION_ID"))
