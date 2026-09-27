@@ -538,7 +538,7 @@
     {
       "id": "P84.8-791",
       "title": "a panel save reads what it patches under the lock it writes with, on every door, and a crashed panel's recovery line works",
-      "status": "in_progress",
+      "status": "done",
       "description": "Round-3 phase review of P84 (review-P84c.json). (1) Every panel save builds its document from a read taken before _acquire_write_lock, so a serialised second save writes a stale copy and the first save's change is lost while both answer ok (measured through the real handler: composition and policy/theme). Take the lock FIRST, then read and patch inside the held region - apply_composition reads the manifest under the lock; write_config takes a mutator applied to the config it reads under the lock (policy, theme, ado). A real two-thread case per door asserting BOTH changes land, proved red against the current read order. (2) POST /api/proposal runs _proposals.run in-process with an ordinary claim whose token _carry puts in the process-wide environment, so concurrent request threads borrow it and a drop is lost. The proposal door holds the panel's per-call lock around run, locked before run loads the manifest, and _carry never exports a token into a server process's environment for a per-call claim; a two-thread proposal case. (3, pre-existing) the recovery line the panel prints for a crashed panel's claim ('audit-lock.py release index') always refuses because the dead holder pid counts as a mismatch, and '(this lock records taking over from you)' prints when both sessions are None: release accepts a claim whose holder pid is dead on this host, or the panel prints the command that works; the takenOverFrom comparison requires a non-empty session; a case that follows the printed instruction and succeeds.",
       "files": [
         "plugins/audit/scripts/panel/_panel_write.py",
@@ -577,14 +577,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e6d43450",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Lock-first reads in apply_composition and write_config; the proposal door under a per-call lock; release accepts a dead local holder.",
+        "descriptive": "Two panel saves made at once both land now, and the recovery command printed for a crashed panel works."
       },
       "startedAt": "2026-09-27T08:31:05Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T08:50:08Z",
+      "verifiedBy": [
+        "test__panel_write lu1",
+        "test__panel_write lu2",
+        "test__panel_write lu3",
+        "test__panel_write lu6",
+        "test_panel_server hr1",
+        "test_panel_server hr2",
+        "test__locks rk7"
+      ]
     }
   ],
   "startedAt": "2026-09-27T04:18:45Z"
