@@ -516,6 +516,47 @@
         "full sweep",
         "gate-parity"
       ]
+    },
+    {
+      "id": "P87.11-bpl",
+      "title": "a trailing comment does not hide a continuation operator, and the pin states that reachability is not decided",
+      "status": "in_progress",
+      "description": "Phase review round 9 (review-P87i.json). (1) A trailing comment after &&, || or | hides the token: `false && # skip`, `true || # c`, `echo x | # c` above the wrapper or a call leave the real call read while it never runs. Strip a trailing shell comment before testing &&, || and | (not before a backslash - `\\ #` does not continue); ra29i rows for the three shapes, red first. (2) The section comment claims a line is refused whenever the lines around it mean it is not what runs, but a text check cannot decide reachability: `exit 0`, `false && {`, `if false; then ... fi` above the call are read, and the release arm itself depends on reading a call inside an if. Narrow the sentence to what is checked (the exact line, its own continuation chain, and its YAML context) and state the limit plainly in the comment and the CHANGELOG: whether the line is reached at all - control flow above it - is not decided by this check.",
+      "files": [
+        "tools/check-rendered-artifacts.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-rendered-artifacts.py: repro that FAILS on current code - false && followed by a comment above the wrapper leaves the real call read"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T17:11:20Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-27T14:08:20Z"

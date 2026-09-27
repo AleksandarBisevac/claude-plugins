@@ -669,21 +669,26 @@ def arms_for(argv):
 
 
 # --- which arms the runner and the workflow really ask --------------------------
-# AN EXACT-LINE PIN, NOT A PARSER. Six rounds of reading shell and YAML by hand each
-# left a spelling that read silently wrong - the last one an `echo` of the call. So
-# nothing here interprets either file any more. Every non-comment line that names
+# AN EXACT-LINE PIN, NOT A PARSER. Reading shell and YAML by hand kept leaving one
+# more spelling that read silently wrong - an `echo` of the call among them - so
+# nothing here interprets either file. Every non-comment line that names
 # this tool must, with its indentation stripped - and in ci.yml an optional leading
 # `- ` and `run:` - EQUAL one of the call lines in `_CALL_LINES`, or it is refused
-# by line. An exact line is also refused when the lines around it mean it is not
-# what runs (`_context_problem`): a YAML value that continues onto a deeper line or
-# sits outside a plain `run: |` block, or a line continued from one that is not the
-# runner's `run "<label>" \` wrapper. `run_arms()` then says which file, and which
-# part of verify.sh, holds each exact line.
+# by line. Beyond the exact line, `_context_problem` checks two things and no more:
+# the line's own continuation chain - it must not be continued from a line that is
+# not the runner's `run "<label>"` wrapper, and the line its command starts after
+# must not end in a backslash, `&&`, `||` or `|` - and, in ci.yml, its YAML context:
+# a one-line `run:` with no deeper continuation, or a line in a plain `run: |`
+# block. `run_arms()` then says which file, and which part of verify.sh, holds each
+# exact line.
 #
-# THE LIMIT, WHICH IS WHAT A TEXT CHECK IS: an exact call line inside a heredoc, a
-# quoted string or another key's block text is not told apart from a call. That
-# only matters if the real call is also removed, because ra29 pins each exact line
-# to exactly one place - a second copy fails it too.
+# THE LIMITS, WHICH ARE WHAT A TEXT CHECK IS. It does not decide whether the line
+# is reached at all: control flow above it - an `exit 0`, a `false && {`, an `if
+# false; then ... fi` - is not read, and the release arm itself is a call inside an
+# `if`. And an exact call line inside a heredoc, a quoted string or another key's
+# block text is not told apart from a call. The second only matters if the real
+# call is also removed, because ra29 pins each exact line to exactly one place - a
+# second copy fails it too.
 _THIS_TOOL = "tools/check-rendered-artifacts.py"
 _VERIFY_REL = "tools/verify.sh"
 _CI_REL = ".github/workflows/ci.yml"
@@ -723,14 +728,38 @@ def _opener(lines, index):
 _CONTINUES = ("\\", "&&", "||", "|")
 
 
+def _without_trailing_comment(code):
+    """`code` with a trailing shell comment cut off: a `#` that starts a word (at
+    the start, or after whitespace) outside single or double quotes."""
+    quote = None
+    for i, ch in enumerate(code):
+        if quote:
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch == "#" and (i == 0 or code[i - 1].isspace()):
+            return code[:i].rstrip()
+    return code
+
+
 def _continues_with(line):
     """The token `line` ends in that continues its command onto a later line, or
-    None. A full-line comment continues nothing, whatever it ends in."""
+    None. A full-line comment continues nothing, whatever it ends in.
+
+    A backslash continues only as the line's LAST character - a backslash followed
+    by a space and a comment escapes the space and continues nothing - so it is
+    tested on the line as written. `&&`, `||` and `|` continue whatever follows them on the line, a
+    comment included, so they are tested with a trailing comment cut off.
+    """
     code = line.rstrip()
     if not code.strip() or code.strip().startswith("#"):
         return None
+    if code.endswith("\\"):
+        return "\\"
+    code = _without_trailing_comment(code)
     for token in _CONTINUES:
-        if code.endswith(token):
+        if token != "\\" and code.endswith(token):
             return token
     return None
 
@@ -1393,6 +1422,9 @@ def _arm_cases(check):
         "a comment ending in a backslash right above": (_pinned(
             "# a note that ends in a backslash \\\n  python3 %s --against-commit\n"
             % (_t,)), [AGAINST_COMMIT_ARMS]),
+        "a backslash before a comment does not continue": (_pinned(
+            "echo done \\ # a note\n  python3 %s --against-commit\n" % (_t,)),
+            [AGAINST_COMMIT_ARMS]),
         "a call right under `run: |`": (_pinned(
             "      - run: |\n          python3 %s --against-commit\n" % (_t,),
             yaml=True), [AGAINST_COMMIT_ARMS]),
@@ -1457,6 +1489,14 @@ def _arm_cases(check):
             "true ||\n  python3 %s --against-commit\n" % (_t,))),
         "echo x | above the call": (1, _pinned(
             "echo x |\n\n  python3 %s --against-commit\n" % (_t,))),
+        "false && # comment above the wrapper": (1, _pinned(
+            'false && # skip\nrun "y" \\\n  python3 %s --against-commit\n' % (_t,))),
+        "true || # comment above the call": (1, _pinned(
+            "true || # c\n  python3 %s --against-commit\n" % (_t,))),
+        "echo x | # comment above the call": (1, _pinned(
+            "echo x | # c\n  python3 %s --against-commit\n" % (_t,))),
+        "a quoted # before && above the call": (1, _pinned(
+            'echo "a # b" &&\n  python3 %s --against-commit\n' % (_t,))),
         "false && in a run: | body": (2, _pinned(
             "      - run: |\n          false &&\n          python3 %s\n" % (_t,),
             yaml=True)),
