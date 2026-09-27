@@ -941,7 +941,8 @@
       "P74.5-qq5",
       "P74.6-qq5",
       "P80.8",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
@@ -2256,7 +2257,8 @@
       "P75.4-j5h",
       "P76.1",
       "P76.4-6qa",
-      "P80.21-rtb"
+      "P80.21-rtb",
+      "P80.17-rtb"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -2496,7 +2498,8 @@
       "P74.4-qq5",
       "P74.5-qq5",
       "P74.6-qq5",
-      "P80.13"
+      "P80.13",
+      "P80.15-rtb"
     ],
     "plugins/audit/scripts/report/_report_html.py": [
       "P13.1",
@@ -2513,13 +2516,15 @@
       "P74.4-qq5",
       "P74.5-qq5",
       "P74.6-qq5",
-      "P86.1"
+      "P86.1",
+      "P80.15-rtb"
     ],
     "plugins/audit/scripts/report/_report_md.py": [
       "P51.9",
       "P63.6",
       "P80.7",
-      "P86.2"
+      "P86.2",
+      "P80.15-rtb"
     ],
     "plugins/audit/scripts/report/_report_page.py": [
       "P63.6",
@@ -2952,7 +2957,8 @@
       "P74.4-qq5",
       "P74.5-qq5",
       "P74.6-qq5",
-      "P80.13"
+      "P80.13",
+      "P80.15-rtb"
     ],
     "plugins/audit/tests/test__gate_feed.py": [
       "P48.3",
@@ -3155,7 +3161,8 @@
       "P63.9",
       "P63.12",
       "P85.1",
-      "P85.5-axa"
+      "P85.5-axa",
+      "P80.15-rtb"
     ],
     "plugins/audit/tests/test__panel_policy.py": [
       "P59.10",
@@ -3232,11 +3239,13 @@
       "P51.9",
       "P63.6",
       "P71.2-zso",
-      "P80.7"
+      "P80.7",
+      "P80.15-rtb"
     ],
     "plugins/audit/tests/test__report_md.py": [
       "P63.6",
-      "P80.7"
+      "P80.7",
+      "P80.15-rtb"
     ],
     "plugins/audit/tests/test__report_page.py": [
       "P63.6"
@@ -4076,71 +4085,88 @@
     ],
     "docs/screenshots/panel-appearance.png": [
       "P80.8",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/panel-blocks.png": [
       "P80.8",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/panel-composition-expanded.png": [
       "P80.8",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/panel-composition.png": [
       "P80.8",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/panel-confirm.png": [
       "P80.8",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/panel-dark.png": [
       "P80.8",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/panel-gate.png": [
       "P80.8",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/panel-guards.png": [
       "P80.8",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/panel-help.png": [
       "P80.8",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/panel-mobile.png": [
       "P80.8",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/panel-monthly.png": [
       "P80.8",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/panel-overview.png": [
       "P80.8",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/panel-person.png": [
       "P80.8",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/panel-policy-expanded.png": [
       "P80.8",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/panel-policy.png": [
       "P80.8",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/panel-proposals.png": [
       "P80.8",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/panel-usage.png": [
       "P80.8",
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "tools/ui-tests/evidence-read-error.test.mjs": [
       "P80.15-rtb"
