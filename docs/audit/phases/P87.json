@@ -233,6 +233,47 @@
         "full sweep",
         "gate-parity"
       ]
+    },
+    {
+      "id": "P87.5-bpl",
+      "title": "the git-call recorder counts any root inside this checkout, and the ci.yml reader reads a call only from a literal block",
+      "status": "in_progress",
+      "description": "Phase review round 3 (review-P87c.json). (1) The recorder flags a root only when it equals REPO; a subdirectory root still asks this checkout's HEAD (git -C REPO/tools resolves the same toplevel). Flag a root equal to or under REPO (realpath, then == or startswith(target + os.sep)); add a ra30b row with a subdirectory root. (2) Two YAML shapes read silently as a no-flag call, which is exactly ci.yml's expected answer: `run: > # comment` and a plain multi-line scalar with the flag on a continuation line. Structural rule: a call to the tool is read only from a single-line `run:` or a literal `|` block; any other run: with deeper-indented continuation lines that mentions the tool is refused by line, and the folded pattern allows a trailing comment. Add both shapes to ra29c. (3) The comment saying the file runs no git outside _git is wrong (fixture repos at _head_fixture and ra17); say it runs git outside _git only against fixture repos. Re-wrap the CHANGELOG line. Red first for 1 and 2.",
+      "files": [
+        "tools/check-rendered-artifacts.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-rendered-artifacts.py: repro that FAILS on current code - a planted head_unavailable(REPO/tools) leaves ra30 green"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-27T15:41:51Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-27T14:08:20Z"
