@@ -310,7 +310,7 @@ L2:
   _ado_drift -> _manifest_io, _manifest_vocab, _output, _usage_core
   _config_rules -> _loader, _output, _policy
   _doctor_report -> _loader, _output
-  _evidence_io -> _journal_io, _locks, _manifest_io, _output
+  _evidence_io -> _journal_io, _locks, _manifest_io, _manifest_vocab, _output, _worktrees
   _gate_feed -> _journal_io, _loader, _output, _usage_core
   _help -> _areas, _journal_io, _loader, _manifest_vocab, _output, _policy, _ui_theme
   _id_shape -> _branch, _manifest_io, _manifest_vocab, _output
@@ -3060,6 +3060,13 @@ reader can act on. An evidence directory outside the git root is **not-applicabl
 it cannot be committed there at all, so the plan is not at fault for naming rows git was never going
 to hold. A torn committed row is a **gap**: it says a row could not be read, never that a pointer is
 unsupported.
+
+**`full_status()` answers the third place's own question from the ledger alone**, never from a
+manifest pointer: WHOLE only when a scope-`full` row that is green, measured, clean and running
+`meta.fullGate` verbatim has a head `_worktrees.merged_into` (git ancestry, never string equality)
+finds containing the phase's `mergedHead`, PROVISIONAL when every such row falls short of that,
+UNKNOWN when the phase carries no `mergedHead` or git itself could not say, and NOT_DECLARED when
+the plan names no third place at all.
 
 ### `plugins/audit/scripts/governance/_gate_derive.py`
 The gate helpers' one home, and a pure `derive()`.

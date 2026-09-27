@@ -104,7 +104,7 @@
     {
       "id": "P80.2",
       "title": "close-phase writes phase.mergedHead in the same write that stamps mergedAt",
-      "status": "in_progress",
+      "status": "done",
       "description": "stamp_merged(manifest_path, phase_id, when=None, merged_head=None) writes phase.mergedHead in the SAME shard write that stores mergedAt and the derived status (P69's _store_derived call inside stamp_merged), never as a second write. _stamp() inside main asks _worktrees.ref_exists(git_root, names['parent'])['sha'] after close() has verified containment and before the cleanup, and passes it; a parent that does not resolve writes no mergedHead and the render says 'mergedHead NOT recorded: <basis>' - never a guessed SHA. The parent's commit after the merge, not the branch tip: _worktrees.merged_into records that a squash merge answers not-contained for the branch, and the parent commit is what a later full run's head must contain. A recorded merge is kept: the early return for an existing mergedAt writes nothing new, so a phase merged before this field has none, which reads unknown and says why. Do not add mergedHead to the index stub (mirror_stub mirrors status only). Note: close-phase stamps only after it has verified containment, so a branch squash-merged by hand is never stamped by it; the design's squash case (dg6b) is a full_status case, not a close-phase one. Red-first in test_close_phase.py with a real _harness.fixture_root() repo: the closed phase's mergedHead equals the parent's git rev-parse after the merge, written in the same file write as mergedAt; mutation: record the branch tip -> red on a --no-ff merge whose parent head differs from the tip. Allow case: a re-run on an already stamped phase writes nothing. Rebase on the peer phase (B), which rewrites close-phase messages from the main worktree: do not reword its lines.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -135,18 +135,27 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "154b45924da438ed1e2dd52dce07e0c4b85f7638",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "close-phase.stamp_merged takes merged_head and sets it on the body that receives mergedAt before the single revalidated write; _stamp() reads the PARENT's ref after containment is verified, a full SHA from rev-parse or null with the reason printed; a recorded merge is kept and never re-derived. Cases mh1 (ff), mh2 (--no-ff), mh3 (recorded merge kept). Task review: intent matches, redFirst proved. Carried to sign-off (low): no case for the default deleteBranch re-run path, and none for a first stamp after a hand merge. inheritedTests not-asked.",
+        "descriptive": "Landing a phase now records the parent branch's commit after the merge (phase.mergedHead) in the same write that stamps mergedAt, so the third place can ask git whether a full run contains the phase."
       },
       "startedAt": "2026-09-27T04:40:58Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-27T06:44:58Z",
+      "verifiedBy": [
+        "mh1",
+        "mh2",
+        "mh3"
+      ],
       "testEvidence": {
         "runId": "2026-09-27T06:37:49Z.9c10a5",
         "status": "passed",
         "at": "2026-09-27T06:37:49Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "154b45924da438ed1e2dd52dce07e0c4b85f7638",
+        "at": "2026-09-27T06:44:58Z"
       }
     },
     {

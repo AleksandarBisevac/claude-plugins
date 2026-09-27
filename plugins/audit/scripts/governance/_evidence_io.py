@@ -83,6 +83,8 @@ _output.install_path()
 import _journal_io  # noqa: E402  (config loading, the writer id, the month)
 import _locks  # noqa: E402  (whose phase lock, and is it live)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; the atomic write)
+import _manifest_vocab  # noqa: E402  (the FULL_STATUS words, one vocabulary)
+import _worktrees  # noqa: E402  (git ancestry: merged_into, the three answers)
 from _journal_io import (command_facts, redacted_paths,  # noqa: E402
                          redacted_text, repo_relative_or_token)
 
@@ -2073,10 +2075,25 @@ def _same_subject(row, ids):
     `row_for`'s own rule read back: a phase-scope row carries no `taskId` at all,
     and letting a missing key match a present one would hand a phase's verdict to
     a task.
+
+    A FULL-SCOPE ROW HAS NEITHER, AND A THIRD ARM COVERS IT. `taskId` and
+    `phaseId` are both absent on every full row alike, so the loop above passes
+    every one of them against every other -- a plan never asks a full run's
+    verdict about a task or a phase, it asks about the TREE that run measured.
+    `testedState.head` is what says which tree that was, so a caller comparing
+    full-scope subjects passes it under `ids["head"]` and this is where it is
+    read back, with the same absent-is-distinct rule as the pair above.
     """
     for key in ("taskId", "phaseId"):
         left = row.get(key)
         right = (ids or {}).get(key)
+        if (left is None) != (right is None):
+            return False
+        if left is not None and str(left) != str(right):
+            return False
+    if row.get("scope") == FULL_SCOPE:
+        left = (row.get("testedState") or {}).get("head")
+        right = (ids or {}).get("head")
         if (left is None) != (right is None):
             return False
         if left is not None and str(left) != str(right):
@@ -2195,6 +2212,166 @@ def _current_pointer(manifest_path, scope, ids):
     except Exception:
         return None
     return None
+
+
+# --- full_status: whole, provisional, unknown, or not declared -----------------
+# THE THIRD PLACE'S OWN VERDICT, DERIVED FROM THE LEDGER ALONE. `phase.mergedHead`
+# names the commit a phase landed on; a WHOLE answer needs a green, measured,
+# clean, verbatim full run whose recorded head CONTAINS that commit, and that
+# containment is asked of git through `_worktrees.merged_into` -- never a string
+# comparison, because a head that merely EQUALS `mergedHead` is a special case of
+# containment and a head that is further ahead of it is the ordinary one.
+#
+# NO MANIFEST POINTER IS EVER READ HERE. `phase.testEvidence` and any cache a
+# surface keeps beside it answer a different, narrower question (is THIS task's
+# or phase's own gate run backed by evidence); a stale or hand-edited cache must
+# never be able to make a phase read WHOLE that the ledger does not actually
+# hold, so the only two things this reads are the rows it is handed and the
+# phase dict's own `mergedHead`.
+FULL_SCOPE = "full"
+
+
+def _full_disqualification(row, full_commands):
+    """Why `row` cannot bear WHOLE, or None when every rule holds.
+
+    EVERY RULE NAMES ITSELF IN ITS OWN RETURN, because a caller reporting
+    PROVISIONAL over the nearest disqualified row has to say WHICH condition
+    failed -- a bare "not whole-bearing" would be the same silence a filter
+    that narrows to nothing must never produce.
+
+    THE ORDER IS THE ORDER A ROW WAS BUILT IN: whether it is a measurement at
+    all (status, then not a repeat), what scope it claims, whether it measured
+    anything, whether every step's cost is known, whether the tree it measured
+    was clean, and only last whether it ran the gate that is actually declared
+    now -- a row that failed every earlier test would be a strange one to praise
+    for running the right commands.
+    """
+    if row.get("status") != "passed":
+        return "status is %r, not passed" % (row.get("status"),)
+    if row.get(VERDICT_SOURCE) is not None:
+        return ("this row repeats an earlier verdict (%s=%r) rather than "
+                "measuring one" % (VERDICT_SOURCE, row.get(VERDICT_SOURCE)))
+    if row.get("scope") != FULL_SCOPE:
+        return "scope is %r, not %r" % (row.get("scope"), FULL_SCOPE)
+    obs = row.get("observations") if isinstance(row.get("observations"), dict) else {}
+    ran_total = obs.get("ranTotal")
+    if not (isinstance(ran_total, (int, float)) and not isinstance(ran_total, bool)
+            and ran_total > 0):
+        return "the full run counted nothing"
+    if not obs.get("countsBasis"):
+        return "the full run's count carries no basis"
+    steps = row.get("steps") if isinstance(row.get("steps"), list) else []
+    for step in steps:
+        duration = step.get("durationMs") if isinstance(step, dict) else None
+        if isinstance(duration, bool) or not isinstance(duration, (int, float)):
+            return ("a step of this run carries no durationMs, so its cost "
+                    "cannot be measured")
+    if "dirtyOutside" not in obs:
+        return ("this run carries no dirtyOutside observation, so a dirty "
+                "tree cannot be ruled out")
+    if obs.get("dirtyOutside"):
+        return ("FULL RUN ON A DIRTY TREE: certifies nothing about %s"
+                % ((row.get("testedState") or {}).get("head"),))
+    commands = [s.get("command") if isinstance(s, dict) else None for s in steps]
+    declared = list(full_commands or [])
+    if len(commands) != len(declared):
+        return ("FULL RUN RAN %d OF %d DECLARED ENTRIES"
+                % (len(commands), len(declared)))
+    if commands != declared:
+        return ("the published commands do not match meta.fullGate verbatim "
+                "and in order")
+    return None
+
+
+def full_status(rows, phase, git_root, full_commands, run=None):
+    """`{"answer", "basis", "runId"}` -- is this phase's merge WHOLE, PROVISIONAL,
+    UNKNOWN, or NOT_DECLARED, from the ledger alone.
+
+    NOT_DECLARED when `full_commands` (the resolved `meta.fullGate`) is empty --
+    a plan naming no third place has nothing to ask. UNKNOWN when the phase
+    carries no `mergedHead` -- ancestry needs two ends and this one has only
+    one, so it is never PROVISIONAL, which would claim a specific gap this
+    plan has no way to measure.
+
+    OTHERWISE, every scope-`full` row is walked NEWEST FIRST, and only the
+    WHOLE-BEARING ones (`_full_disqualification` finds nothing wrong) are asked
+    of git: `_worktrees.merged_into(git_root, mergedHead, row's head, run=run)`.
+    CONTAINED answers WHOLE, naming the run. NOT_CONTAINED moves on to an
+    older whole-bearing run. UNKNOWN is remembered rather than answered
+    immediately, because a newer run that DOES answer CONTAINED still settles
+    the question -- git could not say about one run is not the same as git
+    saying no about all of them.
+
+    If nothing was CONTAINED: any remembered UNKNOWN wins, because a could-not-
+    ask is never folded into a definite answer. Otherwise PROVISIONAL, whose
+    basis names the newest whole-bearing run and that its head does not
+    contain `mergedHead` -- or, when not one recorded full run was
+    whole-bearing at all, the nearest disqualified one and why.
+    """
+    phase = phase if isinstance(phase, dict) else {}
+    declared = list(full_commands or [])
+    if not declared:
+        return {"answer": _manifest_vocab.FULL_STATUS_NOT_DECLARED,
+                "basis": "this plan names no meta.fullGate, so there is no "
+                         "third place to ask",
+                "runId": None}
+    merged_head = phase.get("mergedHead")
+    if not merged_head:
+        return {"answer": _manifest_vocab.FULL_STATUS_UNKNOWN,
+                "basis": "phase %s records no mergedHead, so ancestry cannot "
+                         "be asked at all" % (phase.get("id"),),
+                "runId": None}
+    full_rows = [r for r in (rows or [])
+                if isinstance(r, dict) and r.get("scope") == FULL_SCOPE]
+    full_rows.sort(key=lambda r: str(r.get("ts") or ""), reverse=True)
+    newest_whole_bearing, nearest_disqualified, newest_unknown = None, None, None
+    for row in full_rows:
+        reason = _full_disqualification(row, declared)
+        if reason is not None:
+            if nearest_disqualified is None:
+                nearest_disqualified = (row, reason)
+            continue
+        if newest_whole_bearing is None:
+            newest_whole_bearing = row
+        head = (row.get("testedState") or {}).get("head")
+        answer = _worktrees.merged_into(git_root, merged_head, head, run=run)
+        if answer["answer"] == _worktrees.CONTAINED:
+            return {"answer": _manifest_vocab.FULL_STATUS_WHOLE,
+                    "basis": "%s is contained in run %s's head %s (%s)"
+                             % (merged_head, row.get("runId"), head,
+                                answer["basis"]),
+                    "runId": row.get("runId")}
+        if answer["answer"] == _worktrees.UNKNOWN:
+            if newest_unknown is None:
+                newest_unknown = (row, answer)
+            continue
+        # NOT_CONTAINED - an older whole-bearing run may still contain it.
+    if newest_unknown is not None:
+        row, answer = newest_unknown
+        return {"answer": _manifest_vocab.FULL_STATUS_UNKNOWN,
+                "basis": ("whether %s is contained in run %s's head could not "
+                         "be established: %s"
+                         % (merged_head, row.get("runId"),
+                            answer.get("detail") or answer.get("basis"))),
+                "runId": row.get("runId")}
+    if newest_whole_bearing is not None:
+        head = (newest_whole_bearing.get("testedState") or {}).get("head")
+        return {"answer": _manifest_vocab.FULL_STATUS_PROVISIONAL,
+                "basis": ("the newest measured full run (%s, head %s) does "
+                         "not contain %s"
+                         % (newest_whole_bearing.get("runId"), head,
+                            merged_head)),
+                "runId": newest_whole_bearing.get("runId")}
+    if nearest_disqualified is not None:
+        row, reason = nearest_disqualified
+        return {"answer": _manifest_vocab.FULL_STATUS_PROVISIONAL,
+                "basis": ("the newest recorded full run (%s) is not "
+                         "whole-bearing: %s" % (row.get("runId"), reason)),
+                "runId": row.get("runId")}
+    return {"answer": _manifest_vocab.FULL_STATUS_PROVISIONAL,
+            "basis": ("no full-scope run has ever been recorded, so nothing "
+                     "can be asked whether it contains %s" % (merged_head,)),
+            "runId": None}
 
 
 # --- the boundary: when could a run have been recorded at all ------------------

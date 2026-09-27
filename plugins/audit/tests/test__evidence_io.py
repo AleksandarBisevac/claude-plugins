@@ -33,6 +33,7 @@ from _output import safe_stdio                     # noqa: E402
 import _evidence_io as M                           # noqa: E402
 import _journal_io                                 # noqa: E402
 import _locks                                      # noqa: E402
+import _manifest_vocab                             # noqa: E402
 
 
 def _project(root, config=None):
@@ -2534,6 +2535,274 @@ def _merge_ledger_cases(check):
               "that failed: %r" % (why,),
               aliases is None and "docs/audit/phases/P2.json" in why
               and "docs/audit/audit-plan.json" not in why)
+    finally:
+        _harness.remove_tree(tmp)
+
+    _full_status_cases(check)
+
+
+# --- full_status: whole, provisional, unknown, or not declared -----------------
+def _fake_git(table):
+    """A fake git for `full_status`'s injected `run` - one answer for
+    `merge-base --is-ancestor`, so a case can drive the UNKNOWN branch a real
+    repository cannot be made to answer with (a ref that will never resolve)."""
+    def run(git_root, args, timeout=None):
+        return table.get(" ".join(args[:2]), (0, "", ""))
+    return run
+
+
+def _real_two_commits(root):
+    """A REAL git repository at `root`, two sequential commits on `main`.
+
+    `{"first", "second"}` are the two commits' own shas - `first` an actual
+    ancestor of `second`, never a string this fixture invents. This is what an
+    ancestry claim needs and a fake `run` cannot give it: a case that mutated
+    `full_status` to compare `head == mergedHead` would still pass against two
+    equal strings, and only two REAL, DIFFERENT, ancestor-related commits
+    catch that.
+    """
+    os.makedirs(root, exist_ok=True)
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+          "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+
+    def sh(*args):
+        subprocess.run(git + list(args), cwd=root, check=True,
+                       capture_output=True, timeout=30)
+
+    def rev():
+        out = subprocess.run(git + ["rev-parse", "HEAD"], cwd=root, check=True,
+                             capture_output=True, timeout=30)
+        return out.stdout.decode("utf-8").strip()
+
+    sh("init", "-q")
+    with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
+        fh.write("1\n")
+    sh("add", "-A")
+    sh("commit", "-qm", "one")
+    first = rev()
+    with open(os.path.join(root, "a.txt"), "w", encoding="utf-8") as fh:
+        fh.write("2\n")
+    sh("add", "-A")
+    sh("commit", "-qm", "two")
+    second = rev()
+    return {"root": root, "first": first, "second": second}
+
+
+def _fs_row(run_id, ts, head, commands, ran_total=3, dirty_outside=(),
+           status="passed", scope=None, extra=None):
+    """One well-formed scope-`full` row: every command carried VERBATIM (as
+    `row_for`/`_step` store it when the command is in the published set), every
+    step timed, a positive count with a basis, and a clean `dirtyOutside`.
+
+    `scope` DEFAULTS TO None RATHER THAN `M.FULL_SCOPE` DIRECTLY, on purpose:
+    a default argument is evaluated once, at import time, and reaching into
+    the module under test THEN would make a red-first proof against a
+    checkout that does not carry `full_status` yet fail on the wrong missing
+    name (`FULL_SCOPE`) instead of on the one this task actually introduces.
+    """
+    scope = scope if scope is not None else M.FULL_SCOPE
+    row = {
+        "v": M.ROW_VERSION, "runId": run_id, "ts": ts, "scope": scope,
+        "status": status,
+        "steps": [{"name": "gate", "command": c, "exit": 0, "durationMs": 1000}
+                 for c in commands],
+        "testedState": {"head": head},
+        "observations": {"ranTotal": ran_total, "countsBasis": "3 checks",
+                         "dirtyOutside": list(dirty_outside)},
+    }
+    if extra:
+        row.update(extra)
+    return row
+
+
+def _full_status_cases(check):
+    tmp = _harness.fixture_root("audit-evidence-full-")
+    try:
+        # --- the two questions that need no ledger at all ----------------------
+        check("fs1 no meta.fullGate at all is NOT_DECLARED, whatever the ledger "
+              "or the phase carry - a plan naming no third place has nothing to "
+              "ask",
+              M.full_status([], {"mergedHead": "abc"}, tmp, [])["answer"]
+              == _manifest_vocab.FULL_STATUS_NOT_DECLARED)
+
+        check("fs2 a declared fullGate but no phase.mergedHead is UNKNOWN, never "
+              "PROVISIONAL - PROVISIONAL would claim a specific gap this plan "
+              "cannot measure at all",
+              M.full_status([], {"id": "P9"}, tmp, ["echo x"])["answer"]
+              == _manifest_vocab.FULL_STATUS_UNKNOWN)
+
+        # --- RED-FIRST: ancestry, never a string comparison (dg6) --------------
+        repo = _real_two_commits(os.path.join(tmp, "repo"))
+        phase = {"id": "P1", "mergedHead": repo["first"]}
+        whole_row = _fs_row("run-whole", "2026-01-02T00:00:00Z", repo["second"],
+                            ["echo x"])
+        res = M.full_status([whole_row], phase, repo["root"], ["echo x"])
+        check("fs3 RED-FIRST: a full run's head that CONTAINS mergedHead "
+              "without EQUALLING it reads WHOLE - real commits, so a "
+              "`head == mergedHead` mutation fails on this and only ancestry "
+              "passes it: %r" % (res,),
+              res["answer"] == _manifest_vocab.FULL_STATUS_WHOLE
+              and res["runId"] == "run-whole")
+
+        # ALLOW: the SAME head, trivially its own ancestor, still reads WHOLE -
+        # the mutation this pairs with is the opposite one (an ancestry check
+        # that forgot a run can equal its own subject is not a real risk here,
+        # but the case is what tells "ancestor of" apart from "strictly older
+        # than").
+        same_head_row = _fs_row("run-same", "2026-01-02T00:00:00Z", repo["first"],
+                                ["echo x"])
+        res_same = M.full_status([same_head_row], phase, repo["root"], ["echo x"])
+        check("fs4 ALLOW: a full run measured AT mergedHead itself is also "
+              "WHOLE - a commit is its own ancestor: %r" % (res_same,),
+              res_same["answer"] == _manifest_vocab.FULL_STATUS_WHOLE)
+
+        # A head that does NOT contain mergedHead (an unrelated commit) never
+        # reads WHOLE - PROVISIONAL, naming the run that does not contain it.
+        unrelated_row = _fs_row("run-unrelated", "2026-01-02T00:00:00Z",
+                                "0" * 40, ["echo x"])
+        res_un = M.full_status([unrelated_row], phase, repo["root"], ["echo x"],
+                               run=_fake_git(
+                                   {"merge-base --is-ancestor": (1, "", "")}))
+        check("fs5 a whole-bearing run whose head does not contain mergedHead "
+              "is PROVISIONAL, naming that run: %r" % (res_un,),
+              res_un["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
+              and "run-unrelated" in res_un["basis"])
+
+        # --- RED-FIRST: a dirty tree certifies nothing (dg7) -------------------
+        dirty_row = _fs_row("run-dirty", "2026-01-02T00:00:00Z", repo["second"],
+                            ["echo x"], dirty_outside=["src/app.ts"])
+        res_dirty = M.full_status([dirty_row], phase, repo["root"], ["echo x"])
+        check("fs6 RED-FIRST: a full run on a dirty tree never reads WHOLE, "
+              "even when its head really does contain mergedHead: %r"
+              % (res_dirty,),
+              res_dirty["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
+              and "DIRTY TREE" in res_dirty["basis"])
+
+        # A row that predates the dirtyOutside field is disqualified the same
+        # way - "unknown whether it was clean" is not "known clean".
+        no_dirty_key = _fs_row("run-nokey", "2026-01-02T00:00:00Z",
+                               repo["second"], ["echo x"])
+        del no_dirty_key["observations"]["dirtyOutside"]
+        res_nokey = M.full_status([no_dirty_key], phase, repo["root"], ["echo x"])
+        check("fs7 a row that never recorded dirtyOutside cannot be told clean, "
+              "so it is disqualified too: %r" % (res_nokey,),
+              res_nokey["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL)
+
+        # --- RED-FIRST: a hand-typed row that counted nothing (dg8) ------------
+        no_count_row = {"v": M.ROW_VERSION, "runId": "run-empty",
+                        "ts": "2026-01-02T00:00:00Z", "scope": M.FULL_SCOPE,
+                        "status": "passed", "steps": [],
+                        "testedState": {"head": repo["second"]}}
+        res_empty = M.full_status([no_count_row], phase, repo["root"], ["echo x"])
+        check("fs8 RED-FIRST: a hand-typed row with status passed and no steps "
+              "is refused as whole-bearing rather than read as WHOLE: %r"
+              % (res_empty,),
+              res_empty["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
+              and "counted nothing" in res_empty["basis"])
+
+        # --- RED-FIRST: subset and reordering never satisfy fullGate (dg9) -----
+        subset_row = _fs_row("run-subset", "2026-01-02T00:00:00Z", repo["second"],
+                             ["echo a", "echo b"])
+        res_subset = M.full_status([subset_row], phase, repo["root"],
+                                   ["echo a", "echo b", "echo c"])
+        check("fs9 RED-FIRST: a row whose commands are a STRICT SUBSET of "
+              "fullGate is disqualified by more than a length compare would "
+              "catch on its own, and the message names the count: %r"
+              % (res_subset,),
+              res_subset["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
+              and "2 OF 3" in res_subset["basis"])
+
+        reorder_row = _fs_row("run-reorder", "2026-01-02T00:00:00Z",
+                              repo["second"], ["echo b", "echo a"])
+        res_reorder = M.full_status([reorder_row], phase, repo["root"],
+                                    ["echo a", "echo b"])
+        check("fs10 RED-FIRST: a row whose commands are a REORDERING of "
+              "fullGate (same length) is refused too - a length-only compare "
+              "would let this one through: %r" % (res_reorder,),
+              res_reorder["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
+              and "verbatim" in res_reorder["basis"])
+
+        # --- RED-FIRST: the ledger is the only source (dg14) --------------------
+        phase_with_stale_cache = {"id": "P1", "mergedHead": repo["first"],
+                                  "fullEvidence": {"status": "whole",
+                                                    "runId": "some-old-run"}}
+        res_cache = M.full_status([unrelated_row], phase_with_stale_cache,
+                                  repo["root"], ["echo x"],
+                                  run=_fake_git(
+                                      {"merge-base --is-ancestor": (1, "", "")}))
+        check("fs11 RED-FIRST: a stale phase.fullEvidence claiming whole is "
+              "never consulted - the answer comes from the ledger alone: %r"
+              % (res_cache,),
+              res_cache["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL)
+
+        # --- RED-FIRST: git's own could-not-ask is UNKNOWN, never folded in -----
+        res_128 = M.full_status(
+            [whole_row], phase, repo["root"], ["echo x"],
+            run=_fake_git({"merge-base --is-ancestor":
+                          (128, "", "fatal: bad object\n")}))
+        check("fs12 RED-FIRST: git answering 128 (could not be asked) is "
+              "UNKNOWN, never folded into PROVISIONAL - a could-not-ask is not "
+              "the same claim as a definite 'does not contain': %r" % (res_128,),
+              res_128["answer"] == _manifest_vocab.FULL_STATUS_UNKNOWN)
+
+        # The walk does not stop at the first whole-bearing row it tries: two
+        # rows both measured at a head that contains mergedHead, newest first,
+        # and the newest one still answers CONTAINED rather than the loop
+        # somehow needing a second pass over an older one.
+        older_whole = _fs_row("run-older-whole", "2026-01-01T00:00:00Z",
+                              repo["second"], ["echo x"])
+        res_two = M.full_status([older_whole, whole_row], phase, repo["root"],
+                                ["echo x"])
+        check("fs13 two whole-bearing rows, both containing mergedHead: the "
+              "newest one answers and names itself, not the older one: %r"
+              % (res_two,),
+              res_two["answer"] == _manifest_vocab.FULL_STATUS_WHOLE
+              and res_two["runId"] == "run-whole")
+
+        # --- ALLOW: no full row at all is PROVISIONAL, not UNKNOWN -------------
+        res_none = M.full_status([], phase, repo["root"], ["echo x"])
+        check("fs14 ALLOW: a plan with mergedHead and fullGate but no full run "
+              "ever recorded is PROVISIONAL, not UNKNOWN or WHOLE: %r"
+              % (res_none,),
+              res_none["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL)
+
+        # --- reconcile: a full row moves nothing and refuses nothing -----------
+        proj = _project(os.path.join(tmp, "recon"),
+                        {"manifestPath": "docs/audit/audit-plan.json"})
+        manifest_path = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(manifest_path))
+        with open(manifest_path, "w", encoding="utf-8") as fh:
+            json.dump({"meta": {}, "phases": []}, fh)
+        M.append_row(proj, whole_row)
+        res_recon = M.reconcile(proj, manifest_path)
+        check("fs15 a ledger holding only a scope:full row reconciles clean - "
+              "`subject_key` gives it no key (no phaseId, no taskId), so it "
+              "moves nothing and refuses nothing rather than being chased as "
+              "a phase pointer that does not exist: %r" % (res_recon,),
+              res_recon["moved"] == [] and res_recon["refused"] == []
+              and res_recon["subjects"] == 0)
+
+        # --- _same_subject / reusable_run: a head arm, widen-only --------------
+        head1 = _fs_row("run-h1", "2026-01-02T00:00:00Z", "h1", ["echo x"],
+                        extra={"reuseKey": "k1"})
+        head2 = _fs_row("run-h2", "2026-01-03T00:00:00Z", "h2", ["echo x"],
+                        extra={"reuseKey": "k1"})
+        phase_scope_row = {"runId": "run-phase", "ts": "2026-01-04T00:00:00Z",
+                           "scope": "phase", "status": "passed",
+                           "phaseId": "P1", "reuseKey": "k1"}
+        reused = M.reusable_run([head1, head2, phase_scope_row], M.FULL_SCOPE,
+                                {"head": "h1"}, "k1", ["passed"])
+        check("fs16 WIDEN-ONLY: reusable_run over scope:full matches the row "
+              "measured at the SAME head and never the other head or a "
+              "phase-scope row sharing the same reuseKey: %r"
+              % (reused and reused.get("runId"),),
+              reused is not None and reused["runId"] == "run-h1")
+        check("fs17 ...and the taskId/phaseId loop alone would have called "
+              "both full rows the same subject (neither carries either key) - "
+              "`_same_subject` needs the head arm for the two to disagree: %r"
+              % (M._same_subject(head1, {"head": "h2"}),),
+              M._same_subject(head1, {"head": "h1"})
+              and not M._same_subject(head1, {"head": "h2"}))
     finally:
         _harness.remove_tree(tmp)
 
