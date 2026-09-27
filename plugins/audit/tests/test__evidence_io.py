@@ -446,6 +446,77 @@ def _cases(check):
               % (len(_rofs["steps"][0]["failingSuites"]),),
               len(_rofs["steps"][0]["failingSuites"]) == M.MAX_PATHS)
 
+        # --- og1-og5: WHY a step could not run, kept beside the verdict ---------
+        # A `could-not-run` step already carries `outcome`, and until now nothing
+        # else - a derived run that skipped a listed suite, a missing interpreter
+        # and a runner's own "no tests found" all collapsed onto that one word,
+        # which is the defect this proves closed. `outcomeBasis` and `derivedGap`
+        # are the two fields `run-test-gate.observed_step`/`run_gate` already put
+        # on the STEP dict; this proves they survive into the committed row.
+        _cnr_step = dict(RESULT["steps"][0], exit=1)
+        _cnr_step["outcome"] = "could-not-run"
+        _cnr_step["outcomeBasis"] = (
+            "no test files found in /Users/%s/shop" % (_leak_user,))
+        _cnr = dict(RESULT)
+        _cnr["steps"] = [_cnr_step]
+        _rcnr = M.row_for(plain, _cnr, "task", {"taskId": "P1.2"}, IDENT,
+                          published=["pytest -q"])
+        check("og1 a `could-not-run` step keeps ITS OWN `outcomeBasis` on the "
+              "committed row - the ONE field that says why nothing was measured, "
+              "which `STEP_KEYS` has to name before `_step` will carry it: %r"
+              % (_rcnr["steps"][0].get("outcomeBasis"),),
+              "outcomeBasis" in M.STEP_KEYS
+              and "no test files found" in _rcnr["steps"][0]["outcomeBasis"])
+        check("og2 ...REDACTED on the way in, the same rule `failing` obeys: "
+              "this row is committed, and a no-verdict sentence naming a home "
+              "directory is the identical CWE-532 leak one field over: %r"
+              % (_rcnr["steps"][0]["outcomeBasis"],),
+              _journal_io.OUTSIDE_TOKEN in _rcnr["steps"][0]["outcomeBasis"]
+              and _journal_io.canonical(_rcnr).count(_leak_user) == 0)
+
+        _long_basis = dict(RESULT)
+        _long_step = dict(RESULT["steps"][0], exit=1)
+        _long_step["outcome"] = "could-not-run"
+        _long_step["outcomeBasis"] = "x" * (_journal_io.MAX_VALUE_CHARS + 50)
+        _long_basis["steps"] = [_long_step]
+        _rlb = M.row_for(plain, _long_basis, "task", {"taskId": "P1.2"}, IDENT,
+                         published=["pytest -q"])
+        check("og3 ...and BOUNDED to a size limit exactly as `failing` is, "
+              "never trusted whole from the caller - a row is hash-chained, "
+              "so an unbounded free-text field is a row of unbounded size: %r"
+              % (len(_rlb["steps"][0]["outcomeBasis"]),),
+              len(_rlb["steps"][0]["outcomeBasis"]) <= _journal_io.MAX_VALUE_CHARS)
+
+        # A derived run that answered on a NARROWER question than the phase
+        # declared is a second, DISTINCT reason a step reads `could-not-run` -
+        # `run-test-gate.run_gate` marks it with `derivedGap: True` rather than
+        # a string a reader would have to parse back out of the basis sentence.
+        _gap_step = dict(RESULT["steps"][0], exit=0)
+        _gap_step["outcome"] = "could-not-run"
+        _gap_step["outcomeBasis"] = "DERIVED RUN NAMED 1 OF 2 LISTED SUITES: unit"
+        _gap_step["derivedGap"] = True
+        _gap = dict(RESULT)
+        _gap["steps"] = [_gap_step]
+        _rgap = M.row_for(plain, _gap, "task", {"taskId": "P1.2"}, IDENT,
+                          published=["pytest -q"])
+        check("og4 a DERIVED-RUN GAP is a MARKER on the row, distinguishable "
+              "from a missing interpreter or a bare no-verdict signature - "
+              "`derivedGap` is `STEP_KEYS`'s and never a string match on the "
+              "basis sentence: %r" % (_rgap["steps"][0].get("derivedGap"),),
+              "derivedGap" in M.STEP_KEYS
+              and _rgap["steps"][0]["derivedGap"] is True
+              and _rcnr["steps"][0].get("derivedGap") is None)
+        _passed_step = dict(RESULT["steps"][0], exit=0)
+        _passed = dict(RESULT, steps=[_passed_step])
+        _rpassed = M.row_for(plain, _passed, "task", {"taskId": "P1.2"}, IDENT,
+                             published=["pytest -q"])
+        check("og5 the allow case: a PASSED step - one whose input carries "
+              "neither key - gains neither on the row. The row only gains "
+              "keys for a step this file's own caller actually set, never for "
+              "every step by default: %r" % (sorted(_rpassed["steps"][0]),),
+              "outcomeBasis" not in _rpassed["steps"][0]
+              and "derivedGap" not in _rpassed["steps"][0])
+
         # --- suiteReader and suite_keys, the ledger's own answer to "was a
         # test suite even run" for a gate key that is not test-shaped by name.
         def _row_with(steps, run_id="R-sk", ts="2026-09-01T00:00:00Z"):

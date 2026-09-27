@@ -227,7 +227,7 @@
     {
       "id": "P80.4",
       "title": "run-test-gate --full records a full-scope row on HEAD; --writer names a CI shard",
-      "status": "in_progress",
+      "status": "done",
       "description": "run-test-gate.py <manifest> --full [--record] [--writer <name>]: the phase positional becomes optional and is refused together with --full, and --full with --task is refused (exit 2). --full without meta.fullGate exits 2 'no meta.fullGate declared - this plan names no third place'. Commands: _resolved(meta.fullGate, build, preamble), the one resolution both scopes share (P71 run-test-gate.py). Scope full, ids {} and the subject is testedState.head, which the row already records; owns is empty, so no coverage question is asked of a whole-product run and the declared-coverage line is not printed. Before the first command record observations.dirtyOutside = the paths git status shows outside _evidence_io.recorded_paths (P70's dirty_outside(before, owns) with the recorder's own paths as the owned set), bounded and redacted like _paths, and print 'FULL RUN ON A DIRTY TREE: certifies nothing about <head>' when it is non-empty; the run still happens and is recorded, it just cannot bear whole. --record writes the row and NO pointer (write_pointer is not called for scope full) and no evidence boundary stamp. --writer <name> reaches _evidence_io.record / append_row and is handed to _journal_io.file_for as the fallback, winning over a session id, so a CI build writes <month>.ci-<buildId>.jsonl (writer_id sanitises and bounds it); absent, today's writer token. The verdict prints 'FULL GATE GREEN at <head>' or 'FULL GATE RED' beside the ordinary banners orchestrator.md routes on, which stay unchanged. The NARROWED line of the previous phase now names meta.fullGate as what is owed. Red-first: --full over a declared fullGate records a scope full row with head and dirtyOutside [] and writes no pointer; a dirty source file outside the recorder's paths is recorded and printed (mutation: exclude nothing -> red on the allow case, a tree dirty only under the evidence directory, which records []); --writer ci-42 lands in a file named for it; no fullGate -> exit 2 with the sentence; --full --task refused.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -261,18 +261,33 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4cf389e4121d30b50f93f409218879a0328ffc18",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_evidence_io.resolved_commands(manifest, entries) is the one resolver (run-test-gate._resolved delegates); full_status's docstring names it as the full_commands contract. --full refuses a phase or --task beside it and a plan with no meta.fullGate (exit 2); records scope full, ids {}, observations.dirtyOutside, no pointer, no boundary stamp; row before summary; --writer threads to _journal_io.file_for. NARROWED line names meta.fullGate. dg labels dropped from test__evidence_io markers. Cases rc0-rc0c, ev18b-c, fg1-fg10. Task review: intent matches, redFirst proved. Carried to sign-off (low): fg10 derives its expected commands from the function it tests; add a literal comparison. inheritedTests not-asked.",
+        "descriptive": "run-test-gate.py --full runs the declared meta.fullGate and records a full-scope row on HEAD, written before the summary prints, with --writer naming the ledger file a CI build writes; gate commands now resolve in one library function that the full-run status and every surface share."
       },
       "startedAt": "2026-09-27T06:49:12Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-27T07:37:28Z",
+      "verifiedBy": [
+        "rc0",
+        "rc0c",
+        "ev18b",
+        "fg1",
+        "fg4",
+        "fg5",
+        "fg7",
+        "fg9",
+        "fg10"
+      ],
       "testEvidence": {
         "runId": "2026-09-27T07:28:10Z.994adb",
         "status": "passed",
         "at": "2026-09-27T07:28:10Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "4cf389e4121d30b50f93f409218879a0328ffc18",
+        "at": "2026-09-27T07:37:28Z"
       }
     },
     {
@@ -381,7 +396,12 @@
       },
       "startedAt": "2026-09-27T07:28:10Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T08:22:46Z.f01df2",
+        "status": "passed",
+        "at": "2026-09-27T08:22:46Z"
+      }
     },
     {
       "id": "P80.7",
@@ -448,7 +468,29 @@
         "plugins/audit/scripts/panel/_panel_composition.py",
         "plugins/audit/scripts/ui/panel/overview.js",
         "plugins/audit/tests/test__panel_composition.py",
-        "tools/ui-tests/full-run-verified.test.mjs"
+        "tools/ui-tests/full-run-verified.test.mjs",
+        "plugins/audit/scripts/panel/_panel_state.py",
+        "plugins/audit/tests/test__panel_state.py",
+        "plugins/audit/scripts/panel/panel-server.py",
+        "plugins/audit/tests/test_panel_server.py",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png",
+        "docs/screenshots/captured-at.json"
       ],
       "tests": {
         "mode": "tdd",
@@ -485,7 +527,12 @@
       },
       "startedAt": "2026-09-27T07:28:11Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T08:33:46Z.ce6307",
+        "status": "passed",
+        "at": "2026-09-27T08:33:46Z"
+      }
     },
     {
       "id": "P80.9",
@@ -530,12 +577,17 @@
       },
       "startedAt": "2026-09-27T07:28:11Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T08:24:04Z.ffba9e",
+        "status": "passed",
+        "at": "2026-09-27T08:24:04Z"
+      }
     },
     {
       "id": "P80.10",
       "title": "full-gate.py, /audit:review --full, the pre-push snippet and the pipeline step",
-      "status": "pending",
+      "status": "in_progress",
       "description": "New entry point plugins/audit/scripts/governance/full-gate.py <manifest> [--writer <name>] [--project-dir DIR]: the one command of the third place. It runs run-test-gate.py <manifest> --full --record [--writer ...] as a SUBPROCESS resolved with _loader.script_path('run-test-gate.py') and sys.executable (an entry point cannot import another; render-report._bench_fixture is the precedent _deps names for this spelling, and script_path is not counted as an edge), streams its output and exits with its code. With no meta.fullGate it exits 0 saying no third place is declared: a pre-push hook on a plan that has none must not block pushes. This phase's script does not learn; the selection-miss pass is the next phase's. commands/review.md: --full - after the ordinary sign-off, run-test-gate.py <m> --full --record, then read the full-status line; argument-hint and the README /audit:review row (_refs.command_flag_drift). README, a section 'The third place': the documented .husky/pre-push snippet 'python3 \"$AUDIT_PLUGIN/scripts/governance/full-gate.py\" docs/audit/audit-plan.json || exit 1', that CI is the stronger owner (--no-verify skips a hook), and what whole, provisional and unknown mean. docs/examples/azure-pipelines.yml: a job with fetchDepth: 0 (ancestry needs history; a shallow clone answers unknown), run-test-gate.py \"$(manifest)\" --full --record --writer \"ci-$(Build.BuildId)\", the evidence directory published as a build artifact, then audit-status.py --gate --fail-on stale-full-run in the same checkout, and how a maintainer brings the artifact back with import-evidence.py. Red-first in test_full_gate.py: with a fake fullGate command the script's exit code is the runner's and a full row exists afterwards; no fullGate -> exit 0 with the sentence (mutation: exit 2 -> red). Layer entry in _deps.LAYERS, PATH_PREAMBLE, safe_stdio() first, migrated --selftest, PLUGIN-BUILD-GUIDE.md tree line and section.",
       "files": [
         "plugins/audit/scripts/governance/full-gate.py",
@@ -545,7 +597,8 @@
         "plugins/audit/commands/review.md",
         "docs/examples/azure-pipelines.yml",
         "plugins/audit/README.md",
-        "plugins/audit/tests/test__deps.py"
+        "plugins/audit/tests/test__deps.py",
+        "plugins/audit/tests/test__output.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -571,16 +624,21 @@
         "P80.4",
         "P80.5"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T07:37:40Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T08:25:19Z.1d4796",
+        "status": "passed",
+        "at": "2026-09-27T08:25:19Z"
+      }
     },
     {
       "id": "P80.11",
@@ -625,7 +683,12 @@
       },
       "startedAt": "2026-09-27T07:28:12Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T08:26:33Z.f048f5",
+        "status": "passed",
+        "at": "2026-09-27T08:26:33Z"
+      }
     },
     {
       "id": "P80.12",
@@ -686,7 +749,7 @@
     {
       "id": "P80.13",
       "title": "A committed evidence row keeps why a step could not run",
-      "status": "pending",
+      "status": "in_progress",
       "description": "_evidence_io.STEP_KEYS omits outcomeBasis, and the derived-gap marker run-test-gate sets on a step is omitted too, so _step / row_for drop both and a committed could-not-run row carries the verdict and not its basis: a derived run that did not name every listed suite, a missing interpreter and a no-verdict signature read identically to audit-lookup, the report and the doctor. Keep outcomeBasis on the row, bounded the way failing is bounded, and the derived-gap marker; render them wherever a could-not-run step is shown (audit-lookup run, the report's evidence view). The row only gains keys, which COMPATIBILITY.md treats as free. Allow case: a passed step's row is byte-identical to today's. No plan ids in comments; no numbers in prose.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -720,16 +783,21 @@
         "P80.4"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T07:37:41Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T08:27:50Z.66845d",
+        "status": "passed",
+        "at": "2026-09-27T08:27:50Z"
+      }
     }
   ],
   "startedAt": "2026-09-27T04:18:48Z"

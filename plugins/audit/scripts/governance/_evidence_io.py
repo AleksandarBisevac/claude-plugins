@@ -422,10 +422,29 @@ MAX_FAILING = 10
 # in `_step` and nowhere else. `suiteReader` needs neither - it is one of the
 # vocabulary words this plugin composes, never a runner's own bytes, so it
 # crosses unredacted exactly like `outcome` does.
+#
+# `outcomeBasis` IS THE THIRD SUCH VALUE, and the reason `could-not-run` had
+# only ONE word for every cause. A no-verdict signature a runner printed, a
+# derived run that skipped a listed suite, a missing interpreter and a step
+# the OS killed all set `outcome` to the same word, and until this key
+# existed nothing on the row said which of them happened -- a committed row
+# carried the verdict and not why it was reached. It gets the same two rules
+# `failing` gets, for the same reason: it is a sentence built out of a
+# runner's own printed bytes (or, for the derived-gap arm, the phase's own
+# suite names -- still worth bounding, since nothing here caps how many a
+# phase declares), so it is redacted through `redacted_text` and cut to that
+# function's own bound rather than trusted whole from the caller.
+#
+# `derivedGap` IS A MARKER, NOT A SECOND COPY of the sentence above. A reader
+# asking "was THIS could-not-run a derived run that answered a narrower
+# question than the phase declared" needs a fact it can branch on, and
+# string-matching the basis sentence would break the moment its wording
+# changed -- `run-test-gate.run_gate` sets the marker and composes the
+# sentence in the same place, so the two cannot drift apart.
 STEP_KEYS = ("name", "exit", "ran", "measured", "durationMs", "outcome",
              "timeoutSeconds", "teardown", "failing", "failingBasis",
              "failingSuites", "failingSuitesBasis", "suiteReader",
-             "retriedAfterSignal", "retryBasis")
+             "retriedAfterSignal", "retryBasis", "outcomeBasis", "derivedGap")
 STATE_KEYS = ("head", "headBasis", "scopeDigest", "scopeBasis",
               "scopeListDigest", "dirtyDigest", "dirtyBasis")
 _PORCELAIN_RENAME = " -> "
@@ -550,6 +569,16 @@ def _step(project, step, published):
             # an absolute suite path names somebody's machine.
             out[key] = [repo_relative_or_token(project, p)
                         for p in step[key][:MAX_PATHS]]
+            continue
+        if key == "outcomeBasis":
+            # WHY THIS `could-not-run` STEP HAS NO VERDICT, bounded and
+            # redacted exactly as `failing`'s lines are: a no-verdict
+            # signature or a derived-gap sentence is built out of a runner's
+            # own printed bytes or a phase's own suite names, and this row is
+            # committed - so it gets `redacted_text`'s bound the same way
+            # `failing` gets it, rather than being trusted whole from the
+            # caller.
+            out[key] = redacted_text(project, str(step[key]))
             continue
         out[key] = step[key]
     command = step.get("command")

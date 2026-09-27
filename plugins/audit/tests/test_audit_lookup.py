@@ -311,6 +311,40 @@ def _cases(check):
           "`_evio.latest_by_subject` reads it elsewhere: %r" % (payload,),
           found is True and payload["runId"] == "R-old")
 
+    r4 = {"v": 1, "runId": "R-4", "ts": "2026-06-04T10:00:00Z",
+          "scope": "task", "taskId": "P1.1", "status": "could-not-run",
+          "failed": [],
+          "steps": [{"name": "unit", "exit": 1, "durationMs": 90,
+                     "outcome": "could-not-run",
+                     "outcomeBasis": "no test files found",
+                     "derivedGap": True}]}
+    found, payload = M.run_lookup([r1, r4], "R-4")
+    check("rl8 a `could-not-run` row keeps its step's `outcomeBasis` and "
+          "`derivedGap` in the rendered payload - the reason nothing was "
+          "measured, not only the word that says nothing was: %r"
+          % (payload,),
+          found is True
+          and "outcomeBasis" in payload["steps"][0]
+          and payload["steps"][0]["outcomeBasis"] == "no test files found"
+          and payload["steps"][0].get("derivedGap") is True)
+    lines = M._render_human("run", "R-4", found, payload)
+    check("rl9 `audit-lookup run <runId>` NAMES why the step could not run, "
+          "in its human rendering, and marks a derived-run gap as such rather "
+          "than leaving a reader to guess from the bare outcome word: %r"
+          % (lines,),
+          any("no test files found" in line for line in lines)
+          and any("derived" in line.lower() for line in lines))
+
+    found, payload = M.run_lookup([r1], "R-1")
+    lines_r1 = M._render_human("run", "R-1", found, payload)
+    check("rl10 THE ALLOW CASE: a PASSED step's rendered lines read exactly "
+          "as they did before either key existed - no `outcomeBasis`/"
+          "`derivedGap` line appears for a step that carries neither: %r"
+          % (lines_r1,),
+          lines_r1 == ["run R-1 (task P1.1): passed",
+                      "  lint: exit=0 durationMs=120",
+                      "pointer: evidence ledger row for runId 'R-1'"])
+
     # --- CLI: main(), a real manifest on disk, --json and the exit code ----
     tmp = _harness.fixture_root("audit-lookup-")
     try:

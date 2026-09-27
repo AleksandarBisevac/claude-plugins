@@ -304,9 +304,14 @@ def brief_lookup(manifest, task_id):
 # `failing`/`failingSuites` cross through EXACTLY as `_evio._step` bounded
 # them at write time (`MAX_FAILING`/`MAX_PATHS`), never re-cut here - a
 # second cut would be a second, possibly disagreeing, opinion about where
-# the line is.
+# the line is. `outcomeBasis`/`derivedGap` are the same rule applied to WHY a
+# `could-not-run` step has no verdict: a derived-run gap, a missing
+# interpreter and a runner's own no-verdict signature all set that one word,
+# and without these two this lookup told a caller nothing more than the
+# terminal it was meant to stand in for already scrolled past.
 _RUN_STEP_KEYS = ("name", "exit", "durationMs", "outcome",
-                  "failing", "failingBasis", "failingSuites", "failingSuitesBasis")
+                  "failing", "failingBasis", "failingSuites", "failingSuitesBasis",
+                  "outcomeBasis", "derivedGap")
 
 
 def _run_payload(row):
@@ -422,6 +427,18 @@ def _render_human(question, node_id, found, payload):
                 lines.append("    failing: %s" % (line,))
             for suite in step.get("failingSuites") or []:
                 lines.append("    failingSuite: %s" % (suite,))
+            # WHY, WHEN THE STEP HAS NO VERDICT. Printed only for a step that
+            # carries the field - a step recorded before it existed, or one
+            # that measured cleanly, says nothing here rather than an empty
+            # basis reading as a claim. `derivedGap` is named beside it rather
+            # than folded into the same sentence, because it is a fact this
+            # lookup can render on its own without re-parsing the basis text
+            # a build might phrase differently tomorrow.
+            if step.get("outcomeBasis"):
+                lines.append("    basis: %s" % (step["outcomeBasis"],))
+            if step.get("derivedGap"):
+                lines.append("    derivedGap: this step answered a narrower "
+                             "question than the phase's derived gate declared")
         if _evio.VERDICT_SOURCE in payload:
             lines.append("verdictSource: %s" % (payload[_evio.VERDICT_SOURCE],))
         if "reusedFrom" in payload:
