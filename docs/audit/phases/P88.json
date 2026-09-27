@@ -1,7 +1,7 @@
 {
   "id": "P88",
   "title": "the history and secrets guards say exactly what they do not follow, and their allow cases are pinned",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "SECURITY.md's not-followed list names every shape the P83 round-3 review found the guards do not read, the CHANGELOG claims no broader Perl coverage than the code has, and the compound shapes the history guard now reads have allow twins that fail when the reading over-fires.",
   "testGate": [
@@ -15,7 +15,7 @@
   "blockedBy": [],
   "baseRef": "e96506fb479ac98813e30a90eac10e35642ecc12",
   "branch": "audit/p88-the-history-and-secrets-guards",
-  "mergedAt": null,
+  "mergedAt": "2026-09-27T20:42:46Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -191,5 +191,6 @@
     "runId": "2026-09-27T20:42:01Z.15d601",
     "status": "passed",
     "at": "2026-09-27T20:42:01Z"
-  }
+  },
+  "mergedHead": "4c4411491a73a33e47e2f3262c2371f5b32847bf"
 }
