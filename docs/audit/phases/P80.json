@@ -1057,7 +1057,7 @@
     {
       "id": "P80.15-rtb",
       "title": "the panel says when the evidence ledger could not be read",
-      "status": "in_progress",
+      "status": "done",
       "description": "Sign-off finding P80-R6. build_state turns a failed ledger read into a fabricated clean empty read that the evidence tab renders as no runs and zero unreadable lines. Carry the error into evidence_view's payload (a readError field) and render it in overview.js as its own sentence, distinct from an empty ledger; the full-run UNKNOWN path already carries it. JS: a pure-data test that the view shows the error sentence. Mutation: fabricate the clean read again. Allow case: a genuinely empty ledger still reads as no runs. No plan ids; no numbers in prose.",
       "files": [
         "plugins/audit/scripts/panel/_panel_state.py",
@@ -1147,18 +1147,23 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ac7365bca4c0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "diverges from the description by scope, on the orchestrator's decisions after four reviews: the same fabricated clean read existed on the report and in the full-run block, so the fix covers both surfaces; the sentence lives in _manifest_vocab (LEDGER_READ_FAILED / LEDGER_LOCATION_FAILED) and every surface fills it (tv6a4 refuses a copy or a paraphrase); the badge is amber on both surfaces; the report's full-run line wraps (the 833px overflow the full-run line introduced, verified clean in the browser); the WHOLE line drops an unrecorded count clause; runId must be a non-empty string on every reader (parity matrix). Committed over ra23 only (F521); re-gated green on the committed tree.",
+        "descriptive": "an evidence ledger that cannot be read is never shown as an empty one: the panel and the report show an amber 'Ledger unreadable' state, and status, report, panel and doctor share one sentence and answer unknown for every merged phase"
       },
       "startedAt": "2026-09-27T11:21:50Z",
-      "completedAt": null,
+      "completedAt": "2026-09-27T13:22:24Z",
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-09-27T13:15:38Z.1cf137",
-        "status": "failed",
-        "at": "2026-09-27T13:15:38Z"
+        "runId": "2026-09-27T13:22:24Z.fbe258",
+        "status": "passed",
+        "at": "2026-09-27T13:22:24Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "ac7365bca4c0",
+        "at": "2026-09-27T13:22:24Z"
       }
     },
     {
@@ -1581,7 +1586,12 @@
       },
       "startedAt": "2026-09-27T12:48:08Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T13:28:30Z.ca812c",
+        "status": "passed",
+        "at": "2026-09-27T13:28:30Z"
+      }
     }
   ],
   "startedAt": "2026-09-27T04:18:48Z"

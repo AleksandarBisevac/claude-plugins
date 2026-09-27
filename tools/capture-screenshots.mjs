@@ -338,6 +338,46 @@ const panelLiveness = newLivenessTally();
 const TAB_WIRED_MS = 10000;
 const TAB_SWITCH_MS = 3000;
 
+/**
+ * How long a panel page gets to finish boot() before this file says it did not.
+ * Headroom over a wait that normally ends within a second, as TAB_WIRED_MS is;
+ * only a run that is already failing pays it.
+ */
+const PANEL_BOOT_MS = 20000;
+
+/**
+ * Wait until boot() has adopted the server's answers, and say so when it never does.
+ *
+ * `waitForSelector('.tab')` cannot be that wait: the tab strip is static markup in
+ * panel.html, so it is satisfied as soon as the page parses, while `STATE` is still
+ * `null` and `REG` still the empty placeholder boot() replaces from /api/registry.
+ * A fixed sleep after it was the whole of the old wait, and it was a race the idle
+ * machine won by tens of milliseconds: the panel's first /api/state is its slowest,
+ * and on a loaded machine the identity precondition read `null` and the manifest
+ * skills precondition found every skill undeclared — two confident diagnoses
+ * ("GIT_CONFIG_GLOBAL did not take", "add them to BIG_USER_SKILLS") of a page that
+ * had not loaded yet. `#guards` is empty in the markup and filled by renderSettings,
+ * which boot() runs only after /api/state and /api/registry have both answered.
+ *
+ * @param {import('playwright').Page} page
+ * @param {string} label prefix for the failure line
+ * @returns {Promise<boolean>} true once boot() has rendered from the server's state
+ */
+async function waitForPanelBoot(page, label) {
+  try {
+    await page.waitForFunction(() => typeof STATE === 'object' && STATE !== null
+      && (document.querySelector('#guards')?.children.length || 0) > 0,
+    null, { timeout: PANEL_BOOT_MS });
+    return true;
+  } catch {
+    fail(`${label}: ${PANEL_BOOT_MS}ms after the page loaded, boot() had not rendered `
+       + 'from /api/state, so every precondition read from STATE or REG here would '
+       + 'describe the page\'s initial placeholders rather than the server. The JS '
+       + 'errors this run collected and the panel\'s own "load failed" toast say why.');
+    return false;
+  }
+}
+
 // --- tab navigation, and whether a tab painted ---------------------------------
 
 /**
@@ -4084,6 +4124,7 @@ async function assertFilterPersistence(page, browser, panelUrl) {
   // The reload: chip, person header and hash all survive.
   await page.reload({ waitUntil: 'load' });
   await page.waitForSelector('.tab', { timeout: 15000 });
+  await waitForPanelBoot(page, 'usage');
   await page.waitForTimeout(600);
   const back = await page.evaluate(() => ({
     author: UF.author, order: UORDER.slice(), hash: location.hash,
@@ -4109,6 +4150,7 @@ async function assertFilterPersistence(page, browser, panelUrl) {
     await p2.goto(panelUrl + '#/usage!au=' + encodeURIComponent(who),
                   { waitUntil: 'load' });
     await p2.waitForSelector('.tab', { timeout: 15000 });
+    await waitForPanelBoot(p2, 'usage');
     await p2.waitForTimeout(600);
     const shared = await p2.evaluate(() => ({
       author: UF.author,
@@ -4140,6 +4182,7 @@ async function assertFilterPersistence(page, browser, panelUrl) {
   }
   await page.reload({ waitUntil: 'load' });
   await page.waitForSelector('.tab', { timeout: 15000 });
+  await waitForPanelBoot(page, 'usage');
   await page.waitForTimeout(600);
   const clean = await page.evaluate(() => ({
     author: UF.author, order: UORDER.length,
@@ -5281,11 +5324,17 @@ async function assertManifestSkillsDiscovered(page) {
     (comp.areaSkills || []).forEach((s) => spelled.add(s));
     return { unknown: [...spelled].sort()
                .filter((n) => !REG.skills.some((s) => s.name === n)),
-             spelled: spelled.size };
+             spelled: spelled.size, known: REG.skills.length };
   });
   if (!gap.spelled) {
     fail('panel: the fixture manifest spells no skill at all, so neither the '
        + 'inventory hint nor this check has anything to be about');
+  } else if (!gap.known) {
+    // Not the fixture's gap: nothing is known, so every name is "unknown" and the
+    // advice below would send the reader to a declaration that is already right.
+    fail('panel: the page\'s skill registry is empty, so every name the fixture '
+       + 'manifest spells reads as undeclared — boot() has not adopted '
+       + '/api/registry, or discovery found nothing at all');
   } else if (gap.unknown.length) {
     fail(`panel: the fixture manifest spells ${JSON.stringify(gap.unknown)}, which `
        + `the fixture home does not declare — every composition shot would carry a `
@@ -7053,6 +7102,7 @@ async function main() {
       page.on('console', (m) => { if (m.type() === 'error') jsErrors.push(m.text()); });
       await page.goto(panel.url, { waitUntil: 'load' });
       await page.waitForSelector('.tab', { timeout: 15000 });
+      await waitForPanelBoot(page, 'panel');
       await page.waitForTimeout(400);
 
       const tabs = await page.$$eval('.tab', (els) => els.map((e) => e.dataset.t));
@@ -7490,6 +7540,7 @@ async function main() {
       mob.on('console', (m) => { if (m.type() === 'error') jsErrors.push('mobile: ' + m.text()); });
       await mob.goto(panel.url, { waitUntil: 'load' });
       await mob.waitForSelector('.tab', { timeout: 15000 });
+      await waitForPanelBoot(mob, 'panel/mobile');
       await tabTo(mob, 'over');
       await mob.waitForFunction(
         () => { const o = document.querySelector('#over');
@@ -7953,6 +8004,7 @@ async function main() {
         ppage.on('console', (m) => { if (m.type() === 'error') jsErrors.push('policy: ' + m.text()); });
         await ppage.goto(polPanel.url, { waitUntil: 'load' });
         await ppage.waitForSelector('.tab', { timeout: 15000 });
+        await waitForPanelBoot(ppage, 'policy');
         await ppage.waitForTimeout(400);
 
         await assertFixtureDiscovery(ppage, fx.want, 'policy');

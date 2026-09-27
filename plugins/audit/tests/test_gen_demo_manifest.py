@@ -29,7 +29,7 @@ import sys
 import tempfile
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
-from _output import safe_stdio                     # noqa: E402
+from _output import REPO_ROOT, safe_stdio          # noqa: E402
 import _evidence_view                              # noqa: E402
 import _loader                                     # noqa: E402
 
@@ -172,6 +172,67 @@ def _covered_prefixes(manifest, phase):
             continue
         prefixes.append(root.rstrip("/") + "/")
     return prefixes, unreadable
+
+
+# --- the screenshot tool's panel boot wait ------------------------------------
+# The tab strip is static markup in panel.html, so waiting for `.tab` proves the
+# page parsed and nothing about whether boot() has adopted /api/state and
+# /api/registry yet. The panel preconditions read `STATE.viewer` and `REG.skills`
+# right after that wait; read too early they see `null` and an empty registry and
+# report a foreign identity and every manifest skill as undeclared, when
+# neither is true.
+_TAB_WAIT = "waitForSelector('.tab'"
+_BOOT_WAIT = "await waitForPanelBoot("
+
+
+def _tab_waits_without_boot(src):
+    """Line numbers of every static-tab wait NOT followed by the boot wait.
+
+    The next statement is what is read: blank lines and `//` comments between the
+    two are skipped, anything else there is a read that could land before boot."""
+    lines = src.splitlines()
+    bare = []
+    for i, line in enumerate(lines):
+        if _TAB_WAIT not in line or line.strip().startswith(("//", "*")):
+            continue
+        following = [ln.strip() for ln in lines[i + 1:]
+                     if ln.strip() and not ln.strip().startswith("//")]
+        if not following or not following[0].startswith(_BOOT_WAIT):
+            bare.append(i + 1)
+    return bare
+
+
+def _boot_wait_cases(check):
+    check("bw1 the boot-wait scanner flags a static-tab wait followed by a "
+          "fixed sleep, and passes one followed by the boot wait or named in a "
+          "comment",
+          _tab_waits_without_boot(
+              "await p.waitForSelector('.tab', { timeout: 1 });\n"
+              "await p.waitForTimeout(400);\n") == [1]
+          and _tab_waits_without_boot(
+              "await p.waitForSelector('.tab', { timeout: 1 });\n"
+              "// why\n\n"
+              "await waitForPanelBoot(p, 'x');\n") == []
+          and _tab_waits_without_boot(
+              "// a comment naming waitForSelector('.tab') is not a wait\n")
+          == [])
+    src = open(os.path.join(REPO_ROOT, "tools", "capture-screenshots.mjs"),
+               encoding="utf-8").read()
+    waits = src.count(_TAB_WAIT)
+    bare = _tab_waits_without_boot(src)
+    check("bw2 every panel page the screenshot tool opens waits for boot() to "
+          "adopt the server's state before it reads STATE or REG - a static-tab "
+          "wait plus a fixed sleep let the identity and skills preconditions "
+          "read the page's initial null and empty registry on a loaded machine "
+          "(%d static-tab wait(s), bare at lines %r)" % (waits, bare),
+          waits > 0 and bare == [])
+    body = src[src.find("async function waitForPanelBoot("):]
+    body = body[:body.find("\n}\n")]
+    check("bw3 ...and the boot wait asks for what boot() delivers - the "
+          "server's state adopted and the Settings view rendered from it - "
+          "rather than for more time",
+          "STATE" in body and "#guards" in body
+          and "waitForTimeout" not in body)
 
 
 # --- cases --------------------------------------------------------------------
@@ -1372,6 +1433,7 @@ def _history_cases(check):
 def _all_cases(check):
     _cases(check)
     _history_cases(check)
+    _boot_wait_cases(check)
 
 
 def _selftest():
