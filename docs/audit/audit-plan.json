@@ -842,7 +842,9 @@
       "P84.1",
       "P84.7-791",
       "P80.21-rtb",
-      "P80.19-rtb"
+      "P80.19-rtb",
+      "P80.22-rtb",
+      "P80.15-rtb"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -900,7 +902,8 @@
       "P63.6",
       "P80.7",
       "P84.7-791",
-      "P80.20-rtb"
+      "P80.20-rtb",
+      "P80.15-rtb"
     ],
     "docs/design/audit-concurrency-report.md": [
       "P60.3"
@@ -928,7 +931,8 @@
       "P18.10",
       "P23.3",
       "P27.1",
-      "P32.10"
+      "P32.10",
+      "P80.15-rtb"
     ],
     "docs/screenshots": [
       "P53.9"
@@ -953,7 +957,8 @@
       "P32.10",
       "P51.9",
       "P55.7",
-      "P63.6"
+      "P63.6",
+      "P80.15-rtb"
     ],
     "examples/acme-store/acme-store-audit.md": [
       "P13.3",
@@ -961,7 +966,8 @@
       "P23.3",
       "P27.1",
       "P32.10",
-      "P63.6"
+      "P63.6",
+      "P80.15-rtb"
     ],
     "examples/acme-store/audit-plan.json": [
       "P50.3",
@@ -1811,7 +1817,8 @@
       "P76.1",
       "P74.3-qq5",
       "P84.7-791",
-      "P80.20-rtb"
+      "P80.20-rtb",
+      "P80.23-rtb"
     ],
     "plugins/audit/scripts/demo/gen-demo-usage.py": [
       "P10.3",
@@ -2258,7 +2265,8 @@
       "P76.1",
       "P76.4-6qa",
       "P80.21-rtb",
-      "P80.17-rtb"
+      "P80.17-rtb",
+      "P80.15-rtb"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -2556,7 +2564,8 @@
       "P51.9",
       "P80.7",
       "P86.2",
-      "P80.14-rtb"
+      "P80.14-rtb",
+      "P80.15-rtb"
     ],
     "plugins/audit/scripts/status/_doctor_ado.py": [
       "P57.5"
@@ -2566,7 +2575,8 @@
       "P69.4-j6r",
       "P76.1",
       "P72.8-ttl",
-      "P76.3-6qa"
+      "P76.3-6qa",
+      "P80.15-rtb"
     ],
     "plugins/audit/scripts/status/_doctor_hygiene.py": [
       "P18.6",
@@ -2614,7 +2624,8 @@
       "P77.3-6u9",
       "P77.4-6u9",
       "P78.13-msc",
-      "P80.14-rtb"
+      "P80.14-rtb",
+      "P80.15-rtb"
     ],
     "plugins/audit/scripts/status/_gate_feed.py": [
       "P48.3",
@@ -2684,7 +2695,8 @@
       "P75.2-j5h",
       "P75.3-j5h",
       "P76.1",
-      "P80.14-rtb"
+      "P80.14-rtb",
+      "P80.15-rtb"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -2692,7 +2704,8 @@
       "P77.2"
     ],
     "plugins/audit/scripts/ui/panel-css/status-colours.css": [
-      "P32.7"
+      "P32.7",
+      "P80.15-rtb"
     ],
     "plugins/audit/scripts/ui/panel.css": [
       "P11.1"
@@ -2733,7 +2746,8 @@
       "P59.4"
     ],
     "plugins/audit/scripts/ui/report-css/badges.css": [
-      "P32.7"
+      "P32.7",
+      "P80.15-rtb"
     ],
     "plugins/audit/scripts/ui/report.css": [
       "P11.2"
@@ -2860,7 +2874,8 @@
       "P69.4-j6r",
       "P76.1",
       "P72.8-ttl",
-      "P76.3-6qa"
+      "P76.3-6qa",
+      "P80.15-rtb"
     ],
     "plugins/audit/tests/test__doctor_hygiene.py": [
       "P18.6",
@@ -2908,7 +2923,8 @@
       "P77.4-6u9",
       "P77.5-6u9",
       "P78.13-msc",
-      "P80.14-rtb"
+      "P80.14-rtb",
+      "P80.15-rtb"
     ],
     "plugins/audit/tests/test__evidence_io.py": [
       "P32.7",
@@ -3365,7 +3381,8 @@
       "P75.2-j5h",
       "P75.3-j5h",
       "P76.1",
-      "P80.14-rtb"
+      "P80.14-rtb",
+      "P80.15-rtb"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -3532,7 +3549,8 @@
       "P80.7",
       "P81.1",
       "P84.7-791",
-      "P80.20-rtb"
+      "P80.20-rtb",
+      "P80.23-rtb"
     ],
     "plugins/audit/tests/test_guard_bash_writes.py": [
       "P20.1",
@@ -3665,7 +3683,8 @@
       "P25.1",
       "P51.9",
       "P80.7",
-      "P80.14-rtb"
+      "P80.14-rtb",
+      "P80.15-rtb"
     ],
     "plugins/audit/tests/test_repair_commits.py": [
       "P59.13",
@@ -3818,7 +3837,8 @@
       "P53.9",
       "P58.2",
       "P63.9",
-      "P80.20-rtb"
+      "P80.20-rtb",
+      "P80.23-rtb"
     ],
     "tools/check-committed-pii.py": [
       "P51.4",
@@ -3867,7 +3887,8 @@
       "P55.7",
       "P59.4",
       "P59.9",
-      "P80.20-rtb"
+      "P80.20-rtb",
+      "P80.15-rtb"
     ],
     "tools/gate-parity.py": [
       "P19.2",
@@ -3926,7 +3947,8 @@
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P80.15-rtb"
     ],
     "tools/ui-tests/gate-reasons.test.mjs": [
       "P58.2"
@@ -4057,31 +4079,39 @@
       "P85.2"
     ],
     "docs/screenshots/areas.png": [
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/authors.png": [
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/dark.png": [
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/demo-gate.gif": [
       "P84.7-791"
     ],
     "docs/screenshots/expanded.png": [
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/filtered.png": [
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/filters.png": [
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/mobile.png": [
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/overview.png": [
-      "P84.7-791"
+      "P84.7-791",
+      "P80.15-rtb"
     ],
     "docs/screenshots/panel-appearance.png": [
       "P80.8",
@@ -4173,6 +4203,12 @@
     ],
     "tools/check-rendered-artifacts.py": [
       "P80.20-rtb"
+    ],
+    "plugins/audit/scripts/governance/propose-gates.py": [
+      "P80.15-rtb"
+    ],
+    "plugins/audit/tests/test_propose_gates.py": [
+      "P80.15-rtb"
     ]
   },
   "bugs": [
