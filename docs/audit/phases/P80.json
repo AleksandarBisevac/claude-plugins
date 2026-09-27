@@ -1131,7 +1131,7 @@
     {
       "id": "P80.16-rtb",
       "title": "the release guard holds a release over a phase whose full-run answer is unknown",
-      "status": "in_progress",
+      "status": "done",
       "description": "Sign-off finding P80-R2. read_provisional appends only PROVISIONAL phases and drops UNKNOWN ones, which lets a release through over a phase the plan's own evidence cannot answer for; treat UNKNOWN as a reason to refuse, named with its basis, and select merged phases with the shared predicate. refusal() names each list it could read and only the unreadable one as unknown. Restate the plan, design-table and bug ids in the new comments as the constraints they stand for. SECURITY.md: no count in prose ('two lists'), and the table states what an unknown phase does. Mutations: drop the unknown bucket; collapse both lists to unknown. Allow: a whole phase releases; git push origin main untouched.",
       "files": [
         ".claude/hooks/guard-release.py",
@@ -1163,18 +1163,23 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2ea7130e1ca199ea9d3f18f1cbcc9c756e2e7464",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "merged_phase selects phases; the raising plan loader keeps an unreadable plan from reading as nothing held; the refusal lists the first few held phases per kind and the arming message names all; an out-of-repository narrowing was tried and reverted after review (it allowed real releases) and is recorded under the guard-scope fault for its own phase.",
+        "descriptive": "a merged phase whose full-run answer is unknown now holds a release with its basis and a remedy fitted to its cause; each list is reported on its own and an unreadable one is named UNKNOWN"
       },
       "startedAt": "2026-09-27T11:21:50Z",
-      "completedAt": null,
+      "completedAt": "2026-09-27T12:22:36Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-27T12:22:35Z.5b4661",
         "status": "passed",
         "at": "2026-09-27T12:22:35Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2ea7130e1ca199ea9d3f18f1cbcc9c756e2e7464",
+        "at": "2026-09-27T12:22:36Z"
       }
     },
     {
@@ -1329,9 +1334,9 @@
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-09-27T10:44:52Z.6c68d6",
+        "runId": "2026-09-27T12:24:01Z.e5829a",
         "status": "passed",
-        "at": "2026-09-27T10:44:52Z"
+        "at": "2026-09-27T12:24:01Z"
       }
     },
     {

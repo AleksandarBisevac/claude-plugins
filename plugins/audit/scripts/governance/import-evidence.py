@@ -23,6 +23,13 @@ two different chains sharing one name is exactly the substitution that seed
 exists to catch, and silently picking a winner between them would be this
 command inventing the finding instead of reporting it.
 
+ONE RUN, ONE ROW. A shard under a NEW name whose runIds the ledger already
+holds is refused too, naming each id and the file holding it, and so is a
+shard repeating a runId among its own rows, naming the shard itself: every
+reader of the directory counts rows, so the same run twice is counted twice.
+A ledger that cannot be read in full refuses the import rather than reading as
+empty - the check could not be made, and that is what the refusal says.
+
 WHAT IT DOES NOT PROVE. A ledger is evidence, not authentication. A new shard
 starts at its own genesis the moment somebody names a file that way, so a
 verified chain says the rows were not edited AFTER the file was written and
@@ -36,7 +43,9 @@ Usage:
 
 Exit codes:
   0  the file was copied whole, or an identical copy was already there
-  1  the chain does not hold, or a different file already holds that name
+  1  the chain does not hold, a different file already holds that name, a
+     run it carries is already in the ledger under another file or repeated
+     inside the shard, or the ledger could not be read in full to ask
   2  usage error - the manifest will not load, or the shard path is not a file
 
 This module carries no `--selftest` of its own; its cases live in
@@ -92,7 +101,67 @@ def _empty_answer(basename):
     differ are filled in - so a caller reading one key never meets a KeyError
     on the branch that never sets it."""
     return {"imported": False, "alreadyImported": False, "path": None,
-           "basename": basename, "runIds": [], "refused": ""}
+           "basename": basename, "runIds": [], "refused": "", "duplicates": []}
+
+
+def held_runs(project, config):
+    """`(heldBy, unreadable)` - which ledger file already holds each runId, and
+    which files could not be read in full.
+
+    ONE READ, `_evidence_io.read_rows`, the reader every consumer of this
+    directory trusts: its `rowFiles` names the file each row came from, and its
+    `unreadableFiles` is the verdict on what was lost. A second walk to name the
+    holder would be a second decode, free to disagree with this one about
+    whether a file holds a row at all.
+    """
+    ledger = _ev.read_rows(project, config)
+    held = {}
+    for row, name in zip(ledger["rows"], ledger["rowFiles"]):
+        run_id = str(row.get("runId") or "")
+        if run_id and run_id not in held:
+            held[run_id] = name
+    return held, list(ledger["unreadableFiles"])
+
+
+def duplicates_of(rows, held, basename):
+    """Every runId in `rows` that is already a run - held by a ledger file, or
+    carried by an earlier row of this same shard (`basename` is then the
+    holder) - once each, in shard order, with the file holding it. A row
+    carrying no runId is no claim to a run and so cannot duplicate one."""
+    earlier, reported, out = set(), set(), []
+    for row in rows:
+        run_id = str(row.get("runId") or "")
+        if not run_id:
+            continue
+        holder = held.get(run_id) or (basename if run_id in earlier else None)
+        earlier.add(run_id)
+        if holder is None or run_id in reported:
+            continue
+        reported.add(run_id)
+        out.append({"runId": run_id, "file": holder})
+    return out
+
+
+def unreadable_refusal(paths):
+    """The refusal for a ledger that could not be read in full, carrying the
+    step that clears each of the causes `read_rows` folds into one list - a
+    file that would not open, a torn tail, a bad line before the end. It
+    cannot tell which one a file has, so it names all of them and points at
+    the command that does; a refusal naming no next step would block every
+    later import with nothing to act on."""
+    return (
+        "the duplicate-run check could not be made: %s could not be read in "
+        "full, and a run lost there could be one this shard carries again. "
+        "`audit-journal.py verify` names the cause for each file. A file that "
+        "could not be opened at all (a permission, a lock, a path that is not "
+        "a file) is cleared by making it readable and re-running the import. "
+        "If a file ends with a partial line, a writer was interrupted there - "
+        "those bytes are not a row. Truncate the partial line on purpose and "
+        "re-run the import. Any other line that is not valid JSON is a "
+        "corrupted row, which `verify` reports by line: restore the file from "
+        "its committed copy, or remove that line on purpose once you have read "
+        "it, and re-run the import."
+        % (", ".join(paths),))
 
 
 def import_shard(project, shard_path, config=None):
@@ -162,6 +231,25 @@ def import_shard(project, shard_path, config=None):
             "genesis is seeded from the basename alone, so two files sharing "
             "one name would read as one chain with two genesis rows"
             % (dest,))
+        return E_FAIL, answer
+    # A run is one run whichever file carries it: every reader of this
+    # directory counts rows, so a second copy - under another name, or a
+    # second row inside this shard - is a second count. Checked after the
+    # same-name branch, which is why the identical re-import above never
+    # meets it, and before anything is written.
+    held, unreadable = held_runs(project, config)
+    if unreadable:
+        answer["refused"] = unreadable_refusal(unreadable)
+        return E_FAIL, answer
+    duplicates = duplicates_of([r for r in rows if not r.get("_unparseable")],
+                               held, basename)
+    if duplicates:
+        answer["duplicates"] = duplicates
+        answer["refused"] = (
+            "%s carries run(s) that are already runs - imported, each would be "
+            "counted twice:\n%s" % (basename, "\n".join(
+                "  runId %s already in %s" % (d["runId"], d["file"])
+                for d in duplicates)))
         return E_FAIL, answer
     os.makedirs(directory, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=directory, prefix="." + basename + ".",

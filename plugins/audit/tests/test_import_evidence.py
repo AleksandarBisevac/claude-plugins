@@ -26,6 +26,15 @@ WHAT IS PINNED, and why each one is here rather than trusted:
   repeat of an import already done is not an error - it is the same shard
   arriving twice - and this is the case a version that always refused a name
   already on disk would fail.
+- **A RUN THE LEDGER ALREADY HOLDS IS REFUSED UNDER ANY OTHER NAME**, naming
+  each duplicated id and the file that holds it, with nothing written - and
+  its two allow cases beside it (new ids import into a non-empty ledger; the
+  identical re-import still reads as already imported). A shard repeating a
+  runId among its own rows is refused the same way, naming itself. The holder
+  is named from the ledger reader's own read, so a file carrying a non-UTF-8
+  byte is still named. A ledger that cannot be read in full refuses too,
+  saying the check could not be made and giving the step that clears a torn
+  tail, because an unread row is a row that might be the duplicate.
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
@@ -198,6 +207,169 @@ def _cases(check):
         check("i11 the report names the run it brought and says a ledger is "
               "evidence, not authentication: %r" % (out,),
               code == 0 and "run-e1" in out and "not authentication" in out)
+
+        # --- a run already in the ledger, arriving under another name -------
+        d5, mp5 = project()
+        held_name = "2026-01.ci-w5.jsonl"
+        held_data, _ = _shard_bytes(
+            held_name, [{"runId": "run-f1", "v": 1, "status": "passed"},
+                        {"runId": "run-f2", "v": 1, "status": "passed"}])
+        held_src = write_shard(held_name, held_data)
+        code, out = run([mp5, held_src, "--project-dir", d5])
+        check("i12 setup: the first shard of this project imports: %r (%s)"
+              % (code, out), code == 0)
+
+        dup_name = "2026-01.ci-w6.jsonl"
+        dup_data, _ = _shard_bytes(
+            dup_name, [{"runId": "run-f2", "v": 1, "status": "passed"},
+                       {"runId": "run-g1", "v": 1, "status": "passed"}])
+        dup_src = write_shard(dup_name, dup_data)
+        code, out = run([mp5, dup_src, "--project-dir", d5])
+        check("i13 a shard under a NEW name carrying a runId the ledger already "
+              "holds is refused, exit 1 - imported, the same run would be "
+              "counted twice: %r (%s)" % (code, out), code == 1)
+        refusal_lines = [ln for ln in out.splitlines() if "run-f2" in ln]
+        check("i14 ...the refusal names the duplicated id AND the file already "
+              "holding it, and does not name the id that was new: %r" % (out,),
+              len(refusal_lines) == 1 and held_name in refusal_lines[0]
+              and "run-g1" not in out)
+        ev5 = _ev.evidence_dir(d5)
+        check("i15 ...and nothing was written - the directory holds the first "
+              "file alone, no copy and no stray temp file: %r"
+              % (sorted(os.listdir(ev5)),),
+              sorted(os.listdir(ev5)) == [held_name])
+        _json_out = run([mp5, dup_src, "--project-dir", d5, "--json"])[1]
+        dups = json.loads(_json_out).get("duplicates")
+        check("i16 --json carries each duplicate as a runId and the file that "
+              "holds it: %r" % (dups,),
+              dups == [{"runId": "run-f2", "file": held_name}])
+
+        # allow direction: the check must not fire on runs the ledger lacks,
+        # nor on the byte-identical re-import of a file already held - a
+        # version that refused every import into a non-empty ledger fails here
+        new_name = "2026-01.ci-w7.jsonl"
+        new_data, _ = _shard_bytes(
+            new_name, [{"runId": "run-h1", "v": 1, "status": "passed"}])
+        new_src = write_shard(new_name, new_data)
+        code, out = run([mp5, new_src, "--project-dir", d5])
+        check("i17 ALLOW: a shard of run ids the ledger does not hold imports "
+              "into a non-empty ledger, exit 0: %r (%s)" % (code, out),
+              code == 0 and os.path.isfile(os.path.join(ev5, new_name)))
+        code, out = run([mp5, held_src, "--project-dir", d5])
+        check("i18 ALLOW: re-importing the identical file still reads 'already "
+              "imported', exit 0, even though every one of its runIds is in the "
+              "ledger: %r (%s)" % (code, out),
+              code == 0 and "already imported" in out)
+
+        # --- a ledger that cannot be read in full: the check cannot be made -
+        d6, mp6 = project()
+        ev6 = _ev.evidence_dir(d6)
+        os.makedirs(ev6)
+        broken_name = "2026-01.ci-w8.jsonl"
+        with open(os.path.join(ev6, broken_name), "wb") as fh:
+            fh.write(b'{"runId": "run-k1", "v": 1')        # a torn last line
+        fresh_name = "2026-01.ci-w9.jsonl"
+        fresh_data, _ = _shard_bytes(
+            fresh_name, [{"runId": "run-m1", "v": 1, "status": "passed"}])
+        fresh_src = write_shard(fresh_name, fresh_data)
+        code, out = run([mp6, fresh_src, "--project-dir", d6])
+        check("i19 an existing ledger file that cannot be read in full refuses "
+              "the import, exit 1 - read as empty, the run it lost could be "
+              "the very one arriving again: %r (%s)" % (code, out), code == 1)
+        check("i20 ...the refusal says the duplicate check could not be made, "
+              "names the file by its full path, says a partial last line is an "
+              "interrupted write, and gives the step that clears it - a "
+              "refusal with no next step leaves every later import blocked: %r"
+              % (out,),
+              "could not be made" in out
+              and os.path.join(ev6, broken_name) in out
+              and "a writer was interrupted there" in out
+              and "Truncate the partial line on purpose and re-run the import"
+              in out)
+        # One clause per cause `read_rows` folds into its unreadable list,
+        # plus the pointer to the command that tells them apart - each is
+        # pinned alone, so dropping any one of them goes red by name.
+        clauses = [
+            "`audit-journal.py verify` names the cause for each file",
+            "could not be opened at all",
+            "is cleared by making it readable and re-running the import",
+            "Any other line that is not valid JSON is a corrupted row",
+            "restore the file from its committed copy, or remove that line on "
+            "purpose once you have read it, and re-run the import"]
+        check("i20b ...and it gives a way out for EVERY cause it cannot tell "
+              "apart - a file that would not open, a torn tail, a corrupted "
+              "line before the end - and names the command that tells them "
+              "apart; missing: %r" % ([c for c in clauses if c not in out],),
+              all(c in out for c in clauses))
+        check("i21 ...and nothing was written: %r" % (sorted(os.listdir(ev6)),),
+              sorted(os.listdir(ev6)) == [broken_name])
+
+        # --- a shard repeating a runId among its own rows --------------------
+        d7, mp7 = project()
+        twice_name = "2026-01.ci-w10.jsonl"
+        twice_data, _ = _shard_bytes(
+            twice_name, [{"runId": "run-n1", "v": 1, "status": "passed"},
+                         {"runId": "run-n2", "v": 1, "status": "passed"},
+                         {"runId": "run-n1", "v": 1, "status": "failed"}])
+        twice_src = write_shard(twice_name, twice_data)
+        code, out = run([mp7, twice_src, "--project-dir", d7, "--json"])
+        answer7 = json.loads(out)
+        check("i22 a shard whose OWN rows repeat a runId is refused, exit 1 - "
+              "the same run twice is counted twice whether the second copy "
+              "sits in another file or in this one: %r (%s)" % (code, out),
+              code == 1)
+        check("i23 ...naming the repeated id once, with the shard itself as "
+              "the file holding it, and not the id that appears once: %r"
+              % (answer7.get("duplicates"),),
+              answer7.get("duplicates") == [{"runId": "run-n1",
+                                             "file": twice_name}])
+        ev7 = _ev.evidence_dir(d7)
+        check("i24 ...and nothing was written: %r"
+              % (os.path.isdir(ev7) and sorted(os.listdir(ev7)),),
+              not os.path.isdir(ev7) or not os.listdir(ev7))
+
+        # --- the holder is named even when its bytes are not strict UTF-8 ---
+        # The ledger reader decodes with replacement, so a stray byte inside a
+        # field still yields the row; naming its file must come from that
+        # SAME read, or a stricter second read fails to find the holder.
+        d8, mp8 = project()
+        ev8 = _ev.evidence_dir(d8)
+        os.makedirs(ev8)
+        odd_name = "2026-01.ci-w11.jsonl"
+        odd_data, _ = _shard_bytes(
+            odd_name, [{"runId": "run-p1", "v": 1, "status": "passed",
+                        "note": "BYTE"}])
+        odd_data = odd_data.replace(b"BYTE", b"B\xffTE")
+        with open(os.path.join(ev8, odd_name), "wb") as fh:
+            fh.write(odd_data)
+        again_name = "2026-01.ci-w12.jsonl"
+        again_data, _ = _shard_bytes(
+            again_name, [{"runId": "run-p1", "v": 1, "status": "passed"}])
+        again_src = write_shard(again_name, again_data)
+        code, out = run([mp8, again_src, "--project-dir", d8, "--json"])
+        answer8 = json.loads(out)
+        check("i25 a duplicate held in a ledger file carrying a non-UTF-8 byte "
+              "is refused naming THAT file, never a placeholder: %r (%s)"
+              % (code, answer8.get("duplicates")),
+              code == 1 and answer8.get("duplicates")
+              == [{"runId": "run-p1", "file": odd_name}])
+
+        # --- a ledger-held run carried twice by the shard: named once -------
+        twice_held_name = "2026-01.ci-w13.jsonl"
+        twice_held_data, _ = _shard_bytes(
+            twice_held_name,
+            [{"runId": "run-f1", "v": 1, "status": "passed"},
+             {"runId": "run-q1", "v": 1, "status": "passed"},
+             {"runId": "run-f1", "v": 1, "status": "failed"}])
+        twice_held_src = write_shard(twice_held_name, twice_held_data)
+        code, out = run([mp5, twice_held_src, "--project-dir", d5, "--json"])
+        answer9 = json.loads(out)
+        check("i26 a runId the ledger holds, carried TWICE by the shard, is "
+              "reported once and against the LEDGER file that holds it - not "
+              "once per row, and not against the shard: %r (%s)"
+              % (code, answer9.get("duplicates")),
+              code == 1 and answer9.get("duplicates")
+              == [{"runId": "run-f1", "file": held_name}])
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

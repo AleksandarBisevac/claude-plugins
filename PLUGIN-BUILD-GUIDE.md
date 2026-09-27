@@ -2998,7 +2998,9 @@ departs from `usage_ledger.read_ledger`'s silent `continue`: that is right for t
 for evidence. It reports the file count too, because "no rows" and "no files" are different answers
 and a bare list could not tell them apart. The **parse** is `_journal_io.rows_from_text`'s and only
 the **counting rule** is local, so a row the chain grades and a row this returns can never be two
-different things.
+different things. `rowFiles` names, at each row's own index, the basename of the file it was read
+from, so a caller that must say *which* file holds a run reads it from this one read instead of
+walking the directory again with a decode of its own.
 
 **Every row is hash-chained, with the trail's chain and not a second one.** `append_row()` links
 each row onto the file's tail — `prev`, then `hash` over the canonical row, seeded from the file's
@@ -3644,6 +3646,19 @@ as "already imported"; different bytes is refused outright, because the chain's 
 from the basename alone (`_journal_io.genesis_prev`) — two different chains sharing one name is
 exactly the substitution that seed exists to catch. The copy itself is atomic: the bytes land in a
 temp file inside the destination directory and only `os.replace` gives it the final name.
+
+**One run, one row — checked before anything is written.** Every reader of the evidence directory
+counts rows, so a run arriving twice is counted twice. The import is refused, exit 1, naming each
+duplicated `runId` and the file already holding it, when the shard carries a `runId` the ledger
+already holds under another file, or repeats a `runId` among its own rows (the shard itself is
+then the holder). The holders come from `_evidence_io.read_rows`'s `rowFiles`, the same read every
+consumer trusts. A ledger that cannot be read in full refuses the import too, saying the check
+could not be made rather than reading as empty — an unread row may be the duplicate — and names the
+file with the step that clears each cause it cannot tell apart — make a file that would not open
+readable; truncate a torn tail's partial line on purpose; restore a file with a corrupted line from
+its committed copy or remove that line on purpose — and points at `audit-journal.py verify`, which
+names the cause. The byte-identical re-import is compared before this check and still reads as
+already imported.
 
 **What it does not prove.** A ledger is evidence, not authentication — a new shard starts at its
 own genesis the moment somebody names a file that way, so a verified chain says the rows were not

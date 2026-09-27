@@ -1168,8 +1168,8 @@ def ledger_files(project, config=None):
 
 
 def read_rows(project, config=None):
-    """`{"rows", "files", "unreadable", "unreadableFiles"}` - every recorded run,
-    and what was lost.
+    """`{"rows", "rowFiles", "files", "unreadable", "unreadableFiles"}` - every
+    recorded run, and what was lost.
 
     A TORN LINE IS COUNTED, not merely skipped. `usage_ledger.read_ledger` drops
     one in silence, which is right for telemetry and wrong here: silence about a
@@ -1192,9 +1192,15 @@ def read_rows(project, config=None):
     path per FILE that contributed to `unreadable` (a file unreadable outright,
     or carrying an unparseable line, or a torn tail), deduplicated, in the order
     `ledger_files` returns them.
+
+    `rowFiles` NAMES EACH ROW'S FILE, ADDITIVELY: the basename of the ledger
+    file `rows[i]` was read from, at the same index. A caller that must say
+    WHICH file holds a run reads it here rather than walking the directory a
+    second time - a second walk is a second decode, and one stricter than the
+    read above would find a row here that it cannot find there.
     """
     config = _journal_io.load_config(project) if config is None else config
-    rows, unreadable, files = [], 0, 0
+    rows, row_files, unreadable, files = [], [], 0, 0
     unreadable_files = []
     for path in ledger_files(project, config):
         files += 1
@@ -1213,13 +1219,14 @@ def read_rows(project, config=None):
                 lost_here = True
             else:
                 rows.append(obj)
+                row_files.append(os.path.basename(path))
         if torn:
             unreadable += 1
             lost_here = True
         if lost_here:
             unreadable_files.append(path)
-    return {"rows": rows, "files": files, "unreadable": unreadable,
-           "unreadableFiles": unreadable_files}
+    return {"rows": rows, "rowFiles": row_files, "files": files,
+           "unreadable": unreadable, "unreadableFiles": unreadable_files}
 
 
 # --- folding history into a tally, never into a verdict ------------------------

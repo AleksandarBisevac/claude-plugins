@@ -765,10 +765,39 @@ def _cases(check):
               len(back["rows"]) == 2 and back["files"] == 2
               and back["unreadable"] == 0
               and sorted(r["runId"] for r in back["rows"]) == ["R1", "R2"])
+        pairs = sorted(zip([r["runId"] for r in back["rows"]],
+                           back.get("rowFiles") or []))
+        check("ev19b `rowFiles` names, per row and at the row's own index, the "
+              "BASENAME of the ledger file it was read from - a caller that "
+              "must say which file holds a run reads it here instead of "
+              "walking the directory a second time with a different decode: %r"
+              % (pairs,),
+              len(back.get("rowFiles") or []) == len(back["rows"])
+              and pairs == [("R1", os.path.basename(path)),
+                            ("R2", os.path.basename(p2))])
 
         with open(path, "a", encoding="utf-8") as fh:
             fh.write("{not json at all\n")
         torn = M.read_rows(plain)
+        check("ev20b ...and a line that never became a row adds no entry, so "
+              "`rowFiles` stays index-aligned with `rows`: %r"
+              % ((len(torn["rows"]), len(torn.get("rowFiles") or [])),),
+              len(torn.get("rowFiles") or []) == len(torn["rows"]) == 2)
+        # A torn TAIL never becomes a row object at all; a bad line in the
+        # MIDDLE does, marked unparseable - the branch the tail cannot reach.
+        mid_proj = _project(os.path.join(tmp, "rowfiles-mid"), {})
+        mid_dir = M.evidence_dir(mid_proj)
+        os.makedirs(mid_dir, exist_ok=True)
+        with open(os.path.join(mid_dir, "2026-01.mid.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write('{"runId": "M1"}\n{not json at all\n{"runId": "M2"}\n')
+        mid = M.read_rows(mid_proj)
+        check("ev20c ...nor does an unparseable line in the MIDDLE of a file: "
+              "`rowFiles` stays index-aligned with `rows`: %r"
+              % ((mid["unreadable"], mid.get("rowFiles")),),
+              mid["unreadable"] == 1
+              and [r.get("runId") for r in mid["rows"]] == ["M1", "M2"]
+              and mid.get("rowFiles") == ["2026-01.mid.jsonl"] * 2)
         check("ev20 a torn line is skipped AND COUNTED. The usage ledger drops "
               "one in silence, which is right for telemetry and wrong here: "
               "silence about a lost EVIDENCE row is the failure this file "
