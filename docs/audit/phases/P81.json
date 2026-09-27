@@ -75,7 +75,9 @@
         "severity": "med",
         "file": "CHANGELOG.md:471",
         "issue": "The entry says every reader of the evidence ledger orders rows by one moment; _gate_derive.newest_red_phase_row and _evidence_view._rows_for still compare ts as text (recorded for their own phase).",
-        "resolution": "Narrow the sentence to the readers that do (the ledger module and the verdict binding) and leave the remaining sites to their recorded fault."
+        "resolution": "fixed in P81.18-j7p (2fff8c0a): Narrow the sentence to the readers that do (the ledger module and the verdict binding) and leave the remaining sites to their recorded fault.",
+        "fixTask": "P81.18-j7p",
+        "commit": "2fff8c0a"
       },
       {
         "id": "P81-R7",
@@ -154,7 +156,9 @@
         "severity": "low",
         "file": "plugins/audit/commands/review.md:64-66",
         "issue": "Tells the reader to read a full-status line the runner does not print.",
-        "resolution": "Point at /audit:status's tests column and /audit:doctor's full run row."
+        "resolution": "fixed in P81.18-j7p (2fff8c0a): Point at /audit:status's tests column and /audit:doctor's full run row.",
+        "fixTask": "P81.18-j7p",
+        "commit": "2fff8c0a"
       },
       {
         "id": "P81-R16",
@@ -166,7 +170,7 @@
         "commit": "63840391"
       }
     ],
-    "outcome": "[findings: 16 - 0 high, 6 med, 10 low; 14 with a recorded fix commit]"
+    "outcome": "[findings: 16 - 0 high, 6 med, 10 low; 16 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1215,7 +1219,7 @@
     {
       "id": "P81.18-j7p",
       "title": "the phase's documents say what the review fixes made true",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase review fix task (docs). CHANGELOG: narrow the one-moment-order sentence to the readers that order by moment; entries for the pinned suite spelling, the ledger-completeness rule in selection_miss, the mute that does not hold in its own bug's fix task, the import's project from the manifest. review.md: point at /audit:status's tests column and /audit:doctor's full run row instead of a full-status line the runner does not print. bug.md: a muted suite is not quarantined inside its own fix task's gate. README and orchestrator.md: the SELECTION MISS remedy spelling and the import's project rule, as the committed code prints them.",
       "files": [
         "CHANGELOG.md",
@@ -1251,18 +1255,24 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2fff8c0a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CHANGELOG [Unreleased] placement checked against v3.0.1 (narrowed Changed entry, four Added, one Fixed); review.md points at the status tests column and the doctor full run row; bug.md: a mute does not hold in its own fix task or once its bug is closed; README/orchestrator: pinned remedy spelling, not-asked lines, the import's project; doctor.md and the guide's _doctor_trail section: muted runs do not age, relearn flags; _relearn_fix docstring corrected.",
+        "descriptive": "The CHANGELOG, README, orchestrator, review, bug and doctor docs and the build guide describe the review fixes as the committed code behaves, and the one-moment-order claim is narrowed to the readers that keep it."
       },
       "startedAt": "2026-09-27T22:36:56Z",
-      "completedAt": null,
+      "completedAt": "2026-09-27T22:53:38Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-27T22:53:37Z.bcbf5e",
         "status": "passed",
         "at": "2026-09-27T22:53:37Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2fff8c0a",
+        "at": "2026-09-27T22:53:38Z",
+        "basis": "the documents the phase review named, and the sentences its fixes made stale"
       }
     }
   ],
