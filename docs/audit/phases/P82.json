@@ -21,109 +21,561 @@
   "review": {
     "tool": "audit:audit-reviewer",
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P82-R1",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/stamp-verification.py",
         "issue": "Each runner is gated on its tally appearing ANYWHERE in the output. That is not the runner read_tally() chose. A house run whose passing case prints a captured unittest transcript (a 'Ran N tests' line) still gets unittest FAIL:/ERROR: phantoms, so the phase's own defect survives in that shape. The phantom FAIL: also counts as an assertion. Probe (scratchpad/p82/probe8.py): in the WT test, the exi",
-        "resolution": "fix task P82.2-fye"
+        "resolution": "fixed in P82.2-fye (f8bbbf6b): fix task P82.2-fye",
+        "fixTask": "P82.2-fye",
+        "commit": "f8bbbf6b"
       },
       {
         "id": "P82-R2",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/stamp-verification.py",
         "issue": "A literal counts as a template when its fixed text holds any single word character. So '%dx%d' becomes .*?x.*?, which renders every label containing an 'x', and '%s is %s' renders every label containing ' is '. probe4 found such a loose literal rendering no-id labels in test__config_rules.py ('%r validates clean') and test_gen_demo_manifest.py ('%dx%d'). End to end (probe5.py): a HEAD test file ho",
-        "resolution": "fix task P82.2-fye"
+        "resolution": "fixed in P82.2-fye (f8bbbf6b): fix task P82.2-fye",
+        "fixTask": "P82.2-fye",
+        "commit": "f8bbbf6b"
       },
       {
         "id": "P82-R3",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/stamp-verification.py",
         "issue": "The FAIL line's detail is set aside only when the label ends in ')'. A check() detail containing a newline is common: sr48 in this very test file passes text_u[-400:]. Such a detail leaves the FAIL line as 'label (first line of detail', with no closing paren. Then no literal fullmatches, so a genuinely new sentence-labelled case reads could-not-prove. probe5.py: detail 'line one\\nline two' gives e",
-        "resolution": "fix task P82.2-fye"
+        "resolution": "fixed in P82.2-fye (f8bbbf6b): fix task P82.2-fye",
+        "fixTask": "P82.2-fye",
+        "commit": "f8bbbf6b"
       },
       {
         "id": "P82-R4",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/stamp-verification.py",
         "issue": "Every placeholder compiles to .*? and is fullmatched against each label form, for every string literal in both copies of the file. A literal that opens with several placeholders separated by short fixed text backtracks combinatorially. probe1.py: '%s '*6+'zq' against a 60-word label took 1.18s, and '%s '*12+'zq' did not finish in 180s. This runs after the red run and is not bounded by --timeout. O",
-        "resolution": "fix task P82.2-fye"
+        "resolution": "fixed in P82.2-fye (f8bbbf6b): fix task P82.2-fye",
+        "fixTask": "P82.2-fye",
+        "commit": "f8bbbf6b"
       },
       {
         "id": "P82-R5",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/stamp-verification.py",
         "issue": "--case now takes an id or a full label, but the Usage line still says '[--case ID ...]', the argparse help says 'a case id the task added', and the executor brief's command template says '[--case <id of the case you added>]'. An executor with a sentence-labelled case reads the template as unable to name it. Only the prose further down says 'or labels'.",
-        "resolution": "fix task P82.2-fye"
+        "resolution": "fixed in P82.2-fye (f8bbbf6b): fix task P82.2-fye",
+        "fixTask": "P82.2-fye",
+        "commit": "f8bbbf6b"
       },
       {
         "id": "P82-R6",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/stamp-verification.py",
         "issue": "_is_named now matches a pytest failure's label, which is the full nodeid. So --case tests/test_x.py::test_a narrows to that failure, and the own check (by id test_a) proves it. The refused check runs on the raw --case string instead. It finds that nodeid in neither file and adds it to refused. The proved basis then says '--case tests/test_x.py::test_a names a case HEAD's test file already carries'",
-        "resolution": "fix task P82.2-fye"
+        "resolution": "fixed in P82.2-fye (f8bbbf6b): fix task P82.2-fye",
+        "fixTask": "P82.2-fye",
+        "commit": "f8bbbf6b"
       },
       {
         "id": "P82-R7",
         "severity": "low",
         "file": "plugins/audit/tests/test_stamp_verification.py",
         "issue": "The new cases pin a loose template only by a literal with no word character at all (sr54 'no fixed words'). Findings 1-3 therefore all pass the suite as it stands: a single-letter fixed literal, a multi-line detail, and a house run echoing a unittest transcript. The mutation claim ('15/15 rows red') could not have covered these shapes.",
-        "resolution": "fix task P82.2-fye"
+        "resolution": "fixed in P82.2-fye (f8bbbf6b): fix task P82.2-fye",
+        "fixTask": "P82.2-fye",
+        "commit": "f8bbbf6b"
       },
       {
         "id": "P82-S1",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/stamp-verification.py",
         "issue": "This is a regression introduced by P82.2, and it gives a false proved. The score for 'most specific' is the total fixed text of any literal that renders ANY form of the label, and that includes the full FAIL line with its detail. Suppose the working tree adds a literal that spells the printed line, such as a test asserting on the harness's output: EXPECT = 'the next value is read (saw %r)'. That l",
-        "resolution": "fix task P82.3-fye"
+        "resolution": "fixed in P82.3-fye (9fa84bcf): fix task P82.3-fye",
+        "fixTask": "P82.3-fye",
+        "commit": "9fa84bcf"
       },
       {
         "id": "P82-S2",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/stamp-verification.py",
         "issue": "Limit 1, which the implementer left in place, CAN give a false proved. In the test, an existing case's label is built at run time ('the ' + KIND + ' is read'), so none of HEAD's literals renders it. The working tree edits the case's condition and adds MSG = '%s is %s'. The generic template becomes the closest literal, HEAD does not hold it, and the result is 'added'. probe9 (b) gives exit 0 proved",
-        "resolution": "fix task P82.3-fye"
+        "resolution": "fixed in P82.3-fye (9fa84bcf): fix task P82.3-fye",
+        "fixTask": "P82.3-fye",
+        "commit": "9fa84bcf"
       },
       {
         "id": "P82-S3",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/stamp-verification.py",
         "issue": "Limit 2, which the implementer left in place, CAN give a false proved. It is the mirror image of R1. In a unittest run, the existing test_old was edited to fail, and a new passing test prints 'FAIL zz9 ...' and 'SELFTEST FAILED: 1/2 cases passed'. read_tally takes the house tally first, so the house reader credits zz9, which appears in the working tree's text and not in HEAD's. probe9 (c) gives ex",
-        "resolution": "fix task P82.3-fye"
+        "resolution": "fixed in P82.3-fye (9fa84bcf): fix task P82.3-fye",
+        "fixTask": "P82.3-fye",
+        "commit": "9fa84bcf"
       },
       {
         "id": "P82-S4",
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md",
         "issue": "P82.1 wrote this and P82.2 left it unchanged. It still says failing_cases reads 'each runner's lines only in output that carries that runner's tally'. That is exactly the behaviour R1 found wrong and P82.2 replaced. The paragraph also says nothing of the most-specific-literal rule that now decides whether a label counts as the task's own.",
-        "resolution": "fix task P82.3-fye"
+        "resolution": "fixed in P82.3-fye (9fa84bcf): fix task P82.3-fye",
+        "fixTask": "P82.3-fye",
+        "commit": "9fa84bcf"
       },
       {
         "id": "P82-T1",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/stamp-verification.py",
         "issue": "P82.3 introduced a false proved, and P82.2 did not have it. Ranking by role first means any label-argument TEMPLATE outranks an exact literal from the 'others' role. Take an existing case whose label is not a derived label argument: a table row fed to check by a loop, a method wrapper, or check(label=...). It is edited to go red, and the task adds a PASSING case whose label template renders the ex",
-        "resolution": "fix task P82.4-fye"
+        "resolution": "fixed in P82.4-fye (a8b5a7ef): fix task P82.4-fye",
+        "fixTask": "P82.4-fye",
+        "commit": "a8b5a7ef"
       },
       {
         "id": "P82-T2",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/stamp-verification.py",
         "issue": "The wrapper derivation mis-derives or misses common shapes. (1) A method wrapper, `def expect(self, name, ok): check(name, ...)` called as `s.expect('label', cond)`, is derived at position 1 because params include self. The CONDITION node gets marked as the label, and the real label literal is filed as 'other'. This is probe10 (e). (2) A label passed by keyword, check(label=...), or through a lamb",
-        "resolution": "fix task P82.4-fye"
+        "resolution": "fixed in P82.4-fye (a8b5a7ef): fix task P82.4-fye",
+        "fixTask": "P82.4-fye",
+        "commit": "a8b5a7ef"
       },
       {
         "id": "P82-T3",
         "severity": "low",
         "file": "plugins/audit/tests/test_stamp_verification.py",
         "issue": "Two mutations of the P82.3 code survive the full 90-case suite on a git-archive export of HEAD. Each mutated file was restored afterwards, and the unmutated suite printed ALL PASS: 90/90 cases passed. (1) `held = set(head['labels'])`: HEAD's other-role literals no longer count as held. This survives, but it turns probe10 (d0), an EXISTING table-fed case edited to go red, into exit 0 proved (checke",
-        "resolution": "fix task P82.4-fye"
+        "resolution": "fixed in P82.4-fye (a8b5a7ef): fix task P82.4-fye",
+        "fixTask": "P82.4-fye",
+        "commit": "a8b5a7ef"
+      },
+      {
+        "id": "P82-R8",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:709-726 (_held_by_head), 736-761 (own_failures)",
+        "issue": "P82.5 introduced a false proved: a house label that embeds a run-time value. Examples are a temp path, an object repr with its address, a timestamp, or a set or dict repr under hash randomisation. HEAD's run and the task's run print different text for the same case, so no label form matches and the case is credited as the task's own. Probe scratchpad/p82/probe12.py, real tool. (m) An existing case labelled 'the file under %s is read' % (tempfile.mkdtemp(),) is edited to fail: exit 0 proved. Its stable-label control (m0) gives exit 3. (n) HEAD is already red on 'the object %r is kept' % (object(),), and the task adds only a PASSING case: exit 0 proved. Its control (n0) gives exit 3. On an export of P82.4 (a8b5a7ef), (m) and (n) both give exit 3, so this is a regression of the new mechanism.",
+        "resolution": "fixed in P82.6-fye (9bfb0d7c): fix task P82.6-fye (review-P82d.json)",
+        "fixTask": "P82.6-fye",
+        "commit": "9bfb0d7c"
+      },
+      {
+        "id": "P82-R9",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:676-706 (head_names, the completeness test at 701)",
+        "issue": "The completeness check compares HEAD's named cases with the tally's collected count. That count covers only what RAN, so a HEAD run that stopped early or ran nothing passes the check, and every case HEAD never reached is credited. (r) Real unittest, `-v -f`. HEAD is red on test_a_p and test_b_f. The task fixes test_a_p only and adds no case. HEAD's run stops at test_a_p (Ran 1, named 1), so the pre-existing broken test_b_f reads as the task's own: exit 0 proved. Without -f (r0) it gives exit 3, and P82.4 gives exit 3 for (r). The same hole shows on a pytest-shaped run. pytest is not installed on this machine, so the texts below are its usual shapes fed to head_names (scratchpad/p82/probe13.py), not captured runs. (s) `pytest -rA tests/test_a.py tests/test_new.py`: at HEAD the new path is missing, which gives 'ERROR: file or directory not found' and 'no tests ran'. head_names returns ([], None), so every failing case in the EXISTING test_a.py is credited. (t) `-x`, 'stopping after 1 failures': it returns only the one node reached. (u) A collection error interrupts the session: it returns ['tests/test_a.py'] with problem None.",
+        "resolution": "fixed in P82.6-fye (9bfb0d7c): fix task P82.6-fye (review-P82d.json)",
+        "fixTask": "P82.6-fye",
+        "commit": "9bfb0d7c"
+      },
+      {
+        "id": "P82-R10",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:1124 (present), 1201 (new_files), 689-692 (head_names' new-file branch), 842-857 (_lay_over, deletion branch)",
+        "issue": "A renamed test file reads as new, so every case it moved is credited. (p) HEAD holds tests/test_mine.py. The task moves it to tests/test_ren.py, edits an existing case to fail and declares both paths. The command runs tests/test_ren.py: exit 0 proved. The no-rename control (p0) gives exit 3. The cause: `present` drops the deleted old path, so new_files is True, and HEAD's run of the missing file ('can't open file', no tally) names nothing. The same filter keeps a deleted declared test out of _lay_over, whose removal branch then never runs for tests. The task's run therefore still holds HEAD's copy of a file the working tree deleted. P82.4 also gave exit 0 for (p), so this predates P82.5, but it now sits in the new_files and head_names logic this phase wrote.",
+        "resolution": "fixed in P82.6-fye (9bfb0d7c): fix task P82.6-fye (review-P82d.json)",
+        "fixTask": "P82.6-fye",
+        "commit": "9bfb0d7c"
+      },
+      {
+        "id": "P82-R11",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:725-726 (`h not in runs`)",
+        "issue": "P82.5 introduced a false proved through a duplicated label. (v) An existing case 'the next value is read' is edited to fail, and the task adds a new PASSING case with the same label. The task's run prints HEAD's label again through the new PASS line. `h not in runs` then skips it, and the existing case's failing line 'the next value is read (saw 1)' reads as the task's own: exit 0 proved. P82.4 gives exit 3. From the output alone this shape cannot be told apart from sr92's allow shape, a new 'the value (as read)' beside an existing 'the value'.",
+        "resolution": "fixed in P82.6-fye (9bfb0d7c): fix task P82.6-fye (review-P82d.json)",
+        "fixTask": "P82.6-fye",
+        "commit": "9bfb0d7c"
+      },
+      {
+        "id": "P82-R12",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:289 (_UNITTEST_CASE), 302 (_UNITTEST_VERBOSE), 658-660 (_unittest_names)",
+        "issue": "unittest cases are named by the bare method name, and the names are de-duplicated. A suite whose two classes both hold test_x therefore names fewer cases than it collected, even under -v. (q) A genuinely new test_new, with the command already carrying -v: exit 3 could-not-prove. The reason tells the executor to 'run the command so that every case is named (... unittest -v)', which it already did. P82.4 proved (q). This is a false could-not-prove with a wrong remedy.",
+        "resolution": "fixed in P82.6-fye (9bfb0d7c): fix task P82.6-fye (review-P82d.json)",
+        "fixTask": "P82.6-fye",
+        "commit": "9bfb0d7c"
+      },
+      {
+        "id": "P82-R13",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:1044-1055 (_put_back_head), 589-592 (_head_text), 586 (_git strips and decodes)",
+        "issue": "The put-back is not byte-faithful. _head_text returns _git's output, which merges stderr, decodes as UTF-8 with 'replace' and calls .strip(). probe13 (w) shows the trailing newline is lost (66386 vs 66387 characters for an unchanged file). A binary or non-UTF-8 fixture under a test directory is rewritten corrupted, and a CRLF file is rewritten with \\r\\r\\n on Windows. For most Python sources the names HEAD prints stay the same. But a HEAD case that compares against such a fixture can change outcome, and the HEAD run is then not HEAD.",
+        "resolution": "fixed in P82.6-fye (9bfb0d7c): fix task P82.6-fye (review-P82d.json)",
+        "fixTask": "P82.6-fye",
+        "commit": "9bfb0d7c"
+      },
+      {
+        "id": "P82-R14",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:1049 (_put_back_head -> _head_text), 1201 (new_files -> _head_text), 232-239 (the budget comment)",
+        "issue": "The comment says the ONE deadline 'covers every git call that builds or reads the throwaway'. The put-back's `git show HEAD:<rel>` calls, one per declared test file, run through _git's default timeout of 120 s. So do the new_files calls that red_verdict's ctx makes after the runs. None of these is bounded by what is left of the deadline, and none is in TEARDOWN_MARGIN. In practice they take milliseconds, but the stated bound does not hold.",
+        "resolution": "fixed in P82.6-fye (9bfb0d7c): fix task P82.6-fye (review-P82d.json)",
+        "fixTask": "P82.6-fye",
+        "commit": "9bfb0d7c"
+      },
+      {
+        "id": "P82-R15",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:632-637, 709-718; PLUGIN-BUILD-GUIDE.md:3664-3674; CHANGELOG.md:301-327",
+        "issue": "The code and documents claim more than the diff does. The commit says 'Remaining limits are false could-not-prove only, the loud direction. They are stated in _held_by_head's docstring.' That docstring and the section comment state no limit at all. The guide says the measurement 'has none of them to get wrong'. Findings 1 to 4 are false proveds the measurement does produce.",
+        "resolution": "fixed in P82.6-fye (9bfb0d7c): fix task P82.6-fye (review-P82d.json)",
+        "fixTask": "P82.6-fye",
+        "commit": "9bfb0d7c"
+      },
+      {
+        "id": "P82-R16",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:1217-1224 (_at_head), 1380-1383 (new_files/deleted), 1231-1237 (_put_back_head)",
+        "issue": "P82.6 introduced a false proved for any declared test file whose path is not plain ASCII. _at_head reads `git ls-tree --name-only HEAD -- <rels>` and intersects its lines with the declared paths. git quotes such a path under the default core.quotePath: it prints \"tests/test_caf\\303\\251.py\", not tests/test_café.py (checked directly with git). So `present` is empty, new_files reads True, head_names returns [] and every failing case is credited. Probe scratchpad/p82/probe15.py (x), real tool: HEAD's tests/test_café.py is already red on 'the old broken case', and the task adds only a PASSING case. Result: exit 0 proved, crediting 'the old broken case (saw 1)'. The ASCII control (x0) gives exit 3. On an export of P82.5 (58b11909), (x) gives exit 3, so this is a regression. The same `present` set makes _put_back_head delete HEAD's copy of the file instead of restoring it, and makes `deleted` miss a rename of such a file.",
+        "resolution": "fixed in P82.7-fye (02f351f5): fix task P82.7-fye (review-P82e.json)",
+        "fixTask": "P82.7-fye",
+        "commit": "02f351f5"
+      },
+      {
+        "id": "P82-R17",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:853-870 (the gone check), 886-891 (_forced_label result)",
+        "issue": "P82.6 introduced a false proved by the phase's own definition, where an existing case edited to fail is not the task's own: a rename that appends ' (...)'. The gone check accepts HEAD's label as printed again when any reading of a task FAIL line equals it. Once the fix run resolves that line to its one label, the gone check is not asked again. Probe15 (y), real tool: HEAD has PASS 'the value'. The task renames it to 'the value (as read)' and edits it to fail. The task line FAIL 'the value (as read) (saw 1)' carries the reading 'the value', so nothing counts as gone. The fix run prints PASS 'the value (as read)', and _forced_label returns that label, which HEAD never printed. Result: exit 0 proved. The control (y0), renamed to 'the value, as read', gives exit 3 with 'a renamed or removed case'. P82.5 gave exit 3 for (y). The guide says 'a task that renames or removes any case ... is refused whole', and this diff does not hold that.",
+        "resolution": "fixed in P82.7-fye (02f351f5): fix task P82.7-fye (review-P82e.json)",
+        "fixTask": "P82.7-fye",
+        "commit": "02f351f5"
+      },
+      {
+        "id": "P82-R18",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:306-308 (_STOP_FIRST_FLAGS), 695-706 (_stops_early)",
+        "issue": "Round-4 finding 2 is closed only for whole-token spellings. _stops_early matches a flag only when the whole argv token equals it (or is `--maxfail=`...). unittest prints no marker when it stops at a failure, and argparse accepts clustered short flags and unique prefixes of long ones. Probe17, real tool, using the (r) shape: HEAD is red on test_a_p and test_b_f, and the task fixes only test_a_p. `-vf`, `-fv`, `-v -cf` and `-v --failf` each give exit 0 proved, crediting the pre-existing test_b_f. The control `-v -f` gives exit 3. The same hole is open, by reading, whenever the flag sits inside a wrapper the argv does not show: `sh -c '...'`, a make target, or a tox or nox session.",
+        "resolution": "fixed in P82.7-fye (02f351f5): fix task P82.7-fye (review-P82e.json)",
+        "fixTask": "P82.7-fye",
+        "commit": "02f351f5"
+      },
+      {
+        "id": "P82-R19",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:766-804 (_matching, _forced_label), 873-891 (the per-failure loop), 1139 (called in red_verdict, after every run)",
+        "issue": "The pairing's CPU cost is unbounded and falls outside the one deadline. It runs after all the runs, and nothing checks the clock during it. For every ambiguous failing line, _forced_label rebuilds the label sets and runs one Kuhn matching per candidate right. Each place() call re-sorts its candidates, and identical labels drive the augmenting path as deep as the line count. The loop repeats this for every failing line, including ones with an identical label. Measured with the functions (probe14): N identical ambiguous labels take 0.07 s at 20, 1.53 s at 40 and 47 s at 80, about N^5. Distinct labels grow quadratically: 3000 take 18.9 s. Real tool with --timeout 5 (probe15 and probe16), where a loop prints one label per item and the task edits the loop's assertion: 60 items took 10.6 s and 100 items took 136 s. Extrapolated, about 130 items pass HOST_BASH_LIMIT (600 s). The host then kills the helper before its finally, so the throwaway is stranded. The recursion depth also equals the chain length, so at about 1000 the result is a RecursionError. That surfaces as an uncaught traceback, exit 1, which is E_NOT_RED's code ('the test PASSED').",
+        "resolution": "fixed in P82.7-fye (02f351f5): fix task P82.7-fye (review-P82e.json)",
+        "fixTask": "P82.7-fye",
+        "commit": "02f351f5"
+      },
+      {
+        "id": "P82-R20",
+        "severity": "low",
+        "file": "CHANGELOG.md:319-321; PLUGIN-BUILD-GUIDE.md:3686-3698; plugins/audit/scripts/governance/stamp-verification.py:228-234 (budget comment), 600-603 and 627 (introduced -> _head_text, 120 s default), 829-838 (compare_runs WHAT THIS CANNOT SEE)",
+        "issue": "The record claims more than the diff holds. (a) The CHANGELOG, the guide and compare_runs' docstring say every remaining limit is in the could-not-prove direction, and findings 1 to 3 are false proveds. (b) The guide still says the measurement 'has none of them to get wrong', which round-4 finding 8 asked to remove. (c) The CHANGELOG and guide say 'every git call runs under the one deadline'. But introduced() calls _head_text, which uses _git's default 120 s timeout, from red_verdict after the runs. The commit itself claimed this only for the put-back. (d) The budget comment still speaks of 'both runs' and 'two runs cannot both time out', while red now makes up to four. The claim still holds, since each later run needs the earlier one finished, but the prose is stale.",
+        "resolution": "fixed in P82.7-fye (02f351f5): fix task P82.7-fye (review-P82e.json)",
+        "fixTask": "P82.7-fye",
+        "commit": "02f351f5"
+      },
+      {
+        "id": "P82-R21",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_stamp_verification.py:993-997 (sr45, inherited)",
+        "issue": "sr45 is an inherited test in this task's gate, and it stayed green after the phase deleted the rule its label names. The label says execute-task.md states 'the task's own is a case absent from HEAD's test file'. This phase replaced that sentence with 'a case that HEAD's own test files, run with the same command in the same throwaway, did not name'. The assertion only checks that one old phrasing is absent and that two generic substrings are present, so it cannot fail when the stated rule changes.",
+        "resolution": "fixed in P82.7-fye (02f351f5): fix task P82.7-fye (review-P82e.json)",
+        "fixTask": "P82.7-fye",
+        "commit": "02f351f5"
+      },
+      {
+        "id": "P82-R22",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:1119-1142 (changed_reds, house branch)",
+        "issue": "changed_reds is not one to one. That lets through the false proved the docs say it refuses: a red that was already at HEAD, credited by relabelling it. For each failing HEAD line it asks only whether ANY task line that may carry the label still fails, so one failing carrier covers any number of HEAD reds. Probe scratchpad/p82/probe18.py, real tool, P82.7 tree. (z): HEAD has two pre-existing reds, both 'the old broken case'. The task relabels one to 'the renamed case' with its assertion unchanged, keeps the other, and reuses the old label for a new PASSING case. Result: exit 0 proved, crediting 'the renamed case (saw 1)', and no red comes from the task's own edit. (z1): HEAD has two reds, 'the value' and 'the value (as read)'. The first is relabelled and 'the value' goes to a new PASS. The task's still-failing 'the value (as read) (saw 1)' carries the reading 'the value', so it counts as a carrier. Result: exit 0 proved. The documented single-red shape (z0) gives exit 3, which is sr117. A pre-P82.7 export (scratchpad/p82/exp6) also gives 0 for (z) and (z1), so this is an incomplete close, not a regression.",
+        "resolution": "fixed in P82.8-fye (7a00a4c8): fix task P82.8-fye (review-P82f.json)",
+        "fixTask": "P82.8-fye",
+        "commit": "7a00a4c8"
+      },
+      {
+        "id": "P82-R23",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:737-765 (_direct_invocation), 767-782 (_stops_early)",
+        "issue": "A stop-first option set in the test file itself is not seen, and nothing refuses it. _direct_invocation counts `python <file>.py` as a direct invocation 'whose every option this reads'. But the file's `unittest.main(failfast=True)` is an option the argv never shows, and unittest prints no stop marker. Probe18 (ff), real tool, command `python tests/test_mine.py -v`: HEAD's file has unittest.main(failfast=True) and fails test_a_p and test_b_f. HEAD's run stops after test_a_p and prints 'Ran 1 test', so the named-versus-collected check passes. The task only drops failfast=True. Result: exit 0 proved, crediting test_b_f, a red already at HEAD. The control (ff0), with no failfast on either side, gives exit 3. changed_reds cannot see this, because test_a_p stays red. It is the same class as round-5 finding 3: the stop is decided somewhere the tool does not read. Commit claim 6 ('the command's argv, never the source') is where it went unseen. On the env-var question: child_env passes PYTEST_ADDOPTS through, and both runs get the same environment. pytest prints its stop line for -x, --maxfail and --sw from any source (argv, addopts, env), and _STOPPED_EARLY reads that line, so an env-borne pytest stop is refused through the marker. That is from reading the code: pytest is not installed here, so it was not run. unittest reads no environment variable, so for unittest the file is the only unseen source.",
+        "resolution": "fixed in P82.8-fye (7a00a4c8): fix task P82.8-fye (review-P82f.json)",
+        "fixTask": "P82.8-fye",
+        "commit": "7a00a4c8"
+      },
+      {
+        "id": "P82-R24",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:847-856 (_pairing_graph, budget checked after it at 975 and 1002), 1119-1142 (changed_reds), 1152-1175 (own_failures list membership)",
+        "issue": "The bound is not complete. (a) The edge budget is compared only after the whole adjacency has been built. Measured with scratchpad/p82/probe19.py: 10000 identical labels take 2.1 s and 806 MB before the refusal, and memory grows with the square of the line count. (b) changed_reds does a quadratic scan with no deadline check, and it runs after compare_runs has returned. 6000 distinct reds plus one new red take 20.4 s in changed_reds alone (3000 take 5.1 s). Extrapolated, about 30000 lines would pass HOST_BASH_LIMIT. The boundary itself is right: 632 identical lines (399424 edges) settle, and 633 (400689) are refused with the reason.",
+        "resolution": "fixed in P82.8-fye (7a00a4c8): fix task P82.8-fye (review-P82f.json)",
+        "fixTask": "P82.8-fye",
+        "commit": "7a00a4c8"
+      },
+      {
+        "id": "P82-R25",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md:3681, 3697-3713; CHANGELOG.md:327-332; plugins/audit/scripts/governance/stamp-verification.py:1027-1049 (compare_runs docstring), 737-741 (_direct_invocation docstring)",
+        "issue": "The record claims more than the code holds. The guide, the CHANGELOG and the docstring name one credited variant and say 'every other limit refuses', but findings 1 and 2 are two more credited shapes. The guide and the docstring say a comparison the pairing cannot finish is 'never a hang', but finding 3 is work outside the deadline and the budget. _direct_invocation's docstring says every option of `python <file>.py` 'is in the argv this reads', which finding 2 contradicts.",
+        "resolution": "fixed in P82.8-fye (7a00a4c8): fix task P82.8-fye (review-P82f.json)",
+        "fixTask": "P82.8-fye",
+        "commit": "7a00a4c8"
+      },
+      {
+        "id": "P82-R26",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:799-805 (_uncovered, house branch); plugins/audit/tests/_harness.py:560-583, 606-626 (_render and run: the total is len(cases), the check() calls that RAN)",
+        "issue": "The house half of the new coverage rule proves nothing. P82.8 says a red HEAD run is credited only on a count showing it covered every case, and names 'a house tally whose total equals the cases named' as that count. But the house harness keeps no list of cases. Its total is the number of check() calls that actually ran, and each of those prints exactly one PASS/FAIL line, so total == len(names) holds for every house run by construction. The only house runs this refuses are ones that print an escape line (a body or stage raise, or DUPLICATE CASE ID): those count in the total but are left out of the names. That is why probe17's e-body and e-stage are refused, and it is incidental. A suite that stops quietly (a `return` after a red) prints a tally that matches exactly. Probe scratchpad/p82/probe20.py (A), real tool, with the real harness's case_id/label_faults/_render/run copied out of _harness.py by AST, command `python tests/test_mine.py --selftest`. HEAD's body returns after its first red. The task only flips STOP_AT_FIRST_RED to False. Result: exit 0 proved, crediting 'the legacy field is kept (saw 1)' as 'the task's own'. That case is already in HEAD's file and never passes (mine.v == 99). HEAD's run tail is ['FAIL the value is two (saw 1)', '', 'SELFTEST FAILED: 0/1 cases passed']. The control (A0), no stop on either side, gives exit 3. (A1), where the gate is itself a case, gives 3, but through changed_reds rather than this rule. sr122 locks the unsound direction in: 'house tally covers every name' is its expected-None half. From reading only (pytest is not installed here): pytest prints `collected N items / M skipped` when a module is skipped at collection. _PYTEST_COLLECTED ignores the `/ M skipped` part, and that module's cases are not in N, so a collection-level skip at HEAD also passes the pytest arm.",
+        "resolution": "fixed in P82.9-fye (0c30d9e7): fix task P82.9-fye (review-P82g.json)",
+        "fixTask": "P82.9-fye",
+        "commit": "0c30d9e7"
+      },
+      {
+        "id": "P82-R27",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:1567-1583 (_put_back_head puts back only the declared test files), 1600-1605 (_head_run), 1746-1748 (HEAD's run made in the same throwaway after the task's)",
+        "issue": "A task can shape HEAD's run, and so the count, without touching HEAD's run's output directly. HEAD's run happens in the same throwaway, after the task's run. Only the declared test files are put back, so anything the task's run wrote there reaches HEAD's run: an undeclared helper, an untracked conftest.py, a cache. Probe20 (C), real tool: HEAD's file imports an undeclared committed helper tests/hh.py and prints PASS 'the kept case' and FAIL 'the legacy field is kept' (a red already at HEAD). The task's file is HEAD's plus an atexit hook that appends a wrapper to tests/hh.py dropping labels that start with 'the legacy'. Result: exit 0 proved, crediting 'the legacy field is kept (saw 1)'. HEAD's run tail is ['PASS the kept case', '', 'ALL PASS: 1/1 cases passed']. The control (C0), a plain new case, proves as it should. From reading only: two channels leave through the same gap. One is pytest `--lf` reading the .pytest_cache the task's run left. The other is outside the tree: child_env passes HOME through, so a .pth file the task's run writes to user site-packages runs inside HEAD's interpreter. The throwaway is supposed to hold HEAD's own test files, and the guide says 'HEAD's copies are put back byte for byte', but the rest of the tree is not HEAD's.",
+        "resolution": "fixed in P82.9-fye (0c30d9e7): fix task P82.9-fye (review-P82g.json)",
+        "fixTask": "P82.9-fye",
+        "commit": "0c30d9e7"
+      },
+      {
+        "id": "P82-R28",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:864-875 (_label_forms / _labels_of), with the sets built at 1122, 1132, 1145 and 1177-1178 and read by _edge_bound at 882-893",
+        "issue": "The bound is still not complete. Every FAIL line is expanded into every prefix that ends before a ` (`, as whole strings, before any budget or deadline check. The memory is quadratic in one line's length. Probe scratchpad/p82/probe21.py (functions of the tool): one FAIL line whose detail is repr() of a list of int pairs (every ', (' is a reading). 1000 pairs: 42 MB. 5000 pairs: 0.3 s and 576 MB. 10000 pairs (a 137784-char line): compare_runs 1.2 s plus changed_reds 0.4 s, maxrss 2288 MB. Measured once each. A detail that is the repr of a list of tuples is an ordinary house FAIL detail. The guide and the compare_runs docstring say a comparison it cannot finish is could-not-prove, 'never an exception or a hang'. At a few times this size it is a MemoryError, or the host swaps.",
+        "resolution": "fixed in P82.9-fye (0c30d9e7): fix task P82.9-fye (review-P82g.json)",
+        "fixTask": "P82.9-fye",
+        "commit": "0c30d9e7"
+      },
+      {
+        "id": "P82-R29",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:1210 (changed_reds names matched[0] == -1), 1484-1488 (the basis)",
+        "issue": "The basis can name the wrong case as changed. When several of HEAD's reds compete for fewer failing task lines, the maximum matching leaves out an arbitrary one, and the basis says that one 'passes in the task's run'. Real tool, probe18 (z1): the verdict is correctly 3, but the basis names 'the value (as read) (saw 1)'. That line still prints FAIL in the task's run; the case that was relabelled is 'the value'. This is a false sentence in the output, which CLAUDE.md's basis rule forbids.",
+        "resolution": "fixed in P82.9-fye (0c30d9e7): fix task P82.9-fye (review-P82g.json)",
+        "fixTask": "P82.9-fye",
+        "commit": "0c30d9e7"
+      },
+      {
+        "id": "P82-R30",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_stamp_verification.py:2019-2024 (sr119-sr121), 2052-2058 (sr122)",
+        "issue": "The new cases are weaker than they read. sr119, sr120 and sr121 assert only exit == E_CANNOT_PROVE. A refusal for any other reason keeps them green, so if the one-to-one pairing regressed while another refusal still fired, nothing would go red. sr117 asserts its reason ('its test was changed'); these do not. sr122's house half asserts the direction finding 1 shows to be unsound.",
+        "resolution": "fixed in P82.9-fye (0c30d9e7): fix task P82.9-fye (review-P82g.json)",
+        "fixTask": "P82.9-fye",
+        "commit": "0c30d9e7"
+      },
+      {
+        "id": "P82-R31",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md (the `_uncovered()` sentences and 'What the measurement still cannot see'); CHANGELOG.md (the stamp-verification Fixed entry); plugins/audit/agents/audit-executor.md:118-121; plugins/audit/reference/execute-task.md:124-127; plugins/audit/scripts/governance/stamp-verification.py",
+        "issue": "The record claims more than the code holds. All six places say the house tally is 'a count of every case it had' and positive evidence that a red HEAD run covered every case, and the guide and docstring say 'Every other limit refuses'. Findings 1 and 2 are two more credited shapes. The two agent documents are the ones executors act on.",
+        "resolution": "fixed in P82.9-fye (0c30d9e7): fix task P82.9-fye (review-P82g.json)",
+        "fixTask": "P82.9-fye",
+        "commit": "0c30d9e7"
+      },
+      {
+        "id": "P82-R32",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:1180-1182 (step 1: _run_in(path, cmd, _left(deadline), env), with the caller's HOME, TMPDIR and user site), 1057-1065 (_fix_run: a fresh home only, with no PYTHONNOUSERSITE and no TMPDIR of its own), 1192 (the --introduces second run, the same e",
+        "issue": "Only the baseline is isolated, so a failure in step 1 can be HEAD's own case failing because of the environment, and the tool then credits it. Rule 4, 'with step 2 green every failure in step 1 is the task's own', holds only when steps 1 and 2 differ in nothing but the declared test files. Here they also differ in environment: step 1 runs under the caller's HOME, XDG roots, TMPDIR and user site, and step 2 under fresh ones. A HEAD case that fails only on the operator's machine is therefore red in step 1, green in the baseline, and green in the fix run, which also gets a fresh home. Probe scratchpad/p82/probe22.py (H), real tool: HEAD's suite has one case that checks ~/.mine-stray is absent. The task adds a case that asserts True. The tool was run with HOME pointing at a directory holding that file. Result: exit 0 proved, basis 'the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - the home holds no stray config (saw 1)'. The head run exited 0 (ALL PASS 1/1) and so did the fix run. Control (H0), same repo with a clean HOME: exit 1, green. (T), the same shape through TMPDIR: could-not-prove only because the fix run ALSO reads the caller's TMPDIR, so it failed too. That is safe by accident, and it contradicts commit 0c30d9e7's claim 3, 'the fix run, which is isolated the same way'. The CHANGELOG and the guide state it correctly: a fresh home only. There is a side effect as well: sr130 and sr132 have step 1 write their marker into the caller's real TMPDIR and HOME (~/.skip-legacy-<pid>) and then remove it.",
+        "resolution": "fixed in P82.10-fye (7fb5c9db): fix task P82.10-fye (review-P82h.json)",
+        "fixTask": "P82.10-fye",
+        "commit": "7fb5c9db"
+      },
+      {
+        "id": "P82-R33",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:662-663 (baseline_problem returns None when new_files), 1174 and 1197 (no HEAD run is made), 909-910 and 924-928 (the basis says 'HEAD's own tests green on HEAD's code'); plugins/audit/tests/test_stamp_verification.py:1619-1626 (sr104 pins 'no t",
+        "issue": "When every declared test file is new at HEAD, the baseline is skipped whatever the command selects, and the basis still claims a green HEAD run. Rule 2 is then never asked, so rule 4 does not hold. Probe22 (N), real tool: the task declares src/mine.py and a NEW tests/test_new.py, whose one test is assertTrue(True). HEAD holds tests/test_old.py, which is red at HEAD and which the implementation fixes. The command is `python -m unittest discover -s tests -v`. Result: exit 0 proved, basis '...the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - test_value_is_two (FAIL)'. run.head is null. The credited case is HEAD's; the task's test was never red. (N1), the same run with --case test_new, is could-not-prove, so --case protects only an executor who passes it, and it is optional. The clause 'HEAD's own tests green on HEAD's code' is also printed on EVERY new-file proof (the sr94 shape), where no HEAD run was made. That is a false sentence under CLAUDE.md's basis rule. This is the most common TDD shape (a new test file) combined with a common command shape (a directory, discovery, bare pytest).",
+        "resolution": "fixed in P82.10-fye (7fb5c9db): fix task P82.10-fye (review-P82h.json)",
+        "fixTask": "P82.10-fye",
+        "commit": "7fb5c9db"
+      },
+      {
+        "id": "P82-R34",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md (step 2: 'so nothing the task's run wrote or rewrote survives'; step 4: 'every failure of step 1 comes from the task's change to the tests'); CHANGELOG.md (the same sentence); plugins/audit/scripts/governance/stamp-verification.py:634-642",
+        "issue": "The record states rule 4 as unconditional, and nothing names what the reset does not cover. P82.9 removed the round-7 limits paragraph and did not replace it. Even after findings 1 and 2 are fixed, a HEAD case can still fail in step 1 and pass in step 2 through these channels (shapes only, none built): (a) state the task's run writes outside the throwaway that checkout -f and clean -ffdx cannot reach. That means the git directory the throwaway shares (config and refs, since a worktree shares .git/config), a hard-coded absolute path such as /tmp/x or /var/tmp, and the shared repository reached by an absolute path. (b) Network or service state that changes between the runs. (c) A flaky or time-dependent HEAD case, which fails in step 1 and passes in step 2 and in the fix run. (a) exists only because the task's run happens BEFORE the baseline.",
+        "resolution": "fixed in P82.10-fye (7fb5c9db): fix task P82.10-fye (review-P82h.json)",
+        "fixTask": "P82.10-fye",
+        "commit": "7fb5c9db"
+      },
+      {
+        "id": "P82-R35",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:643-647 (_label_forms), 697-701 (_is_named), 708-711 (own_failures calls it twice per failure per --case name)",
+        "issue": "Round-7 finding 3 is narrowed but still open. Every prefix before a ` (` is still built as a whole string, so memory is quadratic in one FAIL line's length. It is now reached only when --case is given. Measured once, with functions of the tool: a FAIL label carrying repr() of 5000 int pairs (67801 chars) took maxrss 218 MB for a single own_failures() call with one --case; 2000 pairs took 52 MB.",
+        "resolution": "fixed in P82.10-fye (7fb5c9db): fix task P82.10-fye (review-P82h.json)",
+        "fixTask": "P82.10-fye",
+        "commit": "7fb5c9db"
+      },
+      {
+        "id": "P82-R36",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:650-671 (baseline_skip), 1189-1190 (run_red decides the skip before the throwaway exists); PLUGIN-BUILD-GUIDE.md:3676-3678; CHANGELOG.md:310; plugins/audit/agents/audit-executor.md:115; plugins/audit/reference/execute-task.md:123",
+        "issue": "baseline_skip decides from argv spelling, and every argument that is not a path in the WORKING TREE is ignored. So a command can name a new test file and still reach HEAD's red tests while HEAD's run is skipped. The basis then says 'every path the command names (tests/test_new.py) is a test file new at HEAD, so it reaches nothing of HEAD's own'. Evidence from the real tool, scratchpad/p82/probe23.py and probe24.py (outputs in r10_probe23.txt and r10_probe24.txt). In each probe HEAD holds tests/test_old.py, which is red at HEAD and fixed by src/mine.py, and the new tests/test_new.py only asserts True. All of these gave exit 0 proved, credited test_value_is_two (HEAD's case) and made no head run: (E1) `python -m unittest -v tests/test_new.py tests.test_old`, a second argument that is a dotted module name. (E3) `sh -c '<python -m unittest discover -s tests -v>' tests/test_new.py`, a wrapper whose script string is not a path. (E6) `python -m unittest -v tests/test_new.py tests/test_old.py` with test_old.py deleted in the working tree but not declared: the existence check reads the working tree while the run happens in HEAD's tree, which still has the file. The same skip is returned at unit level (the real baseline_skip) for a pytest node id into a HEAD file (`tests/test_old.py::Old::test_value_is_two`: the `::` is stripped only for new files, so os.path.exists fails), `--pyargs tests.test_old`, an unexpanded glob `tests/test_ol*.py`, `unittest tests.test_old.Old`, a wrapper program in cmd[0] (`./run-tests.sh tests/test_new.py`, which is never examined) and a runner pattern (`jest tests/test_new.py old`). By shape, runner configuration also reaches past argv: pytest `addopts` carrying a path or `--doctest-modules src` in pytest.ini/setup.cfg/tox.ini/pyproject, PYTEST_ADDOPTS kept in the environment, conftest collection hooks, npm/tox/make scripts. `testpaths` does NOT, because pytest ignores it once a path is given. Abuse: yes. A trivial new test file plus a second argument naming a pre-existing red credits that red as the task's proof. --case is optional, and naming the HEAD case's own id passes it. (E1k) with --case test_new refuses, correctly. The node-id shape also skips the baseline when the old file IS declared and edited, which is the case the baseline exists for (an 'edit' of an already-red case). The docs say 'names nothing but test files new at HEAD', which the code does not enforce.",
+        "resolution": "fixed in P82.11-fye (492339ce): fix task P82.11-fye (review-P82i.json)",
+        "fixTask": "P82.11-fye",
+        "commit": "492339ce"
+      },
+      {
+        "id": "P82-R37",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:670-671 (the skip's basis), 943-952 (own_failures credits every asserting failure when --case is absent); PLUGIN-BUILD-GUIDE.md:3688-3693 (What this cannot see)",
+        "issue": "A new test file that imports or subclasses HEAD's test cases carries them into its own run. No argv check, and not even the stub baseline of finding 1, can see that: the reach lives in the task's own file. Real tool, probe23: (E2) test_new.py does `from test_old import Old`, and (E2s) it subclasses test_old.Old. The command in both is `python -m unittest -v tests/test_new.py`. Both gave exit 0 proved, credited test_value_is_two (HEAD's red case, pre-existing) and made no head run. The basis claims 'reaches nothing of HEAD's own', and the guide's list of limits does not name this channel.",
+        "resolution": "fixed in P82.11-fye (492339ce): fix task P82.11-fye (review-P82i.json)",
+        "fixTask": "P82.11-fye",
+        "commit": "492339ce"
+      },
+      {
+        "id": "P82-R38",
+        "severity": "med",
+        "file": "plugins/audit/tests/test_stamp_verification.py:1910-1935 (sr139)",
+        "issue": "sr139 runs a child that does `import sys, resource`. The `resource` module does not exist on Windows, and .github/workflows/ci.yml:22 runs the whole sweep on windows-latest, this suite included. The stage has no platform guard. On that leg the child dies with ModuleNotFoundError, `parts` is not ['1','0',rss], and sr139 fails, so the CI selftests job goes red on Windows. This is from reading; I did not run a Windows leg. The only other platform branch in the file is line 685.",
+        "resolution": "fixed in P82.11-fye (492339ce): fix task P82.11-fye (review-P82i.json)",
+        "fixTask": "P82.11-fye",
+        "commit": "492339ce"
+      },
+      {
+        "id": "P82-R39",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_stamp_verification.py:1861-1879 (sr134, sr135), 1649-1664 (sr140)",
+        "issue": "sr134 and sr135 assert only `code != M.E_PROVED`, so a helper that crashed, refused its usage or timed out also passes. The correct outcome is deterministic: the task's run is green under the isolated home/TMPDIR, exit 1 (E_NOT_RED), and today's selftest prints exit=1 for both. sr140's table has no row with a non-path argument (a dotted name, a node id into an old file, a `-c` script string, a pattern), which is why finding 1's shapes pass the suite.",
+        "resolution": "fixed in P82.11-fye (492339ce): fix task P82.11-fye (review-P82i.json)",
+        "fixTask": "P82.11-fye",
+        "commit": "492339ce"
+      },
+      {
+        "id": "P82-R40",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:236-248 (the deadline budget comment and TEARDOWN_MARGIN), 1196-1204 (the task run is attempted after a failed baseline)",
+        "issue": "P82.10 puts _isolate (git checkout -f, then git clean -ffdx) in front of every run, and after a baseline whose problem is a timeout the task run is still attempted. Its two git calls then run past the deadline, at timeout=max(1, _left(deadline)) = 1 s each, and _lay_over copies files after that. None of this is in TEARDOWN_MARGIN, and MAX_TIMEOUT = HOST_BASH_LIMIT - TEARDOWN_MARGIN leaves no slack. So with --timeout at MAX_TIMEOUT and a hanging baseline, the worst case is about 2 s past the host limit before the removal's git calls finish. The comment 'each later run is made only when the one before it finished' no longer describes the code.",
+        "resolution": "fixed in P82.11-fye (492339ce): fix task P82.11-fye (review-P82i.json)",
+        "fixTask": "P82.11-fye",
+        "commit": "492339ce"
+      },
+      {
+        "id": "P82-R41",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:753-775 (located), 791-804 (own_failures), 670-692 (baseline_problem), 1280-1296 (the baseline's stubs); PLUGIN-BUILD-GUIDE.md:3672-3690; CHANGELOG.md:309-318; plugins/audit/agents/audit-executor.md:114-120; plugins/audit/reference/execute-task.",
+        "issue": "The empty stub removes more than the task's cases: it also removes everything a new file REACHES. The location rule only excludes files that are not declared. So a pre-existing red case in a DECLARED test file that HEAD already has is credited when a new file is the only thing that reaches it. The baseline never runs it, and located() plus _defines() accept it because that file does define it. Real tool, scratchpad/p82/probe25.py, output in r11_probe25.txt. In each probe HEAD's tests/test_old.py holds Old.test_value_is_two, red at HEAD and fixed by src/mine.py, and the command is `python -m unittest -v tests/test_new.py`. (Y1) test_new.py does `from tests.test_old import Old` and declares tests/test_old.py UNCHANGED: exit 0 proved, 'test_value_is_two (FAIL)', basis 'HEAD's own tests green on HEAD's code'. (Y2) test_new.py's load_tests adds tests.test_old: exit 0 proved. Control (Y1c), the same without declaring test_old.py: exit 3. This happens without an adversary, because unittest's loader runs every TestCase class in a module's namespace, so importing a TestCase base from a sibling test module the task also edits is an ordinary refactor. There is a further channel, by reading only (pytest is not installed here): pytest honours an EMPTY pytest.ini as the config file. A declared new tests/pytest.ini stub therefore runs the baseline with default python_files/testpaths/addopts instead of HEAD's pyproject or setup.cfg config, so HEAD's reached red is not reached at baseline. All four documents say 'A case a new file imports or inherits from HEAD's tests is not credited', and the guide says the baseline 'reaches too, minus the task's cases'. Neither holds for a declared existing file.",
+        "resolution": "fixed in P82.12-fye (95987e83): fix task P82.12-fye (review-P82j.json)",
+        "fixTask": "P82.12-fye",
+        "commit": "95987e83"
+      },
+      {
+        "id": "P82-R42",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:745-751 (_defines), 771-775; plugins/audit/tests/test_stamp_verification.py sr154 (fixture `class New(Old): pass`); PLUGIN-BUILD-GUIDE.md:3700-3703",
+        "issue": "_defines() asks whether the located FILE contains any line `def <name>`, not whether the class the runner names defines it. (Y3, real tool) test_new.py holds `class New(test_old.Old)`, which inherits HEAD's red test_value_is_two unchanged, and an unrelated `class Other(TestCase)` with a passing `def test_value_is_two`. Result: exit 0 proved, crediting HEAD's inherited red. Control (Y3c), without Other: exit 3. The regex also matches a `def` line inside a string or docstring. The guide's residual names only 'defines a case of the same name as the HEAD case it inherits and calls the inherited one from it', an override. This shape defines no override, so it is not the documented residual.",
+        "resolution": "fixed in P82.12-fye (95987e83): fix task P82.12-fye (review-P82j.json)",
+        "fixTask": "P82.12-fye",
+        "commit": "95987e83"
+      },
+      {
+        "id": "P82-R43",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:686-688 (the no-tests-ran branch), 424-440 (_unittest_tally: collected=int(ran[-1]) but failed sums every FAILED line), 1027-1033 (the proved basis's 'N of M')",
+        "issue": "The no-tests-ran branch accepts `code in (0,5)` plus the no-tests-ran text plus `not tally['collected']`, and never looks at tally['failed']. unittest's collected is the LAST 'Ran N' while failed sums every FAILED line, so a baseline that printed a red run and then an empty one reads as green. (Z1, real tool) The task declares tests/test_old.py (red at HEAD) and a new tests/test_new.py with its own failing case. The command is `sh -c '<py> -m unittest -v tests/test_old.py; <py> -m unittest -v tests/test_new.py' -- -m unittest --case test_value_is_two`. HEAD's run printed FAILED (failures=1) and then NO TESTS RAN, exit 5. It was accepted as green (a unit call to baseline_problem on that text returns None). The result was exit 0 proved on HEAD's pre-existing red case, and the basis reads '2 of 1 collected tests failing'. The orchestrator asked whether a stub can make HEAD's red read green behind an exit 5: this is that shape. The stub supplies the final empty run, and the rule reads only the last tally.",
+        "resolution": "fixed in P82.12-fye (95987e83): fix task P82.12-fye (review-P82j.json)",
+        "fixTask": "P82.12-fye",
+        "commit": "95987e83"
+      },
+      {
+        "id": "P82-R44",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:764-768 (module.replace('.', '/') + '.py'), 725-742 (_house_script)",
+        "issue": "Over-refusal on a mainstream command. unittest reports a module relative to its top-level directory, and located() maps it to a path as if that directory were the repo root. `python -m unittest discover -s tests -v`, where the top-level directory defaults to the start directory, prints module `test_new`, which becomes `test_new.py`, never `tests/test_new.py`. (D, real tool) A legitimate new red test is refused with exit 3 'locates none of them in a declared test file'. The controls (D0) `-s tests -t .` and (D1) naming the file both give exit 0. The same happens with `-s tests/unit -t tests`, `python -m tests.test_new` (_house_script returns None for -m), and `./tests/test_new.py` or an absolute script path, which do not string-equal the declared relative path. The documents present the unittest module as a location without this condition.",
+        "resolution": "fixed in P82.12-fye (95987e83): fix task P82.12-fye (review-P82j.json)",
+        "fixTask": "P82.12-fye",
+        "commit": "95987e83"
+      },
+      {
+        "id": "P82-R45",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:686-688 (_NO_TESTS_RAN), 300-305; plugins/audit/agents/audit-executor.md:122",
+        "issue": "By reading; pytest is not installed here. When every case is deselected, pytest exits 5 and its summary reads 'N deselected in Xs', not 'no tests ran'. The deselected count is a known summary type, so 'no tests ran' is printed only when there are no parts. The first branch therefore does not match, and exit 5 fails the second. `pytest tests/test_old.py -k test_new_case`, where the new case is added to an edited existing file, gets a HEAD run with that case absent, so it is refused with 'narrow it to the task's cases'. That is exactly the one-`-k` narrowing audit-executor.md:122 prescribes.",
+        "resolution": "fixed in P82.12-fye (95987e83): fix task P82.12-fye (review-P82j.json)",
+        "fixTask": "P82.12-fye",
+        "commit": "95987e83"
+      },
+      {
+        "id": "P82-R46",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:238-248 (the deadline comment), 1105-1113 (_isolate), 1161-1165",
+        "issue": "The floor is checked once, before _isolate's two git calls. _left() truncates to whole seconds, and each call gets timeout=max(1, _left). So with 1.x s left the second call can start past the deadline and run up to about 1 s beyond it. That overrun is not in TEARDOWN_MARGIN. The comment 'no git call is started past the deadline' does not describe the code. Round-9 finding 5 is narrowed, not closed.",
+        "resolution": "fixed in P82.12-fye (95987e83): fix task P82.12-fye (review-P82j.json)",
+        "fixTask": "P82.12-fye",
+        "commit": "95987e83"
+      },
+      {
+        "id": "P82-R47",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:845-878 (credit_problem: `if rel in scope[\"new\"]: return None`), 1399-1404 (state[\"heads\"] only for declared tests HEAD has at the SAME path); PLUGIN-BUILD-GUIDE.md:3695-3696; CHANGELOG.md:322; plugins/audit/agents/audit-executor.md:121; plugins",
+        "issue": "The HEAD comparison is keyed by path, so the rule does not survive a move or a copy. It reads HEAD:<the declared path>. A renamed file is absent at HEAD under its new name, so it counts as new, and none of its cases is compared with the HEAD copy under the old name. Real tool, scratchpad/p82/probe26.py, output in r12_probe26.txt. HEAD's tests/test_old.py holds Old.test_value_is_two, red at HEAD and fixed by src/mine.py. (R1) `git mv tests/test_old.py tests/test_moved.py` with the content unchanged, only the new path declared, and the command `python -m unittest -v tests/test_moved.py`: exit 0 proved, crediting test_value_is_two as 'the task's own'. (R1b) The same with both the old and the new path declared: exit 0 proved. (R2) A verbatim copy of HEAD's red class into a new declared tests/test_new.py, with HEAD's file untouched: exit 0 proved. In each case the baseline is green only because the new path is a stub. A rename is a routine refactor, so no adversary is needed: a task that moves a test file and adds a vacuous test gets its red-first proof from HEAD's pre-existing red. The four documents say a HEAD case is 'not credited unless the task edited it', and a moved case was not edited.",
+        "resolution": "fixed in P82.13-fye (c34d4a8f): fix task P82.13-fye (review-P82k.json)",
+        "fixTask": "P82.13-fye",
+        "commit": "c34d4a8f"
+      },
+      {
+        "id": "P82-R48",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:419-431 (_pytest_tally reads only hits[-1]), 713-730 (fix_problem), 700-708 (baseline_problem), 686-696 (its docstring)",
+        "issue": "Round 10 fixed the two-invocation tally for unittest only. _pytest_tally still reads the LAST summary line, so a shell running two pytest invocations is judged by the second alone. pytest is not installed here, so this is by synthetic unit calls, in r12_probe26b.txt. (P2) A fix run printing 'FAILED tests/test_new.py::test_always', '1 failed', then '1 passed', exit 0: fix_problem returns None, and read_tally gives failed=0. With `sh -c 'pytest tests/test_new.py; pytest tests/test_b.py' -- ... --case test_always` the task run is red (the last invocation fails at HEAD's code), the stub baseline is green, and test_always is located, defined and new. The tool therefore credits a case that also FAILS with the working tree's implementation, and the basis says 'each passing with the working tree's implementation'. (P1) A baseline printing '1 failed' and then 'no tests ran' with exit 5: baseline_problem returns None. That is exactly the shape the docstring (lines 694-696) and the guide say is not read as green. _house_tally also reads hits[-1]. That is safe only because a house run under a shell is never located.",
+        "resolution": "fixed in P82.13-fye (c34d4a8f): fix task P82.13-fye (review-P82k.json)",
+        "fixTask": "P82.13-fye",
+        "commit": "c34d4a8f"
+      },
+      {
+        "id": "P82-R49",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:790-797 (_one_declared), 816-821 (case_site's unittest branch)",
+        "issue": "The trailing-component match looks only at DECLARED files. A short module name that another, undeclared file really supplied is therefore mapped to the one declared file sharing its tail. (A1, real tool) HEAD's undeclared legacy/test_old.py holds a red Old.test_value_is_two. A new declared tests/test_new.py puts legacy/ on sys.path and imports `from test_old import Old`, and a declared NEW tests/test_old.py holds a passing Old.test_value_is_two. unittest prints module `test_old`, which is mapped to tests/test_old.py, where the def is found and is new: exit 0 proved on HEAD's red. Control (A1c), the same without the declared tests/test_old.py: exit 3. The shape is deliberate: a same-basename file with the same class and case names is needed.",
+        "resolution": "fixed in P82.13-fye (c34d4a8f): fix task P82.13-fye (review-P82k.json)",
+        "fixTask": "P82.13-fye",
+        "commit": "c34d4a8f"
+      },
+      {
+        "id": "P82-R50",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:826-843 (_definition; docstring line 830)",
+        "issue": "The docstring says 'the LAST binding of a name wins, as it does when Python runs it'. The code only considers FunctionDef and AsyncFunctionDef nodes, plus ClassDef for the chain, so a later assignment that rebinds the name is invisible. Real tool: (B1) a class-body `test_value_is_two = test_old.Old.test_value_is_two` after a passing def of the same name, and (B2) a module-level `New = type('New', (test_old.Old,), {})` after `class New` with that def. Each gives exit 0 proved, crediting HEAD's unchanged red function run through the new file. This is deliberate, and a sibling of the guide's documented 'define a same-named case that calls the inherited one'. But the docstring states a property the code does not have.",
+        "resolution": "fixed in P82.13-fye (c34d4a8f): fix task P82.13-fye (review-P82k.json)",
+        "fixTask": "P82.13-fye",
+        "commit": "c34d4a8f"
+      },
+      {
+        "id": "P82-R51",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:800-820 (_one_declared: `if path in tests: return path` returns before the `others` check), 823-849 (case_site's unittest branch); plugins/audit/tests/test_stamp_verification.py:2300-2330 (sr173's row 'the full module, whatever HEAD shares' pins",
+        "issue": "The A1 fix left the same shape open for an EXACT module match. A unittest module name is resolved through sys.path, not the repo root, so an exact match proves nothing that a trailing match does not. The real tool, scratchpad/p82/probe27.py, output in r13_probe27.txt, case A2. HEAD's undeclared legacy/test_old.py holds a red Old.test_value_is_two. A new declared tests/test_new.py puts legacy/ first on sys.path and imports `from test_old import Old`. A declared NEW root-level test_old.py holds a passing Old.test_value_is_two. unittest prints module `test_old`, which exactly matches the declared test_old.py, so `others` is never read. The def is found there and its ast differs from HEAD's. Result: exit 0 proved on HEAD's red. The control A2c, which has no decoy, gives exit 3. The shape is deliberate, as A1 was: it needs a same-named file with the same class and case names.",
+        "resolution": "fixed in P82.14-fye (0ecf2415): fix task P82.14-fye (review-P82l.json)",
+        "fixTask": "P82.14-fye",
+        "commit": "0ecf2415"
+      },
+      {
+        "id": "P82-R52",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:858-873 (_binds), 893-914 (_definition docstring: 'an assignment of any kind ... means it is not the def that runs'); PLUGIN-BUILD-GUIDE.md:3693-3697",
+        "issue": "_binds is wrong in both directions. (a) OVER: it walks the whole target with ast.walk, so a Name inside an Attribute or Subscript target counts as rebinding that name, although Python rebinds nothing. A legitimate module-level `New.maxDiff = None` after class New refuses New's genuine new red case. Real tool, probe27 O1: exit 3 'tests/test_new.py class New does not define it in that class'. The control O1c, without that line, gives exit 0 proved. Unit calls in r13_probe27u.txt refuse the same way for `test_x.__doc__ = 'x'` in the class body, `REG[New] = 1`, and `New.x = 1; del New.x`. (b) UNDER: top-level bindings the docstring and guide say are read are not seen. The real tool gives exit 0 proved on HEAD's unchanged red function for a class-body walrus `(test_value_is_two := test_old.Old.test_value_is_two)` (W2) and for a class-body `with nullcontext(Old.test_value_is_two) as test_value_is_two:` (W1). Unit calls show the same for a module-level walrus or `with ... as New`, a class-level `match` capture, and a decorator returning HEAD's function. The guide's named limit covers only a binding nested in if, try or a loop.",
+        "resolution": "fixed in P82.14-fye (0ecf2415): fix task P82.14-fye (review-P82l.json)",
+        "fixTask": "P82.14-fye",
+        "commit": "0ecf2415"
+      },
+      {
+        "id": "P82-R53",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:956-957 (credit_problem: `if classes is None: return None` - a house run skips the HEAD-definition index), 945-950 (docstring); PLUGIN-BUILD-GUIDE.md:3702-3705; plugins/audit/agents/audit-executor.md:121-123; plugins/audit/reference/execute-task",
+        "issue": "The move and copy rule holds for pytest and unittest only. A house run, this repo's own runner, still credits a moved or copied HEAD red suite. Real tool, scratchpad/p82/probe28.py, output in r13_probe28.txt. (H1) `git mv` of HEAD's red house suite tests/test_hold.py to tests/test_hmoved.py, unchanged, with the new path declared and the command `python tests/test_hmoved.py`: exit 0 proved, crediting old1. (H2) A verbatim copy into a new declared file: exit 0 proved. The guide's residual list does name that a house run of one declared file is credited with every case it prints. But the P82.13 text now states the opposite with no house exception. Guide point 4 says 'keyed by the definition, not by the path, so a case HEAD has is refused wherever it lands - ... carried by a git mv, or copied verbatim'. The executor brief says 'a file you moved, or a case you copied is not yours'. execute-task.md and the CHANGELOG say the same. The documents contradict each other, and the agent-facing brief states the stronger one.",
+        "resolution": "fixed in P82.14-fye (0ecf2415): fix task P82.14-fye (review-P82l.json)",
+        "fixTask": "P82.14-fye",
+        "commit": "0ecf2415"
+      },
+      {
+        "id": "P82-R54",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py:862-872 (_target_names: an Attribute target yields no name), 987-1010 (_definition: the chain and the case are resolved by name bindings only); PLUGIN-BUILD-GUIDE.md:3697-3705 and 3733-3742; CHANGELOG.md:320-324",
+        "issue": "The O1 fix opened a new false-credit shape that P82.13 refused. The documented limits do not name it. A module-level attribute assignment after the class, `New.test_value_is_two = test_old.Old.test_value_is_two`, replaces the passing def with HEAD's unchanged red function. P82.14 reads an Attribute target as binding nothing, so `_definition` still returns the passing def. Its ast differs from HEAD's, so HEAD's red is credited. Real tool, scratchpad/p82/probe29.py, output in r14_probe29.txt. T1 gives exit 0 proved, crediting test_value_is_two. The control T0, the passing def alone, gives exit 1 (the test passed). I pulled P82.13's `_definition` out of c34d4a8f and called it: it returns None for T1, a refusal, because it walked the target and saw `New`. So this is a regression of the B1/W1/W2 class, one line long, and just as deliberate as W1 and W2, which were filed. The `setattr(New, 'test_value_is_two', ...)` variant (T2) is also proved. It was credited under P82.13 too, so it is not new, but it is not named either. The guide's residual list names compound blocks, decorators, renamed copies and edited house moves. It says nothing about an attribute assignment or setattr on the class after it.",
+        "resolution": "fixed in P82.15-fye (62a5b65b): fix task P82.15-fye (review-P82m.json)",
+        "fixTask": "P82.15-fye",
+        "commit": "62a5b65b"
       }
-    ]
+    ],
+    "outcome": "matches; thirteen phase reviews and a fix-diff review, every blocking finding fixed in P82.2-P82.15, the last round's lows recorded as F535 [findings: 61 - 8 high, 20 med, 33 low; 61 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "red-first names the task's own failing case, and proves it only against a green, isolated baseline of HEAD's tests.\n\nWhat red-first now does:\n- A house case whose label starts with an ordinary word is recognised.\n- An expected unittest ERROR: line is not read as a failing case.\n- HEAD's baseline always runs first, in an isolated throwaway: a fresh home, its own TMPDIR, and a forced checkout and clean. The task's new test files are laid over it as empty stubs, and the baseline must be green on one runner's tally.\n- The task's tests must be red on HEAD's code, and the fix run must pass every failed case.\n\nA failure is credited only when all of these hold:\n- the runner locates it in one declared test file;\n- the class the runner names defines it by its last binding;\n- no HEAD test file anywhere holds an identical definition under the same class chain.\n\nA later attribute assignment or literal setattr that replaces the case means the file does not define it. A house suite identical to a HEAD test module is refused.\n\nThe documents name the limits that remain: cosmetic edits, helpers, a house suite's missing locations, Python before 3.11, bindings nested in compound blocks, decorators, and computed setattr names.\n\nReviewed in thirteen phase rounds and one fix-diff round. Every blocking finding was fixed in P82.2 to P82.15 and is recorded with its fix commit. The last round's low items are PLAN.md F535.\n\nMain was merged in before the gate. The phase gate is green on all eight entries with the tree unchanged. The full mutation probe ran in parallel on an export, every row red. The invariant check found no breach.",
   "tasks": [
     {
       "id": "P82.1",
@@ -899,5 +1351,10 @@
       ]
     }
   ],
-  "startedAt": "2026-09-26T09:47:10Z"
+  "startedAt": "2026-09-26T09:47:10Z",
+  "testEvidence": {
+    "runId": "2026-09-27T22:02:56Z.50b14f",
+    "status": "passed",
+    "at": "2026-09-27T22:02:56Z"
+  }
 }
