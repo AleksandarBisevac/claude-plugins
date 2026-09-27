@@ -27,7 +27,7 @@
     {
       "id": "P87.1",
       "title": "the published-page check compares against a fresh render before the commit and against the commit only where one exists",
-      "status": "in_progress",
+      "status": "done",
       "description": "F521 (quality-gates-internal PLAN.md). ra23's live arm (--selftest compares every published page against HEAD) sits in the pre-commit sweep, so a task that regenerates a page with the repo's own recipe is red by construction until its commit, and commit-task-work binds a commit to a green gate - P80.7, P80.15 and P80.20 went through --override-verdict. Keep the fresh-render comparison in the pre-commit sweep; move the vs-commit comparison to where a commit exists - the CLI run CI and verify.sh --release make - and state in CONTRIBUTING.md and verify.sh which set carries it. gate-parity.py must stay green (every description of the gate set agrees). Red-first: a fixture page that matches a fresh render and not HEAD makes the selftest red on the current code and green after; allow: a page matching neither a fresh render nor HEAD still fails the pre-commit sweep, and the vs-commit arm still fails on a page the commit does not carry.",
       "files": [
         "tools/check-rendered-artifacts.py",
@@ -59,14 +59,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "210d1b54",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "arms_for/arm_verdict with --before-commit and --against-commit; selftest and verify.sh/--affected use the fresh-render arm; --release adds the HEAD arm; live ra23 removed; ra25-ra28, a10c",
+        "descriptive": "A task that re-renders a published page is no longer red until its own commit; CI and release still check that the commit carries the page"
       },
       "startedAt": "2026-09-27T14:08:20Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T14:26:34Z",
+      "verifiedBy": [
+        "check-rendered-artifacts 29/29",
+        "affected 24/24",
+        "probe 9/9 red on an export",
+        "full sweep",
+        "gate-parity"
+      ]
     },
     {
       "id": "P87.2",
