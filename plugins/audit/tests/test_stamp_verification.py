@@ -990,11 +990,14 @@ def _budget_cases(check):
     with open(os.path.join(M_PLUGIN, "reference", "execute-task.md"), "r",
               encoding="utf-8") as fh:
         ref = " ".join(fh.read().split())
-    check("sr45 execute-task.md states the --case rule the helper enforces: the "
-          "task's own is a case absent from HEAD's test file, and --case narrows "
-          "to ids held to that same test - not an alternative to it",
-          "(`--case`, or a case the working tree's test file adds)" not in ref
-          and "`--case` narrows" in ref and "held to that same test" in ref)
+    check("sr45 execute-task.md states the rule the helper enforces: the task's "
+          "own case is one HEAD's own run of its test files did not name, the "
+          "command must name every case, and --case is held to that same "
+          "measurement - not an alternative to it",
+          "did not name" in ref and "names every case" in ref
+          and "`--case` narrows" in ref and "held to that same test" in ref
+          and "present in the working tree's test file and absent from HEAD's"
+          not in ref)
 
 
 # --- a house case is its label; a runner's lines count only in its own output --
@@ -1756,9 +1759,9 @@ def _head_run_cases(check):
     calls = []
     held = M._git
 
-    def recording(where, args, timeout=120):
+    def recording(where, args, timeout=120, **kwargs):
         calls.append(timeout)
-        return held(where, args, timeout=timeout)
+        return held(where, args, timeout=timeout, **kwargs)
     M._git = recording
     try:
         problem = M._put_back_head(root, root, [rel], time.time() + 5)
@@ -1771,6 +1774,209 @@ def _head_run_cases(check):
           "deadline: %r %r %r" % (problem, back, calls),
           problem is None and back == committed and calls
           and all(t <= 6 for t in calls))
+
+
+# --- a path git quotes, a rename by an appended ` (...)`, every stop-first
+# spelling, and a pairing bounded by the deadline ---
+def _path_red(prefix, rel, head, wt, cmd=None):
+    """`(exit, basis)` of a red whose declared test file is `rel`."""
+    root = _seeded_repo(prefix)
+    os.makedirs(os.path.join(root, "tests"))
+    _write(os.path.join(root, *rel.split("/")), head)
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "test")
+    _write(os.path.join(root, "src", "mine.py"), "v = 2\n")
+    _write(os.path.join(root, *rel.split("/")), wt)
+    manifest = json.loads(json.dumps(MANIFEST))
+    task = manifest["phases"][0]["tasks"][0]
+    task["files"] = ["src/mine.py", rel]
+    task["tests"] = {"mode": "tdd", "add": [rel + ": v is two"]}
+    man = os.path.join(_harness.fixture_root(prefix + "man-"), "audit-plan.json")
+    _write(man, json.dumps(manifest))
+    code, got = _red(root, man, cmd or [sys.executable, rel])
+    return code, json.dumps(got.get("redFirst") or got.get("note") or got)
+
+
+_FAILFAST_HEAD = ["    def test_a_p(self):", "        self.assertEqual(mine.v, 5)",
+                  "    def test_b_f(self):", "        self.assertEqual(mine.v, 7)"]
+_FAILFAST_WT = ["    def test_a_p(self):", "        self.assertEqual(mine.v, 1)",
+                "    def test_b_f(self):", "        self.assertEqual(mine.v, 7)"]
+
+
+def _round5_cases(check):
+    py = sys.executable
+    broken = _label_suite([("'the old broken case'", "mine.v == 2")])
+    plus_new = _label_suite([("'the old broken case'", "mine.v == 2"),
+                             ("'the new pass'", "True")])
+    got = dict((rel, _path_red("stamp-red-path-", rel, broken, plus_new))
+               for rel in ("tests/test_caf\u00e9.py", "tests/test_cafe.py"))
+    check("sr107 a declared test file whose path git quotes (not plain ASCII) is "
+          "still found at HEAD: HEAD already red on an old case, the task adding "
+          "only a passing one, is not proved - and the ASCII path answers the "
+          "same: %r" % (dict((k, v[0]) for k, v in got.items()),),
+          all(v[0] == M.E_CANNOT_PROVE for v in got.values()))
+    code, basis = _suite_red("stamp-red-appended-",
+                             _label_suite([("'the value'", "mine.v >= 1")]),
+                             _label_suite([("'the value (as read)'", "mine.v == 2")]))
+    check("sr108 an existing case RENAMED by appending ` (as read)` and edited to "
+          "fail is not proved: once the fix run settles the failing line's label, "
+          "HEAD's `the value` no longer reappears: exit=%r %s" % (code, basis[:300]),
+          code == M.E_CANNOT_PROVE)
+    head_u, wt_u = _unit_suite(_FAILFAST_HEAD), _unit_suite(_FAILFAST_WT)
+    runs = dict((" ".join(flags), _suite_red("stamp-red-ff-", head_u, wt_u,
+                                             [py, "tests/test_mine.py"] + flags)[0])
+                for flags in (["-vf"], ["-fv"], ["-v", "-cf"], ["-v", "--failf"]))
+    runs["sh -c"] = _suite_red("stamp-red-sh-", head_u, wt_u,
+                               ["sh", "-c", "%s tests/test_mine.py -v -f" % (py,)])[0]
+    check("sr109 HEAD red under failfast in every spelling unittest accepts - "
+          "clustered, a long prefix - or under a wrapper whose options the tool "
+          "cannot read (sh -c) is not proved: %r" % (runs,),
+          all(c == M.E_CANNOT_PROVE for c in runs.values()))
+    new_u = _unit_suite(["    def test_old(self):", "        self.assertTrue(True)",
+                         "    def test_new(self):", "        self.assertEqual(mine.v, 2)"])
+    old_u = _unit_suite(["    def test_old(self):",
+                         "        self.assertEqual(mine.v, 3)"])
+    code_v, basis_v = _suite_red("stamp-red-vv-", old_u,
+                                 new_u.replace("self.assertTrue(True)",
+                                               "self.assertEqual(mine.v, 3)"),
+                                 [py, "tests/test_mine.py", "-vv"])
+    check("sr110 THE ALLOW CASE for sr109: HEAD red under an ordinary `-vv`, a "
+          "direct runner invocation with no stop-first flag, still proves a new "
+          "test: exit=%r %s" % (code_v, basis_v[:300]),
+          code_v == M.E_PROVED and "test_new" in basis_v)
+
+
+def _round5_unit_cases(check):
+    root = _seeded_repo("stamp-quoted-")
+    rels = ["tests/test_caf\u00e9.py", "tests/t.py"]
+    os.makedirs(os.path.join(root, "tests"))
+    for rel in rels:
+        _write(os.path.join(root, *rel.split("/")), "x = 1\n")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "t")
+    present, problem = M._at_head(root, rels + ["tests/absent.py"], time.time() + 30)
+    check("sr111 HEAD's file list is read NUL-separated, so a path git quotes is "
+          "found exactly like an ASCII one, and an absent path is absent: %r"
+          % ((present, problem),),
+          problem is None and present == set(rels))
+    py = sys.executable
+    reasons = dict((" ".join(flags), M._stops_early(
+        {"code": 1, "text": "Ran 1 test in 0.001s\n\nFAILED (failures=1)\n"},
+        [py, "t.py"] + flags))
+        for flags in (["-v"], ["-vv"], ["-v", "-b"], ["-vf"], ["-fv"],
+                      ["-v", "-cf"], ["-v", "--failf"], ["-v", "--failfast"]))
+    reasons.update(dict((" ".join(flags), M._stops_early(
+        {"code": 1, "text": "=== 1 failed, 1 passed in 0.1s ===\n"},
+        ["pytest"] + flags)) for flags in (
+            ["-rA"], ["-rfE"], ["-rxs"], ["-v"], ["-vx"], ["--exitf"], ["--maxf=2"],
+            ["--stepw"])))
+    reasons["sh -c wrapper"] = M._stops_early(
+        {"code": 1, "text": "Ran 1 test in 0.001s\n\nFAILED (failures=1)\n"},
+        ["sh", "-c", "%s t.py -v" % (py,)])
+    stop = ["-vf", "-fv", "-v -cf", "-v --failf", "-v --failfast", "-vx", "--exitf",
+            "--maxf=2", "--stepw", "sh -c wrapper"]
+    check("sr112 every stop-first spelling is read - clustered short options, "
+          "unambiguous long prefixes, a wrapper (`sh -c`) whose options cannot be "
+          "read - and ordinary ones are not (`-v`, `-vv`, "
+          "`-b`, `-rA`, `-rfE`, `-rxs`, whose `f` and `x` are report characters "
+          "- the rest of a cluster after `-r` is its argument): %r" % (reasons,),
+          all(bool(reasons[k]) == (k in stop) for k in reasons))
+    code = "\n".join([
+        "import sys, time", "sys.path.insert(0, %r)" % (_output.TESTS_DIR,),
+        "import _harness, _loader",
+        "M = _loader.load_script('stamp-verification.py', modname='sv_size')",
+        "tally = '%s: 0/%d cases ' + 'passed'",
+        "n = 300",
+        "head = 'PASS A\\n' * n + tally % ('X', n) + '\\n'",
+        "task = 'FAIL A (saw 1)\\n' * n + tally % ('X', n) + '\\n'",
+        "fix = 'PASS A\\n' * n + tally % ('X', n) + '\\n'",
+        "t = time.time()",
+        "r = M.compare_runs(head, task, 'house', M.failing_cases(task, 'house'), fix,"
+        " deadline=time.time() + 20)",
+        "m = 3000",
+        "head2 = ''.join('PASS the case %d\\n' % i for i in range(m))",
+        "task2 = ''.join('FAIL the case %d (saw 1)\\n' % i for i in range(m))",
+        "r2 = M.compare_runs(head2, task2, 'house', M.failing_cases(task2 + tally % "
+        "('X', m), 'house'), head2, deadline=time.time() + 20)",
+        "late = M.compare_runs(head, task, 'house', M.failing_cases(task, 'house'),"
+        " fix, deadline=time.time() - 1)",
+        "print(len(r['held']), len(r2['held']), bool(late['problem']),"
+        " round(time.time() - t, 1))"])
+    try:
+        proc = subprocess.run([sys.executable, "-c", code], stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, universal_newlines=True,
+                              timeout=90)
+        out = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else ""
+    except subprocess.TimeoutExpired:
+        out = "timed out"
+    parts = out.split()
+    check("sr113 the pairing is bounded: many identical and many distinct "
+          "ambiguous lines are settled inside the deadline, every one held as "
+          "HEAD's, and a deadline already passed is a refusal, never a hang or "
+          "an exception: %r" % (out,),
+          len(parts) == 4 and parts[:3] == ["300", "3000", "True"]
+          and float(parts[3]) < 20)
+
+    held = M.PAIRING_EDGE_BUDGET
+    M.PAIRING_EDGE_BUDGET = 10
+    try:
+        many = M.compare_runs("PASS A\n" * 20, "FAIL A (saw 1)\n" * 20, "house",
+                              M.failing_cases("FAIL A (saw 1)\n" * 20 + _TALLY
+                                              % ("X", 0, 20), "house"))
+    finally:
+        M.PAIRING_EDGE_BUDGET = held
+    check("sr114 a pairing past the edge budget is refused with its reason, never "
+          "tried: %r" % (many.get("problem"),),
+          many["problem"] and "edges" in many["problem"] and not many["held"])
+    root = _seeded_repo("stamp-introduced-")
+    calls = []
+    real = M._git
+
+    def recording(where, args, timeout=120, **kwargs):
+        calls.append(timeout)
+        return real(where, args, timeout=timeout, **kwargs)
+    M._git = recording
+    try:
+        M.introduced(root, ["src/mine.py"], "helper_fn", time.time() + 5)
+    finally:
+        M._git = real
+    check("sr115 --introduces reads HEAD's implementation files under the one "
+          "deadline too: %r" % (calls,), calls and all(t <= 6 for t in calls))
+    wt = _house_test("import mine", [("old1", "True"), ("new1", "mine.v == 2"),
+                                     ("the child writes no bytecode",
+                                      "sys.dont_write_bytecode")])
+    head = _house_test("import mine", [("old1", "True"),
+                                       ("the child writes no bytecode",
+                                        "sys.dont_write_bytecode")])
+    root_b, man_b = _red_repo("stamp-red-pyc-", wt, head_test=head)
+    code_b, got_b = _red(root_b, man_b, [sys.executable, "tests/test_mine.py"])
+    basis_b = (got_b.get("redFirst") or {}).get("basis", "")
+    check("sr116 every run in the throwaway is made with bytecode writing off - a "
+          "file swapped for one of the same size in the same second is otherwise "
+          "shadowed by a stale cached copy - and the payload says so: exit=%r %s"
+          % (code_b, basis_b[:200]),
+          code_b == M.E_PROVED
+          and "PASS the child writes no bytecode"
+          in ((got_b.get("run") or {}).get("outputTail") or [])
+          and "PYTHONDONTWRITEBYTECODE=1"
+          in (got_b.get("environment") or {}).get("set", []))
+
+    relabel_head = _label_suite([("'the old broken case'", "mine.v == 2")])
+    relabel_wt = _label_suite([("'the old broken case'", "True"),
+                               ("'the renamed broken case'", "mine.v == 2")])
+    code_r, basis_r = _suite_red("stamp-red-relabel-", relabel_head, relabel_wt)
+    check("sr117 a case already RED at HEAD, relabelled while its old label goes "
+          "to a new passing case, is not proved: HEAD's red case prints only as "
+          "passing in the task's run, which runs HEAD's code, so its test was "
+          "changed: exit=%r %s" % (code_r, basis_r[:300]),
+          code_r == M.E_CANNOT_PROVE and "its test was changed" in basis_r)
+    stays_wt = _label_suite([("'the old broken case'", "mine.v == 2"),
+                             ("'the new failing case'", "mine.v == 2")])
+    code_s, basis_s = _suite_red("stamp-red-staysred-", relabel_head, stays_wt)
+    check("sr118 THE ALLOW CASE for sr117: a task that only adds a new failing case "
+          "beside a HEAD case that was red and stays red still proves: exit=%r %s"
+          % (code_s, basis_s[:300]),
+          code_s == M.E_PROVED and "the new failing case" in basis_s)
 
 
 def _unit_suite(methods):
@@ -1820,6 +2026,8 @@ def _cases(check):
     _harness.stage(check, "sr-measured", _measured_cases)
     _harness.stage(check, "sr-one-to-one", _one_to_one_cases)
     _harness.stage(check, "sr-head-run", _head_run_cases)
+    _harness.stage(check, "sr-round5", _round5_cases)
+    _harness.stage(check, "sr-round5-units", _round5_unit_cases)
     _harness.stage(check, "sr-env", _env_cases)
     _harness.stage(check, "sr-final", _final_pass_cases)
     _harness.stage(check, "sr-budget", _budget_cases)

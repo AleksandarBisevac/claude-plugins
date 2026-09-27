@@ -315,10 +315,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `--failfast` and their kin), and an edited case beside a new passing case of the same label. A
   failing house line one reading of which HEAD printed is credited only by a fix run - the task's
   test files with the working tree's implementation - that pairs it one to one to a label HEAD never
-  printed. unittest names are qualified by class, HEAD's files are put back byte for byte, every git
-  call runs under the one deadline, and every run is made with `PYTHONDONTWRITEBYTECODE=1` so a
-  swapped file cannot be shadowed by stale cached bytecode. The limits
-  that remain, all in the could-not-prove direction, are listed in the guide. A label built by a wrapper, looked up
+  printed, and HEAD's lines are then paired again against the settled labels, so a rename by an
+  appended ` (as read)` is refused. The pairing is an iterative Hopcroft-Karp under the one deadline
+  and an edge budget; an overrun is `could-not-prove`. A stop-first option is read in every spelling
+  the runner accepts (clustered short options, unambiguous long prefixes), and a red HEAD run under a
+  command that is not a direct runner invocation (a shell, `make`, a wrapper) is `could-not-prove`.
+  HEAD's file list is read NUL-separated, so a path git would quote (not plain ASCII) is not taken
+  as new at HEAD. unittest names are qualified by class, HEAD's files are put back byte for byte,
+  every git call before the throwaway's removal runs under the one deadline, and every run is made
+  with `PYTHONDONTWRITEBYTECODE=1` so a swapped file cannot be shadowed by stale cached bytecode.
+  A case red at HEAD that the task's run prints only as passing means its test was changed; beside
+  a credited failing line that is `could-not-prove`, so a red already there before the task cannot be
+  credited by relabelling it. The limits that remain are listed in the guide: a case passing at HEAD
+  that is given a new label and edited to fail, its old label reused by a new passing case, is
+  credited - that red comes from the task's own edit, as an edited test's red does - and every other
+  limit refuses. A label built by a wrapper, looked up
   in a dict, or spelled again by an unrelated literal - each a shape some reading of the source got
   wrong - is therefore decided the same way as any other. The command must name every case it runs,
   passing ones included: the house harness does, pytest does under `-rA` or `-v`, unittest under

@@ -439,6 +439,51 @@
         "test_stamp_verification sr104",
         "test_stamp_verification sr105"
       ]
+    },
+    {
+      "id": "P82.7-fye",
+      "title": "red-first reads git paths exactly, re-checks reappearance after the fix run, knows every stop-first spelling, and bounds its pairing",
+      "status": "in_progress",
+      "description": "Round-5 review (review-P82e.json; probes probe14-probe17). (1) every git path list is read NUL-separated (ls-tree -z, and any other name listing), so a quoted non-ASCII path is never taken as absent at HEAD; the put-back restores rather than deletes. (2) after the fix run settles an ambiguous line's label, reappearance of every HEAD case is checked again with the settled labels; a shorter reading no longer counts as reappearance when the settled label differs - a rename by appended ' (...)' is refused. (3) stop-first flags are recognised in every spelling a runner accepts: clustered short options (-vf, -fv, -v -cf), unambiguous long prefixes (--failf, --exitf, --maxf, --stepw), and pytest -x inside clusters; and when HEAD's run is red and the command is not a direct runner invocation whose every option the tool reads (sh -c, make, a wrapper script), the verdict is could-not-prove with that reason. (4) the pairing is an iterative Hopcroft-Karp (no recursion) under the one deadline; an overrun is could-not-prove, never exit 1; a size case over many identical and many distinct labels finishes inside the budget. (5) the docs claim only what holds: no false-proved limit is stated as could-not-prove, the 'has none of them' sentence goes, introduced() runs its git calls under the deadline, and the budget comment counts the runs truly made. (6) sr45's label states the measured rule and the case can go red on it. Each probe14-17 shape as a red case; the allow cases still prove.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: repro that FAILS on current code - a declared test file with a non-ASCII name is read as new at HEAD and a pre-existing red is credited"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-26T21:21:08Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-09-26T09:47:10Z"

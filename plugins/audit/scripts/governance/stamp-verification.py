@@ -230,12 +230,14 @@ V_MIXED = "mixed-tally"
 HOST_BASH_LIMIT = 600
 DEFAULT_TIMEOUT = 480
 # ONE deadline, `--timeout`, starts before anything runs and covers every git
-# call that builds or reads the throwaway and both runs: each stage gets what the
-# earlier ones left. What happens after the deadline has to fit in the rest of
-# the host's limit, so it is bounded and summed here: one teardown of a timed-out
-# run (`_proc_group.GRACE_SECONDS` for SIGTERM, again for SIGKILL, again for the
-# drain - two runs cannot both time out, the second is only made when the first
-# finished), and the removal's two git calls, each capped at `REMOVE_GIT_TIMEOUT`.
+# call that builds or reads the throwaway, every run - the task's, the second
+# (`--introduces`), HEAD's own and the fix run - and the pairing that compares
+# them: each stage gets what the earlier ones left. What happens after the
+# deadline has to fit in the rest of the host's limit, so it is bounded and summed
+# here: one teardown of a timed-out run (`_proc_group.GRACE_SECONDS` for SIGTERM,
+# again for SIGKILL, again for the drain - at most one run can time out, because
+# each later run is made only when the one before it finished), and the removal's
+# two git calls, each capped at `REMOVE_GIT_TIMEOUT`.
 # Copying files and deleting the temp directory are local and are not budgeted.
 REMOVE_GIT_TIMEOUT = 10
 TEARDOWN_MARGIN = 3 * _proc_group.GRACE_SECONDS + 2 * REMOVE_GIT_TIMEOUT
@@ -304,8 +306,20 @@ _UNITTEST_QUALIFIED = re.compile(r"^(FAIL|ERROR): (\w+) \(([\w.]+)\)", re.M)
 # A red run that may have stopped before running every case: pytest's stop and
 # interrupt lines, and the flags that ask a runner to stop at a failure.
 _STOPPED_EARLY = re.compile(r"stopping after \d+ failures?|Interrupted: .*", re.M)
-_STOP_FIRST_FLAGS = ("-x", "--exitfirst", "--maxfail", "--sw", "--stepwise", "-f",
-                     "--failfast")
+# Each runner's stop-first options, the short options that take an argument (the
+# rest of a cluster after one of them is that argument), and its long stop-first
+# options, which argparse accepts by any unambiguous prefix. A command whose
+# runner is not known is read with the union, so an `f` or an `x` anywhere in a
+# cluster counts.
+_STOP_SHORT = {"pytest": "x", "unittest": "f", None: "fx"}
+_ARG_SHORT = {"pytest": "rkmpcoWn", "unittest": "k", None: "k"}
+_STOP_LONG = {"pytest": ("--exitfirst", "--maxfail", "--stepwise", "--sw",
+                         "--stepwise-skip", "--sw-skip"),
+              "unittest": ("--failfast",)}
+_STOP_LONG[None] = _STOP_LONG["pytest"] + _STOP_LONG["unittest"]
+# Pairing HEAD's run with the task's, and the task's with the fix run, is a
+# bipartite matching; past this many candidate pairs it is refused, not tried.
+PAIRING_EDGE_BUDGET = 400000
 # With no tally, a traceback ending in one of these is a run that never reached an
 # assertion; any other tally-less failure is `no-tally`, a crash nobody classified.
 _COMPILE_ERROR = re.compile(r"^\s*(?:E\s+)?(SyntaxError|IndentationError|TabError|"
@@ -597,9 +611,10 @@ def _git(root, args, timeout=120, strip=True):
     return out.returncode, text.strip() if strip else text
 
 
-def _head_text(root, rel):
+def _head_text(root, rel, timeout=120):
     """HEAD's bytes of `rel` as text, or None when HEAD has no such file."""
-    code, text = _git(root, ["show", "HEAD:%s" % (rel,)], strip=False)
+    code, text = _git(root, ["show", "HEAD:%s" % (rel,)], timeout=timeout,
+                      strip=False)
     return text if code == 0 else None
 
 
@@ -617,14 +632,16 @@ def _names(text, word):
     return bool(re.search(r"(?<![\w-])%s(?![\w-])" % re.escape(word), text or ""))
 
 
-def introduced(root, implementation, symbol):
+def introduced(root, implementation, symbol, deadline=None):
     """`(holds, basis)` - the STATIC half of whether this task introduces `symbol`:
     absent, as a whole name, from HEAD's copy of every declared implementation
     file (content and path, so a new module counts), and present in the working
     tree's copy of at least one. The half that decides is the second run, in
     `run_red`: with the working tree's implementation copied in, the error the
     first run ended on must be gone."""
-    heads = dict((rel, _head_text(root, rel)) for rel in implementation)
+    heads = dict((rel, _head_text(root, rel, timeout=max(1, _left(deadline))
+                                  if deadline is not None else 120))
+                 for rel in implementation)
     at_head = [rel for rel, text in heads.items()
                if text is not None and (_names(rel, symbol) or _names(text, symbol))]
     if at_head:
@@ -692,6 +709,61 @@ def run_names(text, runner):
     return reader(text) if reader is not None else []
 
 
+def _stop_flags(cmd):
+    """The options in `cmd` that ask the runner to stop at a failure: a
+    stop-first letter in a cluster of short options (`-vf`, `-v -cf`, `-vx`)
+    before any letter that takes an argument (pytest's `-rfE` reports, it does
+    not stop), and any unambiguous prefix of a long stop-first option
+    (`--failf`, `--exitf`, `--maxf=2`, `--stepw`)."""
+    runner = command_runner(cmd)
+    stop, takes = _STOP_SHORT.get(runner, "fx"), _ARG_SHORT.get(runner, "k")
+    longs = _STOP_LONG.get(runner, _STOP_LONG[None])
+    found = []
+    for arg in (str(c) for c in (cmd or ())):
+        if arg.startswith("--") and len(arg) > 2:
+            name = arg.split("=", 1)[0]
+            if len(name) >= 3 and any(opt.startswith(name) for opt in longs):
+                found.append(arg)
+        elif re.match(r"^-[A-Za-z]+$", arg):
+            for letter in arg[1:]:
+                if letter in stop:
+                    found.append(arg)
+                    break
+                if letter in takes:
+                    break
+    return found
+
+
+def _direct_invocation(cmd):
+    """Whether `cmd` runs a test runner directly - `pytest ...`, `python -m
+    pytest|unittest ...`, `python <file>.py ...` - so every option it passes is
+    in the argv this reads. A shell (`sh -c`), `make`, a tox session or a
+    wrapper script hides the options that decide whether a run stopped early."""
+    args = [str(a) for a in (cmd or ())]
+    if not args:
+        return False
+    base = os.path.basename(args[0])
+    if base in ("pytest", "py.test"):
+        return True
+    if not base.startswith("python"):
+        return False
+    i = 1
+    while i < len(args):
+        arg = args[i]
+        if arg == "-m":
+            return i + 1 < len(args) and args[i + 1] in ("pytest", "unittest")
+        if arg == "-c":
+            return False
+        if arg in ("-X", "-W"):
+            i += 2
+            continue
+        if arg.startswith("-"):
+            i += 1
+            continue
+        return arg.endswith(".py")
+    return False
+
+
 def _stops_early(head, cmd):
     """Why a red HEAD run may not have run every case, or None."""
     if head.get("code") in (0, None):
@@ -699,10 +771,13 @@ def _stops_early(head, cmd):
     marker = _STOPPED_EARLY.search(head["text"])
     if marker:
         return "it printed %r" % (marker.group(0).strip(),)
-    flags = [a for a in (str(c) for c in (cmd or ())) if a in _STOP_FIRST_FLAGS
-             or any(a.startswith(f + "=") for f in ("--maxfail",))]
+    flags = _stop_flags(cmd)
     if flags:
         return "the command asks it to stop at a failure (%s)" % (", ".join(flags),)
+    if not _direct_invocation(cmd):
+        return ("the command is not a direct runner invocation whose every option "
+                "this reads (a shell, make, or a wrapper can pass a stop-first "
+                "option unseen)")
     return None
 
 
@@ -715,9 +790,11 @@ def head_names(head, cmd, runner, new_files):
     while a declared test file exists at HEAD; one read as another runner; one
     naming FEWER cases than it collected (`pytest -q`, unittest without `-v`
     print only failures); and a red one that may have stopped early - a pytest
-    stop or interrupt line, or a stop-first flag - since a case it never ran
-    would read as new. When every declared test file is new at HEAD there was
-    nothing there to run, and HEAD names nothing."""
+    stop or interrupt line, a stop-first option in any spelling
+    (`_stop_flags`), or a command that is not a direct runner invocation
+    (`_direct_invocation`) - since a case it never ran would read as new.
+    When every declared test file is new at HEAD there was nothing there to
+    run, and HEAD names nothing."""
     if head is None:
         return None, "HEAD's own run was not made"
     if head.get("problem"):
@@ -735,17 +812,17 @@ def head_names(head, cmd, runner, new_files):
         return None, ("HEAD's own run was read as %s and the task's as %s, so their "
                       "cases cannot be compared" % (tally["runner"] or "mixed",
                                                      runner))
-    early = _stops_early(head, cmd)
-    if early is not None:
-        return None, ("HEAD's own run is red and may have stopped before running "
-                      "every case - %s - so a case it never ran would read as new"
-                      % (early,))
     names = run_names(head["text"], runner)
     if len(names) < tally["collected"]:
         return None, ("HEAD's own run named %d case(s) and collected %d, so an "
                       "existing case cannot be told from a new one - run the "
                       "command so that every case is named (pytest -rA or -v, "
                       "unittest -v)" % (len(names), tally["collected"]))
+    early = _stops_early(head, cmd)
+    if early is not None:
+        return None, ("HEAD's own run is red and may have stopped before running "
+                      "every case - %s - so a case it never ran would read as new"
+                      % (early,))
     return names, None
 
 
@@ -763,79 +840,214 @@ def _labels_of(label, failed):
     return set(_label_forms(label)) if failed else set([label])
 
 
-def _matching(lefts, rights):
-    """Whether every entry of `lefts` (a list of label sets) can be paired with
-    a DIFFERENT entry of `rights` sharing a label - Kuhn's augmenting paths."""
-    owner = [None] * len(rights)
+def _past(deadline):
+    return deadline is not None and time.time() > deadline
+
+
+def _pairing_graph(lefts, rights):
+    """`(adjacency, edges)` - for each left label set, the rights sharing a label."""
     by_label = {}
     for j, labels in enumerate(rights):
         for label in labels:
             by_label.setdefault(label, []).append(j)
+    adj = [sorted(set(j for label in labels for j in by_label.get(label, ())))
+           for labels in lefts]
+    return adj, sum(len(a) for a in adj)
 
-    def place(i, seen):
-        for j in sorted(set(k for label in lefts[i] for k in by_label.get(label, ()))):
-            if j in seen:
+
+def _hopcroft_karp(adj, n_right, deadline):
+    """`(match_left, match_right)` of a maximum matching of the bipartite graph
+    `adj` (left -> rights), or None when the deadline passes. Iterative - no
+    recursion, so a deep augmenting path cannot exhaust the stack."""
+    n_left = len(adj)
+    match_l, match_r = [-1] * n_left, [-1] * n_right
+    while True:
+        if _past(deadline):
+            return None
+        dist = [-1] * n_left
+        queue = [u for u in range(n_left) if match_l[u] == -1]
+        for u in queue:
+            dist[u] = 0
+        found, head = False, 0
+        while head < len(queue):
+            u = queue[head]
+            head += 1
+            for v in adj[u]:
+                w = match_r[v]
+                if w == -1:
+                    found = True
+                elif dist[w] == -1:
+                    dist[w] = dist[u] + 1
+                    queue.append(w)
+        if not found:
+            return match_l, match_r
+        cursor = [0] * n_left
+        for start in range(n_left):
+            if match_l[start] != -1:
                 continue
-            seen.add(j)
-            if owner[j] is None or place(owner[j], seen):
-                owner[j] = i
-                return True
-        return False
-    return all(place(i, set()) for i in range(len(lefts)))
+            if _past(deadline):
+                return None
+            stack, taken = [start], []
+            while stack:
+                u = stack[-1]
+                if cursor[u] >= len(adj[u]):
+                    dist[u] = -1
+                    stack.pop()
+                    if taken:
+                        taken.pop()
+                    continue
+                v = adj[u][cursor[u]]
+                cursor[u] += 1
+                w = match_r[v]
+                if w == -1:
+                    for i, left in enumerate(stack):
+                        right = taken[i] if i < len(taken) else v
+                        match_l[left], match_r[right] = right, left
+                    break
+                if dist[w] == dist[u] + 1:
+                    stack.append(w)
+                    taken.append(v)
 
 
-def _forced_label(index, task_lines, fix_lines):
-    """The one label task line `index` carries, read off the fix run - the same
-    test files with the working tree's implementation, where a case that now
-    passes prints its label bare - or None when the lines cannot be paired one
-    to one, or the pairing leaves the line more than one label."""
-    lefts = [_labels_of(label, failed) for label, failed in task_lines]
-    rights = [_labels_of(label, failed) for label, failed in fix_lines]
-    if len(lefts) != len(rights) or not _matching(lefts, rights):
-        return None
-    possible = set()
-    for j, labels in enumerate(rights):
-        if not (lefts[index] & labels):
+def _same_component(adj, match_l, n_right, deadline):
+    """The strongly connected component of every node of the residual graph of
+    a perfect matching - lefts `0..L-1`, rights `L..L+R-1`; an unmatched edge
+    lies in SOME perfect matching exactly when its ends share a component.
+    Iterative Tarjan; None when the deadline passes."""
+    n_left = len(adj)
+    total = n_left + n_right
+    out = [[] for _ in range(total)]
+    for u in range(n_left):
+        for v in adj[u]:
+            if match_l[u] == v:
+                out[n_left + v].append(u)
+            else:
+                out[u].append(n_left + v)
+    index, low, comp = [-1] * total, [0] * total, [-1] * total
+    on_stack, stack, counter, label = [False] * total, [], 0, 0
+    for root in range(total):
+        if index[root] != -1:
             continue
-        rest_l = lefts[:index] + lefts[index + 1:]
-        rest_r = rights[:j] + rights[j + 1:]
-        if _matching(rest_l, rest_r):
-            possible |= lefts[index] & labels
-    return possible.pop() if len(possible) == 1 else None
+        if _past(deadline):
+            return None
+        work = [(root, 0)]
+        index[root] = low[root] = counter
+        counter += 1
+        stack.append(root)
+        on_stack[root] = True
+        while work:
+            node, at = work[-1]
+            if at < len(out[node]):
+                work[-1] = (node, at + 1)
+                nxt = out[node][at]
+                if index[nxt] == -1:
+                    index[nxt] = low[nxt] = counter
+                    counter += 1
+                    stack.append(nxt)
+                    on_stack[nxt] = True
+                    work.append((nxt, 0))
+                elif on_stack[nxt]:
+                    low[node] = min(low[node], index[nxt])
+                continue
+            work.pop()
+            if work:
+                parent = work[-1][0]
+                low[parent] = min(low[parent], low[node])
+            if low[node] == index[node]:
+                while True:
+                    top = stack.pop()
+                    on_stack[top] = False
+                    comp[top] = label
+                    if top == node:
+                        break
+                label += 1
+    return comp
 
 
-def compare_runs(head_text, task_text, runner, failing, fix_text=None):
+def _settled_labels(task_sets, fix_sets, deadline):
+    """`(labels, problem)` - for each task line, the labels it may still carry
+    once paired one to one with the fix run's lines: a line every perfect
+    pairing leaves one label is settled to it. `labels` is None when no such
+    pairing exists; `problem` names an overrun of the budget or the deadline."""
+    if len(task_sets) != len(fix_sets):
+        return None, None
+    adj, edges = _pairing_graph(task_sets, fix_sets)
+    if edges > PAIRING_EDGE_BUDGET:
+        return None, ("pairing the task's run with the fix run needs %d edges, past "
+                      "the %d this settles" % (edges, PAIRING_EDGE_BUDGET))
+    matched = _hopcroft_karp(adj, len(fix_sets), deadline)
+    if matched is None:
+        return None, "the deadline passed while pairing the task's run with the fix run"
+    match_l, _match_r = matched
+    if any(m == -1 for m in match_l):
+        return None, None
+    comp = _same_component(adj, match_l, len(fix_sets), deadline)
+    if comp is None:
+        return None, "the deadline passed while pairing the task's run with the fix run"
+    n = len(task_sets)
+    settled = []
+    for u, labels in enumerate(task_sets):
+        possible = set()
+        for v in adj[u]:
+            if match_l[u] == v or comp[u] == comp[n + v]:
+                possible |= labels & fix_sets[v]
+        settled.append(possible)
+    return settled, None
+
+
+def _unmatched_heads(head_sets, task_sets, deadline):
+    """`(gone, problem)` - the HEAD lines left over when every HEAD line is
+    paired with a DIFFERENT task line that may carry one of its labels."""
+    adj, edges = _pairing_graph(head_sets, task_sets)
+    if edges > PAIRING_EDGE_BUDGET:
+        return None, ("matching HEAD's run with the task's needs %d edges, past "
+                      "the %d this settles" % (edges, PAIRING_EDGE_BUDGET))
+    matched = _hopcroft_karp(adj, len(task_sets), deadline)
+    if matched is None:
+        return None, "the deadline passed while matching HEAD's run with the task's"
+    return [i for i, m in enumerate(matched[0]) if m == -1], None
+
+
+def compare_runs(head_text, task_text, runner, failing, fix_text=None, deadline=None):
     """`{"held", "problem", "ambiguous"}` - which failing cases of the task's
     run HEAD's own run already named, or why the two runs cannot be compared.
 
-    A FALSE PROVED MUST BE IMPOSSIBLE, so any case the two runs cannot match
-    one to one is refused, never credited:
+    Any case the two runs cannot match one to one is refused, never credited:
 
-    - every case HEAD's run named must be printed by the task's run under a
-      label it may carry (pytest and unittest: the same node id or
-      `Class.test`; house: a shared label reading, or for an id-led label the
-      same id) - a label carrying a per-run value (a temp path, an object's
-      address) no longer lines up, and the whole comparison is refused;
-    - a failing house line is HEAD's when any label it may carry is one HEAD's
-      run printed (an id-led one: when HEAD printed its id). Where one reading
-      is HEAD's and another is not - an edited case, a new label holding a
-      parenthesis beside an older, shorter one - the line is `ambiguous`, and
-      only the fix run (`fix_text`) can credit it: it is paired one to one
-      with the fix run's lines (`_forced_label`), and is new only when that
-      pairing leaves it exactly one label, which HEAD never printed. The same
-      label printed more often by the task's run than by HEAD's, one of them
-      failing, pairs to a label HEAD printed, and is refused.
+    - every case HEAD's run named must be printed again by the task's run -
+      pytest and unittest: the same node id or `Class.test`; an id-led house
+      label: the same id; any other house line: paired one to one with a
+      DIFFERENT task line that may carry its label - or the whole comparison is
+      refused (a renamed or removed case, a label carrying a per-run value);
+    - a failing house line is HEAD's when any label it may carry is one HEAD
+      printed (an id-led one: when HEAD printed its id). Where one reading is
+      HEAD's and another is not, the line is `ambiguous`, and only the fix run
+      (`fix_text`) can credit it: the task's lines are paired one to one with
+      the fix run's, a line every such pairing leaves one label is settled to
+      it (`_settled_labels`), HEAD's lines must then be paired again against
+      the settled labels - a rename by an appended ` (as read)` is caught
+      there - and the line is new only when its settled label is one HEAD
+      never printed.
 
-    WHAT THIS CANNOT SEE, every limit in the could-not-prove direction: a new
-    case whose label shares a reading with one HEAD printed is refused unless
-    the fix run tells them apart, which needs the case to pass with the fix; a
-    new case given an id an existing family already uses is refused; a task
-    that renames or removes any case HEAD's run printed is refused whole, as is
-    one whose labels carry per-run values without an id to key them. The
-    refusals `head_names` makes before this is reached - a HEAD file that
-    genuinely holds no case, a red HEAD run under a stop-first flag that did
-    run every case, a runner told to name only failures - are in the same
-    direction."""
+    The pairing is Hopcroft-Karp and Tarjan, iterative, checked against
+    `deadline`, and refused past `PAIRING_EDGE_BUDGET` edges: a comparison it
+    cannot finish is a refusal, never an exception or a hang.
+
+    WHAT THIS CANNOT SEE. A case PASSING at HEAD, given a new label and edited
+    to fail while its old label is reused by a new passing case, is credited:
+    HEAD's case reappears under its old label and the failing line carries a
+    label HEAD never printed. That red comes from the task's own edit, as an
+    edited test's red does, and it is what the proof is about. The same shape
+    over a case already FAILING at HEAD would credit a red that was there
+    before the task; `changed_reds` refuses it, since a case red at HEAD that
+    the task's run prints only as passing means its test was changed. Every
+    other limit refuses: a new case sharing a reading with a label HEAD printed
+    unless the fix run tells them apart; a new case reusing an existing
+    family's id; any rename or removal of a case HEAD printed; a label carrying
+    a per-run value with no id to key it."""
+    if _past(deadline):
+        return {"held": [], "ambiguous": [], "problem": (
+            "the deadline passed before HEAD's run and the task's could be compared")}
     if runner != "house":
         heads = set(run_names(head_text, runner))
         runs = set(run_names(task_text, runner))
@@ -848,48 +1060,86 @@ def compare_runs(head_text, task_text, runner, failing, fix_text=None):
         return {"held": [f for f in failing if f["label"] in heads],
                 "ambiguous": [], "problem": None}
     head_lines, task_lines = _house_lines(head_text), _house_lines(task_text)
-    task_sets = [_labels_of(label, failed) for label, failed in task_lines]
     task_ids = set(house_case_id(label) for label, _f in task_lines) - set([None])
-    head_ids, head_labels, gone = set(), set(), []
-    for label, failed in head_lines:
-        lid = house_case_id(label)
-        if lid is not None:
-            head_ids.add(lid)
-            if lid not in task_ids:
-                gone.append(label)
-            continue
-        labels = _labels_of(label, failed)
-        head_labels |= labels
-        if not any(labels & t for t in task_sets):
-            gone.append(label)
-    if gone:
+    head_ids = set(house_case_id(label) for label, _f in head_lines) - set([None])
+    plain_heads = [(label, failed) for label, failed in head_lines
+                   if house_case_id(label) is None]
+    head_sets = [_labels_of(label, failed) for label, failed in plain_heads]
+    head_labels = set(label for labels in head_sets for label in labels)
+    gone_ids = sorted(head_ids - task_ids)
+
+    def refused(gone):
         return {"held": [], "ambiguous": [], "problem": (
-            "HEAD's own run printed %s, which the task's run printed under no "
-            "label it may carry - a renamed or removed case, or a label carrying "
-            "a value that differs per run - so the two runs' cases cannot be "
-            "matched one to one" % (_output.some_of(gone),))}
-    fix_lines = _house_lines(fix_text) if fix_text is not None else None
+            "HEAD's own run printed %s, which the task's run did not print again "
+            "under a label it may carry - a renamed or removed case, or a label "
+            "carrying a value that differs per run - so the two runs' cases "
+            "cannot be matched one to one" % (_output.some_of(gone),))}
+    task_sets = [_labels_of(label, failed) for label, failed in task_lines]
+    gone, problem = _unmatched_heads(head_sets, task_sets, deadline)
+    if problem is not None:
+        return {"held": [], "ambiguous": [], "problem": problem}
+    if gone or gone_ids:
+        return refused([plain_heads[i][0] for i in gone] + gone_ids)
+    fail_rows = [i for i, (_label, failed) in enumerate(task_lines) if failed]
     held, ambiguous = [], []
-    for f in failing:
+    for k, f in enumerate(failing):
         if f.get("id"):
             if f["id"] in head_ids:
                 held.append(f)
             continue
         readings = _labels_of(f["label"], True)
-        if not readings & head_labels:
-            continue
-        if readings <= head_labels or fix_lines is None:
+        if readings & head_labels:
             held.append(f)
             if not readings <= head_labels:
-                ambiguous.append(f)
+                ambiguous.append((k, f))
+    if fix_text is None or not ambiguous:
+        return {"held": held, "ambiguous": [f for _k, f in ambiguous],
+                "problem": None}
+    fix_sets = [_labels_of(label, failed) for label, failed in _house_lines(fix_text)]
+    settled, problem = _settled_labels(task_sets, fix_sets, deadline)
+    if problem is not None:
+        return {"held": [], "ambiguous": [], "problem": problem}
+    if settled is None:
+        return {"held": held, "ambiguous": [], "problem": None}
+    resolved = [s if len(s) == 1 else task_sets[i] for i, s in enumerate(settled)]
+    gone, problem = _unmatched_heads(head_sets, resolved, deadline)
+    if problem is not None:
+        return {"held": [], "ambiguous": [], "problem": problem}
+    if gone:
+        return refused([plain_heads[i][0] for i in gone])
+    for k, f in ambiguous:
+        row = fail_rows[k] if k < len(fail_rows) else None
+        label = (list(settled[row])[0] if row is not None and len(settled[row]) == 1
+                 else None)
+        if label is not None and label not in head_labels:
+            held.remove(f)
+    return {"held": held, "ambiguous": [], "problem": None}
+
+
+def changed_reds(head_text, task_text, runner):
+    """The cases HEAD's own run reported FAILING that the task's run prints
+    only as passing. The task's run runs HEAD's implementation, so such a case
+    passes only because the task changed its test - and a red that was already
+    there, relabelled while its old label went to a new passing case, cannot
+    be told from a new red by the output. `red` refuses a credit beside one."""
+    if runner != "house":
+        heads = [f["label"] for f in failing_cases(head_text, runner)]
+        names = set(run_names(task_text, runner))
+        still = set(f["label"] for f in failing_cases(task_text, runner))
+        return sorted(h for h in set(heads) if h in names and h not in still)
+    task_lines = _house_lines(task_text)
+    out = []
+    for label, failed in _house_lines(head_text):
+        if not failed:
             continue
-        index = next((i for i, (label, failed) in enumerate(task_lines)
-                      if failed and label == f["label"]), None)
-        label = (_forced_label(index, task_lines, fix_lines)
-                 if index is not None else None)
-        if label is None or label in head_labels:
-            held.append(f)
-    return {"held": held, "ambiguous": ambiguous, "problem": None}
+        lid = house_case_id(label)
+        readings = _labels_of(label, True)
+        carriers = [f for t, f in task_lines
+                    if (house_case_id(t) == lid if lid is not None
+                        else _labels_of(t, f) & readings)]
+        if carriers and not any(carriers):
+            out.append(label)
+    return out
 
 
 def _is_named(failure, name):
@@ -1138,7 +1388,8 @@ def red_verdict(run, ctx):
             fix = run.get("fix")
             compared = compare_runs(run["head"]["text"], text, tally["runner"],
                                     failing, fix["text"] if fix and not
-                                    fix.get("problem") else None)
+                                    fix.get("problem") else None,
+                                    deadline=ctx.get("deadline"))
             head_problem = compared["problem"]
         if head_problem is not None:
             return E_CANNOT_PROVE, verdict, {
@@ -1149,6 +1400,16 @@ def red_verdict(run, ctx):
                             env_clause)}, None
         own, refused = own_failures(heads, compared["held"], failing, ctx["cases"])
         refused_clause = _refused_clause(refused)
+        changed = (changed_reds(run["head"]["text"], text, tally["runner"])
+                   if own else [])
+        if changed:
+            return E_CANNOT_PROVE, verdict, {
+                "status": RED_CANNOT, "at": at,
+                "basis": "%s with failing cases %s, but a case red at HEAD passes in "
+                         "the task's run - its test was changed; the red cannot be "
+                         "told apart from a relabel: %s - %s%s%s"
+                         % (where, _ids(failing), _output.some_of(changed), line,
+                            refused_clause, env_clause)}, None
         if own:
             return E_PROVED, verdict, {
                 "status": RED_PROVED, "at": at,
@@ -1163,7 +1424,8 @@ def red_verdict(run, ctx):
                                    env_clause)}, None
     why_not = []
     for symbol in (ctx["symbols"] if verdict == V_COLLECT else ()):
-        holds, why = introduced(ctx["root"], ctx["implementation"], symbol)
+        holds, why = introduced(ctx["root"], ctx["implementation"], symbol,
+                                ctx.get("deadline"))
         error = qualifying_error(text, symbol)
         second = run.get("second")
         if not holds:
@@ -1217,11 +1479,13 @@ def red_verdict(run, ctx):
 def _at_head(root, rels, deadline):
     """`(present, problem)` - which of `rels` HEAD holds, asked of git under
     the one deadline."""
-    code, text = _git(root, ["ls-tree", "--name-only", "HEAD", "--"] + list(rels),
-                      timeout=max(1, _left(deadline)))
+    code, text = _git(root, ["ls-tree", "-z", "--name-only", "HEAD", "--"]
+                      + list(rels), timeout=max(1, _left(deadline)), strip=False)
     if code != 0:
         return None, "git could not list HEAD's files: %s" % (text,)
-    return set(text.splitlines()) & set(rels), None
+    # NUL-separated: without -z git quotes a path that is not plain ASCII, and a
+    # quoted path matches no declared one - HEAD's file would read as absent.
+    return set(p for p in text.split("\0") if p) & set(rels), None
 
 
 def _put_back_head(root, path, rels, deadline):
@@ -1410,7 +1674,7 @@ def run_red(args, cmd, out):
                                             state["new_files"])
                 failing1 = failing_cases(run["text"], tally1["runner"])
                 first = (compare_runs(run["head"]["text"], run["text"],
-                                      tally1["runner"], failing1)
+                                      tally1["runner"], failing1, deadline=deadline)
                          if problem is None and not state["deleted"] else None)
                 if (first is not None and first["problem"] is None
                         and first["ambiguous"]
@@ -1427,7 +1691,8 @@ def run_red(args, cmd, out):
             "root": root, "implementation": scope["implementation"],
             "tests": scope["tests"], "cases": args.case,
             "symbols": args.introduces, "dropped": dropped, "naming": naming,
-            "new_files": state["new_files"], "deleted": state["deleted"]})
+            "new_files": state["new_files"], "deleted": state["deleted"],
+            "deadline": deadline})
     finally:
         removed = _remove_throwaway(root, holder, path)
         if previous is not None:
@@ -1436,7 +1701,8 @@ def run_red(args, cmd, out):
                "atHead": scope["implementation"], "copied": copied,
                "leftovers": leftovers,
                "environment": {"dropped": dropped, "naming": naming,
-                               "set": ["PYTHONDONTWRITEBYTECODE=1"]},
+                               "set": ["%s=%s" % (k, env[k]) for k in
+                                       ("PYTHONDONTWRITEBYTECODE",) if k in env]},
                "throwaway": {"path": path, "head": head, "removed": removed},
                "run": {"argv": cmd, "exit": run["code"],
                        "outputTail": run["text"].splitlines()[-20:],
