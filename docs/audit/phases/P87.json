@@ -567,7 +567,7 @@
     {
       "id": "P87.12-bpl",
       "title": "the line before a call's command is judged by a strict character rule, not a comment lexer",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase review round 10 (review-P87j.json). The trailing-comment cut is a small shell lexer and leaks the same way the readers did: `false &&# c`, escaped quotes (`false \\\" && # c`), `false \\ #x &&`, and a comment ending in a backslash above a blank line all leave the real call read. Do not write a lexer. Replace the continuation test with a strict character rule: the nearest earlier CODE line before the command's start (skipping blank lines and full-line comments - a line whose first non-space character is #, which never continues a command in shell) must contain none of the characters & | \\ # anywhere; in ci.yml the plain `run: |` opener is the block's edge and is exempt. Any such line is refused by line, naming it. The real tree passes: verify.sh's lines before the plain and release wrappers and ci.yml's `set -e` contain none of them. Delete _without_trailing_comment and the operator-suffix logic the rule makes dead, and the docstring sentence about a backslash before a comment. ra29i rows for every round-10 spelling, red first; ra29g keeps full-line comments (including ones ending in a backslash or &&) and a plain command line above the call as reads. State in the comment and CHANGELOG that the rule is deliberately strict: a correct but unusual line above the call is refused loudly.",
       "files": [
         "tools/check-rendered-artifacts.py",
@@ -596,14 +596,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7e630f10",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_FORBIDDEN_ABOVE over the nearest code line before the command start; comment lexer deleted; ra29i/ra29g",
+        "descriptive": "The line above a call is judged by a fixed character rule, so no shell spelling can make a dead call read as live"
       },
       "startedAt": "2026-09-27T17:22:08Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-27T17:30:01Z",
+      "verifiedBy": [
+        "check-rendered-artifacts 37/37",
+        "py_compile -W error",
+        "probe 8/8 red on an export",
+        "full sweep",
+        "gate-parity"
+      ]
     }
   ],
   "startedAt": "2026-09-27T14:08:20Z"
