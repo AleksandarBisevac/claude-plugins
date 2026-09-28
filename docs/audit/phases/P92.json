@@ -1,7 +1,7 @@
 {
   "id": "P92",
   "title": "the suites pass on the runners CI uses, and the local sweep sees what those runners see",
-  "status": "in_progress",
+  "status": "done",
   "description": "CI failed on the pushed main for causes the local sweep could not see: environment inputs it passes through (the session variables, git's system config and identity guessing, the installed shells) and a report-coverage gap the dogfood plan's own data triggered. Fix each cause red first by flipping the input that hid it, then close the class in the sweep and in verify.sh.",
   "desiredOutcome": "CI's ubuntu selftests and manifest-validation jobs are green on the phase's head, and the local sweep, run in the environment it now isolates, fails on each cause they failed on before the fix",
   "testGate": [
@@ -15,7 +15,7 @@
   "blockedBy": [],
   "baseRef": "b00f798e928993824371b78327d2fbfce3f9bc2b",
   "branch": "audit/p92-the-suites-pass-on-the-runners",
-  "mergedAt": null,
+  "mergedAt": "2026-09-28T02:08:24Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -409,5 +409,6 @@
     "runId": "2026-09-28T01:59:22Z.8f2fc0",
     "status": "passed",
     "at": "2026-09-28T01:59:22Z"
-  }
+  },
+  "mergedHead": "266f1a90e72264f811596f21342b70741e96c5a2"
 }
