@@ -587,7 +587,7 @@
     {
       "id": "P92",
       "title": "the suites pass on the runners CI uses, and the local sweep sees what those runners see",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P92.json"
     }
   ],
