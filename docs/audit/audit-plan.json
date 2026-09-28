@@ -589,6 +589,12 @@
       "title": "the suites pass on the runners CI uses, and the local sweep sees what those runners see",
       "status": "done",
       "shard": "phases/P92.json"
+    },
+    {
+      "id": "P93",
+      "title": "every leg of CI's ubuntu job passes, and verify.sh runs each of them",
+      "status": "pending",
+      "shard": "phases/P93.json"
     }
   ],
   "fileIndex": {
@@ -3986,7 +3992,8 @@
       "P74.10-qq5",
       "P80.18-rtb",
       "P81.11",
-      "P81.16-j7p"
+      "P81.16-j7p",
+      "P93.1"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
@@ -4147,7 +4154,8 @@
       "P43.4",
       "P72.2-ttl",
       "P92.4",
-      "P92.6-a1x"
+      "P92.6-a1x",
+      "P93.2"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -4185,7 +4193,8 @@
       "P85.4",
       "P86.4",
       "P92.4",
-      "P92.6-a1x"
+      "P92.6-a1x",
+      "P93.2"
     ],
     "tools/redfirst.sh": [
       "P55.13"
@@ -4218,7 +4227,8 @@
       "P56.2",
       "P87.1",
       "P87.3-bpl",
-      "P92.4"
+      "P92.4",
+      "P93.2"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
