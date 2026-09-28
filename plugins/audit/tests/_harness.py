@@ -529,21 +529,24 @@ def label_faults(labels, sites):
     appears. One call site is one authored assertion; two hand-written cases
     claiming `pn10` are two.
 
-    `sites` maps an identifier to the set of caller line numbers that produced
-    it. `run()` collects it because a line number is the one thing a rendered
+    `sites` maps an identifier to the set of `(filename, line)` call sites that
+    produced it - see `_call_site()` for which frame that is and why a skip has
+    none. `run()` collects it because a call site is the one thing a rendered
     report has already thrown away, and it is what turns "this id is ambiguous"
     into two places to go and look.
     """
     faults = []
     for cid in sorted(sites):
-        lines = sorted(sites[cid])
-        if len(lines) > 1:
+        places = sorted(sites[cid])
+        if len(places) > 1:
             faults.append(
                 ("DUPLICATE CASE ID `%s` - claimed by %d separate check() call "
-                 "sites, at lines %s. prove-gates.py credits a mutation to the "
+                 "sites, at %s. prove-gates.py credits a mutation to the "
                  "case whose id went red, so an id naming two cases defeats that "
                  "verdict silently"
-                 % (cid, len(lines), ", ".join(str(n) for n in lines)),
+                 % (cid, len(places),
+                    ", ".join("%s:%d" % (os.path.basename(f), n)
+                              for f, n in places)),
                  False, ""))
     seen = {}
     for label in labels:
@@ -555,6 +558,46 @@ def label_faults(labels, sites):
                  "tool can tell the two apart: %r" % (seen[label], label),
                  False, ""))
     return faults
+
+
+def _call_site(frame):
+    """`(filename, line)` naming the authored assertion behind a `check()` call,
+    or None when the call came through `skip()`.
+
+    A SKIP IS NOT AN AUTHORED SITE. `skip()` calls `check()` from its own body, so
+    a bare caller line put every skip in a suite at one harness line - and a case
+    that runs on one platform and is skipped on another then read as two sites
+    under one id, on exactly the platform that lacked the mechanism. The skip's
+    docstring promises the case keeps its id across platforms; recording no site
+    for it is what makes that true. The whole stack up to `run()` is searched for
+    it, so a suite that hands `skip()` its own wrapper around `check()` is read
+    the same way.
+
+    THE SITE IS THE FIRST FRAME OUTSIDE THIS FILE, and it carries the filename, so
+    a line in the harness can never collide with the same number in a suite.
+    `stage()` reports its block's escape from here too, and is attributed to the
+    suite line that staged the block. The walk ends at `run()` itself: every frame
+    past it is whatever launched the suite, never an author. Reaching `run()`
+    without leaving this file means the harness is running its own cases, and then
+    the immediate caller is the site.
+    """
+    site = None
+    first = frame
+    while frame is not None and frame.f_code is not run.__code__:
+        if frame.f_code is skip.__code__:
+            return None
+        if site is None and frame.f_code.co_filename != _HARNESS_SOURCE:
+            site = (frame.f_code.co_filename, frame.f_lineno)
+        frame = frame.f_back
+    if site is None:
+        site = (first.f_code.co_filename, first.f_lineno)
+    return site
+
+
+# What every frame of THIS module reports as its file - read off a code object
+# rather than `__file__`, so it is the same string the walk compares against
+# whether the module was imported or launched as a script.
+_HARNESS_SOURCE = _call_site.__code__.co_filename
 
 
 def _render(cases):
@@ -609,8 +652,9 @@ def run(body):
     def check(label, cond, detail=""):
         cases.append((label, bool(cond), str(detail)))
         cid = case_id("%s" % (label,))
-        if cid is not None:
-            sites.setdefault(cid, set()).add(sys._getframe(1).f_lineno)
+        site = _call_site(sys._getframe(1)) if cid is not None else None
+        if site is not None:
+            sites.setdefault(cid, set()).add(site)
 
     try:
         body(check)
@@ -853,7 +897,8 @@ def _cases(check):
     # unconditionally, u4 if it counts OCCURRENCES instead of call sites.
     check("u3 a suite whose ids are all distinct is told nothing at all",
           label_faults(["a1 one", "a2 two"],
-                       {"a1": set([10]), "a2": set([11])}) == [])
+                       {"a1": set([("s.py", 10)]),
+                        "a2": set([("s.py", 11)])}) == [])
     # THROUGH `run()`, NOT THROUGH `label_faults()` DIRECTLY. A hand-built
     # `sites` dict would assert nothing about the half that keys on the call
     # site, so the mutation this case exists for - collecting one key per case
@@ -899,6 +944,71 @@ def _cases(check):
           "claiming they agree is not a test that they do",
           _render([("pn10b the BARE count", False, "")])[0]
           .splitlines()[0].split(None, 2)[1] == _pn10b_id)
+
+    # -- a skip is not a call site ---------------------------------------------
+    # A SUITE FILE THAT IS NOT THIS ONE, built from source under a name of its
+    # own, because the defect lived exactly at that seam: the real case ran at a
+    # suite line while the skipped one was recorded at the line inside skip()
+    # that calls check(), and the two read as two sites under one id. The loop
+    # is the shape of the shell-lock case whose third shell is absent on a
+    # runner.
+    def _suite_body(name, src):
+        _ns = {"skip": skip}
+        exec(compile(src, name, "exec"), _ns)                  # noqa: S102
+        return _ns["body"]
+
+    _sk_suite = _suite_body("fake_suite_sk.py", (
+        "def body(c):\n"
+        "    for shell in ('sh', 'bash', 'zsh'):\n"
+        "        if shell == 'zsh':\n"
+        "            skip(c, 'sk9 %s' % (shell,), 'not on PATH here', True)\n"
+        "            continue\n"
+        "        c('sk9 %s runs the recipe' % (shell,), True)\n"))
+    out_sk, code_sk = _capture(run, _sk_suite)
+    check("cs1 one id checked by a real case on one branch and through skip() on "
+          "another is ONE case, not a duplicate - a skip is recorded with no call "
+          "site of its own, so the case keeps its id across platforms as skip() "
+          "promises",
+          code_sk == 0 and "DUPLICATE" not in out_sk
+          and "SKIPPED HERE" in out_sk, out_sk)
+
+    # The same shape with every frame inside THIS file, which is the branch of
+    # `_call_site()` that falls back to the immediate caller.
+    def _skips_one_branch(c):
+        for _shell in ("sh", "zsh"):
+            if _shell == "zsh":
+                skip(c, "sk10 %s" % (_shell,), "not on PATH here", True)
+                continue
+            c("sk10 %s runs the recipe" % (_shell,), True)
+
+    out_sk2, code_sk2 = _capture(run, _skips_one_branch)
+    check("cs2 ...and the same holds when the harness itself is the author, so "
+          "the rule does not depend on which file called skip()",
+          code_sk2 == 0 and "DUPLICATE" not in out_sk2, out_sk2)
+
+    # THE ALLOW SIDE, and the fixture is chosen so a key of bare line numbers
+    # cannot pass it: two suite files whose real check() calls sit on the SAME
+    # line number. A line-only key reads them as one site and says nothing; the
+    # filename is what tells two authored assertions apart.
+    _src_a = ("def body(c):\n"
+              "    c('dupf9 the first file claims the id', True)\n")
+    _dup_a = _suite_body("fake_suite_a.py", _src_a)
+    _dup_b = _suite_body("fake_suite_b.py", _src_a.replace("first", "second"))
+
+    def _two_files_one_id(c):
+        _dup_a(c)
+        _dup_b(c)
+
+    out_df, code_df = _capture(run, _two_files_one_id)
+    check("cs3 two real check() call sites under one id are still a duplicate, "
+          "even on the same line number of two different files - and the report "
+          "names each place by file and line",
+          code_df == 1 and "FAIL DUPLICATE CASE ID `dupf9`" in out_df
+          and "fake_suite_a.py:2" in out_df and "fake_suite_b.py:2" in out_df,
+          out_df)
+    check("cs4 ...and u1's fixture, both sites inside this file, is still "
+          "reported with this file's name on each place",
+          out_dup.count("_harness.py:") == 2, out_dup)
 
     # -- module_source(): the subject's file, never the test's -----------------
     import _output as _ms_probe

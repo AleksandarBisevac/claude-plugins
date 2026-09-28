@@ -1,7 +1,7 @@
 {
   "id": "P92",
   "title": "the suites pass on the runners CI uses, and the local sweep sees what those runners see",
-  "status": "pending",
+  "status": "in_progress",
   "description": "CI failed on the pushed main for causes the local sweep could not see: environment inputs it passes through (the session variables, git's system config and identity guessing, the installed shells) and a report-coverage gap the dogfood plan's own data triggered. Fix each cause red first by flipping the input that hid it, then close the class in the sweep and in verify.sh.",
   "desiredOutcome": "CI's ubuntu selftests and manifest-validation jobs are green on the phase's head, and the local sweep, run in the environment it now isolates, fails on each cause they failed on before the fix",
   "testGate": [
@@ -13,8 +13,8 @@
     "lint"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "b00f798e928993824371b78327d2fbfce3f9bc2b",
+  "branch": "audit/p92-the-suites-pass-on-the-runners",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -27,7 +27,7 @@
     {
       "id": "P92.1",
       "title": "a case skipped on one platform and run on another is one case, not a duplicate id",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The harness records a call site as a bare line number and skip() calls check() from inside the harness, so test__refs lr2 (run on one shell, skipped where zsh is absent) reads as a duplicate on ubuntu and windows. A skip registers no call site of its own; sites are keyed by the file and line of the first frame outside the harness. Red first by making zsh unavailable to the case.",
       "files": [
         "plugins/audit/tests/_harness.py",
@@ -54,21 +54,26 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-28T00:35:24Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-28T01:03:43Z.732ab1",
+        "status": "passed",
+        "at": "2026-09-28T01:03:43Z"
+      }
     },
     {
       "id": "P92.2",
       "title": "the lock and branch fixtures in test_audit_task hold on a runner with no session and a plain git",
-      "status": "pending",
+      "status": "in_progress",
       "description": "k1-k4: the fixture takes the lock in the test's own process, whose token then rides in AUDIT_LOCK_TOKENS and lets the verb back in when no session variable names another caller (CI). Take the fixture lock from a subprocess, or drop the carried token, and pin the session variables the case means. tw5/tw6: mk() and mk_pair_empty() run git init without a branch, which is main only under Apple git's system config; use an explicit initial branch. Red first with the session variables stripped and GIT_CONFIG_NOSYSTEM=1.",
       "files": [
         "plugins/audit/tests/test_audit_task.py"
@@ -94,21 +99,26 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-28T00:35:24Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-28T01:05:12Z.797997",
+        "status": "passed",
+        "at": "2026-09-28T01:05:12Z"
+      }
     },
     {
       "id": "P92.3",
       "title": "close-phase's merge fixture carries its own git identity",
-      "status": "pending",
+      "status": "in_progress",
       "description": "close-phase's merge --no-ff needs a committer; the fixture identity covers only the fixture's own git calls, and ubuntu cannot guess one. Write a repo-local user.name/user.email into the worktree fixture. Red first with user.useConfigOnly=true.",
       "files": [
         "plugins/audit/tests/test_close_phase.py"
@@ -134,26 +144,33 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-28T00:35:25Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-28T01:06:43Z.5d58b3",
+        "status": "passed",
+        "at": "2026-09-28T01:06:43Z"
+      }
     },
     {
       "id": "P92.4",
       "title": "the rendered-plan legs CI runs are graded the same way locally, and a plan with ready work and no area tags is not a coverage failure",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The tagged-phase chips expect is excused only when nothing is ready; excuse it too on the note its else branch prints when no ready task sits in a tagged phase. CI's one-status leg renders the live dogfood plan while its comment says the plan is all one status: render a committed fixture that is, or say what it renders. verify.sh runs the same rendered-plan legs as ci.yml so a local green covers them.",
       "files": [
         "tools/check-report-interactive.mjs",
         ".github/workflows/ci.yml",
-        "tools/verify.sh"
+        "tools/verify.sh",
+        "tools/gate-parity.py",
+        "tools/prove-gates.py"
       ],
       "tests": {
         "mode": "regression",
@@ -176,16 +193,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-28T00:35:25Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-28T01:08:11Z.a7562f",
+        "status": "passed",
+        "at": "2026-09-28T01:08:11Z"
+      }
     },
     {
       "id": "P92.5",
@@ -235,5 +257,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-28T00:35:24Z"
 }
