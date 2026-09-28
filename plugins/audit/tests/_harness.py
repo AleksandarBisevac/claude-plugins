@@ -204,6 +204,15 @@ def fixture_root(prefix):
     rather than exempting one platform's spelling of a cache directory is what keeps
     the two watched channels free of a premise nobody re-checks.
 
+    AND THE REST OF THE ENVIRONMENT IS FILTERED. The runner drops the Claude
+    session's variables - every `CLAUDE_` name, plus `CLAUDECODE` and
+    `AUDIT_LOCK_TOKENS` - and any identity the caller exports (`GIT_AUTHOR_*`,
+    `GIT_COMMITTER_*`, `EMAIL`), and runs git with `GIT_CONFIG_NOSYSTEM` set and
+    `user.useConfigOnly` refusing a guessed identity, supplying no branch and no
+    identity instead. So a fixture here that commits must configure its own
+    identity, and one that names a branch must create it, exactly as on a bare CI
+    runner.
+
     This function is only the easy way to be clean.
     """
     root = tempfile.mkdtemp(prefix=prefix)

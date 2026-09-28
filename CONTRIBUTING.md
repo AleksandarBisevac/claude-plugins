@@ -101,13 +101,23 @@ the script is only a caller:
 # independently on linux, `USERPROFILE` answers on windows, and git for windows joins
 # `HOMEDRIVE` with `HOMEPATH` by hand.
 #
+# WHAT IS NOT A DIRECTORY IS FILTERED, NOT PASSED THROUGH. The Claude session's variables -
+# every `CLAUDE_` name, plus `CLAUDECODE` and `AUDIT_LOCK_TOKENS` - are dropped, and so is any
+# identity the caller exports (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`, `EMAIL`); git runs
+# with `GIT_CONFIG_NOSYSTEM` set and `user.useConfigOnly` refusing a guessed identity. No
+# branch and no identity are supplied in their place: a suite leaning on the host's git must
+# fail here the way it fails on a bare runner, which is what a local sweep that stayed green
+# over CI's ubuntu reds was not doing.
+#
 # AND THIS COMMENT IS A CHECKED ONE. `gate-parity.py`'s `isolation_drift()` reads the runner's
 # own constants - the families are tuples in that module, not a list restated here - and fails
 # when a family it pins is named by none of the documents that describe the isolation: this
 # block, CLAUDE.md's Tests section, and the docstring beside `_harness.fixture_root()`. It also
 # asks the runner about itself: a watched directory with no channel label beside it is dropped
 # by `zip` and reported about by nothing, and one with no planted file can report a stray but
-# never a deletion. The surface grew more than once and left each of the three behind by a
+# never a deletion. It reads only the families pinned to a directory, so nothing holds this
+# block to the filtered names above; the runner's own cases hold the filtering itself. The
+# surface grew more than once and left each of the three behind by a
 # different amount, which is why there is a rule here instead of a fourth correction.
 #
 # `--jobs 1` gives the old serial shape for a bisect.

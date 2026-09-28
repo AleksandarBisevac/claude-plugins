@@ -70,6 +70,7 @@ not a cache - on a cold tree the compile lands once instead of once per file.
 """
 import ast
 import io
+import json
 import os
 import re
 import shutil
@@ -208,6 +209,73 @@ def home_env(home):
     drive, tail = os.path.splitdrive(home)
     out["HOMEDRIVE"] = drive
     out["HOMEPATH"] = tail
+    return out
+
+
+# --- what a child inherits from the caller, which is not a directory ----------
+# THE DIRECTORIES ABOVE WERE NOT THE WHOLE OF THE AMBIENT STATE. The rest of the
+# caller's environment went through untouched, and three things in it made a local
+# sweep green over suites CI's ubuntu runner turned red: the Claude session a sweep
+# is usually typed from, which the lock and journal code read as a live holder and
+# an actor; git's SYSTEM configuration, which on a mac pins a default branch no bare
+# runner has; and git's habit of guessing an identity from the hostname when none
+# is configured, which a runner with no hostname identity refuses. A suite that
+# leaned on any of the three passed here and failed there.
+#
+# THE SESSION FAMILY IS DERIVED BY PREFIX, not listed, because the harness adds
+# members to it and a list would be one release behind. The two names outside the
+# prefix are named with their reason: `CLAUDECODE` is the harness's own marker that
+# a process was spawned by it, and `AUDIT_LOCK_TOKENS` is how a lock holder hands
+# its claims to its children - a sweep typed from inside a held run would hand
+# every suite a claim it never took. Nothing is allowed through by name: CI's
+# runners carry none of this family, and a suite that needs one of them sets it.
+SESSION_PREFIX = "CLAUDE_"
+SESSION_NAMES = ("CLAUDECODE", "AUDIT_LOCK_TOKENS")
+
+# AN IDENTITY THE CALLER EXPORTS IS AMBIENT TOO. Refusing git's guess closes only
+# half of it: a developer with one of these exported hands every suite an identity
+# a bare runner never has, and a suite that commits without configuring its own
+# goes green here and red there. The list is the "Git Commits" section of `git(1)`,
+# exactly - the other `GIT_*` names (`GIT_DIR`, `GIT_TERMINAL_PROMPT`, ...) are not
+# identity and pass through. Only what THIS runner inherits is filtered: a suite
+# that sets one of these for its own child builds that child's environment itself.
+GIT_IDENTITY_NAMES = ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE",
+                      "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL",
+                      "GIT_COMMITTER_DATE", "EMAIL")
+
+# NO DEFAULT BRANCH AND NO IDENTITY ARE PINNED, deliberately. Refusing the host's
+# answers is the whole move; supplying the runner's own would hide a suite that
+# still leans on the host behind a value only this runner provides. The global
+# config needs nothing here - HOME is already a scratch directory with no
+# `.gitconfig` in it. `GIT_CONFIG_COUNT` rather than a file planted in that home,
+# because a planted file is one more thing the home channel would have to excuse.
+GIT_ENV = (("GIT_CONFIG_NOSYSTEM", "1"),
+           ("GIT_CONFIG_COUNT", "1"),
+           ("GIT_CONFIG_KEY_0", "user.useConfigOnly"),
+           ("GIT_CONFIG_VALUE_0", "true"))
+
+
+def is_session_var(name):
+    """True when `name` is the Claude session's, and a child must not see it."""
+    return name.startswith(SESSION_PREFIX) or name in SESSION_NAMES
+
+
+def is_ambient_identity(name):
+    """True when `name` hands git an identity a bare runner would not have."""
+    return name in GIT_IDENTITY_NAMES
+
+
+def ambient_env(environ):
+    """The caller's environment minus the session and any exported git identity,
+    with git's host answers refused.
+
+    A NEW MAPPING, never the caller's: `run_one` layers the directory pins on top of
+    this, and the process's own environment is shared with every other thread of
+    the sweep.
+    """
+    out = dict((k, v) for k, v in environ.items()
+               if not is_session_var(k) and not is_ambient_identity(k))
+    out.update(GIT_ENV)
     return out
 
 
@@ -371,7 +439,7 @@ def child_debris(work, home):
 
 # --- running (impure) and grading (pure) --------------------------------------
 def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
-            pycache=None):
+            pycache=None, environ=None):
     """Run one file's `--selftest` in a scratch directory and report what happened.
 
     Split from `grade` on purpose: everything below this line is a decision about
@@ -406,6 +474,13 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     pays a cold compile, which is right for the handful of direct calls in the
     cases below and wrong for a sweep of the whole tree.
 
+    AND WHAT IS NOT A DIRECTORY IS FILTERED TOO. `ambient_env` drops the Claude
+    session's variables and any git identity the caller exports, and refuses git's
+    system config and its guessed identity,
+    so a suite sees what a bare runner shows it. `environ` is the caller's
+    environment, threaded rather than read so a case can plant a session variable
+    without writing to the process's own.
+
     stderr is folded into stdout (`2>&1`, as both old copies did) so a traceback
     lands in the same stream as the contract line, in order. Bytes are decoded with
     `replace`: under `--encoding cp1252` the child deliberately writes a legacy code
@@ -413,7 +488,7 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     run the pass it exists to run.
     """
     repo = repo or REPO
-    env = dict(os.environ)
+    env = ambient_env(os.environ if environ is None else environ)
     if encoding:
         env["PYTHONIOENCODING"] = encoding
     # A SHORT PREFIX, deliberately. This directory becomes the root of every fixture
@@ -879,6 +954,62 @@ def _cases(check):
           and all(_pinned[n] == _where for n in HOME_VARS)
           and os.path.join(_pinned["HOMEDRIVE"], _pinned["HOMEPATH"]) == _where)
 
+    # -- the rest of the caller's environment -------------------------------
+    _caller = {"CLAUDE_CODE_SESSION_ID": "s", "CLAUDE_PLUGIN_ROOT": "/p",
+               "CLAUDECODE": "1", "AUDIT_LOCK_TOKENS": "t",
+               "PATH": "/bin", "MY_CLAUDE_NOTE": "kept", "CLAUDEX_NOTE": "kept",
+               "GIT_CONFIG_NOSYSTEM": "0"}
+    _before = dict(_caller)
+    _amb = ambient_env(_caller)
+    check("se0 the session family is dropped by PREFIX and the two names outside "
+          "it by name, so a member the harness adds later is dropped without a "
+          "list growing: %r" % (sorted(_amb),),
+          not any(k in _amb for k in ("CLAUDE_CODE_SESSION_ID",
+                                      "CLAUDE_PLUGIN_ROOT", "CLAUDECODE",
+                                      "AUDIT_LOCK_TOKENS")))
+    # se1 IS THE SECOND DIRECTION: se0 passes against a filter that drops
+    # everything, or one that matches the prefix anywhere in a name.
+    check("se1 ...and nothing else is: a name that merely CONTAINS the prefix, "
+          "or starts with the prefix minus its separator, passes through with "
+          "PATH: %r" % (_amb,),
+          _amb.get("PATH") == "/bin" and _amb.get("MY_CLAUDE_NOTE") == "kept"
+          and _amb.get("CLAUDEX_NOTE") == "kept")
+    check("se2 git's system config is switched off and identity guessing refused "
+          "OVER whatever the caller carried, and no branch or identity is "
+          "supplied in their place: %r"
+          % (dict((k, v) for k, v in _amb.items() if k.startswith("GIT_")),),
+          _amb.get("GIT_CONFIG_NOSYSTEM") == "1"
+          and _amb.get("GIT_CONFIG_COUNT") == "1"
+          and _amb.get("GIT_CONFIG_KEY_0") == "user.useConfigOnly"
+          and _amb.get("GIT_CONFIG_VALUE_0") == "true"
+          and not any(k in _amb for k in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
+                                          "GIT_COMMITTER_NAME",
+                                          "GIT_COMMITTER_EMAIL"))
+          and "init.defaultBranch" not in _amb.values())
+    check("se3 ...and the caller's mapping is left as it was, because it is the "
+          "process environment every thread of the sweep shares",
+          _caller == _before)
+
+    _ident = dict((n, "x") for n in GIT_IDENTITY_NAMES)
+    _ident.update({"GIT_DIR": "/r/.git", "GIT_TERMINAL_PROMPT": "0"})
+    _amb = ambient_env(_ident)
+    # NAMED HERE rather than read off GIT_IDENTITY_NAMES, as hv0 does for the home
+    # table: a case asserting the tuple against itself passes a tuple that lost
+    # half its members.
+    check("se4 every identity name in git's own list is dropped when the caller "
+          "exports it: %r" % (sorted(_amb),),
+          not any(k in _amb for k in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
+                                      "GIT_AUTHOR_DATE", "GIT_COMMITTER_NAME",
+                                      "GIT_COMMITTER_EMAIL", "GIT_COMMITTER_DATE",
+                                      "EMAIL")))
+    # se5 IS THE SECOND DIRECTION of se4: a filter over the whole `GIT_` prefix
+    # passes se4 and takes the repository a caller pointed at with it.
+    check("se5 ...and a GIT_ name that is not identity is left alone: %r"
+          % (dict((k, v) for k, v in _amb.items()
+                  if k in ("GIT_DIR", "GIT_TERMINAL_PROMPT")),),
+          _amb.get("GIT_DIR") == "/r/.git"
+          and _amb.get("GIT_TERMINAL_PROMPT") == "0")
+
     # A fixture, NOT this file: `run_one` appends `--selftest`, so pointing it at
     # this module would have it run its own suite, which runs this case, which
     # spawns it again. Written that way first; a hermetic child is both safe and a
@@ -1052,6 +1183,111 @@ def _cases(check):
               ran["code"] == 0 and _seen.get("prefix") not in (None, "", "None")
               and not _seen["prefix"].startswith(_seen["home"])
               and not _seen["prefix"].startswith(_seen["cwd"]))
+
+        # -- what a child inherits that is not a directory -----------------
+        # THE SESSION IS PLANTED, not read off this process: CI's runners carry
+        # none of it, so a case that relied on the caller's own environment would
+        # pass there against a runner that filters nothing. `GIT_CONFIG_NOSYSTEM`
+        # is planted as "0" so a runner that merely passes the caller's value
+        # through reads differently from one that pins it. The pass-through name is
+        # chosen to CONTAIN the prefix without starting with it, which is what a
+        # filter matching anywhere in the name would wrongly drop.
+        envprobe = _fixture("fixture_env",
+                            "import json, os, subprocess, sys\n"
+                            "r = subprocess.run(['git', 'var', "
+                            "'GIT_COMMITTER_IDENT'], stdout=subprocess.PIPE, "
+                            "stderr=subprocess.PIPE)\n"
+                            "e = os.environ\n"
+                            "sys.stdout.write('ENV=' + json.dumps({\n"
+                            "    'session': sorted(k for k in e if "
+                            "k.startswith('CLAUDE') or k == 'AUDIT_LOCK_TOKENS'),\n"
+                            "    'identity': sorted(k for k in e if k in %r),\n"
+                            % (list(GIT_IDENTITY_NAMES),)
+                            + "    'prompt': e.get('GIT_TERMINAL_PROMPT'),\n"
+                            "    'own': subprocess.run(['git', 'var', "
+                            "'GIT_AUTHOR_IDENT'], stdout=subprocess.PIPE, "
+                            "stderr=subprocess.PIPE, env=dict(e, "
+                            "GIT_AUTHOR_NAME='Own Fixture', "
+                            "GIT_AUTHOR_EMAIL='own@fixture.invalid'))"
+                            ".stdout.decode('utf-8', 'replace'),\n"
+                            "    'nosystem': e.get('GIT_CONFIG_NOSYSTEM'),\n"
+                            "    'ident': r.returncode,\n"
+                            "    'kept': e.get('SWEEP_CLAUDE_PROBE'),\n"
+                            "    'path': e.get('PATH'),\n"
+                            "    'home': os.path.expanduser('~'),\n"
+                            "    'tmp': os.path.realpath(e.get('TMPDIR') or ''),\n"
+                            "    'cwd': os.path.realpath(os.getcwd())}) + '\\n')\n"
+                            + _CONTRACT_LINE)
+        _planted = dict(os.environ)
+        _planted.update({"CLAUDE_CODE_SESSION_ID": "sweep-probe-session",
+                         "CLAUDE_PID": str(os.getpid()),
+                         "CLAUDECODE": "1",
+                         "AUDIT_LOCK_TOKENS": "sweep-probe-token",
+                         "GIT_CONFIG_NOSYSTEM": "0",
+                         "SWEEP_CLAUDE_PROBE": "kept",
+                         "GIT_TERMINAL_PROMPT": "0"})
+        # EVERY IDENTITY NAME IS EXPORTED BY THE CALLER, which is the developer
+        # this case is about. x10 therefore reads a refused GUESS only when the
+        # exported identity was dropped first - a runner that passes it through
+        # turns x10 red beside x12, and that is the class, not a confusion of it.
+        _planted.update(dict((n, "sweep-probe-%s@ambient.invalid" % (n.lower(),))
+                             for n in GIT_IDENTITY_NAMES
+                             if not n.endswith("_DATE")))
+        _planted.update({"GIT_AUTHOR_DATE": "@1700000000 +0000",
+                         "GIT_COMMITTER_DATE": "@1700000000 +0000"})
+        ran = run_one(envprobe, timeout=30, environ=_planted)
+        _env = {}
+        for line in ran["output"].splitlines():
+            if line.startswith("ENV="):
+                _env = json.loads(line[len("ENV="):])
+        # What the messages print: the report without PATH, which is long and is
+        # compared rather than read - or, when the child reported nothing, what it
+        # printed instead, so a dead child is not a row of empty dicts.
+        _shown = (dict((k, v) for k, v in _env.items() if k != "path")
+                  if _env else ran["output"][-400:])
+        check("x8 a child sees NONE of the Claude session it was typed from - the "
+              "prefix family, the harness marker and a lock holder's tokens - "
+              "which the lock and journal code otherwise read as a live holder "
+              "and an actor that a bare runner never has: %r" % (_shown,),
+              ran["code"] == 0 and bool(_env) and _env.get("session") == [])
+        check("x9 ...git's SYSTEM config is switched off in the child, overriding "
+              "the value the caller carried, so a default branch the host's git "
+              "pins cannot reach a suite: %r" % (_env.get("nosystem"),),
+              bool(_env) and _env.get("nosystem") == "1")
+        check("x10 ...and git refuses to GUESS an identity: with no configured "
+              "user a child's `git var GIT_COMMITTER_IDENT` fails as it does on a "
+              "runner, instead of answering with the host name: exit %r"
+              % (_env.get("ident"),),
+              bool(_env) and _env.get("ident") not in (None, 0))
+        check("x12 ...and an identity the caller EXPORTS does not reach the child "
+              "either - every name git's own documentation lists for a commit's "
+              "identity is absent, so a suite that commits without configuring "
+              "one cannot borrow the developer's: %r" % (_env.get("identity"),),
+              bool(_env) and _env.get("identity") == [])
+        # x13 AND x14 ARE THE SECOND DIRECTION of x12. A filter over every `GIT_*`
+        # name passes x12 and takes `GIT_DIR` and its neighbours with it; a filter
+        # applied to what a SUITE builds for its own child would break every
+        # fixture that commits with an identity it set itself.
+        check("x13 ...while a GIT_ name that is not identity still passes through "
+              "from the caller: GIT_TERMINAL_PROMPT=%r" % (_env.get("prompt"),),
+              bool(_env) and _env.get("prompt") == "0")
+        check("x14 ...and an identity a child sets for ITS OWN child reaches it - "
+              "only what the sweep inherits is filtered: %r" % (_env.get("own"),),
+              bool(_env) and "Own Fixture <own@fixture.invalid>"
+              in (_env.get("own") or ""))
+        # x11 IS THE SECOND DIRECTION: every case above passes against a runner
+        # that hands the child an EMPTY environment, which would kill every suite
+        # that shells out by name. It is also the one that fails when the filter
+        # matches the prefix anywhere in a name rather than at its start.
+        check("x11 ...while everything else still reaches the child: PATH and a "
+              "name that merely contains the prefix pass through, and the cwd, "
+              "TMPDIR and home isolation are still in force (PATH identical: "
+              "%r): %r" % (_env.get("path") == os.environ.get("PATH"), _shown),
+              bool(_env) and _env.get("kept") == "kept"
+              and _env.get("path") == os.environ.get("PATH")
+              and _env.get("tmp") == _env.get("cwd")
+              and _env.get("home") not in (None, os.path.expanduser("~"),
+                                           _env.get("cwd")))
 
         # The WIRING, at the level that actually runs in CI. Everything above
         # proves `run_one` observes and `grade` judges; this is the only case that

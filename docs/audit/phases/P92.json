@@ -236,7 +236,7 @@
     {
       "id": "P92.5",
       "title": "the sweep hands its suites no ambient session or git configuration, so a local green means what CI's does",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The class behind the ubuntu failures: the sweep isolates cwd, TMPDIR, HOME/XDG and the pycache but passes the rest of the environment through. For every child: drop the Claude session variables (CLAUDE_CODE_SESSION_ID, CLAUDE_PID and the rest of that family), ignore git's system configuration (GIT_CONFIG_NOSYSTEM), and refuse git's identity guessing (user.useConfigOnly) with no default branch pinned, so a suite that leans on the host's git fails here the way it fails on a bare runner rather than passing under a pinned default. A sweep case fails if any of these reaches a child. Name the new families where isolation_drift reads them (CLAUDE.md's Tests paragraph, CONTRIBUTING.md and fixture_root's docstring). Prove it red first: with P92.1-P92.4 reverted in a scratch tree, the isolated sweep fails on exactly the causes CI failed on.",
       "files": [
         "tools/sweep-selftests.py",
@@ -270,16 +270,21 @@
         "P92.3",
         "P92.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-28T01:08:53Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-28T01:28:07Z.65eff9",
+        "status": "passed",
+        "at": "2026-09-28T01:28:07Z"
+      }
     }
   ],
   "startedAt": "2026-09-28T00:35:24Z"
