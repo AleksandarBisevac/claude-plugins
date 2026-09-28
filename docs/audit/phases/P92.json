@@ -181,7 +181,7 @@
     {
       "id": "P92.4",
       "title": "the rendered-plan legs CI runs are graded the same way locally, and a plan with ready work and no area tags is not a coverage failure",
-      "status": "in_progress",
+      "status": "done",
       "description": "The tagged-phase chips expect is excused only when nothing is ready; excuse it too on the note its else branch prints when no ready task sits in a tagged phase. CI's one-status leg renders the live dogfood plan while its comment says the plan is all one status: render a committed fixture that is, or say what it renders. verify.sh runs the same rendered-plan legs as ci.yml so a local green covers them.",
       "files": [
         "tools/check-report-interactive.mjs",
@@ -213,18 +213,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "941d551c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "check-report-interactive.mjs FEATURE_ABSENT keyed by the else-branch note; ci.yml live-plan leg renamed and described, one-status leg derived from the scale demo; verify.sh rendered_plan_legs; gate-parity report_target_drift with rt0-rt5 and the two ABSENT_BY_DESIGN rows updated; prove-gates rows rt0 (red) and rt2 (allow).",
+        "descriptive": "A plan with ready work and no area tags no longer fails coverage; verify.sh runs CI's rendered-plan legs, including a derived one-status plan; gate-parity fails when the two runners hand the report checker different documents."
       },
       "startedAt": "2026-09-28T00:35:25Z",
-      "completedAt": null,
+      "completedAt": "2026-09-28T01:08:30Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-28T01:08:11Z.a7562f",
         "status": "passed",
         "at": "2026-09-28T01:08:11Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "941d551c",
+        "at": "2026-09-28T01:08:30Z",
+        "basis": "the checker fix, plus the local legs and a parity check on what each runner hands the checker"
       }
     },
     {
