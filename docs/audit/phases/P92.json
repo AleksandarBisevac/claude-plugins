@@ -130,7 +130,7 @@
     {
       "id": "P92.3",
       "title": "close-phase's merge fixture carries its own git identity",
-      "status": "in_progress",
+      "status": "done",
       "description": "close-phase's merge --no-ff needs a committer; the fixture identity covers only the fixture's own git calls, and ubuntu cannot guess one. Write a repo-local user.name/user.email into the worktree fixture. Red first with user.useConfigOnly=true.",
       "files": [
         "plugins/audit/tests/test_close_phase.py"
@@ -158,18 +158,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d26f0e44",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_init_fixture_repo: git init -b main and a repo-local identity, used by every fixture in test_close_phase.",
+        "descriptive": "close-phase's merge cases no longer depend on the host being able to guess a git identity."
       },
       "startedAt": "2026-09-28T00:35:25Z",
-      "completedAt": null,
+      "completedAt": "2026-09-28T01:08:30Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-28T01:06:43Z.5d58b3",
         "status": "passed",
         "at": "2026-09-28T01:06:43Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d26f0e44",
+        "at": "2026-09-28T01:08:30Z",
+        "basis": "the fixture identity the diagnosis named, applied to every fixture that commits"
       }
     },
     {

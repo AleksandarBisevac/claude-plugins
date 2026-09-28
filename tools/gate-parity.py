@@ -42,6 +42,13 @@ GATES each side invokes - not the full command lines. Arguments legitimately dif
 artifacts) and comparing them would produce noise that trains a reader to ignore
 this. What may never differ is WHICH checks exist.
 
+ONE TOOL IS COMPARED BY ARGUMENT TOO, because for it the argument IS the check: the
+report checker is one gate per document it is handed, and a runner that handed it
+fewer documents named the same tool while running fewer legs. That is how CI came
+to check a fresh render of this repo's own plan that no local run had opened.
+`report_target_drift()` compares the two runners' document sets, read off both
+files with the scratch root folded away.
+
 EXEMPTIONS ARE DECLARED, WITH A REASON, AND ARE THEMSELVES CHECKED. An entry in
 either table below that names a gate neither side invokes any more is reported too -
 otherwise the tables become a place where dead exemptions accumulate and the check
@@ -146,9 +153,12 @@ DOC_SIDES = ("CONTRIBUTING.md", "CLAUDE.md")
 LOCAL_SIDES = ("verify.sh",) + DOC_SIDES
 
 ABSENT_BY_DESIGN = (
-    ("plugins/audit/scripts/demo/gen-demo-manifest.py", LOCAL_SIDES,
-     "builds a throwaway demo tree in /tmp to smoke the pipeline end to end; the "
-     "local set checks the COMMITTED artifacts instead"),
+    # DOC_SIDES, not LOCAL_SIDES: `verify.sh` runs the rendered-plan legs CI runs,
+    # and two of them start from this generator's tree, so it invokes this for real.
+    ("plugins/audit/scripts/demo/gen-demo-manifest.py", DOC_SIDES,
+     "builds the throwaway demo tree the derived report legs start from; "
+     "verify.sh runs those legs, and the documents hand them to it rather than "
+     "listing a generator nobody types by hand"),
     # `gen-demo-usage.py` WAS EXEMPT HERE, on the reason "same throwaway demo tree",
     # and that sentence described a different check. Two of its three runs in
     # ci.yml do build a throwaway tree; the third regenerates the COMMITTED example
@@ -161,8 +171,12 @@ ABSENT_BY_DESIGN = (
     # defect the entry names is still open: nothing compares an exemption's REASON
     # against what the other side actually does, so a row can stay green while its
     # sentence stops being true.
-    ("plugins/audit/scripts/report/render-report.py", LOCAL_SIDES,
-     "rendered into /tmp as a smoke test; locally the equivalent claim is "
+    # DOC_SIDES for the same reason: the rendered-plan legs render with it.
+    ("plugins/audit/scripts/report/render-report.py", DOC_SIDES,
+     "renders throwaway reports for the report checker, which verify.sh's "
+     "rendered-plan legs do exactly as CI does, and the documents hand those "
+     "legs to verify.sh; where a CI step compares committed artifacts, the "
+     "local equivalent is "
      "check-rendered-artifacts.py, which is stronger because it compares bytes"),
     ("plugins/audit/scripts/status/audit-doctor.py", LOCAL_SIDES,
      "an end-to-end CLI smoke test over a fixture project"),
@@ -1430,6 +1444,224 @@ def failmode_table_drift(repo=None):
                             wired=reg["wired"], contract=contract)
 
 
+# --- which documents each runner hands the report checker ----------------------
+# `compare()` asks WHICH tools a side calls, and that grain is deliberate: arguments
+# legitimately differ. It is also exactly the grain at which a missing leg hides.
+# `verify.sh` called the report checker for as long as CI did, on the committed
+# reports alone, while CI also rendered this repo's own plan and checked THAT - so
+# both sides named the checker, parity was perfect, and CI went red on a shape of
+# report no local run had ever opened.
+#
+# So this asks the argument question for the one tool where the argument IS the
+# leg: the set of documents each runner hands the checker must be the same set.
+# Compared after the normalisations below and nothing else, each read off the
+# files themselves rather than listed here:
+#
+#   * a shell variable is expanded from the assignment or `for` loop the file
+#     itself carries, nearest one above the call - so `"$f"` over a list and a
+#     committed path written out are the same document;
+#   * a SCRATCH ROOT is replaced by one placeholder. CI's is the literal `/tmp/`;
+#     a runner's is whichever variable it assigns from `$(mktemp ...)`. Everything
+#     under the root - the directory names, the file names - is compared as
+#     written, which is what makes a leg's name its key.
+#
+# A target that cannot be resolved is a named PROBLEM and not a match or a miss:
+# an unexpanded `$x` compared with anything would say something false either way.
+REPORT_CHECKER = "tools/check-report-interactive.mjs"
+TARGET_SIDES = ("verify.sh", "ci.yml")
+SCRATCH = "<scratch>"
+
+_CHECKER_CALL_RE = re.compile(
+    r"(?:^|[\s(;&|])node\s+" + re.escape(REPORT_CHECKER) + r"(?:\s+(.*))?$")
+_ASSIGN_RE = re.compile(r"^(?:local\s+|export\s+)?([A-Za-z_]\w*)=(.*)$")
+_MKTEMP_RE = re.compile(r"^\$\(\s*mktemp\b")
+_FOR_RE = re.compile(r"^for\s+([A-Za-z_]\w*)\s+in\s+(.*?)\s*;\s*do\b")
+_HEREDOC_RE = re.compile(r"<<-?\s*['\"]?([A-Za-z_]\w*)['\"]?")
+_VAR_RE = re.compile(r"\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))")
+
+
+def _logical_lines(lines):
+    """Command lines with `\\` continuations joined and heredoc bodies dropped.
+
+    Joined because a `for` over three documents is written across three lines in
+    CI, and one line of it names none of them. Heredocs dropped because their body
+    is another language's text - a Python `for phase in plan:` inside one is not a
+    shell loop, and read as one it would bind a variable the shell never sees.
+    """
+    out = []
+    pending = ""
+    ending = None
+    for line in lines:
+        if ending is not None:
+            if line.strip() == ending:
+                ending = None
+            continue
+        if line.endswith("\\"):
+            pending += line[:-1].rstrip() + " "
+            continue
+        full = (pending + line).strip()
+        pending = ""
+        match = _HEREDOC_RE.search(full)
+        if match:
+            ending = match.group(1)
+        out.append(full)
+    if pending.strip():
+        out.append(pending.strip())
+    return out
+
+
+def _first_argument(rest):
+    """The first positional argument of a command's remainder, or None."""
+    try:
+        words = shlex.split(rest or "")
+    except ValueError:
+        return None
+    for word in words:
+        if word[:1] in (">", "<", "|", "&", ";") or word[:2] in ("2>", "1>"):
+            return None
+        if word.startswith("-"):
+            continue
+        return word
+    return None
+
+
+def _expand(word, assigns, scratch_vars, depth=0):
+    """`word` with every variable the file assigns substituted, the scratch root
+    folded to one placeholder. A variable the file never assigns is left as
+    written, which the caller reports rather than compares."""
+    def sub(match):
+        name = match.group(1) or match.group(2)
+        if name in scratch_vars:
+            return SCRATCH
+        if name in assigns and depth < 8:
+            return _expand(assigns[name], assigns, scratch_vars, depth + 1)
+        return match.group(0)
+    text = _VAR_RE.sub(sub, word)
+    if text.startswith("/tmp/"):
+        text = SCRATCH + text[len("/tmp"):]
+    return text
+
+
+def report_targets(lines):
+    """{"targets": set, "unresolved": [raw], "calls": int} for one runner's lines.
+
+    `calls` is returned beside the set so a reader that found NO call - a renamed
+    checker, a reader that stopped matching - is told apart from a runner that
+    genuinely checks nothing.
+    """
+    assigns = {}
+    scratch_vars = set()
+    loops = {}
+    targets = set()
+    unresolved = []
+    calls = 0
+    for line in _logical_lines(lines):
+        assign = _ASSIGN_RE.match(line)
+        if assign:
+            name, value = assign.group(1), assign.group(2).strip()
+            if _MKTEMP_RE.match(value):
+                scratch_vars.add(name)
+                continue
+            try:
+                parts = shlex.split(value)
+            except ValueError:
+                parts = []
+            if len(parts) == 1:
+                assigns[name] = parts[0]
+            continue
+        loop = _FOR_RE.match(line)
+        if loop:
+            try:
+                words = shlex.split(loop.group(2))
+            except ValueError:
+                words = []
+            expanded = []
+            for word in words:
+                expanded.extend(_expand(word, assigns, scratch_vars).split())
+            loops[loop.group(1)] = expanded
+        call = _CHECKER_CALL_RE.search(line)
+        if not call:
+            continue
+        calls += 1
+        raw = _first_argument(call.group(1))
+        if raw is None:
+            unresolved.append(line)
+            continue
+        bare = _VAR_RE.fullmatch(raw)
+        if bare and (bare.group(1) or bare.group(2)) in loops:
+            found = loops[bare.group(1) or bare.group(2)]
+        else:
+            found = [_expand(raw, assigns, scratch_vars)]
+        for target in found:
+            if "$" in target or not target:
+                unresolved.append(raw)
+            else:
+                targets.add(target)
+    return {"targets": targets, "unresolved": unresolved, "calls": calls}
+
+
+def _side_lines(path):
+    text = io.open(path, encoding="utf-8").read()
+    if path.endswith((".yml", ".yaml")):
+        return _yaml_run_lines(text)
+    return _shell_command_lines(text)
+
+
+def report_target_drift(repo=None, read=None):
+    """{"findings": [(target, side, note)], "problem": str or None}.
+
+    `read` maps a side label to its command lines, so a case can hand over two
+    runners that differ in one document without building a tree. `problem` is not
+    None when the question could not be asked: an unreadable side, a side with no
+    call to the checker, or a target this reader could not resolve - each of which
+    would otherwise come back as an empty finding list, the shape of agreement.
+    """
+    if read is None:
+        root = repo or REPO
+        read = {}
+        for label, rel in SIDES:
+            if label not in TARGET_SIDES:
+                continue
+            try:
+                read[label] = _side_lines(os.path.join(root, rel))
+            except (IOError, OSError, UnicodeDecodeError) as exc:
+                return {"findings": [], "problem": "%s could not be read, so no "
+                        "report target of it can be compared: %s" % (rel, exc)}
+    got = {}
+    for label in TARGET_SIDES:
+        answer = report_targets(read.get(label, []))
+        if not answer["calls"]:
+            return {"findings": [], "problem": "no call to %s was found in %s, so "
+                    "an empty comparison here would read as agreement"
+                    % (REPORT_CHECKER, label)}
+        if answer["unresolved"]:
+            return {"findings": [], "problem": "%s hands %s a target this reader "
+                    "cannot resolve (%s) - teach the file an assignment it can "
+                    "read, or this reader the form" % (label, REPORT_CHECKER,
+                                                       answer["unresolved"][0])}
+        got[label] = answer["targets"]
+    findings = []
+    for label in TARGET_SIDES:
+        others = set()
+        for other in TARGET_SIDES:
+            if other != label:
+                others |= got[other]
+        for target in sorted(others - got[label]):
+            findings.append((target, label,
+                             "the other runner hands this document to %s and this "
+                             "one does not, so a green here never opened it"
+                             % (REPORT_CHECKER,)))
+    return {"findings": findings, "problem": None}
+
+
+def report_target_verdict(repo=None):
+    """`report_target_drift()` as findings, with a question nobody could ask AS one."""
+    got = report_target_drift(repo)
+    if got["problem"] is not None:
+        return [(REPORT_CHECKER, "-", got["problem"])]
+    return got["findings"]
+
+
 def gates_in(path):
     """The set of gate labels a file invokes, or None if it cannot be read.
 
@@ -2021,6 +2253,9 @@ def parity(repo=None):
     rather than an inconvenience.
     """
     failmodes = failmode_table_verdict(repo)
+    # The argument question, asked for the one tool whose argument is the leg.
+    # It reads two of the sides on its own and needs nothing `compare()` built.
+    targets = report_target_verdict(repo)
     raw = read_sides(repo)
     read = {}
     unreadable = []
@@ -2033,7 +2268,8 @@ def parity(repo=None):
     if unreadable:
         # NOT an empty verdict. A side nothing could read is not a side that agrees.
         return {"missing": [], "stale_exemptions": unreadable,
-                "failmodes": failmodes, "counts": counts}
+                "failmodes": failmodes, "report_targets": targets,
+                "counts": counts}
     result = compare(read)
     result["counts"] = counts
     # ...and the question `compare()` cannot ask: is each row's REASON still true of
@@ -2052,6 +2288,7 @@ def parity(repo=None):
         + [(name, "exemption tables", why)
            for name, why in exemption_audit_drift(repo)])
     result["failmodes"] = failmodes
+    result["report_targets"] = targets
     return result
 
 
@@ -2112,7 +2349,7 @@ def render(result, stream=None):
     """Print the verdict. Returns the exit code."""
     out = stream if stream is not None else sys.stdout
     bad = (result["missing"] + result["stale_exemptions"]
-           + result["failmodes"])
+           + result["failmodes"] + result["report_targets"])
     out.write("gate parity: %s\n"
               % (", ".join("%d in %s" % (result["counts"].get(label, 0), label)
                            for label, _rel in SIDES),))
@@ -2122,10 +2359,14 @@ def render(result, stream=None):
         out.write("  stale exemption (%s / %s): %s\n" % (gate, side, note))
     for subject, note in result["failmodes"]:
         out.write("  fail-mode drift (%s): %s\n" % (subject, note))
+    for target, side, note in result["report_targets"]:
+        out.write("  report target MISSING from %s: %s\n      %s\n"
+                  % (side, target, note))
     if not bad:
         out.write("  every side names the same gates, every declared exemption "
-                  "is still real, and SECURITY.md's fail modes are the ones "
-                  "hooks.json registers\n")
+                  "is still real, SECURITY.md's fail modes are the ones "
+                  "hooks.json registers, and both runners hand the report "
+                  "checker the same documents\n")
     return 1 if bad else 0
 
 
@@ -2478,7 +2719,7 @@ def _cases(check):
 
     buf = io.StringIO()
     code = render({"missing": [("tools/x.mjs", "ci.yml", "why")],
-                   "stale_exemptions": [], "failmodes": [],
+                   "stale_exemptions": [], "failmodes": [], "report_targets": [],
                    "counts": {"verify.sh": 3}}, stream=buf)
     check("r0 a gap exits 1 and names the gate, the SIDE it is missing from, and "
           "what to do about it - two sides made 'missing' unambiguous and "
@@ -2488,6 +2729,7 @@ def _cases(check):
 
     buf = io.StringIO()
     code = render({"missing": [], "stale_exemptions": [], "failmodes": [],
+                   "report_targets": [],
                    "counts": dict((l, 9) for l, _r in SIDES)}, stream=buf)
     check("r1 and parity exits 0 saying so - 'nothing to report' must not read "
           "like 'nothing was compared'",
@@ -2496,6 +2738,7 @@ def _cases(check):
     buf = io.StringIO()
     code = render({"missing": [], "stale_exemptions": [],
                    "failmodes": [("guard-edits / PreToolUse", "why")],
+                   "report_targets": [],
                    "counts": dict((l, 9) for l, _r in SIDES)}, stream=buf)
     check("r2 ...and a fail-mode disagreement exits 1 on its OWN. The gate sets "
           "can agree perfectly while SECURITY.md tells a reader that a blocking "
@@ -2503,6 +2746,110 @@ def _cases(check):
           "print that as a pass",
           code == 1 and "guard-edits / PreToolUse" in buf.getvalue()
           and "why" in buf.getvalue())
+
+    buf = io.StringIO()
+    code = render({"missing": [], "stale_exemptions": [], "failmodes": [],
+                   "report_targets": [("<scratch>/live-plan/*.html", "verify.sh",
+                                       "why")],
+                   "counts": dict((l, 9) for l, _r in SIDES)}, stream=buf)
+    check("r3 ...and so does a report target one runner lacks, with the gate sets "
+          "otherwise in perfect agreement - which is exactly the state the two "
+          "runners were in while CI checked a render no local run opened",
+          code == 1 and "<scratch>/live-plan/*.html" in buf.getvalue()
+          and "verify.sh" in buf.getvalue())
+
+    # --- which documents each runner hands the report checker ---------------
+    # The fixtures are written in each runner's OWN dialect, spelled as the real
+    # files spell them: CI's loop over committed reports continues across lines
+    # and its scratch root is a literal, the runner's list lives in a variable
+    # and its scratch root is a `mktemp` directory. Two readers that only agreed
+    # on identical text would pass none of the allow cases below.
+    live = report_target_drift()
+    sets = {}
+    for label in TARGET_SIDES:
+        sets[label] = sorted(report_targets(
+            _side_lines(os.path.join(REPO, dict(SIDES)[label])))["targets"])
+    check("rt0 THE LIVE CLAIM: verify.sh and ci.yml hand the report checker the "
+          "same documents, committed and rendered alike, and each side really "
+          "named some - an empty set on both would agree about nothing: %r / %r"
+          % (live, sets),
+          live == {"findings": [], "problem": None}
+          and sets["verify.sh"] and sets["verify.sh"] == sets["ci.yml"])
+
+    _rt_ci = _yaml_run_lines(
+        "jobs:\n  j:\n    steps:\n      - name: s\n        run: |\n"
+        "          for f in docs/a.html \\\n"
+        "                   docs/b.html; do\n"
+        "            node tools/check-report-interactive.mjs \"$f\"\n"
+        "          done\n"
+        "          node tools/check-report-interactive.mjs /tmp/live-plan/*.html\n"
+        "          node tools/check-report-interactive.mjs "
+        "/tmp/live-plan/aged.html > /tmp/aged.log 2>&1\n")
+    _rt_old = _shell_command_lines(
+        'WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/verify-XXXXXX")\n'
+        'docs="docs/a.html docs/b.html"\n'
+        'for f in $docs; do\n'
+        '  ( node tools/check-report-interactive.mjs "$f" '
+        '>"$WORKDIR/$(basename "$f").log" 2>&1\n'
+        'done\n')
+    _rt_new = _rt_old + _shell_command_lines(
+        'lp="$WORKDIR/live-plan"\n'
+        'node tools/check-report-interactive.mjs "$lp"/*.html || return 1\n'
+        'node tools/check-report-interactive.mjs "$lp/aged.html" > "$lp/a.log" 2>&1\n')
+    _rt_red = report_target_drift(read={"verify.sh": _rt_old, "ci.yml": _rt_ci})
+    check("rt1 THE DEFECT THIS EXISTS FOR: a runner that checks the committed "
+          "reports alone, beside a CI that also checks a fresh render and an aged "
+          "one, is reported - both rendered targets, by name, against the runner "
+          "that lacks them, and nothing against the committed reports both check: "
+          "%r" % (_rt_red,),
+          _rt_red["problem"] is None
+          and sorted(t for t, _s, _n in _rt_red["findings"])
+          == ["<scratch>/live-plan/*.html", "<scratch>/live-plan/aged.html"]
+          and all(s == "verify.sh" for _t, s, _n in _rt_red["findings"]))
+
+    _rt_green = report_target_drift(read={"verify.sh": _rt_new, "ci.yml": _rt_ci})
+    check("rt2 THE ALLOW CASE: the same documents spelled in two dialects - a list "
+          "in a variable against a loop continued over lines, a mktemp root "
+          "against a literal /tmp - agree. A reader that compared text would "
+          "fail here, and one that could not fire would pass rt1's pair only: %r"
+          % (_rt_green,),
+          _rt_green == {"findings": [], "problem": None})
+
+    _rt_back = report_target_drift(read={"verify.sh": _rt_new,
+                                         "ci.yml": _rt_ci[:4]})
+    check("rt3 ...and the comparison runs BOTH ways: a leg only the local runner "
+          "has is reported against CI, because a gate CI lacks is a push that "
+          "was never checked where it lands: %r" % (_rt_back,),
+          _rt_back["problem"] is None
+          and [s for _t, s, _n in _rt_back["findings"]] == ["ci.yml", "ci.yml"])
+
+    _rt_heredoc = report_targets(_shell_command_lines(
+        'for f in docs/a.html; do\n'
+        "  python3 - <<'PYEOF'\n"
+        'for f in docs/wrong.html; do\n'
+        'PYEOF\n'
+        '  node tools/check-report-interactive.mjs "$f"\n'
+        'done\n'))
+    check("rt4 a heredoc's body is another language and binds nothing: a line in "
+          "one that LOOKS like a shell loop does not re-bind the variable the real "
+          "loop around the call set - the real legs carry Python loops inside "
+          "heredocs, beside the call they would otherwise redirect: %r"
+          % (_rt_heredoc,),
+          _rt_heredoc["targets"] == set(["docs/a.html"])
+          and _rt_heredoc["unresolved"] == [])
+
+    _rt_none = report_target_drift(read={"verify.sh": [], "ci.yml": _rt_ci})
+    _rt_unres = report_target_drift(read={
+        "verify.sh": _shell_command_lines(
+            'node tools/check-report-interactive.mjs "$never_assigned"\n'),
+        "ci.yml": _rt_ci})
+    check("rt5 a runner with NO call to the checker, and a target this reader "
+          "cannot expand, are named PROBLEMS - each would otherwise come back as "
+          "an empty finding list, and an unexpanded `$x` compared with anything "
+          "says something false either way: %r / %r" % (_rt_none, _rt_unres),
+          _rt_none["findings"] == [] and "no call" in (_rt_none["problem"] or "")
+          and _rt_unres["findings"] == []
+          and "never_assigned" in (_rt_unres["problem"] or ""))
 
     # --- the fourth side ------------------------------------------------------
     # CLAUDE.md's list said of itself that it was one of the sides being

@@ -913,6 +913,14 @@ TABLE = (
   '  if "$@" >"$WORKDIR/step.log" 2>&1; then',
   '  if "$@" >/tmp/verify-step.log 2>&1; then',
   "tools/gate-parity.py", "sc0"),
+ # THE LEG A RUNNER DROPS WHILE STILL NAMING THE TOOL. `verify.sh` called the report
+ # checker on the committed reports alone while CI also checked a fresh render, so
+ # both named the checker and parity was perfect. The mutation is that state: one
+ # rendered leg's call gone, every tool still named. `rt0` reads the real pair.
+ ("report_target_drift", "tools/verify.sh", "replace",
+  '  node tools/check-report-interactive.mjs "$one/one-status.html" || return 1',
+  "  true",
+  "tools/gate-parity.py", "rt0"),
  # ...and the other question asked of that same runner, which is a PAIR rather
  # than a file: the selector chooses the checks and the runner dispatches them, and
  # the fault was a check the selector named and the runner had no arm for. The
@@ -1622,6 +1630,14 @@ ALLOW = (
   "            if not any(name in w for w in windows)]",
   "            if not any(root in w for w in windows)]",
   "tools/gate-parity.py", "sr2"),
+ # THE OVER-FIRE IS COMPARING SPELLINGS. CI writes its scratch root as a literal
+ # `/tmp/` and the runner as a `mktemp` directory, so a reader that stops folding
+ # the two into one placeholder reports every rendered leg as missing from both
+ # sides - a lint people delete. `rt2` is the pair spelled in both dialects.
+ ("report_target_drift", "tools/gate-parity.py", "replace",
+  "            return SCRATCH",
+  "            return match.group(0)",
+  "tools/gate-parity.py", "rt2"),
  # THE OVER-FIRE THIS RULE IS ONE LINE AWAY FROM. The discriminator is the
  # COMPARISON: four of the five exempted scripts name a committed path in CI and
  # only READ it - `render-report.py docs/audit/audit-plan.json --out-dir /tmp/...`

@@ -801,19 +801,70 @@ jobs:
                    docs/demo-large.html; do
             node tools/check-report-interactive.mjs "$f"
           done
-          # ...and one report none of those three can stand in for: a plan whose
-          # phases ALL share one status. All three above have a mix, so the checker's
-          # one-status path ran nowhere in CI — and it was wrong. It asserted that
-          # clicking a status chip drops rows, which is false by construction when
-          # every phase carries that status, so the tool printed REPORT IS INERT and
-          # exited 1 against a working report on what is simply the normal END STATE
-          # of a plan: everything done. This repo's own manifest is exactly that, so
-          # the case now has a permanent fixture rather than being rediscovered by
-          # whoever next finishes a plan and runs the tool on it.
-          rm -rf /tmp/one-status && mkdir -p /tmp/one-status
+          # ...and one report none of those can stand in for: this repo's OWN
+          # plan, rendered fresh from docs/audit/audit-plan.json. The reports
+          # above are committed and hold still; this one has the shape a
+          # long-lived plan really has, and that shape moves with every phase
+          # merged — its status mix, which phases carry area tags, where the
+          # ready work sits. So the checker meets states here that no committed
+          # report reaches: ready work in phases that carry no area tag was one,
+          # and the grader called it a skipped check until it learned to read the
+          # branch's own note.
+          #
+          # What this leg does NOT promise is any particular shape. It was added
+          # when this plan was all one status (everything done), to cover the
+          # checker's one-status path, and it stopped being that plan the next
+          # time a phase opened. That path has its own leg below instead.
+          # tools/verify.sh runs this leg and the ones below it too, so a local
+          # green has seen the same render; tools/gate-parity.py fails the build
+          # when the two files feed the checker different targets.
+          rm -rf /tmp/live-plan && mkdir -p /tmp/live-plan
           python plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json \
-            --out-dir /tmp/one-status --format html
-          node tools/check-report-interactive.mjs /tmp/one-status/*.html
+            --out-dir /tmp/live-plan --format html
+          node tools/check-report-interactive.mjs /tmp/live-plan/*.html
+          # ...and a plan whose phases ALL share one status, which is the normal
+          # END STATE of a plan: everything done. None of the reports above is
+          # one, and the checker's one-status path was wrong the first time it met
+          # one - it asserted that clicking a status chip drops rows, false by
+          # construction there, and called a working report inert. DERIVED, not
+          # committed: the scale demo's generated tree, cut to its done phases,
+          # with the references into the cut ones dropped so it still validates.
+          # The usage ledger is there because a page without one has too little
+          # on it for the width ladder to measure, and the checker refuses a
+          # ladder that measured nothing.
+          rm -rf /tmp/one-status
+          python - /tmp/dl /tmp/one-status <<'PYEOF'
+          import io, json, os, shutil, sys
+          src, dst = sys.argv[1], sys.argv[2]
+          shutil.copytree(src, dst)
+          path = os.path.join(dst, "audit-plan.json")
+          plan = json.load(io.open(path, encoding="utf-8"))
+          for phase in plan["phases"]:
+              if phase["status"] != "done":
+                  os.remove(os.path.join(dst, phase["shard"]))
+          plan["phases"] = [p for p in plan["phases"] if p["status"] == "done"]
+          ids = set()
+          for phase in plan["phases"]:
+              shard = json.load(io.open(os.path.join(dst, phase["shard"]),
+                                        encoding="utf-8"))
+              ids |= set(t["id"] for t in shard["tasks"])
+          plan["fileIndex"] = dict((f, [t for t in ts if t in ids])
+                                   for f, ts in plan["fileIndex"].items()
+                                   if any(t in ids for t in ts))
+          plan["bugs"] = [b for b in plan["bugs"]
+                          if b.get("taskId") is None or b.get("taskId") in ids]
+          plan["proposals"] = []
+          io.open(path, "w", encoding="utf-8").write(json.dumps(plan, indent=2))
+          PYEOF
+          python plugins/audit/scripts/manifest/validate-manifest.py \
+            /tmp/one-status/audit-plan.json
+          python plugins/audit/scripts/demo/gen-demo-usage.py \
+            /tmp/one-status/audit-plan.json
+          CLAUDE_PROJECT_DIR=/tmp/one-status python \
+            plugins/audit/scripts/report/render-report.py \
+            /tmp/one-status/audit-plan.json --out-dir /tmp/one-status \
+            --format html --basename one-status
+          node tools/check-report-interactive.mjs /tmp/one-status/one-status.html
           # ...and one none of them can stand in for: an ALL-PARKED plan. That is
           # what /audit:init leaves when the user declines every synthesized
           # phase, and it used to render zero phases with no hint that any
@@ -876,9 +927,9 @@ jobs:
           # class off the fresh render's filter bar, which is what a report
           # predating .sectools looks like to a selector.
           sed 's/class="toolbar sectools"/class="toolbar was-sectools"/' \
-            /tmp/one-status/audit-report.html > /tmp/one-status/aged.html
+            /tmp/live-plan/audit-report.html > /tmp/live-plan/aged.html
           set +e
-          node tools/check-report-interactive.mjs /tmp/one-status/aged.html > /tmp/aged.log 2>&1
+          node tools/check-report-interactive.mjs /tmp/live-plan/aged.html > /tmp/aged.log 2>&1
           aged=$?
           set -e
           cat /tmp/aged.log
