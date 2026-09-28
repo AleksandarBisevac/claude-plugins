@@ -27,7 +27,7 @@
     {
       "id": "P93.1",
       "title": "the selection-miss fixtures print what a runner prints, whatever the stream's encoding",
-      "status": "in_progress",
+      "status": "done",
       "description": "The fake runner the sm cases write (gate.py) prints a jest bullet through a text stream, so a cp1252 stream crashes it. Write its output as the bytes a real runner writes (UTF-8), independent of the child's stream encoding; check every other fixture in the file that prints a character outside cp1252. Red first with the sweep's encoding leg (tools/sweep-selftests.py --encoding cp1252) or PYTHONIOENCODING=cp1252 on the suite.",
       "files": [
         "plugins/audit/tests/test_run_test_gate.py"
@@ -55,18 +55,27 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b4390efd",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "test_run_test_gate.py: _SM_GATE writes through a say() that writes UTF-8 bytes; the gb block's say.py echoes red.txt as bytes; gb6 runs that block under PYTHONIOENCODING=cp1252.",
+        "descriptive": "The fake runners that print jest's bullet write UTF-8 bytes like a real runner, so the encoding leg sees a named suite instead of a crash."
       },
       "startedAt": "2026-09-28T07:34:13Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-28T07:49:55Z",
+      "verifiedBy": [
+        "sm1",
+        "gb6"
+      ],
       "testEvidence": {
         "runId": "2026-09-28T07:48:17Z.9b53db",
         "status": "passed",
         "at": "2026-09-28T07:48:17Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b4390efd",
+        "at": "2026-09-28T07:49:55Z",
+        "basis": "the fixture the CI leg failed on, plus the one other fixture that echoed jest's bullet, with a case for it"
       }
     },
     {

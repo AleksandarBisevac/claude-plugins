@@ -49,6 +49,12 @@ to check a fresh render of this repo's own plan that no local run had opened.
 `report_target_drift()` compares the two runners' document sets, read off both
 files with the scratch root folded away.
 
+THE SWEEP IS COMPARED BY ARGUMENT FOR THE SAME REASON, because its flags are its
+legs: CI ran it a second time under a forced legacy codec and the local runner did
+not, so a suite that died only under that codec was green at every local run.
+`sweep_leg_drift()` compares the sets of legs each runner runs, with the flags
+that change how a leg runs rather than what it checks declared apart.
+
 EXEMPTIONS ARE DECLARED, WITH A REASON, AND ARE THEMSELVES CHECKED. An entry in
 either table below that names a gate neither side invokes any more is reported too -
 otherwise the tables become a place where dead exemptions accumulate and the check
@@ -1606,12 +1612,14 @@ def _logical_lines(lines):
     return out
 
 
-def _first_argument(rest):
-    """The first positional argument of a command's remainder, or None.
+def _command_words(rest):
+    """The words of a command's remainder up to the first shell operator, or None.
 
     PUNCTUATION IS ITS OWN TOKEN. `shlex.split` keeps a trailing `;` on the word
     before it, so `if node <checker> /tmp/x.html; then` named a document called
-    `x.html;` and disagreed with the same call written bare.
+    `x.html;` and disagreed with the same call written bare. None when the text
+    does not tokenise at all, which is not the same answer as a command with no
+    words after it.
     """
     lexer = shlex.shlex(rest or "", posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
@@ -1619,13 +1627,60 @@ def _first_argument(rest):
         words = list(lexer)
     except ValueError:
         return None
+    out = []
     for word in words:
         if word[:1] in (">", "<", "|", "&", ";") or word[:2] in ("2>", "1>"):
-            return None
+            break
+        out.append(word)
+    return out
+
+
+def _first_argument(rest):
+    """The first positional argument of a command's remainder, or None."""
+    for word in _command_words(rest) or []:
         if word.startswith("-"):
             continue
         return word
     return None
+
+
+def _shell_scan(lines):
+    """Yield `(line, bindings)` for every logical line that is not an assignment.
+
+    `bindings` is {"assigns", "scratch", "loops"} as the file has built it by that
+    line - the variables it assigned one word, the ones it assigned a `mktemp`
+    directory, and the word lists its `for` loops bind. One reader of a runner's
+    variables, so two questions asked of the same file cannot disagree about what
+    `$x` means in it. The dict is the scan's own state and is advanced between
+    yields; a consumer reads it and never writes it.
+    """
+    bindings = {"assigns": {}, "scratch": set(), "loops": {}}
+    for line in _logical_lines(lines):
+        assign = _ASSIGN_RE.match(line)
+        if assign:
+            name, value = assign.group(1), assign.group(2).strip()
+            if _MKTEMP_RE.match(value):
+                bindings["scratch"].add(name)
+                continue
+            try:
+                parts = shlex.split(value)
+            except ValueError:
+                parts = []
+            if len(parts) == 1:
+                bindings["assigns"][name] = parts[0]
+            continue
+        loop = _FOR_RE.match(line)
+        if loop:
+            try:
+                words = shlex.split(loop.group(2))
+            except ValueError:
+                words = []
+            expanded = []
+            for word in words:
+                expanded.extend(_expand(word, bindings["assigns"],
+                                        bindings["scratch"]).split())
+            bindings["loops"][loop.group(1)] = expanded
+        yield line, bindings
 
 
 def _expand(word, assigns, scratch_vars, depth=0):
@@ -1652,36 +1707,10 @@ def report_targets(lines):
     checker, a reader that stopped matching - is told apart from a runner that
     genuinely checks nothing.
     """
-    assigns = {}
-    scratch_vars = set()
-    loops = {}
     targets = set()
     unresolved = []
     calls = 0
-    for line in _logical_lines(lines):
-        assign = _ASSIGN_RE.match(line)
-        if assign:
-            name, value = assign.group(1), assign.group(2).strip()
-            if _MKTEMP_RE.match(value):
-                scratch_vars.add(name)
-                continue
-            try:
-                parts = shlex.split(value)
-            except ValueError:
-                parts = []
-            if len(parts) == 1:
-                assigns[name] = parts[0]
-            continue
-        loop = _FOR_RE.match(line)
-        if loop:
-            try:
-                words = shlex.split(loop.group(2))
-            except ValueError:
-                words = []
-            expanded = []
-            for word in words:
-                expanded.extend(_expand(word, assigns, scratch_vars).split())
-            loops[loop.group(1)] = expanded
+    for line, bound in _shell_scan(lines):
         call = _CHECKER_CALL_RE.search(line)
         if not call:
             continue
@@ -1690,11 +1719,12 @@ def report_targets(lines):
         if raw is None:
             unresolved.append(line)
             continue
+        loops = bound["loops"]
         bare = _VAR_RE.fullmatch(raw)
         if bare and (bare.group(1) or bare.group(2)) in loops:
             found = loops[bare.group(1) or bare.group(2)]
         else:
-            found = [_expand(raw, assigns, scratch_vars)]
+            found = [_expand(raw, bound["assigns"], bound["scratch"])]
         for target in found:
             if "$" in target or not target:
                 unresolved.append(raw)
@@ -1710,6 +1740,25 @@ def _side_lines(path):
     return _shell_command_lines(text)
 
 
+def _read_runners(repo):
+    """({label: command lines} for the two runners, problem or None).
+
+    Shared by every argument question below, so the runners are located and read
+    one way and an unreadable one is a problem in each rather than an empty side.
+    """
+    root = repo or REPO
+    read = {}
+    for label, rel in SIDES:
+        if label not in TARGET_SIDES:
+            continue
+        try:
+            read[label] = _side_lines(os.path.join(root, rel))
+        except (IOError, OSError, UnicodeDecodeError) as exc:
+            return {}, "%s could not be read, so no argument of it can be " \
+                       "compared: %s" % (rel, exc)
+    return read, None
+
+
 def report_target_drift(repo=None, read=None):
     """{"findings": [(target, side, note)], "problem": str or None}.
 
@@ -1720,16 +1769,9 @@ def report_target_drift(repo=None, read=None):
     would otherwise come back as an empty finding list, the shape of agreement.
     """
     if read is None:
-        root = repo or REPO
-        read = {}
-        for label, rel in SIDES:
-            if label not in TARGET_SIDES:
-                continue
-            try:
-                read[label] = _side_lines(os.path.join(root, rel))
-            except (IOError, OSError, UnicodeDecodeError) as exc:
-                return {"findings": [], "problem": "%s could not be read, so no "
-                        "report target of it can be compared: %s" % (rel, exc)}
+        read, problem = _read_runners(repo)
+        if problem is not None:
+            return {"findings": [], "problem": problem}
     got = {}
     for label in TARGET_SIDES:
         answer = report_targets(read.get(label, []))
@@ -1763,6 +1805,198 @@ def report_target_verdict(repo=None):
     if got["problem"] is not None:
         return [(REPORT_CHECKER, "-", got["problem"])]
     return got["findings"]
+
+
+# --- which legs of the sweep each runner runs -----------------------------------
+# The same blind spot as the report checker's, one tool over. CI runs the selftest
+# sweep a second time with a forced legacy codec, because a pipe on Windows is not
+# UTF-8 and a suite that prints a character the codec cannot spell dies there. The
+# local runner ran the sweep once, with no codec, so both sides named the sweep,
+# parity was perfect, and a fixture that failed only under the codec went red on
+# CI having been green at every local run.
+#
+# A LEG IS AN INVOCATION'S FLAGS, compared as a set, after two normalisations and
+# nothing else: `--name=value` and `--name value` are one flag, and a value is
+# expanded through the runner's own variables exactly as a report target is. Every
+# flag the sweep reads defines a leg UNLESS `NOT_LEG_FLAGS` below says why it does
+# not - so a flag added to the sweep tomorrow is compared by default, and leaving it
+# out takes a sentence somebody can disagree with. The other default, a list of
+# flags that DO make a leg, would let a new leg-defining flag pass unread.
+#
+# Which flags take a value is read off the sweep itself, from its own
+# `_flag_value(argv, "--name", ...)` calls, rather than restated here: a copy of
+# that list is how `--encoding cp1252` would come to be read as a bare flag and a
+# stray positional.
+SWEEP = "tools/sweep-selftests.py"
+
+# The sweep's flags that change HOW a leg runs or reads and never WHICH suites run
+# under which rules. Each row is checked to still name a flag the sweep reads, so
+# a row cannot outlive the flag it excuses.
+NOT_LEG_FLAGS = {
+    "--jobs": "how many suites run at once is a property of the machine and not of "
+              "what is checked: the sweep defaults it to the cores it finds, and a "
+              "side that pins it runs the same suites under the same rules",
+    "--quiet": "drops the per-file inventory from the output and keeps the failures "
+               "and the totals, so it changes what a reader sees and never which "
+               "suites run or how each one is graded",
+}
+
+_SWEEP_CALL_RE = re.compile(
+    r"(?:^|[\s(;&|])python3?\s+" + re.escape(SWEEP) + r"(?=$|[\s;&|)])(.*)$")
+_FLAG_RE = re.compile(r"^--[a-z][a-z0-9-]*$")
+
+
+def sweep_flag_shape(source):
+    """{"valued": set, "known": set, "problem": str or None} for the sweep's source.
+
+    `valued` is every flag read through `_flag_value`, which takes the next word
+    as its value; `known` is every flag the entry point mentions at all. Read from
+    `main` and the module-level `if` blocks, so a flag named only in a case
+    fixture is not one the sweep reads.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        return {"valued": set(), "known": set(),
+                "problem": "%s does not parse (%s), so which of its flags take a "
+                           "value cannot be read" % (SWEEP, exc)}
+    scopes = [n for n in tree.body
+              if (isinstance(n, ast.FunctionDef) and n.name == "main")
+              or isinstance(n, ast.If)]
+    valued = set()
+    known = set()
+    for scope in scopes:
+        for node in ast.walk(scope):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) \
+                    and _FLAG_RE.match(node.value):
+                known.add(node.value)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
+                    and node.func.id == "_flag_value" and len(node.args) > 1 \
+                    and isinstance(node.args[1], ast.Constant) \
+                    and isinstance(node.args[1].value, str):
+                valued.add(node.args[1].value)
+    if not valued:
+        return {"valued": set(), "known": known,
+                "problem": "%s carries no `_flag_value(argv, \"--name\", ...)` "
+                           "call in `main`, so which flags take a value cannot be "
+                           "read and `--name value` would split into two words"
+                           % (SWEEP,)}
+    return {"valued": valued, "known": known, "problem": None}
+
+
+def _leg_of(words, valued, not_legs):
+    """The leg a call's expanded words run: a sorted tuple of its leg flags."""
+    tokens = []
+    i = 0
+    while i < len(words):
+        word = words[i]
+        value = None
+        if word.startswith("--") and "=" in word:
+            word, value = word.split("=", 1)
+        elif word in valued and i + 1 < len(words):
+            value = words[i + 1]
+            i += 1
+        i += 1
+        if word in not_legs:
+            continue
+        tokens.append(word if value is None else "%s %s" % (word, value))
+    return tuple(sorted(tokens))
+
+
+def sweep_legs(lines, valued, not_legs=None):
+    """{"legs": set, "unresolved": [raw], "calls": int} for one runner's lines.
+
+    `calls` rides beside the set for `report_targets`' reason: a reader that found
+    no call must not look like a runner that runs no leg.
+    """
+    not_legs = NOT_LEG_FLAGS if not_legs is None else not_legs
+    legs = set()
+    unresolved = []
+    calls = 0
+    for line, bound in _shell_scan(lines):
+        call = _SWEEP_CALL_RE.search(line)
+        if not call:
+            continue
+        calls += 1
+        words = _command_words(call.group(1))
+        if words is None:
+            unresolved.append(line)
+            continue
+        expanded = [_expand(w, bound["assigns"], bound["scratch"]) for w in words]
+        if any("$" in w for w in expanded):
+            unresolved.append(line)
+            continue
+        legs.add(_leg_of(expanded, valued, not_legs))
+    return {"legs": legs, "unresolved": unresolved, "calls": calls}
+
+
+def leg_name(leg):
+    """How a leg is printed: the call it stands for, or that it carries no flag."""
+    return "%s %s" % (SWEEP, " ".join(leg)) if leg else \
+        "%s (no leg flag)" % (SWEEP,)
+
+
+def sweep_leg_drift(repo=None, read=None, source=None, not_legs=None):
+    """{"findings": [(leg, side, note)], "stale": [(flag, note)], "problem"}.
+
+    `read` and `source` stand in for the runners and the sweep, so a case can hand
+    over a pair that differs by one leg without building a tree. `problem` is not
+    None when the question could not be asked - an unreadable file, a side with no
+    call to the sweep, a flag value this reader cannot expand - each of which would
+    otherwise come back as an empty finding list, the shape of agreement.
+    """
+    not_legs = NOT_LEG_FLAGS if not_legs is None else not_legs
+    if source is None:
+        try:
+            source = io.open(os.path.join(repo or REPO, SWEEP),
+                             encoding="utf-8").read()
+        except (IOError, OSError, UnicodeDecodeError) as exc:
+            return {"findings": [], "stale": [], "problem": "%s could not be read, "
+                    "so which of its flags take a value is unknown: %s"
+                    % (SWEEP, exc)}
+    shape = sweep_flag_shape(source)
+    if shape["problem"] is not None:
+        return {"findings": [], "stale": [], "problem": shape["problem"]}
+    if read is None:
+        read, problem = _read_runners(repo)
+        if problem is not None:
+            return {"findings": [], "stale": [], "problem": problem}
+    got = {}
+    for label in TARGET_SIDES:
+        answer = sweep_legs(read.get(label, []), shape["valued"], not_legs)
+        if not answer["calls"]:
+            return {"findings": [], "stale": [], "problem": "no call to %s was "
+                    "found in %s, so an empty comparison here would read as "
+                    "agreement" % (SWEEP, label)}
+        if answer["unresolved"]:
+            return {"findings": [], "stale": [], "problem": "%s calls %s with a "
+                    "flag this reader cannot resolve (%s) - teach the file an "
+                    "assignment it can read, or this reader the form"
+                    % (label, SWEEP, answer["unresolved"][0])}
+        got[label] = answer["legs"]
+    findings = []
+    for label in TARGET_SIDES:
+        others = set()
+        for other in TARGET_SIDES:
+            if other != label:
+                others |= got[other]
+        for leg in sorted(others - got[label]):
+            findings.append((leg_name(leg), label,
+                             "the other runner runs the sweep this way and this "
+                             "one does not, so a green here never ran that leg"))
+    stale = [(flag, "is excused from defining a leg, and %s no longer reads a "
+                    "flag by that name - the row outlived its flag" % (SWEEP,))
+             for flag in sorted(not_legs) if flag not in shape["known"]]
+    return {"findings": findings, "stale": stale, "problem": None}
+
+
+def sweep_leg_verdict(repo=None):
+    """`sweep_leg_drift()` as findings, with a question nobody could ask AS one."""
+    got = sweep_leg_drift(repo)
+    if got["problem"] is not None:
+        return [(SWEEP, "-", got["problem"])]
+    return got["findings"] + [(flag, "NOT_LEG_FLAGS", why)
+                              for flag, why in got["stale"]]
 
 
 def gates_in(path):
@@ -1958,6 +2192,7 @@ AUDITED_EXEMPTIONS = {
     "SHARED_CONCERNS": ("live", "shared_concern_violations"),
     "CONTRAST_EXEMPTIONS": ("live", "cr_violations"),
     "SCRATCH_EXEMPT": ("live", "scratch_isolation"),
+    "NOT_LEG_FLAGS": ("live", "sweep_leg_drift"),
     "BASELINE": ("live", "dead_baseline"),
     "KNOWN_CONFIG_MIRRORS": ("reason", "config_read_violations"),
     "PANEL_ROUTE_READERS": ("reason", "panel_route_violations"),
@@ -2359,6 +2594,8 @@ def parity(repo=None):
     # The argument question, asked for the one tool whose argument is the leg.
     # It reads two of the sides on its own and needs nothing `compare()` built.
     targets = report_target_verdict(repo)
+    # ...and asked again for the sweep, whose flags are its legs.
+    legs = sweep_leg_verdict(repo)
     raw = read_sides(repo)
     read = {}
     unreadable = []
@@ -2372,7 +2609,7 @@ def parity(repo=None):
         # NOT an empty verdict. A side nothing could read is not a side that agrees.
         return {"missing": [], "stale_exemptions": unreadable,
                 "failmodes": failmodes, "report_targets": targets,
-                "counts": counts}
+                "sweep_legs": legs, "counts": counts}
     result = compare(read)
     result["counts"] = counts
     # ...and the question `compare()` cannot ask: is each row's REASON still true of
@@ -2392,6 +2629,7 @@ def parity(repo=None):
            for name, why in exemption_audit_drift(repo)])
     result["failmodes"] = failmodes
     result["report_targets"] = targets
+    result["sweep_legs"] = legs
     return result
 
 
@@ -2452,7 +2690,8 @@ def render(result, stream=None):
     """Print the verdict. Returns the exit code."""
     out = stream if stream is not None else sys.stdout
     bad = (result["missing"] + result["stale_exemptions"]
-           + result["failmodes"] + result["report_targets"])
+           + result["failmodes"] + result["report_targets"]
+           + result.get("sweep_legs", []))
     out.write("gate parity: %s\n"
               % (", ".join("%d in %s" % (result["counts"].get(label, 0), label)
                            for label, _rel in SIDES),))
@@ -2465,11 +2704,18 @@ def render(result, stream=None):
     for target, side, note in result["report_targets"]:
         out.write("  report target MISSING from %s: %s\n      %s\n"
                   % (side, target, note))
+    for leg, side, note in result.get("sweep_legs", []):
+        if side in TARGET_SIDES:
+            out.write("  sweep leg MISSING from %s: %s\n      %s\n"
+                      % (side, leg, note))
+        else:
+            out.write("  sweep leg question (%s / %s): %s\n" % (leg, side, note))
     if not bad:
         out.write("  every side names the same gates, every declared exemption "
                   "is still real, SECURITY.md's fail modes are the ones "
-                  "hooks.json registers, and both runners hand the report "
-                  "checker the same documents\n")
+                  "hooks.json registers, both runners hand the report "
+                  "checker the same documents, and both run the same legs of "
+                  "the sweep\n")
     return 1 if bad else 0
 
 
@@ -3002,6 +3248,133 @@ def _cases(check):
           _rt_none["findings"] == [] and "no call" in (_rt_none["problem"] or "")
           and _rt_unres["findings"] == []
           and "never_assigned" in (_rt_unres["problem"] or ""))
+
+    # --- which legs of the sweep each runner runs -----------------------------
+    # Fixtures in each runner's own dialect, spelled as the real files spell them:
+    # CI calls `python` from a `run:` key, the local runner calls `python3` through
+    # its `run "label"` wrapper, continued over a line.
+    _sl_src = ('def main(argv):\n'
+               '    enc = _flag_value(argv, "--encoding", None)\n'
+               '    jobs = int(_flag_value(argv, "--jobs", 4))\n'
+               '    quiet = "--quiet" in argv\n'
+               'if __name__ == "__main__":\n'
+               '    if "--selftest" in sys.argv[1:]:\n'
+               '        pass\n')
+    _sl_ci = _yaml_run_lines(
+        "jobs:\n  j:\n    steps:\n"
+        "      - name: sweep\n        run: python tools/sweep-selftests.py\n"
+        "      - name: own\n        run: python tools/sweep-selftests.py --selftest\n"
+        "      - name: codec\n"
+        "        run: python tools/sweep-selftests.py --encoding cp1252\n")
+    _sl_head = _shell_command_lines(
+        'run "selftests" python3 tools/sweep-selftests.py\n'
+        'run "...and the runner\'s own cases, read directly" \\\n'
+        '  python3 tools/sweep-selftests.py --selftest\n')
+    _sl_fixed = _sl_head + _shell_command_lines(
+        'enc=cp1252\n'
+        'run "selftests again, on a legacy code page" \\\n'
+        '  python3 tools/sweep-selftests.py --encoding="$enc"\n')
+
+    live_legs = sweep_leg_drift()
+    _sl_shape = sweep_flag_shape(io.open(os.path.join(REPO, SWEEP),
+                                         encoding="utf-8").read())
+    _sl_sets = dict((label, sorted(sweep_legs(
+        _side_lines(os.path.join(REPO, dict(SIDES)[label])),
+        _sl_shape["valued"])["legs"])) for label in TARGET_SIDES)
+    check("sl0 THE LIVE CLAIM: verify.sh and ci.yml run the same legs of the "
+          "sweep, and the codec leg is among them on both - a pair that agreed on "
+          "the plain leg alone would agree about nothing CI found: %r / %r"
+          % (live_legs, _sl_sets),
+          live_legs == {"findings": [], "stale": [], "problem": None}
+          and _sl_sets["verify.sh"] == _sl_sets["ci.yml"]
+          and ("--encoding cp1252",) in _sl_sets["verify.sh"])
+
+    _sl_red = sweep_leg_drift(read={"verify.sh": _sl_head, "ci.yml": _sl_ci},
+                              source=_sl_src)
+    check("sl1 THE DEFECT THIS EXISTS FOR: a runner that sweeps once beside a CI "
+          "that sweeps again under a forced codec is reported - the codec leg, by "
+          "its flags, against the runner that lacks it, and nothing against the "
+          "legs both run: %r" % (_sl_red,),
+          _sl_red["problem"] is None and _sl_red["stale"] == []
+          and [(leg, side) for leg, side, _n in _sl_red["findings"]]
+          == [(SWEEP + " --encoding cp1252", "verify.sh")])
+
+    _sl_back = sweep_leg_drift(read={"verify.sh": _sl_fixed,
+                                     "ci.yml": _sl_ci[:2]}, source=_sl_src)
+    check("sl2 ...and BOTH ways: a leg only the local runner runs is reported "
+          "against CI, because a leg CI lacks is a push nobody ran it on: %r"
+          % (_sl_back,),
+          _sl_back["problem"] is None
+          and [(leg, side) for leg, side, _n in _sl_back["findings"]]
+          == [(SWEEP + " --encoding cp1252", "ci.yml")])
+
+    _sl_green = sweep_leg_drift(read={"verify.sh": _sl_fixed, "ci.yml": _sl_ci},
+                                source=_sl_src)
+    check("sl3 THE ALLOW CASE: the same legs in two dialects agree - `python` "
+          "against `python3`, `--encoding cp1252` against `--encoding=\"$enc\"` "
+          "through a variable, a call continued over a line against one on its "
+          "own. A reader comparing text fails here: %r" % (_sl_green,),
+          _sl_green == {"findings": [], "stale": [], "problem": None})
+
+    # THE DECISION WHICH FLAGS ARE LEGS, PINNED. `--jobs` on one side and `--quiet`
+    # on the other change how a leg runs and how it prints, never what it checks,
+    # so the pair below is the same legs. Treat either as a leg and this goes red -
+    # which is the over-fire that would make the rule one people delete.
+    _sl_knobs = sweep_leg_drift(read={
+        "verify.sh": _shell_command_lines(
+            'run "selftests" python3 tools/sweep-selftests.py --jobs 4\n'
+            'run "own" python3 tools/sweep-selftests.py --selftest\n'
+            'run "codec" python3 tools/sweep-selftests.py --encoding cp1252 '
+            '--jobs=2\n'),
+        "ci.yml": _yaml_run_lines(
+            "jobs:\n  j:\n    steps:\n"
+            "      - name: a\n        run: python tools/sweep-selftests.py --quiet\n"
+            "      - name: b\n        run: python tools/sweep-selftests.py --selftest\n"
+            "      - name: c\n        run: python tools/sweep-selftests.py "
+            "--quiet --encoding cp1252\n")}, source=_sl_src)
+    check("sl4 a flag that is not a leg may differ between the sides: `--jobs` in "
+          "either spelling locally and `--quiet` in CI leave the legs the same - "
+          "and `--jobs 4`'s value is consumed with it rather than read as a leg "
+          "of its own: %r" % (_sl_knobs,),
+          _sl_knobs == {"findings": [], "stale": [], "problem": None})
+
+    _sl_none = sweep_leg_drift(read={"verify.sh": [], "ci.yml": _sl_ci},
+                               source=_sl_src)
+    _sl_unres = sweep_leg_drift(read={
+        "verify.sh": _shell_command_lines(
+            'python3 tools/sweep-selftests.py --encoding "$never_assigned"\n'),
+        "ci.yml": _sl_ci}, source=_sl_src)
+    _sl_noarity = sweep_leg_drift(read={"verify.sh": _sl_fixed, "ci.yml": _sl_ci},
+                                  source="def main(argv):\n    return 0\n")
+    check("sl5 a runner with NO call to the sweep, a flag value this reader "
+          "cannot expand, and a sweep whose valued flags cannot be read are named "
+          "PROBLEMS, never an empty finding list: %r / %r / %r"
+          % (_sl_none, _sl_unres, _sl_noarity),
+          _sl_none["findings"] == [] and "no call" in (_sl_none["problem"] or "")
+          and _sl_unres["findings"] == []
+          and "never_assigned" in (_sl_unres["problem"] or "")
+          and _sl_noarity["findings"] == []
+          and "_flag_value" in (_sl_noarity["problem"] or ""))
+
+    _sl_stale = sweep_leg_drift(
+        read={"verify.sh": _sl_fixed, "ci.yml": _sl_ci}, source=_sl_src,
+        not_legs=dict(NOT_LEG_FLAGS, **{"--gone": "a flag the sweep stopped "
+                                                  "reading long ago, kept here"}))
+    check("sl6 a row excusing a flag the sweep no longer reads is reported as "
+          "stale, and the rows that name live flags are not: %r" % (_sl_stale,),
+          _sl_stale["problem"] is None and _sl_stale["findings"] == []
+          and [flag for flag, _n in _sl_stale["stale"]] == ["--gone"])
+
+    buf = io.StringIO()
+    code = render({"missing": [], "stale_exemptions": [], "failmodes": [],
+                   "report_targets": [],
+                   "sweep_legs": [(SWEEP + " --encoding cp1252", "verify.sh",
+                                   "why")],
+                   "counts": dict((l, 9) for l, _r in SIDES)}, stream=buf)
+    check("sl7 ...and a sweep leg one runner lacks exits 1 on its own, with the "
+          "gate sets otherwise in agreement, naming the leg and the side",
+          code == 1 and "--encoding cp1252" in buf.getvalue()
+          and "MISSING from verify.sh" in buf.getvalue())
 
     # --- the fourth side ------------------------------------------------------
     # CLAUDE.md's list said of itself that it was one of the sides being

@@ -927,6 +927,14 @@ TABLE = (
   '  node tools/check-report-interactive.mjs "$one/one-status.html" || return 1',
   "  true",
   "tools/gate-parity.py", "rt0"),
+ # ...and the same blind spot for the sweep, whose flags are its legs. CI sweeps a
+ # second time under a forced legacy codec; the mutation is the runner that did
+ # not, with the sweep still named on both sides so every gate set still agrees.
+ # `sl0` reads the real pair.
+ ("sweep_leg_drift", "tools/verify.sh", "replace",
+  "    python3 tools/sweep-selftests.py --encoding cp1252",
+  "    true",
+  "tools/gate-parity.py", "sl0"),
  # ...and the other question asked of that same runner, which is a PAIR rather
  # than a file: the selector chooses the checks and the runner dispatches them, and
  # the fault was a check the selector named and the runner had no arm for. The
@@ -1655,6 +1663,15 @@ ALLOW = (
   "            return SCRATCH",
   "            return match.group(0)",
   "tools/gate-parity.py", "rt2"),
+ # THE OVER-FIRE IS READING A MACHINE KNOB AS A LEG. The local runner may pin how
+ # many suites run at once and CI may quiet the inventory; neither changes which
+ # suites run or how they are graded. The mutation stops excusing `--jobs`, so a
+ # side that pins it runs a "different" leg - the noise that trains a reader to
+ # ignore the rule. `sl4` is that pair, and it expects agreement.
+ ("sweep_leg_drift", "tools/gate-parity.py", "replace",
+  "        if word in not_legs:",
+  "        if word in not_legs and word != \"--jobs\":",
+  "tools/gate-parity.py", "sl4"),
  # THE OVER-FIRE THIS RULE IS ONE LINE AWAY FROM. The discriminator is the
  # COMPARISON: four of the five exempted scripts name a committed path in CI and
  # only READ it - `render-report.py docs/audit/audit-plan.json --out-dir /tmp/...`

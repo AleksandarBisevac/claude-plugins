@@ -3,7 +3,8 @@
 # because an earlier one went red.
 #
 #   tools/verify.sh                 the full set (what CI runs)
-#   tools/verify.sh --fast          iteration mode: narrower browser sweeps, NOT a gate
+#   tools/verify.sh --fast          iteration mode: narrower browser sweeps and no
+#                                   legacy-code-page sweep, NOT a gate
 #   tools/verify.sh --release       the full set PLUS the checks a version bump owes
 #   tools/verify.sh --affected      only the checks the working tree's changes need
 #
@@ -253,6 +254,25 @@ run "selftests (hooks + scripts + tests + tools)" python3 tools/sweep-selftests.
 # directly, the exit code is read by this shell instead of by the thing under test.
 run "...and the runner's own cases, read directly" \
   python3 tools/sweep-selftests.py --selftest
+# THE SWEEP AGAIN, ON A STREAM THAT CANNOT SPELL EVERY CHARACTER - the leg CI runs
+# and this file did not. A pipe on Windows is the machine's legacy code page, and a
+# suite printing a character that page lacks dies there while every other OS stays
+# green; the forced codec reproduces that on any machine. Without this leg a fixture
+# that failed only under the codec was green at every local run and red on the
+# push. `gate-parity.py` now compares the sweep's legs, so dropping this line turns
+# that gate red by the leg's flags.
+#
+# `--fast` SKIPS it and says so in the summary: it re-runs every suite the plain
+# leg just ran, which doubles the python leg's wall clock for a class of failure
+# that only a printed character can trigger. The full run and CI both keep it.
+if [ "$FAST" -eq 1 ]; then
+  printf '  %-44s%s\n' "selftests on a legacy code page" "skipped (--fast)"
+  RESULTS="$RESULTS
+  skip  selftests on a legacy code page (--fast)"
+else
+  run "selftests on a legacy code page" \
+    python3 tools/sweep-selftests.py --encoding cp1252
+fi
 # The meta-gate. This file, ci.yml, CONTRIBUTING.md and CLAUDE.md are hand-maintained
 # descriptions of one gate set, and they had drifted in both directions before anyone
 # measured it; a gate named by one and not another now fails by name. Both documents
@@ -661,7 +681,8 @@ if [ "$FAILED" -gt 0 ]; then
   exit 1
 fi
 if [ "$FAST" -eq 1 ]; then
-  echo "VERIFY (--fast): every step green, but the browser sweeps were narrowed."
+  echo "VERIFY (--fast): every step green, but the browser sweeps were narrowed"
+  echo "and the selftest sweep's legacy-code-page leg was skipped."
   echo "This is NOT the gate — re-run without --fast before trusting a change."
   exit 0
 fi
