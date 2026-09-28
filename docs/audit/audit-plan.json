@@ -587,7 +587,7 @@
     {
       "id": "P92",
       "title": "the suites pass on the runners CI uses, and the local sweep sees what those runners see",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P92.json"
     }
   ],
@@ -4143,7 +4143,8 @@
       "P36.2",
       "P37.2",
       "P43.4",
-      "P72.2-ttl"
+      "P72.2-ttl",
+      "P92.4"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -4179,7 +4180,8 @@
       "P72.5-ttl",
       "P77.1",
       "P85.4",
-      "P86.4"
+      "P86.4",
+      "P92.4"
     ],
     "tools/redfirst.sh": [
       "P55.13"
