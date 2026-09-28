@@ -27,7 +27,7 @@
     {
       "id": "P92.1",
       "title": "a case skipped on one platform and run on another is one case, not a duplicate id",
-      "status": "in_progress",
+      "status": "done",
       "description": "The harness records a call site as a bare line number and skip() calls check() from inside the harness, so test__refs lr2 (run on one shell, skipped where zsh is absent) reads as a duplicate on ubuntu and windows. A skip registers no call site of its own; sites are keyed by the file and line of the first frame outside the harness. Red first by making zsh unavailable to the case.",
       "files": [
         "plugins/audit/tests/_harness.py",
@@ -56,18 +56,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "100beb36",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_harness._call_site: a skip registers no site; a site is the file and line of the first frame outside the harness; label_faults reports basename:line; cases cs1-cs4.",
+        "descriptive": "A case skipped where a shell is absent and run where it exists keeps one id, and two real call sites under one id are still reported, now even across files sharing a line number."
       },
       "startedAt": "2026-09-28T00:35:24Z",
-      "completedAt": null,
+      "completedAt": "2026-09-28T01:08:28Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-28T01:03:43Z.732ab1",
         "status": "passed",
         "at": "2026-09-28T01:03:43Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "100beb36",
+        "at": "2026-09-28T01:08:28Z",
+        "basis": "the harness fix the diagnosis named"
       }
     },
     {

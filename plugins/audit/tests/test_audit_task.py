@@ -137,7 +137,12 @@ def _cases(check):
         else:
             _panel_write._atomic_write_json(mpath, manifest)
         if git:
-            subprocess.run(["git", "init", "-q", proj], check=True,
+            # The branch is named, not inherited: an unnamed `init` takes
+            # whatever `init.defaultBranch` the machine's gitconfig carries, so
+            # a verb that checks "forks from main" read a different fixture on
+            # a runner whose git falls back to its built-in default.
+            subprocess.run(["git", "init", "-q", "-b", "main", proj],
+                           check=True,
                            stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL)
         return proj, mpath
@@ -1013,39 +1018,65 @@ def _cases(check):
             # which module it means in an import.
             lockmod = _loader.load_script("audit-lock.py", modname="audit_lock")
             check("k0 the lock library loads", lockmod is not None)
-            if lockmod is not None:
-                held = lockmod.main(
-                    ["acquire", "index", "--project", projk,
-                     "--note", "phase P2 run", "--session", "sess-A",
-                     "--pid", str(os.getpid())], out=lambda *_a: None)
-                check("k0b fixture lock taken", held == 0)
-                kb = open(mpathk, "rb").read()
-                code, txt = run(["add", "Locked out", "--phase", "P2",
-                                 "--project-dir", projk])
-                check("k1 a live holder refuses with exit 3", code == 3)
-                check("k1b ...printing the lock's own standard shape",
-                      "HELD by a live run" in txt and "sess-A" in txt)
-                check("k1c ...and nothing was written",
-                      open(mpathk, "rb").read() == kb)
-                deadp = subprocess.Popen([sys.executable, "-c", "pass"])
-                deadp.wait()
-                lpath = os.path.join(lockmod.lock_dir(projk), "index.lock")
-                info = lockmod.read_lock(lpath)
-                info["pid"] = deadp.pid
-                lockmod._write_lock(lpath, info)
-                code, txt = run(["add", "Stale", "--phase", "P2",
-                                 "--project-dir", projk])
-                check("k2 an abandoned holder -> exit 4, offering --takeover",
-                      code == 4 and "--takeover" in txt)
-                check("k2b ...but nothing is seized or written yet",
-                      open(mpathk, "rb").read() == kb)
-                code, txt = run(["add", "Taken over", "--phase", "P2",
-                                 "--project-dir", projk, "--takeover"])
-                check("k3 --takeover seizes the abandoned lock and writes",
-                      code == 0 and (task_in(mpathk, "P2.4") or {}).get("title")
-                      == "Taken over")
-                check("k4 the lock is released after the write",
-                      not os.path.exists(lpath))
+            # THE CALLER IS A STRANGER, AND THAT IS PINNED RATHER THAN FOUND.
+            # A claim is re-entered by a process carrying its token, or by the
+            # session or pid it was taken for - so the fixture lock is taken
+            # in a CHILD, whose token dies with it, and every name this run
+            # could go by is unset for the group. Taken in-process, the token
+            # travels in this process's environment and the verb reads the
+            # lock as its own; that only stayed hidden where the runner
+            # happened to name a different session.
+            _k_names = ("CLAUDE_CODE_SESSION_ID", "CLAUDE_PID",
+                        "AUDIT_LOCK_TOKENS")
+            _k_saved = dict((n, os.environ.get(n)) for n in _k_names)
+            for n in _k_names:
+                os.environ.pop(n, None)
+            try:
+                if lockmod is not None:
+                    held = subprocess.run(
+                        [sys.executable,
+                         os.path.join(_output.SCRIPTS_DIR, "governance",
+                                      "audit-lock.py"),
+                         "acquire", "index", "--project", projk,
+                         "--note", "phase P2 run", "--session", "sess-A",
+                         "--pid", str(os.getpid())],
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        universal_newlines=True)
+                    check("k0b fixture lock taken, by a child",
+                          held.returncode == 0, held.stdout)
+                    kb = open(mpathk, "rb").read()
+                    code, txt = run(["add", "Locked out", "--phase", "P2",
+                                     "--project-dir", projk])
+                    check("k1 a live holder refuses with exit 3", code == 3)
+                    check("k1b ...printing the lock's own standard shape",
+                          "HELD by a live run" in txt and "sess-A" in txt)
+                    check("k1c ...and nothing was written",
+                          open(mpathk, "rb").read() == kb)
+                    deadp = subprocess.Popen([sys.executable, "-c", "pass"])
+                    deadp.wait()
+                    lpath = os.path.join(lockmod.lock_dir(projk), "index.lock")
+                    info = lockmod.read_lock(lpath)
+                    info["pid"] = deadp.pid
+                    lockmod._write_lock(lpath, info)
+                    code, txt = run(["add", "Stale", "--phase", "P2",
+                                     "--project-dir", projk])
+                    check("k2 an abandoned holder -> exit 4, offering --takeover",
+                          code == 4 and "--takeover" in txt)
+                    check("k2b ...but nothing is seized or written yet",
+                          open(mpathk, "rb").read() == kb)
+                    code, txt = run(["add", "Taken over", "--phase", "P2",
+                                     "--project-dir", projk, "--takeover"])
+                    check("k3 --takeover seizes the abandoned lock and writes",
+                          code == 0 and (task_in(mpathk, "P2.4") or {}).get("title")
+                          == "Taken over")
+                    check("k4 the lock is released after the write",
+                          not os.path.exists(lpath))
+            finally:
+                for n, v in _k_saved.items():
+                    if v is None:
+                        os.environ.pop(n, None)
+                    else:
+                        os.environ[n] = v
         projl, mpathl = mk("k-legacy", base_manifest())
         open(mpathl + ".lock", "w").close()
         code, txt = run(["add", "X", "--phase", "P2", "--project-dir", projl])
@@ -5659,8 +5690,10 @@ def _cases(check):
             row relies on a manifest already being at the project, and `seed`
             refuses for exactly that reason."""
             proj, mp = mk_empty(name)
-            subprocess.run(["git", "init", "-q", proj], check=True,
-                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Named branch, for the reason `mk()` gives.
+            subprocess.run(["git", "init", "-q", "-b", "main", proj],
+                           check=True, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
             _git_q(proj, ["add", "-A"])
             _git_q(proj, ["commit", "-qm", "fixture"])
             tree = os.path.join(tmp, name + "-wt")
@@ -5761,6 +5794,17 @@ def _cases(check):
             ["git", "-C", tw_rv_proj, "rev-parse", "HEAD"],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
         ).stdout.decode("utf-8", "replace").strip()
+        # The fixtures' branch is the fixture's own, never the machine's: an
+        # unnamed `git init` inherits `init.defaultBranch`, and the rows below
+        # read a phase that forks from main.
+        _tw_heads = [subprocess.run(
+            ["git", "-C", p, "symbolic-ref", "--short", "-q", "HEAD"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+        ).stdout.decode("utf-8", "replace").strip()
+            for p in (tw_seed_proj, tw_rv_proj)]
+        check("tw0 both git fixtures start on main whatever the runner's "
+              "gitconfig names as the default branch: %r" % (_tw_heads,),
+              _tw_heads == ["main", "main"])
         _tw_argv = (
             ("add", ["add", "Fresh", "--phase", "P2"]),
             ("add-phase", ["add-phase", "Later", "--outcome", "it ships"]),
