@@ -19,7 +19,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P92-R1",
@@ -67,9 +67,9 @@
         "commit": "67aac9f3"
       }
     ],
-    "outcome": "[findings: 5 - 0 high, 0 med, 5 low; 5 with a recorded fix commit]"
+    "outcome": "Diagnosed on a fresh clone and an ubuntu:24.04 container; the phase review reproduced CI's ubuntu shape in the container and found the three failing suites and the full sweep green on the phase head, with P92.1-P92.4 reverted reproducing CI's reds. Its five lows were fixed in P92.6 and resolved; one overclaim in a recorded outcome (the macOS sweep does not reproduce the shell-dependent duplicate) was corrected. prove-gates proves the new gate-parity rows red and quiet; the phase gate and verify.sh are green, invariants found no breach. The windows-latest leg is diagnosed separately. [findings: 5 - 0 high, 0 med, 5 low; 5 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "The suites CI's ubuntu runner failed on carry their own identity, branch and session now, a case skipped on one platform keeps one id, and the report checker excuses the tagged-chips expect only on its own note; the sweep hands its children no ambient session, git configuration or git identity, verify.sh runs CI's rendered-plan legs, and gate-parity holds the checker's targets and the filtered isolation names to both runners and every document.",
   "tasks": [
     {
       "id": "P92.1",
@@ -404,5 +404,10 @@
       }
     }
   ],
-  "startedAt": "2026-09-28T00:35:24Z"
+  "startedAt": "2026-09-28T00:35:24Z",
+  "testEvidence": {
+    "runId": "2026-09-28T01:59:22Z.8f2fc0",
+    "status": "passed",
+    "at": "2026-09-28T01:59:22Z"
+  }
 }
