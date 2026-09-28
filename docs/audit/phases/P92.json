@@ -236,7 +236,7 @@
     {
       "id": "P92.5",
       "title": "the sweep hands its suites no ambient session or git configuration, so a local green means what CI's does",
-      "status": "in_progress",
+      "status": "done",
       "description": "The class behind the ubuntu failures: the sweep isolates cwd, TMPDIR, HOME/XDG and the pycache but passes the rest of the environment through. For every child: drop the Claude session variables (CLAUDE_CODE_SESSION_ID, CLAUDE_PID and the rest of that family), ignore git's system configuration (GIT_CONFIG_NOSYSTEM), and refuse git's identity guessing (user.useConfigOnly) with no default branch pinned, so a suite that leans on the host's git fails here the way it fails on a bare runner rather than passing under a pinned default. A sweep case fails if any of these reaches a child. Name the new families where isolation_drift reads them (CLAUDE.md's Tests paragraph, CONTRIBUTING.md and fixture_root's docstring). Prove it red first: with P92.1-P92.4 reverted in a scratch tree, the isolated sweep fails on exactly the causes CI failed on.",
       "files": [
         "tools/sweep-selftests.py",
@@ -272,18 +272,27 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "acef6c2c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/sweep-selftests.py: ambient_env drops the CLAUDE_ prefix, CLAUDECODE, AUDIT_LOCK_TOKENS and git's documented identity names, and sets GIT_CONFIG_NOSYSTEM and user.useConfigOnly; no branch or identity pinned; cases se0-se5, x8-x14. CLAUDE.md Tests paragraph, CONTRIBUTING.md isolation block and fixture_root's docstring name the filtered families and state that isolation_drift does not read them.",
+        "descriptive": "A local sweep hands its suites the bare session and git a CI runner has: no Claude session variables, no system git configuration, no guessed or exported git identity; over the pre-fix tree it now fails on exactly the suites CI failed on."
       },
       "startedAt": "2026-09-28T01:08:53Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-28T01:28:07Z",
+      "verifiedBy": [
+        "se0-se5",
+        "x8-x14"
+      ],
       "testEvidence": {
         "runId": "2026-09-28T01:28:07Z.65eff9",
         "status": "passed",
         "at": "2026-09-28T01:28:07Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "acef6c2c",
+        "at": "2026-09-28T01:28:07Z",
+        "basis": "the isolation the diagnosis named, widened to ambient git identity, with the class proved on the pre-fix tree"
       }
     }
   ],
