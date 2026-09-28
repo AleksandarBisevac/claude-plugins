@@ -1,0 +1,239 @@
+{
+  "id": "P92",
+  "title": "the suites pass on the runners CI uses, and the local sweep sees what those runners see",
+  "status": "pending",
+  "description": "CI failed on the pushed main for causes the local sweep could not see: environment inputs it passes through (the session variables, git's system config and identity guessing, the installed shells) and a report-coverage gap the dogfood plan's own data triggered. Fix each cause red first by flipping the input that hid it, then close the class in the sweep and in verify.sh.",
+  "desiredOutcome": "CI's ubuntu selftests and manifest-validation jobs are green on the phase's head, and the local sweep, run in the environment it now isolates, fails on each cause they failed on before the fix",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P92.1",
+      "title": "a case skipped on one platform and run on another is one case, not a duplicate id",
+      "status": "pending",
+      "description": "The harness records a call site as a bare line number and skip() calls check() from inside the harness, so test__refs lr2 (run on one shell, skipped where zsh is absent) reads as a duplicate on ubuntu and windows. A skip registers no call site of its own; sites are keyed by the file and line of the first frame outside the harness. Red first by making zsh unavailable to the case.",
+      "files": [
+        "plugins/audit/tests/_harness.py",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/_harness.py: repro that FAILS on current code - a case run through check() on one branch and through skip() on another is reported as a duplicate case id"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P92.2",
+      "title": "the lock and branch fixtures in test_audit_task hold on a runner with no session and a plain git",
+      "status": "pending",
+      "description": "k1-k4: the fixture takes the lock in the test's own process, whose token then rides in AUDIT_LOCK_TOKENS and lets the verb back in when no session variable names another caller (CI). Take the fixture lock from a subprocess, or drop the carried token, and pin the session variables the case means. tw5/tw6: mk() and mk_pair_empty() run git init without a branch, which is main only under Apple git's system config; use an explicit initial branch. Red first with the session variables stripped and GIT_CONFIG_NOSYSTEM=1.",
+      "files": [
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - with the Claude session variables stripped and git's system config ignored, k1-k4 and tw5/tw6 fail"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P92.3",
+      "title": "close-phase's merge fixture carries its own git identity",
+      "status": "pending",
+      "description": "close-phase's merge --no-ff needs a committer; the fixture identity covers only the fixture's own git calls, and ubuntu cannot guess one. Write a repo-local user.name/user.email into the worktree fixture. Red first with user.useConfigOnly=true.",
+      "files": [
+        "plugins/audit/tests/test_close_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_close_phase.py: repro that FAILS on current code - with identity guessing refused, mh2's --no-ff merge cannot commit"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P92.4",
+      "title": "the rendered-plan legs CI runs are graded the same way locally, and a plan with ready work and no area tags is not a coverage failure",
+      "status": "pending",
+      "description": "The tagged-phase chips expect is excused only when nothing is ready; excuse it too on the note its else branch prints when no ready task sits in a tagged phase. CI's one-status leg renders the live dogfood plan while its comment says the plan is all one status: render a committed fixture that is, or say what it renders. verify.sh runs the same rendered-plan legs as ci.yml so a local green covers them.",
+      "files": [
+        "tools/check-report-interactive.mjs",
+        ".github/workflows/ci.yml",
+        "tools/verify.sh"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/check-report-interactive.mjs: repro that FAILS on current code - a report of a plan with ready tasks and no area tags fails coverage on the tagged-phase chips expect"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P92.5",
+      "title": "the sweep hands its suites no ambient session or git configuration, so a local green means what CI's does",
+      "status": "pending",
+      "description": "The class behind the ubuntu failures: the sweep isolates cwd, TMPDIR, HOME/XDG and the pycache but passes the rest of the environment through. For every child: drop the Claude session variables (CLAUDE_CODE_SESSION_ID, CLAUDE_PID and the rest of that family), ignore git's system configuration (GIT_CONFIG_NOSYSTEM), and refuse git's identity guessing (user.useConfigOnly) with no default branch pinned, so a suite that leans on the host's git fails here the way it fails on a bare runner rather than passing under a pinned default. A sweep case fails if any of these reaches a child. Name the new families where isolation_drift reads them (CLAUDE.md's Tests paragraph, CONTRIBUTING.md and fixture_root's docstring). Prove it red first: with P92.1-P92.4 reverted in a scratch tree, the isolated sweep fails on exactly the causes CI failed on.",
+      "files": [
+        "tools/sweep-selftests.py",
+        "plugins/audit/tests/_harness.py",
+        "CLAUDE.md",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/sweep-selftests.py: repro that FAILS on current code - a child suite sees a Claude session variable, git's system configuration, or a git identity guessed from the host"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P92.1",
+        "P92.2",
+        "P92.3",
+        "P92.4"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
