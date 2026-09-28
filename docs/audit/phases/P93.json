@@ -1,0 +1,110 @@
+{
+  "id": "P93",
+  "title": "every leg of CI's ubuntu job passes, and verify.sh runs each of them",
+  "status": "pending",
+  "description": "The ubuntu job's encoding leg fails on a selection-miss fixture that prints a character a cp1252 stream cannot encode, and no local command runs that leg. Make the fixture independent of its child's stream encoding, then run the leg locally and hold the sweep's legs to both runners.",
+  "desiredOutcome": "CI's ubuntu job is green on both of its sweeps, including the one on a stream that cannot spell every character, and verify.sh runs that leg too, held to CI by gate-parity",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P93.1",
+      "title": "the selection-miss fixtures print what a runner prints, whatever the stream's encoding",
+      "status": "pending",
+      "description": "The fake runner the sm cases write (gate.py) prints a jest bullet through a text stream, so a cp1252 stream crashes it. Write its output as the bytes a real runner writes (UTF-8), independent of the child's stream encoding; check every other fixture in the file that prints a character outside cp1252. Red first with the sweep's encoding leg (tools/sweep-selftests.py --encoding cp1252) or PYTHONIOENCODING=cp1252 on the suite.",
+      "files": [
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: repro that FAILS on current code - under PYTHONIOENCODING=cp1252 the selection-miss fixture's fake runner crashes and sm1 reads a tail instead of a named suite"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P93.2",
+      "title": "verify.sh runs the sweep's encoding leg, and gate-parity holds the sweep's legs to both runners",
+      "status": "pending",
+      "description": "verify.sh runs the sweep once; ci.yml runs it again with --encoding cp1252, and gate-parity compares scripts, not legs, so the gap was invisible. verify.sh runs the encoding leg in its full mode (say what --fast does with it); gate-parity derives each side's sweep invocations and fails when a leg (a distinct flag set) runs on one side only, the way report_target_drift holds the checker's targets; prove-gates rows for it, red and allow.",
+      "files": [
+        "tools/verify.sh",
+        "tools/gate-parity.py",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/gate-parity.py: repro that FAILS on current code - ci.yml runs the sweep with a flag verify.sh never passes, and gate-parity reports no gap"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
