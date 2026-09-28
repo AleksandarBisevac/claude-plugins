@@ -79,7 +79,7 @@
     {
       "id": "P92.2",
       "title": "the lock and branch fixtures in test_audit_task hold on a runner with no session and a plain git",
-      "status": "in_progress",
+      "status": "done",
       "description": "k1-k4: the fixture takes the lock in the test's own process, whose token then rides in AUDIT_LOCK_TOKENS and lets the verb back in when no session variable names another caller (CI). Take the fixture lock from a subprocess, or drop the carried token, and pin the session variables the case means. tw5/tw6: mk() and mk_pair_empty() run git init without a branch, which is main only under Apple git's system config; use an explicit initial branch. Red first with the session variables stripped and GIT_CONFIG_NOSYSTEM=1.",
       "files": [
         "plugins/audit/tests/test_audit_task.py"
@@ -107,18 +107,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1085ef3e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "k-group fixture lock taken by a child process with session variables unset for the group; git init -q -b main in mk() and mk_pair_empty(); tw0.",
+        "descriptive": "The lock cases no longer depend on the runner's Claude session variables, and the git fixtures start on main whatever the runner's default branch."
       },
       "startedAt": "2026-09-28T00:35:24Z",
-      "completedAt": null,
+      "completedAt": "2026-09-28T01:08:29Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-09-28T01:05:12Z.797997",
         "status": "passed",
         "at": "2026-09-28T01:05:12Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "1085ef3e",
+        "at": "2026-09-28T01:08:29Z",
+        "basis": "the fixture fixes the diagnosis named, plus a case for the fixture no case read"
       }
     },
     {
