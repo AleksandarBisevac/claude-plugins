@@ -23,7 +23,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P81-R1",
@@ -170,9 +170,9 @@
         "commit": "63840391"
       }
     ],
-    "outcome": "[findings: 16 - 0 high, 6 med, 10 low; 16 with a recorded fix commit]"
+    "outcome": "Every task was reviewed on its own, several over repeated rounds. The phase review drove the outcome live with real vitest and Playwright runners (every clause delivered) and read the cross-module seams; its findings were fixed in P81.16, P81.17 and P81.18 and are all resolved. The phase gate is green on all entries including shots and interactive, verify.sh is green, the large demo report stays interactive, and invariants found no breach. Recorded for later phases: the remaining text-ordered readers, the remaining project-of-manifest answers, run-test-gate's exit when --record cannot store a row, and the example pipeline's pinned tag. [findings: 16 - 0 high, 6 med, 10 low; 16 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "A red full run learns: a selection miss the runner named is filed as a coupling and a bug under its pinned path, a catch refreshes lastCaught only for the one coupling a name pins, and a run recorded elsewhere is learned from after import through a printed command; a muted suite is recorded but neither blocks nor teaches, never holds in its own bug's fix task or after its bug closes, and an expired mute blocks again; Playwright's flaky tests are recorded as flaky beside a passing verdict. The evidence ledger is decoded one strict way and ordered by moment in its own module and the verdict binding.",
   "tasks": [
     {
       "id": "P81.1",
@@ -1276,5 +1276,10 @@
       }
     }
   ],
-  "startedAt": "2026-09-27T14:08:52Z"
+  "startedAt": "2026-09-27T14:08:52Z",
+  "testEvidence": {
+    "runId": "2026-09-27T23:55:33Z.a395eb",
+    "status": "passed",
+    "at": "2026-09-27T23:55:33Z"
+  }
 }
