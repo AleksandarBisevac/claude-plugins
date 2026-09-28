@@ -5533,15 +5533,17 @@ def _no_verdict_cases(check):
           "breadth:" not in subject)
 
     # --- whose gate graded the work, printed where the verdict is read ------
+    # Echoed as BYTES, and the file written as UTF-8: the output carries jest's
+    # bullet, which a text stream on a legacy code page cannot encode.
     say = os.path.join(root, "say.py")
     with open(say, "w") as fh:
         fh.write("import sys\n"
                  "if len(sys.argv) > 3:\n"
                  "    open(sys.argv[3], 'w').close()\n"
-                 "sys.stdout.write(open(sys.argv[1]).read())\n"
+                 "sys.stdout.buffer.write(open(sys.argv[1], 'rb').read())\n"
                  "raise SystemExit(int(sys.argv[2]))\n")
     red_out = os.path.join(root, "red.txt")
-    with open(red_out, "w") as fh:
+    with open(red_out, "w", encoding="utf-8") as fh:
         fh.write(" FAIL  src/sibling.test.ts\n  ● sibling > regressed\n\n"
                  "Tests:       1 failed, 4 passed, 5 total\n")
     ran_marker = os.path.join(root, "phase-gate-ran")
@@ -5609,6 +5611,26 @@ def _no_verdict_cases(check):
           % ([ln for ln in p_lines if "graded by" in ln],),
           p_code == M.E_FAIL
           and not any("graded by" in ln for ln in p_lines))
+
+    # The child's stream codec is pinned to a legacy code page for this run, so
+    # the fixture's byte echo is measured on every run, not only on the sweep's
+    # encoding pass.
+    codec_was = os.environ.get("PYTHONIOENCODING")
+    os.environ["PYTHONIOENCODING"] = "cp1252"
+    try:
+        e_code, e_lines = _main("--task", "P1.2")
+    finally:
+        if codec_was is None:
+            os.environ.pop("PYTHONIOENCODING", None)
+        else:
+            os.environ["PYTHONIOENCODING"] = codec_was
+    e_text = "\n".join(e_lines)
+    check("gb6 on a child stream that cannot spell jest's bullet, the gate still "
+          "reads the runner's own output - the bullet's title reaches the "
+          "report and no encode traceback stands in for it: %r"
+          % ([ln for ln in e_lines if "regressed" in ln or "Error" in ln],),
+          e_code == M.E_FAIL and "sibling > regressed" in e_text
+          and "UnicodeEncodeError" not in e_text)
 
     # --- the breadth clause, end to end ---------------------------------------
     # `coverage()` is pinned directly by br1-br3; these pin that `main` hands it
@@ -8451,21 +8473,27 @@ def _sm_track_suite(root, suite=_SM_SUITE):
     with open(path, "w") as fh:
         fh.write("// %s\n" % (suite,))
     return suite.split("/", 1)[0]
+# The fake runner writes UTF-8 BYTES, as jest does whatever its parent's stream
+# is. A text-stream `print` encodes through the child's own stdout codec, so on a
+# legacy code page the bullet raises instead of printing and the runner under
+# test reads a traceback where a named suite should be.
 _SM_GATE = """\
 import sys
+def say(line):
+    sys.stdout.buffer.write((line + "\\n").encode("utf-8"))
 mode = open(sys.argv[1]).read().strip()
 if mode == "green":
-    print("PASS e2e/cart.spec.ts")
-    print("Tests:       4 passed, 4 total")
+    say("PASS e2e/cart.spec.ts")
+    say("Tests:       4 passed, 4 total")
     sys.exit(0)
 if mode == "named":
-    print("FAIL e2e/cart.spec.ts")
-    print("  \\u25cf cart > adds an item")
-    print("")
-    print("Tests:       1 failed, 3 passed, 4 total")
+    say("FAIL e2e/cart.spec.ts")
+    say("  \\u25cf cart > adds an item")
+    say("")
+    say("Tests:       1 failed, 3 passed, 4 total")
     sys.exit(1)
-print("boom")
-print("at e2e/cart.spec.ts:3")
+say("boom")
+say("at e2e/cart.spec.ts:3")
 sys.exit(1)
 """
 
