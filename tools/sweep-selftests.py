@@ -214,17 +214,17 @@ def home_env(home):
 
 # --- what a child inherits from the caller, which is not a directory ----------
 # THE DIRECTORIES ABOVE WERE NOT THE WHOLE OF THE AMBIENT STATE. The rest of the
-# caller's environment went through untouched, and three things in it made a local
+# caller's environment went through untouched, and what was in it made a local
 # sweep green over suites CI's ubuntu runner turned red: the Claude session a sweep
 # is usually typed from, which the lock and journal code read as a live holder and
 # an actor; git's SYSTEM configuration, which on a mac pins a default branch no bare
 # runner has; and git's habit of guessing an identity from the hostname when none
 # is configured, which a runner with no hostname identity refuses. A suite that
-# leaned on any of the three passed here and failed there.
+# leaned on any of them passed here and failed there.
 #
 # THE SESSION FAMILY IS DERIVED BY PREFIX, not listed, because the harness adds
-# members to it and a list would be one release behind. The two names outside the
-# prefix are named with their reason: `CLAUDECODE` is the harness's own marker that
+# members to it and a list would be one release behind. The names outside the
+# prefix are listed with their reason: `CLAUDECODE` is the harness's own marker that
 # a process was spawned by it, and `AUDIT_LOCK_TOKENS` is how a lock holder hands
 # its claims to its children - a sweep typed from inside a held run would hand
 # every suite a claim it never took. Nothing is allowed through by name: CI's
@@ -961,7 +961,7 @@ def _cases(check):
                "GIT_CONFIG_NOSYSTEM": "0"}
     _before = dict(_caller)
     _amb = ambient_env(_caller)
-    check("se0 the session family is dropped by PREFIX and the two names outside "
+    check("se0 the session family is dropped by PREFIX and the names outside "
           "it by name, so a member the harness adds later is dropped without a "
           "list growing: %r" % (sorted(_amb),),
           not any(k in _amb for k in ("CLAUDE_CODE_SESSION_ID",

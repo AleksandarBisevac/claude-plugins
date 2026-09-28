@@ -20,7 +20,44 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P92-R1",
+        "severity": "low",
+        "file": "tools/gate-parity.py (_HEREDOC_RE)",
+        "issue": "The heredoc reader also matches a here-string (<<<), reads its word as a terminator and drops every following line, so a checker call after a here-string vanishes from the target set with no finding.",
+        "resolution": "Match a heredoc only on exactly two angle brackets; a case puts a here-string before a real call and asserts the call is read."
+      },
+      {
+        "id": "P92-R2",
+        "severity": "low",
+        "file": "tools/gate-parity.py (_first_argument)",
+        "issue": "The target keeps trailing shell punctuation, so a call written as `if ... ; then` on one side and bare on the other reads as a missing document.",
+        "resolution": "Tokenise with shell punctuation separated; an allow case with the same target in both spellings."
+      },
+      {
+        "id": "P92-R3",
+        "severity": "low",
+        "file": "tools/prove-gates.py (ALLOW row rt2 comment)",
+        "issue": "The comment says the mutation reports every rendered leg missing; it actually leaves the scratch root unexpanded, which the reader reports as an unresolved target.",
+        "resolution": "Say what the mutation does."
+      },
+      {
+        "id": "P92-R4",
+        "severity": "low",
+        "file": "tools/gate-parity.py; tools/sweep-selftests.py (comments and a case label)",
+        "issue": "Present-tense counts of what the files hold (legs from the generator's tree, documents in a loop, names outside the prefix) go wrong when one is added.",
+        "resolution": "Delete the numbers and keep the pointers."
+      },
+      {
+        "id": "P92-R5",
+        "severity": "low",
+        "file": "CLAUDE.md, CONTRIBUTING.md, plugins/audit/tests/_harness.py (fixture_root docstring)",
+        "issue": "The filtered isolation families are named in three documents that nothing checks; the documents say so, but it is a rule in prose in documents this repo has recorded drifting apart.",
+        "resolution": "isolation_drift derives the filtered families from the runner's constants and requires each document to name them; then drop the sentences that say nothing checks them."
+      }
+    ],
+    "outcome": "[findings: 5 - 0 high, 0 med, 5 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -275,7 +312,7 @@
       "commit": "acef6c2c",
       "outcome": {
         "technical": "tools/sweep-selftests.py: ambient_env drops the CLAUDE_ prefix, CLAUDECODE, AUDIT_LOCK_TOKENS and git's documented identity names, and sets GIT_CONFIG_NOSYSTEM and user.useConfigOnly; no branch or identity pinned; cases se0-se5, x8-x14. CLAUDE.md Tests paragraph, CONTRIBUTING.md isolation block and fixture_root's docstring name the filtered families and state that isolation_drift does not read them.",
-        "descriptive": "A local sweep hands its suites the bare session and git a CI runner has: no Claude session variables, no system git configuration, no guessed or exported git identity; over the pre-fix tree it now fails on exactly the suites CI failed on."
+        "descriptive": "A local sweep hands its suites the bare session and git a CI runner has: no Claude session variables, no system git configuration, no guessed or exported git identity; over the pre-fix tree it now fails on the suites whose CI failure came from the environment (the lock, branch and identity fixtures); the duplicate-id failure, which depends on which shells a machine has installed, is held on every platform by the harness's own cases instead."
       },
       "startedAt": "2026-09-28T01:08:53Z",
       "completedAt": "2026-09-28T01:28:07Z",
@@ -293,6 +330,56 @@
         "commit": "acef6c2c",
         "at": "2026-09-28T01:28:07Z",
         "basis": "the isolation the diagnosis named, widened to ambient git identity, with the class proved on the pre-fix tree"
+      }
+    },
+    {
+      "id": "P92.6-a1x",
+      "title": "the report-target reader reads every call the shell would run, and the filtered isolation families are held in the documents by a check",
+      "status": "in_progress",
+      "description": "Phase review fix task. report_target_drift: a heredoc is matched on exactly two angle brackets so a here-string does not swallow the lines after it; a call's first argument is read with shell punctuation separated so an if/then spelling and a bare one agree. prove-gates' rt2 comment says what its mutation does. Present-tense counts in the new comments and a case label become pointers. isolation_drift also derives the filtered families (the session prefix and names, the git identity names, the git configuration it sets) from sweep-selftests.py and requires each isolation document to name them; the sentences saying nothing checks them go.",
+      "files": [
+        "tools/gate-parity.py",
+        "tools/prove-gates.py",
+        "tools/sweep-selftests.py",
+        "CLAUDE.md",
+        "CONTRIBUTING.md",
+        "plugins/audit/tests/_harness.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/gate-parity.py: repro that FAILS on current code - a checker call after a here-string vanishes from the target set, and a document that stops naming a filtered isolation family passes"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-28T01:41:50Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-28T01:56:37Z.f6c187",
+        "status": "passed",
+        "at": "2026-09-28T01:56:37Z"
       }
     }
   ],

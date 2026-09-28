@@ -68,8 +68,9 @@ here was a second reader of the same files:
     disagreement `parity()` cannot see: both files named the same gates while
     disagreeing about which of them run, so a step the runner had no arm for was
     dropped in silence and the summary went on calling the change covered.
-  * every family of environment variables the sweep points away from the machine
-    must be named by every document describing that isolation, and the sweep must
+  * every family of environment variables the sweep points away from the machine,
+    and every name it filters out of a child's environment or sets there, must be
+    named by every document describing that isolation, and the sweep must
     agree with itself about what it watches. `isolation_drift()` reads the runner's
     own constants rather than restating them.
   * every root the sweep walks must be named where each document enumerates
@@ -82,6 +83,7 @@ here was a second reader of the same files:
     paragraph, and why the second direction is what makes the first worth having.
 """
 import ast
+import fnmatch
 import glob
 import io
 import json
@@ -154,7 +156,7 @@ LOCAL_SIDES = ("verify.sh",) + DOC_SIDES
 
 ABSENT_BY_DESIGN = (
     # DOC_SIDES, not LOCAL_SIDES: `verify.sh` runs the rendered-plan legs CI runs,
-    # and two of them start from this generator's tree, so it invokes this for real.
+    # and some of them start from this generator's tree, so it invokes this for real.
     ("plugins/audit/scripts/demo/gen-demo-manifest.py", DOC_SIDES,
      "builds the throwaway demo tree the derived report legs start from; "
      "verify.sh runs those legs, and the documents hand them to it rather than "
@@ -912,8 +914,86 @@ def unnamed_groups(text, groups):
             if not any(name in text for name in groups[held])]
 
 
+# THE NAMES THE SWEEP FILTERS, which point at no directory and so are invisible to
+# `pinned_env_groups`. The runner drops the Claude session and any exported git
+# identity, and sets git's switches, from module tables; these are those tables, by
+# name, and the grain differs from the directory families on purpose. A directory
+# family is many spellings of ONE lookup, so naming one member names it. A filtered
+# name is its own leak - the committer's identity is not the author's spelled
+# differently - so every member must be named, by itself or by a glob covering it.
+FILTER_TABLES = ("SESSION_PREFIX", "SESSION_NAMES", "GIT_IDENTITY_NAMES", "GIT_ENV")
+_CODE_SPAN_RE = re.compile(r"`([^`\n]+)`")
+# The names in a `GIT_CONFIG_COUNT` triple that only ENCODE a setting; the setting
+# itself is the key a `GIT_CONFIG_KEY_<n>` carries, and that is what a reader needs
+# to see named.
+_GIT_CONFIG_KEY_RE = re.compile(r"^GIT_CONFIG_KEY_\d+$")
+_GIT_CONFIG_ENCODING_RE = re.compile(r"^GIT_CONFIG_(?:COUNT|VALUE_\d+)$")
+
+
+def filtered_env_families(source):
+    """({family: (members,)}, problem) - what the runner filters, off its tables.
+
+    The prefix arrives as a pattern (`PREFIX*`), so the rule that matches members
+    can tell a prefix from a name. A runner missing any table is REPORTED rather
+    than read as filtering nothing: an empty family set is one every document names.
+    """
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError) as exc:
+        return {}, "does not parse, so nothing can be compared: %s" % (exc,)
+    consts = _module_constants(tree)
+    missing = [name for name in FILTER_TABLES if name not in consts]
+    if missing:
+        return {}, ("carries no %s, so what it filters from a child's environment "
+                    "cannot be read" % (", ".join(missing),))
+    prefix = consts["SESSION_PREFIX"]
+    names = _string_tuple(consts["SESSION_NAMES"]) or ()
+    identity = _string_tuple(consts["GIT_IDENTITY_NAMES"]) or ()
+    config = []
+    for pair in consts["GIT_ENV"]:
+        if not (isinstance(pair, (tuple, list)) and len(pair) == 2):
+            return {}, "GIT_ENV holds %r, which is not a (name, value) pair" % (pair,)
+        key, value = pair
+        if _GIT_CONFIG_KEY_RE.match(key):
+            config.append(value)
+        elif not _GIT_CONFIG_ENCODING_RE.match(key):
+            config.append(key)
+    if not isinstance(prefix, str) or not prefix:
+        return {}, "SESSION_PREFIX is %r, which is not a prefix" % (prefix,)
+    return {"session": (prefix + "*",) + names,
+            "git identity": identity,
+            "git config": tuple(config)}, None
+
+
+def _covers(token, member):
+    """True when the code span `token` names `member` - the decision is9 pins."""
+    if member.endswith("*"):
+        return token in (member, member[:-1])
+    if token == member:
+        return True
+    return (token.endswith("*") and len(token) > 1
+            and fnmatch.fnmatchcase(member, token))
+
+
+def uncovered_members(text, families):
+    """[(family, (members,))] for every family `text` leaves a member of unnamed.
+
+    Pure over one document, for the reason `unnamed_groups` is: both directions are
+    driven from strings. Only code spans are read, so a longer variable that merely
+    STARTS with a prefix, written in running prose, cannot name the prefix.
+    """
+    tokens = set(_CODE_SPAN_RE.findall(text))
+    out = []
+    for family in sorted(families):
+        left = tuple(m for m in families[family]
+                     if not any(_covers(t, m) for t in tokens))
+        if left:
+            out.append((family, left))
+    return out
+
+
 def isolation_drift(repo=None):
-    """{"prose", "runner", "groups", "watched", "sides", "problem"} for the tree.
+    """{"prose", "runner", "groups", "filtered", "watched", "sides", "problem"}.
 
     `problem` is not None when the runner could not be read at all - which produces
     an empty finding list, the same shape a tree in perfect agreement produces, and
@@ -924,14 +1004,19 @@ def isolation_drift(repo=None):
         with io.open(os.path.join(root, SWEEP_REL), encoding="utf-8") as fh:
             source = fh.read()
     except (IOError, OSError, UnicodeDecodeError) as exc:
-        return {"prose": [], "runner": [], "groups": {}, "watched": {}, "sides": 0,
+        return {"prose": [], "runner": [], "groups": {}, "filtered": {},
+                "watched": {}, "sides": 0,
                 "problem": "%s could not be read: %s" % (SWEEP_REL, exc)}
     groups, problem = pinned_env_groups(source)
     if problem is not None:
-        return {"prose": [], "runner": [], "groups": {}, "watched": {}, "sides": 0,
+        return {"prose": [], "runner": [], "groups": {}, "filtered": {},
+                "watched": {}, "sides": 0,
                 "problem": "%s %s" % (SWEEP_REL, problem)}
     watched = watched_channels(source)
     runner = []
+    filtered, why = filtered_env_families(source)
+    if why is not None:
+        runner.append((SWEEP_REL, "-", why))
     if watched["problem"] is not None:
         runner.append((SWEEP_REL, "-", watched["problem"]))
     else:
@@ -965,8 +1050,16 @@ def isolation_drift(repo=None):
                           "of that family - so a reader of it cannot tell "
                           "the pin exists"
                           % (", ".join("`%s`" % (n,) for n in names),)))
-    return {"prose": prose, "runner": runner, "groups": groups, "watched": watched,
-            "sides": sides, "problem": None}
+        for family, left in uncovered_members(text, filtered):
+            prose.append((label, family,
+                          "the sweep filters %s out of a child's environment "
+                          "or sets it there, and this document names neither "
+                          "it nor a glob covering it - so a reader of it cannot "
+                          "tell the filter exists"
+                          % (", ".join("`%s`" % (n,) for n in left),)))
+    return {"prose": prose, "runner": runner, "groups": groups,
+            "filtered": filtered, "watched": watched, "sides": sides,
+            "problem": None}
 
 
 
@@ -1476,15 +1569,18 @@ _CHECKER_CALL_RE = re.compile(
 _ASSIGN_RE = re.compile(r"^(?:local\s+|export\s+)?([A-Za-z_]\w*)=(.*)$")
 _MKTEMP_RE = re.compile(r"^\$\(\s*mktemp\b")
 _FOR_RE = re.compile(r"^for\s+([A-Za-z_]\w*)\s+in\s+(.*?)\s*;\s*do\b")
-_HEREDOC_RE = re.compile(r"<<-?\s*['\"]?([A-Za-z_]\w*)['\"]?")
+# EXACTLY TWO angle brackets. A here-string (`<<<`) contains the same pair and
+# feeds one word to its command; read as a heredoc, that word became a terminator
+# no line ever matched, and everything after it vanished without a finding.
+_HEREDOC_RE = re.compile(r"(?<!<)<<(?!<)-?\s*['\"]?([A-Za-z_]\w*)['\"]?")
 _VAR_RE = re.compile(r"\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))")
 
 
 def _logical_lines(lines):
     """Command lines with `\\` continuations joined and heredoc bodies dropped.
 
-    Joined because a `for` over three documents is written across three lines in
-    CI, and one line of it names none of them. Heredocs dropped because their body
+    Joined because CI writes a `for` over several documents across several lines,
+    and one line of it names none of them. Heredocs dropped because their body
     is another language's text - a Python `for phase in plan:` inside one is not a
     shell loop, and read as one it would bind a variable the shell never sees.
     """
@@ -1511,9 +1607,16 @@ def _logical_lines(lines):
 
 
 def _first_argument(rest):
-    """The first positional argument of a command's remainder, or None."""
+    """The first positional argument of a command's remainder, or None.
+
+    PUNCTUATION IS ITS OWN TOKEN. `shlex.split` keeps a trailing `;` on the word
+    before it, so `if node <checker> /tmp/x.html; then` named a document called
+    `x.html;` and disagreed with the same call written bare.
+    """
+    lexer = shlex.shlex(rest or "", posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
     try:
-        words = shlex.split(rest or "")
+        words = list(lexer)
     except ValueError:
         return None
     for word in words:
@@ -2838,6 +2941,55 @@ def _cases(check):
           _rt_heredoc["targets"] == set(["docs/a.html"])
           and _rt_heredoc["unresolved"] == [])
 
+    # A HERE-STRING IS NOT A HEREDOC. `<<<` feeds one word to a command and ends
+    # there; a reader that took that word for a terminator dropped every line after
+    # it, the checker call included, and reported neither a finding nor a problem.
+    _rt_herestr = report_targets(_shell_command_lines(
+        'grep -q x <<< word\n'
+        'node tools/check-report-interactive.mjs docs/a.html\n'))
+    check("rt6 a here-string ends on its own line: the call AFTER one is still "
+          "read, rather than swallowed as the body of a heredoc that never "
+          "opened: %r" % (_rt_herestr,),
+          _rt_herestr["calls"] == 1
+          and _rt_herestr["targets"] == set(["docs/a.html"]))
+
+    # THE SAME TARGET, BARE ON ONE SIDE AND INSIDE `if ...; then` ON THE OTHER. A
+    # tokeniser that keeps shell punctuation on the word reads the second as a
+    # different document - `iff.html;` - and reports both sides as missing a leg
+    # each has. The fixture file name ends in the letter the separator would be
+    # glued to, so a strip of one trailing character could not pass by accident.
+    _rt_if_ci = _yaml_run_lines(
+        "jobs:\n  j:\n    steps:\n      - name: s\n        run: |\n"
+        "          if node tools/check-report-interactive.mjs /tmp/iff.html; then\n"
+        "            echo ok\n"
+        "          fi\n")
+    _rt_if_local = _shell_command_lines(
+        'WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/verify-XXXXXX")\n'
+        'node tools/check-report-interactive.mjs "$WORKDIR/iff.html"\n')
+    _rt_if = report_target_drift(read={"verify.sh": _rt_if_local,
+                                       "ci.yml": _rt_if_ci})
+    check("rt7 ...and a target written inside `if ...; then` agrees with the same "
+          "target written bare - the separator is shell syntax, not part of the "
+          "document's name: %r" % (_rt_if,),
+          _rt_if == {"findings": [], "problem": None})
+
+    # ...and mirrored, with the variable UNQUOTED inside the `if`. Splitting on
+    # punctuation alone reads `$` as a word of its own, so this is the pair that
+    # tells a tokeniser splitting on whitespace AND punctuation from one that only
+    # separates the punctuation - which the quoted spelling above cannot.
+    _rt_if2 = report_target_drift(read={
+        "verify.sh": _shell_command_lines(
+            'WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/verify-XXXXXX")\n'
+            'if node tools/check-report-interactive.mjs $WORKDIR/iff.html; then\n'
+            '  true\n'
+            'fi\n'),
+        "ci.yml": _yaml_run_lines(
+            "jobs:\n  j:\n    steps:\n      - name: s\n        run: |\n"
+            "          node tools/check-report-interactive.mjs /tmp/iff.html\n")})
+    check("rt8 ...and mirrored: an UNQUOTED variable inside `if ...; then` on the "
+          "local side agrees with the bare literal in CI: %r" % (_rt_if2,),
+          _rt_if2 == {"findings": [], "problem": None})
+
     _rt_none = report_target_drift(read={"verify.sh": [], "ci.yml": _rt_ci})
     _rt_unres = report_target_drift(read={
         "verify.sh": _shell_command_lines(
@@ -2961,11 +3113,11 @@ def _cases(check):
     _iso = isolation_drift()
     check("is0 THE LIVE CLAIM: every family the sweep pins is named by every "
           "document that describes the isolation, and the runner agrees with "
-          "itself about what it watches - read over %d document(s) and the "
-          "families %r, with a run that could not ask the question saying so "
-          "instead of coming back empty: %r / %r / %r"
-          % (_iso["sides"], sorted(_iso["groups"]), _iso["problem"],
-             _iso["prose"], _iso["runner"]),
+          "itself about what it watches - read over %d document(s), the "
+          "families %r and the filtered ones %r, with a run that could not ask "
+          "the question saying so instead of coming back empty: %r / %r / %r"
+          % (_iso["sides"], sorted(_iso["groups"]), sorted(_iso["filtered"]),
+             _iso["problem"], _iso["prose"], _iso["runner"]),
           _iso["problem"] is None and _iso["prose"] == []
           and _iso["runner"] == [] and _iso["sides"] == len(ISOLATION_SIDES))
 
@@ -3193,6 +3345,101 @@ def _cases(check):
           "ran: %r" % (_no_repo["problem"],),
           _no_repo["problem"] is not None and _no_repo["prose"] == []
           and _no_repo["sides"] == 0)
+
+    # --- the names the sweep FILTERS, which point at no directory ------------
+    # The families above are read off the directories a child is pointed at; what
+    # the runner DROPS or SETS without a directory is a second surface, read off
+    # the module's own tables. Every name below is invented, for the reason the
+    # miniature runner above gives.
+    _filt_src = ('SESSION_PREFIX = "PX_"\n'
+                 'SESSION_NAMES = ("PXMARK", "PX_TOKENS_NOT")\n'
+                 'GIT_IDENTITY_NAMES = ("ID_A", "ID_B", "MAILISH")\n'
+                 'GIT_ENV = (("NOSYS_PROBE", "1"), ("GIT_CONFIG_COUNT", "1"),\n'
+                 '           ("GIT_CONFIG_KEY_0", "probe.onlyConfig"),\n'
+                 '           ("GIT_CONFIG_VALUE_0", "true"))\n')
+    _filt, _filt_problem = filtered_env_families(_filt_src)
+    check("is7 the filtered families are READ off the runner's tables: the prefix "
+          "as a pattern, each dropped name, and the git settings by what they "
+          "set - the switch by its own name, a config pair by the KEY it carries, "
+          "with the count and the value that only encode it left out: %r / %r"
+          % (_filt_problem, _filt),
+          _filt_problem is None
+          and _filt == {"session": ("PX_*", "PXMARK", "PX_TOKENS_NOT"),
+                        "git identity": ("ID_A", "ID_B", "MAILISH"),
+                        "git config": ("NOSYS_PROBE", "probe.onlyConfig")})
+
+    _doc_full = ("drops every `PX_` name, `PXMARK` and `PX_TOKENS_NOT`, an "
+                 "exported `ID_*` or `MAILISH`, and sets `NOSYS_PROBE` and "
+                 "`probe.onlyConfig`")
+    _doc_short = _doc_full.replace(" or `MAILISH`", "")
+    check("is8 a document that stops naming one filtered member is reported for "
+          "that family and that member, and the complete one is not: %r vs %r"
+          % (uncovered_members(_doc_full, _filt),
+             uncovered_members(_doc_short, _filt)),
+          uncovered_members(_doc_full, _filt) == []
+          and uncovered_members(_doc_short, _filt)
+          == [("git identity", ("MAILISH",))])
+
+    # THE MATCHING DECISION, pinned. A member is named when a code span in the
+    # document IS it, or is a trailing-star glob with a stem that matches it; a
+    # prefix is named by the prefix or the prefix-star. Prose without backticks
+    # does not count - `CLAUDE.md` mentions longer names that START with the
+    # session prefix, and a substring test would let those name the prefix - and a
+    # bare `*` covers nothing, because it names every variable at once.
+    _fam = {"f": ("PX_*", "ID_A", "ID_B")}
+    check("is9 how a name is matched: `ID_*` covers ID_A and ID_B, `PX_` covers "
+          "the PX_ prefix; a longer name starting with the prefix, the member in "
+          "prose without backticks, and a bare star cover nothing: %r / %r / %r "
+          "/ %r"
+          % (uncovered_members("`PX_` and `ID_*`", _fam),
+             uncovered_members("`PX_LONGER` and `ID_*`", _fam),
+             uncovered_members("`PX_` and ID_A, ID_B", _fam),
+             uncovered_members("`PX_` and `*`", _fam)),
+          uncovered_members("`PX_` and `ID_*`", _fam) == []
+          and uncovered_members("`PX_*` and `ID_A` `ID_B`", _fam) == []
+          and uncovered_members("`PX_LONGER` and `ID_*`", _fam)
+          == [("f", ("PX_*",))]
+          and uncovered_members("`PX_` and ID_A, ID_B", _fam)
+          == [("f", ("ID_A", "ID_B"))]
+          and uncovered_members("`PX_` and `*`", _fam)
+          == [("f", ("ID_A", "ID_B"))])
+
+    _none, _why_none = filtered_env_families("X = 1\n")
+    check("is10 a runner that carries none of the tables is a NAMED problem, not "
+          "an empty family set every document trivially names: %r / %r"
+          % (_none, _why_none),
+          _none == {} and "SESSION_PREFIX" in (_why_none or ""))
+    check("is11 ...and the live read found the filtered families on the real "
+          "runner, so is0's clean answer covers them: %r" % (_iso["filtered"],),
+          sorted(_iso["filtered"]) == ["git config", "git identity", "session"]
+          and all(_iso["filtered"].values()))
+
+    # THE WIRING. is7-is9 prove the parts; this is the case that fails when
+    # `isolation_drift` stops handing a document to them. A tree holding the real
+    # runner and the real documents, with ONE document's dropped name paraphrased
+    # into prose, must come back with exactly that finding.
+    _wire = tempfile.mkdtemp(prefix="gp-iso-")
+    try:
+        for _label, _rel in ((None, SWEEP_REL),) + ISOLATION_SIDES:
+            _dst = os.path.join(_wire, _rel)
+            if not os.path.isdir(os.path.dirname(_dst)):
+                os.makedirs(os.path.dirname(_dst))
+            shutil.copyfile(os.path.join(REPO, _rel), _dst)
+        _claude = os.path.join(_wire, CLAUDE_REL)
+        with io.open(_claude, encoding="utf-8") as fh:
+            _body = fh.read()
+        with io.open(_claude, "w", encoding="utf-8") as fh:
+            fh.write(_body.replace("`AUDIT_LOCK_TOKENS`", "the lock holder's tokens"))
+        _wired = isolation_drift(_wire)
+    finally:
+        shutil.rmtree(_wire, ignore_errors=True)
+    check("is12 isolation_drift hands every document to the filtered-name rule: "
+          "the real tree with CLAUDE.md paraphrasing one dropped name reports that "
+          "document, that family and that name, and nothing else: %r"
+          % (_wired["prose"],),
+          _wired["problem"] is None and len(_wired["prose"]) == 1
+          and _wired["prose"][0][:2] == ("CLAUDE.md", "session")
+          and "`AUDIT_LOCK_TOKENS`" in _wired["prose"][0][2])
 
     # --- the sweep's roots against every document that enumerates them --------
     # This repository's own hooks under `.claude/hooks/` carried suites nothing ran:

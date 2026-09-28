@@ -875,6 +875,12 @@ TABLE = (
  ("isolation_drift", "CLAUDE.md", "sub", r"PYTHONPYCACHEPREFIX",
   (r"PYTHONPYCACHEPREFIX", "PYTHONDONTWRITEBYTECODE"),
   "tools/gate-parity.py", "is0"),
+ # ...and the names the sweep FILTERS rather than points anywhere, which the rule
+ # reads off the runner's tables and requires member by member. The mutation is a
+ # document paraphrasing one dropped name into prose - still a true sentence, and
+ # no longer one a reader can grep for.
+ ("isolation_drift", "CLAUDE.md", "replace", "`AUDIT_LOCK_TOKENS`",
+  "the lock holder's tokens", "tools/gate-parity.py", "is0"),
  # THE DOCUMENT FALLING BEHIND THE RUNNER, one root at a time. This repository's
  # own hooks under `.claude/hooks/` were swept by nothing while every document
  # enumerated the same roots; `sweep_roots_drift()` reads the runner's tuple and
@@ -1622,6 +1628,15 @@ ALLOW = (
   "            if not any(name in text for name in groups[held])]",
   "            if not all(name in text for name in groups[held])]",
   "tools/gate-parity.py", "is2"),
+ # THE NARROWING FOR THE FILTERED NAMES IS THE GLOB. Every document says
+ # `GIT_AUTHOR_*` rather than spelling each author variable out; stop letting a
+ # trailing-star code span cover the names it matches and every honest document
+ # is convicted of hiding the identity filter it describes. `is9` pins how a name
+ # is matched, and it fails on that version.
+ ("isolation_drift", "tools/gate-parity.py", "replace",
+  '    return (token.endswith("*") and len(token) > 1',
+  '    return (False and len(token) > 1',
+  "tools/gate-parity.py", "is9"),
  # THE OVER-FIRE ONE TOKEN AWAY: demand the root's whole path where the documents
  # say `hooks/`, and every honest sentence is convicted - a lint people delete. `sr2`
  # is the fixture that names the plugin's roots the way the documents do, and it
@@ -1631,9 +1646,11 @@ ALLOW = (
   "            if not any(root in w for w in windows)]",
   "tools/gate-parity.py", "sr2"),
  # THE OVER-FIRE IS COMPARING SPELLINGS. CI writes its scratch root as a literal
- # `/tmp/` and the runner as a `mktemp` directory, so a reader that stops folding
- # the two into one placeholder reports every rendered leg as missing from both
- # sides - a lint people delete. `rt2` is the pair spelled in both dialects.
+ # `/tmp/` and the runner as a `mktemp` directory. The mutation stops substituting
+ # the placeholder for the `mktemp` variable, so the runner's rendered targets stay
+ # unexpanded `$WORKDIR/...` words, which the reader reports as a PROBLEM rather
+ # than comparing - on a pair that is spelled differently and agrees. `rt2` is that
+ # pair, and it expects the two sides to agree with no problem.
  ("report_target_drift", "tools/gate-parity.py", "replace",
   "            return SCRATCH",
   "            return match.group(0)",

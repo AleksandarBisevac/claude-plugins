@@ -251,9 +251,9 @@ that needs scratch space builds it under `tempfile.mkdtemp()` and removes it in 
 runner's own constants rather than restating them, and fails when a family of variables it pins
 is named by none of the documents that describe the isolation — this one, `CONTRIBUTING.md`, and
 the docstring beside `_harness.fixture_root()` — or when the runner's watched directories, their
-channel labels and the files planted in them stop agreeing with each other. It reads only the
-families pinned to a directory, so nothing holds this paragraph to the filtered names above; the
-runner's own cases hold the filtering itself. That surface grew
+channel labels and the files planted in them stop agreeing with each other. The filtered names
+are read off the runner's tables too, and each must appear in every one of those documents as a
+code span, itself or under a glob like `GIT_AUTHOR_*`. That surface grew
 more than once and left each document behind by a different amount, which is what a rule is worth
 more than another correction of.
 

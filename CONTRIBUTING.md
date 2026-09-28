@@ -115,9 +115,9 @@ the script is only a caller:
 # block, CLAUDE.md's Tests section, and the docstring beside `_harness.fixture_root()`. It also
 # asks the runner about itself: a watched directory with no channel label beside it is dropped
 # by `zip` and reported about by nothing, and one with no planted file can report a stray but
-# never a deletion. It reads only the families pinned to a directory, so nothing holds this
-# block to the filtered names above; the runner's own cases hold the filtering itself. The
-# surface grew more than once and left each of the three behind by a
+# never a deletion. The filtered names above are read off the runner's tables too, and each
+# must appear in every one of those documents as a code span, itself or under a glob like
+# `GIT_AUTHOR_*`. The surface grew more than once and left each document behind by a
 # different amount, which is why there is a rule here instead of a fourth correction.
 #
 # `--jobs 1` gives the old serial shape for a bisect.
