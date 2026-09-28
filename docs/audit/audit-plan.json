@@ -583,6 +583,12 @@
       "title": "committed plan records carry no machine path, and the committed-artifact check reads the plan",
       "status": "done",
       "shard": "phases/P91.json"
+    },
+    {
+      "id": "P92",
+      "title": "the suites pass on the runners CI uses, and the local sweep sees what those runners see",
+      "status": "pending",
+      "shard": "phases/P92.json"
     }
   ],
   "fileIndex": {
@@ -632,7 +638,8 @@
       "P32.10",
       "P51.1",
       "P59.2",
-      "P87.10-bpl"
+      "P87.10-bpl",
+      "P92.4"
     ],
     ".gitignore": [
       "P4.4",
@@ -771,7 +778,8 @@
       "P35.1",
       "P37.2",
       "P80.11",
-      "P87.3-bpl"
+      "P87.3-bpl",
+      "P92.5"
     ],
     "COMPATIBILITY.md": [
       "P18.8",
@@ -817,7 +825,8 @@
       "P87.1",
       "P87.3-bpl",
       "P87.9-bpl",
-      "P87.10-bpl"
+      "P87.10-bpl",
+      "P92.5"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -3438,7 +3447,8 @@
       "P76.1",
       "P77.3-6u9",
       "P79.4",
-      "P81.2"
+      "P81.2",
+      "P92.1"
     ],
     "plugins/audit/tests/test__report_html.py": [
       "P25.1",
@@ -3651,7 +3661,8 @@
       "P84.6-791",
       "P81.7",
       "P81.13-j7p",
-      "P81.16-j7p"
+      "P81.16-j7p",
+      "P92.2"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -3688,7 +3699,8 @@
       "P74.9-qq5",
       "P74.10-qq5",
       "P80.17-rtb",
-      "P87.2"
+      "P87.2",
+      "P92.3"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
       "P28.2",
@@ -4118,7 +4130,8 @@
       "P59.4",
       "P59.9",
       "P80.20-rtb",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P92.4"
     ],
     "tools/gate-parity.py": [
       "P19.2",
@@ -4173,7 +4186,8 @@
     ],
     "tools/sweep-selftests.py": [
       "P37.2",
-      "P56.2"
+      "P56.2",
+      "P92.5"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -4196,7 +4210,8 @@
       "P32.10",
       "P56.2",
       "P87.1",
-      "P87.3-bpl"
+      "P87.3-bpl",
+      "P92.4"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
@@ -4286,7 +4301,9 @@
       "P75.4-j5h"
     ],
     "plugins/audit/tests/_harness.py": [
-      "P72.1"
+      "P72.1",
+      "P92.1",
+      "P92.5"
     ],
     "plugins/audit/scripts/status/_claude_home.py": [
       "P77.2"
