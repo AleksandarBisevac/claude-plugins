@@ -81,7 +81,7 @@
     {
       "id": "P93.2",
       "title": "verify.sh runs the sweep's encoding leg, and gate-parity holds the sweep's legs to both runners",
-      "status": "in_progress",
+      "status": "done",
       "description": "verify.sh runs the sweep once; ci.yml runs it again with --encoding cp1252, and gate-parity compares scripts, not legs, so the gap was invisible. verify.sh runs the encoding leg in its full mode (say what --fast does with it); gate-parity derives each side's sweep invocations and fails when a leg (a distinct flag set) runs on one side only, the way report_target_drift holds the checker's targets; prove-gates rows for it, red and allow.",
       "files": [
         "tools/verify.sh",
@@ -111,18 +111,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6bc98d68",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "verify.sh: an encoding-leg step, skipped and said under --fast; gate-parity: sweep_flag_shape from the sweep's AST, NOT_LEG_FLAGS with reasons, sweep_legs/sweep_leg_drift over shared shell readers; prove-gates rows sl0 and sl4.",
+        "descriptive": "verify.sh runs the sweep on a legacy code page as CI does, and gate-parity names any sweep leg one runner runs and the other does not."
       },
       "startedAt": "2026-09-28T07:34:13Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-28T07:49:55Z",
+      "verifiedBy": [
+        "sl0-sl7"
+      ],
       "testEvidence": {
         "runId": "2026-09-28T07:49:54Z.f75ae8",
         "status": "passed",
         "at": "2026-09-28T07:49:54Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6bc98d68",
+        "at": "2026-09-28T07:49:55Z",
+        "basis": "the missing local leg and the parity check that would have named it"
       }
     }
   ],
