@@ -1,7 +1,7 @@
 {
   "id": "P81",
   "title": "Selection miss learns, flaky is muted",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "A full run that fails on a suite no derived sign-off gate listed prints SELECTION MISS and records it, and full-gate.py files a bug and a coupling for it only when the runner named that suite as failing; a muted suite's failure is recorded but neither blocks a verdict nor teaches a coupling, an expired mute blocks again, and Playwright's flaky tests are recorded as flaky beside a passing verdict rather than as passes or failures.",
   "testGate": [
@@ -19,7 +19,7 @@
   ],
   "baseRef": "6dc42323acbdc06a1330344d35e881a54282089e",
   "branch": "audit/p81-selection-miss-learns-flaky-is",
-  "mergedAt": null,
+  "mergedAt": "2026-09-28T00:04:10Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -1281,5 +1281,6 @@
     "runId": "2026-09-27T23:55:33Z.a395eb",
     "status": "passed",
     "at": "2026-09-27T23:55:33Z"
-  }
+  },
+  "mergedHead": "e77c6a96dfc80834dc82ebe9fa92a43d7b8b12c4"
 }
