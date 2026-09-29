@@ -27,7 +27,7 @@
     {
       "id": "P89.1",
       "title": "BUG-12's fix lands, and SECURITY.md and the CHANGELOG describe what the guards now read",
-      "status": "in_progress",
+      "status": "done",
       "description": "Merge branch fix/bug-12 (906ab8b9 red tests; f3b9f891 the maintainer's fix) into this phase's branch. Then remove from SECURITY.md's open-residuals list every shape the fix now reads - the three BUG-12 items and, since gp76/gp77 pass, the pass-through filter redirect and the receiving group or loop that evals - each confirmed by the passing test that pins it; keep every residual the fix does not touch. Add a CHANGELOG [Unreleased] Fixed entry naming BUG-12 and what the guards now read, at shape level. Gate: the three guard suites all-pass, the full sweep, bench-hooks --gate, ruff, vermin, prose-number lints.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -59,14 +59,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "99f1e646",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "maintainer's fix merged (f3b9f891..0b426515) with P88 twins kept and _substitution_end restored; SECURITY.md residuals and CHANGELOG updated",
+        "descriptive": "BUG-12 is fixed: the guards read the command shapes the review found, and SECURITY.md lists only what they still do not read"
       },
       "startedAt": "2026-09-27T20:59:03Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-09-29T10:01:14Z",
+      "verifiedBy": [
+        "guard suites 278/257/383",
+        "probe rows red on a copy",
+        "full sweep",
+        "bench-hooks",
+        "check-committed-pii"
+      ]
     }
   ],
   "startedAt": "2026-09-27T20:59:03Z"
