@@ -204,7 +204,7 @@
     {
       "id": "P94.4",
       "title": "the remaining suites and the repo's release hook spell shells and paths portably",
-      "status": "in_progress",
+      "status": "done",
       "description": "rmtree fixtures in test__refs, test__merge_install and guard-release.py's own copy go through a remove that clears the read-only bit; lr2 runs shutil.which(shell), not a bare name that hits the WSL stub; gw1/gw5/gw6 quote the -C path; i30 runs the printed command through the resolved sh or skips; mv61 grades a skip (or proves on a fake clock) where time.tzset is absent; sv3 compares paths normalised; gr36b and mi2 display shell-facing paths with forward slashes; .gitattributes pins eol=lf for .sh and .yml so ra29 reads LF on a Windows checkout. Red first on POSIX where an emulation shows it.",
       "files": [
         "plugins/audit/tests/test__refs.py",
@@ -239,18 +239,27 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8be1b6b1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "shutil.which('sh') in test__refs and test_import_evidence; shlex.quote in test_guard_history_rewrite; mv61b fake clock; _from_dirs/_same_dir in test_close_phase; guard-release remove_tree + removal_copy_drift; .gitattributes eol=lf.",
+        "descriptive": "Test suites no longer assume /bin/sh, an unspaced interpreter path, time.tzset, or LF checkouts, so they run as written on Windows."
       },
       "startedAt": "2026-09-29T10:15:51Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-29T10:52:30Z",
+      "verifiedBy": [
+        "task gate run 2026-09-29T10:51:15Z.d63b6b",
+        "green"
+      ],
       "testEvidence": {
         "runId": "2026-09-29T10:51:15Z.d63b6b",
         "status": "passed",
         "at": "2026-09-29T10:51:15Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8be1b6b1",
+        "at": "2026-09-29T10:52:30Z",
+        "basis": "the named suites resolve sh through shutil.which, quote interpreter and path words with shlex.quote, pin a fake clock where timezone setting is absent, compare directories through same-dir helpers; guard-release carries its own remover checked against the harness copy; .gitattributes pins LF for .sh and .yml"
       }
     }
   ],
