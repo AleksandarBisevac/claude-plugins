@@ -189,6 +189,13 @@ def _cases(check):
           bash("perl -e \"open(F, '<.env'); print <F>\""))
     _expect("b5p3 ...and three-argument open with '<'", "block",
           bash("perl -e \"open(my \\$f, '<', '.env'); print <\\$f>\""))
+    _expect("b5p5 ...and the form without parentheses", "block",
+          bash("perl -e \"open F, '<', '.env'; print <F>\""))
+    _expect("b5p6 ...and a layered read mode", "block",
+          bash("perl -e \"open(my \\$f, '<:raw', '.env'); print <\\$f>\""))
+    check("b5p7 a write mode is not a read target",
+          M._eval_read_targets("open(F, '>.env')") == [],
+          repr(M._eval_read_targets("open(F, '>.env')")))
     _expect("b5p4 ...while perl opening an ordinary file is nothing", "allow",
           bash("perl -e \"open(F, 'README.md'); print <F>\""))
     _expect("b5h9 ruby running a script reads a here-string as input", "allow",
@@ -199,6 +206,18 @@ def _cases(check):
           "block", bash("perl -c <<< \"open(F, '.env'); print <F>\""))
     _expect("b5h12 python -E is not a program flag, so the here-string is the program",
           "block", bash("python3 -E <<< \"print(open('.env').read())\""))
+    _hs_body = "print(open('.env').read())"
+    _hs_prefixes = ("ionice -t python3", "xargs -l python3",
+                    "xargs -e python3", "chrt -R python3")
+    _hs_results = [(_prefix, _harness.attempt(
+        M._interpreter_herestrings, _prefix + " <<< \"" + _hs_body + "\""))
+                   for _prefix in _hs_prefixes]
+    check("b5h12a a wrapper parser mistake cannot make here-string grading raise",
+          all(_ok and _body == [_hs_body] for _prefix, (_ok, _body) in _hs_results),
+          repr(_hs_results))
+    for _prefix in _hs_prefixes:
+        _expect("b5h12b %s still blocks its secret here-string" % (_prefix,),
+                "block", bash(_prefix + " <<< \"" + _hs_body + "\""))
     _expect("b5h8 a here-string glued to the interpreter's name is read", "block",
           bash("python3<<<\"print(open('.env').read())\""))
     _expect("b5h5 ...and code-shaped text in a here-string to a program that only "

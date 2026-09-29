@@ -625,6 +625,8 @@ def _cases(check):
                  "...and so does a backquoted one inside an argument"),
                 ("gp12", "sudo " + _G, "deny", "sudo runs its argument"),
                 ("gp13", "env FOO=1 " + _G, "deny", "env runs its argument"),
+                ("gp13a", "echo '" + _G + "' | env FOO=1 sh", "deny",
+                 "an assignment under env cannot hide a receiving shell"),
                 ("gp14", "echo x | xargs " + _G + " drop", "deny",
                  "xargs runs its argument"),
                 ("gp15", "timeout 5 " + _G, "deny",
@@ -792,6 +794,21 @@ def _cases(check):
                  "an inner emitter's substitution contributes what it prints"),
                 ("gp71a", "echo \"$(echo '" + _G + "')\" > notes.md; "
                  "( echo hello ) | sh", "allow", "...into notes.md, text"),
+                # Shapes the narrowings had dropped.
+                ("gp72", "case x in a) echo in; (echo '" + _G + "') | sh;; esac",
+                 "deny", "the word `in` inside a case arm does not reopen patterns"),
+                ("gp73", "echo '" + _G + "' > >(tee .git/hooks/pre-commit)", "deny",
+                 "a process substitution whose command tees into a hook"),
+                ("gp74", "cd .git/hooks && echo '" + _G + "' > pre-commit", "deny",
+                 "a bare hook name after a `cd` into the hooks directory"),
+                ("gp75", "echo '" + _G + "' | sudo -u root \"$SH\"", "deny",
+                 "a variable as the program behind a wrapper option with a value"),
+                ("gp76", "echo '" + _G + "' | cat > .git/hooks/pre-commit", "deny",
+                 "a pass-through cat carries its own redirect"),
+                ("gp77", "echo '" + _G + "' | while read l; do eval \"$l\"; done",
+                 "deny", "a receiving loop that evals what it read runs it"),
+                ("gp78", "echo '" + _G + "' | while read l; do echo \"$l\"; done",
+                 "allow", "...while one that only prints it does not"),
                 # A `case` read in command position only; the body is READ.
                 ("gs19", 'echo "$(echo worst case)"; echo stash | xargs git',
                  "deny", "a bare word `case` in a substitution does not make "
@@ -1056,6 +1073,11 @@ def _cases(check):
     check("se7 ...while a subshell's `)` inside an open case arm closes the "
           "subshell, not a pattern", M._substitution_end(_body, 0)
           == _body.index(") tail"), repr(M._substitution_end(_body, 0)))
+    _body = "case x in a) echo 1;; b) echo 2;; esac) tail"
+    check("se8 ...and every arm's pattern is a pattern, not only the first: a "
+          "second arm's `)` does not close the substitution",
+          M._substitution_end(_body, 0) == _body.index("esac)") + 4,
+          repr(M._substitution_end(_body, 0)))
     check("se3 ...and one with no `esac` never closes, which is unreadable",
           M._substitution_end("case x in x) date", 0) is None,
           repr(M._substitution_end("case x in x) date", 0)))
