@@ -1,7 +1,7 @@
 {
   "id": "P95",
   "title": "the history guard follows a cd whose target holds a quoted or escaped space",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "The maintainer's fix for BUG-13 (branch fix/bug-13) lands: a cd into a directory whose name holds a space, quoted or escaped, is followed, so a history rewrite of that worktree's recorded commit is judged against the worktree; nothing measured is weaker than main and no benign command is refused. SECURITY.md and the CHANGELOG say what the shared reader now resolves and what it still does not, and BUG-13 is closed with its fixing commit.",
   "testGate": [
@@ -15,7 +15,7 @@
   "blockedBy": [],
   "baseRef": "80e14affe7f163ad8f821971636013b84f48680b",
   "branch": "audit/p95-the-history-guard-follows-a-cd",
-  "mergedAt": null,
+  "mergedAt": "2026-09-29T23:46:38Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -89,5 +89,6 @@
     "runId": "2026-09-29T23:45:07Z.6707fd",
     "status": "passed",
     "at": "2026-09-29T23:45:07Z"
-  }
+  },
+  "mergedHead": "3289952ff74230dc4f9a4d0f254c3009491da099"
 }
