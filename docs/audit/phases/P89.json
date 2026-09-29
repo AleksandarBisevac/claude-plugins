@@ -19,7 +19,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P89-R1",
@@ -103,9 +103,9 @@
         "commit": "99f1e646"
       }
     ],
-    "outcome": "[findings: 9 - 2 high, 7 med, 0 low; 9 with a recorded fix commit]"
+    "outcome": "matches; four reviews of the human fix, the last clean; its lows recorded as F542 [findings: 9 - 2 high, 7 med, 0 low; 9 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "The history and secrets guards read the command shapes BUG-12 left open. The fix was written by the human maintainer on branch fix/bug-12 across four commits: f3b9f891, e593de54, e04076d8 and 0b426515. The earlier rounds' regressions were found by review and fixed in the later commits, and one hunk was restored to main's reading (e5764afd) and pinned by a case. The final review measured that nothing is weaker than main, that no path raises into a guard, and that no benign command is refused. SECURITY.md now lists only the shapes the guards still do not read, each re-measured through the guard's own path, and the CHANGELOG records the fix. The final review's low items are PLAN.md F542. Main was merged in before the gate. The phase gate is green with the tree unchanged, check-committed-pii is clean, and the invariant check found no breach.",
   "tasks": [
     {
       "id": "P89.1",
@@ -158,5 +158,10 @@
       ]
     }
   ],
-  "startedAt": "2026-09-27T20:59:03Z"
+  "startedAt": "2026-09-27T20:59:03Z",
+  "testEvidence": {
+    "runId": "2026-09-29T10:06:35Z.2bf646",
+    "status": "passed",
+    "at": "2026-09-29T10:06:35Z"
+  }
 }
