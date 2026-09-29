@@ -1305,17 +1305,20 @@ def leftover_line(left):
             "record) - not pruned")
 
 
-def holder_base(root):
+def holder_base(root, platform=None, environ=None):
     """A temp directory OUTSIDE the shared tree, or None. A TMPDIR pointing inside
     the repository would put the throwaway worktree where siblings' `git status`
     sees it, so the environment's own temp variables and then the platform's own
     temp directories are tried next - on every platform, since a Windows host
     whose temp directory sits in the repository needs the fallback as much as a
-    POSIX one does."""
+    POSIX one does. `platform` and `environ` default to `os.name` and
+    `os.environ`, read at call time; passing them selects a platform's branch
+    without changing the process's own."""
+    environ = os.environ if environ is None else environ
     roots = [r for r in set((root, os.path.realpath(root))) if r]
-    candidates = [tempfile.gettempdir()] + [os.environ.get(name) for name in
+    candidates = [tempfile.gettempdir()] + [environ.get(name) for name in
                                             ("TMPDIR", "TEMP", "TMP")]
-    candidates += _platform_temp_dirs()
+    candidates += _platform_temp_dirs(platform, environ)
     for cand in candidates:
         if (cand and os.path.isdir(cand) and os.access(cand, os.W_OK)
                 and not _under(os.path.abspath(cand), roots)):
@@ -1323,15 +1326,18 @@ def holder_base(root):
     return None
 
 
-def _platform_temp_dirs():
+def _platform_temp_dirs(platform=None, environ=None):
     """The temp directories a platform keeps whatever its environment says:
     the per-user one under the local application data and the system one on
-    Windows, `/tmp` and `/var/tmp` elsewhere."""
-    if os.name != "nt":
+    Windows, `/tmp` and `/var/tmp` elsewhere. `platform` and `environ` default
+    to `os.name` and `os.environ`, read at call time."""
+    platform = os.name if platform is None else platform
+    environ = os.environ if environ is None else environ
+    if platform != "nt":
         return ["/tmp", "/var/tmp"]
-    local = os.environ.get("LOCALAPPDATA") or os.path.join(
+    local = environ.get("LOCALAPPDATA") or os.path.join(
         os.path.expanduser("~"), "AppData", "Local")
-    system = os.environ.get("SystemRoot") or os.environ.get("SYSTEMROOT")
+    system = environ.get("SystemRoot") or environ.get("SYSTEMROOT")
     return [os.path.join(local, "Temp")] + ([os.path.join(system, "Temp")]
                                             if system else [])
 

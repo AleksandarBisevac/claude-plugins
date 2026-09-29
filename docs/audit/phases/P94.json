@@ -309,7 +309,7 @@
     {
       "id": "P94.5-579",
       "title": "the shell found beside git runs with Git's tools on PATH, the system-dir rejection is pinned under Windows path rules, and the documents say sh -c",
-      "status": "in_progress",
+      "status": "done",
       "description": "A Windows host with only Git's cmd directory on PATH runs plan commands under Git's wrapper sh (or under usr/bin sh with usr/bin and mingw64/bin on the child's PATH), the SystemRoot rejection is proved under ntpath on every host, and run-test-gate's docstring, PLUGIN-BUILD-GUIDE.md, execute-task.md and CHANGELOG.md describe the spawn and the raw log name as they now are",
       "files": [
         "plugins/audit/scripts/governance/_proc_group.py",
@@ -344,18 +344,27 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "5121f15a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_proc_group locate_sh/shell_env/shell_invocation; _GIT_SH_RELS bin first; _GIT_PATH_RELS; spawn sites pass env=; pg7-pg10 under ntpath; pg15-pg20; lc16 platform split removed.",
+        "descriptive": "Plan commands started from a shell found beside git get Git's tools ahead of PATH; POSIX children keep their env untouched; the system-dir check and lc16 hold on every host; the documents match."
       },
       "startedAt": "2026-09-29T11:03:38Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-29T11:31:29Z",
+      "verifiedBy": [
+        "task gate run 2026-09-29T11:27:44Z.693853 green; orchestrator ran the executor's mutation probe: M1-M9 killed with the expected cases",
+        "shas restored"
+      ],
       "testEvidence": {
         "runId": "2026-09-29T11:27:44Z.693853",
         "status": "passed",
         "at": "2026-09-29T11:27:44Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "5121f15a",
+        "at": "2026-09-29T11:31:29Z",
+        "basis": "locate_sh prefers bin/sh.exe and returns Git's usr/bin and mingw64/bin for a beside-git shell only; shell_env prepends them on a copy for that shell and returns the caller's env otherwise; shell_invocation is the one call run-test-gate._shell and derive-phase-gate._spawn make; _in_system_dir folds with the path module it is given; lc16 expects could-not-run on every host; docs and CHANGELOG describe sh -c and the raw log name"
       }
     },
     {

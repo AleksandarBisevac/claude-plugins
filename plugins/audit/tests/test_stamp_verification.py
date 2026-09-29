@@ -2852,26 +2852,44 @@ def _holder_cases(check):
     inside = os.path.join(root, "untracked-tmp")
     os.makedirs(inside)
     outside = _harness.fixture_root("stamp-holder-out-")
-    held = (os.name, tempfile.tempdir, os.environ.get("TEMP"))
+    # Two outside homes, each with the Temp the Windows branch names, so which
+    # of them answers says which the branch put first.
+    local = _harness.fixture_root("stamp-holder-local-")
+    system = _harness.fixture_root("stamp-holder-system-")
+    for base in (local, system):
+        os.makedirs(os.path.join(base, "Temp"))
+    all_inside = {"TMPDIR": inside, "TEMP": inside, "TMP": inside}
+    windows = dict(all_inside, LOCALAPPDATA=local, SystemRoot=system)
+    held = tempfile.tempdir
     try:
-        os.environ["TEMP"] = outside
         tempfile.tempdir = outside
-        preferred = M.holder_base(root)
-        os.name = "nt"
+        preferred = M.holder_base(root, "nt", {"TEMP": outside})
         tempfile.tempdir = inside
-        fallback = M.holder_base(root)
+        fallback = M.holder_base(root, "nt", {"TEMP": outside})
+        platform_only = M.holder_base(root, "nt", windows)
+        env_first = M.holder_base(root, "nt", dict(windows, TEMP=outside))
+        posix = M.holder_base(root, "posix", dict(all_inside, LOCALAPPDATA=local))
     finally:
-        os.name, tempfile.tempdir = held[0], held[1]
-        if held[2] is None:
-            os.environ.pop("TEMP", None)
-        else:
-            os.environ["TEMP"] = held[2]
+        tempfile.tempdir = held
     real_root = os.path.realpath(root) + os.sep
     check("sr191 on Windows too, a temp directory inside the repository is passed "
           "over for one outside it, while an outside one is still used first: "
           "%r" % ((preferred, fallback),),
           preferred == outside and fallback is not None
           and not (os.path.realpath(fallback) + os.sep).startswith(real_root))
+    check("sr192 on Windows with the temp directory and every temp variable "
+          "inside the repository, the per-user Temp under LOCALAPPDATA answers, "
+          "ahead of the system one: %r" % (platform_only,),
+          platform_only == os.path.join(local, "Temp"))
+    check("sr193 THE ALLOW CASE: on Windows an outside TEMP still answers before "
+          "the platform's own directories: %r" % (env_first,),
+          env_first == outside)
+    posix_dirs = M._platform_temp_dirs("posix", {"LOCALAPPDATA": local,
+                                                 "SystemRoot": system})
+    check("sr194 THE ALLOW CASE: off Windows the Windows entries are never "
+          "consulted, even with LOCALAPPDATA set: %r" % ((posix_dirs, posix),),
+          posix_dirs == ["/tmp", "/var/tmp"]
+          and posix != os.path.join(local, "Temp"))
 
 
 def _cases(check):
