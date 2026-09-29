@@ -1243,16 +1243,23 @@ _DIR_CHANGE_CLAUSE = re.compile(
 def _dir_change_words(text):
     """Directory-change words with balanced quotes removed, else None.
 
-    Backslashes stay literal so a quoted Windows path remains one destination.
+    A backslash immediately before whitespace keeps that whitespace in its word.
+    Other backslashes stay literal so a Windows path remains one destination.
     This deliberately reads only the shell shape `effective_cwd` can establish.
     """
     words, current, quote, has_word = [], [], None, False
-    for ch in text:
+    index = 0
+    while index < len(text):
+        ch = text[index]
         if quote:
             if ch == quote:
                 quote = None
             else:
                 current.append(ch)
+        elif ch == "\\" and index + 1 < len(text) and text[index + 1].isspace():
+            current.append(text[index + 1])
+            has_word = True
+            index += 1
         elif ch in ("'", '"'):
             quote, has_word = ch, True
         elif ch.isspace():
@@ -1262,6 +1269,7 @@ def _dir_change_words(text):
         else:
             current.append(ch)
             has_word = True
+        index += 1
     if quote:
         return None
     if has_word:
@@ -1299,14 +1307,14 @@ def effective_cwd(cmd, payload_cwd):
 
     A DIRECTORY CHANGE THIS CANNOT READ ENDS THE WALK, for every write that
     follows it in the command. `cd`/`pushd` with anything but exactly one
-    plain argument - no expansion, substitution, glob or home shorthand, the
-    same marks `resolvable_destination` already will not guess through - and
-    `popd` (which needs a push stack this process never saw a matching
-    `pushd` build) both leave the rest of the command standing somewhere this
-    cannot name. That is not a second mechanism: it is the withdrawal
-    `resolvable_destination` already makes for a mark in the target's OWN
-    text, extended to the one case it was one short of - a plain word with
-    nothing to resolve it against.
+    literal argument - balanced quotes or a backslash directly before
+    whitespace may spell literal whitespace, but no expansion, substitution,
+    glob or home shorthand is read - and `popd` (which needs a push stack this
+    process never saw a matching `pushd` build) both leave the rest of the
+    command standing somewhere this cannot name. That is not a second
+    mechanism: it is the withdrawal `resolvable_destination` already makes
+    for a mark in the target's OWN text, extended to the one case it was one
+    short of - a plain word with nothing to resolve it against.
 
     ONE PASS, ACCUMULATING, over every clause in the command in the order it
     is written - not the directory change nearest a particular write's own

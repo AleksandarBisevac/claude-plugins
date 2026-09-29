@@ -1114,6 +1114,7 @@ def _cases(check):
     # two. Either way the command names a directory that is not the fixture, and
     # a case expecting deny reads allow.
     _q_wt = shlex.quote(_wt["wt"])
+    _escaped_wt = _wt["wt"].replace(" ", "\\ ")
     try:
         for _cid, _cwd, _cmd, _want, _what in (
                 ("gw1", _wt["main"], "git -C %s rebase main" % _q_wt, "deny",
@@ -1123,6 +1124,10 @@ def _cases(check):
                  % _q_wt, "deny",
                  "a `cd` into the worktree, then a reset that orphans the "
                  "commit ITS plan records"),
+                ("gw2b", _wt["main"], "cd %s && git reset --hard HEAD~1"
+                 % _escaped_wt, "deny",
+                 "the same worktree reached through a backslash-escaped "
+                 "space in its `cd` target"),
                 ("gw3", _wt["wt"], "git commit --amend -m x", "deny",
                  "a session standing in the worktree amends the commit its plan "
                  "records"),
