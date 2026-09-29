@@ -154,8 +154,8 @@ claude-plugins/                           # this repo (personal, public)
           propose-gates.py                # a plan proposal from what evidence history caught, not the tree alone - and says which it drew on
           record-risk-confirmation.py     # the high-risk gate answered BEFORE the run, bounded to named task ids and written to the trail
           record-outside-run.py           # a suite that ran where this plugin could not see it, so a gate run in the same window is not credited with its effects
-          import-evidence.py              # a CI build's own evidence ledger file, brought in whole after its chain verifies - never rewrites a row, never re-chains
-          full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, or the sentence and exit 0 when no meta.fullGate is declared
+          import-evidence.py              # a CI build's own evidence ledger file, brought in whole after its chain verifies - never rewrites a row, never re-chains; prints (never runs) the full-gate.py --learn-from command for each red full row it brought in
+          full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, then a coupling and a bug per named selection miss of a red run (the red still blocks), or the sentence and exit 0 when no meta.fullGate is declared; --learn-from <runId> runs nothing and learns from an imported row through the same function
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
           _verdict_binding.py             # the ONE rule for whether a recorded gate verdict binds the declared work now - a task commit's and a sign-off's
@@ -336,7 +336,7 @@ L3:
   _doctor_hygiene -> _branch, _locks, _output, _worktrees
   _evidence_view -> _evidence_io, _manifest_io, _output, _report_html, _status_facts
   _gate_derive -> _evidence_io, _manifest_io, _manifest_phases, _manifest_vocab, _output
-  _manifest_rules -> _branch, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output
+  _manifest_rules -> _branch, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output, _status_facts
   _panel_discovery -> _help, _manifest_io, _output, _policy
   _panel_paths -> _config_rules, _loader, _manifest_io, _output, _status_facts
   _panel_settings -> _config_rules, _output
@@ -349,7 +349,7 @@ L4:
   _doctor_completions -> _commit_trail, _doctor_report, _evidence_io, _journal_io, _manifest_vocab, _output
   _doctor_policy -> _branch, _doctor_report, _manifest_io, _output, _worktrees
   _doctor_setup -> _claude_home, _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _merge_install, _output, _status_facts, _warning_groups
-  _doctor_trail -> _doctor_report, _evidence_io, _fmt, _journal_io, _manifest_io, _manifest_vocab, _output
+  _doctor_trail -> _doctor_report, _evidence_io, _fmt, _journal_io, _manifest_io, _manifest_vocab, _output, _worktrees
   _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _locks, _manifest_crossrefs, _manifest_io, _manifest_rules, _output, _status_facts, usage_ledger
   _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _manifest_vocab, _output, _panel_paths, _priority, _status_facts, _worktrees
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
@@ -392,10 +392,10 @@ L7:
   derive-phase-gate -> _evidence_io, _gate_derive, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
-  full-gate -> _loader, _manifest_io, _output
+  full-gate -> _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
   gen-demo-manifest -> _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
   gen-demo-usage -> _demo_cast, _loader, _output
-  import-evidence -> _evidence_io, _journal_io, _manifest_io, _output
+  import-evidence -> _evidence_io, _journal_io, _loader, _manifest_io, _output, _panel_write
   manage-worktrees -> _branch, _manifest_io, _output, _worktrees
   materialize-proposal -> _manifest_io, _output, _proposals, _warning_groups
   merge-manifest -> _id_refs, _id_shape, _locks, _manifest_io, _manifest_merge, _manifest_rules, _merge_install, _output
@@ -412,7 +412,7 @@ L7:
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
-  run-test-gate -> _evidence_io, _fmt, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _proc_group, _tree_stamp
+  run-test-gate -> _evidence_io, _fmt, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _status_facts, _tree_stamp
   set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
   stamp-verification -> _locks, _manifest_io, _output, _proc_group, _tree_stamp
   validate-config -> _config_rules, _output
@@ -1800,6 +1800,13 @@ import; a case pins every alias with `is`, so a pasted-back copy fails by name. 
 above `_manifest_vocab` at layer 1, and a consumer AT layer 2 is still not strictly
 downward.
 
+**`_check_muted` grades `meta.muted`.** A mute naming no bug, or a bug `bugs[]` does not hold, is a
+finding. A mute whose bug is closed by its effective status (`_closed_bugs`: the bug's
+`_manifest_io.effective_bug_status` in `_status_facts.CLOSED_BUG`, the reading
+`run-test-gate.withheld_mutes` refuses the mute by) is a WARNING, `rules.muted.bug-closed`,
+carrying `audit-task.py unmute --test <path>` — a warning for the expiry's reason: the runner
+already stops honouring it, and a finding would freeze the very verb that lifts it.
+
 ### `plugins/audit/scripts/manifest/_manifest_vocab.py`
 The manifest's **words** (layer 1), and the four shape checks every level of it shares.
 The status/tests/risk/bug enums, the `BUG-`/`PROP-` id patterns, the known-key set per level
@@ -2707,6 +2714,19 @@ or a finding it cannot support, and both grade a real pattern a WARNING, never a
 state cannot tell an operator they are paying for a gate that keeps earning nothing; only the
 trail can, and doing so is advice rather than a build failure.
 
+**`check_couplings` ages a coupling in green measured full runs, never in days, and never by a
+run that muted it.** `_measured_run_moments` keeps `(moment, mutedTests)` for every green
+measured full run — `_evidence_io._measurement_disqualification`, so a run with no tested head
+still counts — with each moment read by `_evidence_io.stamp_moment`, the ledger's own ordering
+read. `_muted_tests` gathers every test a mute excused in the row, from the row's `muted` list and
+every step's, in `_norm`'s spelling. `coupling_age` counts the runs after the entry's
+`lastCaught` (else its `learnedAt`) whose `mutedTests` do not hold the entry's test: a row that
+reads green because the mute hid that test's failure is not a pass of it, and counting it would
+read "failed every run" as "caught nothing". An entry that cannot be aged gets `_relearn_fix`'s
+`uncouple` then `couple` pair, which spells `--basis-run` and `--basis-head`, the flags `couple`
+refuses to learn without, so the remedy is not refused the moment it is typed, and `--phases`
+for the phases that run covered, which `couple` accepts but does not require.
+
 ### `plugins/audit/scripts/status/_doctor_completions.py`
 The one check that CORRELATES two records rather than inspecting one: the journal's close
 receipts against the manifest's done tasks, the commit SHAs those tasks name against what git
@@ -3098,6 +3118,31 @@ manifest pointer: WHOLE only when a scope-`full` row that is green, measured, cl
 finds containing the phase's `mergedHead`, PROVISIONAL when every such row falls short of that,
 UNKNOWN when the phase carries no `mergedHead` or git itself could not say, and NOT_DECLARED when
 the plan names no third place at all.
+
+**`row_is_red()` is the one reading of "this run exited red"**: every `status` but `passed`
+(`RUN_PASSED`), because `run-test-gate.py` exits 0 exactly then — so a status no writer has
+produced yet, or none at all, is red rather than a pass nobody measured. The measurement rule
+above, `full-gate.py`'s `--learn-from` refusal and `import-evidence.py`'s printed command all ask
+it rather than comparing the word themselves.
+
+**`pin_suite()` is where a runner's spelling of a suite becomes a tracked path.** A runner names
+a suite from whatever directory it was started in, and a derived gate, a coupling and a bug spell
+it from the project root. `suite_listing()` asks `git ls-files` from the project once per reader,
+and `pin_suite()` normalizes the spelling (`project_relative()`: an absolute one inside the
+project becomes relative, one outside it is refused), then keeps the ONE path `resolve_named()`
+matches among the tracked files plus the spelling itself when it exists from the root — so a
+spelling on disk that also has deeper tracked twins pins to none of them, and a spelling that
+sibling packages both end in pins to none of them; either way the reason names the candidates.
+Where git cannot list, a spelling on disk from the root is kept as written and any other is
+refused naming the listing failure; a path holding a control character is refused
+(`shell_unsafe()`). `pin_suites()` is the all-or-none form `audit-task.py add --failing-from`
+narrows a fix task's gate with. `selection_miss()` pins each named suite before asking whether a
+derived gate listed it, so a name that pins to no path, or to several, is a
+`SELECTION MISS not asked of` line rather than a listed suite; `full-gate.py` pins each miss
+before `couple` and `bug-add`; and `own_miss()` is the one reading of "this row lists that suite
+as its own miss", which `full-gate.py`'s catch credit and `couple --caught`'s refusal both ask.
+Crediting a catch to a coupling is a different question — which coupled key a name fits — and
+both of those ask `resolve_named()` over the coupled keys directly.
 
 ### `plugins/audit/scripts/governance/_gate_derive.py`
 The gate helpers' one home, and a pure `derive()`.
@@ -3611,6 +3656,28 @@ declares beside a pass. `--also` makes the run own the union of every named memb
 signoff` compares that `scopeDigest` against the members' files as they stand when it records a
 `passed` verdict, which is how the verdict knows the run it rests on is current.
 
+**A selection miss is asked of pinned paths, and its remedy runs as printed.** The `--full` path
+hands its steps to `_evidence_io.selection_miss`, which pins each suite the runner named with
+`pin_suite` before asking whether a derived gate listed it; a name that pins to no tracked path,
+or to several, prints `SELECTION MISS not asked of <name>: <why>` and is never counted as
+listed. The whole ledger read goes in, lost lines included (`unreadable_names`): a file read with
+losses may hold the bounding run, so no miss is asked and the `SELECTION MISS not asked:` line
+names the file. `_miss_remedy` prints each command as `python3 <audit-task.py> … <manifest>
+--project-dir <project>`, the script resolved by `_loader.script_path` and every path absolute and
+shell-quoted, so it runs from any directory; the suite in it is the pinned path.
+
+**Withheld mutes.** `withheld_mutes(manifest, task_id)` names the bugs whose mutes a run may not
+honour, and `mute_decision` refuses each such entry with that sentence as its `why`, whatever its
+`until`: the bug whose `taskId` is the task under `--task` — a mute inside its own fix task's gate
+would hide the failure the fix must be seen to clear — and any bug closed by its effective status
+(`_manifest_io.effective_bug_status` in `_status_facts.CLOSED_BUG`), whose quarantine is over.
+The full run passes no task, so only the closed-bug rule applies there.
+
+**The project is the manifest's.** Without `--project-dir`, the project is
+`_panel_write.project_of_manifest(manifest)`, the answer `full-gate.py`, `import-evidence.py` and
+`audit-task.py` read, never a count of directories up from the file — that count is right only for
+`<T>/docs/audit/<file>` and would record anywhere else into a ledger outside the project.
+
 ### `plugins/audit/scripts/governance/record-outside-run.py`
 `record-outside-run.py <manifest> --label TEXT --started <ISO> [--ended <ISO> | --duration-ms N]
 [--status passed|failed]` — **record a test suite that ran where this plugin could not see it.**
@@ -3677,6 +3744,23 @@ its committed copy or remove that line on purpose — and points at `audit-journ
 names the cause. The byte-identical re-import is compared before this check and still reads as
 already imported.
 
+**A red full row prints the command that learns from it.** After a successful import — a fresh
+copy or the byte-identical repeat — `learn_from_commands` builds, from the rows this import already
+parsed, `python3 <full-gate.py> <manifest> --learn-from <runId> --project-dir <dir>` for each
+row that is full scope and red by `_evidence_io.row_is_red`. Every path in it is absolute and
+shell-quoted — the script resolved by `_loader.script_path`, the manifest argument made absolute,
+the project this import resolved — so the line runs as printed from any directory; `render` prints each after the authentication note and `--json` carries them as
+`learnFrom`. They are printed, never run: bringing a file in whole is not consent to write the
+plan, and a green row prints none.
+
+**The project is the manifest's.** `resolve_project` takes it from
+`_panel_write.project_of_manifest` when `--project-dir` is absent — the nearest ancestor holding
+`.claude/` or `.git`, else `<T>` for `<T>/docs/audit/<file>`, else the manifest's own directory —
+and never from the directory the command was typed in, which would land the shard in a ledger the
+plan never reads and print a `--learn-from` command pairing that plan with the wrong ledger. With
+`--project-dir`, a manifest that does not sit under it (both resolved through symlinks) is
+refused, exit 2.
+
 **What it does not prove.** A ledger is evidence, not authentication — a new shard starts at its
 own genesis the moment somebody names a file that way, so a verified chain says the rows were not
 edited after the file was written and says nothing about who wrote it. The report says so on every
@@ -3684,7 +3768,8 @@ successful import; the commit that carries the imported file into the repository
 authorship trail.
 
 ### `plugins/audit/scripts/governance/full-gate.py`
-`full-gate.py <manifest> [--writer NAME] [--project-dir DIR]` — **the one command of the third
+`full-gate.py <manifest> [--writer NAME] [--project-dir DIR]`, or
+`full-gate.py <manifest> --learn-from RUNID [--project-dir DIR]` — **the one command of the third
 place**, meant for a pre-push hook or a CI step that should not have to spell out
 `run-test-gate.py --full --record` and its own refusals itself.
 
@@ -3701,8 +3786,57 @@ not block every push, forever, over a gate nobody asked for. So this file reads 
 itself, before invoking anything, and answers with the sentence and **exit 0** instead of letting
 that usage refusal reach an operator's shell as a blocked push.
 
-**Does not learn.** No selection-miss pass, no read of the evidence ledger, no bug opened on a
-red run — that pass belongs to the phase after this one. What this file owes is delegation.
+**A red run is learned from, and still blocks.** After a non-zero exit this file reads the row
+the run recorded (`_evidence_io.row_by_run`, with the id off the runner's own `evidence: recorded`
+line; with no such line, the newest full row stamped since it started the run — never an earlier
+run at the same head) and files what it taught through `audit-task.py`, as subprocesses: a
+`couple` and a `bug-add` per `selectionMiss` entry, and a `couple --caught` per suite the plan
+already coupled that the runner named failing — pinned by `_evidence_io.resolve_named`, so a name
+that fits several coupled suites credits none of them. A suite the row lists in its own
+`selectionMiss` is never that row's catch: the row says no derived gate ran it, so a coupling
+the row creates or widens, or one another row with the same miss taught, is not credited by it —
+in either order, which is what makes a second pass over the same row file nothing new. Each verb's own output and exit code are printed;
+the exit stays the runner's. It never acts on a green run, on a run the runner said it did not
+record, or on a failure the runner did not **name** (every miss is re-asked of
+`_evidence_io.named_failing_suites`, which also skips a muted step). The couplings a catch is
+credited to are read before any verb here writes, so a suite this run coupled is not also
+credited with a catch by it. A miss whose `sources` the row cut (`sourcesDropped`) is
+**not** coupled — coupling a suite to a prefix of what it depends on narrows it silently — and
+the bug it files says so and points at the tasks' files in the plan. A miss an open bug already
+tracks, or a coupling that already covers every source, is not filed again, so a push retried on
+the same red does not multiply bugs.
+
+**A miss is filed under its pinned path.** `learning_plan` pins each miss's spelling with
+`_evidence_io.pin_suite` over one `suite_listing` of the project, so `couple --test` and
+`bug-add --files` name a file the plan can open and the existing-coupling check reads the key the
+plan holds. A spelling that pins to no tracked path, or to several, still files its bug — the
+failure happened — with no `--files`, no coupling, and a note saying why. Whether a miss is one the
+runner named is `same_suite`, never a suffix, and whether the row lists a coupled suite as its own
+miss is `own_miss`, the reading `couple --caught` refuses by.
+
+**The project is the manifest's, and a lost file is named.** Without `--project-dir` the project
+is `_panel_write.project_of_manifest(manifest)` — the plugin's one answer, never a count of
+directories up from the file — and it is always handed to `run-test-gate.py` as `--project-dir`,
+so the runner records into the very ledger the red branch then reads. When the run's row is not
+among the readable rows and `read_rows` could not read some ledger file in full, `find_row` says
+so, naming the file (`_evidence_io.unreadable_names`) with the `--learn-from` command to ask again
+once it is repaired, rather than calling the run absent.
+
+**`--learn-from <runId>` learns from a run recorded elsewhere, running nothing.**
+`full-gate.py <manifest> --learn-from RUNID [--project-dir DIR]` is the door for a red full run a
+CI build recorded into its own shard: learning inside the pipeline would write into a checkout the
+build throws away, so the row teaches once `import-evidence.py` has brought it into a checkout
+that keeps what is filed. It reads the row with `_evidence_io.row_by_run` and hands it to
+`learn_from_row`, the one function the red branch also calls, so the rules above are stated once.
+`row_refusal` refuses a row that is not full scope and a row `_evidence_io.row_is_red` calls
+green — the one home of the runner's own reading, since `run-test-gate.py` exits 0 exactly when
+`status` is `passed`, and the reading `import-evidence.py` uses too — and a run id the readable rows lack
+is refused naming each ledger file `read_rows` could not read in full, the way `audit-task.py`'s
+`--basis-run` lookup does. Every refusal is one `[full-gate] cannot learn from run …` line and exit
+1. Unlike the red branch there is no runner's verdict to keep, so a failed verb or a raise is exit
+1 too; exit 0 means the learning ran, and when it filed nothing the lines above the summary say
+why. Learning twice files nothing new, by the own-miss rule above. Beside `--writer` it is a usage error, exit 2: a learning pass records no row for a
+writer to name.
 
 ### `plugins/audit/scripts/governance/propose-gates.py`
 A plan proposal that reads what previous runs in THIS repository actually ran and what they
@@ -3872,7 +4006,9 @@ refused before anything is built, because it would run the shared files and grad
 `run-test-gate.py` and `red` share: the child starts a session of its own, a timeout or an
 interrupt tears the whole group down, and SIGINT/SIGTERM raise so the `finally` runs.
 ONE deadline, `--timeout`, starts before anything runs and covers every git call that builds or
-reads the throwaway and both runs, each getting what the earlier ones left. What follows the
+reads the throwaway and every run - the task's, the second (`--introduces`), HEAD's own and the fix
+run - each getting what the earlier ones left; at most one run
+can time out, because each later run is made only when the one before it finished. What follows the
 deadline is bounded and summed in `TEARDOWN_MARGIN` - one teardown and the removal's two git
 calls, each capped at `REMOVE_GIT_TIMEOUT` - and `--timeout` is refused above `MAX_TIMEOUT`, the
 host's limit less that margin, so the helper's own deadline and cleanup finish before the host
@@ -3894,12 +4030,111 @@ own cwd writes shared refs.
 
 **`proved` needs a tally, a named case of the task's own, and an assertion.** `classify_run()`
 reads the house harness's line, pytest's summary (framed, or bare under `-q`) or unittest's
-`Ran N tests`, and `failing_cases()` names each failing case with whether it failed an assertion:
+`Ran N tests`, and `failing_cases()` names each failing case with whether it failed an assertion,
+reading only the lines of the runner whose tally the verdict came from (a passing house case may
+print `ERROR: <path>` as the message it asserts on, or echo a whole unittest transcript). When the
+output carries the tallies of more than one runner, the command decides if it names one (`pytest`,
+`-m unittest`, a house `--selftest`); otherwise the verdict is `mixed-tally`, which prints
+`could-not-prove` and names every tally it saw:
 a house `FAIL` that is not a build escape or a duplicated id, a pytest `FAILED` whose reason is an
 `assert`, a unittest `FAIL:`. A pytest body exception and a unittest `ERROR:` are named but are not
-assertions. `proved` needs one of those failures to be the TASK'S OWN - a case id present in the
-working tree's copy of a declared test file and absent from HEAD's. `--case` narrows to the ids it
-names and is held to the same test, because the flag is chosen by the party being checked; the
+assertions. `proved` needs one of those failures to be the TASK'S OWN, and that is decided by a
+GREEN BASELINE, not by reading output (`baseline_problem()`, `fix_problem()`, `own_failures()`):
+
+Every run - HEAD's baseline, the task's run, the `--introduces` second run and the fix run - is made
+in the throwaway reset to HEAD (a forced checkout and a clean of untracked and ignored files), with
+an isolated environment of its own (`_isolated_env()`): a new empty home under every name a home
+lookup reads (`HOME_VARS`, the table `tools/sweep-selftests.py` isolates its children with), a new
+TMPDIR/TMP/TEMP, and `PYTHONNOUSERSITE=1`. So the runs differ only in the files laid over the tree.
+
+1. HEAD's baseline runs FIRST, before any file of the task's is laid over or run: HEAD's own test
+   files, the same command, HEAD's implementation, with every declared test file new at HEAD laid
+   over as an EMPTY file. It is always made, and the stubs are why no reader of the command's
+   arguments is needed: whatever the command reaches - a dotted module name, a shell wrapper, a
+   discovery, a file the working tree deleted - the baseline reaches too, minus the new files'
+   content. That is more than the task's cases: whatever a new file imports, inherits or loads is
+   not reached either, which is why step 4 binds a credit to the task's edit and not to a file. It
+   must be GREEN - exit 0 with no failure counted, or an exit 5 whose ONE runner's tally counts no
+   case run and no failure (a command naming only new files gives it, and pytest gives it when `-k`
+   deselects every case); the words "no tests ran" are never read alone, since a red run followed by
+   an empty one prints them too, and the unittest and pytest tallies count every `Ran N` line and
+   every summary line - so the fix run of step 3 is judged by all its invocations as well, not by
+   its last. Anything else -
+   already red, stopped, unreadable - is `could-not-prove` with the instruction to narrow the
+   command to the task's cases;
+2. the task's run - its test files on HEAD's implementation - is red on an assertion;
+3. the fix run - the task's test files on the working tree's implementation - must be green, with no
+   fewer cases than the task's run, so every failure turns green;
+4. then a failure of step 2 is the task's own - a new case or an edited one - only where the runner
+   locates it in ONE declared test file (`case_site()`: a pytest node id's path or unittest `-v`'s
+   module, matched by trailing components because both print them relative to their own top
+   directory, refused when two declared files match or when an undeclared file in HEAD's tree or
+   the throwaway equals or ends with the same path - for a unittest module even on an EXACT match,
+   since unittest resolves a module through `sys.path` and `test_old` names whichever `test_old.py`
+   came first, while a pytest node id is a real path; the longest module prefix naming a declared
+   file, so a nested class keeps its chain; or the one declared script a `__main__` or house run
+   executes, spelled `./`, absolute or `-m`), the class the runner names there holds its `def`
+   (`_definition()`, read by ast as each name's LAST top-level binding in its body, `_binds()`
+   reading only what really binds a name: a Name target through tuples, lists and starred - never
+   under an attribute or a subscript, so `New.maxDiff = None` rebinds nothing - an annotated
+   assignment with a value, an augmented one, `del`, a `for` target, `with ... as`, a match
+   capture, an import (a `*` import counts as binding anything), a def, a class, and a walrus
+   anywhere in the statement outside a lambda; any of those after the def means the def is not
+   what runs, and so does a later statement at any level of the chain that `_replaces()` the case
+   on its class - an assignment of any kind to the exact attribute path `<chain>.<case>`
+   (`New.test_x = f` at module level, `Inner.test_x = f` in `Outer`'s body) or a
+   `setattr(<chain>, '<case>', ...)` naming it literally - while any other attribute of the class
+   is untouched; a def in a string, in another class or merely inherited is not it), and no test file
+   anywhere in HEAD's tree (`head_tree()`: `git ls-tree -r` filtered by `_is_test_path()`, read
+   by one `git cat-file --batch` under the deadline) holds an ast-identical def under the same
+   class chain and name (`credit_problem()`). That is keyed by the definition, not by the path, so
+   a case HEAD has is refused wherever it lands - imported, inherited or loaded by a new file,
+   carried by a `git mv`, or copied verbatim. A house run carries no definitions, so its one
+   script is compared whole instead (`module_key()`): a script whose module ast is identical to
+   one of HEAD's test files is HEAD's suite, moved or copied, and is refused. A HEAD case is
+   therefore not credited unless the task edited its definition - or, under a house run, the
+   script; if HEAD's tree cannot be read no case is credited; a runner that
+   locates no failure is `could-not-prove`, with each case's reason; and `--case` must name a
+   credited one. That rests on two
+   conditions, and holds only while both do: the runs differ only in the files laid over, which the
+   reset and the isolated environment provide; and HEAD's cases give the same answer on the same
+   files, which the rule cannot check.
+
+`--introduces` requires the same baseline. **What this cannot see**, each a named limit: state
+outside the throwaway that a run reaches by an absolute path or through the git directory the
+throwaway shares with the repository (config, refs) - HEAD's baseline runs first, so nothing of the
+task's can reach it, but the task's run and the fix run could still read what an earlier run wrote
+there; network or service state that changes between runs; a flaky or time-dependent HEAD case,
+which can fail in the task's run and pass in the baseline and the fix run; and a house suite - its
+`FAIL` lines carry no location, so a run of exactly one declared file is credited with every case
+that file's run prints, including one it imported from HEAD's tests and ran itself; under pytest
+or unittest, a new file that defines a case of the same name as the HEAD case it inherits and calls
+the inherited one from it; any edit to a HEAD case's definition, a docstring included, which makes it
+the task's case, so an edit that changes nothing the case asserts still lets a new file that reaches
+it be credited with HEAD's red; and the other direction - an unchanged HEAD case the task turns red
+through something else in its file (a helper, `setUp`, a constant) is not credited, and needs its
+definition touched or a case of its own. A copy of a HEAD case under a renamed class or case name is
+a new definition and is credited; a HEAD case in a file `_is_test_path()` does not call a test file
+is not in the set a copy is compared against; a rebinding inside the block of an `if`, `try`,
+loop, `with` or `match` is not read (only what the statement's header binds is); a decorator that
+returns a different function than the one it decorates is not read, so a decorated def is taken to
+be what runs; a `setattr` whose name is computed rather than a literal, or whose object is reached
+some other way than the chain's own dotted names, is not read either; a house suite moved or copied with any edit is compared as a new file and is credited
+with every case it prints, HEAD's among them; and a unittest module name, exact or trailing, also
+refuses a legitimate case when an unrelated file elsewhere in the tree ends with the same path -
+run the file by its path, or under pytest, to prove it.
+
+Seven review rounds each found another way to credit a case past a RED baseline by reading two runs'
+output - a relabelled case, a label carrying a per-run value, a quiet stop, a failfast set in the
+file, a file the task's run rewrote - so the rule stopped crediting against a red baseline at all
+rather than adding an eighth reader. What that costs is stated plainly: a command already red at HEAD
+must be narrowed to the task's cases before it can prove anything, and a case whose red the fix does
+not turn green is not proved. HEAD's file list is read NUL-separated (`ls-tree -z`), so a declared
+test file whose path git would quote is found like any other, and every run is made with
+`PYTHONDONTWRITEBYTECODE=1`, so a swapped file of the same size written in the same second cannot be
+shadowed by a stale cached bytecode file. The baseline is paid on every run it is owed, the fix run
+only when the task's run is red, and the payload records each one's exit and seconds. `--case` narrows to the ids or labels it names and must
+name a case that failed an assertion, because the flag is chosen by the party being checked; the
 basis names the case and says whether it was named or derived. A house suite whose every failure is a block that raised while being built, a
 run with errors and nothing asserted, zero collected, and a bare traceback ending in a compile or
 import error are `collection-error`, which prints `could-not-prove` — unless the task
@@ -4195,7 +4430,34 @@ past what an importer listing alone would find. `couple` appends a new entry, or
 rather than overwriting it, because the couple is a fact learned once and re-confirmed, not
 re-dated on every call. `uncouple` drops the one entry naming `--test` and refuses, exit 2, when
 no entry names it - the same "an operation on something that is not there is an error, never a
-silent no-op" rule every other verb here holds.
+silent no-op" rule every other verb here holds. `couple --test <path> --caught <runId>` is the
+narrowest door onto the same key: it refreshes an EXISTING entry's `lastCaught`
+to the `ts` of a full run whose runner named the test failing on a step no mute excused, and a
+name the run gave that fits several coupled tests (`_evidence_io.resolve_named`) credits none of
+them. It never creates an entry (a test with none is refused, exit 2), never changes `sources` or
+`basis` (`--sources`/`--basis-run`/`--basis-head`/`--phases` beside it are refused), and never
+moves `lastCaught` back: a catch at or before the recorded one, compared as moments through
+`_evidence_io.stamp_moment`, writes nothing and exits 0 saying so. A row whose own
+`selectionMiss` lists the test (`_evidence_io.own_miss`) is refused, exit 2, as `full-gate.py`
+credits it no catch. Journaled as `coupling.caught`.
+
+`bug-add "<title>" --severity low|med|high --description TEXT` (with optional `--files`,
+`--repro`, `--expected` and `--actual`) is the only writer `/audit:bug add` uses for `bugs[]`: it
+appends one bug in exactly the shape `commands/bug.md` spells - every key present, the unset
+links `null` - with the id `next-id bug` would print, creating the list when the plan has none,
+into the index alone, with a `bug.add` journal row. It exists because that shape used to be a
+paragraph the model re-typed by hand on every report, and nothing checked that every key reached
+the file.
+
+`mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId>` and
+`unmute --test <path>` are the only writers of `meta.muted`, the quarantine the gate runner
+reads, for `couple`'s reason: one verb pair means one set of refusals on the way in. `mute`
+refuses, exit 2, a missing `--bug` and an `--until` that is unreadable or already past, and
+extends an existing entry only to a later day. It does not look the bug up itself: a `--bug` the
+plan lacks is the validator's own finding on the revalidation, so the write is rolled back, exit
+1, with the finding printed - one answer to "does this bug exist", not two. `unmute` removes
+exactly the entry naming `--test`, and refuses, exit 2, when there is none. An expired mute is a
+warning rather than a finding, so both run on a plan that carries one.
 
 ### `plugins/audit/scripts/usage/audit-usage.py`
 `/audit:usage` — token spend, attributed, rendering its own final ASCII output (no box

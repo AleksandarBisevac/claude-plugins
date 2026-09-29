@@ -395,6 +395,48 @@
               "learnedAt": {
                 "type": "string",
                 "description": "When this entry was recorded."
+              },
+              "lastCaught": {
+                "type": "string",
+                "description": "The ts of the newest third-place (meta.fullGate) run that named `test` as failing, the runner having named the failing suite rather than guessed it from a tail. Absent = never caught since it was learned; a reader ages the entry from `learnedAt` instead."
+              }
+            }
+          }
+        },
+        "muted": {
+          "type": "array",
+          "description": "Test suites QUARANTINED: a muted suite is still run and its failure still recorded, but that failure does not fail the run and teaches no coupling. Absent/empty = nothing is quarantined and every failure blocks. Every entry must name a bug bugs[] holds - a mute with no bug is the retry-until-green shape this refuses, so the validator reports it as a finding. An `until` in the past is a WARNING, not a finding: the runner stops honouring the mute that day, so its failure blocks again, while the plan stays valid for the verb that lifts or extends it.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+              "test",
+              "reason",
+              "owner",
+              "until",
+              "bugId"
+            ],
+            "properties": {
+              "test": {
+                "type": "string",
+                "description": "The suite path this entry mutes, spelled as the runner names a failing suite."
+              },
+              "reason": {
+                "type": "string",
+                "description": "Why the suite is muted rather than fixed."
+              },
+              "owner": {
+                "type": "string",
+                "description": "Who answers for lifting the mute."
+              },
+              "until": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                "description": "The last UTC calendar day (YYYY-MM-DD, inclusive) the mute holds. From the next day the runner refuses to honour it."
+              },
+              "bugId": {
+                "type": "string",
+                "description": "The bugs[] id tracking the failure this mute hides."
               }
             }
           }

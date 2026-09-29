@@ -65,6 +65,21 @@ def _cases(check):
                              {"ts": "2", "status": "failed"}]) is not None
           and M.red_after_green([{"ts": "1", "status": "failed"},
                                  {"ts": "2", "status": "passed"}]) is None)
+    # Text order and moment order DISAGREE: the offset stamp spells a later
+    # day and names an earlier moment.
+    early_text, late_text = "2026-09-02T23:00:00Z", "2026-09-03T00:00:00+05:00"
+    got_newest = M.newest([{"runId": "A", "ts": early_text},
+                           {"runId": "B", "ts": late_text}])
+    check("vb3b RED-FIRST: `newest` picks the row whose ts names the later "
+          "MOMENT, never the later spelling: %r" % ((got_newest or {}).get(
+              "runId"),),
+          (got_newest or {}).get("runId") == "A")
+    got_red = M.red_after_green([{"ts": early_text, "status": "passed"},
+                                 {"ts": late_text, "status": "failed"}])
+    check("vb3c RED-FIRST: `red_after_green` orders by moment too - a red "
+          "whose ts spells a later day but names an EARLIER moment than the "
+          "green was retired by it: %r" % (got_red,),
+          got_red is None)
     check("vb4 a sentence names the task when there is one, else the phase",
           M.label_of({"taskId": "P1.2", "phaseId": "P1"}) == "P1.2"
           and M.label_of(PHASE) == "P1")
@@ -123,6 +138,79 @@ def _cases(check):
         got = _bind(base, mpath)
         check("vb13 SECOND DIRECTION: one that could be the phase's row blocks",
               got["state"] == "refused" and M.VERIFY_COMMAND in got["sentence"])
+        # A NEWER verdict for the phase sits in a second file whose bytes are
+        # not UTF-8. Every ledger reader loses that file whole, so the older
+        # green in the first file must not be bound as if the newer row had
+        # never been recorded - the lost file is named, and the verdict refused.
+        _project(base, [row])
+        odd = os.path.join(_evidence_io.evidence_dir(base), "2026-09.odd.jsonl")
+        newer = _measured(base, "R5", "2026-09-05T00:00:00Z", status="failed")
+        newer["note"] = "BYTE"
+        with open(odd, "wb") as fh:
+            fh.write(json.dumps(newer).encode("utf-8").replace(
+                b"BYTE", b"B\xffTE") + b"\n")
+        got = _bind(base, mpath)
+        check("vb14 RED-FIRST: a ledger file holding a byte that is not UTF-8 is "
+              "lost to the binding and SAID - the verdict is refused naming that "
+              "file as unreadable, never bound on an older row as though the "
+              "file held nothing: %r" % (got["sentence"],),
+              got["state"] == "refused"
+              and "2026-09.odd.jsonl" in got["sentence"]
+              and M.VERIFY_COMMAND in got["sentence"])
+        check("vb14b RED-FIRST: a file lost WHOLE gets its own words - not "
+              "'line(s) that will not parse', but what `verify` names for it "
+              "and the step that clears it: %r" % (got["sentence"],),
+              "line(s) that will not parse" not in got["sentence"]
+              and "could not be read at all" in got["sentence"]
+              and "restore the file from its committed copy"
+              in got["sentence"])
+        os.remove(odd)
+
+        # A red stamped with a DATE beside a green stamped to the second: the
+        # day is the start of that day, a moment after the green, so the red
+        # is after the last green and is not retired.
+        green = _measured(base, "R-G1", "2026-09-04T00:00:00Z")
+        day_red = _measured(base, "R-D1", "2026-09-05", status="failed")
+        _project(base, [green, day_red])
+        got = _bind(base, mpath, entries=())
+        check("vb15 RED-FIRST: a date-only red after a dated green is a red "
+              "after the last green, and refuses as one: %r / %r"
+              % ((M.red_after_green([green, day_red]) or {}).get("runId"),
+                 got["sentence"]),
+              (M.red_after_green([green, day_red]) or {}).get("runId")
+              == "R-D1"
+              and got["state"] == "refused"
+              and "after the last green" in got["sentence"])
+        junk_red = _measured(base, "R-J1", "not-a-moment", status="failed")
+        _project(base, [green, junk_red])
+        got = _bind(base, mpath)
+        check("vb16 RED-FIRST: a subject row whose ts is no moment BLOCKS - it "
+              "cannot be placed before or after the green, so it could be the "
+              "newest verdict - naming the row and pointing at `%s`: %r"
+              % (M.VERIFY_COMMAND, got["sentence"]),
+              got["state"] == "refused" and "R-J1" in got["sentence"]
+              and "not-a-moment" in got["sentence"]
+              and M.VERIFY_COMMAND in got["sentence"])
+
+        # A REPEATED verdict names its origin by runId, and two rows wear that
+        # id: the origin is the NEWER by moment, read FIRST here, whose gate
+        # is the gate now. File order would pick the older row, measured
+        # under another gate.
+        origin_new = _measured(base, "R-O", "2026-09-06T00:00:00Z")
+        origin_old = _measured(base, "R-O", "2026-09-01T00:00:00Z",
+                               steps=("lint",))
+        repeat = {"runId": "R-RP", "ts": "2026-09-07T00:00:00Z",
+                  "scope": "phase", "phaseId": "P1", "status": "passed",
+                  "testedState": {},
+                  _evidence_io.VERDICT_SOURCE: _evidence_io.REUSED,
+                  "reusedFrom": {"runId": "R-O"}}
+        _project(base, [origin_new, origin_old, repeat])
+        got = _bind(base, mpath)
+        check("vb18 RED-FIRST: a repeat's origin is the NEWEST row carrying "
+              "its runId by moment, never the last in ledger order: %r / %r"
+              % ((got["measured"] or {}).get("ts"), got["sentence"]),
+              got["state"] == "bound"
+              and (got["measured"] or {}).get("ts") == "2026-09-06T00:00:00Z")
     finally:
         _harness.remove_tree(root)
 

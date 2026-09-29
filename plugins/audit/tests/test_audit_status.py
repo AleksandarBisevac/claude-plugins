@@ -95,6 +95,51 @@ def _fixture():
     }
 
 
+# --- the project a bare render reads its locks from ---------------------------
+import contextlib as _ctx_own                      # noqa: E402
+import tempfile as _tf_own                         # noqa: E402
+
+
+@_ctx_own.contextmanager
+def _own_project(root=None):
+    """`CLAUDE_PROJECT_DIR` pinned at a project of the fixture's own for the
+    length of the block, and put back as it was afterwards; yields the path.
+
+    With no `root`, a fresh repository is made and removed with the block.
+    With one, that directory is pinned and left in place - its owner built it
+    and removes it. Every case in this file that names the project goes
+    through here, so the restore exists once.
+
+    The bare render injects the locks of the project `audit-status.py` is
+    anchored at - `CLAUDE_PROJECT_DIR`, else the working directory - and locks
+    live in the git dir every worktree of a clone shares. Left ambient, a case
+    comparing that render with a hand-built `render_status` reads whatever
+    lock a real run holds in the checkout the suite happens to run inside, and
+    fails there while passing in the sweep's scratch directory. Both sides of
+    such a comparison are computed inside the block, so they read one project.
+
+    Without git on PATH the directory stays a plain one, which the product
+    reads as "no repository, no locks" - still nothing from outside the fixture.
+    """
+    made = root is None
+    if made:
+        root = _tf_own.mkdtemp(prefix="audit-status-own-project-")
+    before = os.environ.get("CLAUDE_PROJECT_DIR")
+    try:
+        if made and shutil.which("git"):
+            subprocess.run(["git", "init", "-q", root], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        os.environ["CLAUDE_PROJECT_DIR"] = root
+        yield root
+    finally:
+        if before is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = before
+        if made:
+            shutil.rmtree(root, ignore_errors=True)
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(_record):
     import copy
@@ -1524,6 +1569,41 @@ def _cases(_record):
     check("cc3 an unknown --color value is a usage error (exit 2)",
           M.main([cpath, "--color", "sometimes"]) == 2)
 
+    # --- (op) the one helper that names the project -----------------------------
+    # Nothing downstream fails when a pin leaks - every later case simply reads
+    # a project that no longer exists - so the restore is pinned here directly,
+    # in both directions: a value that was set comes back, and one that was
+    # unset is unset again.
+    _op_before = os.environ.get("CLAUDE_PROJECT_DIR")
+    try:
+        os.environ["CLAUDE_PROJECT_DIR"] = "/op-sentinel"
+        with _own_project() as _op_made:
+            _op_inside = os.environ.get("CLAUDE_PROJECT_DIR")
+        _op_back = os.environ.get("CLAUDE_PROJECT_DIR")
+        os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        _op_keep = tempfile.mkdtemp(prefix="audit-status-op-")
+        try:
+            with _own_project(_op_keep):
+                _op_inside2 = os.environ.get("CLAUDE_PROJECT_DIR")
+            _op_back2 = os.environ.get("CLAUDE_PROJECT_DIR", "<unset>")
+            _op_kept = os.path.isdir(_op_keep)
+        finally:
+            shutil.rmtree(_op_keep, ignore_errors=True)
+    finally:
+        if _op_before is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = _op_before
+    check("op1 _own_project pins the project for the block and puts the "
+          "previous value back after it, set or unset - a leaked pin reads a "
+          "deleted directory for the rest of the suite, which no later case "
+          "notices: %r" % ((_op_inside, _op_back, _op_inside2, _op_back2),),
+          _op_inside == _op_made and _op_back == "/op-sentinel"
+          and _op_inside2 == _op_keep and _op_back2 == "<unset>")
+    check("op2 ...and it removes only the directory it made: its own fresh "
+          "repository is gone after the block, a root it was handed is not",
+          not os.path.exists(_op_made) and _op_kept)
+
     # --- (cv) --view end to end: where the DEFAULT PICK lives -------------------
     # The renderer's default is "every phase" (vw1); the narrowing is main()'s
     # choice, and this is the only place it can be measured. The rule is copied
@@ -1533,12 +1613,13 @@ def _cases(_record):
     # the fold's own failure wearing a flag.
     _cv_m = _mio.load_manifest(cpath)
     _cv_f, _cv_w = vm.validate(_cv_m)
-    _cv_sum = M.rollup(_cv_m, _cv_f, _cv_w,
-                       usage=M.usage_summary(_cv_m, cpath),
-                       boundary=M.boundary_for(cpath))
-    _cv_c, _cv_o = _cli_out([cpath])
-    _cv_ac, _cv_ao = _cli_out([cpath, "--view", "all"])
-    _cv_jd, _o_def_json = _cli_out([cpath, "--json"])
+    with _own_project():
+        _cv_sum = M.rollup(_cv_m, _cv_f, _cv_w,
+                           usage=M.usage_summary(_cv_m, cpath),
+                           boundary=M.boundary_for(cpath))
+        _cv_c, _cv_o = _cli_out([cpath])
+        _cv_ac, _cv_ao = _cli_out([cpath, "--view", "all"])
+        _cv_jd, _o_def_json = _cli_out([cpath, "--json"])
     check("cv1 the DEFAULT narrows: the fixture's archived phase is not listed, "
           "the unfinished one is, and the line saying so names the flag back",
           _cv_c == 0 and "P1.1" not in _cv_o.split("READY NOW")[0]
@@ -1836,7 +1917,7 @@ def _cases(_record):
     _missing_ap = [c for c in M.CONDITIONS if c not in _o_h]
     check("ap8 --help LISTS all %d --fail-on conditions - the listing that did "
           "not exist" % len(M.CONDITIONS),
-          _missing_ap == [] and len(M.CONDITIONS) == 14,
+          _missing_ap == [] and len(M.CONDITIONS) == 15,
           "absent from --help: %r" % (_missing_ap,))
     _help_txt = getattr(M, "CONDITION_HELP", None)
     check("ap9 ...and every condition's MEANING is rendered there too, so the "
@@ -2218,7 +2299,6 @@ def _cases(_record):
     import shutil as _sh_bd
 
     _bd_root = tempfile.mkdtemp(prefix="audit-status-boundary-")
-    _bd_env = os.environ.get("CLAUDE_PROJECT_DIR")
     try:
         def _bd_project(name, tasks, since=None, ledger=None, merged=None,
                         torn=False):
@@ -2259,8 +2339,9 @@ def _cases(_record):
 
         def _bd_gate(proj, path):
             """`--gate --fail-on no-test-evidence` over one plan, project pinned."""
-            os.environ["CLAUDE_PROJECT_DIR"] = proj
-            return _cli_io([path, "--gate", "--fail-on", "no-test-evidence"])
+            with _own_project(proj):
+                return _cli_io([path, "--gate", "--fail-on",
+                                "no-test-evidence"])
 
         _bd_p1, _bd_f1 = _bd_project("nothing-recorded",
                                      [("PE.1", "2026-05-01T00:00:00Z")])
@@ -2345,9 +2426,9 @@ def _cases(_record):
               and "cannot be trusted" in _bd_o6
               and "could not be parsed" in _bd_o6
               and "no run recorded" not in _bd_o6)
-        os.environ["CLAUDE_PROJECT_DIR"] = _bd_p3
-        _bd_cj, _bd_oj, _bd_ej = _cli_io([_bd_f3, "--json", "--gate",
-                                          "--fail-on", "no-test-evidence"])
+        with _own_project(_bd_p3):
+            _bd_cj, _bd_oj, _bd_ej = _cli_io([_bd_f3, "--json", "--gate",
+                                              "--fail-on", "no-test-evidence"])
         _bd_blob = _parses(_bd_oj) or {}
         check("bd7 the --json payload carries the boundary WHOLE - the moment, "
               "both sources named apart, the basis and `unknown` - and the "
@@ -2365,8 +2446,8 @@ def _cases(_record):
               == ["PE", "PE.1"]
               and _bd_blob["testEvidence"]["beforeBoundary"] == []
               and "GATE FAILED" in _bd_ej)
-        os.environ["CLAUDE_PROJECT_DIR"] = _bd_p2
-        _bd_cd, _bd_od, _bd_ed = _cli_io([_bd_f2, "--gate"])
+        with _own_project(_bd_p2):
+            _bd_cd, _bd_od, _bd_ed = _cli_io([_bd_f2, "--gate"])
         check("bd8 SECOND DIRECTION on the flag: the DEFAULT gate reads no "
               "boundary sentence at all. The excuse note is emitted only when "
               "somebody asked for the condition, so a pipeline that never set "
@@ -2377,10 +2458,6 @@ def _cases(_record):
               _bd_cd == 0 and "excused" not in _bd_od
               and "GATE PASSED" in _bd_od and _bd_ed == "")
     finally:
-        if _bd_env is None:
-            os.environ.pop("CLAUDE_PROJECT_DIR", None)
-        else:
-            os.environ["CLAUDE_PROJECT_DIR"] = _bd_env
         _sh_bd.rmtree(_bd_root, ignore_errors=True)
 
     # --- (uf) a run that stopped mid-phase, driven end to end -------------------
@@ -2398,7 +2475,6 @@ def _cases(_record):
     import shutil as _sh_uf
 
     _uf_root = tempfile.mkdtemp(prefix="audit-status-unfinished-")
-    _uf_env = os.environ.get("CLAUDE_PROJECT_DIR")
     try:
         def _uf_lines(summary):
             """`_unfinished_lines` over a summary, as the renderer calls it."""
@@ -2456,88 +2532,84 @@ def _cases(_record):
                                     "audit-plan.json")
             with open(_uf_path, "w", encoding="utf-8") as fh:
                 json.dump(_uf_plan, fh)
-            os.environ["CLAUDE_PROJECT_DIR"] = _uf_repo
-            # The identity is PASSED rather than inherited, for the reason the
-            # `ur` block next door states: `CLAUDE_PID` is set inside a live
-            # Claude session and unset in CI, so a lock taken without saying who
-            # took it records a different pid on the two.
-            _uf_sid = "f301-cli-fixture"
-            _uf_quiet = lambda *_a, **_k: None      # noqa: E731  (acquire's out)
+            with _own_project(_uf_repo):
+                # The identity is PASSED rather than inherited, for the reason the
+                # `ur` block next door states: `CLAUDE_PID` is set inside a live
+                # Claude session and unset in CI, so a lock taken without saying who
+                # took it records a different pid on the two.
+                _uf_sid = "f301-cli-fixture"
+                _uf_quiet = lambda *_a, **_k: None      # noqa: E731  (acquire's out)
 
-            _c1, _o1, _e1 = _cli_io([_uf_path, "--json"])
-            check("uf1 the bare --json payload carries NO locks key. It is "
-                  "pinned byte for byte against the pure rollup (dv1), and a "
-                  "lock is a fact about this checkout at this instant rather "
-                  "than about the plan the payload describes: %r"
-                  % (sorted(_parses(_o1) or {}),),
-                  _c1 == 0 and "locks" not in (_parses(_o1) or {"locks": 1}))
-            _c2, _o2, _e2 = _cli_io([_uf_path, "--gate", "--json"])
-            check("uf3 ...and neither does the DEFAULT gate: the read costs a "
-                  "git call, and a gate nobody asked this of must not pay it. "
-                  "The case that fails if the wiring becomes unconditional",
-                  _c2 == 0 and "locks" not in (_parses(_o2) or {"locks": 1}))
-            _c3, _o3, _e3 = _cli_io([_uf_path, "--gate", "--json", "--fail-on",
-                                     "unfinished-run"])
-            _uf_blob = _parses(_o3) or {}
-            check("uf2 asking for the condition DOES compute it, and the block "
-                  "travels in the payload with the verdict and its basis - so a "
-                  "pipeline reads the same evidence the exit code was taken "
-                  "from. Reads vacuous beside uf1/uf3 and is the only case that "
-                  "fails if the injection is dropped: %r"
-                  % (_uf_blob.get("locks"),),
-                  _c3 == 0 and isinstance(_uf_blob.get("locks"), dict)
-                  and _uf_blob["locks"]["scheme"] is True
-                  and _uf_blob["locks"]["held"] == []
-                  and _uf_blob["gate"]["failed"] == [])
-            # ...and now a lock, taken the way a phase run takes one.
-            _uf_took = _lockmod.held(_lockmod.acquire(
-                _uf_repo, "phase-P5", note="/audit:phase P5", session=_uf_sid,
-                pid=os.getpid(), out=_uf_quiet))
-            _c4, _o4, _e4 = _cli_io([_uf_path, "--gate", "--fail-on",
-                                     "unfinished-run"])
-            check("uf4 END TO END: the lock is held, two tasks are ready, and "
-                  "the gate FAILS naming the phase, the work left and the "
-                  "command that picks it up - the state was "
-                  "knowable the whole time and nothing read it: %r"
-                  % (_o4.strip()[-200:],),
-                  _uf_took and _c4 == 1
-                  and "GATE FAILED: unfinished-run" in _o4
-                  and "phase P5" in _o4 and "2 task(s) still ready" in _o4
-                  and "/audit:phase P5" in _o4 and _e4 == "")
-            _c5, _o5, _e5 = _cli_io([_uf_path])
-            check("uf6 ...and the HUMAN RENDER says it too, which is the half "
-                  "the fault was actually about: no gate had failed and nobody "
-                  "was going to run one. RESUMABLE is on the same page and is a "
-                  "DIFFERENT line from a different fact - the phase status the "
-                  "plan wrote down, against the lock on disk: %r"
-                  % (_o5.strip()[-200:],),
-                  _c5 == 0 and "UNFINISHED" in _o5
-                  and "stopped mid-phase" in _o5 and "phase P5 holds a lock"
-                  in _o5 and "RESUMABLE" in _o5)
-            # THE TRANSITION, at the CLI. Nothing about the plan changes; the
-            # lock goes back and the verdict has to go with it.
-            _lockmod.release(_uf_repo, "phase-P5", session=_uf_sid,
-                             out=_uf_quiet)
-            _c6, _o6, _e6 = _cli_io([_uf_path, "--gate", "--fail-on",
-                                     "unfinished-run"])
-            _c7, _o7, _e7 = _cli_io([_uf_path])
-            check("uf5 THE TRANSITION AND THE THIRD ROW TOGETHER: the lock is "
-                  "given back with the SAME two tasks still ready, and the gate "
-                  "PASSES while the render goes silent. That state is the "
-                  "ordinary one of every planned phase there has ever been, so "
-                  "a condition that fired here would be noise inside a day - "
-                  "and uf4 is the case that fails if it stops firing at all: %r"
-                  % (_o6.strip()[-120:],),
-                  _c6 == 0 and "GATE PASSED: unfinished-run" in _o6
-                  and _c7 == 0 and "UNFINISHED" not in _o7
-                  and "READY NOW  2 task(s)" in _o7)
+                _c1, _o1, _e1 = _cli_io([_uf_path, "--json"])
+                check("uf1 the bare --json payload carries NO locks key. It is "
+                      "pinned byte for byte against the pure rollup (dv1), and a "
+                      "lock is a fact about this checkout at this instant rather "
+                      "than about the plan the payload describes: %r"
+                      % (sorted(_parses(_o1) or {}),),
+                      _c1 == 0 and "locks" not in (_parses(_o1) or {"locks": 1}))
+                _c2, _o2, _e2 = _cli_io([_uf_path, "--gate", "--json"])
+                check("uf3 ...and neither does the DEFAULT gate: the read costs a "
+                      "git call, and a gate nobody asked this of must not pay it. "
+                      "The case that fails if the wiring becomes unconditional",
+                      _c2 == 0 and "locks" not in (_parses(_o2) or {"locks": 1}))
+                _c3, _o3, _e3 = _cli_io([_uf_path, "--gate", "--json", "--fail-on",
+                                         "unfinished-run"])
+                _uf_blob = _parses(_o3) or {}
+                check("uf2 asking for the condition DOES compute it, and the block "
+                      "travels in the payload with the verdict and its basis - so a "
+                      "pipeline reads the same evidence the exit code was taken "
+                      "from. Reads vacuous beside uf1/uf3 and is the only case that "
+                      "fails if the injection is dropped: %r"
+                      % (_uf_blob.get("locks"),),
+                      _c3 == 0 and isinstance(_uf_blob.get("locks"), dict)
+                      and _uf_blob["locks"]["scheme"] is True
+                      and _uf_blob["locks"]["held"] == []
+                      and _uf_blob["gate"]["failed"] == [])
+                # ...and now a lock, taken the way a phase run takes one.
+                _uf_took = _lockmod.held(_lockmod.acquire(
+                    _uf_repo, "phase-P5", note="/audit:phase P5", session=_uf_sid,
+                    pid=os.getpid(), out=_uf_quiet))
+                _c4, _o4, _e4 = _cli_io([_uf_path, "--gate", "--fail-on",
+                                         "unfinished-run"])
+                check("uf4 END TO END: the lock is held, two tasks are ready, and "
+                      "the gate FAILS naming the phase, the work left and the "
+                      "command that picks it up - the state was "
+                      "knowable the whole time and nothing read it: %r"
+                      % (_o4.strip()[-200:],),
+                      _uf_took and _c4 == 1
+                      and "GATE FAILED: unfinished-run" in _o4
+                      and "phase P5" in _o4 and "2 task(s) still ready" in _o4
+                      and "/audit:phase P5" in _o4 and _e4 == "")
+                _c5, _o5, _e5 = _cli_io([_uf_path])
+                check("uf6 ...and the HUMAN RENDER says it too, which is the half "
+                      "the fault was actually about: no gate had failed and nobody "
+                      "was going to run one. RESUMABLE is on the same page and is a "
+                      "DIFFERENT line from a different fact - the phase status the "
+                      "plan wrote down, against the lock on disk: %r"
+                      % (_o5.strip()[-200:],),
+                      _c5 == 0 and "UNFINISHED" in _o5
+                      and "stopped mid-phase" in _o5 and "phase P5 holds a lock"
+                      in _o5 and "RESUMABLE" in _o5)
+                # THE TRANSITION, at the CLI. Nothing about the plan changes; the
+                # lock goes back and the verdict has to go with it.
+                _lockmod.release(_uf_repo, "phase-P5", session=_uf_sid,
+                                 out=_uf_quiet)
+                _c6, _o6, _e6 = _cli_io([_uf_path, "--gate", "--fail-on",
+                                         "unfinished-run"])
+                _c7, _o7, _e7 = _cli_io([_uf_path])
+                check("uf5 THE TRANSITION AND THE THIRD ROW TOGETHER: the lock is "
+                      "given back with the SAME two tasks still ready, and the gate "
+                      "PASSES while the render goes silent. That state is the "
+                      "ordinary one of every planned phase there has ever been, so "
+                      "a condition that fired here would be noise inside a day - "
+                      "and uf4 is the case that fails if it stops firing at all: %r"
+                      % (_o6.strip()[-120:],),
+                      _c6 == 0 and "GATE PASSED: unfinished-run" in _o6
+                      and _c7 == 0 and "UNFINISHED" not in _o7
+                      and "READY NOW  2 task(s)" in _o7)
 
         _harness.stage(check, "uf", _uf_wired)
     finally:
-        if _uf_env is None:
-            os.environ.pop("CLAUDE_PROJECT_DIR", None)
-        else:
-            os.environ["CLAUDE_PROJECT_DIR"] = _uf_env
         _sh_uf.rmtree(_uf_root, ignore_errors=True)
 
 
@@ -2589,12 +2661,11 @@ def _cases(_record):
 
     if not _sh_fr.which("git"):
         for _lbl in ("fr10", "fr11", "fr12", "fr13", "fr14", "fr14b",
-                     "fr14c", "fr15"):
+                     "fr14c", "fr15", "fr15b", "fr16", "fr16b"):
             _harness.skip(check, _lbl, "git is not on PATH, and full_status "
                           "needs a real repository to ask ancestry of", True)
     else:
         _fr_root = tempfile.mkdtemp(prefix="audit-status-fullrun-")
-        _fr_env = os.environ.get("CLAUDE_PROJECT_DIR")
         try:
             _fr_repo = os.path.join(_fr_root, "proj")
             os.makedirs(os.path.join(_fr_repo, "docs", "audit"))
@@ -2611,184 +2682,199 @@ def _cases(_record):
                                     "audit-plan.json")
             with open(_fr_path, "w", encoding="utf-8") as fh:
                 json.dump(_fr_plan, fh)
-            os.environ["CLAUDE_PROJECT_DIR"] = _fr_repo
+            with _own_project(_fr_repo):
 
-            def _fr_cli(argv):
-                _o, _e = _io_ap.StringIO(), _io_ap.StringIO()
-                with _ctx_ap.redirect_stdout(_o), _ctx_ap.redirect_stderr(_e):
-                    _c = M.main(argv)
-                return _c, _o.getvalue(), _e.getvalue()
+                def _fr_cli(argv):
+                    _o, _e = _io_ap.StringIO(), _io_ap.StringIO()
+                    with _ctx_ap.redirect_stdout(_o), _ctx_ap.redirect_stderr(_e):
+                        _c = M.main(argv)
+                    return _c, _o.getvalue(), _e.getvalue()
 
-            def _fr_write(rows):
-                d = _ebio.evidence_dir(_fr_repo)
-                os.makedirs(d, exist_ok=True)
-                with open(os.path.join(d, "manual.jsonl"), "w",
-                         encoding="utf-8") as fh:
-                    for r in rows:
-                        fh.write(json.dumps(r) + "\n")
+                def _fr_write(rows):
+                    d = _ebio.evidence_dir(_fr_repo)
+                    os.makedirs(d, exist_ok=True)
+                    with open(os.path.join(d, "manual.jsonl"), "w",
+                             encoding="utf-8") as fh:
+                        for r in rows:
+                            fh.write(json.dumps(r) + "\n")
 
-            # --- no full run recorded at all: PROVISIONAL, and OPT-IN ----------
-            _c1, _o1, _e1 = _fr_cli([_fr_path, "--gate", "--fail-on",
-                                     "provisional"])
-            _c2, _o2, _e2 = _fr_cli([_fr_path, "--gate"])
-            check("fr10 --gate --fail-on provisional exits non-zero on a "
-                  "PROVISIONAL fixture (nothing ever recorded), and zero "
-                  "without the flag - provisional is opt-in, exactly like "
-                  "no-test-evidence",
-                  _c1 == 1 and "GATE FAILED: provisional" in _o1
-                  and "P1" in _o1 and _c2 == 0,
-                  repr((_c1, _o1.strip()[-160:], _c2)))
+                # --- no full run recorded at all: PROVISIONAL, and OPT-IN ----------
+                _c1, _o1, _e1 = _fr_cli([_fr_path, "--gate", "--fail-on",
+                                         "provisional"])
+                _c2, _o2, _e2 = _fr_cli([_fr_path, "--gate"])
+                check("fr10 --gate --fail-on provisional exits non-zero on a "
+                      "PROVISIONAL fixture (nothing ever recorded), and zero "
+                      "without the flag - provisional is opt-in, exactly like "
+                      "no-test-evidence",
+                      _c1 == 1 and "GATE FAILED: provisional" in _o1
+                      and "P1" in _o1 and _c2 == 0,
+                      repr((_c1, _o1.strip()[-160:], _c2)))
 
-            # --- a full run whose head CONTAINS mergedHead: WHOLE --------------
-            _fr_write([_fr_row("r1", "2026-04-01T00:00:00Z", _fr_second)])
-            _c3, _o3, _e3 = _fr_cli([_fr_path, "--gate", "--fail-on",
-                                     "provisional"])
-            check("fr11 a green, measured, clean, verbatim full run whose head "
-                  "IS mergedHead certifies the phase WHOLE, and the gate passes",
-                  _c3 == 0 and "GATE PASSED: provisional" in _o3,
-                  repr(_o3.strip()[-160:]))
-            _c3b, _o3b, _e3b = _fr_cli([_fr_path])
-            check("fr12 THE TESTS COLUMN, on the human render: the phase head "
-                  "names the third place's own word, and it is the SAME "
-                  "spelling `_manifest_vocab.VERIFIED` uses for it - never a "
-                  "second word for 'whole'",
-                  _c3b == 0 and "full whole" in _o3b
-                  and _vocab.VERIFIED[2] == "whole",
-                  repr(_o3b))
+                # --- a full run whose head CONTAINS mergedHead: WHOLE --------------
+                _fr_write([_fr_row("r1", "2026-04-01T00:00:00Z", _fr_second)])
+                _c3, _o3, _e3 = _fr_cli([_fr_path, "--gate", "--fail-on",
+                                         "provisional"])
+                check("fr11 a green, measured, clean, verbatim full run whose head "
+                      "IS mergedHead certifies the phase WHOLE, and the gate passes",
+                      _c3 == 0 and "GATE PASSED: provisional" in _o3,
+                      repr(_o3.strip()[-160:]))
+                _c3b, _o3b, _e3b = _fr_cli([_fr_path])
+                check("fr12 THE TESTS COLUMN, on the human render: the phase head "
+                      "names the third place's own word, and it is the SAME "
+                      "spelling `_manifest_vocab.VERIFIED` uses for it - never a "
+                      "second word for 'whole'",
+                      _c3b == 0 and "full whole" in _o3b
+                      and _vocab.VERIFIED[2] == "whole",
+                      repr(_o3b))
 
-            # --- a run BEFORE the merge that does not contain it: PROVISIONAL,
-            # but not yet STALE - the plan has simply not been re-measured -----
-            _fr_write([_fr_row("r0", "2026-01-01T00:00:00Z", _fr_first)])
-            _c4, _o4, _e4 = _fr_cli([_fr_path, "--gate", "--fail-on",
-                                     "provisional,stale-full-run"])
-            check("fr13 a full run recorded BEFORE the merge, whose head does "
-                  "NOT contain mergedHead, is provisional but not stale",
-                  _c4 == 1 and "GATE FAILED: provisional" in _o4
-                  and "GATE FAILED: stale-full-run" not in _o4,
-                  repr(_o4.strip()))
-            _c4b, _o4b, _e4b = _fr_cli([_fr_path])
-            check("fr13b ...and the tests column names it, since since <mergedAt>",
-                  _c4b == 0
-                  and "full provisional (since 2026-03-01T00:00:00Z)" in _o4b,
-                  repr(_o4b))
+                # --- a run BEFORE the merge that does not contain it: PROVISIONAL,
+                # but not yet STALE - the plan has simply not been re-measured -----
+                _fr_write([_fr_row("r0", "2026-01-01T00:00:00Z", _fr_first)])
+                _c4, _o4, _e4 = _fr_cli([_fr_path, "--gate", "--fail-on",
+                                         "provisional,stale-full-run"])
+                check("fr13 a full run recorded BEFORE the merge, whose head does "
+                      "NOT contain mergedHead, is provisional but not stale",
+                      _c4 == 1 and "GATE FAILED: provisional" in _o4
+                      and "GATE FAILED: stale-full-run" not in _o4,
+                      repr(_o4.strip()))
+                _c4b, _o4b, _e4b = _fr_cli([_fr_path])
+                check("fr13b ...and the tests column names it, since since <mergedAt>",
+                      _c4b == 0
+                      and "full provisional (since 2026-03-01T00:00:00Z)" in _o4b,
+                      repr(_o4b))
 
-            # --- THE SHARPER CLAIM: a run AFTER the merge, still not containing
-            # mergedHead - a full run happened after the phase landed and STILL
-            # does not contain it -----------------------------------------------
-            _fr_write([_fr_row("r2", "2026-05-01T00:00:00Z", _fr_first)])
-            _c5, _o5, _e5 = _fr_cli([_fr_path, "--gate", "--fail-on",
-                                     "stale-full-run"])
-            check("fr14 LIVE: a full run recorded AFTER mergedAt whose head "
-                  "still does not contain mergedHead trips stale-full-run, "
-                  "naming the run and both moments",
-                  _c5 == 1 and "GATE FAILED: stale-full-run" in _o5
-                  and "r2" in _o5 and "2026-03-01T00:00:00Z" in _o5
-                  and "2026-05-01T00:00:00Z" in _o5,
-                  repr(_o5.strip()[-260:]))
+                # --- THE SHARPER CLAIM: a run AFTER the merge, still not containing
+                # mergedHead - a full run happened after the phase landed and STILL
+                # does not contain it -----------------------------------------------
+                _fr_write([_fr_row("r2", "2026-05-01T00:00:00Z", _fr_first)])
+                _c5, _o5, _e5 = _fr_cli([_fr_path, "--gate", "--fail-on",
+                                         "stale-full-run"])
+                check("fr14 LIVE: a full run recorded AFTER mergedAt whose head "
+                      "still does not contain mergedHead trips stale-full-run, "
+                      "naming the run and both moments",
+                      _c5 == 1 and "GATE FAILED: stale-full-run" in _o5
+                      and "r2" in _o5 and "2026-03-01T00:00:00Z" in _o5
+                      and "2026-05-01T00:00:00Z" in _o5,
+                      repr(_o5.strip()[-260:]))
 
-            # --- a DISQUALIFIED run after the merge is not "a full run
-            # happened": status passed and scope full, but measured on a dirty
-            # tree. It leaves the phase provisional and never makes it stale ---
-            _fr_dirty = _fr_row("r3", "2026-05-01T00:00:00Z", _fr_first)
-            _fr_dirty["observations"]["dirtyOutside"] = ["src/app.ts"]
-            _fr_write([_fr_dirty])
-            _c7, _o7, _e7 = _fr_cli([_fr_path, "--gate", "--fail-on",
-                                     "provisional,stale-full-run"])
-            check("fr14b RED-FIRST: a passed full run on a dirty tree, recorded "
-                  "after mergedAt, reads provisional but never trips "
-                  "stale-full-run - its moment is not a whole-bearing run's",
-                  _c7 == 1 and "GATE FAILED: provisional" in _o7
-                  and "GATE FAILED: stale-full-run" not in _o7,
-                  repr(_o7.strip()[-260:]))
+                # --- a DISQUALIFIED run after the merge is not "a full run
+                # happened": status passed and scope full, but measured on a dirty
+                # tree. It leaves the phase provisional and never makes it stale ---
+                _fr_dirty = _fr_row("r3", "2026-05-01T00:00:00Z", _fr_first)
+                _fr_dirty["observations"]["dirtyOutside"] = ["src/app.ts"]
+                _fr_write([_fr_dirty])
+                _c7, _o7, _e7 = _fr_cli([_fr_path, "--gate", "--fail-on",
+                                         "provisional,stale-full-run"])
+                check("fr14b RED-FIRST: a passed full run on a dirty tree, recorded "
+                      "after mergedAt, reads provisional but never trips "
+                      "stale-full-run - its moment is not a whole-bearing run's",
+                      _c7 == 1 and "GATE FAILED: provisional" in _o7
+                      and "GATE FAILED: stale-full-run" not in _o7,
+                      repr(_o7.strip()[-260:]))
 
-            # --- a WHOLE answer from an OLDER run, beside a NEWER whole-bearing
-            # run that does not contain the merge: the answer's run and the
-            # newest whole-bearing run are different runs, and the row must
-            # never hand a reader one run's id beside the other's moment ------
-            _fr_write([_fr_row("r-old", "2026-04-01T00:00:00Z", _fr_second),
-                       _fr_row("r-new", "2026-05-01T00:00:00Z", _fr_first)])
-            _c8, _o8, _e8 = _fr_cli([_fr_path, "--gate", "--json",
-                                     "--fail-on", "stale-full-run"])
-            try:
-                _fr_json = json.loads(_o8).get("fullRun", {}).get("P1", {})
-            except ValueError:
-                _fr_json = {"unparsed": _o8[-200:]}
-            check("fr14c RED-FIRST: a WHOLE row whose runId is an older run "
-                  "carries the newest whole-bearing run's moment only under "
-                  "that run's own id, and no runTs a reader would pair with "
-                  "runId: %r" % (_fr_json,),
-                  _c8 == 0
-                  and _fr_json.get("answer") == "whole"
-                  and _fr_json.get("runId") == "r-old"
-                  and _fr_json.get("wholeRunId") == "r-new"
-                  and _fr_json.get("wholeRunTs") == "2026-05-01T00:00:00Z"
-                  and "runTs" not in _fr_json)
+                # --- a WHOLE answer from an OLDER run, beside a NEWER whole-bearing
+                # run that does not contain the merge: the answer's run and the
+                # newest whole-bearing run are different runs, and the row must
+                # never hand a reader one run's id beside the other's moment ------
+                _fr_write([_fr_row("r-old", "2026-04-01T00:00:00Z", _fr_second),
+                           _fr_row("r-new", "2026-05-01T00:00:00Z", _fr_first)])
+                _c8, _o8, _e8 = _fr_cli([_fr_path, "--gate", "--json",
+                                         "--fail-on", "stale-full-run"])
+                try:
+                    _fr_json = json.loads(_o8).get("fullRun", {}).get("P1", {})
+                except ValueError:
+                    _fr_json = {"unparsed": _o8[-200:]}
+                check("fr14c RED-FIRST: a WHOLE row whose runId is an older run "
+                      "carries the newest whole-bearing run's moment only under "
+                      "that run's own id, and no runTs a reader would pair with "
+                      "runId: %r" % (_fr_json,),
+                      _c8 == 0
+                      and _fr_json.get("answer") == "whole"
+                      and _fr_json.get("runId") == "r-old"
+                      and _fr_json.get("wholeRunId") == "r-new"
+                      and _fr_json.get("wholeRunTs") == "2026-05-01T00:00:00Z"
+                      and "runTs" not in _fr_json)
 
-            # --- THE ALLOW CASE: no meta.fullGate at all renders BYTE-IDENTICAL
-            # to a plan that never named a third place - no "not_declared" text
-            _fr_no_gate = copy.deepcopy(_fr_plan)
-            del _fr_no_gate["meta"]["fullGate"]
-            del _fr_no_gate["meta"]["buildCommands"]
-            fd, _fr_ng_path = tempfile.mkstemp(suffix=".json")
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump(_fr_no_gate, fh)
-            _c6, _o6, _e6 = _fr_cli([_fr_ng_path])
-            check("fr15 ALLOW: a plan with no meta.fullGate renders EXACTLY as "
-                  "it always has - no 'full:' text of any kind, and 'not "
-                  "declared' nowhere on the page. A basis with no claim is "
-                  "noise",
-                  _c6 == 0 and "full " not in _o6 and "not_declared" not in _o6
-                  and "not declared" not in _o6,
-                  repr(_o6))
-            os.unlink(_fr_ng_path)
+                # --- THE ALLOW CASE: no meta.fullGate at all renders BYTE-IDENTICAL
+                # to a plan that never named a third place - no "not_declared" text
+                _fr_no_gate = copy.deepcopy(_fr_plan)
+                del _fr_no_gate["meta"]["fullGate"]
+                del _fr_no_gate["meta"]["buildCommands"]
+                fd, _fr_ng_path = tempfile.mkstemp(suffix=".json")
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    json.dump(_fr_no_gate, fh)
+                _c6, _o6, _e6 = _fr_cli([_fr_ng_path])
+                check("fr15 ALLOW: a plan with no meta.fullGate renders EXACTLY as "
+                      "it always has - no 'full:' text of any kind, and 'not "
+                      "declared' nowhere on the page. A basis with no claim is "
+                      "noise",
+                      _c6 == 0 and "full " not in _o6 and "not_declared" not in _o6
+                      and "not declared" not in _o6,
+                      repr(_o6))
+                _c6u, _o6u, _e6u = _fr_cli([_fr_ng_path, "--gate", "--fail-on",
+                                            "unknown-full-run"])
+                check("fr15b ALLOW: a plan with no meta.fullGate never trips "
+                      "unknown-full-run - nothing was asked, so nothing is unknown",
+                      _c6u == 0 and "GATE PASSED: unknown-full-run" in _o6u,
+                      repr((_c6u, _o6u.strip()[-200:])))
+                os.unlink(_fr_ng_path)
 
-            # --- a phase with NO mergedHead: UNKNOWN - ancestry cannot be asked
-            # at all, and it must never render (or gate) as WHOLE -------------
-            _fr_unk = copy.deepcopy(_fr_plan)
-            del _fr_unk["phases"][0]["mergedHead"]
-            fd, _fr_unk_path = tempfile.mkstemp(suffix=".json")
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump(_fr_unk, fh)
-            _c7, _o7, _e7 = _fr_cli([_fr_unk_path])
-            check("fr16 UNKNOWN renders its own word and never 'full whole' - "
-                  "ancestry that could not be asked at all is a narrower claim "
-                  "than certified WHOLE, and reading one as the other is the "
-                  "mutation this case exists to catch",
-                  _c7 == 0 and "full unknown -" in _o7
-                  and "full whole" not in _o7,
-                  repr(_o7))
-            os.unlink(_fr_unk_path)
+                # --- a phase with NO mergedHead: UNKNOWN - ancestry cannot be asked
+                # at all, and it must never render (or gate) as WHOLE -------------
+                _fr_unk = copy.deepcopy(_fr_plan)
+                del _fr_unk["phases"][0]["mergedHead"]
+                fd, _fr_unk_path = tempfile.mkstemp(suffix=".json")
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    json.dump(_fr_unk, fh)
+                _c7, _o7, _e7 = _fr_cli([_fr_unk_path])
+                check("fr16 UNKNOWN renders its own word and never 'full whole' - "
+                      "ancestry that could not be asked at all is a narrower claim "
+                      "than certified WHOLE, and reading one as the other is the "
+                      "mutation this case exists to catch",
+                      _c7 == 0 and "full unknown -" in _o7
+                      and "full whole" not in _o7,
+                      repr(_o7))
+                _c7u, _o7u, _e7u = _fr_cli([_fr_unk_path, "--gate", "--fail-on",
+                                            "unknown-full-run"])
+                _c7p, _o7p, _e7p = _fr_cli([_fr_unk_path, "--gate", "--fail-on",
+                                            "provisional"])
+                _c7d, _o7d, _e7d = _fr_cli([_fr_unk_path, "--gate"])
+                check("fr16b LIVE: that UNKNOWN phase fails --fail-on "
+                      "unknown-full-run naming the phase and full_status's basis, "
+                      "while `provisional` still passes over it and the default "
+                      "gate never asks - the condition is opt-in",
+                      _c7u == 1 and "GATE FAILED: unknown-full-run" in _o7u
+                      and "phase P1: phase P1 records no mergedHead" in _o7u
+                      and _c7p == 0 and _c7d == 0,
+                      repr((_c7u, _o7u.strip()[-200:], _c7p, _c7d)))
+                os.unlink(_fr_unk_path)
 
-            # --- meta.nodePreamble: the run's own command carries it, and the
-            # resolution asked of the run MUST carry the identical preamble -
-            # never a second reading of meta.buildCommands that could drift ---
-            _fr_pre = copy.deepcopy(_fr_plan)
-            _fr_pre["meta"]["nodePreamble"] = "cd ."
-            _fr_pre_path = _fr_path
-            with open(_fr_pre_path, "w", encoding="utf-8") as fh:
-                json.dump(_fr_pre, fh)
-            _fr_write([{"v": _ebio.ROW_VERSION, "runId": "r3",
-                       "ts": "2026-04-01T00:00:00Z", "scope": _ebio.FULL_SCOPE,
-                       "status": "passed",
-                       "steps": [{"name": "gate", "command": "cd . && echo x",
-                                 "exit": 0, "durationMs": 1000}],
-                       "testedState": {"head": _fr_second},
-                       "observations": {"ranTotal": 3, "countsBasis": "3 checks",
-                                        "dirtyOutside": []}}])
-            _c8, _o8, _e8 = _fr_cli([_fr_pre_path, "--gate", "--fail-on",
-                                     "provisional"])
-            check("fr17 THE ONE RESOLUTION: a run recorded with meta.nodePreamble "
-                  "in front of its commands is judged WHOLE against the SAME "
-                  "resolution, `_evidence_io.resolved_commands` - never a second "
-                  "reading of meta.buildCommands that drops the preamble and "
-                  "reads every real full run as 'commands do not match'",
-                  _c8 == 0 and "GATE PASSED: provisional" in _o8,
-                  repr(_o8.strip()[-200:]))
+                # --- meta.nodePreamble: the run's own command carries it, and the
+                # resolution asked of the run MUST carry the identical preamble -
+                # never a second reading of meta.buildCommands that could drift ---
+                _fr_pre = copy.deepcopy(_fr_plan)
+                _fr_pre["meta"]["nodePreamble"] = "cd ."
+                _fr_pre_path = _fr_path
+                with open(_fr_pre_path, "w", encoding="utf-8") as fh:
+                    json.dump(_fr_pre, fh)
+                _fr_write([{"v": _ebio.ROW_VERSION, "runId": "r3",
+                           "ts": "2026-04-01T00:00:00Z", "scope": _ebio.FULL_SCOPE,
+                           "status": "passed",
+                           "steps": [{"name": "gate", "command": "cd . && echo x",
+                                     "exit": 0, "durationMs": 1000}],
+                           "testedState": {"head": _fr_second},
+                           "observations": {"ranTotal": 3, "countsBasis": "3 checks",
+                                            "dirtyOutside": []}}])
+                _c8, _o8, _e8 = _fr_cli([_fr_pre_path, "--gate", "--fail-on",
+                                         "provisional"])
+                check("fr17 THE ONE RESOLUTION: a run recorded with meta.nodePreamble "
+                      "in front of its commands is judged WHOLE against the SAME "
+                      "resolution, `_evidence_io.resolved_commands` - never a second "
+                      "reading of meta.buildCommands that drops the preamble and "
+                      "reads every real full run as 'commands do not match'",
+                      _c8 == 0 and "GATE PASSED: provisional" in _o8,
+                      repr(_o8.strip()[-200:]))
         finally:
-            if _fr_env is None:
-                os.environ.pop("CLAUDE_PROJECT_DIR", None)
-            else:
-                os.environ["CLAUDE_PROJECT_DIR"] = _fr_env
             _sh_fr.rmtree(_fr_root, ignore_errors=True)
 
 
@@ -2817,15 +2903,47 @@ def _cases(_record):
         # `render_status(fx, sum)` with no `view=` (which means EVERY phase, by
         # that function's own contract) would compare two different questions.
         _sh_full_direct = M.render_status(_sh_fx, _sh_sum, view="active")
-        _sh_c0, _sh_o0, _sh_e0 = _sh_cli([_sh_path])
-        check("sh0 RED-FIRST GUARD: the bare invocation's render is exactly "
-              "render_status's output for the same view, with no trace of the "
-              "short form's own closing line - the case that must go red the "
-              "day --short is made the default without being asked for",
-              _sh_c0 == 0 and _sh_o0 == _sh_full_direct + "\n"
-              and "Full view:" not in _sh_o0
-              and "waiting on" in _sh_o0,
-              repr(_sh_o0[:260]))
+        with _own_project() as _sh_proj:
+            _sh_c0, _sh_o0, _sh_e0 = _sh_cli([_sh_path])
+            check("sh0 RED-FIRST GUARD: the bare invocation's render is exactly "
+                  "render_status's output for the same view, with no trace of the "
+                  "short form's own closing line - the case that must go red the "
+                  "day --short is made the default without being asked for",
+                  _sh_c0 == 0 and _sh_o0 == _sh_full_direct + "\n"
+                  and "Full view:" not in _sh_o0
+                  and "waiting on" in _sh_o0,
+                  repr(_sh_o0[:260]))
+            # THE ALLOW HALF, under the same pin: a lock the fixture's OWN
+            # repository holds still reaches the bare render, so the pin
+            # narrowed where locks are read from rather than switching the
+            # read off. Exactly one lock is named, so a lock held anywhere
+            # else on this machine's clone would show as a second one.
+            def _sh_own_lock(check):
+                if not shutil.which("git"):
+                    _harness.skip(check, "sh5", "git is not on PATH, and a "
+                                  "lock lives in the git dir - there is "
+                                  "nowhere to take one", True)
+                    return
+                _sh_quiet = lambda *_a, **_k: None  # noqa: E731
+                _sh_took = _lockmod.held(_lockmod.acquire(
+                    _sh_proj, "phase-P2", note="/audit:phase P2",
+                    session="own-project-fixture", pid=os.getpid(),
+                    out=_sh_quiet))
+                try:
+                    _sh_c5, _sh_o5, _sh_e5 = _sh_cli([_sh_path])
+                finally:
+                    _lockmod.release(_sh_proj, "phase-P2",
+                                     session="own-project-fixture",
+                                     out=_sh_quiet)
+                check("sh5 ...and a lock held in the fixture's OWN repository "
+                      "is still rendered, and is the only one: the render "
+                      "names phase P2 and no other lock - %r"
+                      % (_sh_o5.strip()[-240:],),
+                      _sh_took and _sh_c5 == 0 and "UNFINISHED" in _sh_o5
+                      and "phase P2 holds a lock" in _sh_o5
+                      and _sh_o5.count("holds a lock") == 1)
+
+            _harness.stage(check, "sh5", _sh_own_lock)
 
         _sh_short = M.render_short(_sh_fx, _sh_sum)
         check("sh1 the short render carries the overall line, the READY NOW "

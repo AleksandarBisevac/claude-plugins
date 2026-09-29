@@ -514,10 +514,13 @@ The refusal names an UNKNOWN phase as **unanswerable**, beside the bugs and the 
 with the remedy for its cause, told apart by whether the phase records a `mergedHead`. A phase with
 none is repaired by the command that records it (a `close-phase.py` re-run); a phase that re-run
 refuses to backfill stays unanswerable, and only the bypass releases over it. A phase that records a
-`mergedHead` git could not answer about — an unreachable commit, a shallow clone, a run row that
-records no head, git missing or timing out; the basis names which — is repaired by making both
-commits present or by recording a full run whose row carries its head. A re-run cannot help it,
-since a head is already recorded, and until git can answer, only the bypass releases over it. The
+`mergedHead` git could not answer about — an unreachable commit, a shallow clone, git missing or
+timing out; the basis names which — is repaired by making both commits present. A re-run cannot
+help it, since a head is already recorded, and until git can answer, only the bypass releases over
+it. A full run whose row names no tested head never reaches git at all: the evidence rule skips
+it. An older full run that contains the merge still makes the phase whole; otherwise the phase is
+refused as provisional, and the remedy is to record the full run that settles it
+(`/audit:review <phase> --full`, or the pre-push/CI step). The
 refusal lists the first few phases of each kind and points at `/audit:status` for the rest; the
 arming message names every one.
 

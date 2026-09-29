@@ -1,7 +1,7 @@
 {
   "id": "P81",
   "title": "Selection miss learns, flaky is muted",
-  "status": "pending",
+  "status": "done",
   "description": "",
   "desiredOutcome": "A full run that fails on a suite no derived sign-off gate listed prints SELECTION MISS and records it, and full-gate.py files a bug and a coupling for it only when the runner named that suite as failing; a muted suite's failure is recorded but neither blocks a verdict nor teaches a coupling, an expired mute blocks again, and Playwright's flaky tests are recorded as flaky beside a passing verdict rather than as passes or failures.",
   "testGate": [
@@ -17,21 +17,167 @@
   "blockedBy": [
     "P80"
   ],
-  "baseRef": null,
-  "branch": null,
-  "mergedAt": null,
+  "baseRef": "6dc42323acbdc06a1330344d35e881a54282089e",
+  "branch": "audit/p81-selection-miss-learns-flaky-is",
+  "mergedAt": "2026-09-28T00:04:10Z",
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P81-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py:3083 (selection_miss, listed_by)",
+        "issue": "A failed suite the runner names relative to its own directory counts as listed when any derived-gate test ends with that spelling, even a sibling package's suite, so a real selection miss prints nothing (driven live: vitest --root pkg1, derived gate listed pkg2/tests/x.test.js, no SELECTION MISS line).",
+        "resolution": "fixed in P81.16-j7p (63840391): Pin each named spelling to one tracked path before the listed test (the resolver --failing-from uses, moved to _evidence_io); a spelling that pins to none or several prints a 'SELECTION MISS not asked of <spelling>' reason instead of counting as listed.",
+        "fixTask": "P81.16-j7p",
+        "commit": "63840391"
+      },
+      {
+        "id": "P81-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/full-gate.py:338-353 (learning_plan); run-test-gate.py:4390-4427 (_miss_remedy)",
+        "issue": "A selection miss is coupled and bug-filed under the runner's verbatim spelling, a path git may not track, while the catch path in the same run resolves the same name (driven live: coupling for tests/x.test.js that doctor then reports as untracked; _couple_skip misses the root-spelled entry).",
+        "resolution": "fixed in P81.16-j7p (63840391): Resolve each miss's test to one tracked path before couple/bug-add and in the printed remedy; on none or several, file the bug, couple nothing, and name the candidates.",
+        "fixTask": "P81.16-j7p",
+        "commit": "63840391"
+      },
+      {
+        "id": "P81-R3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:3055-3116 (mute_decision); _manifest_rules.py:354 (_check_muted)",
+        "issue": "A mute holds inside the gate of its own bug's fix task, so that gate cannot prove the fix, and the validator stays silent on a mute whose bug is effectively closed.",
+        "resolution": "fixed in P81.16-j7p (63840391): The runner does not honour a mute whose bug is the bug of the task under test, or whose bug is effectively closed; the validator warns on a mute naming a closed bug with the unmute command; commands/bug.md says so.",
+        "fixTask": "P81.16-j7p",
+        "commit": "63840391"
+      },
+      {
+        "id": "P81-R4",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:4526-4534 (_run_full post-pass)",
+        "issue": "selection_miss is handed only readable rows; a lost line or file holding the newest measured run silently moves the bound to an older run, widening 'merged since' with nothing printed.",
+        "resolution": "fixed in P81.16-j7p (63840391): When the ledger is not fully readable, ask no miss and print a 'SELECTION MISS not asked' reason naming the files, as _ledger_run does.",
+        "fixTask": "P81.16-j7p",
+        "commit": "63840391"
+      },
+      {
+        "id": "P81-R5",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/import-evidence.py:361,388-392",
+        "issue": "--project-dir defaults to the cwd, so an import run outside the project writes the shard under <cwd>/docs/audit/evidence and prints a --learn-from command pairing the manifest's project with the cwd (driven live: coupling and bug written into a plan whose ledger lacks the basis run).",
+        "resolution": "fixed in P81.17-j7p (f391b892): Without --project-dir take the project from the manifest path, as full-gate does; refuse when the manifest is not under --project-dir; a case imports from another directory.",
+        "fixTask": "P81.17-j7p",
+        "commit": "f391b892"
+      },
+      {
+        "id": "P81-R6",
+        "severity": "med",
+        "file": "CHANGELOG.md:471",
+        "issue": "The entry says every reader of the evidence ledger orders rows by one moment; _gate_derive.newest_red_phase_row and _evidence_view._rows_for still compare ts as text (recorded for their own phase).",
+        "resolution": "fixed in P81.18-j7p (2fff8c0a): Narrow the sentence to the readers that do (the ledger module and the verdict binding) and leave the remaining sites to their recorded fault.",
+        "fixTask": "P81.18-j7p",
+        "commit": "2fff8c0a"
+      },
+      {
+        "id": "P81-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/_doctor_trail.py:1602-1630 (_measured_run_moments)",
+        "issue": "A full run whose coupled suite failed but was muted comes out passed and ages that coupling as 'caught nothing', so doctor proposes uncoupling a suite that failed every run.",
+        "resolution": "fixed in P81.17-j7p (f391b892): A row whose muted list names the coupling's test does not age it; case.",
+        "fixTask": "P81.17-j7p",
+        "commit": "f391b892"
+      },
+      {
+        "id": "P81-R8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:8252-8307 (_caught_refusal)",
+        "issue": "couple --caught credits a row whose own selectionMiss lists the suite, which full-gate refuses; one question, two answers.",
+        "resolution": "fixed in P81.16-j7p (63840391): One own-miss helper in _evidence_io used by learning_plan and _caught_refusal (exit 2).",
+        "fixTask": "P81.16-j7p",
+        "commit": "63840391"
+      },
+      {
+        "id": "P81-R9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:2271-2279; full-gate.py:258-264 (find_row)",
+        "issue": "--failing-from and full-gate's red-branch find_row say a run is absent when a ledger file holding it could not be read.",
+        "resolution": "fixed in P81.16-j7p (63840391): Both name the unreadable files, as _ledger_run and _missing_row do.",
+        "fixTask": "P81.16-j7p",
+        "commit": "63840391"
+      },
+      {
+        "id": "P81-R10",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/_doctor_trail.py:1440; audit-doctor.py:261-265; run-test-gate.py:4527-4528; _evidence_io.py:2817,2825",
+        "issue": "Comments and full_status basis strings still say whole-bearing where the code reads measured runs, or say measured where they name the whole-bearing run.",
+        "resolution": "fixed in P81.16-j7p (63840391): Reword each to the rule it reads.",
+        "fixTask": "P81.16-j7p",
+        "commit": "63840391"
+      },
+      {
+        "id": "P81-R11",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/_doctor_trail.py:1596,1622; audit-task.py:8279,8377-8378",
+        "issue": "Doctor ageing and couple --caught read row ts with parse_ts while the ledger orders by stamp_moment; they disagree on a date-only stamp.",
+        "resolution": "fixed in P81.17-j7p (f391b892): Read row ts through _evidence_io.stamp_moment in both.",
+        "fixTask": "P81.17-j7p",
+        "commit": "f391b892"
+      },
+      {
+        "id": "P81-R12",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:4390-4427 (_miss_remedy); README.md:1612",
+        "issue": "The SELECTION MISS remedy prints bare audit-task.py commands that a shell cannot run as printed, unlike the import's printed command.",
+        "resolution": "fixed in P81.16-j7p (63840391): Print python3 with the shell-quoted absolute path through _loader.script_path, as learn_from_commands does.",
+        "fixTask": "P81.16-j7p",
+        "commit": "63840391"
+      },
+      {
+        "id": "P81-R13",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/_doctor_trail.py:1639-1650 (_relearn_fix)",
+        "issue": "The printed relearn command lacks --basis-head, which couple requires (exit 2).",
+        "resolution": "fixed in P81.17-j7p (f391b892): Add --basis-head (and --phases) to the template; case.",
+        "fixTask": "P81.17-j7p",
+        "commit": "f391b892"
+      },
+      {
+        "id": "P81-R14",
+        "severity": "low",
+        "file": "plugins/audit/commands/task.md:678-683",
+        "issue": "The couple --caught refused list omits the ambiguity refusal.",
+        "resolution": "fixed in P81.17-j7p (f391b892): Add it.",
+        "fixTask": "P81.17-j7p",
+        "commit": "f391b892"
+      },
+      {
+        "id": "P81-R15",
+        "severity": "low",
+        "file": "plugins/audit/commands/review.md:64-66",
+        "issue": "Tells the reader to read a full-status line the runner does not print.",
+        "resolution": "fixed in P81.18-j7p (2fff8c0a): Point at /audit:status's tests column and /audit:doctor's full run row.",
+        "fixTask": "P81.18-j7p",
+        "commit": "2fff8c0a"
+      },
+      {
+        "id": "P81-R16",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:1971,2009",
+        "issue": "Two inline copies of listed_by's suffix rule remain (preexisting).",
+        "resolution": "fixed in P81.16-j7p (63840391): Use _evidence_io.listed_by.",
+        "fixTask": "P81.16-j7p",
+        "commit": "63840391"
+      }
+    ],
+    "outcome": "Every task was reviewed on its own, several over repeated rounds. The phase review drove the outcome live with real vitest and Playwright runners (every clause delivered) and read the cross-module seams; its findings were fixed in P81.16, P81.17 and P81.18 and are all resolved. The phase gate is green on all entries including shots and interactive, verify.sh is green, the large demo report stays interactive, and invariants found no breach. Recorded for later phases: the remaining text-ordered readers, the remaining project-of-manifest answers, run-test-gate's exit when --record cannot store a row, and the example pipeline's pinned tag. [findings: 16 - 0 high, 6 med, 10 low; 16 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "A red full run learns: a selection miss the runner named is filed as a coupling and a bug under its pinned path, a catch refreshes lastCaught only for the one coupling a name pins, and a run recorded elsewhere is learned from after import through a printed command; a muted suite is recorded but neither blocks nor teaches, never holds in its own bug's fix task or after its bug closes, and an expired mute blocks again; Playwright's flaky tests are recorded as flaky beside a passing verdict. The evidence ledger is decoded one strict way and ordered by moment in its own module and the verdict binding.",
   "tasks": [
     {
       "id": "P81.1",
       "title": "meta.muted and coupling.lastCaught: schema, vocabulary, validator",
-      "status": "pending",
+      "status": "done",
       "description": "Schema: meta.muted (array of {test path, reason, owner, until ISO date, bugId}; absent means nothing is quarantined and every failure blocks) and meta.coupling[].lastCaught (the ts of the newest third-place run that named the coupled test as failing; absent means never caught since it was learned). KNOWN_META += muted. Validator: a muted entry whose bugId is missing, or names no bug in bugs[], is a FINDING - a mute with no bug is the retry-until-green shape this exists to refuse, and it is wrong from the moment it is written. An EXPIRED until is a WARNING naming the entry and the unmute or extend command - NOT a finding, and this deviates from the lane on purpose: every mutating verb pre-validates and refuses a manifest already carrying a finding (_locked_retarget: 'the manifest is already invalid -- nothing written'), and DEFAULT_GATE holds invalid, so a date-triggered finding would freeze every verb and fail every default CI gate on the expiry day, including the verb that lifts the mute. The runner's refusal to honour an expired mute (L4.c) is the enforcement. Reverting to a finding is a one-word change plus exempting the mute verbs from their own pre-check, the repair-tests-add precedent. A duplicate test, a missing owner or reason, and an unparseable until are warnings. SCHEMA_EXEMPTIONS rows for the new fields, with the reason. Red-first: a muted entry without bugId is a finding; one naming a bug id bugs[] does not hold is a finding (mutation: accept any string -> red); an expired until is a warning and the manifest stays valid (mutation: make it a finding -> red). Allow case: a well-formed unexpired entry validates clean.",
       "files": [
         "plugins/audit/schema/audit-plan.schema.json",
@@ -66,28 +212,40 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d974169e4a496c8ba0a72b028d581bd62349c0f2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_manifest_vocab gains mute_until, mute_expired and mute_today (the UTC day, which the runner will import so both read one clock); _manifest_rules._check_muted emits the findings and warnings; the demo exempts meta.muted with a reason.",
+        "descriptive": "meta.muted and coupling.lastCaught are in the schema and the vocabulary; a mute without a bug, or naming a bug the plan lacks, is a validator finding; an expired until is a warning that names the unmute and extend commands"
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-27T14:08:52Z",
+      "completedAt": "2026-09-27T14:41:54Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T14:41:54Z.f20358",
+        "status": "passed",
+        "at": "2026-09-27T14:41:54Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d974169e4a496c8ba0a72b028d581bd62349c0f2",
+        "at": "2026-09-27T14:41:54Z"
+      }
     },
     {
       "id": "P81.2",
       "title": "bug-add writes the bug shape /audit:bug spells; mute and unmute write meta.muted",
-      "status": "pending",
+      "status": "done",
       "description": "audit-task.py bug-add \"<title>\" [manifest] --severity low|med|high --description TEXT --files a,b [--repro TEXT] [--expected TEXT] [--actual TEXT] writes exactly the shape commands/bug.md step 3 spells - {id, title, status 'open', severity, reportedAt, reportedBy null, description, repro, expected, actual, files, taskId null, fixedIn null, notes null} - with the id from _id_shape.next_bug_id(assembled, suffix) (the allocator next-id bug already uses, suffix from _mint_suffix), creating bugs [] when absent, under _under_lock, into the index through _write_add(..., phase_id=None, index_fields=('bugs',)) (the index-only path P69 added), revalidated with roll-back, journal row bug.add. The title is the POSITIONAL, not a --title flag: this parser's positional slot is named title, and the --rename comment in build_parser records why a --title flag would shadow it. --repro, --expected and --actual join PROSE_FLAGS. mute --test <path> --reason TEXT --owner NAME --until <date> --bug <id> and unmute --test <path> are the only writers of meta.muted (same lock, index write with index_fields=('meta',), revalidation, journal test.muted / test.unmuted); mute on an already-muted test with a later until extends it. Because an expired mute is a warning (L4.a), unmute and an extending mute run on such a plan like every other verb. commands/bug.md steps 1-3 become the bug-add call (no hand edit of bugs[]) and /audit:bug add passes its gathered answers as flags; the /audit:bug README row and commands/task.md for mute and unmute (_refs.command_flag_drift). Red-first: bug-add writes the step-3 shape with every key present, an allocator id and one journal row; on a plan with no bugs key it creates the list; mute without --bug refused; mute naming a bug the plan lacks is refused by the validator's finding and rolled back (mutation: skip the revalidation -> red). Allow case: unmute of a muted test removes exactly that entry.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/commands/bug.md",
         "plugins/audit/commands/task.md",
-        "plugins/audit/README.md"
+        "plugins/audit/README.md",
+        "plugins/audit/tests/test__refs.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -113,27 +271,41 @@
       "dependsOn": [
         "P81.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "29839ab5a78fba074e7690200119b7bd8ef24d9c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "bug-add under the lock into the index with a bug.add row; mute reads until through _manifest_vocab and extends only to a later day; an unknown bug is the validator's finding with rollback; main and supplied_flags use parse_intermixed_args (proved on 3.9); _manifest_from_positional runs before _resolve_project in settle/couple/uncouple/mute/unmute; --files kept optional as bug.md allows.",
+        "descriptive": "/audit:bug add calls bug-add, which writes the step-3 shape with every key; mute and unmute are the only writers of meta.muted; the CLI parses a trailing manifest on every supported interpreter, and that manifest decides the project"
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-27T14:42:17Z",
+      "completedAt": "2026-09-27T16:44:01Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T16:38:40Z.fab1c8",
+        "status": "passed",
+        "at": "2026-09-27T16:38:40Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "29839ab5a78fba074e7690200119b7bd8ef24d9c",
+        "at": "2026-09-27T16:44:01Z"
+      }
     },
     {
       "id": "P81.3",
       "title": "A muted suite's failure is recorded and does not block; Playwright's flaky is its own word",
-      "status": "pending",
+      "status": "done",
       "description": "Verdict rule (dg20): a failed step whose failingSuites (named basis only) are ALL muted by an unexpired meta.muted entry does not make the run fail - failed_steps / run_status exclude it - and the step keeps its exit, failing and failingSuites on the row; the row gets muted [{test, bugId, until}] and the terminal prints 'muted: <test> failed (bug <bugId>, until <date>)'. A step with one non-muted failing suite, or whose failures could not be named (tail basis), fails as today: a mute is never assumed. An expired entry is not honoured, and the line says 'muted until <date> - expired, so this failure blocks'. The runner never retries a non-muted failure (a retry stays reserved for a signal death). Playwright: add a summary reader row (passed, failed and flaky counted as ran) and a failure reader row TOGETHER (fr0 reads _SUMMARY_READERS and _FAILURE_READERS against each other), and a step observation flaky (the names Playwright reports as flaky) with flakyBasis, recorded on a step that exited 0 as well. NOT a step outcome: _evidence_io._step_failed and every tally read any outcome as not-passed, and a flaky-but-green step is a pass with a named doubt. Capture a real Playwright run's list or line reporter output as the fixture before writing the regex (the verifying-external-behavior skill): the reader must match what the pinned version prints. _evidence_io: muted on the row (row_for allow-list), flaky and flakyBasis in STEP_KEYS, bounded and redacted. Red-first: dg20 - a muted failing suite beside green steps -> status passed with the muted line (mutation: remove the filter -> red); allow: an expired until -> the failure blocks (mutation: ignore until -> red); a muted suite beside an unmuted failure -> failed; a tail-basis failure -> failed. Playwright output with one flaky test -> step exit 0, flaky names it, status passed (mutation: record it as outcome -> red, through gate_tally counting it failed).",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
         "plugins/audit/scripts/governance/_evidence_io.py",
         "plugins/audit/tests/test_run_test_gate.py",
-        "plugins/audit/tests/test__evidence_io.py"
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/tests/test_derive_phase_gate.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test_audit_lookup.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -159,27 +331,39 @@
       "dependsOn": [
         "P81.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "82f585fbf371896cef0a6824be8c8428cebe6b53",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "diverges from the description by tightening it after three reviews: the description's rule (all failingSuites muted, named basis) let a second failure through in wrappers, package scripts, multi-runner steps and several runner shapes, so the rule fails closed (mute_ineligible, command_runner, MUTE_RUNNERS) over real captures of pytest 9.1.1, jest 30.5.2, vitest 4.1.10 and Playwright 1.56.0; a step-level muted marker is on the committed row, and the tallies, the shadow claim, derive-phase-gate and audit-lookup read it. Known limit, stated in MUTE_RUNNERS: a jest reporter error prints nothing, so a mute beside it holds.",
+        "descriptive": "a mute is honoured only for a direct call of an allow-listed runner (pytest, jest, vitest, Playwright) that exits with its failed-tests code, whose named failures match its tally and which reports no other failure state; anything else keeps the gate red; Playwright's flaky tests are named on a step without being an outcome"
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-27T14:42:17Z",
+      "completedAt": "2026-09-27T17:09:05Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T17:07:15Z.706819",
+        "status": "passed",
+        "at": "2026-09-27T17:07:15Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "82f585fbf371896cef0a6824be8c8428cebe6b53",
+        "at": "2026-09-27T17:09:05Z"
+      }
     },
     {
       "id": "P81.4",
       "title": "The --full post-pass names a SELECTION MISS, learning only from a suite the runner named",
-      "status": "pending",
+      "status": "done",
       "description": "After a --full run, a post-pass (dg15). Failing suites = the steps' failingSuites whose basis says the runner NAMED them - never the failing tail, never a muted suite. Derived sets = the union of phase.testGateDerived.tests over the phases whose mergedHead the run's head contains (_worktrees.merged_into) and that merged after the newest earlier whole-bearing green full row. A failing suite none of them listed is a SELECTION MISS: print 'SELECTION MISS: <path> failed at the third place and no derived sign-off gate in <P, ...> listed it. remedy: audit-task.py couple --test <path> --sources <files> --basis-run <runId> --basis-head <head> --phases <ids>; audit-task.py bug-add ...' and put selectionMiss [{test, phases, sources}] on the row (row_for allow-list). Sources are the union of those phases' tasks' files - the work since the last green full run, read off the plan rather than guessed from a diff. When the failures were not named, print 'not learned: the runner did not name the failing suites (basis: <basis>)' instead. The runner prints and records; it never writes the manifest - full-gate.py acts. Red-first: a full run failing on e2e/cart.spec.ts, with one merged phase whose derived tests do not list it, prints the miss and records it; dg15 - the same failure with a tail basis records no miss and prints the not-learned line (mutation: learn from the tail -> red). Allow cases: a failing suite a derived gate listed is not a miss; a muted suite is never a miss.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
         "plugins/audit/scripts/governance/_evidence_io.py",
         "plugins/audit/tests/test_run_test_gate.py",
-        "plugins/audit/tests/test__evidence_io.py"
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/tests/test_derive_phase_gate.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -205,26 +389,38 @@
       "dependsOn": [
         "P81.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "22688385a2fc5f22c48c4033e964e8e8d586dfb5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "diverges by narrowing the description after review: only phases with a derived gate count (a non-derived phase made no selection); with no earlier whole-bearing run, or no head on it, nothing is learned; a backfilled mergedHead fails closed unless the bounding head contains it; cancelled tasks' files are not sources; cut lists carry dropped counts. One reading of named failing suites (_evidence_io.named_failing_suites) now serves run-test-gate, the shadow claim and derive-phase-gate; newest_whole_bearing is its single home. Also fixed at its source: a step's named paths were a set, which crashed every --json dump.",
+        "descriptive": "a --full run prints and records a SELECTION MISS, with a couple and bug-add remedy, for a suite the runner named that no derived gate of the phases merged since the newest earlier whole-bearing run listed; a tail-read failure prints not-learned, and every case it cannot ask is printed with its reason"
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-27T17:09:06Z",
+      "completedAt": "2026-09-27T18:00:26Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T17:58:56Z.05634c",
+        "status": "passed",
+        "at": "2026-09-27T17:58:56Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "22688385a2fc5f22c48c4033e964e8e8d586dfb5",
+        "at": "2026-09-27T18:00:26Z"
+      }
     },
     {
       "id": "P81.5",
       "title": "couple --caught refreshes a coupling's lastCaught from a named third-place failure",
-      "status": "pending",
-      "description": "couple --test <path> --caught <runId> on an already-coupled test sets lastCaught to that run's ts and journals coupling.caught. The run must be a scope full row whose failingSuites, with a named basis, include the test (looked up with _evidence_io.row_by_run); otherwise refused exit 2 naming which. A coupling first written from a miss carries no lastCaught. --caught never creates a coupling (a test that is not coupled is refused) and never changes sources. Add the dest to VERB_FLAGS['couple'] and commands/task.md. Red-first: --caught on a coupled test named failing in a full row sets lastCaught to the row's ts and writes one journal row; mutation: accept a row whose basis is a tail -> red. Allow cases: an uncoupled test refused; a phase-scope row refused.",
+      "status": "done",
+      "description": "couple --test <path> --caught <runId> on an already-coupled test sets lastCaught to that run's ts and journals coupling.caught. The run must be a scope full row whose failingSuites, with a named basis, include the test (looked up with _evidence_io.row_by_run); otherwise refused exit 2 naming which. A coupling first written from a miss carries no lastCaught. --caught never creates a coupling (a test that is not coupled is refused) and never changes sources. Add the dest to VERB_FLAGS['couple'] and commands/task.md. Red-first: --caught on a coupled test named failing in a full row sets lastCaught to the row's ts and writes one journal row; mutation: accept a row whose basis is a tail -> red. Allow cases: an uncoupled test refused; a phase-scope row refused. Also, in the same file: audit-task's `_named_failing_suites` (the reader behind a fix task's --failing-from gate) must skip a step the committed row marks muted (the step-level `muted` marker P81.3 adds to STEP_KEYS), so a quarantined suite never narrows a fix task's gate; correct its docstring that says it reads a failed step the way run-test-gate.failed_steps does. Red-first: a failed row whose only failing suite is a muted step yields no failing-from paths.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/tests/test_audit_task.py",
-        "plugins/audit/commands/task.md"
+        "plugins/audit/commands/task.md",
+        "plugins/audit/README.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -250,21 +446,31 @@
         "P81.2",
         "P81.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e02d991e1e2e67261a5f1bada72efc7f2988d5da",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "timestamps compared as parsed moments; a catch that is not newer is a no-op exit 0; a missing run with an unreadable ledger says so (one helper for --basis-run and --caught); audit-task reads named failing suites through _evidence_io.named_failing_suites; the guide's module map re-rendered for the audit-task -> _usage_core edge.",
+        "descriptive": "couple --test <path> --caught <runId> sets lastCaught from a full-scope row whose runner named the test on an unmuted step; it never creates a coupling or changes sources; a muted step never narrows a --failing-from gate"
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-27T16:44:22Z",
+      "completedAt": "2026-09-27T18:00:27Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T18:00:26Z.00ed92",
+        "status": "passed",
+        "at": "2026-09-27T18:00:26Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "e02d991e1e2e67261a5f1bada72efc7f2988d5da",
+        "at": "2026-09-27T18:00:27Z"
+      }
     },
     {
       "id": "P81.6",
       "title": "The doctor names untracked couplings and uncouple candidates, never removing either",
-      "status": "pending",
+      "status": "done",
       "description": "check_couplings(rep, project, manifest_rel, manifest, git_root, config=None) in _doctor_trail.py, wired after the full-run row. (dg5) A coupling whose test or any source git does not track (one batched git ls-files over the named paths) is a WARNING naming the path and 'audit-task.py uncouple --test <path>' - never removed silently. A coupling not caught (lastCaught, else learnedAt) in the last K green whole-bearing full runs is named as a CANDIDATE for uncouple, with K printed as the basis (a module constant with its reason); never removed, because removal narrows the gate. No meta.coupling: an OK row. Red-first: delete the coupled test file in a fixture repo -> the doctor names it with the command (mutation: skip untracked paths -> red). Allow cases: a coupling caught recently is not a candidate; one older than K green full runs is.",
       "files": [
         "plugins/audit/scripts/status/_doctor_trail.py",
@@ -295,25 +501,41 @@
       "dependsOn": [
         "P81.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c96f02eaab50ae2aaab4c098fc4c10ce86912457",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "check_couplings in _doctor_trail, one batched git ls-files through _worktrees._git with out-of-repository paths split out and warned per entry, ageing strictly after lastCaught else learnedAt over runs _full_disqualification accepts, unparseable run timestamps counted and reported; re-learn remedy is uncouple then couple.",
+        "descriptive": "the doctor warns on a coupling whose test or source git does not track and names candidates for uncouple after UNCOUPLE_AFTER_FULL_RUNS green whole-bearing runs without a catch; it never removes either"
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-27T14:42:17Z",
+      "completedAt": "2026-09-27T16:44:00Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T16:41:33Z.499595",
+        "status": "passed",
+        "at": "2026-09-27T16:41:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c96f02eaab50ae2aaab4c098fc4c10ce86912457",
+        "at": "2026-09-27T16:44:00Z"
+      }
     },
     {
       "id": "P81.7",
       "title": "full-gate.py acts on a miss: a coupling and a bug, and nothing from an unnamed failure",
-      "status": "pending",
+      "status": "done",
       "description": "After the --full --record subprocess, full-gate.py reads the row it wrote (_evidence_io.row_by_run with the runId the runner printed on its 'evidence: recorded' line; failing that, the newest full row for HEAD) and, for each selectionMiss entry, runs audit-task.py couple --test <path> --sources <sources> --basis-run <runId> --basis-head <head> --phases <ids>, then audit-task.py bug-add \"Selection miss: <path>\" --severity med --files <path> --description <the miss sentence, the runId, the head and the phases>, both as subprocesses through _loader.script_path; and couple --test <t> --caught <runId> for each already-coupled test named failing. It prints what it wrote and each verb's own output, and exits with the runner's code: a miss is learned and the red still blocks the push. It never acts on a row whose failures were not named. Red-first in test_full_gate.py: a fake full run producing a miss ends with a coupling and a bug in the fixture plan and one journal row each; dg15 end to end - a tail-basis red writes nothing (mutation: act on the failing lines -> red). Allow case: a green run writes nothing.",
       "files": [
         "plugins/audit/scripts/governance/full-gate.py",
-        "plugins/audit/tests/test_full_gate.py"
+        "plugins/audit/tests/test_full_gate.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -340,21 +562,38 @@
         "P81.4",
         "P81.5"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8a2aa1e3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "full-gate.py: after a non-zero runner exit, find_row reads this run's row (runId off the evidence line, or the newest full row stamped since start by _ev.stamp_moment), learning_plan re-checks every miss against named_failing_suites, files couple (skipped when sources were cut) and bug-add (skipped when an open bug carries the title) through audit-task.py subprocesses, and credits couple --caught only through _evidence_io.resolve_named; a learning exception prints one line and main returns the runner's code. _evidence_io.resolve_named (unique / none / several with a reason). audit-task.py: --caught membership by listed_by, refusal of an ambiguous name (_caught_ambiguity). Guide fence, tree line and full-gate section; _deps.py comment.",
+        "descriptive": "A red third-place run now leaves a coupling and a bug behind for each selection miss the runner named, credits a catch only to the one coupling a name pins, learns nothing from a tail-read or unrecorded run, and still blocks the push."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-27T18:00:36Z",
+      "completedAt": "2026-09-27T19:38:53Z",
+      "verifiedBy": [
+        "fgl1-fgl18",
+        "cc16",
+        "cc17",
+        "cc18",
+        "rn1-rn4"
+      ],
+      "testEvidence": {
+        "runId": "2026-09-27T19:38:31Z.e4fc27",
+        "status": "passed",
+        "at": "2026-09-27T19:38:31Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "8a2aa1e3",
+        "at": "2026-09-27T19:38:53Z",
+        "basis": "the description's verbs are delivered (couple and bug-add per named miss, couple --caught per already-coupled named failure, the runner's exit kept); it diverges where review proved the literal rule wrong: with no evidence line the run's row is the newest full row stamped since this run started, not the newest for HEAD; a retried push does not file a duplicate bug; bug wording follows the runner's printed remedy; and audit-task's --caught was changed so a catch is credited only to the one coupling a runner's name pins"
+      }
     },
     {
       "id": "P81.8",
       "title": "Docs: the learning loop, quarantine and flaky",
-      "status": "pending",
+      "status": "done",
       "description": "reference/orchestrator.md: the learning loop - a miss at the third place becomes a coupling and a bug through full-gate.py, only from a suite the runner named; removal is uncouple by a person, never automatic. Quarantine: a muted suite is run and recorded, never blocks, never teaches, and blocks again when its until passes; no retry-until-green. reference/manifest-conventions.md: the bug.add, test.muted, test.unmuted and coupling.caught journal actions and their details. commands/doctor.md: the coupling row. commands/review.md: what --full now learns. README: meta.muted and a flaky step, and what a SELECTION MISS asks of the operator. COMPATIBILITY.md: muted absent = nothing quarantined; lastCaught absent = never caught since learned; an expired mute is a warning and why it is not a finding. CHANGELOG.md [Unreleased]. No numbers in prose, no register ids.",
       "files": [
         "plugins/audit/reference/orchestrator.md",
@@ -363,7 +602,9 @@
         "plugins/audit/commands/review.md",
         "plugins/audit/README.md",
         "COMPATIBILITY.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "docs/examples/azure-pipelines.yml"
       ],
       "tests": {
         "mode": "gate-only",
@@ -396,21 +637,32 @@
         "P81.11",
         "P81.12"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6c10da78",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "orchestrator.md (What a red full run teaches; Quarantine; no retry until green names both signal readers), manifest-conventions.md (coupling.caught, bug.add, test.muted, test.unmuted and their details), doctor.md (the coupling row, measured-run ageing), review.md (--full files nothing; points at full-gate.py), README (meta.muted, what a SELECTION MISS asks, quarantine, a flaky step, the restored Azure heading), COMPATIBILITY.md (absence readings, expired mute as a warning, unknown-full-run additive), CHANGELOG [Unreleased] Added, PLUGIN-BUILD-GUIDE (couple --caught, full-gate section), azure-pipelines.yml (unknown-full-run).",
+        "descriptive": "The learning loop, the quarantine, flaky steps, the doctor's coupling row, unknown-full-run and the phase's other additions are documented as the committed code behaves, with CHANGELOG entries under Added and one false earlier claim corrected."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-27T19:40:56Z",
+      "completedAt": "2026-09-27T20:44:53Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T20:44:30Z.ceb041",
+        "status": "passed",
+        "at": "2026-09-27T20:44:30Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "6c10da78",
+        "at": "2026-09-27T20:44:53Z",
+        "basis": "delivered every document the description names; review.md says --full files nothing (the code as it stands) instead of what --full learns, with a follow-up task to wire it; the gate printed NO OVERLAP because a docs task's files are graded by the sweep's doc lints (prose numbers, link checks, gate parity), which print no doc paths"
+      }
     },
     {
       "id": "P81.9",
       "title": "status tests read only the locks their own fixture holds",
-      "status": "pending",
+      "status": "done",
       "description": "Fault F520. test_audit_status.py cv2 and sh0 compare the CLI's bare output with a hand-built render_status() call; run directly inside a checkout that holds a live phase-<id> lock (.git/audit-locks, shared by every worktree of the clone), the CLI side prints an unfinished-work block naming that real lock, so both fail - the isolated sweep hides it. Point the lock lookup at the fixture's own git directory (or inject it through a seam audit-status already has), so a real lock elsewhere cannot reach the render. Red-first: run the two cases while a real lock is held and see them fail before the fix. Allow: a lock planted in the fixture's own git directory is still rendered.",
       "files": [
         "plugins/audit/tests/test_audit_status.py",
@@ -437,25 +689,46 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7d8a6045f70b50fb7b19cdc8c1ef051f73862528",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "root cause was the test: it left CLAUDE_PROJECT_DIR ambient while the product's documented anchor is CLAUDE_PROJECT_DIR or the cwd for every injected block; audit-status.py unchanged; every pin in the suite now goes through _own_project(root=None), whose restore and cleanup are pinned by op1/op2.",
+        "descriptive": "cv2 and sh0 no longer read a real phase lock held on the clone; a lock in the fixture's own repository is still rendered"
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-27T14:08:52Z",
+      "completedAt": "2026-09-27T14:41:55Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T14:35:23Z.54ff40",
+        "status": "passed",
+        "at": "2026-09-27T14:35:23Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7d8a6045f70b50fb7b19cdc8c1ef051f73862528",
+        "at": "2026-09-27T14:41:55Z"
+      }
     },
     {
       "id": "P81.10",
       "title": "the evidence ledger's readers decode through one function, and a byte that does not decode is a finding everywhere",
-      "status": "pending",
+      "status": "done",
       "description": "Fault F523. read_rows opens ledger files with errors='replace' and reports them fully read, while verify opens them strictly and grades them unreadable; every consumer of read_rows (status, doctor, panel, report, the release guard's full-run answer, import-evidence) can compare a value a replaced byte silently changed. Both readers (and any sibling that opens a ledger file) decode through ONE function; a non-UTF-8 byte is a finding on every surface - read_rows counts the file as lost (unreadableFiles), never returns its rows as clean. Red-first as above; allow: a clean UTF-8 file with non-ASCII text reads as before.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
-        "plugins/audit/tests/test__evidence_io.py"
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/tests/test_import_evidence.py",
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "plugins/audit/tests/test__verdict_binding.py",
+        "plugins/audit/scripts/governance/import-evidence.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/governance/audit-journal.py",
+        "plugins/audit/tests/test_audit_journal.py",
+        "plugins/audit/scripts/panel/_panel_composition.py",
+        "plugins/audit/tests/test__panel_composition.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/tests/test__status_facts.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -480,25 +753,41 @@
       "dependsOn": [
         "P81.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fd8c74c5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_evidence_io: ledger_decode/ledger_text (strict) serve read_rows, verify, append_row (refuses an undecodable target), import-evidence and the audit-journal evidence merge (refuses an undecodable side); stamp_moment (parse_ts plus ISO date) feeds oldest_first/newest_row, which row_by_run, latest_by_subject, reusable_run, gate_last_caught, earliest_recorded, boundary_of and a derived _newest_first all use; boundary_of hands at on in the Z spelling and names every unplaceable or missing stamp in unknown; _verdict_binding blocks on an unplaceable subject row, words a lost file apart, and finds a reused origin by row_by_run; the panel reads newest per runId through the same order. Recorded elsewhere: the other text-ordered readers and _epoch (F530), run-test-gate --record exiting 0 unrecorded (F532).",
+        "descriptive": "Every reader and writer of the evidence ledger decodes a file one strict way and orders rows by the moment a stamp names; a byte that is not UTF-8, or a stamp that places no moment, is named or refused on every surface instead of being silently repaired or dropped."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-27T18:00:36Z",
+      "completedAt": "2026-09-27T19:24:39Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T19:24:16Z.d50bfc",
+        "status": "passed",
+        "at": "2026-09-27T19:24:16Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "fd8c74c5",
+        "at": "2026-09-27T19:24:39Z",
+        "basis": "the description asked for one decode across the ledger's readers; review widened the task to the ledger's moment order, the evidence boundary, the merge verb and the panel, each because this task's change made a claim there false or left the same question answered two ways"
+      }
     },
     {
       "id": "P81.11",
       "title": "a full-scope row that names no tested head cannot bear whole",
-      "status": "pending",
+      "status": "done",
       "description": "Fault F526. _full_disqualification checks status, verdict source, scope, counts, durations, the dirty tree and the commands, but never that the row names testedState.head; a head-less row then reaches merged_into with no head and full_status answers UNKNOWN while an older head-carrying whole run might have answered WHOLE. Add 'the row names no tested head' as a disqualification reason so the walk skips it and a basis names it. Allow: rows with a head are unaffected.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
-        "plugins/audit/tests/test__evidence_io.py"
+        "plugins/audit/tests/test__evidence_io.py",
+        ".claude/hooks/guard-release.py",
+        "SECURITY.md",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/tests/test_run_test_gate.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -523,21 +812,41 @@
       "dependsOn": [
         "P81.10"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7351c2e4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_evidence_io: _names_tested_head; _measurement_disqualification (every rule but the head) and _full_disqualification (head + measurement); one walk _newest_passing behind newest_whole_bearing and newest_measured_full_run; selection_miss bounds by the measured run and asks the head itself. _doctor_trail: _measured_run_moments. guard-release: gr36d rewritten, the unreachable no-head remedy deleted and pinned absent (gr36c), comments and read_held_phases docstring corrected. SECURITY.md paragraph; test_run_test_gate sm7 wording.",
+        "descriptive": "(a) an older headed full run that does not contain mergedHead beside a newer head-less one now reads PROVISIONAL about the older run instead of UNKNOWN; (b) a ledger whose only candidate is head-less reads PROVISIONAL with the basis 'the row names no tested head' and the release guard gives the full-run remedy, not fetch/unshallow; (c) wholeRunId/wholeRunTs no longer name a head-less run; (d) the doctor's coupling ageing still counts a green head-less full run. Unchanged: an older run containing the merge still makes the phase WHOLE."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-27T19:40:55Z",
+      "completedAt": "2026-09-27T20:36:54Z",
+      "verifiedBy": [
+        "fs27",
+        "fs27b",
+        "fs28-fs32",
+        "dcp13",
+        "gr36c",
+        "gr36d",
+        "sm7",
+        "sm11"
+      ],
+      "testEvidence": {
+        "runId": "2026-09-27T20:33:01Z.de7cd9",
+        "status": "passed",
+        "at": "2026-09-27T20:33:01Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "7351c2e4",
+        "at": "2026-09-27T20:36:54Z",
+        "basis": "the description's premise (a head-less row hides an older whole run) was already handled at HEAD; what the fix changed is the shape that really read unknown (an older run not containing the merge beside a head-less one, and a head-less-only ledger now read provisional), and review widened it to split the whole-bearing rule from a measurement rule that selection_miss's bound and the doctor's coupling ageing read, and to correct the release guard and SECURITY.md"
+      }
     },
     {
       "id": "P81.12",
       "title": "the status gate can fail on a merged phase whose full-run answer is unknown",
-      "status": "pending",
+      "status": "done",
       "description": "Fault F527. provisional_phases and stale_full_runs count PROVISIONAL rows only and no condition in _status_facts.CONDITIONS names UNKNOWN, so '--gate --fail-on provisional,stale-full-run' is green over a plan whose third place cannot be answered at all (no mergedHead, git could not answer, or an unreadable ledger), while this repository's release guard refuses over the same phase. Add a new OPT-IN condition 'unknown-full-run' (additive, outside DEFAULT_GATE like its siblings) that names each such phase with full_status's basis; do not change what 'provisional' covers. commands/status.md lists it with the others. COMPATIBILITY and CHANGELOG lines go to the docs task. Allow: WHOLE and NOT_DECLARED pass.",
       "files": [
         "plugins/audit/scripts/status/_status_facts.py",
@@ -569,16 +878,409 @@
       "dependsOn": [
         "P81.9"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1052846d603b5516b77cf2826c3e1abaac420f97",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_status_facts gains unknown_full_runs and FULL_RUN_CONDITIONS (fu6 derives the readers from evaluate_gate's AST); audit-status fetches fullRun only when one of those conditions is named.",
+        "descriptive": "--fail-on unknown-full-run names each merged phase whose full-run answer is unknown with full_status's basis; opt-in, outside the default gate, and provisional is unchanged"
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-27T14:42:17Z",
+      "completedAt": "2026-09-27T16:44:00Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T16:43:14Z.63f0b9",
+        "status": "passed",
+        "at": "2026-09-27T16:43:14Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "1052846d603b5516b77cf2826c3e1abaac420f97",
+        "at": "2026-09-27T16:44:00Z"
+      }
+    },
+    {
+      "id": "P81.13-j7p",
+      "title": "add --failing-from resolves a runner-named suite to one repository path",
+      "status": "done",
+      "description": "A fix task created with add --failing-from puts the runner's spelling of each named failing suite straight into its gate, and run-test-gate runs that gate from the project root. A suite the runner named relative to its own directory (test_old.py for backend/tests/test_old.py) becomes a path that does not exist, so the fix task's gate cannot run (probed: python3 test_old.py exits 2, can't open file). Resolve each named suite before _union_paths: keep it when it exists from the project root; otherwise take the single tracked file (git ls-files) it matches by the listed_by suffix rule; when none or several match, fall through to the ordinary task gate and say why first, the way the tail-basis case does. Reuse the one resolver the catch rule uses (a runner spelling resolves to exactly one candidate, or names why not) rather than a second matcher. Red-first: an ff case where a runner-relative spelling must come out as the repository-root path, one where two tracked files share the suffix (falls through with the reason), and one where the spelling already exists from the root (kept as written).",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - add --failing-from over a row naming a runner-relative suite writes a gate path that does not exist from the project root"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P81.7"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "0136a1fe",
+      "outcome": {
+        "technical": "audit-task.py: _root_spelled_suites (normpath, _project_relative, _shell_unsafe, git ls-files once through _worktrees._runner, _evidence_io.resolve_named over tracked plus on-disk candidates), _failed_step_entries through _evidence_io.named_failing_suites, the phase testGate when no step name was recorded; px2-clean via _output.posix_rel. ff fixture writes the suites ff1/ff2/ff9 name.",
+        "descriptive": "A fix task opened with --failing-from gets a gate that runs the failure it fixes: each runner-named suite is pinned to one tracked path from the project root, and when any cannot be (no match, several, outside the project, a control character, git cannot list), the gate is the entry of the step the run failed on, with the reason printed."
+      },
+      "startedAt": "2026-09-27T19:40:55Z",
+      "completedAt": "2026-09-27T20:36:54Z",
+      "verifiedBy": [
+        "ff10-ff20"
+      ],
+      "testEvidence": {
+        "runId": "2026-09-27T20:34:38Z.d320a7",
+        "status": "passed",
+        "at": "2026-09-27T20:34:38Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "0136a1fe",
+        "at": "2026-09-27T20:36:54Z",
+        "basis": "the description's fall-through to the ordinary task gate was replaced after review: that gate could narrow to the task's own paths and run none of the named failures, so an unpinnable suite now gates on the failed step's recorded entry; the exists-from-root short-circuit was made strict to follow resolve_named's one ambiguity rule; spellings are normalized and machine paths refused"
+      }
+    },
+    {
+      "id": "P81.14-j7p",
+      "title": "the third place learns wherever it runs: review --full runs full-gate, and a full run recorded elsewhere is learned from after import",
+      "status": "done",
+      "description": "Only full-gate.py learns from a red full run, and two of the three third-place paths never reach it. /audit:review --full tells the orchestrator to run run-test-gate.py --full --record, which prints the remedy and files nothing; the CI example records the run into a shard that is imported later, and nothing learns from an imported row (learning inside CI would write into a checkout that is thrown away). Do: (1) review.md's --full runs full-gate.py (one command of the third place), with the manifest and --project-dir as the pre-push hook does. (2) full-gate.py --learn-from <runId>: runs nothing, reads that row from the ledger, and applies exactly the learning the red branch applies (named misses only, unique catches, cut sources, dedupe, a learning exception never masks the answer); refuses with a reason and a non-zero exit when the row is missing, unreadable, not full scope, or not red; learning twice from the same run files nothing new. (3) import-evidence.py prints, for each imported red full row, the full-gate --learn-from command that learns from it (printed, never run). (4) the CI example and the orchestrator/README third-place text say where learning happens for a CI run. Red-first for (2) and (3); allow: a green imported row prints no learn command; --learn-from on a green row refuses. No numbers in prose, no register ids.",
+      "files": [
+        "plugins/audit/scripts/governance/full-gate.py",
+        "plugins/audit/tests/test_full_gate.py",
+        "plugins/audit/scripts/governance/import-evidence.py",
+        "plugins/audit/tests/test_import_evidence.py",
+        "plugins/audit/commands/review.md",
+        "docs/examples/azure-pipelines.yml",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/README.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_full_gate.py: repro that FAILS on current code - full-gate --learn-from <runId> over an imported red full row with a named selection miss files the coupling and the bug without running anything"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P81.8"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "aced313d",
+      "outcome": {
+        "technical": "full-gate.py: learn_from_row shared by the red branch and --learn-from; row_refusal (not full scope, not red via _evidence_io.row_is_red); _missing_row names unreadable files; exit 0/1/2 contract; own-miss rule in learning_plan (taught_by removed). import-evidence.py: learn_from_commands prints python3 <_loader.script_path('full-gate.py')> <abs manifest> --learn-from <id> --project-dir <abs project> for each red full row. _evidence_io.row_is_red. review.md, README, orchestrator.md, pipeline comments, guide (module map, sections), CHANGELOG Added.",
+        "descriptive": "Every place the third place runs now learns from a red run: /audit:review --full runs full-gate.py, and a red full run a CI build recorded is learned from in the clone after import, through a printed command that runs as printed and runs no gate; learning twice, or in any order, files nothing new and never credits a run's own miss as a catch."
+      },
+      "startedAt": "2026-09-27T20:47:23Z",
+      "completedAt": "2026-09-27T21:35:31Z",
+      "verifiedBy": [
+        "fglf1-fglf13",
+        "fgc1-fgc3",
+        "i27-i31",
+        "rr2b"
+      ],
+      "testEvidence": {
+        "runId": "2026-09-27T21:35:21Z.6c6036",
+        "status": "passed",
+        "at": "2026-09-27T21:35:21Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "aced313d",
+        "at": "2026-09-27T21:35:31Z",
+        "basis": "the description's four items are delivered; review added one learning rule (a row's own selection miss is never its catch, whatever order imported rows are learned in), a runnable printed command, and one reading of a red run (_evidence_io.row_is_red)"
+      }
+    },
+    {
+      "id": "P81.15-j7p",
+      "title": "a gate re-pointed at paths quotes each path for the shell it runs in",
+      "status": "done",
+      "description": "_gate_derive.repointed rebuilds a path-scoped gate entry by joining tokens with a space and never quotes the paths it substitutes, and run-test-gate runs gate commands through a shell. A suite path with a space (or any shell metacharacter) therefore produces a gate that cannot run: probed, the runner named 'test old.py', the resolver pinned 'backend/tests/test old.py', and the written gate 'python3 backend/tests/test old.py' exits 2 (can't open .../backend/tests/test). Quote each substituted path with shlex.quote (POSIX shell, which is what run-test-gate spawns), and read the sibling's own tokens with the matching split so an already-quoted path in a declared gate survives a re-point. Paths with no special characters must come out byte-identical to today (every existing gate spelling stays). Red-first: a space path; a path with a quote character; allow: an ordinary path is unchanged, and a sibling entry that already quotes its path is re-pointed without double quoting. Drive one end to end: the written gate run from a real project root opens the file.",
+      "files": [
+        "plugins/audit/scripts/governance/_gate_derive.py",
+        "plugins/audit/tests/test__gate_derive.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test__manifest_phases.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__gate_derive.py: repro that FAILS on current code - a sibling gate re-pointed at a suite path holding a space yields a command that, run from the project root through a shell, opens the right file"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "999100e9",
+      "outcome": {
+        "technical": "_manifest_phases.shell_words / shell_word_path (quote-free words read as the old whitespace split; quoted words through shlex); gate_entry_paths and path_scoped_sibling use them; _gate_derive.repointed quotes substituted paths with shlex.quote; zero diffs over every committed plan (compare probe).",
+        "descriptive": "A gate re-pointed at a path with a space or a quote runs as one shell word from the project root, a sibling whose only path is quoted is recognised, and every committed unquoted gate entry reads and re-points byte-identically."
+      },
+      "startedAt": "2026-09-27T20:06:36Z",
+      "completedAt": "2026-09-27T20:36:54Z",
+      "verifiedBy": [
+        "q1-q6",
+        "sp5",
+        "sp6"
+      ],
+      "testEvidence": {
+        "runId": "2026-09-27T20:36:26Z.2df7eb",
+        "status": "passed",
+        "at": "2026-09-27T20:36:26Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "999100e9",
+        "at": "2026-09-27T20:36:54Z",
+        "basis": "delivered as described, and widened on the executor's finding so gate_entry_paths and path_scoped_sibling read an entry's words through the same reader as repointed"
+      }
+    },
+    {
+      "id": "P81.16-j7p",
+      "title": "a runner's suite name is pinned once, and every third-place reader uses the pinned path, the whole ledger and one own-miss rule",
+      "status": "done",
+      "description": "Phase review fix task. Pin a runner's suite spelling to one tracked path in one _evidence_io resolver (moved from audit-task's --failing-from) and use it in selection_miss's listed test, full-gate's couple/bug-add, the printed SELECTION MISS remedy (python3 plus absolute path) and --failing-from; one own-miss helper for full-gate and couple --caught; selection_miss asks nothing and says why when the ledger is not fully readable; --failing-from and find_row name lost files; couple --caught reads ts through stamp_moment; the runner does not honour a mute whose bug is the task's own bug or is closed, and the validator warns on a mute naming a closed bug; stale whole-bearing/measured wording in these files; run-test-gate's inline suffix-rule copies use listed_by.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/full-gate.py",
+        "plugins/audit/tests/test_full_gate.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "plugins/audit/tests/test__manifest_rules.py",
+        "plugins/audit/tests/test_validate_manifest.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__evidence_io.py: repro that FAILS on current code - a runner-relative failing suite beside a sibling package's same-named derived suite yields a SELECTION MISS or a not-asked reason, never silence"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "63840391",
+      "outcome": {
+        "technical": "_evidence_io: pin_suite/pin_suites/suite_listing/project_relative/shell_unsafe (moved from audit-task), own_miss, same_suite, unreadable_names; selection_miss pins, reports unasked spellings and asks nothing over an unreadable ledger. full-gate: pinned couple/bug-add, own_miss for catches, lost-file notes, project via _panel_write.project_of_manifest. run-test-gate: withheld_mutes into mute_decision, whole read_rows to _run_full, runnable remedy, listed_by for the inline suffix copies, standalone project via project_of_manifest. _manifest_rules: rules.muted.bug-closed. audit-task: --caught own-miss refusal and stamp_moment, --failing-from through _ledger_run. Guide fence re-rendered.",
+        "descriptive": "Selection miss, full-gate learning, the printed remedy, --failing-from and couple --caught place a runner's suite name on one tracked path by one rule; a name that fits none or several is said, not guessed; a lossy ledger is named; a fix task's gate does not honour its own bug's mute, and a mute on a closed bug is warned and no longer honoured."
+      },
+      "startedAt": "2026-09-27T21:50:22Z",
+      "completedAt": "2026-09-27T22:36:48Z",
+      "verifiedBy": [
+        "ps1-ps6",
+        "sm16-sm20",
+        "mw1-mw4",
+        "fgp1-fgp4",
+        "ff4b",
+        "cc19",
+        "cc20",
+        "mu8",
+        "mu9",
+        "c48",
+        "lp1"
+      ],
+      "testEvidence": {
+        "runId": "2026-09-27T22:35:08Z.e1dad8",
+        "status": "passed",
+        "at": "2026-09-27T22:35:08Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "63840391",
+        "at": "2026-09-27T22:36:48Z",
+        "basis": "fixes the phase-review findings assigned to it, and closes the project-of-manifest class in its files"
+      }
+    },
+    {
+      "id": "P81.17-j7p",
+      "title": "the import reads its project from the manifest, and the doctor ages and repairs couplings the verbs accept",
+      "status": "done",
+      "description": "Phase review fix task. import-evidence takes the project from the manifest when --project-dir is not given and refuses a manifest outside --project-dir; a full run whose muted list names a coupling's test does not age it; doctor reads row ts through _evidence_io.stamp_moment; the printed relearn command carries --basis-head (and --phases) so couple accepts it; audit-doctor and _doctor_trail comments say measured where they read measured runs; commands/task.md lists couple --caught's ambiguity refusal.",
+      "files": [
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "plugins/audit/tests/test__doctor_trail.py",
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/tests/test_audit_doctor.py",
+        "plugins/audit/scripts/governance/import-evidence.py",
+        "plugins/audit/tests/test_import_evidence.py",
+        "plugins/audit/commands/task.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_import_evidence.py: repro that FAILS on current code - an import run from outside the project writes the shard under the project the manifest names and prints a --learn-from command whose project is that one"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "f391b892",
+      "outcome": {
+        "technical": "import-evidence: resolve_project via _panel_write.project_of_manifest, mismatch refusal (exit 2). _doctor_trail: _measured_run_moments carries muted tests, coupling_age skips runs that muted the coupling's test, stamp_moment for ts/lastCaught/learnedAt, _relearn_fix with --basis-head and --phases, measured wording. audit-doctor comment. commands/task.md: the ambiguity refusal.",
+        "descriptive": "An import typed from anywhere lands in the manifest's own project and names it; a full run that muted a coupled suite does not age that coupling; date-only stamps age as the ledger orders them; the doctor's relearn command is accepted by couple."
+      },
+      "startedAt": "2026-09-27T21:50:22Z",
+      "completedAt": "2026-09-27T22:36:48Z",
+      "verifiedBy": [
+        "i32-i38",
+        "dcp14-dcp19"
+      ],
+      "testEvidence": {
+        "runId": "2026-09-27T22:36:29Z.3c4187",
+        "status": "passed",
+        "at": "2026-09-27T22:36:29Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "f391b892",
+        "at": "2026-09-27T22:36:48Z",
+        "basis": "fixes the phase-review findings assigned to it; the project lookup uses the plugin's shared helper rather than a copy"
+      }
+    },
+    {
+      "id": "P81.18-j7p",
+      "title": "the phase's documents say what the review fixes made true",
+      "status": "done",
+      "description": "Phase review fix task (docs). CHANGELOG: narrow the one-moment-order sentence to the readers that order by moment; entries for the pinned suite spelling, the ledger-completeness rule in selection_miss, the mute that does not hold in its own bug's fix task, the import's project from the manifest. review.md: point at /audit:status's tests column and /audit:doctor's full run row instead of a full-status line the runner does not print. bug.md: a muted suite is not quarantined inside its own fix task's gate. README and orchestrator.md: the SELECTION MISS remedy spelling and the import's project rule, as the committed code prints them.",
+      "files": [
+        "CHANGELOG.md",
+        "plugins/audit/README.md",
+        "plugins/audit/commands/review.md",
+        "plugins/audit/commands/bug.md",
+        "plugins/audit/reference/orchestrator.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/commands/doctor.md",
+        "plugins/audit/scripts/status/_doctor_trail.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P81.16-j7p",
+        "P81.17-j7p"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "2fff8c0a",
+      "outcome": {
+        "technical": "CHANGELOG [Unreleased] placement checked against v3.0.1 (narrowed Changed entry, four Added, one Fixed); review.md points at the status tests column and the doctor full run row; bug.md: a mute does not hold in its own fix task or once its bug is closed; README/orchestrator: pinned remedy spelling, not-asked lines, the import's project; doctor.md and the guide's _doctor_trail section: muted runs do not age, relearn flags; _relearn_fix docstring corrected.",
+        "descriptive": "The CHANGELOG, README, orchestrator, review, bug and doctor docs and the build guide describe the review fixes as the committed code behaves, and the one-moment-order claim is narrowed to the readers that keep it."
+      },
+      "startedAt": "2026-09-27T22:36:56Z",
+      "completedAt": "2026-09-27T22:53:38Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-27T22:53:37Z.bcbf5e",
+        "status": "passed",
+        "at": "2026-09-27T22:53:37Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2fff8c0a",
+        "at": "2026-09-27T22:53:38Z",
+        "basis": "the documents the phase review named, and the sentences its fixes made stale"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-09-27T14:08:52Z",
+  "testEvidence": {
+    "runId": "2026-09-27T23:55:33Z.a395eb",
+    "status": "passed",
+    "at": "2026-09-27T23:55:33Z"
+  },
+  "mergedHead": "e77c6a96dfc80834dc82ebe9fa92a43d7b8b12c4"
 }

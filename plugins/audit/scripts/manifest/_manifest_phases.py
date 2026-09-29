@@ -43,6 +43,7 @@ This module carries no `--selftest` of its own; its cases live in
 import json
 import os
 import re
+import shlex
 import sys
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -1102,15 +1103,77 @@ def gate_entry_paths(entry):
 
     A token has to carry an extension or be a dotfile to count, which is what
     keeps `npm`, `--shard`, `1/4` and a bare build-command key out of the answer.
+
+    The tokens are `shell_words`: a quoted path is one word and comes back as
+    the name it spells, without its quotes.
     """
     if not isinstance(entry, str):
         return []
     found = []
-    for token in entry.split():
-        path = tests_add_path(token)
+    for _raw, value in shell_words(entry):
+        path = shell_word_path(value)
         if path:
             found.append(path)
     return found
+
+
+# One shell word as written: runs of unquoted non-space characters and whole
+# single- or double-quoted spans, so whitespace inside a quote does not end the
+# word. A backslash outside quotes is an ordinary character here -- see
+# `shell_words` for why.
+_SHELL_WORD = re.compile(r"""(?:[^\s'"]|'[^']*'|"(?:[^"\\]|\\.)*")+""")
+
+
+def shell_words(entry):
+    """`[(raw, value)]` for each word of a gate entry: `raw` its spelling as
+    written, `value` what a POSIX shell reads it as, or None when a quoted
+    word does not read as exactly one word.
+
+    THE ONE READER of a gate entry's words. `run-test-gate.py` hands every
+    entry to a POSIX shell, so "which words does this entry have" is asked
+    the way that shell answers it, by `gate_entry_paths` and by the re-point
+    in `_gate_derive` alike -- two readings would pick a sibling's shape by
+    one and rewrite it by the other.
+
+    ONLY A WORD CARRYING A QUOTE IS READ THROUGH `shlex.split`. A word with
+    none is its own value, backslashes included, which keeps every unquoted
+    entry exactly as the whitespace split has always read it -- a gate
+    written with a backslash separator is not re-read as an escape. An entry
+    the reader cannot delimit (an unbalanced quote) falls back to that same
+    whitespace split, each token standing for itself: it fails in the runner
+    either way, and this has no better reading of it to offer.
+    """
+    if not isinstance(entry, str):
+        return []
+    if _SHELL_WORD.sub("", entry).strip():
+        return [(token, token) for token in entry.split()]
+    words = []
+    for raw in _SHELL_WORD.findall(entry):
+        if "'" not in raw and '"' not in raw:
+            words.append((raw, raw))
+            continue
+        try:
+            value = shlex.split(raw)
+        except ValueError:
+            return [(token, token) for token in entry.split()]
+        words.append((raw, value[0] if len(value) == 1 else None))
+    return words
+
+
+def shell_word_path(value):
+    """The file one shell word names, as `shell_words` read it, or None.
+
+    `tests_add_path` asked of the word, with WHITESPACE MAPPED AWAY FIRST: it
+    refuses a space because in a `tests.add` sentence a space ends the path
+    and starts the prose, but a shell word has already been bounded by the
+    shell, so a space inside one is part of the name and only the segment and
+    filename questions are left. The mapping replaces one character with one,
+    so the answer is cut back out of the word itself, spaces restored.
+    """
+    if not isinstance(value, str):
+        return None
+    path = tests_add_path(re.sub(r"\s", "_", value))
+    return value[:len(path)] if path else None
 
 
 # --- the walk --------------------------------------------------------------------

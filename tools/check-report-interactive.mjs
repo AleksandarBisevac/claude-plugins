@@ -69,7 +69,7 @@ import { PHONE_VIEWPORT, applyRecording, documentKey, emptyBaseline, judge,
 // mistyped flag is silently nothing — `--recrod` would leave a run that was asked
 // to bless a figure quietly not blessing it — so an unknown one stops the tool. A
 // second positional has always been ignored here and one caller relies on it: CI
-// drives `/tmp/one-status/*.html`, a glob the shell expands, and rejecting the
+// drives `/tmp/live-plan/*.html`, a glob the shell expands, and rejecting the
 // extra would turn a green step red for a reason that has nothing to do with the
 // report.
 const args = process.argv.slice(2);
@@ -185,6 +185,14 @@ const FEATURE_ABSENT = [
     covers: ['every ready task is a term', 'the list carries as many terms',
              'every term names its task id', 'every definition says why',
              'tasks of tagged phases wear the area chips'] },
+  // Ready work with no area tag on the phase it sits in: the chip cross-check
+  // has nothing to compare, and its own else-half prints this note. Keyed by
+  // that note rather than by 'no phase in this plan carries an area tag',
+  // because a plan can tag some phases and still have every ready task in an
+  // untagged one - and with the note absent the site is still demanded, so a
+  // ready task in a tagged phase keeps being checked.
+  { note: 'no ready task sits in a tagged phase',
+    covers: ['tasks of tagged phases wear the area chips'] },
   { note: 'no status chips in this report',
     covers: ['no matches-outside-this-view row is emitted any more',
              '...and choosing All phases from the View select reaches them instead',

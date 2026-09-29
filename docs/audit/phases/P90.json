@@ -1,0 +1,77 @@
+{
+  "id": "P90",
+  "title": "the committed-identity check accounts for the one journal row it misreads",
+  "status": "done",
+  "description": "",
+  "desiredOutcome": "tools/check-committed-pii.py is green on main: the review.finding row whose prose says 'home/TMPDIR' - a phrase, not a home directory - is named in BASELINE with its reason, and nothing else in the committed domain matches.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint"
+  ],
+  "blockedBy": [],
+  "baseRef": "ab8c0240b58911c059b0fea706096f86d020d33a",
+  "branch": "audit/p90-the-committed-identity-check-a",
+  "mergedAt": "2026-09-27T23:02:15Z",
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "passed",
+    "findings": [],
+    "outcome": "matches; a table-only change proven by the check it feeds"
+  },
+  "summary": "The committed-identity check is green on main. Three hash-chained journal rows that the home-directory detector misreads are recorded in BASELINE, each with its reason: one finding's prose, and the two plan rows that quoted it. None carries a path of any machine, and the detector is unchanged. It is not reviewed beyond the author's check, because the change is three table rows proven by the check itself: red without them, green with them, the tool's selftest passing. The phase gate is green with the tree unchanged, and the invariant check found no breach.",
+  "tasks": [
+    {
+      "id": "P90.1",
+      "title": "BASELINE names the review.finding row whose prose 'home/TMPDIR' the posix-home detector matches",
+      "status": "done",
+      "description": "docs/audit/journal/2026-09.24c1c300-045e-45b9-beaf.wt-cbe2f966.jsonl line 95 (a review.finding row committed in 464b0b1d) matches posix-home at column 899 on the words 'isolated home/TMPDIR' in a finding's text - no path of this machine is in it. The row is hash-chained and already merged into another branch, so it is superseded, never edited. Add a BASELINE row with a reason stating exactly that (>= the minimum reason length). q7 goes green on main; the table's own checks (a stale row reported, reasons checked) stay green.",
+      "files": [
+        "tools/check-committed-pii.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "dc31d1bd",
+      "outcome": {
+        "technical": "three BASELINE rows in tools/check-committed-pii.py; detector unchanged",
+        "descriptive": "The committed-identity check is green again; three chained journal rows it misreads are recorded with their reasons"
+      },
+      "startedAt": "2026-09-27T22:57:23Z",
+      "completedAt": "2026-09-27T23:00:13Z",
+      "verifiedBy": [
+        "check-committed-pii exit 1 without the rows",
+        "0 with them; its selftest 26/26; full sweep"
+      ]
+    }
+  ],
+  "startedAt": "2026-09-27T22:57:23Z",
+  "testEvidence": {
+    "runId": "2026-09-27T23:01:53Z.517f42",
+    "status": "passed",
+    "at": "2026-09-27T23:01:53Z"
+  },
+  "mergedHead": "3306e57f8e9c526bd329af319f157b82637af326"
+}

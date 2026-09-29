@@ -96,6 +96,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -141,6 +142,9 @@ import _fmt  # noqa: E402  (human_duration: a recorded durationMs, in the one sp
 import _loader  # noqa: E402  (load_hooks_config: logs_dir/ensure_local_dir, for --own's
 #                              raw log - the same self-ignoring local directory every
 #                              hook already makes state and logs under)
+import _status_facts  # noqa: E402  (CLOSED_BUG: the one reading of "not open", for a
+#                                    mute whose bug is closed)
+import _panel_write  # noqa: E402  (project_of_manifest: the project a named manifest is in)
 
 E_OK, E_FAIL, E_ASK = 0, 1, 2
 
@@ -253,6 +257,10 @@ _STEP_WORDS = {
 # nothing" failure mode one runner along. `error` is out for the same reason from the
 # other end: a pytest collection error is a test that never started.
 _SUMMARY_PAIR = re.compile(r"(\d+) ([a-z]+)")
+# One terminal control sequence of any kind - a colour, and also the cursor
+# moves a live reporter prints before it rewrites a line. `_ANSI` below is the
+# narrower colour-only reading jest's header needs.
+_CSI_TEXT = "\x1b\\[[0-9;]*[A-Za-z]"
 # The phrasing both vitest and pytest use for "there were none", which carries no
 # `N word` pair at all and would otherwise read as a runner this cannot count.
 _NO_TESTS = re.compile(r"\bno tests\b")
@@ -273,6 +281,17 @@ _SUMMARY_READERS = (
      re.compile(r"^[=\s]*((?:no tests ran|\d+ \w+(?:, \d+ \w+)*)"
                 r" in [\d.]+m?s.*)$", re.M),
      ("passed", "failed", "xpassed", "xfailed")),
+    # playwright: `  1 failed`, `  1 flaky` and `  1 passed (590ms)`, each ALONE
+    # on its line and the last with its duration. The line reporter prints
+    # cursor escapes in front of the block, which is why any may lead. `flaky`
+    # counts as ran: the test executed, failed once and passed on its retry.
+    # LAST, because a bare count line is the loosest shape in this table and
+    # every runner above has a signature of its own to be recognised by first.
+    ("playwright",
+     re.compile("^(?:" + _CSI_TEXT + ")*[ \t]*(\\d+ (?:passed|failed|"
+                "flaky|skipped|interrupted|did not run))(?: \\([^)]*\\))?"
+                "[ \t]*$", re.M),
+     ("passed", "failed", "flaky")),
 )
 
 
@@ -563,14 +582,23 @@ def summary_reader(text):
     wanted the names of the checks that failed, and two spellings of one
     recognition rule drift the first time either table grows a row.
     """
+    matched = summary_readers(text)
+    return matched[0] if matched else (None, "", ())
+
+
+def summary_readers(text):
+    """Every `(name, joined, words)` whose summary this output carries, in
+    table order. `summary_reader` takes the first; a caller that must know
+    the output is ONE runner's asks whether there is more than one."""
+    out = []
     for name, line_re, words in _SUMMARY_READERS:
         found = line_re.findall(text or "")
         if not found:
             continue
         joined = " ".join(found)
         if _SUMMARY_PAIR.findall(joined) or _NO_TESTS.search(joined):
-            return name, joined, words
-    return None, "", ()
+            out.append((name, joined, words))
+    return out
 
 
 def summary_count(text):
@@ -720,6 +748,14 @@ _FAILURE_READERS = {
     # `error` being absent from the counting words above: a collection error is
     # not a check that ran, and it is still the thing the operator has to fix.
     "pytest": re.compile(r"^(?:FAILED|ERROR)[ \t]+(.+?)[ \t]*$", re.M),
+    # playwright lists each test under the count that names its fate - `N
+    # failed`, `N flaky` - as `<file>:<line>:<col> › <title>` (behind
+    # `[<project>] › ` when projects are configured) and a rule of box-drawing
+    # dashes. This is the ENTRY line; which block it sits under is
+    # `playwright_listed`'s question, because a flaky test and a failed one are
+    # spelled identically and only the heading above tells them apart.
+    "playwright": re.compile(
+        "^[ \t]+((?:\\[[^\\]]+\\] › )?\\S+:\\d+:\\d+ › .+?)(?:[ \t]+─+)?[ \t]*$"),
 }
 
 
@@ -829,6 +865,92 @@ def jest_worker_signal(exit_code, text, command=None):
                          JEST_EXEC_ERROR, exit_code))
 
 
+_CSI = re.compile(_CSI_TEXT)
+# The count heading playwright prints above each list of tests it names.
+_PLAYWRIGHT_HEADING = re.compile(
+    r"^[ \t]*\d+ (failed|flaky|passed|skipped|interrupted|did not run)\b")
+
+
+def playwright_listed(text, fate):
+    """Every test playwright lists under its `N <fate>` heading, in order.
+
+    A LISTED ENTRY BELONGS TO THE HEADING DIRECTLY ABOVE IT, and a line that is
+    neither a heading nor an entry ends the block. The numbered failure
+    reports earlier in the output name flaky tests and failed ones alike, so
+    they answer neither question; the closing block is the one place the
+    runner says which fate each test met.
+    """
+    out, current = [], None
+    for line in _CSI.sub("", text or "").splitlines():
+        heading = _PLAYWRIGHT_HEADING.match(line)
+        if heading:
+            current = heading.group(1)
+            continue
+        entry = _FAILURE_READERS["playwright"].match(line)
+        if entry is None:
+            current = None
+        elif current == fate:
+            out.append(entry.group(1))
+    return _distinct(out)
+
+
+# The file half of a playwright test name, behind an optional project.
+_PLAYWRIGHT_FILE = re.compile(r"^(?:\[[^\]]+\] › )?(\S+?):\d+:\d+ › ")
+
+
+def flaky_tests(text, limit):
+    """`(names, basis)` of the tests a runner reported as FLAKY, or `(None,
+    None)` when it reported none or is not a runner that says.
+
+    AN OBSERVATION, NEVER AN OUTCOME. A flaky test failed and then passed on
+    its retry, so the step's exit code is the runner's own green; recording
+    that as `outcome` would make every tally that reads any outcome as
+    not-passed count a pass as a failure. It is a pass with a named doubt,
+    so it rides on the step beside the verdict and changes none of it -
+    on a step that exited 0 as readily as on one that did not.
+    """
+    if summary_reader(text)[0] != "playwright":
+        return None, None
+    named = playwright_listed(text, "flaky")
+    if not named:
+        return None, None
+    kept = named[:limit]
+    if len(named) > len(kept):
+        return kept, ("%d of the %d test(s) playwright named as flaky - failed, "
+                      "then passed on retry; the rest are not carried"
+                      % (len(kept), len(named)))
+    return kept, ("the %d test(s) playwright named as flaky - failed, then "
+                  "passed on retry - read from its own `flaky` block"
+                  % (len(kept),))
+
+
+def _named_failures(body):
+    """`(runner, names)` - the checks a recognised runner NAMED as failing.
+
+    `names` is empty when the runner is not recognised or named none, which is
+    exactly when `failing_lines` falls to a tail. One reading, asked by
+    `failing_lines` for what to carry and by the mute rule for whether a
+    failure was named at all, so the two cannot disagree about a run.
+    """
+    name, _joined, _words = summary_reader(body)
+    # `.get`, NEVER `[name]`. The two tables are held together by a case rather
+    # than by this line, and the case is the right mechanism - but a KeyError
+    # here would abort `run_gate` mid-gate and lose the run, which is a far worse
+    # answer to a drifted table than the tail this falls through to. `fl0` is
+    # what reports the drift; this is only what survives it.
+    if _FAILURE_READERS.get(name) is None:
+        return name, []
+    # jest's failed-to-run heading is paired with its suite and reason;
+    # playwright's entries are read by the block they sit under; every other
+    # runner's line already names the check it failed.
+    if name == "jest":
+        return name, _distinct([_jest_failure_name(*f)
+                                for f in jest_failures(body)])
+    if name == "playwright":
+        return name, playwright_listed(body, "failed")
+    return name, _distinct(_FAILURE_READERS[name].findall(body))
+
+
 def failing_lines(text, limit):
     """`(lines, basis)` - the names of the checks that failed, or a capped tail.
 
@@ -853,27 +975,15 @@ def failing_lines(text, limit):
     paths and the committed file may never carry them.
     """
     body = text or ""
-    name, _joined, _words = summary_reader(body)
-    # `.get`, NEVER `[name]`. The two tables are held together by a case rather
-    # than by this line, and the case is the right mechanism - but a KeyError
-    # here would abort `run_gate` mid-gate and lose the run, which is a far worse
-    # answer to a drifted table than the tail this falls through to. `fl0` is
-    # what reports the drift; this is only what survives it.
-    reader = _FAILURE_READERS.get(name)
-    if reader is not None:
-        # jest's failed-to-run heading is paired with its suite and reason;
-        # every other runner's line already names the check it failed.
-        named = _distinct(
-            [_jest_failure_name(*f) for f in jest_failures(body)]
-            if name == "jest" else reader.findall(body))
-        if named:
-            kept = named[:limit]
-            if len(named) > len(kept):
-                return kept, ("%d of the %d check(s) %s named as failing; the "
-                              "rest are not carried"
-                              % (len(kept), len(named), name))
-            return kept, ("the %d check(s) %s named as failing, read from its "
-                          "own failure lines" % (len(kept), name))
+    name, named = _named_failures(body)
+    if named:
+        kept = named[:limit]
+        if len(named) > len(kept):
+            return kept, ("%d of the %d check(s) %s named as failing; the "
+                          "rest are not carried"
+                          % (len(kept), len(named), name))
+        return kept, ("the %d check(s) %s named as failing, read from its "
+                      "own failure lines" % (len(kept), name))
     lines = [ln.rstrip() for ln in body.splitlines() if ln.strip()]
     tail = lines[-limit:] if limit > 0 else []
     if not tail:
@@ -895,6 +1005,37 @@ def failing_lines(text, limit):
 _VITEST_FAIL_LINE = re.compile(r"^[ \t]*FAIL[ \t]+(\S+)", re.M)
 
 
+def _suite_candidates(body):
+    """`(runner, paths, source)` - every path a runner's failure lines name,
+    BEFORE any filtering; `paths` is None for a runner that names no file.
+
+    Unfiltered on purpose, and that is the one reason this is not inlined in
+    `failing_suites`: the mute rule asks whether EVERY file a runner blamed
+    is muted, and a blamed file `failing_suites` drops as a non-suite or a
+    vendored path is still a failure no mute names.
+    """
+    name, _joined, _words = summary_reader(body)
+    if name == "jest":
+        return name, [header.group(1)
+                      for header in (_JEST_SUITE_HEADER.match(line)
+                                     for line in _ANSI.sub("", body).splitlines())
+                      if header and header.group(0).strip().startswith("FAIL")
+                      ], "jest's FAIL <path> header(s)"
+    if name == "vitest":
+        return (name, _VITEST_FAIL_LINE.findall(body),
+                "vitest's FAIL <file> line(s)")
+    if name == "pytest":
+        return name, [match.group(1).split("::", 1)[0]
+                      for match in _FAILURE_READERS["pytest"].finditer(body)
+                      ], "pytest's FAILED/ERROR line(s)"
+    if name == "playwright":
+        return name, [hit.group(1)
+                      for hit in (_PLAYWRIGHT_FILE.match(test) for test
+                                  in playwright_listed(body, "failed"))
+                      if hit], "playwright's `failed` block"
+    return name, None, None
+
+
 def failing_suites(text):
     """`(paths, basis)` - the SUITE FILES a runner named as failing.
 
@@ -905,10 +1046,11 @@ def failing_suites(text):
     unable to point a failed-first fix task, the derived gate's last-failed arm
     or the shadow recall at anything - they all need the FILE.
 
-    THREE READERS, one per runner whose own failure lines NAME a file: jest's
-    `FAIL <path>` header (`_JEST_SUITE_HEADER`, `FAIL` only - a `PASS` header is
-    not a failure), vitest's `FAIL <file> > ...` line, and pytest's path before
-    `::` on a `FAILED`/`ERROR` line. Read off `summary_reader`'s own name, the
+    ONE READER PER RUNNER whose own failure lines NAME a file
+    (`_suite_candidates`): jest's `FAIL <path>` header (`_JEST_SUITE_HEADER`,
+    `FAIL` only - a `PASS` header is not a failure), vitest's
+    `FAIL <file> > ...` line, pytest's path before `::` on a `FAILED`/`ERROR`
+    line, and the file half of each test in playwright's `failed` block. Read off `summary_reader`'s own name, the
     same runner identity `failing_lines` uses, so the two can never disagree
     about which runner this output is.
 
@@ -928,24 +1070,11 @@ def failing_suites(text):
     runner's OWN failure lines - a learner can refuse anything else.
     """
     body = text or ""
-    name, _joined, _words = summary_reader(body)
-    if name == "jest":
-        raw = [header.group(1)
-               for header in (_JEST_SUITE_HEADER.match(line)
-                              for line in _ANSI.sub("", body).splitlines())
-               if header and header.group(0).strip().startswith("FAIL")]
-        source = "jest's FAIL <path> header(s)"
-    elif name == "vitest":
-        raw = _VITEST_FAIL_LINE.findall(body)
-        source = "vitest's FAIL <file> line(s)"
-    elif name == "pytest":
-        raw = [match.group(1).split("::", 1)[0]
-               for match in _FAILURE_READERS["pytest"].finditer(body)]
-        source = "pytest's FAILED/ERROR line(s)"
-    elif name is not None:
+    name, raw, source = _suite_candidates(body)
+    if raw is None and name is not None:
         return None, ("%s's failure lines name no file, only the check that "
                       "failed" % (name,))
-    else:
+    if raw is None:
         return None, ("no runner this gate can count recognised, so no suite "
                       "file could be named")
     kept = _distinct(
@@ -1842,9 +1971,7 @@ def suite_breadth(task_files, named):
                     and not any(seg in _VENDOR_DIRS for seg in _segments(n)))
 
     def _theirs(path):
-        return (any(path == f or path.endswith("/" + f) or f.endswith("/" + path)
-                    for f in owned)
-                or _subject_of(path) in stems)
+        return _ev.listed_by(path, owned) or _subject_of(path) in stems
 
     extra = [n for n in suites if not _theirs(n)]
     if not extra:
@@ -1880,9 +2007,7 @@ def _names_declared(f, named, subjects):
     not named by the run" about a file the run named exactly.
     """
     path = _vocab._strip_line_suffix(f)
-    return (any(n == path or n.endswith("/" + path) or path.endswith("/" + n)
-                for n in named)
-            or _declared_stem(f) in subjects)
+    return _ev.listed_by(path, named) or _declared_stem(f) in subjects
 
 
 def derived_step_gap(step, listed):
@@ -2135,16 +2260,13 @@ def shadow_gate_claim(manifest, phase_id, steps):
     listed_tests = (derived or {}).get("tests") if isinstance(derived, dict) else None
     if not listed_tests:
         return None
-    failing = []
-    for st in (steps or []):
-        if st.get("failingSuitesBasis") and st.get("failingSuites"):
-            failing.extend(st["failingSuites"])
-    failing = sorted(set(failing))
+    # A quarantined failure is not a catch the derived gate could miss, and a
+    # step that passed or never reached a verdict names none - the one
+    # reading `_evidence_io.named_failing_suites` holds for every learner.
+    failing = sorted(set(_ev.named_failing_suites(steps)))
     if not failing:
         return None
-    missed = [f for f in failing
-              if not any(f == t or f.endswith("/" + t) or t.endswith("/" + f)
-                        for t in listed_tests)]
+    missed = [f for f in failing if not _ev.listed_by(f, listed_tests)]
     return {"listed": len(failing) - len(missed), "full": len(failing),
             "missed": missed}
 
@@ -2645,6 +2767,398 @@ def _shell(project, command, timeout=None):
         raise
 
 
+# --- a quarantined suite: its failure recorded, and not blocking --------------
+# `meta.muted` names suites whose failure is tracked by a bug and must not hold
+# the gate while it is fixed. Every rule here narrows, because the direction a
+# mute may be wrong in is hiding a failure nobody quarantined: it covers a step
+# only when the runner NAMED every failing check and every file it blamed, and
+# each of those files has an entry whose `until` still holds today.
+MUTE_EXPIRED = "expired"
+MUTE_UNREADABLE = "not a day this can read"
+
+
+def _mute_record(entry):
+    """The part of a mute a run carries: which suite, which bug, until when."""
+    return {"test": str(entry.get("test")), "bugId": str(entry.get("bugId")),
+            "until": str(entry.get("until"))}
+
+
+def declared_mutes(manifest):
+    """`meta.muted` as a list, `[]` when the plan declares none or the shape
+    is not a list - the validator reports a malformed one, and a mute this
+    cannot read is a mute it does not honour."""
+    meta = (manifest or {}).get("meta") if isinstance(manifest, dict) else None
+    muted = meta.get("muted") if isinstance(meta, dict) else None
+    return list(muted) if isinstance(muted, list) else []
+
+
+def withheld_mutes(manifest, task_id):
+    """`{bugId: why}` - each bug whose mute this run may not honour, and the
+    sentence saying why.
+
+    A MUTE NEVER HOLDS INSIDE THE GATE OF ITS OWN BUG'S FIX TASK. The bug
+    whose `taskId` is the task under test (`--task`) is the failure that
+    task exists to clear, and a gate that quarantined it would go green
+    whether the fix worked or not - the one verdict the task is graded on.
+
+    NOR ONCE ITS BUG IS CLOSED. A mute is justified by an open bug; one whose
+    EFFECTIVE status (`_manifest_io.effective_bug_status`) is in
+    `_status_facts.CLOSED_BUG` has nothing left to justify it, and the
+    validator warns about the entry with the command that lifts it.
+
+    Every other mute is decided exactly as before, by `mute_decision`.
+    """
+    by_id = _mio.tasks_by_id(manifest if isinstance(manifest, dict) else {})
+    withheld = {}
+    for bug in (manifest or {}).get("bugs") or []:
+        if not isinstance(bug, dict) or not bug.get("id"):
+            continue
+        bug_id = str(bug["id"])
+        status = _mio.effective_bug_status(bug, by_id)
+        if task_id is not None and bug.get("taskId") == task_id:
+            withheld[bug_id] = (
+                "not honoured: bug %s is the one task %s fixes, and a mute "
+                "inside that task's own gate would hide the failure the fix "
+                "must be seen to clear" % (bug_id, task_id))
+        elif status in _status_facts.CLOSED_BUG:
+            withheld[bug_id] = (
+                "not honoured: bug %s is closed (%s), so the quarantine it "
+                "justified is over - lift it with audit-task.py unmute"
+                % (bug_id, status))
+    return withheld
+
+
+def declared_preamble(manifest):
+    """`meta.nodePreamble` when it is a string, else None."""
+    meta = manifest.get("meta") if isinstance(manifest, dict) else None
+    lead = meta.get("nodePreamble") if isinstance(meta, dict) else None
+    return lead if isinstance(lead, str) else None
+
+
+def _distinct_records(records):
+    """`records` with exact repeats dropped, first occurrence order kept."""
+    seen, out = set(), []
+    for record in records:
+        key = tuple(sorted(record.items()))
+        if key not in seen:
+            seen.add(key)
+            out.append(record)
+    return out
+
+
+# --- when a mute may be honoured at all: FAIL CLOSED --------------------------
+# A mute excuses the failures a runner NAMED. It is honoured only when those
+# names are provably the whole failure, and every question below narrows: a
+# shape this cannot read refuses, because the alternative is a green over a
+# failure nobody quarantined. Every marker was read off a real run.
+#
+# THE ALLOW-LIST: runner -> the exit code its "tests failed" run was seen to
+# return. pytest 9.1.1, jest 30.5.2, vitest 4.1.10 and playwright 1.56.0 all
+# exited 1 with failing tests and nothing else wrong; pytest reserves other
+# codes for an interrupt, an internal error, a usage error and no tests. A
+# runner not here - mocha among them, whose exit is its failure COUNT - never
+# mutes.
+#
+# THE LIMIT, stated once: a mute holds only for a DIRECT runner call; a
+# script, task runner or wrapper keeps the gate red. `npm test`, a shell
+# script, `make`, `tox` and their kind can fail on a lint or type error that
+# prints no second summary and moves neither the tally nor the exit code, so
+# nothing in the output could tell it from the muted failure. And one failure
+# stays invisible even to a direct call: a jest reporter whose `getLastError()`
+# answers makes jest 30.5.2 exit 1 while printing nothing at all (captured on a
+# green suite), so a mute beside it holds.
+MUTE_RUNNERS = {"pytest": 1, "jest": 1, "vitest": 1, "playwright": 1}
+# What a command may be, read token by token after any leading `VAR=value`.
+# `npx`, `yarn exec` and `pnpm exec` run the package's own binary; `yarn X` and
+# `pnpm X` run a same-named package script FIRST when one exists (probed on
+# yarn 1.22.22 and pnpm 10.12.1 against a script and a binary both named
+# `jest`), so those two are a script, not a launcher.
+_PACKAGE_MANAGERS = frozenset(("npm", "yarn", "pnpm", "bun"))
+_TASK_RUNNERS = frozenset(("make", "tox", "nox", "run-s", "run-p",
+                           "npm-run-all", "turbo", "nx", "just", "task"))
+_ENV_WORD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_PYTHON = re.compile(r"^python(?:3(?:\.\d+)?)?$")
+# The words each runner's failure TALLY is read from. pytest's `error`s are
+# failures too (a fixture that errors at setup), and under `-rf` its short
+# summary names none of them.
+_TALLY_WORDS = {"pytest": ("failed", "error", "errors")}
+# A vitest failure line naming a TEST (`FAIL  <file> > <name>`), one per test.
+_VITEST_FAILED_TEST = re.compile(r"^[ \t]*FAIL[ \t]+\S+ > ", re.M)
+# States a runner reports beside its failures that are failures no name covers.
+_PLAYWRIGHT_STRAY = re.compile(
+    r"^[ \t]*(\d+) errors? (?:was|were) not a part of any test", re.M)
+_PLAYWRIGHT_UNFINISHED = re.compile(r"(\d+) (interrupted|did not run)")
+_VITEST_ERRORS = re.compile(r"^[ \t]*Errors[ \t]+(\d+) errors?\b", re.M)
+_JEST_FAILURE_SUMMARY = re.compile(r"^Summary of all failing tests[ \t]*$",
+                                   re.M)
+# jest fails a run on an obsolete, removed or failed snapshot beside its test
+# tally: `Snapshots:   1 obsolete, 1 passed, 1 total` (jest 30.5.2).
+_JEST_SNAPSHOTS = re.compile(r"^Snapshots:(.*)$", re.M)
+_JEST_SNAPSHOT_FAILS = re.compile(
+    r"(\d+) (?:snapshots? )?(?:files? )?(obsolete|removed|failed)\b")
+# An early stop: the part of the suite that never ran is not a pass.
+# pytest `-x`/`--maxfail`: `!!!! stopping after 1 failures !!!!`; jest
+# `--bail`: `Test Suites: 1 failed, 1 of 2 total`; vitest `--bail`:
+# `Test Files  1 failed (2)` - counts that add up to less than the total.
+_PYTEST_STOPPED = re.compile(r"stopping after \d+ failures?")
+_JEST_PARTIAL = re.compile(r"^Test Suites:.*\b(\d+) of (\d+) total", re.M)
+_VITEST_FILES = re.compile(r"^[ \t]*Test Files[ \t]+(.*?)\((\d+)\)[ \t]*$",
+                           re.M)
+# A coverage threshold the run failed: jest's `Jest: Coverage for lines (..)
+# does not meet "global" threshold`, pytest-cov's `FAIL Required test
+# coverage of 100% not reached`, vitest's `ERROR: Coverage for lines (..)
+# does not meet global threshold`.
+_COVERAGE_FAILED = re.compile(
+    r"^(?:Jest: .*\bthreshold\b|FAIL Required test coverage\b"
+    r"|ERROR: Coverage for .*\bthreshold\b).*$", re.M)
+
+
+def _without_preamble(command, preamble):
+    """`command` with the manifest's own `meta.nodePreamble` prefix read off.
+
+    `_evidence_io.resolved_commands` joins the two with ` && `, so a gate with
+    a preamble is two clauses by construction; only that exact prefix is
+    removed, and anything else joined to the runner still counts.
+    """
+    lead = preamble.strip() if isinstance(preamble, str) else ""
+    prefix = "%s && " % (lead,)
+    text = command or ""
+    return text[len(prefix):] if lead and text.startswith(prefix) else text
+
+
+def command_runner(command):
+    """`(kind, runner)` - what a preamble-stripped command calls.
+
+    `kind` is None for a direct call, whose `runner` is the one it calls (or
+    None when no runner is recognised); otherwise it names why the command is
+    not one - a package script, a task runner or a script file - and
+    `runner` is None.
+    """
+    try:
+        words = shlex.split(command or "")
+    except ValueError:
+        return None, None
+    while words and _ENV_WORD.match(words[0]):
+        words = words[1:]
+    if words[:1] == ["npx"]:
+        words = words[1:]
+    elif words[:2] in (["yarn", "exec"], ["pnpm", "exec"]):
+        words = words[2:]
+    elif words[:1] and words[0] in _PACKAGE_MANAGERS:
+        return "a package script (`%s`)" % (" ".join(words[:2]),), None
+    first = words[0] if words else ""
+    if first in _TASK_RUNNERS:
+        return "a task runner (`%s`)" % (first,), None
+    if "/" in first or first.endswith((".sh", ".bash", ".py")):
+        return "a script file (`%s`)" % (first,), None
+    if _PYTHON.match(first) and words[1:3] == ["-m", "pytest"]:
+        return None, "pytest"
+    if first in ("pytest", "jest", "vitest"):
+        return None, first
+    if first == "playwright" and words[1:2] == ["test"]:
+        return None, "playwright"
+    return None, None
+
+
+def _named_failure_count(runner, text):
+    """How many failures `runner` NAMED, one per failure, never deduplicated -
+    the number its tally has to equal."""
+    if runner == "jest":
+        # Past `summaryThreshold` jest prints every failure a second time
+        # under this heading (captured with more suites than the threshold),
+        # so only the bullets above it are counted.
+        return len(jest_failures(_JEST_FAILURE_SUMMARY.split(
+            _ANSI.sub("", text), 1)[0]))
+    if runner == "vitest":
+        return len(_VITEST_FAILED_TEST.findall(_ANSI.sub("", text)))
+    if runner == "playwright":
+        return len(playwright_listed(text, "failed"))
+    return len(_FAILURE_READERS[runner].findall(text))
+
+
+def _stopped_early(runner, body):
+    """The marker saying `runner` stopped before the suite finished, or None."""
+    if runner == "pytest":
+        hit = _PYTEST_STOPPED.search(body)
+        return hit.group(0) if hit else None
+    if runner == "jest":
+        hit = _JEST_PARTIAL.search(body)
+        if hit and int(hit.group(1)) < int(hit.group(2)):
+            return hit.group(0).strip()
+    if runner == "vitest":
+        hit = _VITEST_FILES.search(body)
+        if hit and sum(int(n) for n in re.findall(r"\d+", hit.group(1))
+                       ) < int(hit.group(2)):
+            return hit.group(0).strip()
+    return None
+
+
+def _other_failures(runner, joined, body):
+    """A non-pass state `runner` reported beside its named failures, or None."""
+    if runner == "jest":
+        line = _JEST_SNAPSHOTS.search(body)
+        for count, word in _JEST_SNAPSHOT_FAILS.findall(
+                line.group(1) if line else ""):
+            if int(count) > 0:
+                return ("jest's `Snapshots:` summary reports %s %s "
+                        "snapshot(s), which fails a run beside its test tally"
+                        % (count, word))
+    if runner == "playwright":
+        flaky = sum(int(n) for n, word in _SUMMARY_PAIR.findall(joined)
+                    if word == "flaky")
+        if flaky > 0:
+            return ("playwright also reported %d flaky test(s), which fail the "
+                    "run when `failOnFlakyTests` is set - in the config, where "
+                    "the command cannot show it, or on the command" % (flaky,))
+        for count, word in _PLAYWRIGHT_UNFINISHED.findall(joined):
+            if int(count) > 0:
+                return "playwright also reported %s %s" % (count, word)
+        stray = _PLAYWRIGHT_STRAY.search(body)
+        if stray and int(stray.group(1)) > 0:
+            return ("playwright also reported %s error(s) not a part of any "
+                    "test" % (stray.group(1),))
+    if runner == "vitest":
+        errors = _VITEST_ERRORS.search(body)
+        if errors and int(errors.group(1)) > 0:
+            return ("vitest also reported %s unhandled error(s) in its "
+                    "`Errors` summary" % (errors.group(1),))
+    return None
+
+
+def mute_ineligible(command, code, text, preamble=None, runners=None):
+    """Why no mute may excuse this step, or None when one may.
+
+    FAIL CLOSED, in the order the questions narrow: the step is ONE runner
+    invocation (no wrapper, no shell separator beyond the manifest's own
+    preamble); its output carries exactly ONE runner's summary; the command
+    is a DIRECT call of that runner (`command_runner`) and not a package
+    script, task runner or script file; that runner is on `MUTE_RUNNERS`; it exited with its failed-tests code; its failure
+    tally equals the failures it named and it reported no other non-pass
+    state; and it neither stopped early nor failed a coverage threshold.
+    """
+    runners = MUTE_RUNNERS if runners is None else runners
+    body = _CSI.sub("", text or "")
+    bare = _without_preamble(command, preamble)
+    if wrapper_words(bare):
+        return ("the step wraps other runs and reports one line for each, so "
+                "the runner the names came from is not the whole step")
+    if _SHELL_BREAK.search(bare) or "\n" in bare or "\r" in bare:
+        return ("the command is more than one shell clause, so one runner's "
+                "names cannot be the whole step")
+    found = summary_readers(text)
+    if len(found) != 1:
+        return ("the output carries summaries from %s (%s) - not exactly "
+                "one, so no one runner's names are the whole failure"
+                % ("more than one runner" if found else "no runner",
+                   ", ".join(n for n, _j, _w in found) or "none"))
+    runner, joined, _words = found[0]
+    kind, called = command_runner(bare)
+    if kind:
+        return ("the command runs %s, which can fail on something beside %s "
+                "that prints no summary of its own" % (kind, runner))
+    if called != runner:
+        return ("the command is not a direct call of %s%s, so its exit and "
+                "output are not that runner's alone"
+                % (runner, " (it calls %s)" % (called,) if called else ""))
+    expected = runners.get(runner)
+    if expected is None:
+        return ("%s is not on the allow-list of runners whose failed-tests "
+                "exit was read off a real run" % (runner,))
+    if code != expected:
+        return ("%s exited %s, not %s - the failed-tests code it uses"
+                % (runner, code, expected))
+    words = _TALLY_WORDS.get(runner, ("failed",))
+    tally = sum(int(n) for n, word in _SUMMARY_PAIR.findall(joined)
+                if word in words)
+    named = _named_failure_count(runner, text or "")
+    if tally != named:
+        return ("%s tallied %d failure(s) and named %d, so a failure no mute "
+                "names is among them" % (runner, tally, named))
+    other = _other_failures(runner, joined, body)
+    if other:
+        return other
+    stopped = _stopped_early(runner, body)
+    if stopped:
+        return ("%s stopped early (%s), so the rest of the suite never ran"
+                % (runner, stopped))
+    coverage = _COVERAGE_FAILED.search(body)
+    if coverage:
+        return "a coverage threshold failed: %s" % (coverage.group(0).strip(),)
+    return None
+
+
+def mute_decision(step, text, entries, today, preamble=None, runners=None,
+                  withheld=None):
+    """`(honoured, refused, unmatched)` - the mutes that excuse this step, the
+    ones that name one of its failing suites and may not, and the ones that
+    named no path the runner blamed at all.
+
+    `withheld` is `withheld_mutes`' answer: an entry whose `bugId` it holds
+    is refused with that sentence as its `why`, exactly as an expired one
+    is, whatever its `until` says.
+
+    `honoured` is non-empty ONLY when the whole step is excused: a step
+    with one failing file no live entry names fails exactly as it did before
+    mutes existed, and saying half of it was muted would read as an excuse.
+    The same holds for any step `mute_ineligible` refuses - a wrapper, a
+    compound command, an unlisted runner, a failure beyond the named ones:
+    every live entry is then refused with that reason. `refused` carries `why` - expired, an `until` that is not a day,
+    or that reason - which is the line the terminal owes an operator whose
+    mute did not hold.
+
+    `unmatched` is filled only when a blamed file has no entry at all, and
+    names every entry that matched no blamed file: the usual cause is a
+    runner that prints paths relative to its own directory while the mute
+    spells them from the repository root, and silence there reads as a mute
+    that should have held.
+
+    THE DAY IS `_manifest_vocab`'s, parsed and graded there, so the validator
+    that warns about an expired mute and this runner that stops honouring it
+    read one clock and one spelling of a date.
+    """
+    if step.get("exit") == 0 or step.get("outcome") or not entries:
+        return [], [], []
+    _runner, named = _named_failures(text or "")
+    _name, raw, _source = _suite_candidates(text or "")
+    if not named or not raw:
+        return [], [], []
+    paths = _distinct(_norm(p) for p in raw)
+    entries = [e for e in entries if isinstance(e, dict)]
+    honoured, refused, uncovered = [], [], []
+    for path in paths:
+        live, stale = None, []
+        for entry in entries:
+            if _norm(entry.get("test")) != path:
+                continue
+            until = _vocab.mute_until(entry.get("until"))
+            held_back = (withheld or {}).get(str(entry.get("bugId")))
+            if held_back:
+                stale.append(dict(_mute_record(entry), why=held_back))
+            elif until is None:
+                stale.append(dict(_mute_record(entry), why=MUTE_UNREADABLE))
+            elif _vocab.mute_expired(until, today):
+                stale.append(dict(_mute_record(entry), why=MUTE_EXPIRED))
+            elif live is None:
+                live = _mute_record(entry)
+        if live is None:
+            refused.extend(stale)
+            if not stale:
+                uncovered.append(path)
+        else:
+            honoured.append(live)
+    unmatched = []
+    if uncovered:
+        unmatched = [_mute_record(e) for e in entries
+                     if _norm(e.get("test")) not in paths]
+    if len(honoured) < len(paths):
+        return [], refused, unmatched
+    beyond = mute_ineligible(step.get("command"), step.get("exit"), text,
+                             preamble, runners)
+    if beyond:
+        return [], [dict(m, why=beyond) for m in honoured], []
+    return honoured, [], []
+
+
 def failed_steps(steps):
     """The steps that ran to completion and came back non-zero.
 
@@ -2652,9 +3166,14 @@ def failed_steps(steps):
     point. A timed-out step's exit code is an artefact of the kill that stopped it
     - `-9`, or 124 where the platform gave nothing better - and counting it as a
     failure would report "your tests are red" about a suite that never finished.
+
+    NOR IS A STEP A MUTE EXCUSED (`mute_decision`), and that one keeps its
+    exit and its failing names on the step: the failure is recorded, and it
+    does not make the run fail.
     """
     return [st["name"] for st in steps
-            if st["exit"] != 0 and not st.get("outcome")]
+            if st["exit"] != 0 and not st.get("outcome")
+            and not st.get("muted")]
 
 
 def run_status(steps, failed, ran_total, cancelled_by, refused, unattributable):
@@ -2786,6 +3305,13 @@ def observed_step(name, command, code, text, facts, duration_ms):
     # never by this - `pre-commit run --all-files` measures hooks, and a hook
     # list is not a suite whatever `ran` says it counted.
     step["suiteReader"] = summary_reader(text)[0] or "none"
+    # ON ANY STEP, WHATEVER ITS EXIT - a flaky test is a doubt about a pass as
+    # much as a detail of a failure. Absent when the runner named none, so the
+    # key's presence is itself the claim that somebody reported one.
+    flaky, flaky_basis = flaky_tests(text, _ev.MAX_FAILING)
+    if flaky is not None:
+        step["flaky"] = flaky
+        step["flakyBasis"] = flaky_basis
     # THIS SITS BETWEEN THE TWO FOR A REASON. The wrapper's own facts
     # outrank it: a timed-out step was killed by OUR teardown, so its `-15` is
     # this process's signal and not the OS ending the run, and reading it here
@@ -2858,7 +3384,8 @@ def observed_step(name, command, code, text, facts, duration_ms):
 
 def run_gate(project, commands, runner=None, owns=None, timeout=None,
              recorded=None, task_scope=False, keep_text=False,
-             derived_check=None):
+             derived_check=None, muted=None, today=None, preamble=None,
+             withheld=None):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
     A dict rather than an exit code, for `verify-invariants.py`'s reason: a
@@ -2893,8 +3420,17 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     reads to know this dict exists at all. When it is a list, it is
     `[(name, text)]` for every step that ran, in order, text UNREDACTED:
     the log this feeds is never committed.
+
+    `muted` is `meta.muted` as the manifest holds it; `today` is the day an
+    expiry is graded against, and None asks `_manifest_vocab.mute_today`
+    rather than choosing a clock here. `preamble` is `meta.nodePreamble`,
+    read off a command before the one-runner rule asks about separators.
+    `withheld` is `withheld_mutes`' `{bugId: why}`, the mutes this run may
+    not honour whatever their `until`.
+    `res["muted"]` is every mute that excused a step, `[]` when none did.
     """
     runner = runner or _shell
+    today = _vocab.mute_today() if today is None else today
     before = _tree_stamp.porcelain(project)
     # PRE-EXECUTION, and the placement is load-bearing: a fix-in-place gate
     # rewrites the very files it checks, so a fingerprint taken after the run
@@ -2968,7 +3504,12 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
             # one, but a caller that read it twice from two different lines
             # is exactly the kind of copy this file's own rule refuses.
             named_now = files_named(text)
-            step["named"] = named_now
+            # THE STEP CARRIES A SORTED LIST, NEVER THE SET. `files_named`
+            # answers with a set, which JSON cannot spell, and a step is
+            # dumped whole by every `--json` path; every reader of
+            # `step["named"]` only iterates it. `step_named` below keeps
+            # the set for `shared_counts`, which never leaves this process.
+            step["named"] = None if named_now is None else sorted(named_now)
             if derived_check and name == derived_check.get("entry"):
                 gap = derived_step_gap(step, derived_check.get("tests"))
                 if gap is not None:
@@ -3003,6 +3544,17 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
                                 step["outcomeBasis"] + "; " + gap_reason)
                         else:
                             step["outcomeBasis"] = gap_reason
+            # LAST, AFTER EVERY OUTCOME IS SETTLED: a mute excuses a measured
+            # failure and nothing else, so a step any arm above graded
+            # `could-not-run` is never one it may touch.
+            honoured, refused, unmatched = mute_decision(
+                step, text, muted, today, preamble, withheld=withheld)
+            if honoured:
+                step["muted"] = honoured
+            if refused:
+                step["muteRefused"] = refused
+            if unmatched:
+                step["muteUnmatched"] = unmatched
             steps.append(step)
             # The attempt that ANSWERED, if one did: a retried step's first
             # attempt was ended by a signal, so only the second can speak here.
@@ -3132,20 +3684,26 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
             # `run_gate` out of that scan in silence - the exact failure
             # the scan exists to catch, turned against its own subject.
             "stepText": step_text,
+            # `[]` WHEN NOTHING WAS EXCUSED, the shape `sharedCounts` uses: a
+            # run with no mute to honour measured that, it did not skip it.
+            "muted": _distinct_records(m for st in steps
+                                       for m in (st.get("muted") or ())),
             "failed": failed}
 
 
 def _quiet_step(step):
     """True when a step's own line would say nothing past "it passed".
 
-    Exit 0, no no-verdict outcome, no failing detail and no retry: that is
+    Exit 0, no no-verdict outcome, no failing detail, no retry and no flaky
+    test named: that is
     the whole of what a plain-pass line carries, and the totals `render`
     already prints once for the whole run say the same thing. A step missing
     any one of those stays on the quiet form's output, because each is a fact
     a plain pass does not have.
     """
     return (step["exit"] == 0 and not step.get("outcome")
-            and step.get("failing") is None and not step.get("retryBasis"))
+            and step.get("failing") is None and not step.get("retryBasis")
+            and not step.get("flaky"))
 
 
 def _render_steps(res, out, quiet):
@@ -3186,6 +3744,23 @@ def _render_steps(res, out, quiet):
             for line in step["failing"]:
                 out("      %s" % (line,))
             out("      basis: %s" % (step["failingBasis"],))
+        for mute in step.get("muted") or ():
+            out("      muted: %s failed (bug %s, until %s)"
+                % (mute["test"], mute["bugId"], mute["until"]))
+        for mute in step.get("muteRefused") or ():
+            out("      muted: %s failed (bug %s), muted until %s - %s, so this "
+                "failure blocks" % (mute["test"], mute["bugId"], mute["until"],
+                                    mute["why"]))
+        for mute in step.get("muteUnmatched") or ():
+            out("      muted: the mute on %s (bug %s) matches no path the runner "
+                "named - it named: %s"
+                % (mute["test"], mute["bugId"],
+                   _output.some_of(step.get("failingSuites") or [],
+                                   budget=SAMPLE_BUDGET)))
+        for name in step.get("flaky") or ():
+            out("      flaky: %s" % (name,))
+        if step.get("flaky"):
+            out("      basis: %s" % (step["flakyBasis"],))
 
 
 def _render_verdict(res, out):
@@ -3824,7 +4399,7 @@ def _write_own_log(manifest_path, project_dir, step_text):
 
 
 # --- the third place: --full, against the whole product -----------------------
-def _record_full_run(project, args, res, commands, out=print):
+def _record_full_run(project, args, res, commands, run_id, out=print):
     """Record a scope-`full` row: no ids, no pointer, no evidence boundary.
 
     THE TWO WRITES A PHASE OR TASK RUN MAKES ARE BOTH ABSENT ON PURPOSE.
@@ -3841,8 +4416,10 @@ def _record_full_run(project, args, res, commands, out=print):
     by an operator's own tool timeout after `run_gate` returns and before this
     process would otherwise finish printing, and a run that happened is worse
     lost than a run whose summary the operator never saw.
+
+    `run_id` is minted by the caller, which names it in a remedy it prints.
     """
-    identity = {"runId": _ev.new_run_id(), "via": "cli",
+    identity = {"runId": run_id, "via": "cli",
                 "sessionId": os.environ.get("CLAUDE_CODE_SESSION_ID") or None,
                 "attempt": None, _ev.STARTED_KEY: res.get("startedAt")}
     published = [command for _name, command in (commands or [])]
@@ -3854,6 +4431,86 @@ def _record_full_run(project, args, res, commands, out=print):
         return {"recorded": False}
     out("  evidence: recorded %s" % (identity["runId"],))
     return {"recorded": True, "path": recorded["path"]}
+
+
+def _miss_remedy(miss, run_id, head, manifest_path, project):
+    """The two `audit-task.py` commands that file what a miss taught, in the
+    spelling its parser accepts - or the sentence saying why one cannot be
+    printed. Printed, never run: `full-gate.py` is what acts on a miss.
+
+    ANY EXPLANATION COMES BEFORE THE COMMANDS, inside `remedy (...):`, so
+    everything after the colon is commands alone, joined by `; ` and safe
+    to paste. `--sources` is bounded by `_evidence_io.MAX_PATHS`, the same
+    cut the row takes; past it no couple is printed, and the line points at
+    the row and the plan instead of printing an unbounded argument.
+
+    RUNNABLE AS PRINTED, from any directory: the interpreter is spelled out,
+    the script is the absolute path `_loader.script_path` resolves by
+    basename, and the plan and project are named - a bare `audit-task.py` is
+    'command not found' in a shell. Every argument is shell-quoted.
+    `import-evidence.py`'s printed `--learn-from` commands take the same form.
+
+    THE SUITE IS THE PINNED PATH: `miss["test"]` is what
+    `_evidence_io.selection_miss` pinned the runner's spelling to
+    (`pin_suite`), so the coupling and the bug name a file the plan can open.
+    """
+    test = miss["test"]
+    phases = ", ".join(miss["phases"])
+    if run_id is None:
+        return ("remedy: none printed - this run was not recorded, so no "
+                "--basis-run could name it; re-run with --record")
+    lead = "python3 %s" % (shlex.quote(_loader.script_path("audit-task.py")),)
+    tail = " %s --project-dir %s" % (
+        shlex.quote(os.path.abspath(manifest_path)),
+        shlex.quote(os.path.abspath(project)))
+    bug = ("%s bug-add %s --severity med --description %s --files %s%s"
+           % (lead, shlex.quote("SELECTION MISS: %s" % (test,)),
+              shlex.quote("full run %s at %s failed %s, and no derived "
+                          "sign-off gate in %s listed it"
+                          % (run_id, head, test, phases)),
+              shlex.quote(test), tail))
+    sources = miss["sources"]
+    if not sources:
+        return ("remedy (no couple: the tasks of %s declare no files to "
+                "couple the suite to): %s" % (phases, bug))
+    if len(sources) > _ev.MAX_PATHS:
+        return ("remedy (no couple: the tasks of %s declare %d source "
+                "files, past the %d one printed sources argument carries; run %s's "
+                "selectionMiss keeps the first %d with sourcesDropped, and "
+                "the full list is those tasks' files in the plan): %s"
+                % (phases, len(sources), _ev.MAX_PATHS, run_id,
+                   _ev.MAX_PATHS, bug))
+    return ("remedy: %s couple --test %s --sources %s --basis-run %s "
+            "--basis-head %s --phases %s%s; %s"
+            % (lead, shlex.quote(test), shlex.quote(",".join(sources)),
+               shlex.quote(str(run_id)), shlex.quote(str(head)),
+               shlex.quote(",".join(miss["phases"])), tail, bug))
+
+
+def selection_lines(selection, run_id, head, manifest_path, project):
+    """What a full run's post-pass (`_evidence_io.selection_miss`) prints.
+
+    One SELECTION MISS line per suite the runner named that no counted
+    phase's derived gate listed, with its remedy; one not-learned line per
+    failed step whose runner named no suite, with the basis the step carries;
+    and a line for every reason the question could not be put at all -
+    `reasons` and each `unasked` subject - so a silent post-pass means no
+    failure the runner named. `run_id` is None when the run was not
+    recorded.
+    """
+    lines = ["SELECTION MISS: %s failed at the third place and no derived "
+             "sign-off gate in %s listed it. %s"
+             % (miss["test"], ", ".join(miss["phases"]),
+                _miss_remedy(miss, run_id, head, manifest_path, project))
+             for miss in selection.get("misses") or []]
+    lines.extend("not learned: the runner did not name the failing suites "
+                 "(basis: %s)" % (basis,)
+                 for basis in selection.get("unnamed") or [])
+    lines.extend("SELECTION MISS not asked: %s" % (reason,)
+                 for reason in selection.get("reasons") or [])
+    lines.extend("SELECTION MISS not asked of %s: %s" % (subject, sentence)
+                 for subject, sentence in selection.get("unasked") or [])
+    return lines
 
 
 def _run_full(project, args, manifest, out=print):
@@ -3894,7 +4551,9 @@ def _run_full(project, args, manifest, out=print):
     try:
         res = run_gate(project, commands, owns=[], timeout=args.timeout,
                        recorded=recorded_excl, task_scope=False,
-                       keep_text=False)
+                       keep_text=False, muted=declared_mutes(manifest),
+                       preamble=declared_preamble(manifest),
+                       withheld=withheld_mutes(manifest, None))
     finally:
         _disarm_interrupt(previous)
     res["dirtyOutside"] = dirty_paths
@@ -3925,15 +4584,37 @@ def _run_full(project, args, manifest, out=print):
     # what a full run means: it is the whole product's own claim, not an
     # empty one.
     res["coverageBasis"] = None
+    # THE POST-PASS, BEFORE THE ROW IS BUILT so the row can carry what it
+    # found, and over the ledger as it stood BEFORE this run was appended -
+    # "the newest earlier measured full run" that bounds the work since must
+    # not be this one. The run id is minted here for the same reason: the
+    # remedy names it. The WHOLE read goes in, lost lines included: a ledger
+    # file read with losses may hold the bounding run, and the post-pass
+    # then asks nothing and names the file rather than bound by an older one.
+    run_id = _ev.new_run_id()
+    ledger = _ev.read_rows(project)
+    selection = _ev.selection_miss(
+        res.get("steps"), manifest.get("phases") or [], head, project,
+        ledger["rows"], [c for _name, c in commands],
+        unreadable=_ev.unreadable_names(ledger, project))
+    # `selectionMiss` is what `row_for` allow-lists onto the row;
+    # `selectionPass` is the whole answer, for `--json` alone.
+    res["selectionMiss"] = selection["misses"]
+    res["selectionPass"] = selection
     if args.record:
         # STRICTLY BEFORE render()/render_quiet() PRINT ANYTHING - see
         # `_record_full_run`'s own docstring for why.
-        res["recorded"] = _record_full_run(project, args, res, commands, out=out)
+        res["recorded"] = _record_full_run(project, args, res, commands,
+                                           run_id, out=out)
     if args.as_json:
         out(json.dumps(res, indent=2, sort_keys=True))
         return E_OK if res["status"] == "passed" else E_FAIL
     out("[run-test-gate] full gate: %d command(s)" % (len(commands),))
     code = (render_quiet if args.quiet else render)(res, out=out)
+    recorded = (res.get("recorded") or {}).get("recorded")
+    for line in selection_lines(selection, run_id if recorded else None, head,
+                                args.manifest, project):
+        out(line)
     out("FULL GATE GREEN at %s" % (head,) if code == E_OK else "FULL GATE RED")
     return code
 
@@ -4038,8 +4719,13 @@ def main(argv, out=print):
             out("[run-test-gate] --own refuses --reconcile - there is no "
                 "pointer from this path for it to repair")
             return E_ASK
-    project = args.project_dir or os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(args.manifest))))
+    # THE PLUGIN'S ONE ANSWER to which project a named manifest belongs to
+    # (`_panel_write.project_of_manifest`), the one `full-gate.py`,
+    # `import-evidence.py` and `audit-task.py` ask - never a count of
+    # directories, which is right only for `<T>/docs/audit/<file>` and records
+    # anywhere else into a ledger outside the project.
+    project = args.project_dir or _panel_write.project_of_manifest(
+        args.manifest)
     try:
         manifest = _mio.load_manifest(args.manifest)
     except Exception as exc:
@@ -4184,7 +4870,10 @@ def main(argv, out=print):
                            keep_text=args.own,
                            derived_check=(
                                derived_gate_check(manifest, args.phase)
-                               if args.task is None else None))
+                               if args.task is None else None),
+                           muted=declared_mutes(manifest),
+                           preamble=declared_preamble(manifest),
+                           withheld=withheld_mutes(manifest, args.task))
         finally:
             _disarm_interrupt(previous)
         # ON THE MEASURED RUN AND NOT ON THE REPEAT'S SOURCE. `run_gate` takes no

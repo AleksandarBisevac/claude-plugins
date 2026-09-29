@@ -308,10 +308,12 @@ def brief_lookup(manifest, task_id):
 # `could-not-run` step has no verdict: a derived-run gap, a missing
 # interpreter and a runner's own no-verdict signature all set that one word,
 # and without these two this lookup told a caller nothing more than the
-# terminal it was meant to stand in for already scrolled past.
+# terminal it was meant to stand in for already scrolled past. `muted` is the
+# mute that excused a step's failure, so a passed run beside a non-zero step
+# says why.
 _RUN_STEP_KEYS = ("name", "exit", "durationMs", "outcome",
                   "failing", "failingBasis", "failingSuites", "failingSuitesBasis",
-                  "outcomeBasis", "derivedGap")
+                  "outcomeBasis", "derivedGap", "muted")
 
 
 def _run_payload(row):
@@ -427,6 +429,14 @@ def _render_human(question, node_id, found, payload):
                 lines.append("    failing: %s" % (line,))
             for suite in step.get("failingSuites") or []:
                 lines.append("    failingSuite: %s" % (suite,))
+            # A PASSED run can hold a step that exited non-zero: the failure a
+            # mute quarantined. Naming the mute is what keeps that row from
+            # reading as a contradiction.
+            for mute in step.get("muted") or []:
+                if isinstance(mute, dict):
+                    lines.append("    muted: %s (bug %s, until %s)"
+                                 % (mute.get("test"), mute.get("bugId"),
+                                    mute.get("until")))
             # WHY, WHEN THE STEP HAS NO VERDICT. Printed only for a step that
             # carries the field - a step recorded before it existed, or one
             # that measured cleanly, says nothing here rather than an empty

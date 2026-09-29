@@ -13,9 +13,9 @@ because the list was wrong in both halves when somebody finally ran the graph:
     python3 -c "import sys;sys.path.insert(0,'plugins/audit/scripts');import _deps;\
     e,_=_deps.import_graph();print(sorted(a for a,b in e if b=='_manifest_vocab'))"
 
-LAYER 1, AND THAT IS WHY `TERMINAL` IS NOT HERE. Every other name below is a
-literal or a `re` pattern, so this module reaches nothing but `_output` and can
-sit at the floor where every consumer can import it. `TERMINAL` is
+LAYER 1, AND THAT IS WHY `TERMINAL` IS NOT HERE. This module reaches no sibling
+but `_output`, and nothing else beyond the standard library, so it can sit at
+the floor where every consumer can import it. `TERMINAL` is
 `_manifest_io`'s (layer 1 as well), so holding it here would put this module at
 layer 2 and push `_manifest_rules` past the layer its own consumers leave free.
 It stays re-exported from `_manifest_rules`, where the phase walk reads it.
@@ -46,6 +46,7 @@ This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__manifest_vocab.py` - see
 `plugins/audit/tests/_harness.py`.
 """
+import datetime
 import os
 import re
 import sys
@@ -277,6 +278,51 @@ LEDGER_READ_FAILED = "the evidence ledger could not be read: %s"
 LEDGER_LOCATION_FAILED = "where the evidence ledger lives could not be resolved: %s"
 
 
+# --- a mute's expiry: one reading of `meta.muted[].until` -------------------------
+# The validator warns on an expired mute and the test-gate runner refuses to honour
+# one; if the two parsed the date or read the clock differently, a mute could read
+# expired to one and live to the other on the same morning. So both ask here. The
+# date is a UTC calendar day in `YYYY-MM-DD` and is INCLUSIVE: a mute until a given
+# day still holds on that day and is expired from the next one.
+_MUTE_UNTIL_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def mute_until(value):
+    """`meta.muted[].until` as a `datetime.date`, or None when it is not one.
+
+    None is the answer for a missing value, a non-string, the wrong shape and an
+    impossible day alike: the caller names the entry as unreadable, and never
+    guesses a date for it.
+    """
+    if not isinstance(value, str) or not _MUTE_UNTIL_RE.match(value):
+        return None
+    try:
+        return datetime.date(int(value[:4]), int(value[5:7]), int(value[8:10]))
+    except ValueError:
+        return None
+
+
+def mute_today():
+    """The calendar day an expiry is graded against: TODAY IN UTC.
+
+    UTC because every timestamp the evidence ledger writes is UTC, so a run
+    stamped just after midnight and the day its mute is graded on are the same
+    day. A local-clock read would let the validator and the runner disagree
+    about one mute for the hours between the two midnights. Callers that grade
+    an expiry take the day from here and never choose a clock themselves.
+    """
+    return datetime.datetime.now(datetime.timezone.utc).date()
+
+
+def mute_expired(until, today):
+    """True when a mute whose `until` parsed to `until` no longer holds on `today`.
+
+    Both arguments are `datetime.date`; an unparseable `until` is the caller's to
+    report, because "expired" and "cannot tell" are different repairs.
+    """
+    return until < today
+
+
 # Known keys per level. Unknown keys are WARNINGS (typo catcher), never findings
 # — additionalProperties stays permissive for forward/backward compatibility.
 # The "legacy" names below were removed from the schema in v0.3.0 but remain
@@ -339,6 +385,13 @@ KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               # so no phase is ever provisional for lack of one. See `VERIFIED`
               # and `FULL_STATUS` below.
               "fullGate",
+              # Test suites QUARANTINED: each entry names a test path, why, who
+              # owns it, the day it stops holding, and the bug tracking it. A
+              # muted suite's failure is recorded but does not fail a run.
+              # Absent = nothing is quarantined and every failure blocks.
+              # `_manifest_rules._check_muted` is the shape check, and
+              # `mute_until`/`mute_expired` above are the one reading of `until`.
+              "muted",
               # The rest are NOT in the schema, and the reason for each is in
               # `OFF_SCHEMA` below rather than here - one copy, and a lint that
               # goes red when it stops being true. (The comment that stood here

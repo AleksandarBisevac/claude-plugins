@@ -3,7 +3,8 @@
 # because an earlier one went red.
 #
 #   tools/verify.sh                 the full set (what CI runs)
-#   tools/verify.sh --fast          iteration mode: narrower browser sweeps, NOT a gate
+#   tools/verify.sh --fast          iteration mode: narrower browser sweeps and no
+#                                   legacy-code-page sweep, NOT a gate
 #   tools/verify.sh --release       the full set PLUS the checks a version bump owes
 #   tools/verify.sh --affected      only the checks the working tree's changes need
 #
@@ -253,6 +254,25 @@ run "selftests (hooks + scripts + tests + tools)" python3 tools/sweep-selftests.
 # directly, the exit code is read by this shell instead of by the thing under test.
 run "...and the runner's own cases, read directly" \
   python3 tools/sweep-selftests.py --selftest
+# THE SWEEP AGAIN, ON A STREAM THAT CANNOT SPELL EVERY CHARACTER - the leg CI runs
+# and this file did not. A pipe on Windows is the machine's legacy code page, and a
+# suite printing a character that page lacks dies there while every other OS stays
+# green; the forced codec reproduces that on any machine. Without this leg a fixture
+# that failed only under the codec was green at every local run and red on the
+# push. `gate-parity.py` now compares the sweep's legs, so dropping this line turns
+# that gate red by the leg's flags.
+#
+# `--fast` SKIPS it and says so in the summary: it re-runs every suite the plain
+# leg just ran, so it costs a second full sweep's wall clock for a class of failure
+# that only a printed character can trigger. The full run and CI both keep it.
+if [ "$FAST" -eq 1 ]; then
+  printf '  %-44s%s\n' "selftests on a legacy code page" "skipped (--fast)"
+  RESULTS="$RESULTS
+  skip  selftests on a legacy code page (--fast)"
+else
+  run "selftests on a legacy code page" \
+    python3 tools/sweep-selftests.py --encoding cp1252
+fi
 # The meta-gate. This file, ci.yml, CONTRIBUTING.md and CLAUDE.md are hand-maintained
 # descriptions of one gate set, and they had drifted in both directions before anyone
 # measured it; a gate named by one and not another now fails by name. Both documents
@@ -399,6 +419,107 @@ for f in $report_docs; do
     FAILED=$((FAILED + 1))
   fi
 done
+# THE RENDERED-PLAN LEGS, which the loop above cannot stand in for. CI's manifest
+# job renders reports that are not committed anywhere and checks them - this
+# repo's own live plan, a plan whose phases all share one status, an all-parked
+# plan, the same with --no-proposals, and a report older than the checks - and
+# until these ran here a local green had never seen any of them. The live plan is
+# the one that bit: its shape moves with every phase merged, and CI went red on a
+# shape the committed reports do not have while this file stayed green.
+#
+# Same commands and same order as the "The report is interactive" step of
+# .github/workflows/ci.yml; only the scratch ROOT differs - this run's own WORKDIR
+# where CI writes under /tmp - and the directory and file names under it are CI's.
+# That is load-bearing: tools/gate-parity.py reads the checker's targets off both
+# files, strips the scratch root, and fails when the two sets differ. The
+# derived plans are built from the scale demo's generated manifest because that
+# is what CI builds them from, and the one-status transform is CI's, copied.
+rendered_plan_legs() {
+  lp="$WORKDIR/live-plan"
+  one="$WORKDIR/one-status"
+  ap="$WORKDIR/all-parked"
+  dl="$WORKDIR/dl"
+  mkdir -p "$lp" "$ap" || return 1
+  echo "== live plan: render and check"
+  python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json \
+    --out-dir "$lp" --format html || return 1
+  node tools/check-report-interactive.mjs "$lp"/*.html || return 1
+  python3 plugins/audit/scripts/demo/gen-demo-manifest.py "$dl" --phases 40 --tasks 5 \
+    >/dev/null || return 1
+  echo "== one-status plan: every phase done"
+  python3 - "$dl" "$one" <<'PYEOF' || return 1
+import io, json, os, shutil, sys
+src, dst = sys.argv[1], sys.argv[2]
+shutil.copytree(src, dst)
+path = os.path.join(dst, "audit-plan.json")
+plan = json.load(io.open(path, encoding="utf-8"))
+for phase in plan["phases"]:
+    if phase["status"] != "done":
+        os.remove(os.path.join(dst, phase["shard"]))
+plan["phases"] = [p for p in plan["phases"] if p["status"] == "done"]
+ids = set()
+for phase in plan["phases"]:
+    shard = json.load(io.open(os.path.join(dst, phase["shard"]),
+                              encoding="utf-8"))
+    ids |= set(t["id"] for t in shard["tasks"])
+plan["fileIndex"] = dict((f, [t for t in ts if t in ids])
+                         for f, ts in plan["fileIndex"].items()
+                         if any(t in ids for t in ts))
+plan["bugs"] = [b for b in plan["bugs"]
+                if b.get("taskId") is None or b.get("taskId") in ids]
+plan["proposals"] = []
+io.open(path, "w", encoding="utf-8").write(json.dumps(plan, indent=2))
+PYEOF
+  python3 plugins/audit/scripts/manifest/validate-manifest.py "$one/audit-plan.json" \
+    || return 1
+  python3 plugins/audit/scripts/demo/gen-demo-usage.py "$one/audit-plan.json" \
+    >/dev/null || return 1
+  CLAUDE_PROJECT_DIR="$one" python3 plugins/audit/scripts/report/render-report.py \
+    "$one/audit-plan.json" --out-dir "$one" --format html --basename one-status \
+    || return 1
+  node tools/check-report-interactive.mjs "$one/one-status.html" || return 1
+  echo "== all-parked plan: names its proposals, with and without --no-proposals"
+  python3 - "$dl/audit-plan.json" "$ap/audit-plan.json" <<'PYEOF' || return 1
+import io, json, sys
+src = json.load(io.open(sys.argv[1], encoding="utf-8"))
+src["phases"] = []
+src["fileIndex"] = {}
+src["bugs"] = []
+for prop in src.get("proposals") or []:
+    prop["status"] = "proposed"
+    prop["materializedAs"] = None
+    prop["materializedAt"] = None
+    prop.pop("notes", None)
+    prop.pop("droppedAt", None)
+io.open(sys.argv[2], "w", encoding="utf-8").write(json.dumps(src, indent=2))
+PYEOF
+  python3 plugins/audit/scripts/manifest/validate-manifest.py "$ap/audit-plan.json" \
+    || return 1
+  CLAUDE_PROJECT_DIR="$ap" python3 plugins/audit/scripts/report/render-report.py \
+    "$ap/audit-plan.json" --out-dir "$ap" --format html || return 1
+  # A glob, as in CI: the file is named after the plan it renders.
+  grep -q "parked proposal" "$ap"/*.html \
+    || { echo "an all-parked report does not name its proposals"; return 1; }
+  CLAUDE_PROJECT_DIR="$ap" python3 plugins/audit/scripts/report/render-report.py \
+    "$ap/audit-plan.json" --out-dir "$ap" --format html --basename np --no-proposals \
+    || return 1
+  grep -q "parked proposal" "$ap/np.html" \
+    || { echo "--no-proposals swallowed the empty-plan sentence"; return 1; }
+  if grep -q 'id="proposals"' "$ap/np.html"; then
+    echo "--no-proposals did not drop the section"; return 1
+  fi
+  echo "== a report older than the checks: exit 2 (cannot check), element named"
+  sed 's/class="toolbar sectools"/class="toolbar was-sectools"/' \
+    "$lp/audit-report.html" > "$lp/aged.html" || return 1
+  node tools/check-report-interactive.mjs "$lp/aged.html" > "$lp/aged.log" 2>&1
+  aged=$?
+  cat "$lp/aged.log"
+  [ "$aged" -eq 2 ] || { echo "expected exit 2 (cannot check), got $aged"; return 1; }
+  grep -q 'no \.sectools' "$lp/aged.log" \
+    || { echo "expected the missing element to be named"; return 1; }
+  return 0
+}
+run "rendered-plan legs (live, one-status, all-parked, aged)" rendered_plan_legs
 if [ "$FAST" -eq 1 ]; then
   run "panel + report preconditions (--fast)" \
     node tools/capture-screenshots.mjs --check --fast
@@ -560,7 +681,8 @@ if [ "$FAILED" -gt 0 ]; then
   exit 1
 fi
 if [ "$FAST" -eq 1 ]; then
-  echo "VERIFY (--fast): every step green, but the browser sweeps were narrowed."
+  echo "VERIFY (--fast): every step green, but the browser sweeps were narrowed"
+  echo "and the selftest sweep's legacy-code-page leg was skipped."
   echo "This is NOT the gate — re-run without --fast before trusting a change."
   exit 0
 fi

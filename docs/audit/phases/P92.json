@@ -1,0 +1,414 @@
+{
+  "id": "P92",
+  "title": "the suites pass on the runners CI uses, and the local sweep sees what those runners see",
+  "status": "done",
+  "description": "CI failed on the pushed main for causes the local sweep could not see: environment inputs it passes through (the session variables, git's system config and identity guessing, the installed shells) and a report-coverage gap the dogfood plan's own data triggered. Fix each cause red first by flipping the input that hid it, then close the class in the sweep and in verify.sh.",
+  "desiredOutcome": "CI's ubuntu selftests and manifest-validation jobs are green on the phase's head, and the local sweep, run in the environment it now isolates, fails on each cause they failed on before the fix",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint"
+  ],
+  "blockedBy": [],
+  "baseRef": "b00f798e928993824371b78327d2fbfce3f9bc2b",
+  "branch": "audit/p92-the-suites-pass-on-the-runners",
+  "mergedAt": "2026-09-28T02:08:24Z",
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P92-R1",
+        "severity": "low",
+        "file": "tools/gate-parity.py (_HEREDOC_RE)",
+        "issue": "The heredoc reader also matches a here-string (<<<), reads its word as a terminator and drops every following line, so a checker call after a here-string vanishes from the target set with no finding.",
+        "resolution": "fixed in P92.6-a1x (67aac9f3): Match a heredoc only on exactly two angle brackets; a case puts a here-string before a real call and asserts the call is read.",
+        "fixTask": "P92.6-a1x",
+        "commit": "67aac9f3"
+      },
+      {
+        "id": "P92-R2",
+        "severity": "low",
+        "file": "tools/gate-parity.py (_first_argument)",
+        "issue": "The target keeps trailing shell punctuation, so a call written as `if ... ; then` on one side and bare on the other reads as a missing document.",
+        "resolution": "fixed in P92.6-a1x (67aac9f3): Tokenise with shell punctuation separated; an allow case with the same target in both spellings.",
+        "fixTask": "P92.6-a1x",
+        "commit": "67aac9f3"
+      },
+      {
+        "id": "P92-R3",
+        "severity": "low",
+        "file": "tools/prove-gates.py (ALLOW row rt2 comment)",
+        "issue": "The comment says the mutation reports every rendered leg missing; it actually leaves the scratch root unexpanded, which the reader reports as an unresolved target.",
+        "resolution": "fixed in P92.6-a1x (67aac9f3): Say what the mutation does.",
+        "fixTask": "P92.6-a1x",
+        "commit": "67aac9f3"
+      },
+      {
+        "id": "P92-R4",
+        "severity": "low",
+        "file": "tools/gate-parity.py; tools/sweep-selftests.py (comments and a case label)",
+        "issue": "Present-tense counts of what the files hold (legs from the generator's tree, documents in a loop, names outside the prefix) go wrong when one is added.",
+        "resolution": "fixed in P92.6-a1x (67aac9f3): Delete the numbers and keep the pointers.",
+        "fixTask": "P92.6-a1x",
+        "commit": "67aac9f3"
+      },
+      {
+        "id": "P92-R5",
+        "severity": "low",
+        "file": "CLAUDE.md, CONTRIBUTING.md, plugins/audit/tests/_harness.py (fixture_root docstring)",
+        "issue": "The filtered isolation families are named in three documents that nothing checks; the documents say so, but it is a rule in prose in documents this repo has recorded drifting apart.",
+        "resolution": "fixed in P92.6-a1x (67aac9f3): isolation_drift derives the filtered families from the runner's constants and requires each document to name them; then drop the sentences that say nothing checks them.",
+        "fixTask": "P92.6-a1x",
+        "commit": "67aac9f3"
+      }
+    ],
+    "outcome": "Diagnosed on a fresh clone and an ubuntu:24.04 container; the phase review reproduced CI's ubuntu shape in the container and found the three failing suites and the full sweep green on the phase head, with P92.1-P92.4 reverted reproducing CI's reds. Its five lows were fixed in P92.6 and resolved; one overclaim in a recorded outcome (the macOS sweep does not reproduce the shell-dependent duplicate) was corrected. prove-gates proves the new gate-parity rows red and quiet; the phase gate and verify.sh are green, invariants found no breach. The windows-latest leg is diagnosed separately. [findings: 5 - 0 high, 0 med, 5 low; 5 with a recorded fix commit]"
+  },
+  "summary": "The suites CI's ubuntu runner failed on carry their own identity, branch and session now, a case skipped on one platform keeps one id, and the report checker excuses the tagged-chips expect only on its own note; the sweep hands its children no ambient session, git configuration or git identity, verify.sh runs CI's rendered-plan legs, and gate-parity holds the checker's targets and the filtered isolation names to both runners and every document.",
+  "tasks": [
+    {
+      "id": "P92.1",
+      "title": "a case skipped on one platform and run on another is one case, not a duplicate id",
+      "status": "done",
+      "description": "The harness records a call site as a bare line number and skip() calls check() from inside the harness, so test__refs lr2 (run on one shell, skipped where zsh is absent) reads as a duplicate on ubuntu and windows. A skip registers no call site of its own; sites are keyed by the file and line of the first frame outside the harness. Red first by making zsh unavailable to the case.",
+      "files": [
+        "plugins/audit/tests/_harness.py",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/_harness.py: repro that FAILS on current code - a case run through check() on one branch and through skip() on another is reported as a duplicate case id"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "100beb36",
+      "outcome": {
+        "technical": "_harness._call_site: a skip registers no site; a site is the file and line of the first frame outside the harness; label_faults reports basename:line; cases cs1-cs4.",
+        "descriptive": "A case skipped where a shell is absent and run where it exists keeps one id, and two real call sites under one id are still reported, now even across files sharing a line number."
+      },
+      "startedAt": "2026-09-28T00:35:24Z",
+      "completedAt": "2026-09-28T01:08:28Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-28T01:03:43Z.732ab1",
+        "status": "passed",
+        "at": "2026-09-28T01:03:43Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "100beb36",
+        "at": "2026-09-28T01:08:28Z",
+        "basis": "the harness fix the diagnosis named"
+      }
+    },
+    {
+      "id": "P92.2",
+      "title": "the lock and branch fixtures in test_audit_task hold on a runner with no session and a plain git",
+      "status": "done",
+      "description": "k1-k4: the fixture takes the lock in the test's own process, whose token then rides in AUDIT_LOCK_TOKENS and lets the verb back in when no session variable names another caller (CI). Take the fixture lock from a subprocess, or drop the carried token, and pin the session variables the case means. tw5/tw6: mk() and mk_pair_empty() run git init without a branch, which is main only under Apple git's system config; use an explicit initial branch. Red first with the session variables stripped and GIT_CONFIG_NOSYSTEM=1.",
+      "files": [
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: repro that FAILS on current code - with the Claude session variables stripped and git's system config ignored, k1-k4 and tw5/tw6 fail"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "1085ef3e",
+      "outcome": {
+        "technical": "k-group fixture lock taken by a child process with session variables unset for the group; git init -q -b main in mk() and mk_pair_empty(); tw0.",
+        "descriptive": "The lock cases no longer depend on the runner's Claude session variables, and the git fixtures start on main whatever the runner's default branch."
+      },
+      "startedAt": "2026-09-28T00:35:24Z",
+      "completedAt": "2026-09-28T01:08:29Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-28T01:05:12Z.797997",
+        "status": "passed",
+        "at": "2026-09-28T01:05:12Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "1085ef3e",
+        "at": "2026-09-28T01:08:29Z",
+        "basis": "the fixture fixes the diagnosis named, plus a case for the fixture no case read"
+      }
+    },
+    {
+      "id": "P92.3",
+      "title": "close-phase's merge fixture carries its own git identity",
+      "status": "done",
+      "description": "close-phase's merge --no-ff needs a committer; the fixture identity covers only the fixture's own git calls, and ubuntu cannot guess one. Write a repo-local user.name/user.email into the worktree fixture. Red first with user.useConfigOnly=true.",
+      "files": [
+        "plugins/audit/tests/test_close_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_close_phase.py: repro that FAILS on current code - with identity guessing refused, mh2's --no-ff merge cannot commit"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "d26f0e44",
+      "outcome": {
+        "technical": "_init_fixture_repo: git init -b main and a repo-local identity, used by every fixture in test_close_phase.",
+        "descriptive": "close-phase's merge cases no longer depend on the host being able to guess a git identity."
+      },
+      "startedAt": "2026-09-28T00:35:25Z",
+      "completedAt": "2026-09-28T01:08:30Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-28T01:06:43Z.5d58b3",
+        "status": "passed",
+        "at": "2026-09-28T01:06:43Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d26f0e44",
+        "at": "2026-09-28T01:08:30Z",
+        "basis": "the fixture identity the diagnosis named, applied to every fixture that commits"
+      }
+    },
+    {
+      "id": "P92.4",
+      "title": "the rendered-plan legs CI runs are graded the same way locally, and a plan with ready work and no area tags is not a coverage failure",
+      "status": "done",
+      "description": "The tagged-phase chips expect is excused only when nothing is ready; excuse it too on the note its else branch prints when no ready task sits in a tagged phase. CI's one-status leg renders the live dogfood plan while its comment says the plan is all one status: render a committed fixture that is, or say what it renders. verify.sh runs the same rendered-plan legs as ci.yml so a local green covers them.",
+      "files": [
+        "tools/check-report-interactive.mjs",
+        ".github/workflows/ci.yml",
+        "tools/verify.sh",
+        "tools/gate-parity.py",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/check-report-interactive.mjs: repro that FAILS on current code - a report of a plan with ready tasks and no area tags fails coverage on the tagged-phase chips expect"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "941d551c",
+      "outcome": {
+        "technical": "check-report-interactive.mjs FEATURE_ABSENT keyed by the else-branch note; ci.yml live-plan leg renamed and described, one-status leg derived from the scale demo; verify.sh rendered_plan_legs; gate-parity report_target_drift with rt0-rt5 and the two ABSENT_BY_DESIGN rows updated; prove-gates rows rt0 (red) and rt2 (allow).",
+        "descriptive": "A plan with ready work and no area tags no longer fails coverage; verify.sh runs CI's rendered-plan legs, including a derived one-status plan; gate-parity fails when the two runners hand the report checker different documents."
+      },
+      "startedAt": "2026-09-28T00:35:25Z",
+      "completedAt": "2026-09-28T01:08:30Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-28T01:08:11Z.a7562f",
+        "status": "passed",
+        "at": "2026-09-28T01:08:11Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "941d551c",
+        "at": "2026-09-28T01:08:30Z",
+        "basis": "the checker fix, plus the local legs and a parity check on what each runner hands the checker"
+      }
+    },
+    {
+      "id": "P92.5",
+      "title": "the sweep hands its suites no ambient session or git configuration, so a local green means what CI's does",
+      "status": "done",
+      "description": "The class behind the ubuntu failures: the sweep isolates cwd, TMPDIR, HOME/XDG and the pycache but passes the rest of the environment through. For every child: drop the Claude session variables (CLAUDE_CODE_SESSION_ID, CLAUDE_PID and the rest of that family), ignore git's system configuration (GIT_CONFIG_NOSYSTEM), and refuse git's identity guessing (user.useConfigOnly) with no default branch pinned, so a suite that leans on the host's git fails here the way it fails on a bare runner rather than passing under a pinned default. A sweep case fails if any of these reaches a child. Name the new families where isolation_drift reads them (CLAUDE.md's Tests paragraph, CONTRIBUTING.md and fixture_root's docstring). Prove it red first: with P92.1-P92.4 reverted in a scratch tree, the isolated sweep fails on exactly the causes CI failed on.",
+      "files": [
+        "tools/sweep-selftests.py",
+        "plugins/audit/tests/_harness.py",
+        "CLAUDE.md",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/sweep-selftests.py: repro that FAILS on current code - a child suite sees a Claude session variable, git's system configuration, or a git identity guessed from the host"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P92.1",
+        "P92.2",
+        "P92.3",
+        "P92.4"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "acef6c2c",
+      "outcome": {
+        "technical": "tools/sweep-selftests.py: ambient_env drops the CLAUDE_ prefix, CLAUDECODE, AUDIT_LOCK_TOKENS and git's documented identity names, and sets GIT_CONFIG_NOSYSTEM and user.useConfigOnly; no branch or identity pinned; cases se0-se5, x8-x14. CLAUDE.md Tests paragraph, CONTRIBUTING.md isolation block and fixture_root's docstring name the filtered families and state that isolation_drift does not read them.",
+        "descriptive": "A local sweep hands its suites the bare session and git a CI runner has: no Claude session variables, no system git configuration, no guessed or exported git identity; over the pre-fix tree it now fails on the suites whose CI failure came from the environment (the lock, branch and identity fixtures); the duplicate-id failure, which depends on which shells a machine has installed, is held on every platform by the harness's own cases instead."
+      },
+      "startedAt": "2026-09-28T01:08:53Z",
+      "completedAt": "2026-09-28T01:28:07Z",
+      "verifiedBy": [
+        "se0-se5",
+        "x8-x14"
+      ],
+      "testEvidence": {
+        "runId": "2026-09-28T01:28:07Z.65eff9",
+        "status": "passed",
+        "at": "2026-09-28T01:28:07Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "acef6c2c",
+        "at": "2026-09-28T01:28:07Z",
+        "basis": "the isolation the diagnosis named, widened to ambient git identity, with the class proved on the pre-fix tree"
+      }
+    },
+    {
+      "id": "P92.6-a1x",
+      "title": "the report-target reader reads every call the shell would run, and the filtered isolation families are held in the documents by a check",
+      "status": "done",
+      "description": "Phase review fix task. report_target_drift: a heredoc is matched on exactly two angle brackets so a here-string does not swallow the lines after it; a call's first argument is read with shell punctuation separated so an if/then spelling and a bare one agree. prove-gates' rt2 comment says what its mutation does. Present-tense counts in the new comments and a case label become pointers. isolation_drift also derives the filtered families (the session prefix and names, the git identity names, the git configuration it sets) from sweep-selftests.py and requires each isolation document to name them; the sentences saying nothing checks them go.",
+      "files": [
+        "tools/gate-parity.py",
+        "tools/prove-gates.py",
+        "tools/sweep-selftests.py",
+        "CLAUDE.md",
+        "CONTRIBUTING.md",
+        "plugins/audit/tests/_harness.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/gate-parity.py: repro that FAILS on current code - a checker call after a here-string vanishes from the target set, and a document that stops naming a filtered isolation family passes"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "67aac9f3",
+      "outcome": {
+        "technical": "gate-parity.py: two-bracket heredoc match, shlex.shlex with punctuation_chars and whitespace_split, filtered_env_families/_covers/uncovered_members in isolation_drift; prove-gates rows for the new drift and a corrected rt2 comment; counts in prose removed; CLAUDE.md and CONTRIBUTING.md describe the check.",
+        "descriptive": "The report-target reader no longer loses a call after a here-string or reads shell punctuation into a file name, and every name the sweep filters is held, as a code span, to each document that describes the isolation."
+      },
+      "startedAt": "2026-09-28T01:41:50Z",
+      "completedAt": "2026-09-28T01:56:38Z",
+      "verifiedBy": [
+        "rt6",
+        "rt7",
+        "rt8",
+        "is7-is12"
+      ],
+      "testEvidence": {
+        "runId": "2026-09-28T01:56:37Z.f6c187",
+        "status": "passed",
+        "at": "2026-09-28T01:56:37Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "67aac9f3",
+        "at": "2026-09-28T01:56:38Z",
+        "basis": "the phase review's five findings"
+      }
+    }
+  ],
+  "startedAt": "2026-09-28T00:35:24Z",
+  "testEvidence": {
+    "runId": "2026-09-28T01:59:22Z.8f2fc0",
+    "status": "passed",
+    "at": "2026-09-28T01:59:22Z"
+  },
+  "mergedHead": "266f1a90e72264f811596f21342b70741e96c5a2"
+}

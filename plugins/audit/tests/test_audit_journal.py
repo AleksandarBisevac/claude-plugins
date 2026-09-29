@@ -2434,6 +2434,52 @@ def _evidence_merge_cases(check):
               and "%s(key task %s, " % (order[2], "P1.1" if order[2]
                                         == "run-o1" else "P1.2") in summary[0]
               and " before " in summary[0])
+
+        # A SIDE THAT IS NOT UTF-8 IS REFUSED, never merged. The merge WRITES
+        # the ledger and re-chains it, so a byte read leniently would become a
+        # valid character `verify` then passes as clean - and a side read as
+        # "no rows" would drop its runs. Both sources of a side are driven: a
+        # file handed as --ours, and the index stage git holds.
+        proj, target, ours, theirs = _ev_divergence(
+            tmp, "undecodable",
+            [_ev_run("run-u1", "2026-06-02T10:00:00Z", "P1.1")],
+            [_ev_run("run-u2", "2026-06-03T10:00:00Z", "P1.1")])
+        with open(ours, "rb") as fh:
+            ours_bytes = fh.read()
+        with open(ours, "wb") as fh:
+            fh.write(ours_bytes.replace(b'"run-u1"', b'"run-u\xff1"'))
+        with open(target, "rb") as fh:
+            target_before = fh.read()
+        code, txt = _ev_merge(proj, target, ours, theirs)
+        with open(target, "rb") as fh:
+            target_after = fh.read()
+        check("me11 RED-FIRST: an --ours ledger file holding a byte that is not "
+              "UTF-8 REFUSES the merge, naming the side and its file, and "
+              "writes nothing: %r" % (txt,),
+              code != 0 and "REFUSED:" in txt and "the ours side" in txt
+              and ours in txt and "not UTF-8" in txt
+              and target_after == target_before, txt)
+        with open(theirs, "rb") as fh:
+            theirs_bytes = fh.read()
+        stages = {2: ours_bytes.replace(b'"run-u1"', b'"run-u\xff1"'),
+                  3: theirs_bytes}
+        real_stage = M._git_stage
+        M._git_stage = lambda path, stage: stages.get(stage)
+        try:
+            lines = []
+            code = M.main(["merge", "--file", _output.posix_rel(target, proj),
+                           "--project", proj], out=lines.append)
+        finally:
+            M._git_stage = real_stage
+        txt = "\n".join(lines)
+        with open(target, "rb") as fh:
+            target_after = fh.read()
+        check("me12 RED-FIRST: ...and so does the index's stage 2, the side "
+              "git holds - named by the stage it came from - with nothing "
+              "written: %r" % (txt,),
+              code != 0 and "REFUSED:" in txt and "the ours side" in txt
+              and ":2:" in txt and "not UTF-8" in txt
+              and target_after == target_before, txt)
     finally:
         _harness.remove_tree(tmp)
 

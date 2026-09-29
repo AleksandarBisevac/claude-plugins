@@ -447,6 +447,18 @@ The journal's **completion-record actions**:
   rather than replaced, so a widening still writes this action, once, over the same entry
 - `coupling.dropped` — `audit-task.py uncouple` removed one `meta.coupling` entry by its test path
   (details: field = the test path, from = the `sources` the dropped entry carried)
+- `coupling.caught` — `audit-task.py couple --test <path> --caught <runId>` set one existing
+  `meta.coupling` entry's `lastCaught` from a full run that named the test failing (details:
+  field = the test path, from = the `lastCaught` it replaced, null when there was none, to = the
+  run row's `ts`, runId). A catch no newer than the recorded `lastCaught` writes no row, since
+  nothing moved
+- `bug.add` — `audit-task.py bug-add` appended one bug to `bugs[]` (details: field = the new bug
+  id, to = `open`)
+- `test.muted` — `audit-task.py mute` wrote or extended one `meta.muted` entry (details: field =
+  the test path, from = the `until` an extended entry carried, null for a new one, to = the new
+  `until`, reason)
+- `test.unmuted` — `audit-task.py unmute` removed one `meta.muted` entry (details: field = the test
+  path, from = the `until` the removed entry carried)
 - `phase.gateDerived` — `derive-phase-gate.py` computed a phase's derived sign-off gate (details:
   phaseId, mode, changes — which of `testGateDerived`/`testGateBasis`/`testGate` this run wrote,
   `testGate` only in `enforce` mode — and basis, `phase.testGateBasis`'s own word). Written **only
@@ -499,8 +511,8 @@ derived, and an old, unrelated completion of the same task is a different record
 by design:** a sign-off of a branchless phase (`mergedAt` is null, which cannot tell one sign-off
 from another), and a completion that was never recorded anywhere. Both cost a repeated row, never
 a lost one.
-`task.move`, `task.block`, `task.note`, `coupling.learned` and `coupling.dropped` are written **in
-process** by `audit-task.py`, the same way its `task.done`, `task.reopen` and `plan.settle` rows
+`task.move`, `task.block`, `task.note`, `coupling.learned`, `coupling.dropped`, `coupling.caught`,
+`bug.add`, `test.muted` and `test.unmuted` are written **in process** by `audit-task.py`, the same way its `task.done`, `task.reopen` and `plan.settle` rows
 are. `phase.gateDerived` is written **in process** by `derive-phase-gate.py`, its own entry point,
 for the identical reason. `phase.merged` and `phase.mergedHead.recorded` are written **in process** by
 `close-phase.py`, for the same reason again: it writes the plan with `os.replace` from a script

@@ -3075,7 +3075,8 @@ def _cases(check):
           "rather than a silent skip: %r"
           % ((_tk_shared, sorted(_tk_flags)),),
           _tk_shared == ["add", "add-phase", "block", "cancel", "couple", "done",
-                         "move", "note", "reopen", "scope", "start", "uncouple"]
+                         "move", "mute", "note", "reopen", "scope", "start",
+                         "uncouple", "unmute"]
           and "move" in _tk_flags and "move" in _at_usage)
     # `_tk_all`, not `_tk_flags`: the latter has no row for a verb that came from
     # the other document, and indexing it here raised `KeyError` the first time
@@ -3255,7 +3256,8 @@ def _cases(check):
           % ((_pf_verbs, _pf_checked),),
           _pf_checked != [] and "--gate-clear" in _pf_checked
           and _pf_verbs == ["add", "add-phase", "block", "cancel", "couple",
-                            "done", "move", "note", "reopen", "scope", "uncouple"]
+                            "done", "move", "mute", "note", "reopen", "scope",
+                            "uncouple", "unmute"]
           and _pf_same != "" and _pf_same == _at_src
           and _at_dest.get("--gate-clear") == "gate_clear"
           and _at_dest.get("--blocked-by") == "blocked_by")

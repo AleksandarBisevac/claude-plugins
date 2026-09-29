@@ -46,6 +46,8 @@ import calendar
 import json
 import os
 import pathlib
+import posixpath
+import shlex
 import shutil
 import sys
 import time
@@ -78,6 +80,7 @@ import _evidence_io  # noqa: E402  (the ledger tally, at layer 2)
 import _fmt  # noqa: E402  (human_duration, at layer 1)
 import _manifest_io  # noqa: E402  (signoff_recorded, declared_gate_entries, layer 1)
 import _manifest_vocab  # noqa: E402  (the FULL_STATUS words, one vocabulary)
+import _worktrees  # noqa: E402  (_git, the one git runner at layer 1)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `audit-doctor.py` unchanged, and an alias keeps them reading the same names
@@ -1428,6 +1431,362 @@ def check_full_run(rep, project, manifest_rel, manifest, git_root, config=None):
                   ", %s old" % age if age else ""))
         return
     rep.ok(FULL_RUN_CHECK, "%d merged phase(s) read whole" % (len(whole),))
+
+
+# --- checks: learned couplings -------------------------------------------------
+COUPLING_CHECK = "coupling"
+
+# How many GREEN MEASURED full runs a coupling may go without catching
+# anything before this check names it as a candidate for `uncouple`. Counted in
+# runs, never in days: only a full run runs every coupled test, so a stretch
+# with no full run has not exercised a coupling at all and must not age it.
+# Large enough that a run of unrelated changes does not make a young coupling
+# look dead; small enough that one whose sources moved on is named while
+# somebody still remembers why it was learned. Printed beside every candidate
+# as the basis, because a threshold nobody can see is a verdict nobody can
+# argue with.
+UNCOUPLE_AFTER_FULL_RUNS = 10
+
+_UNCOUPLE_FIX = "audit-task.py uncouple --test %s"
+_NEVER_FOR_YOU = (" - never run for you: dropping a coupling narrows the "
+                  "sign-off gate, which is a judgement this check has no "
+                  "basis to make")
+_GIT_TIMEOUT = 30
+
+
+def _coupling_entries(coupling):
+    """The entries of `meta.coupling` that name a test - the key `uncouple`
+    drops an entry by, so an entry without one has no command to offer."""
+    return [e for e in coupling if isinstance(e, dict)
+            and isinstance(e.get("test"), str) and e.get("test").strip()]
+
+
+def _norm(path):
+    """A coupled path in the spelling `git ls-files` prints it back in."""
+    return posixpath.normpath(path.strip().replace("\\", "/"))
+
+
+def _outside_repository(path):
+    """Whether `path` leaves the project before git is asked about it - a
+    parent-relative path or an absolute one (either slash, or a drive
+    letter). The coupling verb accepts both shapes, and git refuses a WHOLE
+    `ls-files` batch over one of them, so it is split out first rather than
+    left to switch the tracking check off for every other coupling."""
+    norm = _norm(path)
+    return (norm == ".." or norm.startswith("../") or norm.startswith("/")
+            or (len(norm) > 1 and norm[1] == ":"))
+
+
+def _coupling_paths(entry):
+    """The test first, then every source that reads as a path."""
+    sources = entry.get("sources") if isinstance(entry.get("sources"), list) else []
+    return [entry["test"]] + [s for s in sources
+                              if isinstance(s, str) and s.strip()]
+
+
+def tracked_among(project, paths):
+    """`(tracked, why)` - which of `paths` git tracks under `project`, from
+    ONE `git ls-files` over all of them, or `(None, why)` when git could not
+    be asked.
+
+    ONE CALL, NOT ONE PER PATH: a plan keeps learning couplings, and a
+    doctor that spawned git per path would pay for every one of them on
+    every run. Run through `_worktrees._git`, the one git runner below this
+    layer, rather than a second subprocess path of its own.
+    `--literal-pathspecs` because a coupled path is a file name, never a
+    pattern - a bracket in a name must not widen the question into a glob
+    that some OTHER tracked file answers. A path that git prints back
+    beneath (a directory) counts as tracked, because something under it is.
+    Paths outside the repository must be split out by the caller
+    (`_outside_repository`) - git refuses the whole batch over one.
+
+    `why` IS THE BASIS for the fail-open branch: git absent, not a
+    repository, or a timeout are each said in git's own words rather than
+    read as "nothing is tracked", which would name every coupling at once."""
+    wanted = sorted(set(_norm(p) for p in paths))
+    if not wanted:
+        return set(), None
+    code, out, err = _worktrees._git(
+        project, ["--literal-pathspecs", "ls-files", "-z", "--"] + wanted,
+        timeout=_GIT_TIMEOUT)
+    if code is None:
+        return None, "git ls-files could not run (%s)" % (err,)
+    if code != 0:
+        said = (err or "").strip()
+        return None, ("git ls-files exited %d: %s"
+                      % (code, said.splitlines()[0] if said else "no message"))
+    listed = [n for n in (out or "").split("\0") if n]
+    return set(p for p in wanted
+               if p in listed or any(n.startswith(p + "/") for n in listed)), None
+
+
+def _uncouple_fix(test):
+    """The command that drops `test`'s entry, and why it is not run here."""
+    return (_UNCOUPLE_FIX % (shlex.quote(test),)) + _NEVER_FOR_YOU
+
+
+def _check_coupling_tracking(rep, project, entries, git_root):
+    """A coupling naming a path git does not track - or one outside the
+    repository, which git cannot track at all - is a WARNING with the
+    command that drops it: never dropped here, and never folded into the
+    ageing verdict, because a file that is gone is a different fact from a
+    test that has stopped catching anything."""
+    outside = dict((e["test"], [p for p in _coupling_paths(e)
+                                if _outside_repository(p)]) for e in entries)
+    for entry in entries:
+        if outside[entry["test"]]:
+            rep.warn(COUPLING_CHECK,
+                     "meta.coupling entry for %s names %s outside the "
+                     "repository - git cannot track it, so the coupling can "
+                     "neither run nor catch anything"
+                     % (entry["test"], _output.some_of(outside[entry["test"]])),
+                     _uncouple_fix(entry["test"]))
+    paths = [p for e in entries for p in _coupling_paths(e)
+             if not _outside_repository(p)]
+    if not paths:
+        return
+    by_hand = "git ls-files -- %s" % (" ".join(
+        shlex.quote(p) for p in sorted(set(_norm(p) for p in paths))),)
+    if not git_root:
+        rep.warn(COUPLING_CHECK,
+                 "whether the coupled paths are tracked was not checked: "
+                 "this project is not a git repository (or git could not "
+                 "find its root)", by_hand)
+        return
+    tracked, why = tracked_among(project, paths)
+    if tracked is None:
+        rep.warn(COUPLING_CHECK,
+                 "whether the coupled paths are tracked was not checked: %s"
+                 % (why,), by_hand)
+        return
+    flagged = 0
+    for entry in entries:
+        gone = [p for p in _coupling_paths(entry)
+                if not _outside_repository(p) and _norm(p) not in tracked]
+        if not gone:
+            continue
+        flagged += 1
+        rep.warn(COUPLING_CHECK,
+                 "meta.coupling entry for %s names %s that git does not "
+                 "track - the coupling points at a file that is gone or was "
+                 "never committed, so it can neither run nor catch anything"
+                 % (entry["test"], _output.some_of(gone)),
+                 _uncouple_fix(entry["test"]))
+    if not flagged and not any(outside.values()):
+        rep.ok(COUPLING_CHECK,
+               "every path the %d coupling(s) name is tracked by git (one "
+               "git ls-files over %d path(s))"
+               % (len(entries), len(set(_norm(p) for p in paths))))
+
+
+def coupling_age(entry, run_moments):
+    """`(runs, field, why)` - how many green measured full runs (the
+    `(moment, mutedTests)` pairs in `run_moments`) came strictly AFTER the
+    entry was last caught, or learned when it never was.
+
+    `lastCaught` OUTRANKS `learnedAt`: a coupling that caught a failure
+    yesterday earned its place yesterday, however long ago it was learned.
+    `runs` is None and `why` the basis when neither field reads as a moment -
+    an entry that cannot be aged is said, never read as a fresh one.
+
+    A RUN THAT MUTED THIS TEST DOES NOT AGE IT. The row reads green because
+    the mute excused the test's failure, not because the test passed, so
+    counting it would read "failed every run" as "caught nothing". The test
+    is compared in `_norm`'s spelling, the one every coupled path here is
+    compared in.
+
+    Both stamps are read by `_evidence_io.stamp_moment`, the reading the
+    ledger orders its rows by, so a date-only stamp means the same moment
+    here as it does there."""
+    field = "lastCaught" if entry.get("lastCaught") else "learnedAt"
+    stamp = entry.get(field)
+    if not stamp:
+        return None, field, "it carries neither lastCaught nor learnedAt"
+    moment = _evidence_io.stamp_moment(stamp)
+    if moment is None:
+        return None, field, "its %s %r does not read as a moment" % (field, stamp)
+    test = _norm(entry["test"])
+    return (sum(1 for m, muted in run_moments if m > moment and test not in muted),
+            field, None)
+
+
+def _muted_tests(row):
+    """Every test a mute excused in `row` - named by the row's own `muted`
+    list or by any step's - in `_norm`'s spelling."""
+    lists = [row.get("muted")] + [step.get("muted")
+                                  for step in (row.get("steps") or [])
+                                  if isinstance(step, dict)]
+    return frozenset(_norm(m["test"]) for mutes in lists
+                     if isinstance(mutes, list)
+                     for m in mutes
+                     if isinstance(m, dict) and isinstance(m.get("test"), str)
+                     and m["test"].strip())
+
+
+def _measured_run_moments(rows, full_commands):
+    """`(moment, mutedTests)` for every GREEN MEASURED full run in `rows`,
+    `mutedTests` being `_muted_tests` of the row - the ledger's
+    own rule (`_evidence_io._measurement_disqualification`), never a second
+    reading of it: a red run, a repeated verdict, a dirty tree or a different
+    command set is not a run that gave a coupling the chance to catch
+    anything. A missing tested head is: the run still measured the gate, and
+    the head only matters to what commit it can vouch for, which ageing
+    never asks.
+
+    `(moments, undated)`: a green measured row whose `ts` does not read as a
+    moment by `_evidence_io.stamp_moment` - the ledger's own ordering read -
+    cannot be placed before or after a coupling, so it ages nothing - and
+    `undated` COUNTS those rows so the caller says so, rather than printing
+    a run count quietly narrower than the ledger it read."""
+    moments, undated = [], 0
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        if _evidence_io._measurement_disqualification(
+                row, full_commands) is not None:
+            continue
+        moment = _evidence_io.stamp_moment(row.get("ts"))
+        if moment is None:
+            undated += 1
+        else:
+            moments.append((moment, _muted_tests(row)))
+    return moments, undated
+
+
+def _undated_note(undated):
+    """The clause every ageing row carries when some green run could not be
+    placed in time - empty when none."""
+    if not undated:
+        return ""
+    return ("; %d green measured full run(s) carry a ts that does not parse, "
+            "so they age nothing" % (undated,))
+
+
+def _relearn_fix(entry):
+    """Drop, THEN learn again. `couple` over a test that already carries an
+    entry only widens its sources and keeps `learnedAt`, so `couple` alone
+    would leave the very field this warning is about untouched.
+
+    THE FLAGS `couple` REFUSES TO LEARN WITHOUT are spelled: `--basis-run`
+    and `--basis-head`, the run and the HEAD that run examined - a remedy
+    missing either is refused the moment it is typed. `--phases`, the phases
+    that run covered, is spelled too; `couple` accepts it but does not
+    require it."""
+    test = shlex.quote(entry["test"])
+    sources = ",".join(s for s in _coupling_paths(entry)[1:])
+    return ("audit-task.py uncouple --test %s, then audit-task.py couple "
+            "--test %s --sources %s --basis-run <runId of a full run it "
+            "failed in> --basis-head <sha that run examined> --phases "
+            "<phase ids that run covered, if any> to learn it again (couple "
+            "alone only widens an existing entry and keeps its learnedAt)"
+            % (test, test, shlex.quote(sources) if sources else "<paths>"))
+
+
+def _check_coupling_ageing(rep, project, manifest_rel, manifest, meta, entries):
+    """Which couplings have gone `UNCOUPLE_AFTER_FULL_RUNS` green measured
+    full runs without catching anything - named as CANDIDATES, never
+    dropped."""
+    full_commands = [c for _name, c in
+                     _evidence_io.resolved_commands(manifest, meta.get("fullGate"))]
+    if not full_commands:
+        rep.ok(COUPLING_CHECK,
+               "no meta.fullGate declared, so no run measured it and no "
+               "coupling can be aged against one")
+        return
+    _eproject, _econfig, rows, failure, unreadable = _read_gate_rows(
+        project, manifest_rel)
+    if failure is not None:
+        rep.warn(COUPLING_CHECK, failure)
+        return
+    if unreadable:
+        rep.warn(COUPLING_CHECK,
+                 "the evidence ledger was only partly readable: %d row(s) or "
+                 "file(s) could not be parsed - no coupling is aged over a "
+                 "ledger this check could not fully read" % (unreadable,))
+        return
+    moments, undated = _measured_run_moments(rows, full_commands)
+    basis = "UNCOUPLE_AFTER_FULL_RUNS = %d" % (UNCOUPLE_AFTER_FULL_RUNS,)
+    aged, unageable = [], []
+    for entry in entries:
+        runs, field, why = coupling_age(entry, moments)
+        if runs is None:
+            unageable.append((entry, why))
+        else:
+            aged.append((entry["test"], runs, field))
+    candidates = [a for a in aged if a[1] >= UNCOUPLE_AFTER_FULL_RUNS]
+    if candidates:
+        rep.warn(COUPLING_CHECK,
+                 "CANDIDATE for uncouple - %s: no failure caught across at "
+                 "least %s green measured full run(s) (%s)%s"
+                 % ("; ".join("%s (%d run(s) since its %s)" % (t, n, f)
+                              for t, n, f in candidates),
+                    UNCOUPLE_AFTER_FULL_RUNS, basis, _undated_note(undated)),
+                 "; ".join(_UNCOUPLE_FIX % (shlex.quote(t),)
+                           for t, _n, _f in candidates) + _NEVER_FOR_YOU)
+    if unageable:
+        rep.warn(COUPLING_CHECK,
+                 "cannot be aged against the full runs: %s"
+                 % ("; ".join("%s (%s)" % (e["test"], why)
+                              for e, why in unageable),),
+                 "; ".join(_relearn_fix(e) for e, _why in unageable)
+                 + _NEVER_FOR_YOU)
+    if candidates or unageable:
+        return
+    rep.ok(COUPLING_CHECK,
+           "%d coupling(s) aged over %d green measured full run(s); "
+           "none has gone %s of them uncaught (%s), the oldest %d%s"
+           % (len(aged), len(moments), UNCOUPLE_AFTER_FULL_RUNS, basis,
+              max(n for _t, n, _f in aged), _undated_note(undated)))
+
+
+def check_couplings(rep, project, manifest_rel, manifest, git_root, config=None):
+    """Is every learned coupling still about files that exist, and is any of
+    them no longer catching anything?
+
+    TWO QUESTIONS, NEVER ONE: a coupling naming a path git does not track
+    (one batched `git ls-files`), or one outside the repository, is broken
+    NOW; one that has not caught a
+    failure across `UNCOUPLE_AFTER_FULL_RUNS` green measured full runs
+    may merely be quiet. The first is a WARNING naming the path, the second a
+    CANDIDATE with the constant printed as its basis, and both carry the
+    exact `audit-task.py uncouple --test <path>` that would act on them.
+
+    NEITHER IS EVER REMOVED HERE. `audit-task.py` is the only writer of
+    `meta.coupling`, and removal narrows the gate a phase signs off on -
+    a doctor that pruned on its own would be deciding coverage for its
+    reader.
+
+    FAIL-OPEN, BECAUSE ADVISORY: no git root or no git on PATH is a WARNING
+    saying the tracking half was NOT CHECKED (with the command to ask by
+    hand), never a crash and never an OK claiming every path is tracked; an
+    unreadable ledger is worded by `_read_gate_rows` through the same
+    vocabulary templates every other ledger check here uses.
+
+    NO `meta.coupling` IS AN OK ROW, not silence - the same rule
+    `check_full_run` follows for its own opt-in field. `config` is accepted
+    for the signature every trail check shares and read by nothing yet."""
+    manifest = manifest if isinstance(manifest, dict) else {}
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    coupling = meta.get("coupling")
+    if not coupling:
+        rep.ok(COUPLING_CHECK,
+               "no meta.coupling learned, so there is no coupling to check")
+        return
+    if not isinstance(coupling, list):
+        rep.warn(COUPLING_CHECK,
+                 "meta.coupling is a %s, not an array, so no entry could be "
+                 "read" % (type(coupling).__name__,),
+                 "validate-manifest.py names the shape it expects")
+        return
+    entries = _coupling_entries(coupling)
+    if not entries:
+        rep.warn(COUPLING_CHECK,
+                 "meta.coupling holds %d entr(ies) and none names a test, so "
+                 "none can be checked or uncoupled" % (len(coupling),),
+                 "validate-manifest.py names the shape it expects")
+        return
+    _check_coupling_tracking(rep, project, entries, git_root)
+    _check_coupling_ageing(rep, project, manifest_rel, manifest, meta, entries)
 
 
 # --- cli ------------------------------------------------------------------------

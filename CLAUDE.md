@@ -192,6 +192,7 @@ out here is left out on the record and not by omission:
 ```bash
 python3 tools/sweep-selftests.py           # hooks, scripts, tests, tools/ AND .claude/hooks/, each in a scratch dir
 python3 tools/sweep-selftests.py --selftest
+python3 tools/sweep-selftests.py --encoding cp1252   # again, on a legacy code page; --fast skips it
 python3 tools/gate-parity.py               # every description of the gate set, compared
 python3 tools/bench-hooks.py --gate        # the hook import budget; no flag prints the measurement
 python3 tools/check-git-pipeline.py        # the write half, against a REAL git repo
@@ -228,7 +229,14 @@ for a bisect.
 things are pointed away from your machine per child: its cwd and `TMPDIR` at one scratch
 directory, its HOME at a second — under every name a home lookup reads, not just `HOME` —
 and `PYTHONPYCACHEPREFIX` at a third, so a bytecode cache the interpreter writes under the
-HOME it was handed cannot convict the suite that triggered it. **The working directory and
+HOME it was handed cannot convict the suite that triggered it. The rest of the environment is
+filtered rather than pointed anywhere: the Claude session's variables — every `CLAUDE_` name,
+plus `CLAUDECODE` and `AUDIT_LOCK_TOKENS` — are dropped, and so is any identity the caller
+exports (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`, `EMAIL`); git runs with
+`GIT_CONFIG_NOSYSTEM` set and `user.useConfigOnly` refusing a guessed identity. No branch and no
+identity are supplied in their place, so a suite leaning on the host's git fails here the way it
+fails on a bare runner; that is what let a local sweep stay green over suites CI's ubuntu runner
+turned red. **The working directory and
 the home directory are the watched pair**, each holding one file the suite did not put
 there, and a suite is red if anything was added to either — or, the destructive half a
 strays-only check would call spotless, if that planted file was deleted or rewritten.
@@ -244,7 +252,9 @@ that needs scratch space builds it under `tempfile.mkdtemp()` and removes it in 
 runner's own constants rather than restating them, and fails when a family of variables it pins
 is named by none of the documents that describe the isolation — this one, `CONTRIBUTING.md`, and
 the docstring beside `_harness.fixture_root()` — or when the runner's watched directories, their
-channel labels and the files planted in them stop agreeing with each other. That surface grew
+channel labels and the files planted in them stop agreeing with each other. The filtered names
+are read off the runner's tables too, and each must appear in every one of those documents as a
+code span, itself or under a glob like `GIT_AUTHOR_*`. That surface grew
 more than once and left each document behind by a different amount, which is what a rule is worth
 more than another correction of.
 

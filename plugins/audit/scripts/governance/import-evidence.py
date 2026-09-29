@@ -30,6 +30,14 @@ reader of the directory counts rows, so the same run twice is counted twice.
 A ledger that cannot be read in full refuses the import rather than reading as
 empty - the check could not be made, and that is what the refusal says.
 
+WHAT A RED FULL ROW ASKS OF YOU. A CI build records its full run and throws
+its checkout away, so nothing learned from a red full run could be kept there.
+After a successful import this command prints, for each imported row that is
+full scope and red, the `python3 <full-gate.py> <manifest> --learn-from <runId>`
+command that files what the run taught into this checkout's plan - both paths
+absolute, so it runs as printed from any directory - printed, never run:
+bringing a file in whole is not consent to write the plan.
+
 WHAT IT DOES NOT PROVE. A ledger is evidence, not authentication. A new shard
 starts at its own genesis the moment somebody names a file that way, so a
 verified chain says the rows were not edited AFTER the file was written and
@@ -46,7 +54,12 @@ Exit codes:
   1  the chain does not hold, a different file already holds that name, a
      run it carries is already in the ledger under another file or repeated
      inside the shard, or the ledger could not be read in full to ask
-  2  usage error - the manifest will not load, or the shard path is not a file
+  2  usage error - the manifest will not load, the shard path is not a file,
+     or `--project-dir` was given and the manifest does not sit under it
+
+Without `--project-dir` the project is the manifest's own
+(`_panel_write.project_of_manifest`) - never the directory the command was
+typed in.
 
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test_import_evidence.py`.
@@ -56,6 +69,7 @@ Stdlib only, Python 3.8 compatible.
 import argparse
 import json
 import os
+import shlex
 import sys
 import tempfile
 
@@ -83,7 +97,9 @@ _output.install_path()
 
 import _evidence_io as _ev  # noqa: E402  (evidence_dir, verify_rows - the one chain)
 import _journal_io  # noqa: E402  (config loading, rows_from_text)
+import _loader  # noqa: E402  (script_path: the printed full-gate.py, never loaded)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR shards)
+import _panel_write  # noqa: E402  (project_of_manifest: the project a named manifest is in)
 
 E_OK, E_FAIL, E_USAGE = 0, 1, 2
 
@@ -101,7 +117,38 @@ def _empty_answer(basename):
     differ are filled in - so a caller reading one key never meets a KeyError
     on the branch that never sets it."""
     return {"imported": False, "alreadyImported": False, "path": None,
-           "basename": basename, "runIds": [], "refused": "", "duplicates": []}
+           "basename": basename, "runIds": [], "refused": "", "duplicates": [],
+           "learnFrom": []}
+
+
+def learn_from_commands(rows, manifest_path, project):
+    """The `full-gate.py --learn-from` command for each red full row in
+    `rows`, in shard order - PRINTED, NEVER RUN.
+
+    WHY HERE AND NOT IN CI. A CI build records its full run into its own shard
+    and throws the checkout away, so learning there would file a coupling and
+    a bug into a plan nobody keeps; the checkout that imports the shard is the
+    first one that keeps what is written. Running it from this command would
+    make an import write the plan, which is a different consent from bringing
+    a file in whole.
+
+    Red is `_evidence_io.row_is_red`, the runner's own reading.
+    `manifest_path` is the one this import was given and `project` the one it
+    resolved, so the command names the plan and the ledger this import just
+    wrote into.
+
+    RUNNABLE AS PRINTED, from any directory: the interpreter is spelled out
+    and the script is the absolute path `_loader.script_path` resolves by
+    basename - the resolution `full-gate.py` itself uses for
+    `run-test-gate.py` - because a bare `full-gate.py` is 'command not found'
+    in a shell. The caller hands both paths in absolute for the same reason."""
+    script = shlex.quote(_loader.script_path("full-gate.py"))
+    return ["python3 %s %s --learn-from %s --project-dir %s"
+            % (script, shlex.quote(manifest_path),
+               shlex.quote(str(row.get("runId"))), shlex.quote(project))
+            for row in rows
+            if row.get("scope") == _ev.FULL_SCOPE
+            and _ev.row_is_red(row) and row.get("runId")]
 
 
 def held_runs(project, config):
@@ -145,16 +192,26 @@ def duplicates_of(rows, held, basename):
 def unreadable_refusal(paths):
     """The refusal for a ledger that could not be read in full, carrying the
     step that clears each of the causes `read_rows` folds into one list - a
-    file that would not open, a torn tail, a bad line before the end. It
-    cannot tell which one a file has, so it names all of them and points at
-    the command that does; a refusal naming no next step would block every
-    later import with nothing to act on."""
+    file that would not open, a byte that is not UTF-8, a torn tail, a bad
+    line before the end. It cannot tell which one a file has, so it names all
+    of them and points at the command that does; a refusal naming no next step
+    would block every later import with nothing to act on.
+
+    THE UNDECODABLE-BYTE REMEDY SAYS ONLY WHAT `verify` PRINTS for it: the
+    codec's own message, which names the first such byte and its offset in
+    the file's bytes - there is no line number to send the reader to."""
     return (
         "the duplicate-run check could not be made: %s could not be read in "
         "full, and a run lost there could be one this shard carries again. "
         "`audit-journal.py verify` names the cause for each file. A file that "
         "could not be opened at all (a permission, a lock, a path that is not "
         "a file) is cleared by making it readable and re-running the import. "
+        "A file holding a byte that is not UTF-8 text is lost whole, every run "
+        "in it: `verify` names the first such byte and its position, counted "
+        "in bytes from the start of the file, not a line. It is cleared by "
+        "restoring the file from its committed copy, or by removing that byte "
+        "on purpose once you have read the row it sits in, and re-running the "
+        "import. "
         "If a file ends with a partial line, a writer was interrupted there - "
         "those bytes are not a row. Truncate the partial line on purpose and "
         "re-run the import. Any other line that is not valid JSON is a "
@@ -164,9 +221,13 @@ def unreadable_refusal(paths):
         % (", ".join(paths),))
 
 
-def import_shard(project, shard_path, config=None):
+def import_shard(project, shard_path, config=None, manifest_path=None):
     """`(exitCode, answer)` - verify `shard_path`'s chain and copy it whole into
     this project's evidence directory. Writes nothing on a refusal.
+
+    With `manifest_path`, a successful import's `learnFrom` carries the
+    command for each red full row it holds (`learn_from_commands`), built off
+    the rows this call already parsed rather than a second read of the file.
 
     THE VERIFIER IS BORROWED, NOT WRITTEN TWICE. `_evidence_io.verify_rows` is
     the one place a broken chain, an edited row or a corrupted mid-file line is
@@ -194,7 +255,7 @@ def import_shard(project, shard_path, config=None):
         answer["refused"] = "cannot read %r (%s)" % (shard_path, exc)
         return E_FAIL, answer
     try:
-        text = raw.decode("utf-8")
+        text = _ev.ledger_decode(raw)
     except Exception as exc:
         answer["refused"] = "%s is not UTF-8 text (%s)" % (basename, exc)
         return E_FAIL, answer
@@ -210,6 +271,9 @@ def import_shard(project, shard_path, config=None):
         return E_FAIL, answer
     run_ids = [str(row.get("runId") or "?") for row in rows
               if not row.get("_unparseable")]
+    learn = (learn_from_commands([r for r in rows if not r.get("_unparseable")],
+                                 manifest_path, project)
+             if manifest_path else [])
     directory = _ev.evidence_dir(project, config)
     dest = os.path.join(directory, basename)
     if os.path.isfile(dest):
@@ -225,6 +289,7 @@ def import_shard(project, shard_path, config=None):
             answer["alreadyImported"] = True
             answer["path"] = dest
             answer["runIds"] = run_ids
+            answer["learnFrom"] = learn
             return E_OK, answer
         answer["refused"] = (
             "%s already holds a different file under this name - the chain's "
@@ -267,6 +332,7 @@ def import_shard(project, shard_path, config=None):
     answer["imported"] = True
     answer["path"] = dest
     answer["runIds"] = run_ids
+    answer["learnFrom"] = learn
     return E_OK, answer
 
 
@@ -284,9 +350,55 @@ def render(answer, out=print):
     for run_id in answer["runIds"]:
         out("  runId %s" % (run_id,))
     out("  %s" % (AUTHENTICATION_NOTE,))
+    for command in answer.get("learnFrom") or []:
+        out("%s a red full run is learned from here, not where it ran: %s"
+            % (PREFIX, command))
 
 
 # --- cli ------------------------------------------------------------------------
+def _is_under(path, directory):
+    """True when `path` sits at or below `directory`, both resolved through
+    symlinks first - a temp directory reached through a link is still the
+    directory it names."""
+    path, directory = os.path.realpath(path), os.path.realpath(directory)
+    try:
+        return os.path.commonpath([path, directory]) == directory
+    except ValueError:
+        return False
+
+
+def resolve_project(manifest_path, project_dir):
+    """`(project, refusal)` - the project this import writes into, or why it
+    will not.
+
+    WITHOUT `--project-dir` the project is the one the MANIFEST belongs to,
+    by the plugin's one answer to that question,
+    `_panel_write.project_of_manifest` - the answer `audit-task.py` reads for
+    a named manifest: the first ancestor holding `.claude/` or `.git`, and
+    without one `<T>` for the default `<T>/docs/audit/<file>` layout or the
+    manifest's own directory anywhere else. A count of directories up from
+    the file is right for the default layout alone. The
+    current directory is not asked: an import typed from anywhere else would
+    otherwise land the shard in a ledger the manifest's plan never reads, and
+    print a `--learn-from` command pairing that plan with the wrong ledger.
+
+    WITH `--project-dir`, a manifest that does not sit under it is refused:
+    the printed command would pair one project's plan with another's ledger,
+    and there is no reading of the pair that is not a mistake."""
+    manifest_abs = os.path.abspath(manifest_path)
+    if project_dir is None:
+        return _panel_write.project_of_manifest(manifest_abs), ""
+    project = os.path.abspath(project_dir)
+    if not _is_under(manifest_abs, project):
+        return project, (
+            "the manifest %s is not under --project-dir %s - the shard would "
+            "land in one project's ledger and be learned from into another's "
+            "plan. Pass the directory the manifest belongs to, or leave "
+            "--project-dir out and the manifest's own project is used"
+            % (manifest_abs, project))
+    return project, ""
+
+
 def build_parser():
     """The argument parser, separated so a case can read the option table."""
     parser = argparse.ArgumentParser(
@@ -295,9 +407,13 @@ def build_parser():
                     "checkout whole, after its own chain verifies.")
     parser.add_argument("manifest")
     parser.add_argument("shard", help="the ledger file a CI build published")
-    parser.add_argument("--project-dir", dest="project_dir", default=".",
+    parser.add_argument("--project-dir", dest="project_dir", default=None,
                         help="the directory holding .claude/ and the records "
-                             "(default: the current directory)")
+                             "(default: the project the manifest belongs to - "
+                             "the nearest directory above it holding .claude/ "
+                             "or .git, else <T> for <T>/docs/audit/<file>, "
+                             "else the manifest's own directory); the "
+                             "manifest must sit under it")
     parser.add_argument("--json", action="store_true", dest="as_json")
     return parser
 
@@ -323,8 +439,14 @@ def main(argv, out=print):
         sys.stderr.write("ERROR: %s is not a file\n" % (args.shard,))
         return E_USAGE
 
-    project = os.path.abspath(args.project_dir)
-    code, answer = import_shard(project, args.shard)
+    project, refusal = resolve_project(args.manifest, args.project_dir)
+    if refusal:
+        sys.stderr.write("ERROR: %s\n" % (refusal,))
+        return E_USAGE
+    # ABSOLUTE, so the printed command does not depend on the directory it
+    # is pasted into.
+    code, answer = import_shard(project, args.shard,
+                                manifest_path=os.path.abspath(args.manifest))
     if args.as_json:
         out(json.dumps(answer, indent=2, sort_keys=True))
     else:

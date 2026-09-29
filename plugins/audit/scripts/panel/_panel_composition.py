@@ -880,16 +880,14 @@ def evidence_view(project, composition, config=None, read=None,
                 wanted.add(run_id)
     read = read if isinstance(read, dict) else _ev.read_rows(project, config=config)
     newest = {}
-    for row in read["rows"]:
+    # `row_by_run`'s order, one key at a time: two worktrees write two files
+    # whose concatenation is in no meaningful order, so reading position would
+    # make 'the run' depend on a directory listing. Walked in
+    # `_ev.oldest_first` order - by the moment each ts names, never its
+    # spelling - so the last row kept per runId is its newest.
+    for row in _ev.oldest_first(read["rows"]):
         run_id = row.get("runId")
-        if run_id not in wanted:
-            continue
-        current = newest.get(run_id)
-        # `latest_by_subject`'s comparison, one key over: two worktrees write two
-        # files whose concatenation is in no meaningful order, so reading position
-        # would make 'the run' depend on a directory listing.
-        if current is None or (str(row.get("ts") or "")
-                               >= str(current.get("ts") or "")):
+        if run_id in wanted:
             newest[run_id] = row
     out = empty_evidence()
     out["runs"] = dict((k, _evidence_facts(v)) for k, v in newest.items())

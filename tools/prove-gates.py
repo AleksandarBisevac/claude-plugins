@@ -875,6 +875,12 @@ TABLE = (
  ("isolation_drift", "CLAUDE.md", "sub", r"PYTHONPYCACHEPREFIX",
   (r"PYTHONPYCACHEPREFIX", "PYTHONDONTWRITEBYTECODE"),
   "tools/gate-parity.py", "is0"),
+ # ...and the names the sweep FILTERS rather than points anywhere, which the rule
+ # reads off the runner's tables and requires member by member. The mutation is a
+ # document paraphrasing one dropped name into prose - still a true sentence, and
+ # no longer one a reader can grep for.
+ ("isolation_drift", "CLAUDE.md", "replace", "`AUDIT_LOCK_TOKENS`",
+  "the lock holder's tokens", "tools/gate-parity.py", "is0"),
  # THE DOCUMENT FALLING BEHIND THE RUNNER, one root at a time. This repository's
  # own hooks under `.claude/hooks/` were swept by nothing while every document
  # enumerated the same roots; `sweep_roots_drift()` reads the runner's tuple and
@@ -913,6 +919,22 @@ TABLE = (
   '  if "$@" >"$WORKDIR/step.log" 2>&1; then',
   '  if "$@" >/tmp/verify-step.log 2>&1; then',
   "tools/gate-parity.py", "sc0"),
+ # THE LEG A RUNNER DROPS WHILE STILL NAMING THE TOOL. `verify.sh` called the report
+ # checker on the committed reports alone while CI also checked a fresh render, so
+ # both named the checker and parity was perfect. The mutation is that state: one
+ # rendered leg's call gone, every tool still named. `rt0` reads the real pair.
+ ("report_target_drift", "tools/verify.sh", "replace",
+  '  node tools/check-report-interactive.mjs "$one/one-status.html" || return 1',
+  "  true",
+  "tools/gate-parity.py", "rt0"),
+ # ...and the same blind spot for the sweep, whose flags are its legs. CI sweeps a
+ # second time under a forced legacy codec; the mutation is the runner that did
+ # not, with the sweep still named on both sides so every gate set still agrees.
+ # `sl0` reads the real pair.
+ ("sweep_leg_drift", "tools/verify.sh", "replace",
+  "    python3 tools/sweep-selftests.py --encoding cp1252",
+  "    true",
+  "tools/gate-parity.py", "sl0"),
  # ...and the other question asked of that same runner, which is a PAIR rather
  # than a file: the selector chooses the checks and the runner dispatches them, and
  # the fault was a check the selector named and the runner had no arm for. The
@@ -1614,6 +1636,15 @@ ALLOW = (
   "            if not any(name in text for name in groups[held])]",
   "            if not all(name in text for name in groups[held])]",
   "tools/gate-parity.py", "is2"),
+ # THE NARROWING FOR THE FILTERED NAMES IS THE GLOB. Every document says
+ # `GIT_AUTHOR_*` rather than spelling each author variable out; stop letting a
+ # trailing-star code span cover the names it matches and every honest document
+ # is convicted of hiding the identity filter it describes. `is9` pins how a name
+ # is matched, and it fails on that version.
+ ("isolation_drift", "tools/gate-parity.py", "replace",
+  '    return (token.endswith("*") and len(token) > 1',
+  '    return (False and len(token) > 1',
+  "tools/gate-parity.py", "is9"),
  # THE OVER-FIRE ONE TOKEN AWAY: demand the root's whole path where the documents
  # say `hooks/`, and every honest sentence is convicted - a lint people delete. `sr2`
  # is the fixture that names the plugin's roots the way the documents do, and it
@@ -1622,6 +1653,25 @@ ALLOW = (
   "            if not any(name in w for w in windows)]",
   "            if not any(root in w for w in windows)]",
   "tools/gate-parity.py", "sr2"),
+ # THE OVER-FIRE IS COMPARING SPELLINGS. CI writes its scratch root as a literal
+ # `/tmp/` and the runner as a `mktemp` directory. The mutation stops substituting
+ # the placeholder for the `mktemp` variable, so the runner's rendered targets stay
+ # unexpanded `$WORKDIR/...` words, which the reader reports as a PROBLEM rather
+ # than comparing - on a pair that is spelled differently and agrees. `rt2` is that
+ # pair, and it expects the two sides to agree with no problem.
+ ("report_target_drift", "tools/gate-parity.py", "replace",
+  "            return SCRATCH",
+  "            return match.group(0)",
+  "tools/gate-parity.py", "rt2"),
+ # THE OVER-FIRE IS READING A MACHINE KNOB AS A LEG. The local runner may pin how
+ # many suites run at once and CI may quiet the inventory; neither changes which
+ # suites run or how they are graded. The mutation stops excusing `--jobs`, so a
+ # side that pins it runs a "different" leg - the noise that trains a reader to
+ # ignore the rule. `sl4` is that pair, and it expects agreement.
+ ("sweep_leg_drift", "tools/gate-parity.py", "replace",
+  "        if word in not_legs:",
+  "        if word in not_legs and word != \"--jobs\":",
+  "tools/gate-parity.py", "sl4"),
  # THE OVER-FIRE THIS RULE IS ONE LINE AWAY FROM. The discriminator is the
  # COMPARISON: four of the five exempted scripts name a committed path in CI and
  # only READ it - `render-report.py docs/audit/audit-plan.json --out-dir /tmp/...`

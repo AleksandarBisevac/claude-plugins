@@ -58,9 +58,25 @@ first level that is **present** answers, an explicit `null` **is** an answer (sk
 the signer), and with several `area` tags written order decides. `/audit:status --phase <phaseId>`
 prints the resolved skill and the basis it came from; read that rather than re-deriving it.
 
-**`--full`** runs the third place after the ordinary sign-off completes: `run-test-gate.py
-<manifest> --full --record`, measured against the whole product rather than this one phase. Read
-the **full-status** line it prints — the same word (`whole`, `provisional` or `unknown`, with the
-reason) `/audit:status`, the report, the panel and the doctor all read off the same row. A plan
-with no `meta.fullGate` declared answers that the plan names no third place at all; that is not a
+**`--full`** runs the third place after the ordinary sign-off completes, through its one command:
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/full-gate.py" <manifest> [--project-dir <dir>]`
+— the same command the README's pre-push snippet runs. It runs `run-test-gate.py <manifest>
+--full --record` as a subprocess, measured against the whole product rather than this one phase,
+streams what the runner prints and exits with the runner's code. Neither script prints the
+phase's full-run answer; read it afterwards where it is printed — `/audit:status`'s tests column
+(`full whole`, `full provisional (since …)`, `full unknown - <reason>`) and `/audit:doctor`'s
+`full run` row (a WARNING naming a PROVISIONAL or UNKNOWN phase with its basis, one OK row when
+every merged phase reads WHOLE), both off `_evidence_io.full_status`. `/audit:status` asks git
+from `CLAUDE_PROJECT_DIR`, or the directory it runs in when that is unset, so run it from the
+project's own checkout. A plan with no
+`meta.fullGate` declared prints that the plan names no third place and exits 0; that is not a
 failure of this command, it is the plan's own state.
+
+**A red `--full` files what the run taught, and stays red.** After the runner exits non-zero,
+`full-gate.py` reads the row it recorded and runs `audit-task.py` itself: a `couple` and a
+`bug-add` for each selection miss the runner named, and a `couple --caught` for each coupled suite
+it named failing and did not list as a miss (orchestrator → **What a red full run teaches**). Each verb's own lines and exit
+code are printed under `[full-gate]`, and so is every reason nothing was learned. The exit is
+still the runner's, and the phase's full-run answer is still the one the ledger holds; a filed
+miss does not make the red run anything but red. Report the coupling and the bug it filed with
+the rest of the sign-off.

@@ -534,6 +534,124 @@ what a run answered from its own printed lines.
 rule a phase gate does**: run it under `run_in_background`, and read its verdict back from the
 ledger once it has recorded — never from a truncated terminal.
 
+### What a red full run teaches
+
+**`full-gate.py` is the part of the third place that learns; `run-test-gate.py --full` alone
+does not.** The runner prints one `SELECTION MISS:` line per suite it named failing that no
+derived sign-off gate listed, among the phases merged since the newest earlier **measured** full
+run — green, clean and verbatim against the declared gate, whether or not its row names a tested
+head (`_evidence_io.newest_measured_full_run`). With no such run to bound "merged since", or one
+whose row names no head to ask ancestry of, nothing is asked and a `SELECTION MISS not asked:`
+line gives the reason; so does a ledger read with losses, naming the file, because the bounding
+run may sit on the line that read lost. Each suite name is first pinned to the one tracked file it
+names (`_evidence_io.pin_suite`); a name that fits none or several is never counted as listed and
+prints `SELECTION MISS not asked of <name>: <why>`. Each miss line ends either in the commands
+that would file it — `python3 <plugin>/scripts/manifest/audit-task.py couple … <manifest>
+--project-dir <project>` and the matching `bug-add`, every path absolute and shell-quoted so they
+run as printed from any directory, printed and never run (`run-test-gate._miss_remedy`) — or in
+the reason none can be printed. `full-gate.py`, after a red exit, reads the row
+that run recorded and runs those verbs itself, as subprocesses (`full-gate.learning_plan`):
+
+- a `couple` (the suite to the sources the miss names) and a `bug-add` titled
+  `SELECTION MISS: <suite>` for each `selectionMiss` entry, filed under the suite's pinned path;
+  a name that pins to no tracked path, or to several, still files its bug, with no `--files` and
+  no coupling;
+- a `couple --caught <runId>` for each suite the plan already coupled that the runner named
+  failing, which refreshes that coupling's `lastCaught` — never for a suite the row lists in its
+  own `selectionMiss`, which says no derived gate ran it, so a coupling that row creates or
+  widens, or that another row with the same miss taught, is not its catch.
+
+Each verb's lines and exit code are printed, and the exit stays the runner's — a run that taught
+something is still a red run. Its closing line, as a red run printed it:
+`[full-gate] the run is still red - exit 1 from run-test-gate.py blocks the push, whatever was
+learned`.
+
+**Only a suite the runner named teaches.** Every miss is asked again through
+`_evidence_io.named_failing_suites`, which counts a suite only when the step's
+`failingSuitesBasis` says the runner named it, and never counts a muted step. A failure read off
+the tail of the output, a run the runner printed `evidence: NOT recorded` for, and a green run
+teach nothing, and a red run that taught nothing prints a line per reason. A miss whose `sources`
+the row cut (`sourcesDropped`) files its bug but no coupling, because a suite coupled to a
+prefix of what it depends on is narrowed where nobody sees it. A push retried on the same red
+does not file the same bug twice (an open bug with that title is skipped) or re-send a coupling
+that already covers every source named.
+
+**A catch is credited to the coupling a name pins, or to none.** A runner may print a suite
+relative to its own directory, so each name it gave is resolved against the plan's coupled
+suites by `_evidence_io.resolve_named`: a name matching exactly one is that coupling's catch, and
+a name matching several credits none of them and says so (`no catch credited for …`). The
+couplings are read before anything this run writes, so a suite coupled by this run is not also
+credited with a catch by it. `couple --caught` asks the same questions again on its own and
+refuses a run that is not `full`, a suite the run did not name or named only on a muted step,
+and an ambiguous name; a catch no newer than the recorded `lastCaught` writes nothing, so
+`lastCaught` never moves back.
+
+**A red full run CI recorded is learned from after its shard is imported, never inside the
+pipeline.** A CI build throws its checkout away, so the pipeline records (`run-test-gate.py
+--full --record --writer ci-<id>`) and files nothing. `import-evidence.py <manifest>
+<shard.jsonl>` writes into the manifest's own project (`_panel_write.project_of_manifest`), never
+the directory it was typed in, and refuses, exit 2, a manifest outside a `--project-dir` it is
+given. It prints, for each imported row that is full scope and red, the command
+`python3 <plugin>/scripts/governance/full-gate.py <manifest> --learn-from <runId> --project-dir
+<dir>` with every path absolute, so it runs as printed from any directory, and runs none of
+them. That command runs no gate: it reads the row from this checkout's ledger and hands it to
+`full-gate.learn_from_row`, the function the red branch calls, so every rule above applies
+unchanged, whatever order the rows are learned in. It refuses, exit 1, a run id the ledger does not hold (naming any ledger file
+it could not read in full), a row that is not full scope and a green row; it exits 1 when a
+learning verb fails, and 2 beside `--writer`. `/audit:review <phaseId> --full` runs
+`full-gate.py` itself, so a red run there is learned from on the spot. Run the printed command
+after an import when the operator asks for the import; nothing runs it for you, and
+`/audit:review` does not.
+
+**Removing a coupling is `audit-task.py uncouple --test <path>`, typed by a person.** No code
+path removes one on its own: `learning_plan` builds only `couple`, `bug-add` and
+`couple --caught`, and `/audit:doctor`'s coupling row names candidates with the `uncouple` command
+and runs nothing. Leave that command to the operator the doctor row addresses — nothing stops
+an orchestrator from typing it, so this sentence is the whole of that rule.
+
+### Quarantine: `meta.muted`
+
+A mute names a suite whose failure a bug already tracks. **A muted suite is run and recorded,
+never blocks while its mute holds, never teaches, and blocks again once its `until` has
+passed:**
+
+- **Run and recorded.** Nothing is skipped: the mute is judged after the step ran
+  (`run-test-gate.mute_decision`), the step keeps its exit and the names that failed, and it
+  carries a `muted` marker on the evidence row. The terminal prints
+  `muted: <suite> failed (bug <id>, until <day>)` under the step.
+- **Never blocks.** A step whose whole failure a live mute covers is left out of the failed
+  steps (`failed_steps`), so the run can pass.
+- **Never teaches.** `named_failing_suites` skips a muted step, so `full-gate.py` files no
+  coupling, no bug and no catch from it, and `couple --caught` refuses one.
+- **Blocks again after `until`.** `until` is the last UTC day the mute holds
+  (`_manifest_vocab.mute_expired`); past it the runner stops honouring the entry and prints the
+  failure as blocking, and `validate-manifest.py` warns with the `unmute`/`mute` commands.
+- **Blocks in its own bug's fix task, and once its bug is closed.** `run-test-gate.withheld_mutes`
+  refuses, whatever `until` says, the mute of the bug whose `taskId` is the task under `--task` —
+  that task's gate must show the failure cleared, so a fix task's gate is never quarantined by its
+  own bug — and the mute of any bug closed by its effective status, which `validate-manifest.py`
+  warns about (`rules.muted.bug-closed`) with `audit-task.py unmute --test <path>`.
+
+**The mute fails closed.** It holds only when the runner named every failing check and every file
+it blamed, a live entry covers each of those files, and `mute_ineligible` finds the step to be one
+direct call of a runner on `run-test-gate.MUTE_RUNNERS` — read by `command_runner` — that exited
+with that runner's failed-tests code, printed exactly one runner's summary, tallied as many
+failures as it named, reported nothing else failing, did not stop early and failed no coverage
+threshold. A package script, a task runner, a script file, a compound command or a runner off the
+list keeps the gate red, with the reason printed on the `muted:` line. `MUTE_RUNNERS`' own comment
+names a failure a direct call cannot show: a jest reporter error exits with jest's
+failed-tests code and prints nothing, so a mute beside it still holds.
+
+**No retry until green.** `run-test-gate.py` gives a step a second attempt only when the
+operating system killed it, as read by `ended_by_signal`, from the exit status, or by
+`jest_worker_signal`, when jest's own report names every failure as a worker the operating
+system terminated. A single test failure beside such a kill is a verdict and keeps the step
+failed, so a red that a test reported is not rolled again. A Playwright `flaky` test is recorded as an observation on the
+step, never as a retry this plugin made, and a flaky count beside a muted failure refuses the
+mute. `mute` and `unmute` (`audit-task.py`) are the only writers of `meta.muted`, and a mute naming
+no bug in `bugs[]` is a validator finding, so a quarantine cannot be written to turn a red phase
+green without a tracked bug behind it.
+
 ## Resume after interruption
 
 1. Read the manifest. Find the phase with `status == "in_progress"`, a non-null `branch`, and no

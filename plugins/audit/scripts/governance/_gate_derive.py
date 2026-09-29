@@ -172,22 +172,33 @@ def repointed(entries, build, paths):
     dropped: a gate of `["lint", "npm test -- <a suite>"]` narrows the suite and
     still lints, because only one of those two entries has a scope that differs
     per task.
+
+    QUOTED FOR THE SHELL THE GATE RUNS IN: `run-test-gate.py` hands each entry
+    to a POSIX shell, so every substituted path goes in through `shlex.quote`
+    -- an ordinary path comes back byte for byte, and one holding a space or a
+    quote stays one word instead of splitting into two the runner cannot
+    open. The sibling's own words come from `_phases.shell_words`, the same
+    reader `gate_entry_paths` -- and so `path_scoped_sibling` -- uses, so a
+    path it already quoted is recognized and replaced rather than copied
+    through, and every word that is not a path keeps the exact spelling it
+    had, quotes and operators included.
     """
     out = []
     for entry in entries:
-        if is_shared_key(entry, build) or not _gate_entry_paths(entry):
+        words = _phases.shell_words(entry)
+        if is_shared_key(entry, build) or not any(
+                _phases.shell_word_path(value) for _raw, value in words):
             out.append(entry)
             continue
         rebuilt, placed = [], False
-        for token in entry.split():
-            # `_phases.tests_add_path` directly -- see the import note above:
-            # `_manifest_rules.tests_add_path` is the same function reached
-            # through a re-export, and reaching it that way is the one edge
-            # this module cannot afford without moving up a layer.
-            if not _phases.tests_add_path(token):
-                rebuilt.append(token)
+        for raw, value in words:
+            # `_phases` directly -- see the import note above: the filename
+            # bound reached through `_manifest_rules`' re-export is the one
+            # edge this module cannot afford without moving up a layer.
+            if not _phases.shell_word_path(value):
+                rebuilt.append(raw)
             elif not placed:
-                rebuilt.extend(paths)
+                rebuilt.extend(shlex.quote(p) for p in paths)
                 placed = True
         out.append(" ".join(rebuilt))
     return out

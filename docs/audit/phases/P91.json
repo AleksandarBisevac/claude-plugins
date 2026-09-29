@@ -1,0 +1,190 @@
+{
+  "id": "P91",
+  "title": "committed plan records carry no machine path, and the committed-artifact check reads the plan",
+  "status": "done",
+  "description": "A phase shard's task text named scratch files by their absolute path on the machine that wrote them, and nothing flagged it because the committed-artifact check does not read the plan. Extend its domain to the plan, red first, then scrub the two shards it finds; words that quote a matched shape are avoided in this phase's own text.",
+  "desiredOutcome": "tools/check-committed-pii.py scans the plan index and every phase shard, and no committed plan record names a path inside a user's home directory or the machine's temporary directory",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint"
+  ],
+  "blockedBy": [],
+  "baseRef": "dedb80e1ab7fe45a595dce182ff58941d41acceb",
+  "branch": "audit/p91-committed-plan-records-carry-n",
+  "mergedAt": "2026-09-27T23:45:20Z",
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P91-R1",
+        "severity": "high",
+        "file": "tools/check-committed-pii.py (BASELINE row for the plan index)",
+        "issue": "The plan-surface BASELINE rows are keyed by line number, and the index's baselined line sits after the phases list and fileIndex, which routine plugin writes rewrite; one added phase stub or fileIndex entry moves it, and the check (and the selftest sweep that reads the live tree) goes red on the next plan write.",
+        "resolution": "fixed in P91.2-htp (1363cb4f): Key plan-surface BASELINE rows by what the line says (path, detector, a digest of the matched line's text), printing but not keying the line number; cases: a line inserted above a baselined match stays accounted for, an edit to the matched line itself goes red; correct the comment.",
+        "fixTask": "P91.2-htp",
+        "commit": "1363cb4f"
+      },
+      {
+        "id": "P91-R2",
+        "severity": "med",
+        "file": "tools/check-committed-pii.py (plan_files problem rows)",
+        "issue": "No selftest case produces plan-config-unreadable or plan-index-unparseable; dropping both appends keeps the selftest green.",
+        "resolution": "fixed in P91.2-htp (1363cb4f): A case per row on a fixture (truncated index JSON; a config that is not JSON), each red when its append is removed.",
+        "fixTask": "P91.2-htp",
+        "commit": "1363cb4f"
+      },
+      {
+        "id": "P91-R3",
+        "severity": "low",
+        "file": "tools/check-committed-pii.py (SYNTHETIC)",
+        "issue": "The two new synthetic rows are missing from SYNTHETIC, so they print as a leak at line zero under the generic closing sentence.",
+        "resolution": "fixed in P91.2-htp (1363cb4f): Add both with their own sentence; update the comment.",
+        "fixTask": "P91.2-htp",
+        "commit": "1363cb4f"
+      },
+      {
+        "id": "P91-R4",
+        "severity": "low",
+        "file": "tools/check-committed-pii.py (plan_files, the directory sweep)",
+        "issue": "A shard pointer into a directory other than the index's own pulls every tracked file under that directory into the plan surface, whatever its type.",
+        "resolution": "fixed in P91.2-htp (1363cb4f): Limit it to the shard-shaped files the pointers can name, or pin the width with a case and say it in the docstring.",
+        "fixTask": "P91.2-htp",
+        "commit": "1363cb4f"
+      }
+    ],
+    "outcome": "Phase review found one high (line-keyed plan exemptions broke on the next plan write), one med (no case for either plan-domain error row) and two lows (synthetic rows' wording, a pointed directory's width); all four fixed in P91.2 and resolved; phase gate green, invariants found no breach, the live check exits 0. [findings: 4 - 1 high, 1 med, 2 low; 4 with a recorded fix commit]"
+  },
+  "summary": "The committed-artifact check reads the plan index and every phase shard, keyed for the plan by what a line says; P85 and P86 no longer name the machine's scratch directory, and every other plan hit is a quoted example shape baselined with its reason.",
+  "tasks": [
+    {
+      "id": "P91.1",
+      "title": "the committed-artifact check reads the plan, and the shards it finds are scrubbed",
+      "status": "done",
+      "description": "Extend check-committed-pii's derived domain to the plan: the index and every file under docs/audit/phases. Red first with a synthetic shard that names a path inside a home directory and one inside the temporary directory. Run the extended check over the real tree BEFORE deciding anything else, and report every hit. Scrub the hits in P85 and P86 by replacing each absolute scratch path with the file's base name (the text keeps what it pointed at). Any other hit is reported, not baselined, until the orchestrator decides. No verb rewrites a finished task's description, so the scrub is this task's own declared edit.",
+      "files": [
+        "tools/check-committed-pii.py",
+        "docs/audit/phases/P85.json",
+        "docs/audit/phases/P86.json"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/check-committed-pii.py: repro that FAILS on current code - a phase shard or the plan index naming a machine path is outside the check's domain and so is never found"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "ee9d8fae",
+      "outcome": {
+        "technical": "tools/check-committed-pii.py: plan_files derives the index from the plugin config's manifestPath and the shards from the index's own pointers (surface 'plan'); plan-index-unparseable and plan-config-unreadable findings; q24/q25 fixture, q6 expects the plan surface; BASELINE rows keyed by path, line and detector with reasons. P85 (done tasks, direct edit) and P86 (pending tasks, scope --description) scrubbed to the base name.",
+        "descriptive": "The committed-artifact check reads the plan index and every phase shard; P85 and P86, which named the machine's scratch directory, now name the file alone, and every other hit, a quoted example shape, is baselined with its reason."
+      },
+      "startedAt": "2026-09-27T23:03:18Z",
+      "completedAt": "2026-09-27T23:16:46Z",
+      "verifiedBy": [
+        "q6",
+        "q24",
+        "q25",
+        "q7"
+      ],
+      "testEvidence": {
+        "runId": "2026-09-27T23:16:30Z.237225",
+        "status": "passed",
+        "at": "2026-09-27T23:16:30Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "ee9d8fae",
+        "at": "2026-09-27T23:16:46Z",
+        "basis": "the scrub of P85/P86 was made by the orchestrator with the owner's approval (the plan gate refuses a subagent's plan write), not by this task's executor; the domain extension and the baseline are the executor's"
+      }
+    },
+    {
+      "id": "P91.2-htp",
+      "title": "a baselined plan hit is keyed by what its line says, and every plan-domain row the check can print has a case",
+      "status": "done",
+      "description": "Phase review fix task. Key plan-surface BASELINE rows by what the line says (path, detector, a digest of the matched line's text) and print the line number without keying on it, so a routine plan write that moves the line keeps the hit accounted for while an edit to the matched line itself goes red; cases for plan-config-unreadable and plan-index-unparseable; both synthetic rows in SYNTHETIC with their own sentence; bound the directory sweep a shard pointer opens to shard-shaped files, or pin its width with a case.",
+      "files": [
+        "tools/check-committed-pii.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/check-committed-pii.py: repro that FAILS on current code - a line inserted above a baselined plan-index hit turns the check red although the hit is unchanged"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "1363cb4f",
+      "outcome": {
+        "technical": "tools/check-committed-pii.py: plan-surface BASELINE rows keyed by path, detector and a digest of the matched line's text (line_anchor, anchors from scan); plan rows rewritten; SYNTHETIC and _SYNTHETIC_HEADLINE for plan-config-unreadable and plan-index-unparseable; a pointed shard directory adds only JSON directly in it; cases q26-q31.",
+        "descriptive": "A routine write to the plan no longer turns the committed-artifact check red, while an edit to an exempted line still does; both plan-domain error rows have a case and their own sentence, and a shard pointer's directory adds only shard-shaped files."
+      },
+      "startedAt": "2026-09-27T23:25:24Z",
+      "completedAt": "2026-09-27T23:43:01Z",
+      "verifiedBy": [
+        "q26",
+        "q27",
+        "q27b",
+        "q28",
+        "q29",
+        "q30",
+        "q31"
+      ],
+      "testEvidence": {
+        "runId": "2026-09-27T23:43:01Z.0aff04",
+        "status": "passed",
+        "at": "2026-09-27T23:43:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "1363cb4f",
+        "at": "2026-09-27T23:43:01Z",
+        "basis": "fixes the four phase-review findings"
+      }
+    }
+  ],
+  "startedAt": "2026-09-27T23:03:18Z",
+  "testEvidence": {
+    "runId": "2026-09-27T23:44:40Z.c39985",
+    "status": "passed",
+    "at": "2026-09-27T23:44:40Z"
+  },
+  "mergedHead": "06db03896bcad2509494a4d0aca117c05e55c284"
+}

@@ -1059,6 +1059,19 @@ def _cases(check):
               dict(zip(M.EVIDENCE_FIELDS,
                        _ev_dup["runs"]["r-1"]))["status"] == "failed"
               and _ev_dup["files"] == 2)
+        # ...by the MOMENT each ts names, not its spelling: the offset stamp
+        # reads later as text and names the EARLIER moment, so it must lose.
+        _ev_moment = M.evidence_view(_evproj, _ev_view, read={
+            "rows": [_evrow("r-1", "2026-08-21T10:00:00Z", status="failed"),
+                     _evrow("r-1", "2026-08-21T12:00:00+05:00",
+                            status="passed")],
+            "files": 1, "unreadable": 0})
+        check("ev12b RED-FIRST: two rows wearing one runId resolve to the "
+              "newest by MOMENT - the offset stamp spells a later hour and "
+              "names an earlier one, so a text comparison would answer "
+              "'passed': %r" % (_ev_moment["runs"].get("r-1"),),
+              dict(zip(M.EVIDENCE_FIELDS,
+                       _ev_moment["runs"]["r-1"]))["status"] == "failed")
         # A POINTER THE LEDGER CANNOT ANSWER, which is the third badge and not
         # the absent one. The counts are what let the page say why.
         _ev_missing = M.evidence_view(_evproj, M._composition_view({

@@ -36,7 +36,7 @@ Usage:
   stamp-verification.py compare [--project DIR] [--stamp TEXT | --stamp-file F]
                                 [--json]
   stamp-verification.py red     [--project DIR] --manifest M --task T
-                                [--case ID ...] [--introduces SYMBOL ...]
+                                [--case ID|LABEL ...] [--introduces SYMBOL ...]
                                 [--timeout S] [--json] -- <test command>
 
   `compare` reads the stamp from stdin when neither --stamp nor --stamp-file is
@@ -74,15 +74,18 @@ path but SIGKILL, which no process can catch - the `red` section says what is
 reported instead.
 """
 import argparse
+import ast
 import datetime
 import json
 import os
+import posixpath
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+import warnings
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -193,7 +196,17 @@ def read_stamp_text(args, stdin=None):
 # ground, and a host refused it beside a sibling's uncommitted work. So the proof
 # is made somewhere else: a `git worktree add --detach` of HEAD in a temp
 # directory, with the working tree's copy of the task's TEST files laid over it
-# and its implementation files left at HEAD.
+# and its implementation files left at HEAD. HEAD's own test files run FIRST,
+# before any file of the task's is laid over - each declared test file new at
+# HEAD written as an EMPTY file, so the same command reaches what the task's run
+# reaches minus the new files' content - and must be green; then the task's run
+# must be red, the fix run - the task's tests on the working tree's
+# implementation - green, and only a failure the runner locates in a declared
+# test file, whose named class defines it with no ast-identical def of that class
+# chain and name anywhere in HEAD's test files, is the task's. Every run is made in the throwaway reset to HEAD with an isolated
+# environment of its own, so the runs differ only in the files laid over. What
+# that cannot see - state reached by an absolute path or the shared git
+# directory, network state, a flaky HEAD case - is named in the guide.
 #
 # WHAT IT WRITES, AND WHAT IT CANNOT PROMISE, so nobody has to discover it.
 # `git worktree add` registers the throwaway in the repository's administrative
@@ -219,6 +232,7 @@ RED_WORDS = (RED_PROVED, RED_CANNOT)
 
 V_RED, V_GREEN = "red", "green"
 V_COLLECT, V_NO_TALLY, V_NOT_RUN = "collection-error", "no-tally", "could-not-run"
+V_MIXED = "mixed-tally"
 
 # The host's Bash tool gives a command at most this many seconds, and a helper it
 # kills never reaches its own `finally`. The default stays under it with room for
@@ -226,12 +240,18 @@ V_COLLECT, V_NO_TALLY, V_NOT_RUN = "collection-error", "no-tally", "could-not-ru
 HOST_BASH_LIMIT = 600
 DEFAULT_TIMEOUT = 480
 # ONE deadline, `--timeout`, starts before anything runs and covers every git
-# call that builds or reads the throwaway and both runs: each stage gets what the
-# earlier ones left. What happens after the deadline has to fit in the rest of
-# the host's limit, so it is bounded and summed here: one teardown of a timed-out
-# run (`_proc_group.GRACE_SECONDS` for SIGTERM, again for SIGKILL, again for the
-# drain - two runs cannot both time out, the second is only made when the first
-# finished), and the removal's two git calls, each capped at `REMOVE_GIT_TIMEOUT`.
+# call that builds or reads the throwaway and every run - HEAD's own, the task's,
+# the second (`--introduces`) and the fix run: each stage gets what the earlier
+# ones left. `_isolated_run` makes no run, and `_isolate` starts neither of the
+# reset's git calls, with less than a whole second left, so none of those is
+# started past the deadline on the one-second floor a timeout is given. The
+# git calls before the throwaway exists (listing and reading HEAD's files,
+# building it) keep that floor and can overrun it by up to a second each. What happens after the deadline has to fit in
+# the rest of the host's limit, so it is bounded and summed here: one teardown
+# of a timed-out run (`_proc_group.GRACE_SECONDS` for SIGTERM, again for
+# SIGKILL, again for the drain - at most one run can time out, because each
+# later run is made only when the one before it finished and a second is
+# left), and the removal's two git calls, each capped at `REMOVE_GIT_TIMEOUT`.
 # Copying files and deleting the temp directory are local and are not budgeted.
 REMOVE_GIT_TIMEOUT = 10
 TEARDOWN_MARGIN = 3 * _proc_group.GRACE_SECONDS + 2 * REMOVE_GIT_TIMEOUT
@@ -282,7 +302,17 @@ _PYTEST_COUNT = re.compile(r"(\d+) (failed|passed|errors?|skipped|xfailed|xpasse
 _PYTEST_FAILED = re.compile(r"^(FAILED|ERROR) (\S+)(?: - (.*))?$", re.M)
 _UNITTEST_RAN = re.compile(r"^Ran (\d+) tests? in ", re.M)
 _UNITTEST_FAILED = re.compile(r"^FAILED \(([^)]*)\)", re.M)
-_UNITTEST_CASE = re.compile(r"^(FAIL|ERROR): (\S+)", re.M)
+# The location is read off the SAME line as the case: two cases of one name in
+# two modules - HEAD's imported class and a subclass inheriting from it - each
+# keep their own.
+_UNITTEST_CASE = re.compile(r"^(FAIL|ERROR): (\S+)(?: \(([\w.]+)\))?", re.M)
+# A house case's id is its label's leading token when that token carries a digit
+# (`me1`, `ga9b`, `pc-sd0`) - the key the harness's `case_id()` hands out and
+# prove-gates attributes a mutation by. A label led by an ordinary word has no id
+# and is named by the whole label: its first word is one some case HEAD's run
+# prints almost always opens with too, so reading it as an id refuses the task's
+# own case.
+_HOUSE_CASE_ID = re.compile(r"^[A-Za-z][A-Za-z_-]*[0-9][A-Za-z0-9_-]*$")
 # With no tally, a traceback ending in one of these is a run that never reached an
 # assertion; any other tally-less failure is `no-tally`, a crash nobody classified.
 _COMPILE_ERROR = re.compile(r"^\s*(?:E\s+)?(SyntaxError|IndentationError|TabError|"
@@ -300,27 +330,84 @@ INTRODUCES_CLASSES = ("ImportError", "ModuleNotFoundError", "AttributeError",
 _SYMBOL_SHAPE = re.compile(r"^[A-Za-z_][\w.]*$")
 
 
-def failing_cases(text):
-    """`[{"id", "assertion", "why"}]` - every failing case a runner named.
+def house_case_id(label):
+    """The label's leading token when it is id-shaped, else None."""
+    head = label.split(None, 1)
+    if not head or not _HOUSE_CASE_ID.match(head[0]):
+        return None
+    return head[0]
+
+
+def _house_cases(text):
+    out = []
+    for ln in text.splitlines():
+        if ln.startswith("FAIL ") and not any(m in ln for m in HOUSE_ESCAPES):
+            label = ln[len("FAIL "):].strip()
+            out.append({"id": house_case_id(label), "label": label,
+                        "assertion": True, "why": "house FAIL"})
+    return out
+
+
+def _pytest_cases(text):
+    out = []
+    for kind, node, why in _PYTEST_FAILED.findall(text):
+        why = (why or "").strip()
+        out.append({"id": node.split("::")[-1], "label": node,
+                    "assertion": kind == "FAILED"
+                    and (why.startswith("assert") or why.startswith("AssertionError")),
+                    "why": why or kind})
+    return out
+
+
+def _unittest_site(name, where):
+    """`(module, class, qual)` a unittest line locates a case in: `where` is
+    `mod.Class` or, from 3.11, `mod.Class.test`, the class part a qualified
+    name when classes nest (`mod.Outer.Inner`). `qual` is that dotted path
+    whole, split, since only the declared files can say where the module ends
+    and the class chain begins; `module` and `class` read it as one class
+    deep. Nones when the line gives no location."""
+    parts = where.split(".") if where else []
+    if parts and parts[-1] == name:
+        parts = parts[:-1]
+    if len(parts) < 2:
+        return None, None, []
+    return ".".join(parts[:-1]), parts[-1], parts
+
+
+def _unittest_cases(text):
+    out = []
+    for kind, name, where in _UNITTEST_CASE.findall(text):
+        module, cls, qual = _unittest_site(name, where)
+        out.append({"id": name, "label": name, "assertion": kind == "FAIL",
+                    "why": kind, "module": module, "cls": cls, "qual": qual})
+    return out
+
+
+CASE_READERS = {"house": _house_cases, "pytest": _pytest_cases,
+                "unittest": _unittest_cases}
+
+
+def failing_cases(text, runner=None):
+    """`[{"id", "label", "assertion", "why"}]` - every failing case the runner
+    that ran named; `runner` defaults to the one `read_tally()` selects.
+
+    Only that runner's lines are read, never another's whose tally line merely
+    appears in the output: a passing house case may print
+    `ERROR: <path> is not a directory` because it asserts on that message, or
+    echo a whole captured unittest transcript, `Ran N tests` line included; a
+    test under another runner may print a line that opens with `FAIL `. No
+    tally, no runner, no cases. `label` is the whole name as printed; `id` is
+    the part a case is keyed by, None for a house label with no id-shaped lead.
 
     `assertion` is True only where the runner says the case failed an assertion:
     a house `FAIL` line that is not an escape, a pytest `FAILED` whose reason is
     an `assert` or an `AssertionError`, a unittest `FAIL:`. A pytest `ERROR`, a
     pytest body exception and a unittest `ERROR:` are named with it False."""
-    out = []
-    for ln in text.splitlines():
-        if ln.startswith("FAIL ") and not any(m in ln for m in HOUSE_ESCAPES):
-            label = ln[len("FAIL "):].strip()
-            out.append({"id": label.split()[0] if label else "", "assertion": True,
-                        "why": "house FAIL"})
-    for kind, node, why in _PYTEST_FAILED.findall(text):
-        why = (why or "").strip()
-        out.append({"id": node.split("::")[-1], "assertion": kind == "FAILED"
-                    and (why.startswith("assert") or why.startswith("AssertionError")),
-                    "why": why or kind})
-    for kind, name in _UNITTEST_CASE.findall(text):
-        out.append({"id": name, "assertion": kind == "FAIL", "why": kind})
-    return out
+    if runner is None:
+        tally = read_tally(text)
+        runner = tally["runner"] if tally is not None else None
+    reader = CASE_READERS.get(runner)
+    return reader(text) if reader is not None else []
 
 
 def _house_tally(text):
@@ -328,7 +415,7 @@ def _house_tally(text):
     if not hits:
         return None
     passed, total = int(hits[-1][0]), int(hits[-1][1])
-    asserting = [c for c in failing_cases(text) if c["why"] == "house FAIL"]
+    asserting = _house_cases(text)
     return {"runner": "house", "collected": total, "failed": total - passed,
             "assertions": len(asserting)}
 
@@ -337,10 +424,16 @@ def _pytest_tally(text):
     hits = _PYTEST_SUMMARY.findall(text)
     if not hits:
         return None
-    counts = dict((kind.rstrip("s") if kind.startswith("error") else kind, int(n))
-                  for n, kind in _PYTEST_COUNT.findall(hits[-1]))
+    # Every summary line is counted, as unittest's `Ran N` lines are: a command
+    # running two invocations prints two, and reading only the last would judge
+    # the whole run by its second half.
+    counts = {}
+    for hit in hits:
+        for n, kind in _PYTEST_COUNT.findall(hit):
+            key = kind.rstrip("s") if kind.startswith("error") else kind
+            counts[key] = counts.get(key, 0) + int(n)
     ran = sum(counts.get(k, 0) for k in ("failed", "passed", "xfailed", "xpassed"))
-    asserting = [c for c in failing_cases(text) if c["assertion"]]
+    asserting = [c for c in _pytest_cases(text) if c["assertion"]]
     return {"runner": "pytest", "collected": ran,
             "failed": counts.get("failed", 0) + counts.get("error", 0),
             "assertions": len(asserting)}
@@ -357,27 +450,67 @@ def _unittest_tally(text):
             if val.isdigit():
                 counts[key] = counts.get(key, 0) + int(val)
     failures = counts.get("failures", 0)
-    return {"runner": "unittest", "collected": int(ran[-1]),
+    # Every `Ran N` line is counted, as every FAILED line is: a command running
+    # two suites prints two, and reading only the last would pair one run's
+    # count with both runs' failures.
+    return {"runner": "unittest", "collected": sum(int(n) for n in ran),
             "failed": failures + counts.get("errors", 0), "assertions": failures}
 
 
-def read_tally(text):
-    """The first tally a known runner printed, or None when none did."""
-    for reader in (_house_tally, _pytest_tally, _unittest_tally):
-        tally = reader(text)
-        if tally is not None:
-            return tally
-    return None
+TALLY_READERS = (("house", _house_tally), ("pytest", _pytest_tally),
+                 ("unittest", _unittest_tally))
 
 
-def classify_run(code, text):
+def command_runner(cmd):
+    """The runner a test command names - `pytest`, `python -m unittest`, a house
+    `--selftest` - or None when it names none, or more than one."""
+    args = [str(a) for a in (cmd or ())]
+    named = set()
+    for i, arg in enumerate(args):
+        base = os.path.basename(arg)
+        follows_m = i > 0 and args[i - 1] == "-m"
+        if base in ("pytest", "py.test"):
+            named.add("pytest")
+        elif follows_m and arg == "unittest":
+            named.add("unittest")
+        elif arg == "--selftest":
+            named.add("house")
+    return named.pop() if len(named) == 1 else None
+
+
+def read_tally(text, cmd=None):
+    """The tally of the runner that ran, or None when no known runner printed one.
+
+    One runner's tally is that runner's. When more than one appears - a house
+    case echoing a captured unittest transcript, a unittest test printing a
+    house tally - neither the order they were printed in nor a precedence
+    between runners says which ran: a merged pipe puts a test's buffered
+    stdout after the runner's own stderr. So the command decides when it names
+    a runner (`command_runner`), and otherwise the answer is
+    `{"runner": None, "mixed": [...]}`, which no reader reads cases from."""
+    tallies = [t for t in (reader(text) for _name, reader in TALLY_READERS)
+               if t is not None]
+    if not tallies:
+        return None
+    if len(tallies) == 1:
+        return tallies[0]
+    named = [t for t in tallies if t["runner"] == command_runner(cmd)]
+    if named:
+        return named[0]
+    return {"runner": None, "mixed": [t["runner"] for t in tallies],
+            "collected": 0, "failed": 0, "assertions": 0}
+
+
+def classify_run(code, text, cmd=None):
     """`(verdict, tally)` for one run: `green` / `red` / `collection-error` /
-    `no-tally`. Exit 0 is `green` whatever the output says."""
+    `mixed-tally` / `no-tally`. Exit 0 is `green` whatever the output says."""
+    tally = read_tally(text, cmd)
     if code == 0:
-        return V_GREEN, read_tally(text)
-    tally = read_tally(text)
+        return V_GREEN, tally
     if tally is None:
         return (V_COLLECT if _COMPILE_ERROR.search(text) else V_NO_TALLY), None
+    if tally["runner"] is None:
+        return V_MIXED, tally
     if tally["collected"] > 0 and tally["assertions"] > 0:
         return V_RED, tally
     return V_COLLECT, tally
@@ -481,9 +614,10 @@ def _git_env():
     return dict((k, v) for k, v in os.environ.items() if not k.startswith("GIT_"))
 
 
-def _git(root, args, timeout=120):
+def _git(root, args, timeout=120, strip=True):
     """`(code, text)` for one git call; the hooks path points nowhere, so no hook
-    the repository carries runs on the throwaway's behalf."""
+    the repository carries runs on the throwaway's behalf. `strip=False` keeps
+    the output as git wrote it, for a file's contents."""
     try:
         out = subprocess.run(["git", "-C", root, "-c",
                               "core.hooksPath=%s" % os.devnull] + list(args),
@@ -491,12 +625,14 @@ def _git(root, args, timeout=120):
                              timeout=timeout, env=_git_env())
     except (OSError, subprocess.SubprocessError) as exc:
         return None, "%s" % (exc,)
-    return out.returncode, out.stdout.decode("utf-8", "replace").strip()
+    text = out.stdout.decode("utf-8", "replace")
+    return out.returncode, text.strip() if strip else text
 
 
-def _head_text(root, rel):
+def _head_text(root, rel, timeout=120):
     """HEAD's bytes of `rel` as text, or None when HEAD has no such file."""
-    code, text = _git(root, ["show", "HEAD:%s" % (rel,)])
+    code, text = _git(root, ["show", "HEAD:%s" % (rel,)], timeout=timeout,
+                      strip=False)
     return text if code == 0 else None
 
 
@@ -514,14 +650,16 @@ def _names(text, word):
     return bool(re.search(r"(?<![\w-])%s(?![\w-])" % re.escape(word), text or ""))
 
 
-def introduced(root, implementation, symbol):
+def introduced(root, implementation, symbol, deadline=None):
     """`(holds, basis)` - the STATIC half of whether this task introduces `symbol`:
     absent, as a whole name, from HEAD's copy of every declared implementation
     file (content and path, so a new module counts), and present in the working
     tree's copy of at least one. The half that decides is the second run, in
     `run_red`: with the working tree's implementation copied in, the error the
     first run ended on must be gone."""
-    heads = dict((rel, _head_text(root, rel)) for rel in implementation)
+    heads = dict((rel, _head_text(root, rel, timeout=max(1, _left(deadline))
+                                  if deadline is not None else 120))
+                 for rel in implementation)
     at_head = [rel for rel, text in heads.items()
                if text is not None and (_names(rel, symbol) or _names(text, symbol))]
     if at_head:
@@ -537,29 +675,568 @@ def introduced(root, implementation, symbol):
                   % (", ".join(implementation), ", ".join(in_wt)))
 
 
-def _added_by_task(root, tests, cid):
-    """Whether case id `cid` is a whole name in the working tree's copy of a
-    declared test file and absent from HEAD's copy of that same file."""
-    return any(_names(_wt_text(root, rel), cid)
-               and not _names(_head_text(root, rel) or "", cid) for rel in tests)
+# --- which failing case is the task's own: the baseline is GREEN ---
+# Whether a case is new cannot be read off the test file's source, and seven
+# review rounds each found another way to read it off two runs' output while
+# HEAD's own run was red - a label rebuilt, a case relabelled, a run that stopped
+# quietly, a file the task's run rewrote. So the red is credited only against a
+# GREEN baseline: HEAD's own test files, run with the same command on HEAD's code
+# in an isolated clean throwaway, must pass. With that, every failure of the
+# task's run comes from the task's change to the tests, and all of them are its
+# own; the fix run then shows each one passes with the working tree's code.
+NARROW = ("the command is already red (or unreadable) at HEAD - narrow it to the "
+          "task's cases")
 
 
-def own_failures(root, tests, failing, cases):
-    """`(own, refused)` - the failing cases that are the TASK'S OWN and failed an
-    assertion, and the `--case` ids refused because HEAD already carries them.
+def baseline_problem(head, cmd):
+    """Why HEAD's own run is not a GREEN baseline, or None when it is.
 
-    Own means a case the task ADDED: its id is a whole name in the working
-    tree's copy of a declared test file and absent from HEAD's copy of it.
-    `--case` narrows to the ids it names and is held to the same test, because
-    the flag is chosen by the party whose proof is being checked - an existing
-    case going red because its test file was edited to match other work is not
-    a proof about this task's test, whoever names it."""
-    asserting = [f for f in failing if f["assertion"] and f["id"]]
-    refused = [c for c in cases if not _added_by_task(root, tests, c)]
+    `head` is `{"code", "text", "problem"}` of HEAD's own test files run on
+    HEAD's code, FIRST, in a fresh throwaway and an isolated environment, with
+    every declared test file new at HEAD laid over as an EMPTY file - so the
+    same command reaches what the task's run reaches, however it is spelled,
+    minus the new files' content. Green is exit 0 with no failure counted, or the
+    runner's own no-tests-ran exit 5 - which a command naming only new files
+    legitimately gives, and pytest gives when `-k` deselects every case - read
+    as ONE runner's tally counting no case run and no failure. The text alone
+    is not read: a red run followed by an empty one prints "NO TESTS RAN" too,
+    and a mixed tally counts nothing because it reads no cases.
+
+    The stubs remove the new files' CONTENT, and with it everything that
+    content reaches - a HEAD case a new file imports, inherits or loads is not
+    run here. `credit_problem` is what keeps such a case from being credited."""
+    if head is None:
+        return "HEAD's own run was not made - %s" % (NARROW,)
+    if head.get("problem"):
+        return "HEAD's own run could not be made (%s) - %s" % (head["problem"], NARROW)
+    tally = read_tally(head["text"], cmd)
+    if head["code"] == 5 and tally is not None and tally["runner"] is not None \
+            and not tally["collected"] and not tally["failed"]:
+        return None
+    if head["code"] != 0 or (tally is not None and (tally["runner"] is None
+                                                    or tally["failed"])):
+        return ("HEAD's own tests on HEAD's code are not green (%s) - %s"
+                % (_decisive_line(head["text"], tally), NARROW))
+    return None
+
+
+def fix_problem(fix, cmd, task_tally):
+    """Why the fix run does not show every failing case passing with the
+    working tree's code, or None. The fix run must be green and must have run
+    at least as many cases as the task's run, so a case that failed cannot
+    have gone missing instead of passing."""
+    if fix is None:
+        return "the fix run was not made"
+    if fix.get("problem"):
+        return "the fix run could not be made: %s" % (fix["problem"],)
+    tally = read_tally(fix["text"], cmd)
+    if fix["code"] != 0 or tally is None or tally["runner"] is None or tally["failed"]:
+        return ("with the working tree's implementation the task's tests do not all "
+                "pass (%s), so the red is not one the fix turns green"
+                % (_decisive_line(fix["text"], tally),))
+    if tally["collected"] < task_tally["collected"]:
+        return ("the fix run collected %d case(s) and the task's run %d, so a "
+                "failing case may be missing rather than passing"
+                % (tally["collected"], task_tally["collected"]))
+    return None
+
+
+def _is_named(failure, name):
+    """Whether `--case NAME` names this failing case: its id, or its label as
+    printed, with or without the detail a house FAIL line appends after a
+    ` (` - read in place, so a long detail costs no prefix copies."""
+    label = failure.get("label") or ""
+    return (name == failure.get("id") or name == label
+            or (label.startswith(name) and label.startswith(" (", len(name))))
+
+
+_RUNNER_MODULES = ("unittest", "pytest")
+
+
+def _house_script(cmd):
+    """The script a `python <file>.py ...` or `python -m <module>` command runs,
+    as the path it was spelled with, or None - for `-c`, and for `-m` naming a
+    runner rather than a test module."""
+    args = [str(a) for a in (cmd or ())]
+    if args and args[0].endswith(".py"):
+        return args[0]
+    if not args or not os.path.basename(args[0]).startswith("python"):
+        return None
+    i = 1
+    while i < len(args):
+        if args[i] in ("-X", "-W"):
+            i += 2
+            continue
+        if args[i] == "-c":
+            return None
+        if args[i] == "-m":
+            module = args[i + 1] if i + 1 < len(args) else ""
+            if not module or module.split(".")[0] in _RUNNER_MODULES:
+                return None
+            return module.replace(".", "/") + ".py"
+        if not args[i].startswith("-"):
+            return args[i]
+        i += 1
+    return None
+
+
+def _as_rel(path, roots):
+    """`path` as a repository-relative posix path: `./` and `..` folded, an
+    absolute path made relative to the first of `roots` it lies under; None
+    for an absolute path under none of them."""
+    if not path:
+        return None
+    if os.path.isabs(path):
+        for root in roots:
+            rel = os.path.relpath(path, root)
+            if rel != os.pardir and not rel.startswith(os.pardir + os.sep):
+                path = rel
+                break
+        else:
+            return None
+    return posixpath.normpath(path.replace(os.sep, "/"))
+
+
+def _one_declared(path, tests, others=(), real_path=False):
+    """The ONE declared test file `path` names, or None.
+
+    Equal to it, or ending with `/` + it, since a runner prints paths and
+    modules relative to its own top directory (`unittest discover -s tests`
+    prints `test_new`). A trailing match is refused when two declared files
+    share the tail. And a match is refused when `others` - every other file in
+    HEAD's tree and in the throwaway - holds one equal to `path` or ending with
+    it: the runner may have loaded that one, and the name cannot say which.
+    That holds for an EXACT match too unless `real_path` says `path` is a path
+    the runner resolved against its working directory (a pytest node id);
+    a unittest module is resolved through sys.path, so `test_old` names
+    whichever `test_old.py` came first on it. `others` None means they could
+    not be listed, and then only a real path's exact match is read."""
+    if not path:
+        return None
+    tail = "/" + path
+    if real_path and path in tests:
+        return path
+    hits = [t for t in tests if t == path or t.endswith(tail)]
+    if len(hits) != 1 or others is None:
+        return None
+    if any(o == path or o.endswith(tail) for o in others if o != hits[0]):
+        return None
+    return hits[0]
+
+
+def case_site(failure, runner, tests, cmd, roots=(), others=()):
+    """`(rel, classes, name)` - the declared test file the runner locates this
+    failure in, the class chain it names there and the case's name - or None
+    when the runner locates it in no declared test file. A pytest node id
+    gives `path::Class::name`; unittest -v gives `mod.Class` (nested classes
+    qualified: the longest prefix naming a declared file is the module), or
+    `__main__` when the command runs a declared file as a script; a house run
+    is located only as the one declared script its command runs, with
+    `classes` None, because its FAIL lines carry no location at all."""
+    name = (failure.get("id") or "").split("[")[0]
+    script = _as_rel(_house_script(cmd), roots)
+    if runner == "pytest":
+        parts = (failure.get("label") or "").split("::")
+        rel = _one_declared(_as_rel(parts[0], roots), tests, others, real_path=True)
+        return (rel, parts[1:-1], name) if rel and len(parts) > 1 else None
+    if runner == "unittest":
+        qual = failure.get("qual") or (
+            (failure.get("module") or "").split(".") if failure.get("module") else [])
+        if not failure.get("qual") and failure.get("cls"):
+            qual = qual + [failure["cls"]]
+        if qual[:1] == ["__main__"]:
+            return (script, qual[1:], name) if script in tests else None
+        for cut_at in range(len(qual), 0, -1):
+            rel = _one_declared("/".join(qual[:cut_at]) + ".py", tests, others)
+            if rel:
+                return rel, qual[cut_at:], name
+        return None
+    if runner == "house" and script in tests:
+        return script, None, name
+    return None
+
+
+_DEFS = (ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def _target_names(target):
+    """The names an assignment target binds: a Name, and the Names inside a
+    Tuple, List or Starred - never a Name under an Attribute or a Subscript,
+    which binds nothing (`New.maxDiff = None` leaves `New` bound as it was)."""
+    if isinstance(target, ast.Name):
+        return [target.id]
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return [n for elt in target.elts for n in _target_names(elt)]
+    if isinstance(target, ast.Starred):
+        return _target_names(target.value)
+    return []
+
+
+# The statements whose nested block is a body of its own: a binding in the
+# block is not read (a named limit), only what their header binds.
+_COMPOUND = ("For", "AsyncFor", "While", "If", "With", "AsyncWith", "Try",
+             "TryStar", "Match")
+
+
+def _header(stmt):
+    """The expressions of `stmt` evaluated in the body `stmt` stands in: the
+    whole of a simple statement; the header of a compound one; a def's or a
+    class's decorators, defaults, bases and keywords."""
+    kind = type(stmt).__name__
+    if isinstance(stmt, _DEFS):
+        args = stmt.args
+        return list(stmt.decorator_list) + list(args.defaults) + [
+            d for d in args.kw_defaults if d is not None]
+    if isinstance(stmt, ast.ClassDef):
+        return list(stmt.decorator_list) + list(stmt.bases) + [
+            k.value for k in stmt.keywords]
+    if kind in ("For", "AsyncFor"):
+        return [stmt.iter]
+    if kind in ("While", "If"):
+        return [stmt.test]
+    if kind in ("With", "AsyncWith"):
+        return [item.context_expr for item in stmt.items]
+    if kind == "Match":
+        return [stmt.subject]
+    if kind in _COMPOUND:
+        return []
+    return [stmt]
+
+
+def _walrus_names(nodes):
+    """The names a walrus in `nodes` binds in their own scope: a lambda is a
+    scope of its own and is not entered; a comprehension is, since a walrus
+    in it binds in the enclosing scope."""
+    out, stack = [], list(nodes)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.Lambda):
+            continue
+        if isinstance(node, ast.NamedExpr):
+            out.extend(_target_names(node.target))
+        stack.extend(ast.iter_child_nodes(node))
+    return out
+
+
+def _pattern_names(pattern):
+    """The capture names of a match pattern (read by node name, which keeps
+    this file free of 3.10-only attributes)."""
+    out = []
+    for node in ast.walk(pattern):
+        kind = type(node).__name__
+        if kind in ("MatchAs", "MatchStar") and getattr(node, "name", None):
+            out.append(node.name)
+        elif kind == "MatchMapping" and getattr(node, "rest", None):
+            out.append(node.rest)
+    return out
+
+
+def _bound_names(stmt):
+    """Every name the statement `stmt` binds in the body it stands in."""
+    kind = type(stmt).__name__
+    names = []
+    if isinstance(stmt, _DEFS + (ast.ClassDef,)):
+        names.append(stmt.name)
+    elif isinstance(stmt, (ast.Import, ast.ImportFrom)):
+        names.extend("*" if a.name == "*" else (a.asname or a.name.split(".")[0])
+                     for a in stmt.names)
+    elif isinstance(stmt, (ast.Assign, ast.Delete)):
+        names.extend(n for t in stmt.targets for n in _target_names(t))
+    elif isinstance(stmt, ast.AugAssign) or (isinstance(stmt, ast.AnnAssign)
+                                             and stmt.value is not None):
+        names.extend(_target_names(stmt.target))
+    elif kind in ("For", "AsyncFor"):
+        names.extend(_target_names(stmt.target))
+    elif kind in ("With", "AsyncWith"):
+        names.extend(n for item in stmt.items if item.optional_vars is not None
+                     for n in _target_names(item.optional_vars))
+    elif kind == "Match":
+        names.extend(n for case in stmt.cases for n in _pattern_names(case.pattern))
+    return names + _walrus_names(_header(stmt))
+
+
+def _binds(stmt, name):
+    """Whether the statement `stmt`, standing in a body, binds `name` there:
+    a def or a class of that name; an import binding it, or a `*` import,
+    which may; a Name target of an assignment, an annotated assignment with a
+    value, an augmented assignment or a `del`, read through tuples, lists and
+    starred but never under an attribute or a subscript; a `for` target; a
+    `with ... as`; a match capture; or a walrus in the statement outside a
+    lambda. A binding inside a compound statement's own block is not read."""
+    names = _bound_names(stmt)
+    return name in names or "*" in names
+
+
+def _last_binding(body, name):
+    """The LAST statement of `body` that binds `name`, or None."""
+    found = [stmt for stmt in body if _binds(stmt, name)]
+    return found[-1] if found else None
+
+
+def _parse(text):
+    """The module ast of `text`, or None; a warning the parse raises (an
+    invalid escape in a file this reads) is not printed."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            return ast.parse(text or "")
+        except (SyntaxError, ValueError):
+            return None
+
+
+def _definition(text, classes, name):
+    """The ast node of the def `name` in the class chain `classes` of `text`
+    (module level when the chain is empty), or None.
+
+    Each name is read as the body's LAST top-level binding of it: a class of
+    the chain must be last bound by its `class` statement, and the case by its
+    `def`. So any binding `_binds` reads after the def - in the class body, or
+    of the class name at module level - means it is not the def that runs; so
+    does a later statement at any level of the chain that `_replaces` the case
+    on its class (an assignment to `<chain>.<case>`, or a `setattr` naming it
+    literally), while any other attribute or subscript assignment binds
+    nothing; and a def in a string, in another class or merely inherited is
+    not it either. A binding inside the block of a compound statement is not
+    read, and neither is a decorator that returns another function or a
+    `setattr` whose name is computed."""
+    tree = _parse(text)
+    if tree is None:
+        return None
+    body, trail = tree.body, []
+    for cls in classes:
+        node = _last_binding(body, cls)
+        if not isinstance(node, ast.ClassDef):
+            return None
+        trail.append((body, node))
+        body = node.body
+    node = _last_binding(body, name)
+    if not isinstance(node, _DEFS):
+        return None
+    trail.append((body, node))
+    for depth, (level, anchor) in enumerate(trail):
+        path = list(classes[depth:]) + [name]
+        later = level[[id(stmt) for stmt in level].index(id(anchor)) + 1:]
+        if any(_replaces(stmt, path) for stmt in later):
+            return None
+    return node
+
+
+def _dotted(node):
+    """The dotted path an expression spells - `New.test_x` is
+    `["New", "test_x"]` - or None for anything but names and attributes."""
+    if isinstance(node, ast.Name):
+        return [node.id]
+    if isinstance(node, ast.Attribute):
+        head = _dotted(node.value)
+        return head + [node.attr] if head is not None else None
+    return None
+
+
+def _attribute_targets(target):
+    """The Attribute targets of an assignment target, read through tuples,
+    lists and starred."""
+    if isinstance(target, ast.Attribute):
+        return [target]
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return [a for elt in target.elts for a in _attribute_targets(elt)]
+    if isinstance(target, ast.Starred):
+        return _attribute_targets(target.value)
+    return []
+
+
+def _replaces(stmt, path):
+    """Whether `stmt` replaces the case at `path` - the class chain as seen
+    from the body `stmt` stands in, then the case's name - on its class: an
+    assignment of any kind to that exact attribute path, or a
+    `setattr(<chain>, '<name>', ...)` with that literal name. Another
+    attribute (`New.maxDiff = None`), another object or a longer path does
+    not, and a name setattr computes is not read."""
+    if len(path) < 2:
+        return False
+    if isinstance(stmt, ast.Assign):
+        targets = stmt.targets
+    elif isinstance(stmt, (ast.AugAssign, ast.AnnAssign)):
+        targets = [stmt.target]
+    else:
+        targets = []
+    if any(_dotted(a) == path for t in targets for a in _attribute_targets(t)):
+        return True
+    stack = list(_header(stmt))
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.Lambda):
+            continue
+        if isinstance(node, ast.Call) and _dotted(node.func) == ["setattr"] \
+                and len(node.args) >= 2 and _dotted(node.args[0]) == path[:-1] \
+                and isinstance(node.args[1], ast.Constant) \
+                and node.args[1].value == path[-1]:
+            return True
+        stack.extend(ast.iter_child_nodes(node))
+    return False
+
+
+def test_definitions(texts):
+    """`{(classes, name, ast dump): rel}` of every def in each file of `texts`
+    (`{rel: text}`), at module level and in every class chain: the cases HEAD
+    already has, keyed so a move or a copy of one is found wherever it lands.
+    A file that does not parse contributes nothing."""
+    out = {}
+    for rel in sorted(texts):
+        tree = _parse(texts[rel])
+        stack = [((), tree.body if tree is not None else [])]
+        while stack:
+            chain, body = stack.pop()
+            for stmt in body:
+                if isinstance(stmt, _DEFS):
+                    out.setdefault((chain, stmt.name, ast.dump(stmt)), rel)
+                elif isinstance(stmt, ast.ClassDef):
+                    stack.append((chain + (stmt.name,), stmt.body))
+    return out
+
+
+def credit_problem(failure, runner, scope):
+    """Why this failing case is NOT the task's own, or None when it is.
+
+    `scope` is `{"tests", "cmd", "roots", "wt", "head_defs", "head_modules",
+    "others"}`: the
+    declared test files, the command, the roots a spelled path is relative
+    to, each declared test file's working-tree text, `test_definitions` and
+    the `module_key`s of every test file in HEAD's tree (None when it could not
+    be read), and every
+    other file in HEAD's tree and the throwaway. The case must be located in
+    ONE declared test file (`case_site`); under pytest and unittest that
+    file's named class must define it (`_definition`); and no test file
+    anywhere in HEAD's tree may hold an ast-identical def under the same class
+    chain and name - because the baseline stubs only NEW files, so a HEAD case
+    a new file imports, a moved file carries or a copy repeats is reached by
+    nothing else. Layout and comments do not count as a change; any edit to
+    the def's ast does. A house run carries no definitions, so the one script
+    it runs is compared whole: a script identical to one of HEAD's test files
+    is HEAD's suite, moved or copied."""
+    site = case_site(failure, runner, scope["tests"], scope["cmd"],
+                     scope.get("roots", ()), scope.get("others", ()))
+    if site is None:
+        return "the runner locates it in no declared test file"
+    rel, classes, name = site
+    if classes is None:
+        modules = scope.get("head_modules")
+        if modules is None:
+            return "HEAD's test files could not be read to tell a new suite from HEAD's"
+        same = modules.get(module_key(scope["wt"].get(rel)))
+        if same is not None:
+            return ("%s is identical to HEAD's %s (the same module ast) - a house run "
+                    "of it prints HEAD's cases" % (rel, same))
+        return None
+    where = "%s%s" % (rel, "".join(" class " + c for c in classes))
+    node = _definition(scope["wt"].get(rel), classes, name)
+    if node is None:
+        return "%s does not define it in %s" % (where, "that class" if classes
+                                                 else "the module")
+    defs = scope.get("head_defs")
+    if defs is None:
+        return "HEAD's test files could not be read to tell an edit from HEAD's case"
+    same = defs.get((tuple(classes), name, ast.dump(node)))
+    if same is not None:
+        return ("its definition in %s is unchanged from HEAD's %s (the same class "
+                "chain, name and ast) - HEAD's case" % (where, same))
+    return None
+
+
+def _cat_blobs(root, rels, deadline):
+    """`(texts, problem)` - HEAD's text of each of `rels`, read by ONE
+    `git cat-file --batch` under the deadline."""
+    rels = [r for r in rels if "\n" not in r]
+    if not rels:
+        return {}, None
+    try:
+        out = subprocess.run(
+            ["git", "-C", root, "-c", "core.hooksPath=%s" % os.devnull, "cat-file",
+             "--batch"], input="".join("HEAD:%s\n" % r for r in rels).encode("utf-8"),
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            timeout=max(1, _left(deadline)), env=_git_env())
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, "git could not read HEAD's test files: %s" % (exc,)
+    data, at, texts = out.stdout, 0, {}
+    for rel in rels:
+        end = data.find(b"\n", at)
+        if end < 0:
+            return None, "git cat-file stopped before %s" % (rel,)
+        head = data[at:end].decode("utf-8", "replace").split()
+        at = end + 1
+        if len(head) == 3 and head[1] == "blob" and head[2].isdigit():
+            size = int(head[2])
+            texts[rel] = data[at:at + size].decode("utf-8", "replace")
+            at += size + 1
+        elif not head or head[-1] != "missing":
+            return None, "git cat-file answered %r for %s" % (" ".join(head), rel)
+    return texts, None
+
+
+def module_key(text):
+    """What makes two test files the same file: the ast of the module, so
+    layout and comments do not count - or, for one that does not parse, its
+    text."""
+    tree = _parse(text)
+    return ast.dump(tree) if tree is not None else "text:" + (text or "")
+
+
+def head_tree(root, named, deadline):
+    """`(files, defs, modules)` - every path in HEAD's tree; `test_definitions`
+    of the `.py` test files among them (`_is_test_path`, the declared `named`
+    counting as tests); and `{module_key: rel}` of the same files, for a house
+    run, whose cases carry no definition to compare. Any is None when git
+    could not answer under the deadline, which the credit reads as a refusal,
+    never as "nothing"."""
+    code, text = _git(root, ["ls-tree", "-r", "-z", "--name-only", "HEAD"],
+                      timeout=max(1, _left(deadline)), strip=False)
+    if code != 0:
+        return None, None, None
+    files = [p for p in text.split("\0") if p]
+    tests = [p for p in files if p.endswith(".py") and _is_test_path(p, named)]
+    texts, problem = _cat_blobs(root, tests, deadline)
+    if problem is not None:
+        return files, None, None
+    modules = {}
+    for rel in sorted(texts):
+        modules.setdefault(module_key(texts[rel]), rel)
+    return files, test_definitions(texts), modules
+
+
+def _throwaway_files(path):
+    """Every file in the throwaway, relative and `/`-separated, `.git` left out."""
+    out = []
+    for top, dirs, names in os.walk(path):
+        dirs[:] = [d for d in dirs if d != ".git"]
+        rel = os.path.relpath(top, path).replace(os.sep, "/")
+        out.extend(n if rel == "." else rel + "/" + n for n in names)
+    return out
+
+
+def _test_texts(root, tests):
+    """`{rel: text}` of each declared test file in the working tree; "" for
+    one that is not there or cannot be read."""
+    out = {}
+    for rel in tests:
+        try:
+            with open(os.path.join(root, *rel.split("/")), encoding="utf-8",
+                      errors="replace") as fh:
+                out[rel] = fh.read()
+        except OSError:
+            out[rel] = ""
+    return out
+
+
+def own_failures(failing, cases, runner=None, scope=None):
+    """`(own, refused)` - the failing cases that failed an assertion and that
+    `credit_problem` credits to the task, narrowed to those `--case` names;
+    and the `--case` names that name none of them. Without a `runner` the
+    credit is not asked."""
+    asserting = [f for f in failing if f["assertion"] and (f["id"] or f["label"])
+                 and (runner is None or credit_problem(f, runner, scope) is None)]
+    refused = [c for c in cases if not any(_is_named(f, c) for f in asserting)]
     if cases:
-        asserting = [f for f in asserting if f["id"] in cases]
-    return ([f for f in asserting if _added_by_task(root, tests, f["id"])],
-            refused)
+        asserting = [f for f in asserting if any(_is_named(f, c) for c in cases)]
+    return asserting, refused
 
 
 def _names_shared_tree(cmd, root, project):
@@ -696,12 +1373,14 @@ def _run_in(path, cmd, timeout, env):
     return proc.returncode, (out or b"").decode("utf-8", "replace"), None
 
 
+_TALLY_KEYS = {"house": "cases ", "pytest": " in ", "unittest": "Ran "}
+
+
 def _decisive_line(text, tally):
     """The line a reader checks the verdict against: the tally, else the error."""
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    if tally is not None:
-        keys = {"house": "cases ", "pytest": " in ", "unittest": "Ran "}
-        hits = [ln for ln in lines if keys[tally["runner"]] in ln]
+    if tally is not None and tally["runner"] in _TALLY_KEYS:
+        hits = [ln for ln in lines if _TALLY_KEYS[tally["runner"]] in ln]
         if hits:
             return hits[-1]
     errors = _ERROR_LINE.findall(text)
@@ -711,16 +1390,30 @@ def _decisive_line(text, tally):
 
 
 def _ids(cases):
-    return _output.some_of(["%s (%s)" % (c["id"] or "?", c["why"]) for c in cases])
+    return _output.some_of(["%s (%s)" % (c["id"] or c["label"] or "?", c["why"])
+                            for c in cases])
+
+
+def _refused_clause(refused):
+    """The basis clause for the `--case` names that name no failing case."""
+    return ("; --case %s names no case that failed an assertion in this run"
+            % (", ".join(refused),) if refused else "")
 
 
 def red_verdict(run, ctx):
     """`(exit, verdict, block, note)` - what the run in the throwaway proved.
 
-    `run` is `{"cmd", "code", "text", "problem", "second"}`; `second` is the
-    re-run with the working tree's implementation copied in, when one was made.
-    `ctx` is `{"root", "implementation", "tests", "cases", "symbols",
-    "dropped"}`."""
+    `run` is `{"cmd", "code", "text", "problem", "second", "head", "fix"}`;
+    `second` is the `--introduces` re-run with the working tree's
+    implementation copied in, `head` the baseline - HEAD's own test files on
+    HEAD's code, made FIRST in the fresh throwaway with the new declared test
+    files as empty stubs - and `fix` the task's test files on the working
+    tree's code, made when the task's run is red on a green baseline. Every
+    run has an isolated environment of its own. `ctx` is `{"root",
+    "implementation", "tests", "cases", "symbols", "dropped", "new",
+    "head_files", "head_defs", "head_modules", "path"}` - `head_tree`'s
+    answer, and the
+    throwaway's path."""
     at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     shown = " ".join(run["cmd"])
     env_clause = "; run without %s" % (", ".join(ctx["dropped"]) or "nothing",)
@@ -733,7 +1426,7 @@ def red_verdict(run, ctx):
             "basis": "`%s` in a throwaway tree at HEAD: %s%s"
                      % (shown, run["problem"], env_clause)}, None
     code, text = run["code"], run["text"]
-    verdict, tally = classify_run(code, text)
+    verdict, tally = classify_run(code, text, run["cmd"])
     line = _decisive_line(text, tally)
     where = "`%s` in a throwaway tree at HEAD exited %d" % (shown, code)
     if verdict == V_GREEN:
@@ -742,29 +1435,65 @@ def red_verdict(run, ctx):
             "this task's test files, run with %s removed from its environment - so "
             "it proves nothing yet; fix the test, there is no redFirst word to "
             "record for this" % (where, line, ", ".join(ctx["dropped"]) or "nothing"))
-    failing = failing_cases(text)
-    how = ("named by --case and absent from HEAD's test files" if ctx["cases"]
-           else "added by the task, absent from HEAD's test files")
+    failing = (failing_cases(text, tally["runner"])
+               if tally is not None and tally["runner"] is not None else [])
+    how = "HEAD's own tests green on HEAD's code"
+    if ctx.get("new"):
+        how += (", its declared test files new at HEAD (%s) laid over as empty "
+                "files" % (", ".join(ctx["new"]),))
+    if ctx["cases"]:
+        how = "named by --case, " + how
+    baseline = baseline_problem(run.get("head"), run["cmd"])
     if verdict == V_RED:
-        own, refused = own_failures(ctx["root"], ctx["tests"], failing, ctx["cases"])
-        refused_clause = ("; --case %s names a case HEAD's test file already "
-                          "carries, so it is not the task's" % (", ".join(refused),)
-                          if refused else "")
+        problem = baseline or fix_problem(run.get("fix"), run["cmd"], tally)
+        if problem is not None:
+            return E_CANNOT_PROVE, verdict, {
+                "status": RED_CANNOT, "at": at,
+                "basis": "%s with failing cases %s, but %s - %s%s"
+                         % (where, _ids(failing), problem, line, env_clause)}, None
+        files = ctx.get("head_files")
+        others = (None if files is None else sorted(
+            (set(files) | set(_throwaway_files(ctx["path"]) if ctx.get("path") else ()))
+            - set(ctx["tests"])))
+        scope = {"tests": ctx["tests"], "cmd": run["cmd"],
+                 "roots": tuple(r for r in (ctx["root"], ctx.get("path")) if r),
+                 "wt": _test_texts(ctx["root"], ctx["tests"]),
+                 "head_defs": ctx.get("head_defs"),
+                 "head_modules": ctx.get("head_modules"), "others": others}
+        own, refused = own_failures(failing, ctx["cases"], tally["runner"], scope)
+        refused_clause = _refused_clause(refused)
+        uncredited = "; ".join(
+            "%s: %s" % (f["label"] or f["id"], why) for f, why in
+            ((f, credit_problem(f, tally["runner"], scope)) for f in failing
+             if f["assertion"]) if why)
+        if not own and not ctx["cases"]:
+            return E_CANNOT_PROVE, verdict, {
+                "status": RED_CANNOT, "at": at,
+                "basis": "%s with failing cases %s, but none is the task's own (%s) "
+                         "- a case is the task's only when the runner locates it in "
+                         "a declared test file (%s) whose named class defines it, "
+                         "with no identical def in HEAD's test files - %s%s"
+                         % (where, _ids(failing), uncredited or "none asserted",
+                            ", ".join(ctx["tests"]), line, env_clause)}, None
         if own:
             return E_PROVED, verdict, {
                 "status": RED_PROVED, "at": at,
                 "basis": "%s with %d of %d collected tests failing an assertion, "
-                         "the task's own among them (%s) - %s: %s%s%s"
+                         "the task's own among them (%s), each passing with the "
+                         "working tree's implementation - %s: %s%s%s"
                          % (where, tally["assertions"], tally["collected"], how,
                             _ids(own), line, refused_clause, env_clause)}, None
         return E_CANNOT_PROVE, verdict, {
             "status": RED_CANNOT, "at": at,
-            "basis": "%s, but none of the failing cases is the task's own (%s): %s "
-                     "- %s%s%s" % (where, how, _ids(failing), line, refused_clause,
-                                   env_clause)}, None
-    why_not = []
-    for symbol in (ctx["symbols"] if verdict == V_COLLECT else ()):
-        holds, why = introduced(ctx["root"], ctx["implementation"], symbol)
+            "basis": "%s, but no case --case names failed an assertion as the "
+                     "task's own: %s%s - %s%s%s"
+                     % (where, _ids(failing),
+                        " (%s)" % (uncredited,) if uncredited else "", line,
+                        refused_clause, env_clause)}, None
+    why_not = [baseline] if baseline and verdict == V_COLLECT else []
+    for symbol in (ctx["symbols"] if verdict == V_COLLECT and not baseline else ()):
+        holds, why = introduced(ctx["root"], ctx["implementation"], symbol,
+                                ctx.get("deadline"))
         error = qualifying_error(text, symbol)
         second = run.get("second")
         if not holds:
@@ -780,7 +1509,8 @@ def red_verdict(run, ctx):
             why_not.append("with the working tree's implementation copied in, a "
                            "second run still ends on %r, so the error is not the "
                            "absence this task fills" % (error,))
-        elif classify_run(second["code"], second["text"])[0] not in (V_GREEN, V_RED):
+        elif classify_run(second["code"], second["text"],
+                          run["cmd"])[0] not in (V_GREEN, V_RED):
             why_not.append("with the working tree's implementation copied in, a "
                            "second run lost %r but still reached no assertion "
                            "(%s), so the test is broken with the fix too"
@@ -793,11 +1523,18 @@ def red_verdict(run, ctx):
                          "%s without that error, its tests reaching their "
                          "assertions%s" % (where, error, symbol, why,
                                            second["code"], env_clause)}, None
-    reason = ("no test was collected or none reached an assertion"
-              if verdict == V_COLLECT else
-              "its output carries no test tally this command reads, so an "
-              "assertion failure cannot be told from a crash - no test is known "
-              "to have been collected")
+    if verdict == V_MIXED:
+        reason = ("its output carries the tallies of more than one runner (%s) and "
+                  "the command names none of them, so which runner ran - and "
+                  "whose failing cases are its own - cannot be told"
+                  % ("; ".join("%s: %s" % (r, _decisive_line(text, {"runner": r}))
+                               for r in tally["mixed"]),))
+    elif verdict == V_COLLECT:
+        reason = "no test was collected or none reached an assertion"
+    else:
+        reason = ("its output carries no test tally this command reads, so an "
+                  "assertion failure cannot be told from a crash - no test is "
+                  "known to have been collected")
     if failing:
         reason += "; failing without an assertion: %s" % (_ids(failing),)
     return E_CANNOT_PROVE, verdict, {
@@ -807,10 +1544,99 @@ def red_verdict(run, ctx):
                                          else "", env_clause)}, None
 
 
-def _wants_second(code, text, symbols):
+def _at_head(root, rels, deadline):
+    """`(present, problem)` - which of `rels` HEAD holds, asked of git under
+    the one deadline."""
+    code, text = _git(root, ["ls-tree", "-z", "--name-only", "HEAD", "--"]
+                      + list(rels), timeout=max(1, _left(deadline)), strip=False)
+    if code != 0:
+        return None, "git could not list HEAD's files: %s" % (text,)
+    # NUL-separated: without -z git quotes a path that is not plain ASCII, and a
+    # quoted path matches no declared one - HEAD's file would read as absent.
+    return set(p for p in text.split("\0") if p) & set(rels), None
+
+
+def _isolate(path, deadline):
+    """Reset the throwaway to HEAD exactly - `checkout -f` and `clean -ffdx`, so
+    nothing an earlier run wrote or rewrote there, tracked or not, survives.
+    Returns the problem, or None. Each git call is started only with a whole
+    second of the deadline left, so none runs past it on the one-second floor
+    a timeout is given."""
+    for args in (["checkout", "-f", "HEAD", "--", "."], ["clean", "-ffdxq"]):
+        if _left(deadline) < 1:
+            return "the run timed out: no time was left of the deadline for the reset"
+        code, text = _git(path, args, timeout=max(1, _left(deadline)))
+        if code != 0:
+            return "git could not reset the throwaway to HEAD: %s" % (text,)
+    return None
+
+
+def _timed_run(path, cmd, deadline, timeout, env):
+    """`{"code", "text", "problem", "seconds"}` for one more run in the
+    throwaway, within what is left of the deadline."""
+    left = _left(deadline)
+    started = time.time()
+    if left < 1:
+        code, text, problem = None, "", ("the run timed out: no time was left of "
+                                         "the %s-second deadline" % (timeout,))
+    else:
+        code, text, problem = _run_in(path, cmd, left, env)
+    return {"code": code, "text": text, "problem": problem,
+            "seconds": round(time.time() - started, 2)}
+
+
+# Every name a home-directory lookup reads - the same table
+# `tools/sweep-selftests.py` isolates its children with (a case pins that the two
+# agree): `HOME` alone leaves the XDG roots at the real home on linux and
+# `USERPROFILE` on windows, and git for windows joins `HOMEDRIVE`/`HOMEPATH`.
+HOME_VARS = ("HOME", "USERPROFILE", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+             "XDG_CACHE_HOME", "XDG_STATE_HOME", "APPDATA", "LOCALAPPDATA")
+
+
+def _isolated_env(env, scratch, tag):
+    """`env` for ONE run: a new empty home under every name in `HOME_VARS`
+    plus the windows drive/path pair, a TMPDIR/TMP/TEMP of its own and no user
+    site-packages. Every run gets new directories, so the runs differ only in
+    the files laid over the throwaway - nothing one run or the caller's
+    environment holds reaches another."""
+    home = tempfile.mkdtemp(prefix=tag + "-home-", dir=scratch)
+    tmp = tempfile.mkdtemp(prefix=tag + "-tmp-", dir=scratch)
+    drive, tail = os.path.splitdrive(home)
+    out = dict(env)
+    out.update(dict((name, home) for name in HOME_VARS))
+    out.update({"HOMEDRIVE": drive, "HOMEPATH": tail, "PYTHONNOUSERSITE": "1",
+                "TMPDIR": tmp, "TMP": tmp, "TEMP": tmp})
+    return out
+
+
+def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
+                  stubs=()):
+    """`(run, copied)` - the throwaway reset to HEAD, `rels` laid over it from
+    the working tree and each of `stubs` written as an EMPTY file, and the
+    command run in an isolated environment. With less than a second of the
+    deadline left no run is made at all - not even the reset's git calls,
+    which would otherwise run past it."""
+    if _left(deadline) < 1:
+        return {"code": None, "text": "", "seconds": 0.0,
+                "problem": "the run timed out: no time was left of the "
+                           "%s-second deadline" % (timeout,)}, []
+    problem = _isolate(path, deadline)
+    if problem is not None:
+        return {"code": None, "text": "", "problem": problem, "seconds": 0.0}, []
+    copied = _lay_over(root, path, rels)
+    for rel in stubs:
+        dst = os.path.join(path, *rel.split("/"))
+        if not os.path.isdir(os.path.dirname(dst)):
+            os.makedirs(os.path.dirname(dst))
+        open(dst, "w").close()
+    return _timed_run(path, cmd, deadline, timeout,
+                      _isolated_env(env, scratch, tag)), copied
+
+
+def _wants_second(code, text, symbols, cmd=None):
     """Whether a second run is owed: a collection error some named symbol's
     missing-symbol error could explain."""
-    verdict, _t = classify_run(code, text) if code is not None else (None, None)
+    verdict, _t = classify_run(code, text, cmd) if code is not None else (None, None)
     return verdict == V_COLLECT and any(qualifying_error(text, s) for s in symbols)
 
 
@@ -827,7 +1653,7 @@ def _red_scope(args, cmd, deadline):
         return None, ("red takes its scope off the plan: pass --manifest and "
                       "--task, and no --files")
     if not 1 <= args.timeout <= MAX_TIMEOUT:
-        return None, ("--timeout %s is outside 1..%d: one deadline covers both runs, "
+        return None, ("--timeout %s is outside 1..%d: one deadline covers every run, "
                       "and it must leave the host's %d-second Bash limit room for "
                       "the teardown, or the host kills the helper before its own "
                       "cleanup runs" % (args.timeout, MAX_TIMEOUT, HOST_BASH_LIMIT))
@@ -863,7 +1689,8 @@ def _red_scope(args, cmd, deadline):
         return None, ("none of task %s's test files (%s) is in the working tree, "
                       "so a throwaway would hold HEAD alone"
                       % (args.task, ", ".join(tests)))
-    return {"root": root, "implementation": implementation, "tests": present}, None
+    return {"root": root, "implementation": implementation, "tests": present,
+            "declared": tests}, None
 
 
 def _arm():
@@ -884,6 +1711,11 @@ def run_red(args, cmd, out):
     root = scope["root"]
     leftovers = leftover_throwaways(root, timeout=max(1, _left(deadline)))
     env, dropped, naming = child_env(root)
+    # The runs swap files in place, and a copy of the same size written in the
+    # same second as the one it replaces leaves a cached bytecode file Python
+    # still trusts - in the tree or under PYTHONPYCACHEPREFIX alike. So no run
+    # writes one, and none is there to be read.
+    env = dict(env, PYTHONDONTWRITEBYTECODE="1")
     _c, head = _git(root, ["rev-parse", "HEAD"], timeout=max(1, _left(deadline)))
     base = holder_base(root)
     if base is None:
@@ -898,30 +1730,47 @@ def run_red(args, cmd, out):
             json.dump({"pid": os.getpid()}, fh)
     except OSError:
         pass
-    run = {"cmd": cmd, "code": None, "text": "", "problem": None, "second": None}
+    run = {"cmd": cmd, "code": None, "text": "", "problem": None, "second": None,
+           "head": None, "fix": None}
+    state = {"new": [], "head_files": None, "head_defs": None,
+             "head_modules": None}
     copied = []
     previous = _arm()
     try:
         try:
-            copied, run["problem"] = _build_throwaway(
-                root, path, scope["tests"], timeout=max(1, _left(deadline)))
+            present, run["problem"] = _at_head(root, scope["declared"], deadline)
+            if run["problem"] is None:
+                state["new"] = sorted(set(scope["tests"]) - present)
+                (state["head_files"], state["head_defs"],
+                 state["head_modules"]) = head_tree(
+                    root, set(scope["tests"]), deadline)
+                _copied, run["problem"] = _build_throwaway(
+                    root, path, [], timeout=max(1, _left(deadline)))
             if run["problem"] is None and _left(deadline) < 1:
                 run["problem"] = ("the run timed out: building the throwaway spent "
                                   "the %s-second deadline" % (args.timeout,))
             if run["problem"] is None:
-                run["code"], run["text"], run["problem"] = _run_in(
-                    path, cmd, _left(deadline), env)
+                run["head"], _c = _isolated_run(root, path, [], cmd, deadline,
+                                                args.timeout, env, holder, "baseline",
+                                                stubs=state["new"])
+            if run["problem"] is None:
+                task, copied = _isolated_run(root, path, scope["declared"], cmd,
+                                             deadline, args.timeout, env, holder,
+                                             "task")
+                run["code"], run["text"], run["problem"] = (
+                    task["code"], task["text"], task["problem"])
             if run["problem"] is None and _wants_second(run["code"], run["text"],
-                                                        args.introduces):
-                _lay_over(root, path, scope["implementation"])
-                left = _left(deadline)
-                if left < 1:
-                    code2, text2, problem2 = None, "", (
-                        "the run timed out: no time was left of the %s-second "
-                        "deadline" % (args.timeout,))
-                else:
-                    code2, text2, problem2 = _run_in(path, cmd, left, env)
-                run["second"] = {"code": code2, "text": text2, "problem": problem2}
+                                                        args.introduces, cmd):
+                run["second"], _c = _isolated_run(
+                    root, path, scope["declared"] + scope["implementation"], cmd,
+                    deadline, args.timeout, env, holder, "second")
+            verdict1 = (classify_run(run["code"], run["text"], cmd)[0]
+                        if run["problem"] is None and run["code"] is not None
+                        else None)
+            if verdict1 == V_RED and baseline_problem(run["head"], cmd) is None:
+                run["fix"], _c = _isolated_run(
+                    root, path, scope["declared"] + scope["implementation"], cmd,
+                    deadline, args.timeout, env, holder, "fix")
         except KeyboardInterrupt as exc:
             run["problem"] = ("interrupted by %s before the run finished; the "
                               "run's process group was torn down"
@@ -929,7 +1778,11 @@ def run_red(args, cmd, out):
         exit_code, verdict, block, note = red_verdict(run, {
             "root": root, "implementation": scope["implementation"],
             "tests": scope["tests"], "cases": args.case,
-            "symbols": args.introduces, "dropped": dropped, "naming": naming})
+            "symbols": args.introduces, "dropped": dropped, "naming": naming,
+            "new": state["new"], "head_files": state["head_files"],
+            "head_defs": state["head_defs"],
+            "head_modules": state["head_modules"], "path": path,
+            "deadline": deadline})
     finally:
         removed = _remove_throwaway(root, holder, path)
         if previous is not None:
@@ -937,13 +1790,17 @@ def run_red(args, cmd, out):
     payload = {"verdict": verdict, "redFirst": block, "note": note,
                "atHead": scope["implementation"], "copied": copied,
                "leftovers": leftovers,
-               "environment": {"dropped": dropped, "naming": naming},
+               "environment": {"dropped": dropped, "naming": naming,
+                               "set": ["%s=%s" % (k, env[k]) for k in
+                                       ("PYTHONDONTWRITEBYTECODE",) if k in env]},
                "throwaway": {"path": path, "head": head, "removed": removed},
                "run": {"argv": cmd, "exit": run["code"],
                        "outputTail": run["text"].splitlines()[-20:],
                        "second": None if run["second"] is None else
                        {"exit": run["second"]["code"],
-                        "outputTail": run["second"]["text"].splitlines()[-20:]}}}
+                        "outputTail": run["second"]["text"].splitlines()[-20:]},
+                       "head": _run_record(run["head"]),
+                       "fix": _run_record(run["fix"])}}
     if args.as_json:
         out(json.dumps(payload, indent=2, sort_keys=True))
     else:
@@ -962,6 +1819,15 @@ def run_red(args, cmd, out):
                          "`git worktree list` names what is left\n" % (path,))
         return E_LEFT_BEHIND
     return exit_code
+
+
+def _run_record(extra):
+    """What the payload keeps of one of `red`'s extra runs, or None."""
+    if extra is None:
+        return None
+    return {"exit": extra["code"], "seconds": extra["seconds"],
+            "problem": extra["problem"],
+            "outputTail": extra["text"].splitlines()[-20:]}
 
 
 def build_parser():
@@ -989,9 +1855,10 @@ def build_parser():
                              "or collection error counts as red only when the "
                              "task introduces a symbol the run names")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT,
-                        help="seconds the red run may take; `red` only")
+                        help="seconds every run `red` makes may take together; `red` only")
     parser.add_argument("--case", action="append", default=[],
-                        help="a case id the task added; `red` only - a red "
+                        help="the id or full label of a case the task added; "
+                             "`red` only - a red "
                              "counts only when one of the task's own cases "
                              "fails an assertion")
     parser.add_argument("--json", action="store_true", dest="as_json")

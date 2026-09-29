@@ -134,6 +134,7 @@ invariant_breaches = _status_facts.invariant_breaches
 unfinished_runs = _status_facts.unfinished_runs
 provisional_phases = _status_facts.provisional_phases
 stale_full_runs = _status_facts.stale_full_runs
+unknown_full_runs = _status_facts.unknown_full_runs
 NO_SIGN_OFF_EVIDENCE = _status_facts.NO_SIGN_OFF_EVIDENCE
 KNOWN_EVIDENCE = _status_facts.KNOWN_EVIDENCE
 evidence_status = _status_facts.evidence_status
@@ -365,8 +366,9 @@ def full_run_block(manifest, manifest_path, project):
     sentence every surface fills; failing to resolve WHERE the ledger lives is a
     different fact and keeps a wording of its own. UNKNOWN is what the panel
     answers for the same failure. `provisional_phases` and `stale_full_runs`
-    count neither UNKNOWN nor a failure, so neither condition fails a gate on an
-    unreadable ledger - the answer is visible per phase, not a gate verdict.
+    count neither UNKNOWN nor a failure, so neither of those conditions fails a
+    gate on an unreadable ledger; `unknown_full_runs` counts exactly these rows,
+    and its gate line carries the basis written here.
     """
     meta = (manifest.get("meta") if isinstance(manifest, dict) else None) or {}
     full_commands = [c for _n, c in _evidence_io.resolved_commands(
@@ -412,6 +414,12 @@ def _provisional_detail(summary):
 def _stale_full_run_detail(summary):
     """What `GATE FAILED: stale-full-run (...)` says after the name."""
     found = stale_full_runs(summary) or []
+    return "%d phase(s): %s" % (len(found), _output.some_of(found, sep="; "))
+
+
+def _unknown_full_run_detail(summary):
+    """What `GATE FAILED: unknown-full-run (...)` says after the name."""
+    found = unknown_full_runs(summary) or []
     return "%d phase(s): %s" % (len(found), _output.some_of(found, sep="; "))
 
 
@@ -1636,6 +1644,15 @@ CONDITION_HELP = {
                       "rather than one that has not reached it yet. Opt-in and "
                       "out of the --gate default for the same reason "
                       "`provisional` is)",
+    "unknown-full-run": "a MERGED phase whose full-run answer is UNKNOWN "
+                        "(the question could not be asked at all: the phase "
+                        "records no mergedHead, git could not establish "
+                        "ancestry, or the evidence ledger could not be read or "
+                        "located - the gate line carries which. Never counted "
+                        "by `provisional`, whose claim is 'not yet contained'. "
+                        "Opt-in and out of the --gate default for the same "
+                        "reason `provisional` is; a plan naming no "
+                        "`meta.fullGate` never trips it)",
 }
 # What `--help` says about a condition CONDITION_HELP has no entry for. It is a
 # `.get` default rather than a KeyError because the caller is `--help`: a condition
@@ -1853,9 +1870,11 @@ def main(argv):
     # than only deleting it. It called this read "a directory listing and a JSON
     # read", which is what made reading it on every invocation look free.
     # `_evidence_io.read_rows` walks the directory and `json.loads` every row of
-    # every recorded run; `earliest_recorded` then takes a single `min(ts)` out of
-    # all of it. That is a full parse per run recorded, and this repository has no
-    # evidence directory, which is the only reason nobody here ever felt it.
+    # every recorded run; `earliest_recorded` then parses every row's `ts` and
+    # keeps the earliest moment, falling back to the least `ts` as text only when
+    # no row's `ts` parses. That is a full parse per run recorded, and this
+    # repository has no evidence directory, which is the only reason nobody here
+    # ever felt it.
     # What licenses the deferral is not the cost, though -- it is that the human
     # render is BYTE-IDENTICAL with a boundary and without one (`eb1`). The
     # consumers are `--json`'s `evidenceBoundary` key, the panel that reads it, and
@@ -1911,11 +1930,12 @@ def main(argv):
     # above and for a sibling reason: the human render's `tests` column names it
     # on every merged phase (see `_phase_table_lines`), so the surface a person
     # actually reads has to carry it whether or not a gate was asked - while
-    # `--gate --json` only pays for it when `provisional` or `stale-full-run`
-    # was named. A plan naming no `meta.fullGate` costs nothing here either way:
-    # `full_run_block` returns `{}` before touching the ledger.
-    if ((want_gate and ("provisional" in conditions
-                        or "stale-full-run" in conditions))
+    # `--gate --json` only pays for it when a condition in
+    # `_status_facts.FULL_RUN_CONDITIONS` was named. A plan naming no
+    # `meta.fullGate` costs nothing here either way: `full_run_block` returns
+    # `{}` before touching the ledger.
+    if ((want_gate and any(c in conditions
+                           for c in _status_facts.FULL_RUN_CONDITIONS))
             or not (want_json or want_gate)):
         summary["fullRun"] = full_run_block(
             manifest, manifest_path,
@@ -2024,6 +2044,7 @@ def main(argv):
                     "unfinished-run": _unfinished_detail(summary),
                     "provisional": _provisional_detail(summary),
                     "stale-full-run": _stale_full_run_detail(summary),
+                    "unknown-full-run": _unknown_full_run_detail(summary),
                 }.get(c, "")
                 say("GATE FAILED: %s (%s)" % (c, detail))
             return 1

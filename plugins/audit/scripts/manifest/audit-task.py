@@ -70,7 +70,18 @@ Usage:
   audit-task.py couple --test <path> --sources p,p --basis-run <runId>
                 --basis-head <sha> [--phases id,id] [manifest]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py couple --test <path> --caught <runId> [manifest]
+                [--project-dir DIR] [--takeover] [--json]
   audit-task.py uncouple --test <path> [manifest]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py bug-add "<title>|-" [manifest] --severity low|med|high
+                --description TEXT|- [--files a,b] [--repro TEXT|-]
+                [--expected TEXT|-] [--actual TEXT|-]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py mute --test <path> --reason TEXT|- --owner NAME
+                --until <YYYY-MM-DD> --bug <bugId> [manifest]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py unmute --test <path> [manifest]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py finding <phaseId> (--severity low|med|high --file <path>
                 --issue TEXT|- --resolution TEXT|- | --findings-file PATH|-)
@@ -153,8 +164,23 @@ Usage:
   never silently replaced. `--basis-run` names a row the evidence ledger
   actually holds (looked up, never parsed) and `--basis-head` the HEAD that
   row examined; a coupling with no run to point at teaches nothing.
+  `couple --caught <runId>` records that an already-coupled test earned its
+  place: the run must be a `full` row whose runner NAMED the test as failing
+  on a step no mute excused, whose own `selectionMiss` does not list it, and
+  the entry's `lastCaught` becomes that row's
+  `ts`. It never creates an entry and never touches `sources` or `basis`;
+  a run no newer than the `lastCaught` already recorded (compared as a
+  moment, not as text) writes nothing and exits 0 saying so.
   `uncouple` drops one entry by `--test` alone, and refuses, exit 2, a test
   that carries none.
+  `bug-add` appends one bug to top-level `bugs[]` in exactly the shape
+  `commands/bug.md` spells, creating the list when the plan has none, with
+  the id the `next-id bug` allocator names. `mute` and `unmute` are the only
+  writers of `meta.muted`: a mute names the bug tracking the failure it
+  hides, and a mute naming a bug the plan lacks is refused by the
+  validator's own finding on the revalidation, every written file rolled
+  back (exit 1). A mute on a test already muted, with a later `--until`,
+  extends that entry.
   `finding`, `resolve-finding` and `correct` are the writes sign-off's review
   step makes: a finding appended to `review.findings` in the schema's shape,
   the task and commit that fixed one, and a TEXT correction of the review's
@@ -773,9 +799,16 @@ def _marked_excerpt(excerpt, rel_start, rel_end):
 # the table anyway, because a finding quotes code in backticks more than any other
 # field does, and a silently eaten identifier is the worse failure. So the stdin
 # route is the ordinary one for a finding's text, not the exception.
+#
+# `--repro`, `--expected` and `--actual` are a bug report's three sentences,
+# which `/audit:bug fix` embeds verbatim in the fix task's description. They
+# join for `--issue`'s reason: a report quotes code and output more than it
+# quotes anything else, and a clause a shell ate out of one is a repro that
+# reads whole and does not reproduce.
 PROSE_FLAGS = ("description", "reason", "outcome", "rename", "descriptive",
                "technical", "summary", "review_outcome", "no_evidence_reason",
-               "intent_basis", "text", "issue", "resolution")
+               "intent_basis", "text", "issue", "resolution", "repro",
+               "expected", "actual")
 
 # THE ONE PLACE `--help` SAYS ANYTHING ABOUT THE STDIN ESCAPE. Before this, none
 # of the flags in PROSE_FLAGS carried a `help=` at all -- `--help` printed the
@@ -806,7 +839,7 @@ _PROSE_HELP = ("free text, written into the manifest verbatim; pass - to read "
 # there is no way to pass a positional to the wrong verb, so there is
 # nothing to refuse -- so a message about this one cannot name a `--flag` that does
 # not exist -- `--title` in particular is REFUSED by argparse, and `rn4` pins that.
-PROSE_POSITIONAL = {"add": "title", "add-phase": "title"}
+PROSE_POSITIONAL = {"add": "title", "add-phase": "title", "bug-add": "title"}
 _POSITIONAL_LABEL = {"title": "the <title> argument"}
 
 
@@ -1436,6 +1469,21 @@ def resolve_basis(args):
                                           "$CLAUDE_PROJECT_DIR")
     return _panel_write.project_basis(os.path.abspath(os.getcwd()),
                                       "the working directory")
+
+
+def _manifest_from_positional(args):
+    """For a verb that takes no id: a lone positional IS the manifest.
+
+    CALLED BEFORE `_resolve_project`, never after. The named manifest is one
+    of the rows `resolve_basis` chooses a root by, so a door that moved the
+    positional into `args.manifest` only after resolving had already fallen
+    through to `$CLAUDE_PROJECT_DIR` or the cwd: the manifest was written
+    where it was named while the lock, the config, the evidence lookup and
+    the journal row went to another tree.
+    """
+    if args.title and not args.manifest:
+        args.manifest = args.title
+        args.title = ""
 
 
 def _resolve_project(args):
@@ -2218,16 +2266,17 @@ def _failing_from_lookup(project, phase, run_id):
     and it must carry `status: "failed"` (a fix task opened from a run that
     PASSED is not failed-first, and the sentence names the status the row
     actually holds, never merely "not failed").
+
+    A RUN NOT AMONG THE READABLE ROWS IS NOT CALLED ABSENT when a ledger
+    file could not be read in full: `_ledger_run`, the lookup `--caught` and
+    `--basis-run` share, names that file instead, since the run may be on
+    the line that read lost.
     """
-    try:
-        rows = _evidence_io.read_rows(project)["rows"]
-    except Exception as exc:
-        return None, ("[audit-task] --failing-from %s: the evidence ledger "
-                      "could not be read (%s)" % (run_id, exc))
-    row = _evidence_io.row_by_run(rows, run_id)
-    if row is None:
-        return None, ("[audit-task] --failing-from %s: no run with this id is "
-                      "in the evidence ledger" % (run_id,))
+    row, refusal = _ledger_run(
+        project, "--failing-from", run_id,
+        "a failed-first fix task names the phase run that failed")
+    if refusal:
+        return None, refusal
     phase_id = phase.get("id")
     if row.get("scope") != "phase" or str(row.get("phaseId")) != str(phase_id):
         subject = ("task %s" % row.get("taskId") if row.get("scope") == "task"
@@ -2244,38 +2293,6 @@ def _failing_from_lookup(project, phase, run_id):
             "-- a failed-first fix task needs a red run to point its gate at"
             % (run_id, row.get("status")))
     return row, None
-
-
-def _named_failing_suites(row):
-    """Every suite file `--failing-from`'s ROW named as failing, in the order
-    its failed steps carry them, deduplicated.
-
-    A STEP COUNTS AS FAILED THE SAME WAY `run-test-gate.failed_steps` READS
-    ONE -- restated here rather than imported, because `run-test-gate.py` and
-    this file are peer entry points and neither imports the other: it ran to
-    completion (a non-zero exit) and carries no no-verdict `outcome`, since a
-    timed-out step's exit code is an artefact of the kill that stopped it and
-    reading that as a named failure would point a gate at a suite that never
-    finished.
-
-    ONLY A `failingSuitesBasis` THAT SAYS THE RUNNER NAMED THEM COUNTS.
-    `run-test-gate.failing_suites` falls back to a capped tail of the step's
-    own output when no runner it recognises wrote a summary, and a tail
-    excerpt is not a list of failing tests -- learning suites off it would be
-    a fix task's gate narrowed to whatever lines happened to scroll past last.
-    """
-    suites = []
-    for step in (row.get("steps") or []):
-        if not isinstance(step, dict):
-            continue
-        if step.get("exit") in (0, None) or step.get("outcome"):
-            continue
-        if "named as failing" not in (step.get("failingSuitesBasis") or ""):
-            continue
-        for path in step.get("failingSuites") or []:
-            if path not in suites:
-                suites.append(path)
-    return suites
 
 
 def _ordinary_task_gate(shape, owner, wide, build, add_paths, files, mode,
@@ -2418,8 +2435,32 @@ def _task_gate(args, phase, assembled, add_paths, files, mode="gate-only"):
                                mode, meta, phase)
 
 
+# A THIN ALIAS, NOT A COPY. The gate runs from the project root and a runner
+# need not: pinning each suite a run named onto one tracked path is
+# `_evidence_io.pin_suites`, the resolver the full-run post-pass, full-gate's
+# learning and the printed remedy read too, so `--failing-from` cannot place
+# a name somewhere they would not. See that module for the rules.
+_root_spelled_suites = _evidence_io.pin_suites
+
+
+def _failed_step_entries(steps):
+    """The gate entry of every failed step whose runner NAMED its suites, in
+    step order, once each -- the recorded `name`, which is the entry the run
+    resolved and ran (`_evidence_io.resolved_commands`), so a gate made of
+    them re-runs exactly the commands that failed. Which steps count is asked
+    of `_evidence_io.named_failing_suites` one step at a time, never a copy
+    of its rule."""
+    out = []
+    for step in steps or []:
+        name = step.get("name") if isinstance(step, dict) else None
+        if (isinstance(name, str) and name.strip() and name not in out
+                and _evidence_io.named_failing_suites([step])):
+            out.append(name)
+    return out
+
+
 def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
-                            failing_row):
+                            failing_row, project=None):
     """`(gate, basis, source)` for `add` ALONE -- `_task_gate` plus the
     failed-first `--failing-from` arm, kept in its own function rather than
     folded into `_task_gate` so `seed` (which shares every other arm) never
@@ -2435,8 +2476,8 @@ def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
     `--gate-set`.
 
     When the row's failed steps NAMED at least one suite
-    (`_named_failing_suites`) and the phase has a path-scoped spelling to
-    point them through, the gate is those suites UNIONED with this task's own
+    (`_evidence_io.named_failing_suites`) and the phase has a path-scoped
+    spelling to point them through, the gate is those suites UNIONED with this task's own
     `tests.add` paths, in the sibling's spelling -- the union because a fix
     task may still be asked to write a NEW case beside the failure it
     repairs, and dropping that path would buy a green the task never earned.
@@ -2444,9 +2485,16 @@ def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
     spelling for it) -- a reader compares the word before the colon and looks
     the runId up, never parsing further.
 
+    A NAMED SUITE THAT CANNOT BE PINNED to one path from the project root
+    (`_root_spelled_suites`) narrows nothing, and the gate is the entry of
+    each failed step that named one -- the command that ran the failure --
+    so the failure this task fixes is always inside its gate. Falling
+    through to the ordinary arms instead would narrow to this task's own
+    paths and run none of the named failures.
+
     THE FALL-THROUGH NEVER REACHES AN EMPTY GATE. A row whose failed steps
-    named no suite (a tail excerpt is not a list of failing tests) or a phase
-    with no path-scoped sibling to narrow through falls to
+    named no suite (a tail excerpt is not a list of failing tests), or a
+    phase with no path-scoped sibling to narrow through, falls to
     `_ordinary_task_gate` exactly as a call with no `--failing-from` would,
     with the reason it fell through said FIRST in the returned sentence --
     never silence, and never the empty gate as though `--failing-from` were a
@@ -2461,17 +2509,42 @@ def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
         return _ordinary_task_gate(shape, owner, wide, build, add_paths,
                                    files, mode, meta, phase)
     if shape is not None:
-        suites = _named_failing_suites(failing_row) if failing_row else []
-        if suites:
-            union = _union_paths(suites, add_paths)
+        suites = (_evidence_io.named_failing_suites(failing_row.get("steps"))
+                  if failing_row else [])
+        pinned, why = ((None, None) if not suites
+                       else _root_spelled_suites(suites, project or "."))
+        if pinned:
+            union = _union_paths(pinned, add_paths)
             return (_repointed(shape, build, union),
                     "narrowed to the suite(s) run %s named as failing, "
                     "union with this task's tests.add paths, in %s's "
                     "spelling" % (args.failing_from, owner),
                     "failing-from-run:%s" % (args.failing_from,))
-        why = ("run %s's failed steps named no suite as failing (a tail "
-               "excerpt is not a list of failing tests)"
-               % (args.failing_from,))
+        if not suites:
+            why = ("run %s's failed steps named no suite as failing (a tail "
+                   "excerpt is not a list of failing tests)"
+                   % (args.failing_from,))
+        else:
+            # THE FAILURE STAYS IN THE GATE. The ordinary arms below would
+            # narrow to this task's own tests.add or files, which run none of
+            # the suites the run named -- so an unpinnable suite gates on the
+            # failed step's own entry, which ran it and failed.
+            why = "--failing-from %s: %s" % (args.failing_from, why)
+            entries = _failed_step_entries(failing_row.get("steps"))
+            if entries:
+                return (entries,
+                        "%s, so no suite is narrowed to: the gate is the "
+                        "entry of each step run %s failed on (%s), which "
+                        "runs the named failure" % (why, args.failing_from,
+                                                    ", ".join(entries)),
+                        "failing-from-run:%s" % (args.failing_from,))
+            if wide:
+                return (wide,
+                        "%s, and run %s recorded no gate entry for its failed "
+                        "step, so the gate is the phase's testGate, wide, "
+                        "which the run was measured against"
+                        % (why, args.failing_from),
+                        "failing-from-run:%s" % (args.failing_from,))
     else:
         why = ("no sibling task in %s declares a path-scoped gate entry to "
                "narrow --failing-from %s against"
@@ -2481,7 +2554,8 @@ def _failing_from_task_gate(args, phase, assembled, add_paths, files, mode,
     return gate, "%s, so falling through: %s" % (why, basis), source
 
 
-def _build_task(task_id, title, args, phase, assembled, failing_row=None):
+def _build_task(task_id, title, args, phase, assembled, failing_row=None,
+                project=None):
     """`(task, unnamed, gateBasis)` -- the new task, fully template-initialized
     (every field from the conventions' New task template, exactly once, in
     _TEMPLATE_KEYS order), the `tests.add` entries that named no file, and the
@@ -2508,7 +2582,7 @@ def _build_task(task_id, title, args, phase, assembled, failing_row=None):
     # gate needs was produced one line too late and thrown away.
     files = _union_paths(_split_csv(args.files), add_paths)
     gate, gate_basis, gate_source = _failing_from_task_gate(
-        args, phase, assembled, add_paths, files, mode, failing_row)
+        args, phase, assembled, add_paths, files, mode, failing_row, project)
     task = {
         "id": task_id,
         "title": title,
@@ -2628,7 +2702,8 @@ def _locked_add(args, project, config, mpath, title, out):
 
     task_id = _allocate_id(assembled, phase_id, _mint_suffix(mpath, assembled))
     task, unnamed_add, gate_basis = _build_task(task_id, title, args, phase,
-                                                assembled, failing_row)
+                                                assembled, failing_row,
+                                                project)
     # THE STAT IS OF THE FILE THE SUFFIX POINTS AT, NOT OF THE ENTRY'S OWN
     # SPELLING. A schema-legal `a/b.py:12-34` is a real, existing `a/b.py`, and
     # `os.path.exists` asked of the raw string can only ever say no -- reporting
@@ -7718,12 +7793,10 @@ def _print_group_plan(args, plan, ids, mrel, landing, sharded, out):
 # path every mutating verb here takes - and it never runs on its own initiative: the
 # warning names it, and whoever owns the plan decides when.
 def cmd_settle(args, out):
-    project = _resolve_project(args)
     # `settle` takes no title, so a manifest named in the first free positional is
     # the manifest - the verb's usage line spells it `settle [manifest]`.
-    if args.title and not args.manifest:
-        args.manifest = args.title
-        args.title = ""
+    _manifest_from_positional(args)
+    project = _resolve_project(args)
     return _under_lock(args, project, out,
                        lambda config, mpath: _locked_settle(
                            args, project, config, mpath, out))
@@ -7848,22 +7921,24 @@ def _locked_settle(args, project, config, mpath, out):
 # `sources` in both derived sets at once and the table could not describe
 # both truthfully. `_coupling_test_refusal` and `_coupling_sources_refusal`
 # take plain values, never `args`, for the same reason `_files_refusal` does;
-# `_locked_couple` and `_locked_uncouple` are the only functions that read
+# `_locked_couple`, `_locked_couple_caught` (reached only through
+# `_locked_couple`) and `_locked_uncouple` are the only functions that read
 # `args.test` / `args.sources` / `args.basis_run` / `args.basis_head` /
-# `args.phases` at all, the way `retarget`'s own `--gate-set`/`--gate-drop`
+# `args.phases` / `args.caught` at all, the way `retarget`'s own `--gate-set`/`--gate-drop`
 # pair stayed inside `_retarget_gate_contradiction` and `_retarget_gate_now`.
-def _coupling_test_refusal(test):
+def _coupling_test_refusal(test, verbs="couple/uncouple", what="a coupling"):
     """Whether `--test <path>` names something a coupling can be about, or
     None. The same two readings `tests.add` and a suite path already share
     (`_rules.tests_add_path`, `_phases.is_suite_path`) -- a coupling is a
-    file a runner ran, never free prose."""
+    file a runner ran, never free prose. `mute`/`unmute` ask the same
+    question of the same flag, so `verbs` and `what` only change the words."""
     if not test:
-        return ("[audit-task] couple/uncouple needs --test <path>")
+        return ("[audit-task] %s needs --test <path>" % (verbs,))
     if _rules.tests_add_path(test) is None or not _phases.is_suite_path(test):
         return ("[audit-task] --test %r does not read as a suite path this "
                 "project already recognises a test by (`tests_add_path` and "
-                "`is_suite_path` both have to accept it) -- a coupling names "
-                "a file a runner ran, not a sentence about one" % (test,))
+                "`is_suite_path` both have to accept it) -- %s names "
+                "a file a runner ran, not a sentence about one" % (test, what))
     return None
 
 
@@ -7892,13 +7967,11 @@ def _coupling_phases_refusal(phases, phase_ids):
 
 
 def cmd_couple(args, out):
+    _manifest_from_positional(args)
     project = _resolve_project(args)
     if not os.path.isdir(project):
         out("[audit-task] not a directory: %s" % project)
         return E_USAGE
-    if args.title and not args.manifest:          # `settle`'s own rule:
-        args.manifest = args.title                # this verb takes no id, so
-        args.title = ""                            # a lone positional is the manifest
     return _under_lock(args, project, out,
                        lambda config, mpath: _locked_couple(
                            args, project, config, mpath, out))
@@ -7935,12 +8008,17 @@ def _locked_couple(args, project, config, mpath, out):
     rule, reused rather than re-derived. `--phases` is checked against the
     plan this call is writing into, refused by name when an id is not a
     phase this plan holds.
+
+    `--caught` IS THE OTHER SPELLING, handed to `_locked_couple_caught`
+    before any learning flag is read.
     """
     test = (args.test or "").strip()
     refusal = _coupling_test_refusal(test)
     if refusal:
         out(refusal)
         return E_USAGE
+    if args.caught is not None:
+        return _locked_couple_caught(args, test, project, config, mpath, out)
     sources = _split_csv(args.sources)
     if not sources:
         out("[audit-task] couple needs --sources <path,path> -- a coupling "
@@ -7968,16 +8046,12 @@ def _locked_couple(args, project, config, mpath, out):
             "name that goes on resolving to whatever it points at later"
             % (head,))
         return E_USAGE
-    try:
-        rows = _evidence_io.read_rows(project)["rows"]
-    except Exception as exc:
-        out("[audit-task] --basis-run %s: the evidence ledger could not be "
-            "read (%s)" % (run_id, exc))
-        return E_USAGE
-    if _evidence_io.row_by_run(rows, run_id) is None:
-        out("[audit-task] --basis-run %s: no run with this id is in the "
-            "evidence ledger -- a coupling says what taught it, and this run "
-            "taught nothing recorded" % (run_id,))
+    row, refusal = _ledger_run(
+        project, "--basis-run", run_id,
+        "a coupling says what taught it, and this run taught nothing "
+        "recorded")
+    if refusal:
+        out(refusal)
         return E_USAGE
     # THE SAME ASK `done --commit` MAKES, reused rather than re-derived
     # (`_commit_git_note`'s own reason): refused when git can be asked and
@@ -8050,14 +8124,225 @@ def _locked_couple(args, project, config, mpath, out):
     return 0
 
 
+def _ledger_run(project, flag, run_id, why):
+    """`(row, refusal)` for the evidence row `run_id` names -- exactly one is
+    not None. `why` ends the refusal for a run the ledger does not hold.
+
+    A LOST LINE IS NAMED, NEVER READ AS ABSENCE. `read_rows` skips a line it
+    cannot parse and counts it; a run not found among the readable rows may
+    be on exactly that line, so the refusal says which file could not be
+    read in full rather than asserting the run was never recorded."""
+    try:
+        ledger = _evidence_io.read_rows(project)
+    except Exception as exc:
+        return None, ("[audit-task] %s %s: the evidence ledger could not be "
+                      "read (%s)" % (flag, run_id, exc))
+    row = _evidence_io.row_by_run(ledger.get("rows") or [], run_id)
+    if row is not None:
+        return row, None
+    if ledger.get("unreadable"):
+        lost = [_output.posix_rel(p, project) if os.path.isabs(p) else p
+                for p in (ledger.get("unreadableFiles") or [])]
+        return None, ("[audit-task] %s %s: no run with this id is among the "
+                      "readable rows of the evidence ledger, and some of it "
+                      "could not be read (%s) -- the run may be on a line "
+                      "that read lost, so repair it before asking again"
+                      % (flag, run_id, ", ".join(lost) or "file unnamed"))
+    return None, ("[audit-task] %s %s: no run with this id is in the "
+                  "evidence ledger -- %s" % (flag, run_id, why))
+
+
+def _caught_refusal(row, run_id, test, listing):
+    """Why the evidence row `run_id` names cannot be a catch of `test`, or
+    None. A catch is a THIRD-PLACE run (scope `full`) whose runner named
+    `test` as failing on a step no mute excused. That reading is
+    `_evidence_io.named_failing_suites`, the one a fix task's
+    `--failing-from` gate and the gate runner take, so a tail excerpt and a
+    quarantined step are refused here for the reason they are refused there.
+    Its `ts` must read as a moment through `_evidence_io.stamp_moment`, the
+    one moment read the ledger orders its rows by, so a date-only stamp is
+    placed here where the ledger places it.
+
+    WHETHER `test` IS ONE OF THE NAMED SUITES is `_evidence_io.listed_by`:
+    a runner may print a suite relative to its own directory while the
+    coupling spells it from the repository root. The catch is still written
+    under `test`, the plan's key, never under the runner's spelling.
+
+    A ROW LISTING `test` AS ITS OWN SELECTION MISS IS NO CATCH OF IT
+    (`_evidence_io.own_miss`, pinned through `listing`, `full-gate.py`'s
+    reading): that row says no derived gate ran the suite, so no coupling
+    caught anything in it."""
+    if row.get("scope") != _evidence_io.FULL_SCOPE:
+        return ("[audit-task] --caught %s is a run of scope %r, not %r -- "
+                "only a third-place run is a catch the coupling earned; a "
+                "phase or task run is the kind of run that taught it"
+                % (run_id, row.get("scope"), _evidence_io.FULL_SCOPE))
+    named = _evidence_io.named_failing_suites(row.get("steps"))
+    if not _evidence_io.listed_by(test, named):
+        return ("[audit-task] --caught %s does not name %s as failing on a "
+                "step whose runner named its failing suites and no mute "
+                "excused (it named: %s) -- a tail excerpt or a quarantined "
+                "failure is not a catch"
+                % (run_id, test, ", ".join(named) if named else "none"))
+    # THE KEY AND EVERY SPELLING OF IT THE RUNNER PRINTED, as `full-gate.py`
+    # asks with the coupled key and the spelling that resolved to it - so a
+    # miss the row recorded under the runner's spelling withholds the catch
+    # here exactly as it does there, even where git cannot pin that spelling.
+    own = _evidence_io.own_miss(
+        row, [test] + [s for s in named if _evidence_io.listed_by(test, [s])],
+        listing)
+    if own is not None:
+        return ("[audit-task] --caught %s lists %s as its own selection miss "
+                "(selectionMiss names %s) -- no derived gate ran that suite, "
+                "so no coupling caught anything in it; full-gate.py credits "
+                "no catch from this row either" % (run_id, test,
+                                                   own.get("test")))
+    if _evidence_io.stamp_moment(row.get("ts")) is None:
+        return ("[audit-task] --caught %s carries ts %r, which does not read "
+                "as a moment, so there is nothing to record as lastCaught"
+                % (run_id, row.get("ts")))
+    return None
+
+
+def _caught_ambiguity(row, run_id, test, keys):
+    """Why the run cannot pin its failure on `test` among the plan's coupled
+    `keys`, or None. Asked after `_caught_refusal` has found a named suite
+    `listed_by` reads as `test`.
+
+    EVERY SPELLING THE RUNNER NAMED FOR `test` IS RESOLVED AGAINST EVERY
+    COUPLED KEY (`_evidence_io.resolve_named`), and one that pins to `test`
+    alone is the catch. A spelling that also fits another coupled key - a
+    bare `test_c.py` beside two `*/test_c.py` couplings - cannot say which
+    one failed, and crediting both would reset the age of the coupling that
+    caught nothing; so it credits neither, `full-gate.py`'s own reading."""
+    named = _evidence_io.named_failing_suites(row.get("steps"))
+    reasons = []
+    for spelling in named:
+        if not _evidence_io.listed_by(test, [spelling]):
+            continue
+        key, why = _evidence_io.resolve_named(spelling, keys)
+        if key == test:
+            return None
+        reasons.append(why)
+    return ("[audit-task] --caught %s: no suite the run named pins to %s "
+            "alone among the coupled tests (%s) -- a failure the name cannot "
+            "place on one coupling is credited to none"
+            % (run_id, test, "; ".join(reasons) or "nothing named it"))
+
+
+def _locked_couple_caught(args, test, project, config, mpath, out):
+    """Set one coupled test's `lastCaught` from a named third-place failure,
+    under lock.
+
+    A CATCH NEVER CREATES OR RESHAPES A COUPLING: a test with no entry is
+    refused, the learning flags are refused beside `--caught`, and only
+    `lastCaught` is written. The run is LOOKED UP through
+    `_evidence_io.row_by_run`, `--basis-run`'s own reason.
+
+    NEWEST ONLY, AND IDEMPOTENT. `lastCaught` is the newest catch, so a
+    well-formed catch at or before the recorded one -- an older run imported
+    late, or the same run replayed by a retry -- writes nothing and adds no
+    journal row, and still exits 0 saying so: the fact it offers is already
+    covered. Both sides are compared as MOMENTS through
+    `_evidence_io.stamp_moment`, the ledger's own moment read, never as
+    text, because an offset against `Z` or a fractional second
+    sorts differently as a string than in time. A recorded `lastCaught` no
+    parser reads is replaced by the catch offered, which does read.
+    """
+    run_id = (args.caught or "").strip()
+    if not run_id:
+        out("[audit-task] --caught needs a runId -- the full run that named "
+            "this test as failing")
+        return E_USAGE
+    extra = [flag for flag, value in (
+        ("--sources", args.sources), ("--basis-run", args.basis_run),
+        ("--basis-head", args.basis_head), ("--phases", args.phases))
+        if value is not None]
+    if extra:
+        out("[audit-task] --caught records a catch and changes nothing else "
+            "on the entry, so it takes none of %s" % (", ".join(extra),))
+        return E_USAGE
+    row, refusal = _ledger_run(
+        project, "--caught", run_id,
+        "a catch names the full run that caught it")
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    refusal = _caught_refusal(row, run_id, test,
+                              _evidence_io.suite_listing(project))
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    ts = str(row.get("ts"))
+
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    meta = dict(assembled.get("meta") or {})
+    coupling = [dict(e) for e in (meta.get("coupling") or [])
+               if isinstance(e, dict)]
+    idx = next((i for i, e in enumerate(coupling) if e.get("test") == test),
+               None)
+    if idx is None:
+        out("[audit-task] couple --caught: %r carries no meta.coupling entry "
+            "-- a catch is recorded against a coupling, never in place of "
+            "one; learn it with --sources/--basis-run/--basis-head first"
+            % (test,))
+        return E_USAGE
+    refusal = _caught_ambiguity(row, run_id, test,
+                                [e.get("test") for e in coupling
+                                 if e.get("test")])
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    was = coupling[idx].get("lastCaught")
+    was_at = _evidence_io.stamp_moment(was)
+    if was_at is not None and was_at >= _evidence_io.stamp_moment(ts):
+        if args.as_json:
+            out(json.dumps({"ok": True, "test": test,
+                            "entry": coupling[idx], "written": [],
+                            "unchanged": True}, sort_keys=True))
+            return 0
+        out("[audit-task] %s: lastCaught already records a newer or the same "
+            "catch (%s; run %s ran at %s) -- nothing written, since "
+            "lastCaught is the newest catch and never moves back"
+            % (test, was, run_id, ts))
+        return 0
+    coupling[idx]["lastCaught"] = ts
+    entry = coupling[idx]
+    meta["coupling"] = coupling
+    assembled["meta"] = meta
+
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [],
+                        "the catch", out, index_fields=("meta",))
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    summary = "%s caught by run %s: lastCaught %s -> %s" % (
+        test, run_id, was or "(never)", ts)
+    jres = _journal_row(project, config, mpath, "coupling.caught", summary,
+                        {"field": test, "from": was, "to": ts,
+                         "runId": run_id})
+    index_note = _index_dirty_note(written, mpath, project, None)
+    if args.as_json:
+        result = {"ok": True, "test": test, "entry": entry,
+                  "written": written}
+        out(_json_tail(result, args, jres, warnings, written_manifest,
+                       index_note))
+        return 0
+    out("[audit-task] %s" % (summary,))
+    _report_tail(out, jres, "coupling.caught", warnings, written_manifest,
+                written, index_note)
+    return 0
+
+
 def cmd_uncouple(args, out):
+    _manifest_from_positional(args)
     project = _resolve_project(args)
     if not os.path.isdir(project):
         out("[audit-task] not a directory: %s" % project)
         return E_USAGE
-    if args.title and not args.manifest:
-        args.manifest = args.title
-        args.title = ""
     return _under_lock(args, project, out,
                        lambda config, mpath: _locked_uncouple(
                            args, project, config, mpath, out))
@@ -8108,6 +8393,298 @@ def _locked_uncouple(args, project, config, mpath, out):
     out("[audit-task] %s uncoupled" % (test,))
     _report_tail(out, jres, "coupling.dropped", warnings, written_manifest,
                 written, index_note)
+    return 0
+
+
+# --- bug-add: the bug `commands/bug.md` spells, written by a verb ---------------
+# `/audit:bug add` used to hand-edit `bugs[]` after asking `next-id bug` for the
+# id, so the step-3 shape was a paragraph the model re-typed on every report and
+# nothing checked that every key reached the file. The shape is a tuple here,
+# written in this order, every key present -- the unset links as null, which is
+# how a reader tells "not materialized yet" from "this writer forgot the key".
+_BUG_TEMPLATE_KEYS = ("id", "title", "status", "severity", "reportedAt",
+                      "reportedBy", "description", "repro", "expected",
+                      "actual", "files", "taskId", "fixedIn", "notes")
+
+
+def cmd_bug_add(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_bug_add(
+                           args, project, config, mpath, out))
+
+
+def _locked_bug_add(args, project, config, mpath, out):
+    """Append one bug to `bugs[]`, under lock, in `_BUG_TEMPLATE_KEYS`' shape.
+
+    THE REQUIRED ANSWERS ARE REFUSED BEFORE THE READ: a title, a severity in
+    the words a finding takes (`_phases.FINDING_SEVERITY`, which the schema
+    says a bug's severity is consistent with) and a description. `--files`,
+    `--repro`, `--expected` and `--actual` may be absent -- `commands/bug.md`
+    allows an empty `files`, and a report can know what happened before it
+    knows how to make it happen again -- and an absent one is written as the
+    empty list or null, never left out.
+
+    THE WORDS ARE WRITTEN AS PASSED. `resolve_briefs` has already read `-`
+    off stdin and refused a shell-eaten gap; nothing here trims or rewraps
+    the operator's text, because a bug's repro is quoted verbatim into the
+    fix task `/audit:bug fix` materializes.
+
+    INDEX-ONLY: `bugs` lives in the index, so no shard is touched.
+    """
+    title = args.title or ""
+    if not title.strip():
+        out("[audit-task] bug-add needs a title: bug-add \"<title>\"")
+        return E_USAGE
+    severity = (args.severity or "").strip()
+    if severity not in _phases.FINDING_SEVERITY:
+        out("[audit-task] bug-add needs --severity %s, got %r"
+            % ("|".join(_phases.FINDING_SEVERITY), args.severity))
+        return E_USAGE
+    description = args.description or ""
+    if not description.strip():
+        out("[audit-task] bug-add needs --description TEXT -- a bug with no "
+            "description is a title nobody can triage")
+        return E_USAGE
+    files = _split_csv(args.files)
+    bad = _path_problems(files)
+    if bad:
+        out("[audit-task] --files names the suspected repository-relative "
+            "files, and %s" % ("; ".join(bad),))
+        return E_USAGE
+
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    bug_id = _id_shape.next_bug_id(assembled, _mint_suffix(mpath, assembled))
+    values = {"id": bug_id, "title": title, "status": "open",
+              "severity": severity, "reportedAt": _utc_now(),
+              "reportedBy": None, "description": description,
+              "repro": args.repro, "expected": args.expected,
+              "actual": args.actual, "files": files, "taskId": None,
+              "fixedIn": None, "notes": None}
+    bug = dict((key, values[key]) for key in _BUG_TEMPLATE_KEYS)
+    assembled["bugs"] = list(assembled.get("bugs") or []) + [bug]
+
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [],
+                        "the bug", out, index_fields=("bugs",))
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    summary = "%s reported (%s): %s" % (bug_id, severity, title)
+    jres = _journal_row(project, config, mpath, "bug.add", summary,
+                        {"field": bug_id, "to": "open"})
+    index_note = _index_dirty_note(written, mpath, project, None)
+    if args.as_json:
+        result = {"ok": True, "bugId": bug_id, "bug": bug,
+                  "written": written}
+        out(_json_tail(result, args, jres, warnings, written_manifest,
+                       index_note))
+        return 0
+    out("[audit-task] %s" % (summary,))
+    out("  next: /audit:bug fix %s when it is ready to be worked" % (bug_id,))
+    _report_tail(out, jres, "bug.add", warnings, written_manifest, written,
+                 index_note)
+    return 0
+
+
+# --- mute / unmute: meta.muted, an index-only write -----------------------------
+# THE ENTRY `_manifest_rules._check_muted` ALREADY GRADES, `{test, reason,
+# owner, until, bugId}`, one per `test`. These two verbs are its only writers.
+#
+# THE BUG IS NOT LOOKED UP HERE. A mute naming a bug `bugs[]` lacks is the
+# validator's own finding, and `_write_plan` revalidates the written plan and
+# rolls every file back on a finding -- so the refusal arrives as the
+# validator's sentence, exit 1, with nothing kept. A second lookup in this
+# verb would be a second answer to that question, free to drift from the one
+# the plan is graded by. What IS refused here, exit 2, is a mute with no
+# `--bug` at all: that is a missing answer, not a wrong one, and refusing it
+# before the read costs no rollback.
+#
+# AN EXPIRED MUTE IS A WARNING, NEVER A FINDING, so `_read_plan`'s pre-check
+# passes a plan that carries one and both verbs run on it -- which is the whole
+# reason `_check_muted` keeps expiry out of the findings.
+#
+# THE READS STAY INSIDE THIS PAIR, `couple`'s reason: `_locked_mute` and
+# `_locked_unmute` are the only functions that read `args.test`/`args.owner`/
+# `args.until`/`args.bug` for these verbs, so the call-graph derivation of
+# `VERB_FLAGS` sees them on these doors alone.
+def _mute_until_refusal(raw, today, current=None):
+    """The refusal for an `--until` this mute cannot carry, or None.
+
+    Read through `_vocab.mute_until`/`mute_expired`, the one reading of the
+    field the validator and the runner share: an unreadable day, a day already
+    past (a mute the runner would not honour, so a write reporting success
+    for nothing), and -- on a test already muted -- a day that does not move
+    the current `until` later, since extending is the one change this verb
+    makes to an existing entry.
+    """
+    until = _vocab.mute_until(raw)
+    if until is None:
+        return ("[audit-task] mute needs --until <YYYY-MM-DD>, the last UTC "
+                "day the mute holds; got %r" % (raw,))
+    if _vocab.mute_expired(until, today):
+        return ("[audit-task] --until %s is already past (today is %s in "
+                "UTC), so the runner would not honour this mute and nothing "
+                "would be quarantined" % (raw, today.isoformat()))
+    held = _vocab.mute_until(current) if current is not None else None
+    if current is not None and held is not None and not until > held:
+        return ("[audit-task] this test is already muted until %s, and a "
+                "re-mute only EXTENDS: --until %s does not move that later. "
+                "Lift it with `unmute --test` first to shorten it"
+                % (current, raw))
+    return None
+
+
+def cmd_mute(args, out):
+    _manifest_from_positional(args)
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_mute(
+                           args, project, config, mpath, out))
+
+
+def _locked_mute(args, project, config, mpath, out):
+    """Write (or extend) one `meta.muted` entry, under lock."""
+    test = (args.test or "").strip()
+    refusal = _coupling_test_refusal(test, "mute/unmute", "a mute")
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    bug = (args.bug or "").strip()
+    if not bug:
+        out("[audit-task] mute needs --bug <bugId> -- a quarantine must name "
+            "the bug tracking the failure it hides; file one with "
+            "`/audit:bug add` first")
+        return E_USAGE
+    reason = args.reason or ""
+    if not reason.strip():
+        out("[audit-task] mute needs --reason TEXT -- why the suite is muted "
+            "rather than fixed")
+        return E_USAGE
+    owner = (args.owner or "").strip()
+    if not owner:
+        out("[audit-task] mute needs --owner NAME -- who answers for lifting "
+            "it")
+        return E_USAGE
+    raw_until = (args.until or "").strip()
+    today = _vocab.mute_today()
+    refusal = _mute_until_refusal(raw_until, today)
+    if refusal:
+        out(refusal)
+        return E_USAGE
+
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    meta = dict(assembled.get("meta") or {})
+    muted = [dict(e) if isinstance(e, dict) else e
+             for e in (meta.get("muted") or [])]
+    idx = next((i for i, e in enumerate(muted)
+                if isinstance(e, dict) and e.get("test") == test), None)
+    entry = {"test": test, "reason": reason, "owner": owner,
+             "until": raw_until, "bugId": bug}
+    was = None
+    if idx is None:
+        muted.append(entry)
+        summary = "%s muted until %s (%s, owner %s)" % (test, raw_until, bug,
+                                                       owner)
+    else:
+        was = muted[idx].get("until")
+        refusal = _mute_until_refusal(raw_until, today, current=was)
+        if refusal:
+            out(refusal)
+            return E_USAGE
+        muted[idx] = entry
+        summary = "%s mute extended: until %s -> %s (%s, owner %s)" % (
+            test, was, raw_until, bug, owner)
+    meta["muted"] = muted
+    assembled["meta"] = meta
+
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [],
+                        "the mute", out, index_fields=("meta",))
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    jres = _journal_row(project, config, mpath, "test.muted", summary,
+                        {"field": test, "from": was, "to": raw_until,
+                         "reason": reason})
+    index_note = _index_dirty_note(written, mpath, project, None)
+    if args.as_json:
+        result = {"ok": True, "test": test, "entry": entry,
+                  "extendedFrom": was, "written": written}
+        out(_json_tail(result, args, jres, warnings, written_manifest,
+                       index_note))
+        return 0
+    out("[audit-task] %s" % (summary,))
+    _report_tail(out, jres, "test.muted", warnings, written_manifest, written,
+                 index_note)
+    return 0
+
+
+def cmd_unmute(args, out):
+    _manifest_from_positional(args)
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_unmute(
+                           args, project, config, mpath, out))
+
+
+def _locked_unmute(args, project, config, mpath, out):
+    """Drop the one `meta.muted` entry for `--test`, under lock. Refused, exit
+    2, when the test carries none -- a lift of nothing reporting success would
+    hide that nothing was muted."""
+    test = (args.test or "").strip()
+    refusal = _coupling_test_refusal(test, "mute/unmute", "a mute")
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    meta = dict(assembled.get("meta") or {})
+    muted = list(meta.get("muted") or [])
+    idx = next((i for i, e in enumerate(muted)
+                if isinstance(e, dict) and e.get("test") == test), None)
+    if idx is None:
+        out("[audit-task] unmute: %r carries no meta.muted entry -- nothing "
+            "to lift" % (test,))
+        return E_USAGE
+    entry = muted.pop(idx)
+    meta["muted"] = muted
+    assembled["meta"] = meta
+
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [],
+                        "the unmute", out, index_fields=("meta",))
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    jres = _journal_row(project, config, mpath, "test.unmuted",
+                        "%s unmuted (was until %s, %s)" % (
+                            test, entry.get("until"), entry.get("bugId")),
+                        {"field": test, "from": entry.get("until")})
+    index_note = _index_dirty_note(written, mpath, project, None)
+    if args.as_json:
+        result = {"ok": True, "test": test, "dropped": entry,
+                  "written": written}
+        out(_json_tail(result, args, jres, warnings, written_manifest,
+                       index_note))
+        return 0
+    out("[audit-task] %s unmuted" % (test,))
+    _report_tail(out, jres, "test.unmuted", warnings, written_manifest,
+                 written, index_note)
     return 0
 
 
@@ -8473,10 +9050,13 @@ VERB_FLAGS = {
     # `note` appends one entry, and its text is its one flag.
     "note": ("text",),
     # `couple` writes `meta.coupling`: the test, what it is coupled to, and
-    # the run that taught it. `--phases` is the only one of the five that may
+    # the run that taught it. `--phases` is the only learning flag that may
     # be absent -- a coupling learned off a run with no phase scope narrows
-    # nothing by phase, which is a legal answer and not a hole.
-    "couple": ("test", "sources", "basis_run", "basis_head", "phases"),
+    # nothing by phase, which is a legal answer and not a hole. `--caught` is
+    # the other spelling: it records a catch on an entry that already exists
+    # and takes none of the learning flags.
+    "couple": ("test", "sources", "basis_run", "basis_head", "phases",
+               "caught"),
     # `uncouple` drops one entry by the test alone; it shares `--test` with
     # `couple` and reads nothing else `couple` does.
     "uncouple": ("test",),
@@ -8489,6 +9069,15 @@ VERB_FLAGS = {
     # `correct` takes the two texts a sign-off wrote and nothing else; it has
     # no `verdict` on purpose, so passing one is refused as a misplaced flag.
     "correct": ("review_outcome", "summary"),
+    # `bug-add` writes one bug in the shape `commands/bug.md` spells; the
+    # title is the positional and the id is allocated, so neither is a flag.
+    # `--severity` is shared with `finding`, whose field takes the same words.
+    "bug-add": ("severity", "description", "files", "repro", "expected",
+                "actual"),
+    # `mute` writes one `meta.muted` entry, one flag per field; `unmute`
+    # drops one by the test alone, `uncouple`'s shape.
+    "mute": ("test", "reason", "owner", "until", "bug"),
+    "unmute": ("test",),
 }
 
 
@@ -8521,7 +9110,8 @@ def build_parser():
                             "retarget", "start", "done", "seed", "next-id",
                             "signoff", "settle", "reopen", "move", "block",
                             "note", "couple", "uncouple", "finding",
-                            "resolve-finding", "correct"])
+                            "resolve-finding", "correct", "bug-add", "mute",
+                            "unmute"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -8674,6 +9264,11 @@ def build_parser():
                    help="couple: the HEAD the run examined")
     p.add_argument("--phases", action="append", default=None,
                    help=_list_help("phase ids", "--phases P2,P3"))
+    # `couple` only, and never beside the learning flags above: the full run
+    # whose runner named the already-coupled test as failing.
+    p.add_argument("--caught", default=None, metavar="RUNID",
+                   help="couple: a full run that named this coupled test as "
+                        "failing; sets its lastCaught and changes nothing else")
     # `finding` only. A review finding's fields, spelled as the schema spells
     # them. `--severity` carries no `choices`: argparse would refuse on stderr
     # before `main` buffers anything, so `_finding_refusal` grades the word and a
@@ -8694,6 +9289,23 @@ def build_parser():
     # `resolve-finding` only. The task whose commit settles the finding.
     p.add_argument("--fix-task", dest="fix_task", default=None, metavar="TASK",
                    help="resolve-finding: the task whose commit settles it")
+    # `bug-add` only. The three sentences of a bug report beside its
+    # `--description`, one flag per field and spelled as the field. The title
+    # stays the POSITIONAL, for `--rename`'s reason above: a `--title` flag
+    # would shadow the slot every verb here already names `title`.
+    p.add_argument("--repro", default=None, metavar="TEXT", help=_PROSE_HELP)
+    p.add_argument("--expected", default=None, metavar="TEXT", help=_PROSE_HELP)
+    p.add_argument("--actual", default=None, metavar="TEXT", help=_PROSE_HELP)
+    # `mute` only. The `meta.muted` fields `--test` and `--reason` do not
+    # already carry: who answers for lifting it, the last UTC day it holds,
+    # and the bug tracking the failure it hides.
+    p.add_argument("--owner", default=None, metavar="NAME",
+                   help="mute: who answers for lifting the mute")
+    p.add_argument("--until", default=None, metavar="YYYY-MM-DD",
+                   help="mute: the last UTC calendar day the mute holds, "
+                        "inclusive")
+    p.add_argument("--bug", default=None, metavar="BUGID",
+                   help="mute: the bugs[] id tracking the failure it hides")
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--json", action="store_true", dest="as_json")
     return p
@@ -8735,7 +9347,8 @@ def supplied_flags(argv):
     reader owes no time to working out why there is no case for it there.
     Measured: the probe is the same parser over an argv the real parse has
     already accepted, so the only argv it rejects (`--gate --json`, where a
-    flag's value looks like a flag) is one the real `parse_args` rejects first,
+    flag's value looks like a flag) is one `main`'s own parse
+    (`parse_intermixed_args`) rejects first,
     and `main` has returned E_USAGE before this is called. It is still not
     dropped -- a `None` the caller silently read as "no flags" is the whole
     defect this returns None to avoid -- and `vf9` drives it by calling this
@@ -8757,7 +9370,7 @@ def supplied_flags(argv):
             marks[action.dest] = []
             action.default = marks[action.dest]
     try:
-        parsed = probe.parse_args(argv)
+        parsed = probe.parse_intermixed_args(argv)   # `main`'s parse, exactly
     except SystemExit:
         return None
     return set(dest for dest in option_dests(probe)
@@ -8834,8 +9447,16 @@ def json_refusal(code, lines):
 
 def main(argv, out=print):
     p = build_parser()
+    # INTERMIXED, BECAUSE THE DOCUMENTED ORDER PUTS THE MANIFEST LAST. On some
+    # interpreters this project still supports (3.9 measured), plain
+    # `parse_args` stops filling positionals at the first option, so
+    # `bug-add "<title>" --severity low --description d <manifest>` is
+    # "unrecognized arguments" there.
+    # The parser has no REMAINDER, no subparsers and no positional inside a
+    # mutually exclusive group, which is all this call rules out. `supplied_flags`
+    # makes the same call, so the flag census reads the same parse.
     try:
-        args = p.parse_args(argv)
+        args = p.parse_intermixed_args(argv)
     except SystemExit as exc:
         return E_USAGE if exc.code else 0
     if not args.as_json:
@@ -8900,7 +9521,8 @@ def _dispatch(args, argv, out):
              "reopen": cmd_reopen, "move": cmd_move, "block": cmd_block,
              "note": cmd_note, "couple": cmd_couple, "uncouple": cmd_uncouple,
              "finding": cmd_finding, "resolve-finding": cmd_resolve_finding,
-             "correct": cmd_correct}
+             "correct": cmd_correct, "bug-add": cmd_bug_add,
+             "mute": cmd_mute, "unmute": cmd_unmute}
     try:
         return doors[args.command](args, out)
     except Exception as exc:                    # never leave a caller guessing

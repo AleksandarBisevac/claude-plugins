@@ -442,10 +442,25 @@ MAX_FAILING = 10
 # string-matching the basis sentence would break the moment its wording
 # changed -- `run-test-gate.run_gate` sets the marker and composes the
 # sentence in the same place, so the two cannot drift apart.
+#
+# `flaky` AND `flakyBasis` ARE THE TESTS A RUNNER REPORTED AS FLAKY - failed,
+# then passed on retry - and the sentence saying where they were read. The
+# names are a runner's own bytes, so `_step` cuts and redacts them as `failing`.
+# They are an OBSERVATION and deliberately not an `outcome`: `_step_failed`
+# and every tally built on it read any outcome as not-passed, and a
+# flaky-but-green step is a pass with a named doubt.
+#
+# `muted` IS THE MUTE THAT EXCUSED THIS STEP'S FAILURE, on the step itself and
+# not only on the row, because the readers that count failures read steps:
+# `_step_failed` does not count a muted step, and neither does anything that
+# learns failing suites off a row. A quarantined, known failure is not
+# something the gate caught. Kept to suite, bug and day, cut at `MAX_PATHS`
+# and each suite path redacted as `failingSuites` is.
 STEP_KEYS = ("name", "exit", "ran", "measured", "durationMs", "outcome",
              "timeoutSeconds", "teardown", "failing", "failingBasis",
              "failingSuites", "failingSuitesBasis", "suiteReader",
-             "retriedAfterSignal", "retryBasis", "outcomeBasis", "derivedGap")
+             "retriedAfterSignal", "retryBasis", "outcomeBasis", "derivedGap",
+             "flaky", "flakyBasis", "muted")
 STATE_KEYS = ("head", "headBasis", "scopeDigest", "scopeBasis",
               "scopeListDigest", "dirtyDigest", "dirtyBasis")
 _PORCELAIN_RENAME = " -> "
@@ -531,6 +546,19 @@ def _paths(project, entries):
     return kept, max(0, len(entries or []) - MAX_PATHS)
 
 
+def _mute_rows(project, mutes):
+    """Mutes as a committed row keeps them: suite, bug and day, nothing else,
+    cut at `MAX_PATHS`, each suite path redacted as `failingSuites` is and the
+    bug and the day cut to the bound a runner string gets (`redacted_text`) -
+    a manifest value is still a value this row did not compose."""
+    if not isinstance(mutes, list):
+        return []
+    return [{"test": repo_relative_or_token(project, str(m.get("test"))),
+             "bugId": redacted_text(project, str(m.get("bugId"))),
+             "until": redacted_text(project, str(m.get("until")))}
+            for m in mutes if isinstance(m, dict)][:MAX_PATHS]
+
+
 def _step(project, step, published):
     """One step of the run, allow-listed - and its command decided, not copied.
 
@@ -550,7 +578,7 @@ def _step(project, step, published):
         # "absent", which is the one reading a reader could mistake for zero.
         if step[key] is None and key not in ("exit", "ran"):
             continue
-        if key == "failing":
+        if key in ("failing", "flaky"):
             # THE ONE FIELD WHOSE CONTENT A RUNNER WROTE, so both rules that keep
             # a committed row safe land here and nowhere else in this loop. The
             # cut is taken by the WRITER rather than trusted from the caller,
@@ -571,6 +599,9 @@ def _step(project, step, published):
             out[key] = [repo_relative_or_token(project, p)
                         for p in step[key][:MAX_PATHS]]
             continue
+        if key == "muted":
+            out[key] = _mute_rows(project, step[key])
+            continue
         if key == "outcomeBasis":
             # WHY THIS `could-not-run` STEP HAS NO VERDICT, bounded and
             # redacted exactly as `failing`'s lines are: a no-verdict
@@ -589,6 +620,21 @@ def _step(project, step, published):
         out["command"] = str(command)
     else:
         out.update(command_facts(str(command)))
+    return out
+
+
+def _miss_row(project, miss):
+    """One selection miss as a committed row keeps it - see `row_for`."""
+    phases = [str(p) for p in (miss.get("phases") or [])]
+    sources = [str(p) for p in (miss.get("sources") or [])]
+    out = {"test": repo_relative_or_token(project, str(miss.get("test"))),
+           "phases": phases[:MAX_PATHS],
+           "sources": [repo_relative_or_token(project, p)
+                       for p in sources[:MAX_PATHS]]}
+    if len(phases) > MAX_PATHS:
+        out["phasesDropped"] = len(phases) - MAX_PATHS
+    if len(sources) > MAX_PATHS:
+        out["sourcesDropped"] = len(sources) - MAX_PATHS
     return out
 
 
@@ -685,6 +731,14 @@ def row_for(project, result, scope, ids, identity, published=None):
     # when there is something to write, like the key above it.
     if result.get("attributionBasis") is not None:
         row["attributionBasis"] = str(result["attributionBasis"])
+    # THE MUTES THAT EXCUSED A FAILING STEP. The step itself keeps its exit and
+    # its failing names, so without this a `passed` beside a red step would be
+    # a verdict the row cannot be read back for. Allow-listed to the suite,
+    # the bug and the day, cut at `MAX_PATHS` and each suite path redacted as
+    # `failingSuites` is; written only when a mute was honoured.
+    muted = _mute_rows(project, result.get("muted"))
+    if muted:
+        row["muted"] = muted
     # WHERE THE `steps` LIST CAME FROM. `steps` names the entries that
     # executed and carries no declaration beside them, and the manifest that
     # declared them is not on the row -- so two rows with different `steps` differ
@@ -784,6 +838,22 @@ def row_for(project, result, scope, ids, identity, published=None):
         if missed_dropped:
             shadow_row["missedDropped"] = missed_dropped
         row["shadow"] = shadow_row
+    # THE FULL RUN'S SELECTION MISSES (`selection_miss`), allow-listed to
+    # `{test, phases, sources}` (`_miss_row`): the suite and every source
+    # are bare paths (never porcelain lines, so not through `_paths`),
+    # redacted by `repo_relative_or_token`; the phase ids are plan ids. Every
+    # list is cut at `MAX_PATHS` with its dropped count beside it -
+    # `phasesDropped`, `sourcesDropped`, `selectionMissDropped` - each
+    # present only when something was cut. Written only when there is a
+    # miss - absence is "none".
+    misses = result.get("selectionMiss")
+    misses = ([m for m in misses if isinstance(m, dict)]
+              if isinstance(misses, list) else [])
+    if misses:
+        row["selectionMiss"] = [_miss_row(project, m)
+                                for m in misses[:MAX_PATHS]]
+        if len(misses) > MAX_PATHS:
+            row["selectionMissDropped"] = len(misses) - MAX_PATHS
     # The three-valued fields keep their shape at the TOP level too, so a reader
     # that never opens `observations` still cannot mistake unknown for clean.
     row["treeMutated"] = row["observations"]["treeMutated"]
@@ -1142,7 +1212,22 @@ def append_row(project, row, session_id=None, config=None, writer=None):
         worktree=_journal_io.worktree_key(project, config))
     lock = _journal_io._acquire(path, record="the evidence ledger")
     try:
-        rows, _torn = _journal_io.read_file(path)
+        # The tail is read through `ledger_text` like every other ledger read.
+        # A file that does not exist yet has no tail. One that exists and will
+        # not decode is REFUSED: every reader loses that file whole, so a run
+        # appended to it would be stored where nothing can find it - and
+        # `record()` must not report a run as stored when no reader can see it.
+        rows = []
+        if os.path.exists(path):
+            try:
+                rows, _torn = _journal_io.rows_from_text(ledger_text(path))
+            except UnicodeDecodeError as exc:
+                raise ValueError(
+                    "%s is not UTF-8 text (%s), and every reader loses such a "
+                    "file whole - a run appended to it would be invisible, so "
+                    "it was not appended. Restore the file from its committed "
+                    "copy and record the run again"
+                    % (os.path.basename(path), exc))
         tail = [r for r in rows if not r.get("_unparseable")]
         linked = chain_onto(row, tail, os.path.basename(path))
         with open(path, "a", encoding="utf-8") as fh:
@@ -1165,6 +1250,30 @@ def ledger_files(project, config=None):
                 for n in sorted(os.listdir(directory)) if n.endswith(".jsonl")]
     except Exception:
         return []
+
+
+def ledger_text(path):
+    """The text of one ledger file, decoded STRICTLY; raises when it cannot be.
+
+    THE ONE DECODE every reader of a ledger file goes through, so a byte that is
+    not UTF-8 is the same answer everywhere: the file could not be read. A
+    lenient decode would swap that byte for a replacement character and hand
+    the row back as clean, and a value it silently changed - a `runId`, a
+    command, a head - would then be compared as if it had been recorded that
+    way, while the chain check grades the same bytes unreadable.
+    """
+    with open(path, "rb") as fh:
+        return ledger_decode(fh.read())
+
+
+def ledger_decode(raw):
+    """Ledger BYTES as text, decoded strictly; raises `UnicodeDecodeError`.
+
+    `ledger_text`'s decode, split out for the bytes that never were a file on
+    this disk - a merge side git holds in its index, a shard handed to an
+    import - so they are read by the same rule as the file they become.
+    """
+    return raw.decode("utf-8")
 
 
 def read_rows(project, config=None):
@@ -1206,8 +1315,7 @@ def read_rows(project, config=None):
         files += 1
         lost_here = False
         try:
-            with open(path, "r", encoding="utf-8", errors="replace") as fh:
-                text = fh.read()
+            text = ledger_text(path)
         except Exception:
             unreadable += 1
             unreadable_files.append(path)
@@ -1252,7 +1360,13 @@ def _step_failed(step):
     `outcome` is the three-valued field a runner sets for what `exit` alone
     cannot say (a timeout, a signal, a step that could not run at all); an
     `exit` other than zero is the ordinary failure a runner reports without
-    ever reaching for that field."""
+    ever reaching for that field.
+
+    A MUTED step is not one, whatever its exit: its failure is quarantined
+    and known, so counting it would credit the gate with a catch on every
+    run the mute holds."""
+    if step.get("muted"):
+        return False
     if step.get("outcome"):
         return True
     exitcode = step.get("exit")
@@ -1271,6 +1385,7 @@ def _matching_steps(rows, key, value):
             if isinstance(step, dict) and step.get(key) == value:
                 out.append({"ts": row.get("ts"), "runId": row.get("runId"),
                             "exit": step.get("exit"), "outcome": step.get("outcome"),
+                            "muted": step.get("muted"),
                             "durationMs": step.get("durationMs")})
     return out
 
@@ -1305,8 +1420,8 @@ def gate_last_caught(rows, name):
     two apart; this answers only the WHEN half, for the gate that has caught
     something at least once."""
     hist = _matching_steps(rows, "name", name)
-    caught = sorted(h["ts"] for h in hist if h.get("ts") and _step_failed(h))
-    return caught[-1] if caught else None
+    last = newest_row([h for h in hist if h.get("ts") and _step_failed(h)])
+    return last["ts"] if last else None
 
 
 def _gate_cost_walk(rows, name):
@@ -1400,8 +1515,7 @@ def verify(project, config=None):
     for path in ledger_files(project, config):
         name = os.path.basename(path)
         try:
-            with open(path, "r", encoding="utf-8") as fh:
-                text = fh.read()
+            text = ledger_text(path)
         except Exception as exc:
             # A FINDING, NOT A SKIP. `_journal_io.read_file` answers an unreadable
             # file with no rows, which is the right fail-open for a reader walking
@@ -2094,15 +2208,16 @@ def latest_by_subject(rows, aliases=None):
 
     `aliases` is `subject_aliases(plan)`: a row recorded under a task's old id is
     keyed under the id the task holds now, so a moved task's runs still join it.
+
+    Newest by the MOMENT `ts` names: rows are walked in `oldest_first` order,
+    so the last one each key keeps is its newest.
     """
     best = {}
-    for row in rows or []:
+    for row in oldest_first(rows):
         key = subject_key(row, aliases)
         if key is None or not row.get("runId"):
             continue
-        current = best.get(key)
-        if current is None or str(row.get("ts") or "") >= str(current.get("ts") or ""):
-            best[key] = row
+        best[key] = row
     return best
 
 
@@ -2117,18 +2232,30 @@ def row_by_run(rows, run_id):
     here declares `runId` unique across every writer this project's worktrees
     keep, so a second row claiming the same id is read as a later one rather
     than as an error neither caller can act on.
+
+    NEWEST BY THE MOMENT `ts` NAMES (`newest_row`), never by its spelling, so a
+    run whose every stamp is unreadable is still found.
     """
     if not run_id:
         return None
-    best = None
-    for row in rows or []:
-        if not isinstance(row, dict):
-            continue
-        if str(row.get("runId") or "") != str(run_id):
-            continue
-        if best is None or str(row.get("ts") or "") >= str(best.get("ts") or ""):
-            best = row
-    return best
+    return newest_row([row for row in rows or [] if isinstance(row, dict)
+                       and str(row.get("runId") or "") == str(run_id)])
+
+
+# The one status a recorded run is green under.
+RUN_PASSED = "passed"
+
+
+def row_is_red(row):
+    """Whether the run `row` records exited red - its `status` is anything
+    but `passed`.
+
+    THE RUNNER'S OWN READING, NOT A SECOND ONE: `run-test-gate.py` exits 0
+    exactly when a run's status is `passed` and non-zero for every other
+    word, so a status no writer has produced yet, or none at all, is red
+    here as it is there. Widening green to "not named failed" would read a
+    new word - or a row missing the field - as a pass nobody measured."""
+    return row.get("status") != RUN_PASSED
 
 
 def suite_keys(rows):
@@ -2214,10 +2341,10 @@ def _same_subject(row, ids):
 def reusable_run(rows, scope, ids, key, statuses):
     """The newest recorded run a caller may repeat instead of measuring, or None.
 
-    FIVE CONDITIONS AND EVERY ONE OF THEM NARROWS. The identity has to match, the
+    EVERY CONDITION NARROWS. The identity has to match, the
     subject has to be the same work, the row has to be a MEASUREMENT rather than
-    another repeat, and the verdict has to be one the caller says may be
-    repeated. Drop any of them and this returns a run that answers a different
+    another repeat, the verdict has to be one the caller says may be
+    repeated, and no mute may have excused it. Drop any of them and this returns a run that answers a different
     question.
 
     THE IDENTITY IS NOT THE SUBJECT, which is why both are asked. Two tasks can
@@ -2237,7 +2364,7 @@ def reusable_run(rows, scope, ids, key, statuses):
     """
     if not key:
         return None
-    best = None
+    candidates = []
     for row in rows or []:
         if not isinstance(row, dict):
             continue
@@ -2247,13 +2374,16 @@ def reusable_run(rows, scope, ids, key, statuses):
             continue
         if row.get("status") not in statuses:
             continue
+        # A VERDICT A MUTE EXCUSED holds only while the mute does, and whether
+        # it still does depends on the day - which no content identity sees.
+        if row.get("muted"):
+            continue
         if str(row.get("scope") or "") != str(scope or ""):
             continue
         if not _same_subject(row, ids):
             continue
-        if best is None or str(row.get("ts") or "") >= str(best.get("ts") or ""):
-            best = row
-    return best
+        candidates.append(row)
+    return newest_row(candidates)
 
 
 def reconcile(project, manifest_path, session_id=None, config=None):
@@ -2344,7 +2474,32 @@ FULL_SCOPE = "full"
 
 
 def _full_disqualification(row, full_commands):
-    """Why `row` cannot bear WHOLE, or None when every rule holds.
+    """Why `row` cannot bear WHOLE, or None when every rule holds: every
+    rule of `_measurement_disqualification`, then the head rule.
+
+    A ROW NAMING NO TESTED HEAD IS DISQUALIFIED HERE, not left for git to
+    refuse: ancestry of an absent head answers UNKNOWN, and an UNKNOWN in
+    `full_status`'s walk outranks an older run that does contain the merge,
+    so the phase would read could-not-ask with a remedy (fetch, unshallow)
+    that cannot supply a head the row never recorded. The head rule comes
+    LAST so a row failing a measurement rule too is named for that one - a
+    red run is red before it is head-less.
+    """
+    reason = _measurement_disqualification(row, full_commands)
+    if reason is not None:
+        return reason
+    if not _names_tested_head(row):
+        return ("the row names no tested head, so there is no commit to ask "
+                "whether it contains the merge, and it cannot bear whole")
+    return None
+
+
+def _measurement_disqualification(row, full_commands):
+    """Why `row` is not a MEASURED FULL RUN - the declared gate measured
+    green on a clean tree - or None when it is. Whole-bearing is this plus a
+    tested head (`_full_disqualification`); a caller asking whether a run
+    gave the gate its chance to catch something, and not what commit it can
+    vouch for, asks this alone.
 
     EVERY RULE NAMES ITSELF IN ITS OWN RETURN, because a caller reporting
     PROVISIONAL over the nearest disqualified row has to say WHICH condition
@@ -2353,13 +2508,13 @@ def _full_disqualification(row, full_commands):
 
     THE ORDER IS THE ORDER A ROW WAS BUILT IN: whether it is a measurement at
     all (status, then not a repeat), what scope it claims, whether it measured
-    anything, whether every step's cost is known, whether the tree it measured
-    was clean, and only last whether it ran the gate that is actually declared
-    now -- a row that failed every earlier test would be a strange one to praise
-    for running the right commands.
+    anything, whether every step's cost is known, whether the tree it
+    measured was clean, and only last whether it ran the gate that is
+    actually declared now -- a row that failed every earlier test would be a
+    strange one to praise for running the right commands.
     """
-    if row.get("status") != "passed":
-        return "status is %r, not passed" % (row.get("status"),)
+    if row_is_red(row):
+        return "status is %r, not %s" % (row.get("status"), RUN_PASSED)
     if row.get(VERDICT_SOURCE) is not None:
         return ("this row repeats an earlier verdict (%s=%r) rather than "
                 "measuring one" % (VERDICT_SOURCE, row.get(VERDICT_SOURCE)))
@@ -2395,6 +2550,14 @@ def _full_disqualification(row, full_commands):
     return None
 
 
+def _names_tested_head(row):
+    """Whether `row.testedState.head` is a non-blank string - the commit a
+    full run's ancestry question is asked of."""
+    state = row.get("testedState")
+    head = state.get("head") if isinstance(state, dict) else None
+    return isinstance(head, str) and bool(head.strip())
+
+
 def merged_phase(phase):
     """Whether `phase` is one the third place is asked about: a dict carrying a
     truthy `mergedAt` and an `id` that is not None.
@@ -2413,27 +2576,75 @@ def merged_phase(phase):
             and phase.get("id") is not None)
 
 
+_DATE_ONLY = "%Y-%m-%d"
+
+
+def stamp_moment(text):
+    """A stamp as epoch seconds, or None when it names no moment.
+
+    THE ONE MOMENT READ this module orders by: `_usage_core.parse_ts`, plus an
+    ISO date with no time (`2026-09-01`), read as the START of that day in
+    UTC. A hand-written `evidenceSince.at` is often a date, and the start of
+    the day is the earliest moment it can mean - so a boundary read from it
+    can only move earlier, never later in silence. Kept here rather than in
+    `parse_ts`, whose other callers read stamps a machine wrote.
+    """
+    moment = _usage_core.parse_ts(text)
+    if moment is not None or not isinstance(text, str):
+        return moment
+    day = text.strip()
+    if len(day) != len("0000-00-00"):
+        return None
+    try:
+        return float(calendar.timegm(time.strptime(day, _DATE_ONLY)))
+    except ValueError:
+        return None
+
+
 def _ts_moment(row):
-    """A row's `ts` as epoch seconds, or None when it will not parse."""
-    return _usage_core.parse_ts(row.get("ts"))
+    """A row's `ts` as epoch seconds (`stamp_moment`), or None."""
+    return stamp_moment(row.get("ts"))
+
+
+def oldest_first(rows):
+    """`rows` ordered by the MOMENT each `ts` names, oldest first, with every
+    row whose `ts` will not parse BEFORE all of them; ledger order is kept
+    among the undated rows and among rows naming the same moment.
+
+    THE ONE ORDER every "newest row" question here is answered from, so that
+    no reader compares `ts` as text: a stamp carrying an offset or a
+    fractional second sorts by its spelling rather than its moment. Undated
+    rows go first so an unreadable `ts` never beats a readable one, and the
+    sort is stable so a tie goes to the row read later.
+    """
+    keyed = [(_ts_moment(r), r) for r in rows or [] if isinstance(r, dict)]
+    dated = sorted([pair for pair in keyed if pair[0] is not None],
+                   key=lambda pair: pair[0])
+    return ([r for m, r in keyed if m is None]
+            + [r for _m, r in dated])
+
+
+def newest_row(rows):
+    """The last row of `oldest_first(rows)`, or None: newest by moment, a
+    later row winning a tie, an undated row only when none is dated."""
+    ordered = oldest_first(rows)
+    return ordered[-1] if ordered else None
 
 
 def _newest_first(full_rows):
     """`full_rows` ordered by the MOMENT each `ts` names, newest first, with
     every row whose `ts` will not parse after all of them, in ledger order.
 
-    PARSED, NEVER COMPARED AS TEXT. A stamp carrying an offset or a
-    fractional second sorts as text against a plain UTC one by its spelling
-    rather than its moment, so "newest" would be whichever string is
-    greatest. An unreadable `ts` has no place in that order at all; it goes
-    last so it is still walked for the answer - its head is as measured as
-    any other - but `_is_dated` keeps it from ever being called newest.
+    DERIVED FROM `oldest_first`, so one order answers "which is newest"
+    everywhere: its dated rows reversed, which puts a dated tie on the row
+    read LATER - `newest_row`'s rule - and then the undated rows as read.
+    An unreadable `ts` has no place in that order at all; it goes last so it
+    is still walked for the answer - its head is as measured as any other -
+    but `_is_dated` keeps it from ever being called newest.
     """
-    keyed = [(_ts_moment(r), r) for r in full_rows]
-    dated = [pair for pair in keyed if pair[0] is not None]
-    dated.sort(key=lambda pair: pair[0], reverse=True)
-    return ([r for _m, r in dated]
-            + [r for m, r in keyed if m is None])
+    ordered = oldest_first(full_rows)
+    return ([r for r in reversed(ordered) if _is_dated(r)]
+            + [r for r in ordered if not _is_dated(r)])
 
 
 def _is_dated(row):
@@ -2443,13 +2654,49 @@ def _is_dated(row):
     return _ts_moment(row) is not None
 
 
-def _newest_whole_bearing(full_rows, full_commands):
-    """The newest DATED row of `full_rows` (already in `_newest_first` order)
-    that `_full_disqualification` passes, or None when none does."""
-    for row in full_rows:
-        if _is_dated(row) and _full_disqualification(row, full_commands) is None:
+def _newest_passing(rows, full_commands, disqualification):
+    """The newest DATED scope-`full` row of `rows` (`_newest_first` order)
+    that `disqualification(row, full_commands)` passes, or None when none
+    does - also None when `full_commands` is empty, since no row can match a
+    gate nothing declares."""
+    declared = list(full_commands or [])
+    if not declared:
+        return None
+    for row in _full_rows_newest_first(rows):
+        if _is_dated(row) and disqualification(row, declared) is None:
             return row
     return None
+
+
+def _full_rows_newest_first(rows):
+    """Every scope-`full` dict of `rows`, in `_newest_first` order."""
+    return _newest_first([r for r in (rows or [])
+                          if isinstance(r, dict) and r.get("scope") == FULL_SCOPE])
+
+
+def newest_whole_bearing(rows, full_commands):
+    """The newest dated, whole-bearing scope-`full` row of `rows`
+    (`_full_disqualification` passes it), or None.
+
+    THE ROW `full_status` NAMES AS `wholeRunId`: a caller asking "what merged
+    since the last full run that counted" reads this, and never a second
+    reading of which run counts.
+    """
+    return _newest_passing(rows, full_commands, _full_disqualification)
+
+
+def newest_measured_full_run(rows, full_commands):
+    """The newest dated MEASURED full run of `rows`
+    (`_measurement_disqualification` passes it, whatever its head), or None.
+
+    A DIFFERENT QUESTION FROM `newest_whole_bearing`, answered by the same
+    walk: whether a run gave the declared gate its chance to catch something,
+    not what commit it can vouch for. `selection_miss` bounds "the work
+    since" with it - passing over a green run with no head to an older one
+    would widen that window over work the newer run already measured - and
+    then asks about the head itself.
+    """
+    return _newest_passing(rows, full_commands, _measurement_disqualification)
 
 
 def full_status(rows, phase, git_root, full_commands, run=None):
@@ -2508,10 +2755,8 @@ def full_status(rows, phase, git_root, full_commands, run=None):
     """
     phase = phase if isinstance(phase, dict) else {}
     declared = list(full_commands or [])
-    full_rows = _newest_first([r for r in (rows or [])
-                              if isinstance(r, dict)
-                              and r.get("scope") == FULL_SCOPE])
-    whole = _newest_whole_bearing(full_rows, declared) if declared else None
+    full_rows = _full_rows_newest_first(rows)
+    whole = newest_whole_bearing(rows, declared)
     whole_ts = whole.get("ts") if whole is not None else None
     return dict(_full_answer(full_rows, phase, git_root, declared, run),
                 wholeRunId=whole.get("runId") if whole is not None else None,
@@ -2569,15 +2814,15 @@ def _full_answer(full_rows, phase, git_root, declared, run):
     if newest_whole_bearing is not None:
         head = (newest_whole_bearing.get("testedState") or {}).get("head")
         return {"answer": _manifest_vocab.FULL_STATUS_PROVISIONAL,
-                "basis": ("the newest measured full run (%s, head %s) does "
-                         "not contain %s"
+                "basis": ("the newest whole-bearing full run (%s, head %s) "
+                         "does not contain %s"
                          % (newest_whole_bearing.get("runId"), head,
                             merged_head)),
                 "runId": newest_whole_bearing.get("runId")}
     if undated_whole_bearing is not None:
         head = (undated_whole_bearing.get("testedState") or {}).get("head")
         return {"answer": _manifest_vocab.FULL_STATUS_PROVISIONAL,
-                "basis": ("no measured full run carries a readable ts; run "
+                "basis": ("no whole-bearing full run carries a readable ts; run "
                          "%s (ts %r, head %s) does not contain %s"
                          % (undated_whole_bearing.get("runId"),
                             undated_whole_bearing.get("ts"), head,
@@ -2593,6 +2838,459 @@ def _full_answer(full_rows, phase, git_root, declared, run):
             "basis": ("no full-scope run has ever been recorded, so nothing "
                      "can be asked whether it contains %s" % (merged_head,)),
             "runId": None}
+
+
+# --- a failing suite no derived gate selected: the selection miss -------------
+# A PHASE SIGNED OFF ON A DERIVED GATE RAN A SUBSET OF THE SUITES, and the
+# third place runs all of them. A suite that fails there and that no derived
+# gate of the work merged since the newest earlier measured full run listed is a
+# selection the derivation got wrong - which is only worth learning from when
+# the RUNNER named that suite. A tail of output is not a list of failing
+# suites, so a failure read only off one is said to be unlearned instead.
+NAMED_FAILING = "named as failing"
+
+
+def _counts_as_failed(step):
+    """A step that ran to a verdict and failed, and was not quarantined: a
+    non-zero exit, no no-verdict `outcome`, and no `muted` marker."""
+    return (isinstance(step, dict) and step.get("exit") not in (0, None)
+            and not step.get("outcome") and not step.get("muted"))
+
+
+def named_failing_suites(steps):
+    """Every suite file a failed step's runner NAMED as failing, in step
+    order, deduplicated.
+
+    A SUITE COUNTS ONLY WHEN `failingSuitesBasis` SAYS THE RUNNER NAMED IT
+    (`NAMED_FAILING` is the phrase `run-test-gate.failing_suites` composes
+    for exactly that answer, and for no other) - and never off a muted step,
+    whose failure is quarantined and known rather than caught.
+    """
+    suites = []
+    for step in steps or []:
+        if not _counts_as_failed(step):
+            continue
+        if NAMED_FAILING not in (step.get("failingSuitesBasis") or ""):
+            continue
+        for path in step.get("failingSuites") or []:
+            if path not in suites:
+                suites.append(path)
+    return suites
+
+
+def unnamed_failure_bases(steps):
+    """The basis of every failed, unmuted step whose runner named no suite -
+    `failingSuitesBasis` when the step carries one, its `failingBasis`
+    otherwise - so the caller can say which failure it refused to learn from
+    and why."""
+    return [step.get("failingSuitesBasis") or step.get("failingBasis")
+            or "the step carries no basis for its failure"
+            for step in steps or []
+            if _counts_as_failed(step)
+            and NAMED_FAILING not in (step.get("failingSuitesBasis") or "")]
+
+
+def listed_by(path, tests):
+    """Whether suite `path` is one of `tests`, read either way round as a
+    path suffix - a runner may print a path relative to its own directory
+    while a derived gate spells it from the repository root."""
+    return any(path == t or path.endswith("/" + t) or t.endswith("/" + path)
+               for t in tests or [])
+
+
+def resolve_named(spelling, candidates):
+    """`(path, None)` for the ONE candidate a runner's `spelling` names, or
+    `(None, reason)` when it names none of them or several.
+
+    THE MATCH IS `listed_by`'s, candidate by candidate - equal, or either a
+    `/`-bounded path suffix of the other - so a suite a runner prints
+    relative to its own directory still finds the path the repository
+    spells from its root. `candidates` is whatever set of paths the caller
+    must pin the name onto: the suites a plan couples, or every file the
+    repository tracks. A candidate listed twice is one candidate.
+
+    SEVERAL MATCHES NAME NONE OF THEM. A bare `test_c.py` fits every
+    `*/test_c.py`, and which one failed is not something the name can say;
+    answering with any of them would act on a suite the run may never have
+    touched. An exact-equal candidate does not break the tie either: a
+    runner working from a subdirectory prints a repository-root-looking
+    path for a deeper file. The reason names every match, so the caller can
+    say what it refused to choose between.
+    """
+    matches = []
+    for path in candidates or []:
+        if path not in matches and listed_by(spelling, [path]):
+            matches.append(path)
+    if len(matches) == 1:
+        return matches[0], None
+    if not matches:
+        return None, ("no candidate path is %s or ends in /%s, and %s ends "
+                      "in none of them" % (spelling, spelling, spelling))
+    return None, ("%s names each of %s - one name, several suites, so it "
+                  "names none of them" % (spelling, ", ".join(matches)))
+
+
+# --- a runner's spelling, pinned to one tracked path ---------------------------
+# A RUNNER NAMES A SUITE THE WAY IT SEES IT, from whatever directory it was
+# started in, while a derived gate, a coupling and a bug spell it from the
+# project root. Every reader that turns the first into the second pins it here,
+# onto the files git tracks, so no two readers can place one name on two paths
+# - and a name that fits several tracked suites is placed on none, with the
+# candidates said, rather than counted as whichever one a suffix happened to
+# reach first.
+def shell_unsafe(path):
+    """Whether `path` holds a control character -- a newline among them --
+    that a gate entry, which is one line of shell, cannot carry."""
+    return any(ord(c) < 32 or ord(c) == 127 for c in path)
+
+
+def project_relative(spelling, project):
+    """`(path, None)` -- `spelling` normalized and spelled from `project` --
+    or `(None, why)` when it names nothing inside the project.
+
+    NORMALIZED BEFORE ANYTHING READS IT, so `./test_old.py` is `test_old.py`
+    to the disk check and to the resolver alike. An ABSOLUTE spelling inside
+    the project becomes relative to it; one outside it is refused, because a
+    gate entry is written into a committed plan and a machine's own path does
+    not belong there. The directory is resolved through its symlinks and the
+    file name is not, so a suite that is itself a link still counts as the
+    project's.
+    """
+    if os.path.isabs(spelling):
+        root = os.path.realpath(project)
+        full = os.path.join(os.path.realpath(os.path.dirname(spelling)),
+                            os.path.basename(spelling))
+        try:
+            rel = _output.posix_rel(full, root)
+        except ValueError:
+            rel = full
+    else:
+        rel = os.path.normpath(spelling)
+    rel = rel.replace(os.sep, "/")
+    if rel == ".." or rel.startswith("../") or os.path.isabs(rel):
+        return None, ("%s lies outside the project, and a machine's own path "
+                      "is never written into a plan" % (spelling,))
+    if rel == ".":
+        return None, "%s names the project root, not a suite" % (spelling,)
+    return rel, None
+
+
+def suite_listing(project, run=None):
+    """`{"project", "tracked", "listingFailed"}` - what `pin_suite` pins
+    onto: every path `git ls-files` lists from `project`, already spelled
+    from the directory a gate runs in, or `tracked: None` and the sentence
+    saying why git could not list them. `run` is `_worktrees`' injectable
+    git runner.
+
+    ASKED ONCE PER READER, never once per name: every name one run printed
+    is pinned against the same tree. An unlisted tree is not an empty one,
+    so a listing failure is carried as a sentence rather than as `[]`.
+    """
+    code, said, err = _worktrees._runner(run)(project, ["ls-files", "-z"])
+    if code == 0:
+        return {"project": project, "listingFailed": None,
+                "tracked": [p for p in (said or "").split("\0") if p]}
+    return {"project": project, "tracked": None,
+            "listingFailed": ("the tracked files could not be listed (git "
+                              "ls-files: %s)" % ((err or "").strip()
+                                                 or "exit %s" % (code,)))}
+
+
+def _pin_relative(rel, listing):
+    """`pin_suite` for a spelling already made project-relative."""
+    on_disk = os.path.isfile(os.path.join(listing["project"], rel))
+    tracked = listing.get("tracked")
+    if tracked is None:
+        path, why = ((rel, None) if on_disk else
+                     (None, "%s is not on disk from the project root, and %s"
+                      % (rel, listing.get("listingFailed"))))
+    else:
+        path, why = resolve_named(rel, tracked + ([rel] if on_disk else []))
+    if path is not None and shell_unsafe(path):
+        path, why = None, ("%s resolves to %r, which holds a control "
+                           "character no one-line gate can carry" % (rel, path))
+    return path, why
+
+
+def pin_suite(spelling, listing):
+    """`(path, None)` - the ONE tracked path a runner's `spelling` names,
+    spelled from the project root - or `(None, why)` when it names none or
+    several. `listing` is `suite_listing`'s answer.
+
+    THE MATCH IS `resolve_named`'s over every tracked file, plus the
+    spelling itself when it exists from the root: a runner working from a
+    subdirectory prints `tests/x.test.js` for `pkg1/tests/x.test.js`, and a
+    sibling `pkg2/tests/x.test.js` makes that name two suites, so it pins to
+    neither. When git cannot list, a spelling that exists from the root is
+    kept as written - nothing is left that could show it a twin - and any
+    other is refused naming the listing failure. A path holding a control
+    character is refused rather than handed to a one-line shell gate.
+    """
+    if not isinstance(spelling, str) or not spelling.strip():
+        return None, "%r names no suite" % (spelling,)
+    rel, why = project_relative(spelling, listing["project"])
+    if rel is None:
+        return None, why
+    return _pin_relative(rel, listing)
+
+
+def pin_suites(suites, project, run=None):
+    """`(paths, None)` -- each suite a runner named, pinned by `pin_suite` --
+    or `(None, why)` when any one of them cannot be.
+
+    ONE UNRESOLVED SUITE REFUSES THEM ALL. A gate narrowed to the suites that
+    did resolve could go green while a failure the run named is never run,
+    so the reason names every suite that could not be pinned. A spelling
+    outside the project is refused before git is asked anything at all.
+    """
+    rels, refused = [], []
+    for spelling in suites:
+        rel, why = project_relative(spelling, project)
+        if rel is None:
+            refused.append(why)
+        else:
+            rels.append(rel)
+    if refused:
+        return None, ("a suite the run named could not be pinned to one path "
+                      "from the project root: %s" % ("; ".join(refused),))
+    listing = suite_listing(project, run)
+    pinned = []
+    for rel in rels:
+        path, why = _pin_relative(rel, listing)
+        if path is None:
+            refused.append(why)
+        else:
+            pinned.append(path)
+    if refused:
+        return None, ("a suite the run named could not be pinned to one path "
+                      "from the project root: %s" % ("; ".join(refused),))
+    return pinned, None
+
+
+def _suite_names(name, listing):
+    """`name` and the tracked path it pins to, when it pins to one."""
+    path, _why = pin_suite(name, listing)
+    return set([name] + ([path] if path is not None else []))
+
+
+def same_suite(one, other, listing):
+    """Whether two spellings name one suite: they are equal, or one pins
+    (`pin_suite`) to the other, or both pin to the same tracked path.
+
+    NEVER A SUFFIX ALONE. `listed_by` would call `tests/x.test.js` and
+    `pkg2/tests/x.test.js` one suite while the runner meant
+    `pkg1/tests/x.test.js`; only the pinned path can say which one failed.
+    """
+    return bool(_suite_names(one, listing) & _suite_names(other, listing))
+
+
+def own_miss(row, names, listing):
+    """The `selectionMiss` entry of `row` naming the suite one of `names`
+    names (`same_suite`), or None.
+
+    THE ONE READING OF "THIS RUN LISTS THAT SUITE AS ITS OWN MISS", shared by
+    `full-gate.py`'s catch credit and `audit-task.py couple --caught`: a row
+    saying no derived gate ran a suite cannot also be the run a coupling of
+    that suite caught something in, and two copies of the comparison are
+    how one verb came to credit a catch the other refused.
+    """
+    wanted = [n for n in names or [] if isinstance(n, str) and n]
+    for miss in row.get("selectionMiss") or []:
+        test = miss.get("test") if isinstance(miss, dict) else None
+        if not isinstance(test, str) or not test:
+            continue
+        if any(same_suite(test, name, listing) for name in wanted):
+            return miss
+    return None
+
+
+def unreadable_names(ledger, project):
+    """Each ledger file `read_rows` could not read in full (`ledger` is its
+    answer), spelled from `project` - the names a reader owes when a run it
+    looked for may be on a line that read lost."""
+    return [_output.posix_rel(p, project) if os.path.isabs(p) else p
+            for p in ledger.get("unreadableFiles") or []]
+
+
+def _ancestry(git_root, merged_head, head, run):
+    """`(answer, unasked_sentence)` - `_worktrees.merged_into` of `merged_head`
+    into `head`, with the sentence to report when git could not answer."""
+    asked = _worktrees.merged_into(git_root, merged_head, head, run=run)
+    if asked["answer"] == _worktrees.UNKNOWN:
+        return asked["answer"], ("whether %s contains %s could not be "
+                                 "established - %s"
+                                 % (head, merged_head,
+                                    asked.get("detail") or asked["basis"]))
+    return asked["answer"], None
+
+
+def _phase_since(phase, head, since, git_root, run):
+    """`(verdict, sentence)` for one merged phase against the run's `head`
+    and the bounding run `since` (a row carrying `testedState.head`).
+
+    `verdict` is "counted", "underived", "unasked" or None (not merged into
+    this run, or merged before `since`). EVERY way ancestry cannot be put is
+    "unasked" with its sentence, never folded into either side:
+    - no `mergedHead` at all;
+    - git could not answer either question;
+    - a `mergedHeadAt` backfill that `since` does not already contain. A
+      backfilled `mergedHead` is the parent's head recorded AFTER the merge,
+      so it can postdate `since` while the merge itself did not; only a
+      `since` that contains it settles the order, and anything else fails
+      closed rather than learn from an imprecise moment.
+    A phase merged since whose `testGateDerived` is not a dict made no
+    selection, so it is "underived" and is never counted toward a miss.
+    """
+    merged_head = phase.get("mergedHead")
+    if not merged_head:
+        return "unasked", ("it is merged (mergedAt %s) but records no "
+                           "mergedHead, so whether this run contains it "
+                           "cannot be asked" % (phase.get("mergedAt"),))
+    inside, why = _ancestry(git_root, merged_head, head, run)
+    if why:
+        return "unasked", why
+    if inside != _worktrees.CONTAINED:
+        return None, None
+    since_head = (since.get("testedState") or {}).get("head")
+    before, why = _ancestry(git_root, merged_head, since_head, run)
+    if why:
+        return "unasked", why
+    if before == _worktrees.CONTAINED:
+        return None, None
+    if phase.get("mergedHeadAt"):
+        return "unasked", ("its mergedHead %s was recorded after the fact "
+                           "(mergedHeadAt %s), so whether it merged before "
+                           "run %s cannot be told"
+                           % (merged_head, phase.get("mergedHeadAt"),
+                              since.get("runId")))
+    if not isinstance(phase.get("testGateDerived"), dict):
+        return "underived", None
+    return "counted", None
+
+
+def _distinct_files(phases):
+    """Every file the phases' tasks declare, in plan order, once - a
+    `cancelled` task's files excluded, since that work never landed."""
+    files = []
+    for phase in phases:
+        for task in phase.get("tasks") or []:
+            if not isinstance(task, dict) or task.get("status") == "cancelled":
+                continue
+            for path in task.get("files") or []:
+                if isinstance(path, str) and path and path not in files:
+                    files.append(path)
+    return files
+
+
+def selection_miss(steps, phases, head, git_root, earlier_rows, full_commands,
+                   run=None, unreadable=None, listing=None):
+    """`{"misses", "unnamed", "phases", "underived", "since", "unasked",
+    "reasons"}` - the post-pass a full run's steps are put through. Reads
+    and returns; writes nothing but the one `git ls-files` it asks.
+
+    `misses` is `[{test, phases, sources}]`: each suite the runner NAMED as
+    failing (`named_failing_suites`), pinned to its one tracked path
+    (`pin_suite` over `listing`, `suite_listing(git_root, run)` when None),
+    that no `testGateDerived.tests` of the counted phases lists - `test` is
+    that pinned path. A name that pins to no tracked path, or to several,
+    is never counted as listed: it is `unasked`, the subject the runner's
+    own spelling and the sentence naming the candidates, since a suffix
+    match would let a sibling package's suite answer for the one that
+    failed. A phase is counted when it is merged
+    (`merged_phase`), the run's `head` contains its `mergedHead`, the newest
+    earlier measured full run (`newest_measured_full_run` over
+    `earlier_rows`, `since`) does not, and it carries a derived gate -
+    `_phase_since` holds each exclusion. Both ancestry questions go to git
+    (`_worktrees.merged_into`). `sources` is the union of the counted
+    phases' live tasks' `files` - the work since the bounding run, read off
+    the plan rather than guessed from a diff. The lists are uncut here;
+    `row_for` bounds them and counts what it drops.
+
+    LEARNING NEEDS A BOUND. With no earlier measured full run, one that
+    recorded no head, or a run with no head of its own, "the work since"
+    would be the whole history, so nothing is learned and `reasons` (or
+    `unasked`, for a bounding run with no head) says why. `unnamed` holds
+    the basis of every failed step whose runner named no suite; `unasked`
+    holds `[subject, sentence]` for every ancestry that could not be put.
+
+    A LEDGER READ WITH LOSSES BOUNDS NOTHING. `unreadable` names each file
+    `read_rows` could not read in full (`unreadable_names`); the newest
+    measured run may sit on the line that read lost, and bounding by the
+    next one down would widen "the work since" in silence - so no miss is
+    asked, and `reasons` names the files.
+    """
+    named = named_failing_suites(steps)
+    result = {"misses": [], "unnamed": unnamed_failure_bases(steps),
+              "phases": [], "underived": [], "since": None, "unasked": [],
+              "reasons": []}
+    if not named:
+        return result
+    if unreadable:
+        result["reasons"].append(
+            "the evidence ledger could not be read in full (%s), so the "
+            "newest earlier measured full run may be on a line that read "
+            "lost and no bound on the work since can be trusted; repair it "
+            "and run again" % (", ".join(unreadable),))
+        return result
+    if not head:
+        result["reasons"].append("this run recorded no head, so what it "
+                                 "contains cannot be asked")
+        return result
+    since = newest_measured_full_run(earlier_rows, full_commands)
+    if since is None:
+        result["reasons"].append("no earlier measured full run bounds the "
+                                 "work since")
+        return result
+    since_head = (since.get("testedState") or {}).get("head")
+    result["since"] = {"runId": since.get("runId"), "head": since_head}
+    if not _names_tested_head(since):
+        result["unasked"].append(
+            ["run %s" % (since.get("runId"),),
+             "the newest earlier measured full run records no "
+             "testedState.head, so what merged since it cannot be asked"])
+        return result
+    counted = []
+    for phase in phases or []:
+        if not merged_phase(phase):
+            continue
+        verdict, sentence = _phase_since(phase, head, since, git_root, run)
+        if verdict == "unasked":
+            result["unasked"].append(["phase %s" % (phase["id"],), sentence])
+        elif verdict == "underived":
+            result["underived"].append(str(phase["id"]))
+        elif verdict == "counted":
+            counted.append(phase)
+    result["phases"] = [str(p["id"]) for p in counted]
+    if not counted:
+        if result["underived"]:
+            result["reasons"].append(
+                "the phases merged since run %s (%s) signed off on a gate "
+                "that was not derived, so no selection was made that this "
+                "run could show wrong"
+                % (since.get("runId"), ", ".join(result["underived"])))
+        elif not result["unasked"]:
+            result["reasons"].append(
+                "no phase merged into %s since run %s, so no derived gate "
+                "selected anything this run could show wrong"
+                % (head, since.get("runId")))
+        return result
+    listed = []
+    for phase in counted:
+        tests = phase["testGateDerived"].get("tests")
+        listed.extend(project_relative(t, git_root)[0] or t
+                      for t in (tests or []) if isinstance(t, str))
+    sources = _distinct_files(counted)
+    listing = suite_listing(git_root, run) if listing is None else listing
+    missed = []
+    for spelling in named:
+        path, why = pin_suite(spelling, listing)
+        if path is None:
+            result["unasked"].append([spelling, why])
+        elif path not in listed and path not in missed:
+            missed.append(path)
+    result["misses"] = [{"test": path, "phases": list(result["phases"]),
+                         "sources": list(sources)} for path in missed]
+    return result
 
 
 # --- the boundary: when could a run have been recorded at all ------------------
@@ -2661,15 +3359,42 @@ def stated_at(block):
 def earliest_recorded(rows):
     """The earliest `ts` any recorded run carries, or None when none carries one.
 
-    COMPARED AS STRINGS, which is `latest_by_subject`'s rule at the other end of
-    the same list and correct for the same reason: every row is stamped by `_now`
-    in one fixed UTC spelling, so lexical order IS chronological order and parsing
-    would add a way to fail without adding an answer.
+    BY MOMENT, `oldest_first`'s order - `latest_by_subject`'s rule at the other
+    end of the same list. A row's `ts` is not always `_now`'s spelling (a caller
+    may hand one in, an imported shard carries another writer's), and as text an
+    offset or a fractional second sorts by how it is written. A `ts` that will
+    not parse is the answer only when no row's does, and then the least as text,
+    which is all such a stamp can be ordered by.
     """
+    dated = [r for r in oldest_first(rows) if _ts_moment(r) is not None]
+    if dated:
+        return dated[0].get("ts")
     stamps = [r.get("ts") for r in rows or []
               if isinstance(r, dict) and isinstance(r.get("ts"), str)
               and r.get("ts").strip()]
     return min(stamps) if stamps else None
+
+
+def unplaced_stamps(rows):
+    """What `earliest_recorded` passes over, in ledger order, each once: every
+    `ts` that `stamp_moment` cannot place, and - named by its run, since it has
+    no stamp to quote - every row whose `ts` is missing, blank or not text.
+
+    A row with no stamp is still a recorded run, and it may be the earliest
+    one; leaving it out would let a ledger of such rows read as an empty one.
+    """
+    out = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        ts = row.get("ts")
+        if isinstance(ts, str) and ts.strip():
+            label = ts if stamp_moment(ts) is None else None
+        else:
+            label = "run %s has no ts" % (row.get("runId") or "?",)
+        if label is not None and label not in out:
+            out.append(label)
+    return out
 
 
 def boundary_of(block, ledger_at, unknown=None):
@@ -2687,12 +3412,44 @@ def boundary_of(block, ledger_at, unknown=None):
     with a non-empty list is holding a boundary that may be later than the truth.
     """
     key_at = stated_at(block)
-    stamps = [s for s in (key_at, ledger_at) if s is not None]
-    at = min(stamps) if stamps else None
-    if key_at is not None and ledger_at is not None:
+    # The earlier MOMENT of the two: the plan's stamp is hand-written and need
+    # not share the ledger's spelling.
+    at = earliest_recorded([{"ts": s} for s in (key_at, ledger_at)
+                            if s is not None])
+    unknown = list(unknown or [])
+    asked_unknown = list(unknown)
+    # A STAMP THAT NAMES NO MOMENT IS NEVER DROPPED IN SILENCE. It cannot be
+    # compared, so the other source (when there is one) becomes the boundary -
+    # and that may be LATER than the start the stamp meant. `unknown` is this
+    # function's word for exactly that, so the stamp is named there, where the
+    # gate reads it, as well as in the basis.
+    key_lost = key_at is not None and stamp_moment(key_at) is None
+    ledger_lost = ledger_at is not None and stamp_moment(ledger_at) is None
+    if key_lost:
+        unknown.append("%s states %r, which names no moment (an ISO timestamp "
+                       "or an ISO date does), so the start it means cannot be "
+                       "placed and the boundary may be later than the truth"
+                       % (SINCE_KEY, key_at))
+    if ledger_lost:
+        unknown.append("the earliest recorded run's ts is %r, which names no "
+                       "moment, so where recording began cannot be placed from "
+                       "the ledger" % (ledger_at,))
+    if key_lost or ledger_lost:
+        basis = ("the stamp(s) %s name no moment this can place, so they are "
+                 "not compared; the boundary %s, and it may be later than the "
+                 "truth" % (
+                     ", ".join(repr(s) for s in (key_at, ledger_at)
+                               if s is not None and stamp_moment(s) is None),
+                     ("is %s" % (at,)) if stamp_moment(at) is not None
+                     else "cannot be placed at all"))
+    elif key_at is not None and ledger_at is not None:
         basis = ("the plan states recording began %s and the earliest recorded "
                  "run is %s; the earlier of the two is the boundary, because "
                  "work before it could not have been recorded" % (key_at, ledger_at))
+    elif key_at is not None and asked_unknown:
+        basis = ("the plan states recording began %s; no run in the ledger "
+                 "places a moment to confirm it, and what could not be read or "
+                 "placed is listed as unknown" % (key_at,))
     elif key_at is not None:
         basis = ("the plan states recording began %s; no run is readable in the "
                  "ledger to confirm it" % (key_at,))
@@ -2703,12 +3460,28 @@ def boundary_of(block, ledger_at, unknown=None):
     elif ledger_at is not None:
         basis = ("this plan carries no %s, so the boundary is the earliest "
                  "recorded run, %s" % (SINCE_KEY, ledger_at))
+    elif asked_unknown:
+        # Not "no run is readable": a source the caller could not read or
+        # place may hold a run, which is what `unknown` lists.
+        basis = ("nothing places when recording began: this plan states no "
+                 "moment in %s and no run in its ledger places one, and what "
+                 "could not be read or placed is listed as unknown - so this "
+                 "boundary cannot be trusted" % (SINCE_KEY,))
     else:
         basis = ("nothing says when recording began: this plan carries no %s and "
                  "no run is readable in its ledger, so no work in it could have "
                  "carried evidence" % (SINCE_KEY,))
+    # HANDED ON IN THE ONE Z SPELLING whenever the moment was placed. The
+    # consumer (`_status_facts._gap_of`) is this module's layer-mate and reads
+    # `at` with `_usage_core.parse_ts`, which does not read a date - so a
+    # placed boundary is spelled the way it reads. The basis and `sources`
+    # keep the plan's own text. A fractional second is dropped, which moves
+    # the boundary earlier: the direction that excuses less, never more.
+    placed = stamp_moment(at)
+    if placed is not None:
+        at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(placed)))
     return {"at": at, "sources": {"key": key_at, "ledger": ledger_at},
-            "basis": basis, "unknown": list(unknown or [])}
+            "basis": basis, "unknown": unknown}
 
 
 def evidence_boundary(project, manifest_path, config=None):
@@ -2733,7 +3506,23 @@ def evidence_boundary(project, manifest_path, config=None):
         unknown.append("%d ledger row(s) could not be parsed, and one of them may "
                        "carry an earlier run than any that could"
                        % (read["unreadable"],))
-    return boundary_of(block, earliest_recorded(read["rows"]), unknown=unknown)
+    ledger_at = earliest_recorded(read["rows"])
+    # A row whose ts names no moment - or that carries none - is passed over
+    # by `earliest_recorded`, and it may be the earliest run. Named here, so
+    # the boundary says it may be later than the truth; the one stamp
+    # `boundary_of` is handed as `ledger_at` it names itself.
+    unplaced = [u for u in unplaced_stamps(read["rows"]) if u != ledger_at]
+    if unplaced and stamp_moment(ledger_at) is not None:
+        unknown.append("ledger row(s) carry a ts that names no moment (%s), so "
+                       "where they fall is unknown and one of them may be an "
+                       "earlier run than %s" % (_output.some_of(unplaced),
+                                                ledger_at))
+    elif unplaced:
+        unknown.append("ledger row(s) carry no ts that names a moment (%s), so "
+                       "where recording began cannot be placed from the "
+                       "ledger although a run is recorded there"
+                       % (_output.some_of(unplaced),))
+    return boundary_of(block, ledger_at, unknown=unknown)
 
 
 def project_config_for(manifest_path, project_dir=None):

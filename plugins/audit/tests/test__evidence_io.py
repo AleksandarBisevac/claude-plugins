@@ -447,6 +447,145 @@ def _cases(check):
               % (len(_rofs["steps"][0]["failingSuites"]),),
               len(_rofs["steps"][0]["failingSuites"]) == M.MAX_PATHS)
 
+        # --- fk: a flaky test is an OBSERVATION on the step -------------------
+        # Playwright reports a test that failed and then passed on retry as
+        # `flaky`, and the step still exits 0. The names are the runner's own
+        # bytes, so they are cut and redacted as `failing` is; never an `outcome`,
+        # because every tally here reads any outcome as not-passed.
+        _fk_leak = "%s/elsewhere/cart.spec.js:2:1 > settles" % (tmp,)
+        _fk_names = ["tests/s%d.spec.js:2:1 › settles on retry" % (n,)
+                     for n in range(M.MAX_FAILING + 3)] + [_fk_leak]
+        _fk_step = dict(RESULT["steps"][0], exit=0, flaky=_fk_names,
+                        flakyBasis="the test(s) playwright named as flaky")
+        _rfk = M.row_for(plain, dict(RESULT, status="passed", failed=[],
+                                     steps=[_fk_step]),
+                         "task", {"taskId": "P1.2"}, IDENT,
+                         published=["pytest -q"])
+        _fk_row_step = _rfk["steps"][0]
+        check("fk1 `flaky` and `flakyBasis` CROSS INTO THE ROW on a step that "
+              "exited 0 - `STEP_KEYS` names both: %r"
+              % (sorted(k for k in _fk_row_step if k.startswith("flaky")),),
+              "flaky" in M.STEP_KEYS and "flakyBasis" in M.STEP_KEYS
+              and _fk_row_step.get("flaky", [None])[0]
+              == "tests/s0.spec.js:2:1 › settles on retry"
+              and "playwright" in (_fk_row_step.get("flakyBasis") or ""))
+        check("fk2 ...CUT BY THE WRITER at `MAX_FAILING`, the bound `failing` "
+              "carries, never trusted from the caller: %r"
+              % (len(_fk_row_step.get("flaky") or []),),
+              len(_fk_row_step.get("flaky") or []) == M.MAX_FAILING)
+        _fk_red = M.row_for(plain, dict(RESULT, status="passed", failed=[],
+                                        steps=[dict(_fk_step,
+                                                    flaky=[_fk_leak])]),
+                            "task", {"taskId": "P1.2"}, IDENT,
+                            published=["pytest -q"])
+        check("fk3 ...and REDACTED on the way in, by `failing`'s redactor - an "
+              "absolute path in a flaky name is the same leak: %r"
+              % (_fk_red["steps"][0].get("flaky"),),
+              bool(_fk_red["steps"][0].get("flaky"))
+              and tmp not in _journal_io.canonical(_fk_red["steps"][0]))
+        check("fk4 A FLAKY-BUT-GREEN STEP IS A PASS in every tally: "
+              "`gate_tally` counts it ran and NOT failed, which is what an "
+              "`outcome` would have broken: %r"
+              % (M.gate_tally([_rfk], "unit"),),
+              M.gate_tally([_rfk], "unit") == (1, 0))
+
+        # --- mq: a muted failure is on the row, with its mute -----------------
+        _mq_step = dict(RESULT["steps"][0], exit=1,
+                        failingSuites=["src/cart.test.ts"],
+                        failingSuitesBasis="the suite file(s) jest named")
+        _mq_entries = [{"test": "src/cart.test.ts", "bugId": "B1",
+                        "until": "2026-10-01", "reason": "not carried",
+                        "owner": "not carried either"}]
+        _rmq = M.row_for(plain, dict(RESULT, status="passed", failed=[],
+                                     steps=[_mq_step], muted=_mq_entries),
+                         "task", {"taskId": "P1.2"}, IDENT,
+                         published=["pytest -q"])
+        check("mq1 `muted` CROSSES INTO THE ROW as `{test, bugId, until}` and "
+              "nothing else, beside a step that keeps its own exit and "
+              "failing suites: %r" % ((_rmq.get("muted"), _rmq["steps"][0]),),
+              _rmq.get("muted") == [{"test": "src/cart.test.ts",
+                                     "bugId": "B1", "until": "2026-10-01"}]
+              and _rmq["steps"][0]["exit"] == 1
+              and _rmq["steps"][0]["failingSuites"] == ["src/cart.test.ts"])
+        check("mq2 ALLOW: a run nothing muted carries NO `muted` key - a key "
+              "on every row could not be told from one a build does not "
+              "write: %r" % (sorted(row),),
+              "muted" not in row)
+        _mq_over = [dict(_mq_entries[0], test="%s/out/s%d.test.ts" % (tmp, n))
+                    for n in range(M.MAX_PATHS + 4)]
+        _rmqo = M.row_for(plain, dict(RESULT, status="passed", failed=[],
+                                      steps=[_mq_step], muted=_mq_over),
+                          "task", {"taskId": "P1.2"}, IDENT,
+                          published=["pytest -q"])
+        check("mq3 ...CUT at `MAX_PATHS` and each `test` redacted as a suite "
+              "path is: %r" % (len(_rmqo.get("muted") or []),),
+              len(_rmqo.get("muted") or []) == M.MAX_PATHS
+              and tmp not in _journal_io.canonical(_rmqo.get("muted")))
+        _mr_rows = [dict(_rmq, **{M.REUSE_KEY: "k-mute", "ts": "2026-09-01T00:00:00Z"})]
+        check("mq4 A VERDICT A MUTE EXCUSED IS NOT REPEATED: whether the mute "
+              "still holds depends on the day it is graded, which no content "
+              "identity can see - so `reusable_run` measures again: %r"
+              % (M.reusable_run(_mr_rows, "task", {"taskId": "P1.2"},
+                                "k-mute", ("passed", "failed")),),
+              M.reusable_run(_mr_rows, "task", {"taskId": "P1.2"}, "k-mute",
+                             ("passed", "failed")) is None
+              and M.reusable_run([dict(_mr_rows[0], muted=None)], "task",
+                                 {"taskId": "P1.2"}, "k-mute",
+                                 ("passed", "failed")) is not None)
+
+        # --- mq5-: the STEP carries its mute, and no tally counts it ----------
+        _mq_marked = dict(_mq_step, muted=[
+            {"test": "%s/out/s%d.test.ts" % (tmp, n), "bugId": "B1",
+             "until": "2026-10-01", "reason": "dropped"}
+            for n in range(M.MAX_PATHS + 2)])
+        _rmm = M.row_for(plain, dict(RESULT, status="passed", failed=[],
+                                     steps=[_mq_marked], muted=_mq_entries),
+                         "task", {"taskId": "P1.2"}, IDENT,
+                         published=["pytest -q"])
+        _mm = _rmm["steps"][0].get("muted") or []
+        check("mq5 `muted` IS A STEP KEY: the committed step says which mute "
+              "excused it, cut at `MAX_PATHS`, each `test` redacted and each "
+              "entry kept to suite, bug and day: %r" % (_mm[:1],),
+              "muted" in M.STEP_KEYS and len(_mm) == M.MAX_PATHS
+              and tmp not in _journal_io.canonical(_mm)
+              and all(sorted(m) == ["bugId", "test", "until"] for m in _mm))
+        _huge_bug = "B" + "x" * (_journal_io.MAX_VALUE_CHARS * 3)
+        _rhb = M.row_for(plain, dict(RESULT, status="passed", failed=[],
+                                     steps=[dict(_mq_step, muted=[dict(
+                                         _mq_entries[0], bugId=_huge_bug,
+                                         until="9" * (_journal_io.MAX_VALUE_CHARS * 3))])],
+                                     muted=[dict(_mq_entries[0], bugId=_huge_bug)]),
+                         "task", {"taskId": "P1.2"}, IDENT,
+                         published=["pytest -q"])
+        check("mq5b an oversized `bugId` or `until` is CUT to the bound every "
+              "runner string on this row gets, on the row and on the step: %r"
+              % ((len(_rhb["muted"][0]["bugId"]),
+                  len(_rhb["steps"][0]["muted"][0]["bugId"]),
+                  len(_rhb["steps"][0]["muted"][0]["until"])),),
+              len(_rhb["muted"][0]["bugId"]) < len(_huge_bug)
+              and len(_rhb["steps"][0]["muted"][0]["bugId"]) < len(_huge_bug)
+              and len(_rhb["steps"][0]["muted"][0]["until"])
+              < _journal_io.MAX_VALUE_CHARS * 3)
+        _unmuted_row = M.row_for(plain, dict(RESULT, steps=[_mq_step]), "task",
+                                 {"taskId": "P1.2"}, IDENT,
+                                 published=["pytest -q"])
+        check("mq6 A QUARANTINED FAILURE IS NOT A GATE CATCH: `gate_tally`, "
+              "`command_tally` and `gate_last_caught` all read a muted step as "
+              "ran and not failed: %r"
+              % ((M.gate_tally([_rmm], "unit"),
+                  M.command_tally([_rmm], "pytest -q"),
+                  M.gate_last_caught([_rmm], "unit")),),
+              M.gate_tally([_rmm], "unit") == (1, 0)
+              and M.command_tally([_rmm], "pytest -q") == (1, 0)
+              and M.gate_last_caught([_rmm], "unit") is None)
+        check("mq7 ALLOW: the same failed step with no mute is counted as it "
+              "always was: %r"
+              % ((M.gate_tally([_unmuted_row], "unit"),
+                  M.gate_last_caught([_unmuted_row], "unit")),),
+              M.gate_tally([_unmuted_row], "unit") == (1, 1)
+              and M.command_tally([_unmuted_row], "pytest -q") == (1, 1)
+              and M.gate_last_caught([_unmuted_row], "unit") is not None)
+
         # --- og1-og5: WHY a step could not run, kept beside the verdict ---------
         # A `could-not-run` step already carries `outcome`, and until now nothing
         # else - a derived run that skipped a listed suite, a missing interpreter
@@ -587,6 +726,111 @@ def _cases(check):
               M.row_by_run(rb_rows, "R-does-not-exist") is None
               and M.row_by_run([], "R-new") is None
               and M.row_by_run(rb_rows, None) is None)
+        # THE RUNNER'S OWN READING: green is exactly `passed`. A status no
+        # writer has produced, and a row with no status, are red - a reader
+        # widening green to "anything not named failed" goes red on them, and
+        # one reading every row as red goes red on the first.
+        is_red = getattr(M, "row_is_red", None)
+        red_of = [None if is_red is None else is_red(r) for r in (
+            {"status": "passed"}, {"status": "failed"},
+            {"status": "a-word-no-writer-wrote"}, {})]
+        check("rr2b RED-FIRST: `row_is_red` is False for passed alone - True "
+              "for failed, for a status no reader has written, and for no "
+              "status at all: %r" % (red_of,),
+              red_of == [False, True, True, True])
+        # Text order and moment order DISAGREE here: the offset stamp spells
+        # a later day but names an earlier moment, and the unparseable stamp
+        # is greatest of all as text.
+        rb_moment = [
+            _row_with([RESULT["steps"][0]], run_id="R-m",
+                      ts="2026-09-02T23:00:00Z"),
+            _row_with([RESULT["steps"][0]], run_id="R-m",
+                      ts="2026-09-03T00:00:00+05:00"),
+            _row_with([RESULT["steps"][0]], run_id="R-m", ts="zzz-not-a-ts"),
+        ]
+        check("rr3 `row_by_run` settles a shared runId by the MOMENT each "
+              "`ts` names, never by its spelling, and a `ts` that will not "
+              "parse never wins over one that does: %r"
+              % (M.row_by_run(rb_moment, "R-m") or {}).get("ts"),
+              (M.row_by_run(rb_moment, "R-m") or {}).get("ts")
+              == "2026-09-02T23:00:00Z")
+        rb_undated = [
+            _row_with([RESULT["steps"][0]], run_id="R-u", ts="zzz-first"),
+            _row_with([RESULT["steps"][0]], run_id="R-u", ts="aaa-second"),
+        ]
+        check("rr4 ALLOW: when no row carrying the id has a readable `ts`, "
+              "the run is still found - the last one in ledger order - rather "
+              "than answered None as if it had never been recorded: %r"
+              % (M.row_by_run(rb_undated, "R-u") or {}).get("ts"),
+              (M.row_by_run(rb_undated, "R-u") or {}).get("ts")
+              == "aaa-second")
+        # The same disagreement, put to every other reader here that picks
+        # a newest row: the offset stamp spells a later day, names an earlier
+        # moment, and must lose.
+        _mo_early_text = "2026-09-02T23:00:00Z"
+        _mo_late_text = "2026-09-03T00:00:00+05:00"
+        _mo_subject = [
+            {"scope": "task", "taskId": "P1.1", "runId": "MO-A",
+             "ts": _mo_early_text},
+            {"scope": "task", "taskId": "P1.1", "runId": "MO-B",
+             "ts": _mo_late_text}]
+        _mo_best = M.latest_by_subject(_mo_subject).get(("task", "P1.1"))
+        check("mo1 `latest_by_subject` keeps the run whose ts names the later "
+              "MOMENT, not the later spelling: %r" % ((_mo_best or {}).get(
+                  "runId"),),
+              (_mo_best or {}).get("runId") == "MO-A")
+        _mo_reuse = [dict(_mr_rows[0], muted=None,
+                          **{"runId": "MO-A", "ts": _mo_early_text}),
+                     dict(_mr_rows[0], muted=None,
+                          **{"runId": "MO-B", "ts": _mo_late_text})]
+        _mo_reused = M.reusable_run(_mo_reuse, "task", {"taskId": "P1.2"},
+                                    "k-mute", ("passed", "failed"))
+        check("mo2 `reusable_run` repeats the run whose ts names the later "
+              "MOMENT: %r" % ((_mo_reused or {}).get("runId"),),
+              (_mo_reused or {}).get("runId") == "MO-A")
+        _mo_caught = [
+            {"ts": _mo_early_text, "runId": "MO-A",
+             "steps": [{"name": "lint", "exit": 1}]},
+            {"ts": _mo_late_text, "runId": "MO-B",
+             "steps": [{"name": "lint", "exit": 1}]}]
+        check("mo3 `gate_last_caught` answers the ts naming the later MOMENT: "
+              "%r" % (M.gate_last_caught(_mo_caught, "lint"),),
+              M.gate_last_caught(_mo_caught, "lint") == _mo_early_text)
+        # ...and at the OTHER end of the list: the earliest moment is the late
+        # spelling here, and an unparseable stamp is never the earliest.
+        check("mo4 `earliest_recorded` answers the ts naming the earliest "
+              "MOMENT, and a ts that will not parse never wins: %r"
+              % (M.earliest_recorded(_mo_caught + [{"ts": "0-not-a-ts"}]),),
+              M.earliest_recorded(_mo_caught + [{"ts": "0-not-a-ts"}])
+              == _mo_late_text)
+        _mo_bound = M.boundary_of({"at": _mo_early_text}, _mo_late_text)
+        check("mo5 `boundary_of` takes the earlier MOMENT of the plan's "
+              "stated start and the ledger's earliest run, and hands it on in "
+              "the one Z spelling every consumer reads: %r"
+              % (_mo_bound["at"],),
+              _mo_bound["at"] == "2026-09-02T19:00:00Z"
+              and _mo_bound["sources"]["ledger"] == _mo_late_text)
+        # A hand-written plan start that names a DAY: the start of that day in
+        # UTC, the earliest moment it can mean, so it is never read as later.
+        _mo_day = M.boundary_of({"at": "2026-09-01"}, "2026-09-05T00:00:00Z")
+        check("mo6 RED-FIRST: a date-only `evidenceSince.at` is a moment - "
+              "the start of that day in UTC - so it stays the earlier "
+              "boundary beside a later ledger row, with nothing unknown: %r"
+              % (_mo_day,),
+              _mo_day["at"] == "2026-09-01T00:00:00Z"
+              and _mo_day["unknown"] == []
+              and _mo_day["sources"]["key"] == "2026-09-01"
+              and M.stamp_moment("2026-09-01")
+              == M.stamp_moment("2026-09-01T00:00:00Z"))
+        _mo_junk = M.boundary_of({"at": "Sept 1 2026"}, "2026-09-05T00:00:00Z")
+        check("mo7 RED-FIRST: a plan start that is no moment at all is NEVER "
+              "dropped in silence: it is named in `unknown` - the answer that "
+              "says the boundary may be later than the truth - and in the "
+              "basis, which no longer claims it is the earlier of the two: %r"
+              % (_mo_junk,),
+              any("Sept 1 2026" in u for u in _mo_junk["unknown"])
+              and "Sept 1 2026" in _mo_junk["basis"]
+              and "the earlier of the two" not in _mo_junk["basis"])
 
         # A RUN NOTHING ELSE ON THE ROW COULD EXPLAIN. `failed` is read back off
         # the steps, `timed-out` off a step's `outcome` and its `timeoutSeconds`,
@@ -812,6 +1056,101 @@ def _cases(check):
               "down whatever surface asked: %r" % (empty,),
               empty["rows"] == [] and empty["files"] == 0
               and empty["unreadable"] == 0)
+
+        # ONE DECODE FOR EVERY READER. A byte that is not UTF-8 is planted
+        # inside a runId; a lenient reader would hand back that row with a
+        # replacement character standing in for the byte, as if it were clean,
+        # while the strict verifier grades the same file unreadable.
+        bad_proj = _project(os.path.join(tmp, "not-utf8"), {})
+        bad_dir = M.evidence_dir(bad_proj)
+        os.makedirs(bad_dir, exist_ok=True)
+        bad_path = os.path.join(bad_dir, "2026-01.bad.jsonl")
+        with open(bad_path, "wb") as fh:
+            fh.write(b'{"runId": "B-clean"}\n{"runId": "B-\xffmoved"}\n')
+        bad_read = M.read_rows(bad_proj)
+        bad_verdict = M.verify(bad_proj)
+        replaced = [r for r in bad_read["rows"] if "�" in json.dumps(
+            r, ensure_ascii=False)]
+        check("ev21b RED-FIRST: a byte that does not decode loses the FILE in "
+              "`read_rows` - it joins `unreadableFiles` and the count, and no "
+              "row carrying a replacement character comes back as clean: %r"
+              % ((bad_read["unreadableFiles"], bad_read["unreadable"],
+                  [r.get("runId") for r in bad_read["rows"]]),),
+              bad_read["unreadableFiles"] == [bad_path]
+              and bad_read["unreadable"] >= 1
+              and replaced == [] and bad_read["rows"] == [])
+        bad_files = [f for f in bad_verdict["files"]
+                     if f["file"] == "2026-01.bad.jsonl"]
+        check("ev21c ...and `verify` grades the SAME file the same way - "
+              "unreadable, a finding, not one of its rows checked - so the two "
+              "readers disagree about nothing: %r" % (bad_files,),
+              len(bad_files) == 1 and bad_files[0]["rows"] == 0
+              and any("could not be read" in f
+                      for f in bad_files[0]["findings"])
+              and not bad_verdict["ok"])
+        with open(bad_path, "rb") as fh:
+            bad_offset = fh.read().index(b"\xff")
+        bad_said = " ".join(bad_files[0]["findings"]) if bad_files else ""
+        check("ev21e ...and its finding names the byte and its offset in the "
+              "FILE's bytes - the remedy import-evidence prints sends the "
+              "reader to that position, so it must be the file's own, not a "
+              "line's: %r (byte at %d)" % (bad_said, bad_offset),
+              "0xff" in bad_said
+              and ("in position %d:" % bad_offset) in bad_said)
+        uni_proj =_project(os.path.join(tmp, "utf8-non-ascii"), {})
+        uni_dir = M.evidence_dir(uni_proj)
+        os.makedirs(uni_dir, exist_ok=True)
+        with open(os.path.join(uni_dir, "2026-01.uni.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write('{"runId": "U-ćevap — été"}\n')
+        uni_read = M.read_rows(uni_proj)
+        uni_verdict = M.verify(uni_proj)
+        check("ev21d ALLOW: a clean UTF-8 file with non-ASCII text reads as "
+              "before - its row returned intact, nothing lost, no finding: %r"
+              % ((uni_read, uni_verdict["findings"]),),
+              [r.get("runId") for r in uni_read["rows"]]
+              == ["U-ćevap — été"]
+              and uni_read["unreadable"] == 0
+              and uni_read["unreadableFiles"] == []
+              and not any("could not be read" in f
+                          for f in uni_verdict["findings"]))
+
+        # An append onto a file no reader can decode would store a run every
+        # reader then loses with the file - so the write is REFUSED, the file
+        # left byte-for-byte as it was, and `record()` raises the refusal a
+        # recorder prints as "evidence: NOT recorded - <reason>".
+        ap_proj = _project(os.path.join(tmp, "append-undecodable"), {})
+        ap_path = M.append_row(ap_proj, {"runId": "AP-1",
+                                         "ts": "2026-01-05T00:00:00Z"},
+                               writer="w-ap")
+        with open(ap_path, "ab") as fh:
+            fh.write(b'{"runId": "AP-\xff"}\n')
+        with open(ap_path, "rb") as fh:
+            ap_before = fh.read()
+        ap_errors = []
+        for ap_call in (
+                lambda: M.append_row(ap_proj, {"runId": "AP-2",
+                                               "ts": "2026-01-06T00:00:00Z"},
+                                     writer="w-ap"),
+                lambda: M.record(ap_proj, {"status": "passed", "steps": [],
+                                           "testedState": {}}, "full", {},
+                                 {"runId": "AP-3",
+                                  "ts": "2026-01-07T00:00:00Z"},
+                                 writer="w-ap")):
+            try:
+                ap_call()
+                ap_errors.append(None)
+            except Exception as exc:
+                ap_errors.append(str(exc))
+        with open(ap_path, "rb") as fh:
+            ap_after = fh.read()
+        check("ap1 RED-FIRST: appending onto a ledger file that is not UTF-8 "
+              "is REFUSED - `append_row` and `record()` both raise, naming the "
+              "file, and not one byte is written: %r" % (ap_errors,),
+              len(ap_errors) == 2 and all(ap_errors)
+              and all(os.path.basename(ap_path) in e for e in ap_errors if e)
+              and all("not UTF-8" in e for e in ap_errors if e)
+              and ap_after == ap_before)
 
         # --- the chain ------------------------------------------------------
         # THE DEFECT THIS BLOCK EXISTS FOR, driven before it was written: two runs
@@ -1611,6 +1950,36 @@ def _cases(check):
               _nothing["at"] is None and len(_nothing["unknown"]) == 1
               and "could not be read" in _nothing["unknown"][0])
 
+        jproj, jpath = _manifest_project("junk-ts")
+        for rid, ts in (("RJ", "not-a-moment"), ("RD", "2026-08-26T11:00:00Z")):
+            M.append_row(jproj, {"v": 1, "runId": rid, "ts": ts, "scope": "task",
+                                 "taskId": "P1.1", "phaseId": "P1",
+                                 "status": "passed"})
+        _junk = M.evidence_boundary(jproj, jpath)
+        check("mo8 RED-FIRST: a ledger row whose ts is no moment is not dropped "
+              "in silence when another row's ts parses - it may be the earliest "
+              "run, so it is NAMED in `unknown`: at=%r unknown=%r"
+              % (_junk["at"], _junk["unknown"]),
+              _junk["at"] == "2026-08-26T11:00:00Z"
+              and any("not-a-moment" in u for u in _junk["unknown"]))
+
+        # A ROW WITH NO ts AT ALL, and no other row to place: `at` stays None,
+        # which alone would excuse everything - so the run is named in
+        # `unknown`, and the basis does not claim no run is readable.
+        nproj, npath = _manifest_project("no-ts")
+        M.append_row(nproj, {"v": 1, "runId": "RN", "scope": "task",
+                             "taskId": "P1.1", "phaseId": "P1",
+                             "status": "passed"})
+        _nots = M.evidence_boundary(nproj, npath)
+        check("mo9 RED-FIRST: a ledger row carrying NO ts is unplaced too - "
+              "named in `unknown` even when no row's ts places a moment, and "
+              "the basis says so rather than that nothing is readable: "
+              "at=%r unknown=%r basis=%r"
+              % (_nots["at"], _nots["unknown"], _nots["basis"]),
+              _nots["at"] is None
+              and any("RN" in u for u in _nots["unknown"])
+              and "no run is readable" not in _nots["basis"])
+
         # --- stamping it, once ----------------------------------------------
         sproj, spath = _manifest_project("since")
         for rid, ts in (("RB", "2026-08-26T11:00:00Z"),
@@ -2213,6 +2582,174 @@ def _cases(check):
     _merge_ledger_cases(check)
     _chain_order_cases(check)
     _narrowed_shadow_cases(check)
+    _selection_miss_row_cases(check)
+    _resolve_named_cases(check)
+    _pin_suite_cases(check)
+
+
+def _pin_suite_cases(check):
+    """(ps) one tracked path for a runner's spelling, and the one own-miss
+    reading every third-place reader shares."""
+    tmp = _harness.fixture_root("audit-evidence-pin-")
+    try:
+        tracked = ["pkg1/tests/x.test.js", "pkg2/tests/x.test.js",
+                   "backend/tests/test_x.py"]
+        listing = {"project": tmp, "tracked": tracked, "listingFailed": None}
+        got = [M.pin_suite(s, listing) for s in
+               ("tests/x.test.js", "test_x.py", "./backend/tests/test_x.py",
+                "../elsewhere.py", "tests/none.py")]
+        check("ps1 RED-FIRST: a spelling two tracked siblings end in pins to "
+              "NEITHER, naming both; one only one tracked path ends in pins "
+              "to it; a normalized root spelling pins to itself; a path "
+              "outside the project and a name nothing tracks pin to nothing, "
+              "each with its reason: %r" % (got,),
+              got[0][0] is None and "pkg1/tests/x.test.js" in got[0][1]
+              and "pkg2/tests/x.test.js" in got[0][1]
+              and got[1] == ("backend/tests/test_x.py", None)
+              and got[2] == ("backend/tests/test_x.py", None)
+              and got[3][0] is None and "outside the project" in got[3][1]
+              and got[4][0] is None and "no candidate path" in got[4][1])
+        unlisted = {"project": tmp, "tracked": None,
+                    "listingFailed": "the tracked files could not be listed"}
+        os.makedirs(os.path.join(tmp, "tests"))
+        with open(os.path.join(tmp, "tests", "on_disk.py"), "w") as fh:
+            fh.write("")
+        check("ps2 where git cannot list, a spelling on disk from the root "
+              "is kept as written and any other is refused NAMING the listing "
+              "failure - an unlisted tree is not an empty one",
+              M.pin_suite("tests/on_disk.py", unlisted)
+              == ("tests/on_disk.py", None)
+              and "could not be listed"
+              in (M.pin_suite("tests/gone.py", unlisted)[1] or ""))
+        check("ps3 same_suite: equal, or pinned to one tracked path - never a "
+              "suffix alone, so the relative spelling of pkg1's suite is not "
+              "pkg2's",
+              M.same_suite("test_x.py", "backend/tests/test_x.py", listing)
+              and M.same_suite("tests/x.test.js", "tests/x.test.js", listing)
+              and not M.same_suite("tests/x.test.js", "pkg2/tests/x.test.js",
+                                   listing))
+        row = {"selectionMiss": [{"test": "test_x.py"}, "junk", {}]}
+        check("ps4 RED-FIRST: own_miss finds the miss a row recorded under "
+              "the runner's spelling for the plan's key, and none for a "
+              "suite the row does not list: %r"
+              % ((M.own_miss(row, ["backend/tests/test_x.py"], listing),
+                  M.own_miss(row, ["pkg1/tests/x.test.js"], listing)),),
+              M.own_miss(row, ["backend/tests/test_x.py"], listing)
+              == {"test": "test_x.py"}
+              and M.own_miss(row, ["pkg1/tests/x.test.js"], listing) is None
+              and M.own_miss({}, ["test_x.py"], listing) is None)
+        ledger = {"unreadableFiles": [os.path.join(tmp, "docs", "e.jsonl"),
+                                      "rel.jsonl"]}
+        check("ps5 unreadable_names spells each lost file from the project",
+              M.unreadable_names(ledger, tmp) == ["docs/e.jsonl", "rel.jsonl"]
+              and M.unreadable_names({}, tmp) == [])
+        ok, bad = (M.pin_suites(["test_x.py"], tmp, run=lambda *_a, **_k: (
+                       0, "backend/tests/test_x.py\0", "")),
+                   M.pin_suites(["test_x.py", "tests/x.test.js"], tmp,
+                                run=lambda *_a, **_k: (
+                                    0, "\0".join(tracked) + "\0", "")))
+        check("ps6 pin_suites pins every suite or none, naming each it could "
+              "not: %r" % ((ok, bad),),
+              ok == (["backend/tests/test_x.py"], None)
+              and bad[0] is None and "tests/x.test.js names each of" in bad[1])
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _resolve_named_cases(check):
+    """(rn) `resolve_named`: the ONE candidate a runner's spelling names by
+    `listed_by`'s suffix rule, or None and a sentence naming what matched.
+    Read through `getattr` so the red before the function exists is an
+    observed answer, not an AttributeError ending the suite."""
+    resolve = getattr(M, "resolve_named", None)
+
+    def ask(spelling, candidates):
+        if resolve is None:
+            return ("absent", None)
+        return resolve(spelling, candidates)
+
+    keys = ["pkg_a/tests/test_c.py", "pkg_b/tests/test_c.py",
+            "tests/test_d.py"]
+    one = ask("test_d.py", keys)
+    check("rn1 RED-FIRST: a spelling that is a `/`-bounded suffix of exactly "
+          "one candidate names that candidate, with no reason: %r" % (one,),
+          one == ("tests/test_d.py", None))
+    none = ask("test_z.py", keys)
+    check("rn2 a spelling no candidate is listed by names none of them, and "
+          "the reason says so and quotes the spelling: %r" % (none,),
+          none[0] is None and isinstance(none[1], str)
+          and "test_z.py" in none[1] and "no candidate" in none[1])
+    several = ask("test_c.py", keys)
+    check("rn3 RED-FIRST: a spelling that more than one candidate is listed "
+          "by names NONE of them - an ambiguous name is not one of its "
+          "matches - and the reason names every match: %r" % (several,),
+          several[0] is None and isinstance(several[1], str)
+          and "pkg_a/tests/test_c.py" in several[1]
+          and "pkg_b/tests/test_c.py" in several[1]
+          and "tests/test_d.py" not in several[1])
+    # ALLOW CASE for the other direction of the suffix rule: a runner printing
+    # a LONGER path than the candidate (its own absolute-ish spelling) still
+    # names it, and a candidate listed twice is still one candidate.
+    longer = ask("repo/pkg_b/tests/test_c.py", keys + ["pkg_b/tests/test_c.py"])
+    check("rn4 ALLOW CASE: the suffix rule read either way round, and a "
+          "repeated candidate counted once: %r" % (longer,),
+          longer == ("pkg_b/tests/test_c.py", None))
+
+
+def _selection_miss_row_cases(check):
+    """(smr) `row_for`'s `selectionMiss`: `{test, phases, sources}` and no
+    other key, the paths redacted, and absent when the post-pass found none."""
+    tmp = _harness.fixture_root("audit-evidence-miss-")
+    try:
+        plain = _project(os.path.join(tmp, "plain"), {})
+        base = {"status": "failed", "durationMs": 900, "failed": ["e2e"],
+                "ranTotal": 4, "coverageBasis": None, "treeBasis": "b",
+                "treeMutated": [], "overlap": None, "steps": []}
+        ident = {"runId": "R-smr", "attempt": None, "via": "cli"}
+        miss = {"test": os.path.join(plain, "e2e", "cart.spec.ts"),
+                "phases": ["P2"], "sources": ["src/cart.ts"],
+                "extra": "widened"}
+        row = M.row_for(plain, dict(base, selectionMiss=[miss]), "full", {},
+                        ident, published=[])
+        check("smr1 `row_for` carries `selectionMiss` as exactly "
+              "{test, phases, sources} - an inventive caller's extra key "
+              "is dropped, and an absolute suite path is written "
+              "repo-relative: %r" % (row.get("selectionMiss"),),
+              row.get("selectionMiss") == [
+                  {"test": "e2e/cart.spec.ts", "phases": ["P2"],
+                   "sources": ["src/cart.ts"]}])
+        over = M.MAX_PATHS + 3
+        wide = {"test": "e2e/cart.spec.ts",
+                "phases": ["P%d" % i for i in range(over)],
+                "sources": ["src/f%d.ts" % i for i in range(over + 2)]}
+        row_wide = M.row_for(plain, dict(base, selectionMiss=[wide] * (over + 1)),
+                             "full", {}, ident, published=[])
+        kept = row_wide.get("selectionMiss") or [{}]
+        check("smr1b every list past MAX_PATHS is cut WITH its dropped count "
+              "beside it - misses, each miss's phases and its sources - so a "
+              "truncation announces itself: %r"
+              % ((len(kept), row_wide.get("selectionMissDropped"),
+                  kept[0].get("phasesDropped"), kept[0].get("sourcesDropped")),),
+              len(kept) == M.MAX_PATHS
+              and row_wide.get("selectionMissDropped") == 4
+              and len(kept[0]["phases"]) == M.MAX_PATHS
+              and kept[0].get("phasesDropped") == 3
+              and len(kept[0]["sources"]) == M.MAX_PATHS
+              and kept[0].get("sourcesDropped") == 5)
+        check("smr1c ALLOW: a miss inside every bound carries no dropped "
+              "count at all - absence means nothing was cut: %r"
+              % (row.get("selectionMiss"),),
+              "selectionMissDropped" not in row
+              and not any(k.endswith("Dropped")
+                          for k in (row.get("selectionMiss") or [{}])[0]))
+        none = M.row_for(plain, dict(base, selectionMiss=[]), "full", {},
+                         ident, published=[])
+        check("smr2 ALLOW: a post-pass that found no miss writes no key - "
+              "absence reads as none, and an empty list on every full row "
+              "could not be told from a build that never asked",
+              "selectionMiss" not in none)
+    finally:
+        _harness.remove_tree(tmp)
 
 
 def _narrowed_shadow_cases(check):
@@ -2840,9 +3377,11 @@ def _full_status_cases(check):
                                run=_fake_git(
                                    {"merge-base --is-ancestor": (1, "", "")}))
         check("fs5 a whole-bearing run whose head does not contain mergedHead "
-              "is PROVISIONAL, naming that run: %r" % (res_un,),
+              "is PROVISIONAL, naming that run AS whole-bearing - the rule "
+              "the walk chose it by, not 'measured': %r" % (res_un,),
               res_un["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
-              and "run-unrelated" in res_un["basis"])
+              and res_un["basis"].startswith(
+                  "the newest whole-bearing full run (run-unrelated, "))
 
         # --- RED-FIRST: a dirty tree certifies nothing --------------------------
         dirty_row = _fs_row("run-dirty", "2026-01-02T00:00:00Z", repo["second"],
@@ -2935,6 +3474,20 @@ def _full_status_cases(check):
               res_two["answer"] == _manifest_vocab.FULL_STATUS_WHOLE
               and res_two["runId"] == "run-whole")
 
+        # Two whole-bearing rows naming the SAME moment: the tie goes to the
+        # row read later, the rule every other "newest" reader here follows.
+        tie_first = _fs_row("run-tie-first", "2026-01-02T00:00:00Z",
+                            repo["second"], ["echo x"])
+        tie_later = _fs_row("run-tie-later", "2026-01-02T00:00:00+00:00",
+                            repo["second"], ["echo x"])
+        tie_whole = M.newest_whole_bearing([tie_first, tie_later], ["echo x"])
+        check("fs13b RED-FIRST: a dated tie between whole-bearing full rows "
+              "goes to the row read LATER, as `newest_row` breaks it - one "
+              "question, one order: %r" % ((tie_whole or {}).get("runId"),),
+              (tie_whole or {}).get("runId") == "run-tie-later"
+              and M.newest_row([tie_first, tie_later])["runId"]
+              == "run-tie-later")
+
         # --- ALLOW: no full row at all is PROVISIONAL, not UNKNOWN -------------
         res_none = M.full_status([], phase, repo["root"], ["echo x"])
         check("fs14 ALLOW: a plan with mergedHead and fullGate but no full run "
@@ -2970,6 +3523,21 @@ def _full_status_cases(check):
               "wholeRunId" in res_dq and res_dq["wholeRunId"] is None
               and "wholeRunTs" in res_dq and res_dq["wholeRunTs"] is None
               and res_dq["runId"] == "run-dirty-newest")
+
+        # An UNDATED disqualified row read FIRST: undated rows are walked
+        # after every dated one, so the run the basis is about is the dated
+        # disqualified run, not whichever the ledger listed first.
+        undated_dirty = _fs_row("run-dirty-undated", "not-a-moment",
+                                repo["second"], ["echo x"],
+                                dirty_outside=["src/app.ts"])
+        res_ud = M.full_status([undated_dirty, newest_dirty], phase,
+                               repo["root"], ["echo x"])
+        check("fs20b RED-FIRST: an undated disqualified row read before a "
+              "dated one is walked AFTER it - the basis names the dated run: "
+              "%r" % (res_ud,),
+              res_ud["runId"] == "run-dirty-newest"
+              and "run-dirty-newest" in res_ud["basis"]
+              and "run-dirty-undated" not in res_ud["basis"])
 
         res_wh = M.full_status([whole_row], phase, repo["root"], ["echo x"])
         check("fs21 ALLOW: a WHOLE answer names its run as the newest "
@@ -3045,7 +3613,9 @@ def _full_status_cases(check):
               and res_only["runId"] == "run-undated"
               and res_only.get("wholeRunId") is None
               and res_only.get("wholeRunTs") is None
-              and "never been recorded" not in res_only["basis"])
+              and "never been recorded" not in res_only["basis"]
+              and res_only["basis"].startswith(
+                  "no whole-bearing full run carries a readable ts"))
 
         contains = _fake_git({"merge-base --is-ancestor": (0, "", "")})
         res_und_whole = M.full_status([undated], phase, repo["root"],
@@ -3055,6 +3625,99 @@ def _full_status_cases(check):
               "nothing about the head it ran on: %r" % (res_und_whole,),
               res_und_whole["answer"] == _manifest_vocab.FULL_STATUS_WHOLE
               and res_und_whole["runId"] == "run-undated")
+
+        # --- a run that names no tested head cannot bear whole ----------------
+        # Real git, no injected `run`: asking ancestry of an absent head is
+        # what git itself answers UNKNOWN to, so only a disqualification lets
+        # the walk reach the older run that does name a head.
+        headless_newer = _fs_row("run-headless", "2026-01-05T00:00:00Z", None,
+                                 ["echo x"])
+        headed_older = _fs_row("run-headed", "2026-01-01T00:00:00Z",
+                               repo["second"], ["echo x"])
+        res_hl = M.full_status([headed_older, headless_newer], phase,
+                               repo["root"], ["echo x"])
+        check("fs27 RED-FIRST: the newest whole-bearing run named beside the "
+              "answer is never a head-less one - wholeRunId names the older "
+              "headed run - while the WHOLE answer from that older run is "
+              "unchanged: %r" % (res_hl,),
+              res_hl["answer"] == _manifest_vocab.FULL_STATUS_WHOLE
+              and res_hl["runId"] == "run-headed"
+              and "run-headed" in res_hl["basis"]
+              and res_hl.get("wholeRunId") == "run-headed")
+
+        # The shape that really read could-not-ask: the older headed run does
+        # NOT contain mergedHead, so the walk used to stop at the newer
+        # head-less row and ask git about an absent head.
+        headed_not = _fs_row("run-headed-not", "2026-01-01T00:00:00Z",
+                             repo["first"], ["echo x"])
+        later_phase = {"id": "P1", "mergedHead": repo["second"]}
+        res_hn = M.full_status([headed_not, headless_newer], later_phase,
+                               repo["root"], ["echo x"])
+        check("fs27b RED-FIRST: an older headed run that does not contain "
+              "mergedHead beside a newer head-less run reads PROVISIONAL "
+              "about the older run, never a could-not-ask about the "
+              "head-less one: %r" % (res_hn,),
+              res_hn["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
+              and res_hn["runId"] == "run-headed-not"
+              and "could not" not in res_hn["basis"])
+
+        no_state = _fs_row("run-nostate", "2026-01-05T00:00:00Z", None,
+                           ["echo x"])
+        del no_state["testedState"]
+        blank_head = _fs_row("run-blank", "2026-01-05T00:00:00Z", "  ",
+                             ["echo x"])
+        reasons = [M._full_disqualification(r, ["echo x"])
+                   for r in (headless_newer, no_state, blank_head)]
+        check("fs28 RED-FIRST: a null head, a missing testedState and a blank "
+              "head are each disqualified by a reason naming the missing "
+              "tested head: %r" % (reasons,),
+              all(r is not None and "tested head" in r for r in reasons))
+
+        res_hl_only = M.full_status([headless_newer], phase, repo["root"],
+                                    ["echo x"])
+        check("fs29 RED-FIRST: when the only whole-looking run names no head "
+              "the answer is not WHOLE, and its basis says the run was "
+              "disqualified for the missing head rather than that git could "
+              "not answer: %r" % (res_hl_only,),
+              res_hl_only["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
+              and res_hl_only["runId"] == "run-headless"
+              and "tested head" in res_hl_only["basis"]
+              and "could not" not in res_hl_only["basis"]
+              and res_hl_only.get("wholeRunId") is None)
+
+        # The other direction: a check that over-fired on every row would
+        # turn the WHOLE answers above red; this pins it directly.
+        check("fs30 ALLOW: a row that does name its tested head passes the "
+              "head rule - no disqualification at all: %r"
+              % (M._full_disqualification(headed_older, ["echo x"]),),
+              M._full_disqualification(headed_older, ["echo x"]) is None
+              and M._full_disqualification(whole_row, ["echo x"]) is None)
+
+        # Two walks, two questions. Whole-bearing needs a head; a MEASURED
+        # full run (the selection-miss bound) does not, but every other rule
+        # still holds - a dirty head-less run is newer than both and is
+        # neither.
+        dirty_headless = _fs_row("run-dirty-headless", "2026-01-06T00:00:00Z",
+                                 None, ["echo x"], dirty_outside=["src/x.ts"])
+        ledger = [headed_older, headless_newer, dirty_headless]
+        whole_walk = M.newest_whole_bearing(ledger, ["echo x"])
+        measured_walk = M.newest_measured_full_run(ledger, ["echo x"])
+        check("fs31 the two walks differ by the head rule alone: the newest "
+              "whole-bearing run is the headed one, the newest measured full "
+              "run the newer head-less one, and the dirty head-less run is "
+              "neither: %r" % ([(b or {}).get("runId")
+                                for b in (whole_walk, measured_walk)],),
+              (whole_walk or {}).get("runId") == "run-headed"
+              and (measured_walk or {}).get("runId") == "run-headless")
+        check("fs32 a head-less row passes the measurement rule and fails "
+              "only the head rule, which is what makes it measured but not "
+              "whole-bearing: %r"
+              % ((M._measurement_disqualification(headless_newer, ["echo x"]),
+                  M._full_disqualification(headless_newer, ["echo x"])),),
+              M._measurement_disqualification(headless_newer, ["echo x"])
+              is None
+              and "tested head" in (M._full_disqualification(
+                  headless_newer, ["echo x"]) or ""))
 
         # --- reconcile: a full row moves nothing and refuses nothing -----------
         proj = _project(os.path.join(tmp, "recon"),

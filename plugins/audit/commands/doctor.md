@@ -271,5 +271,42 @@ run and how long ago it ran.
 here changes nothing about the exit code, and the release guard is the one place a PROVISIONAL
 phase actually blocks anything.
 
+## The `coupling` row — learned couplings that are gone, or no longer catching anything
+
+`_doctor_trail.check_couplings` asks separate questions of `meta.coupling`, below, and never
+folds them into one. **No `meta.coupling` is an OK row saying so.** A value that is not an array, or entries none
+of which names a test, is a WARNING pointing at `validate-manifest.py`.
+
+- **Is every coupled path still tracked?** One `git ls-files` over every test and source the
+  entries name. A path git does not track, or one outside the repository, is a WARNING naming the
+  entry and the path, with `audit-task.py uncouple --test <path>` as the fix. When git cannot be
+  asked — no git root, or `git ls-files` unable to run or exiting non-zero — the row is a WARNING saying the tracking half
+  was **not checked**, with the `git ls-files` command to run by hand; it never reads as every
+  path tracked. When every path is tracked, it is an OK row.
+- **Has any coupling stopped catching?** Asked only when `meta.fullGate` is declared — with none,
+  no run can age a coupling and the row is OK saying so. Each entry is aged by counting the green
+  measured full runs recorded after its `lastCaught`, or after its `learnedAt` when it was never
+  caught (`_doctor_trail._measured_run_moments`) — a run with no tested head counts, since it
+  still ran every coupled suite; only a full run does, so time with no full run ages nothing.
+  **A run whose mute excused that coupling's test is not counted for it**
+  (`_doctor_trail._muted_tests`, read off the row's own `muted` list and every step's): the row
+  reads green because the mute hid the failure, not because the test passed, so counting it would
+  read "failed every run" as "caught nothing". An entry at or past `UNCOUPLE_AFTER_FULL_RUNS` of
+  them is a **CANDIDATE for uncouple**
+  WARNING, with the constant printed as the basis and the `uncouple` command for each. An entry
+  carrying neither stamp, or one that does not read as a moment, is a WARNING that it cannot be
+  aged, with the `uncouple`-then-`couple` pair that learns it again — `audit-task.py couple
+  --test <path> --sources <its sources> --basis-run <runId of a full run it failed in>
+  --basis-head <sha that run examined> --phases <phase ids that run covered, if any>`, which
+  carries `--basis-run` and `--basis-head`, the flags `couple` refuses to learn without
+  (`_doctor_trail._relearn_fix`); `--phases` is optional. A ledger that cannot be read
+  in full ages nothing and says so. Otherwise an OK row names how many couplings were aged over
+  how many runs, and the oldest.
+
+**Neither half removes anything.** Every `uncouple` it prints ends by saying it is never run for you:
+dropping a coupling narrows the sign-off gate, and that is the operator's judgement, taken with
+`audit-task.py uncouple`. Advisory like the rest of this section: a WARNING here changes nothing
+about the exit code.
+
 Do not modify anything. Related: `/audit:status`, `/audit:init`, `/audit:panel`,
 `/audit:usage`, `/audit:layout`, `/audit:logs`, `/audit:review --full`.

@@ -33,9 +33,10 @@ variables:
 
 steps:
   # `fetchDepth: 0` — a FULL clone. Ancestry is what tells a `whole` full run apart
-  # from an `unknown` one (`/audit:status`'s stale-full-run condition below asks
-  # exactly that), and a shallow clone answers `unknown` for every phase regardless
-  # of what actually ran, because git has no history to walk.
+  # from an `unknown` one, and a shallow clone answers `unknown` for every phase
+  # regardless of what actually ran, because git has no history to walk. The
+  # `unknown-full-run` condition in the last step is the one that fails on that
+  # answer; `stale-full-run` never counts an `unknown` phase.
   - checkout: self
     fetchDepth: 0
 
@@ -88,11 +89,20 @@ steps:
         "$(manifest)" --full --record --writer "ci-$(Build.BuildId)"
     displayName: 'Third place: meta.fullGate, --full --record --writer'
     # a build's identity must not be split by session id - see README "The third place"
+    # This step RECORDS and learns nothing: it calls run-test-gate.py, not
+    # full-gate.py, because a coupling or a bug filed here would be filed into
+    # a checkout this build throws away. Learning from a red run happens in the
+    # clone that imports the shard below.
 
   # The evidence directory is published so a maintainer can bring the row this
   # runner recorded back into a clone with `import-evidence.py <manifest>
   # <shard.jsonl>` - the shard's own chain verifies before anything is copied, so
   # a hand-downloaded artifact is trusted the same way a `git`-carried file would be.
+  # For each imported row that is a red full run, the import prints
+  # `python3 <plugin>/scripts/governance/full-gate.py <manifest> --learn-from
+  # <runId> --project-dir <dir>`, every path absolute, and runs nothing; the
+  # maintainer runs that line as printed in the clone, which is where the
+  # coupling and the bug it files are kept.
   - task: PublishBuildArtifacts@1
     inputs:
       pathToPublish: docs/audit/evidence
@@ -102,6 +112,9 @@ steps:
 
   - script: |
       python "$(Agent.TempDirectory)/plugin-src/plugins/audit/scripts/status/audit-status.py" \
-        "$(manifest)" --gate --fail-on stale-full-run
-    displayName: 'Gate: no merged phase is provisional past a full run that already covers it'
+        "$(manifest)" --gate --fail-on stale-full-run,unknown-full-run
+    displayName: 'Gate: no merged phase is stale behind a full run, and none is unknown'
+    # stale-full-run: a full run recorded after the phase merged still does not
+    # contain it. unknown-full-run: the question could not be asked - no mergedHead,
+    # a shallow clone git cannot walk, or an unreadable ledger.
     condition: succeededOrFailed()

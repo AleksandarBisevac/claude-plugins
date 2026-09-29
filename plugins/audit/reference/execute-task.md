@@ -128,9 +128,28 @@ not need to.
      task's declared test files from the working tree over it, runs the command there,
      removes the throwaway in a `finally` and reports whether the removal held, and prints
      the `redFirst` block, naming the failing case it rests on — which must be one of the
-     task's own: a case present in the working tree's test file and absent from HEAD's.
-     `--case` narrows to the ids it names, held to that same test, so naming a case HEAD
-     already carries proves nothing. Its
+     task's own. A red counts only against a GREEN baseline: HEAD's own test files, run FIRST
+     with the same command on HEAD's code and every declared test file new at HEAD laid
+     over as an empty file, must be green — exit 0 with no failure, or an exit 5 whose one
+     runner's tally counts nothing run and nothing failed — and the fix run (the task's
+     test files on the working tree's code) must turn every failure green. A failure is
+     the task's own, a new case or an edited one, only where the runner locates it in a
+     declared test file (a pytest node id's path, unittest `-v`'s module matched by its
+     trailing components, or a run of exactly one declared file), the class the runner
+     names there defines it (its last real binding there, read by ast, and not replaced
+     later by an assignment to `<class>.<case>` or a `setattr` naming it literally; any
+     other attribute or subscript assignment binds nothing), and no test file anywhere in
+     HEAD's tree holds an ast-identical def under the same class chain and name; a house
+     run's one script is
+     compared whole, and a script identical to one of HEAD's test files is refused. So a
+     HEAD case the task's file imports, inherits or loads, a moved file's case and a copied
+     case are not credited unless the task edited the definition (under a house run, the
+     script), and a runner that locates no
+     failure is `could-not-prove`. Every run has a
+     fresh home and temp directory of its own. A command
+     already red at HEAD is `could-not-prove`: narrow the command to the task's cases.
+     `--case` narrows to the ids or labels it names, held to that same test: it must name a
+     case that failed an assertion in the task's run. Its
      `--introduces <symbol>` is where "the task introduces the symbol" is decided: an
      identifier absent from HEAD's copy of every declared implementation file and present
      in the working tree's, a final import/attribute/name error naming it, and a second run

@@ -137,7 +137,12 @@ def _cases(check):
         else:
             _panel_write._atomic_write_json(mpath, manifest)
         if git:
-            subprocess.run(["git", "init", "-q", proj], check=True,
+            # The branch is named, not inherited: an unnamed `init` takes
+            # whatever `init.defaultBranch` the machine's gitconfig carries, so
+            # a verb that checks "forks from main" read a different fixture on
+            # a runner whose git falls back to its built-in default.
+            subprocess.run(["git", "init", "-q", "-b", "main", proj],
+                           check=True,
                            stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL)
         return proj, mpath
@@ -1013,39 +1018,65 @@ def _cases(check):
             # which module it means in an import.
             lockmod = _loader.load_script("audit-lock.py", modname="audit_lock")
             check("k0 the lock library loads", lockmod is not None)
-            if lockmod is not None:
-                held = lockmod.main(
-                    ["acquire", "index", "--project", projk,
-                     "--note", "phase P2 run", "--session", "sess-A",
-                     "--pid", str(os.getpid())], out=lambda *_a: None)
-                check("k0b fixture lock taken", held == 0)
-                kb = open(mpathk, "rb").read()
-                code, txt = run(["add", "Locked out", "--phase", "P2",
-                                 "--project-dir", projk])
-                check("k1 a live holder refuses with exit 3", code == 3)
-                check("k1b ...printing the lock's own standard shape",
-                      "HELD by a live run" in txt and "sess-A" in txt)
-                check("k1c ...and nothing was written",
-                      open(mpathk, "rb").read() == kb)
-                deadp = subprocess.Popen([sys.executable, "-c", "pass"])
-                deadp.wait()
-                lpath = os.path.join(lockmod.lock_dir(projk), "index.lock")
-                info = lockmod.read_lock(lpath)
-                info["pid"] = deadp.pid
-                lockmod._write_lock(lpath, info)
-                code, txt = run(["add", "Stale", "--phase", "P2",
-                                 "--project-dir", projk])
-                check("k2 an abandoned holder -> exit 4, offering --takeover",
-                      code == 4 and "--takeover" in txt)
-                check("k2b ...but nothing is seized or written yet",
-                      open(mpathk, "rb").read() == kb)
-                code, txt = run(["add", "Taken over", "--phase", "P2",
-                                 "--project-dir", projk, "--takeover"])
-                check("k3 --takeover seizes the abandoned lock and writes",
-                      code == 0 and (task_in(mpathk, "P2.4") or {}).get("title")
-                      == "Taken over")
-                check("k4 the lock is released after the write",
-                      not os.path.exists(lpath))
+            # THE CALLER IS A STRANGER, AND THAT IS PINNED RATHER THAN FOUND.
+            # A claim is re-entered by a process carrying its token, or by the
+            # session or pid it was taken for - so the fixture lock is taken
+            # in a CHILD, whose token dies with it, and every name this run
+            # could go by is unset for the group. Taken in-process, the token
+            # travels in this process's environment and the verb reads the
+            # lock as its own; that only stayed hidden where the runner
+            # happened to name a different session.
+            _k_names = ("CLAUDE_CODE_SESSION_ID", "CLAUDE_PID",
+                        "AUDIT_LOCK_TOKENS")
+            _k_saved = dict((n, os.environ.get(n)) for n in _k_names)
+            for n in _k_names:
+                os.environ.pop(n, None)
+            try:
+                if lockmod is not None:
+                    held = subprocess.run(
+                        [sys.executable,
+                         os.path.join(_output.SCRIPTS_DIR, "governance",
+                                      "audit-lock.py"),
+                         "acquire", "index", "--project", projk,
+                         "--note", "phase P2 run", "--session", "sess-A",
+                         "--pid", str(os.getpid())],
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        universal_newlines=True)
+                    check("k0b fixture lock taken, by a child",
+                          held.returncode == 0, held.stdout)
+                    kb = open(mpathk, "rb").read()
+                    code, txt = run(["add", "Locked out", "--phase", "P2",
+                                     "--project-dir", projk])
+                    check("k1 a live holder refuses with exit 3", code == 3)
+                    check("k1b ...printing the lock's own standard shape",
+                          "HELD by a live run" in txt and "sess-A" in txt)
+                    check("k1c ...and nothing was written",
+                          open(mpathk, "rb").read() == kb)
+                    deadp = subprocess.Popen([sys.executable, "-c", "pass"])
+                    deadp.wait()
+                    lpath = os.path.join(lockmod.lock_dir(projk), "index.lock")
+                    info = lockmod.read_lock(lpath)
+                    info["pid"] = deadp.pid
+                    lockmod._write_lock(lpath, info)
+                    code, txt = run(["add", "Stale", "--phase", "P2",
+                                     "--project-dir", projk])
+                    check("k2 an abandoned holder -> exit 4, offering --takeover",
+                          code == 4 and "--takeover" in txt)
+                    check("k2b ...but nothing is seized or written yet",
+                          open(mpathk, "rb").read() == kb)
+                    code, txt = run(["add", "Taken over", "--phase", "P2",
+                                     "--project-dir", projk, "--takeover"])
+                    check("k3 --takeover seizes the abandoned lock and writes",
+                          code == 0 and (task_in(mpathk, "P2.4") or {}).get("title")
+                          == "Taken over")
+                    check("k4 the lock is released after the write",
+                          not os.path.exists(lpath))
+            finally:
+                for n, v in _k_saved.items():
+                    if v is None:
+                        os.environ.pop(n, None)
+                    else:
+                        os.environ[n] = v
         projl, mpathl = mk("k-legacy", base_manifest())
         open(mpathl + ".lock", "w").close()
         code, txt = run(["add", "X", "--phase", "P2", "--project-dir", projl])
@@ -3876,7 +3907,7 @@ def _cases(check):
               % (_pf_ids,),
               sorted(_pf_ids.values()) == [0, 0, 0]
               and "title" not in M.PROSE_POSITIONAL.get("scope", "")
-              and sorted(M.PROSE_POSITIONAL) == ["add", "add-phase"])
+              and sorted(M.PROSE_POSITIONAL) == ["add", "add-phase", "bug-add"])
         check("pf9 the class is a TABLE and not four call sites, and what is "
               "OUTSIDE it was measured rather than assumed: `--gate` carries a "
               "COMMAND (`make check ; true` trips the gap shapes and is exactly "
@@ -3886,14 +3917,20 @@ def _cases(check):
               "of a task's `outcome` are the operator's own sentence, one "
               "rendered by every report surface and one quoted back to the next "
               "executor. `--intent-basis` and a note's `--text` are the same "
-              "again, and so are a finding's `--issue` and `--resolution`; "
+              "again, and so are a finding's `--issue` and `--resolution` and "
+              "a bug's `--repro`, `--expected` and `--actual`; "
               "`move --to`, `--fix-task` and `--severity` are an id and a word, "
-              "which is why they are not: %r"
+              "and a mute's `--owner`, `--until` and `--bug` a name, a day and "
+              "an id, which is why they are not: %r"
               % (sorted(M.PROSE_FLAGS),),
               sorted(M.PROSE_FLAGS)
-              == ["description", "descriptive", "intent_basis", "issue",
-                  "no_evidence_reason", "outcome", "reason", "rename",
-                  "resolution", "review_outcome", "summary", "technical", "text"]
+              == ["actual", "description", "descriptive", "expected",
+                  "intent_basis", "issue", "no_evidence_reason", "outcome",
+                  "reason", "rename", "repro", "resolution", "review_outcome",
+                  "summary", "technical", "text"]
+              and "owner" not in M.PROSE_FLAGS
+              and "until" not in M.PROSE_FLAGS
+              and "bug" not in M.PROSE_FLAGS
               and "to" not in M.PROSE_FLAGS
               and "fix_task" not in M.PROSE_FLAGS
               and "severity" not in M.PROSE_FLAGS
@@ -4037,7 +4074,14 @@ def _cases(check):
                                "--resolution", "r"],
                    "resolve-finding": ["resolve-finding", "P2-R1",
                                        "--fix-task", "P2.1"],
-                   "correct": ["correct", "P2", "--summary", "s"]}
+                   "correct": ["correct", "P2", "--summary", "s"],
+                   # `bug-add` with the answers its door requires; `mute` and
+                   # `unmute` take no id, so `--test` alone reaches the
+                   # misplaced-flag check, which fires before either body.
+                   "bug-add": ["bug-add", "T", "--severity", "low",
+                               "--description", "d"],
+                   "mute": ["mute", "--test", "tests/test_vf.py"],
+                   "unmute": ["unmute", "--test", "tests/test_vf.py"]}
         _vf_leaks = []
         for _vfv in sorted(M.VERB_FLAGS):
             _vfknown = set(M.VERB_FLAGS[_vfv]) | set(M.UNIVERSAL_FLAGS)
@@ -4159,6 +4203,21 @@ def _cases(check):
             ["done", "P2.3", "--no-change", "--reason", "nothing to change",
              "--intent", "not-asked", "--intent-basis", "no diff to review",
              "--json", "--project-dir", _vf_nc_proj])[0]
+        # `bug-add`, `mute` and `unmute` in that order on one project: the
+        # bug the first files is the one the mute names, and the unmute lifts
+        # that mute. Every flag each row declares is passed.
+        _vf_mu_proj, _vf_mu_mp = mk("vf-mute", base_manifest())
+        _vf_ok["bug-add/--repro"] = run(
+            ["bug-add", "T", "--severity", "low", "--description", "d",
+             "--files", "src/a.ts", "--repro", "r", "--expected", "e",
+             "--actual", "a", "--json", "--project-dir", _vf_mu_proj])[0]
+        _vf_ok["mute/--bug"] = run(
+            ["mute", "--test", "tests/test_vf.py", "--reason", "r",
+             "--owner", "o", "--until", "2998-01-01", "--bug", "BUG-1",
+             "--json", "--project-dir", _vf_mu_proj])[0]
+        _vf_ok["unmute/--test"] = run(
+            ["unmute", "--test", "tests/test_vf.py", "--json",
+             "--project-dir", _vf_mu_proj])[0]
         check("vf4 SECOND-DIRECTION CASE: every flag a verb DOES read still "
               "works, and `--json` / `--project-dir` reach every verb - a guard "
               "that fires on a correct call is a guard somebody routes around "
@@ -4301,7 +4360,8 @@ def _cases(check):
               and M.readers_of("nonesuch") == [])
         # THE DEFENSIVE BRANCH, driven through its only door. `main` cannot
         # reach it: the probe re-parses an argv the real parser has already
-        # accepted, so the one shape it rejects is one `parse_args` rejects
+        # accepted, so the one shape it rejects is one `main`'s own parse
+        # (`parse_intermixed_args`) rejects
         # first and `main` returns before calling this. Called directly it is
         # reachable, and what it must NOT do is return an empty set - which
         # reads as "no flags were passed" and lets every misplaced flag through.
@@ -5630,8 +5690,10 @@ def _cases(check):
             row relies on a manifest already being at the project, and `seed`
             refuses for exactly that reason."""
             proj, mp = mk_empty(name)
-            subprocess.run(["git", "init", "-q", proj], check=True,
-                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Named branch, for the reason `mk()` gives.
+            subprocess.run(["git", "init", "-q", "-b", "main", proj],
+                           check=True, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
             _git_q(proj, ["add", "-A"])
             _git_q(proj, ["commit", "-qm", "fixture"])
             tree = os.path.join(tmp, name + "-wt")
@@ -5732,6 +5794,17 @@ def _cases(check):
             ["git", "-C", tw_rv_proj, "rev-parse", "HEAD"],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
         ).stdout.decode("utf-8", "replace").strip()
+        # The fixtures' branch is the fixture's own, never the machine's: an
+        # unnamed `git init` inherits `init.defaultBranch`, and the rows below
+        # read a phase that forks from main.
+        _tw_heads = [subprocess.run(
+            ["git", "-C", p, "symbolic-ref", "--short", "-q", "HEAD"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+        ).stdout.decode("utf-8", "replace").strip()
+            for p in (tw_seed_proj, tw_rv_proj)]
+        check("tw0 both git fixtures start on main whatever the runner's "
+              "gitconfig names as the default branch: %r" % (_tw_heads,),
+              _tw_heads == ["main", "main"])
         _tw_argv = (
             ("add", ["add", "Fresh", "--phase", "P2"]),
             ("add-phase", ["add-phase", "Later", "--outcome", "it ships"]),
@@ -5766,13 +5839,28 @@ def _cases(check):
             ("resolve-finding", ["resolve-finding", "P2-R1", "--fix-task", "P2.1",
                                  "--commit", _tw_rv_sha]),
             ("correct", ["correct", "P2", "--summary", "restated"]),
+            ("bug-add", ["bug-add", "Flaky", "--severity", "low",
+                         "--description", "d"]),
+            # ...and `unmute` lifts the mute `mute` wrote, on their own pair.
+            ("mute", ["mute", "--test", "tests/test_tw.py", "--reason", "r",
+                      "--owner", "o", "--until", "2998-01-01",
+                      "--bug", "BUG-3"]),
+            ("unmute", ["unmute", "--test", "tests/test_tw.py"]),
         )
         # `signoff` gets its own pair too: by its row every other row has left P2
         # with open work, which it rightly refuses.
         _tw_sign = base_manifest()
         _tw_sign["phases"][1]["tasks"][1]["status"] = "done"
         tw_sign_proj, _tw_sign_mp, tw_sign_tree = mk_pair("tw-sign", _tw_sign)
-        _tw_pairs = {"seed": (tw_seed_tree, tw_seed_proj),
+        # `mute` and `unmute` get a pair whose plan already holds the bug the
+        # mute names: on `tw_all` the bug `bug-add` files carries the linked
+        # worktree's branch suffix, which a literal here could not spell.
+        _tw_mu = base_manifest()
+        _tw_mu["bugs"] = [{"id": "BUG-3", "title": "flaky", "status": "open"}]
+        tw_mu_proj, _tw_mu_mp, tw_mu_tree = mk_pair("tw-mute", _tw_mu)
+        _tw_pairs = {"mute": (tw_mu_tree, tw_mu_proj),
+                     "unmute": (tw_mu_tree, tw_mu_proj),
+                     "seed": (tw_seed_tree, tw_seed_proj),
                      "signoff": (tw_sign_tree, tw_sign_proj),
                      "finding": (tw_rv_tree, tw_rv_proj),
                      "resolve-finding": (tw_rv_tree, tw_rv_proj),
@@ -5861,9 +5949,11 @@ def _cases(check):
             _pin(tw_proj, tw_proj)
             for _a in (["add", "T", "--project-dir", tw_proj],
                        ["add", "T", tw_mp], ["add", "T"]):
-                _tw_rows.append(M.resolve_basis(_tw_parser.parse_args(_a)))
+                _tw_rows.append(M.resolve_basis(
+                    _tw_parser.parse_intermixed_args(_a)))
             os.environ.pop("CLAUDE_PROJECT_DIR", None)
-            _tw_rows.append(M.resolve_basis(_tw_parser.parse_args(["add", "T"])))
+            _tw_rows.append(M.resolve_basis(
+                _tw_parser.parse_intermixed_args(["add", "T"])))
         finally:
             _unpin()
         check("tw9 every route names the table row that chose it and quotes "
@@ -8675,7 +8765,7 @@ def _cases(check):
                           "from meta.buildCommands"))
 
         # ---- (ff) a fix task opened after a red run is gated on ITS failing --
-        # suites -- `add --failing-from <runId>`. `_named_failing_suites`'s own
+        # suites -- `add --failing-from <runId>`. `named_failing_suites`'s own
         # rule: only a step whose `failingSuitesBasis` says the runner NAMED
         # them counts; a tail excerpt is not a list of failing tests.
         import _evidence_io as _ff_ev
@@ -8703,6 +8793,13 @@ def _cases(check):
             }
 
         ff_proj, ff_mp = mk("ff-failing-from", ff_manifest())
+        # ON DISK, because a named suite is only narrowed to when the gate can
+        # open it from the project root; this project is not a git one, so a
+        # spelling it does not hold has no tracked file to be pinned onto.
+        for _ff_rel in ("src/cart.test.ts", "src/spied.test.ts"):
+            os.makedirs(os.path.join(ff_proj, "src"), exist_ok=True)
+            with open(os.path.join(ff_proj, _ff_rel), "w") as fh:
+                fh.write("// a fixture suite\n")
         _ff_ev.append_row(ff_proj, {
             "v": 1, "runId": "RUN-VITEST", "ts": "2026-09-01T00:00:00Z",
             "scope": "phase", "phaseId": "P1", "status": "failed",
@@ -8792,6 +8889,28 @@ def _cases(check):
               codeff == 2 and "no run with this id" in txtff
               and task_in(ff_mp, "P1.5") is None)
 
+        # ---- a torn ledger line: the run is not called absent ---------------
+        # It may be the very line the read lost, so the refusal names the
+        # file that could not be read in full, as --caught's does.
+        fl_proj, fl_mp = mk("ff-torn", ff_manifest())
+        _ff_ev.append_row(fl_proj, {
+            "v": 1, "runId": "RUN-FL", "ts": "2026-09-01T00:00:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "failed",
+            "steps": []})
+        _fl_ledger = _ff_ev.ledger_files(fl_proj)[-1]
+        with open(_fl_ledger, "a", encoding="utf-8") as _fl_fh:
+            _fl_fh.write('{"v": 1, "runId": "RUN-FL-LOST", "ts": "2026-09\n')
+        codefl, txtfl = run(
+            ["add", "Fix from a lost run", "--phase", "P1",
+             "--project-dir", fl_proj, "--failing-from", "RUN-FL-LOST"])
+        check("ff4b RED-FIRST: --failing-from a run not among the readable "
+              "rows, with a ledger line torn, is refused exit 2 naming the "
+              "file that could not be read in full - never 'no such run': %r"
+              % ((codefl, txtfl[:300]),),
+              codefl == 2 and os.path.basename(_fl_ledger) in txtfl
+              and "could not be read" in txtfl
+              and "is in the evidence ledger" not in txtfl)
+
         # ---- ALLOW CASE: a PASSED row is refused, exit 2 --------------------
         _ff_ev.append_row(ff_proj, {
             "v": 1, "runId": "RUN-GREEN", "ts": "2026-09-01T00:15:00Z",
@@ -8822,6 +8941,408 @@ def _cases(check):
               "run named as failing: %r" % (txtff[:140],),
               codeff == 2 and "not phase P1's" in txtff
               and task_in(ff_mp, "P1.5") is None)
+
+        # ---- RED-FIRST: a MUTED step never narrows a fix task's gate -------
+        # A step the committed row marks `muted` failed under a quarantine: a
+        # known failure a bug already tracks, not something this run caught.
+        # Its named suites are the one reading that must stay out of the gate.
+        _ff_muted_basis = ("the 1 suite file(s) vitest named as failing, "
+                           "read from vitest's FAIL <file> line(s)")
+        _ff_ev.append_row(ff_proj, {
+            "v": 1, "runId": "RUN-MUTED", "ts": "2026-09-01T00:25:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "failed",
+            "steps": [{"name": "test", "exit": 1,
+                      "failingSuites": ["src/quarantined.test.ts"],
+                      "failingSuitesBasis": _ff_muted_basis,
+                      "muted": [{"test": "src/quarantined.test.ts",
+                                 "bugId": "BUG-1",
+                                 "until": "2999-01-01"}]}]})
+        _ff_muted_row = _ff_ev.row_by_run(
+            _ff_ev.read_rows(ff_proj)["rows"], "RUN-MUTED")
+        codeff, txtff = run(
+            ["add", "Fix beside a quarantine", "--phase", "P1",
+             "--project-dir", ff_proj, "--failing-from", "RUN-MUTED",
+             "--tests-add", "src/fix.test.ts: the case this task writes"])
+        check("ff7 RED-FIRST: a failed row whose ONLY failing suite sits on a "
+              "step the row marks muted yields no failing-from paths, so the "
+              "task falls through to its tests.add gate with the reason "
+              "printed - a quarantined suite never narrows a fix task's "
+              "gate: %r" % ((codeff, _ff_ev.named_failing_suites(
+                  (_ff_muted_row or {}).get("steps")),
+                  ff_tests("P1.5").get("gate"),
+                  ff_tests("P1.5").get("gateBasis")),),
+              _ff_muted_row is not None
+              and _ff_ev.named_failing_suites(
+                  _ff_muted_row.get("steps")) == []
+              and codeff == 0
+              and ff_tests("P1.5").get("gate")
+              == ["lint", "vitest run src/fix.test.ts"]
+              and ff_tests("P1.5").get("gateBasis") == "tests.add"
+              and "named no suite as failing" in txtff)
+        # ...and the direction a skip that is too wide breaks in: only the
+        # muted STEP is skipped, never the row it sits in.
+        _ff_mixed = {"steps": [
+            {"name": "unit", "exit": 1,
+             "failingSuites": ["src/quarantined.test.ts"],
+             "failingSuitesBasis": _ff_muted_basis,
+             "muted": [{"test": "src/quarantined.test.ts", "bugId": "BUG-1",
+                        "until": "2999-01-01"}]},
+            {"name": "e2e", "exit": 1, "failingSuites": ["src/live.test.ts"],
+             "failingSuitesBasis": _ff_muted_basis, "muted": []}]}
+        check("ff8 ALLOW CASE: in a row with a muted step and an unmuted one "
+              "(an empty `muted` is no quarantine), only the unmuted step's "
+              "suites are read: %r"
+              % (_ff_ev.named_failing_suites(_ff_mixed["steps"]),),
+              _ff_ev.named_failing_suites(_ff_mixed["steps"])
+              == ["src/live.test.ts"])
+
+        # ---- ONE READING: both verbs ask `_evidence_io`, never a copy ------
+        # A spy stands in for the shared reading and answers with a suite no
+        # row names, so a verb still reading its own copy would narrow to the
+        # row's real suite instead - the answer, not merely the call, has to
+        # come from the shared function.
+        _sp_calls = []
+        _sp_real = _ff_ev.named_failing_suites
+
+        def _sp_spy(steps):
+            _sp_calls.append(steps)
+            return ["src/spied.test.ts"]
+        _ff_ev.named_failing_suites = _sp_spy
+        try:
+            codesp, txtsp = run(
+                ["add", "Fix read through the spy", "--phase", "P1",
+                 "--project-dir", ff_proj, "--failing-from", "RUN-VITEST"])
+        finally:
+            _ff_ev.named_failing_suites = _sp_real
+        check("ff9 the failing-from gate is read through "
+              "`_evidence_io.named_failing_suites`, handed the row's steps, "
+              "and narrows to what IT answers: %r"
+              % ((codesp, _sp_calls, ff_tests("P1.6").get("gate")),),
+              M._evidence_io is _ff_ev
+              and not hasattr(M, "_named_failing_suites")
+              and codesp == 0 and len(_sp_calls) == 1
+              and isinstance(_sp_calls[0], list)
+              and _sp_calls[0][0].get("failingSuites")
+              == ["src/cart.test.ts"]
+              and ff_tests("P1.6").get("gate")
+              == ["lint", "vitest run src/spied.test.ts"])
+
+        # ---- a runner's spelling becomes a path FROM THE PROJECT ROOT -------
+        # The gate runs with the project root as its working directory, and a
+        # runner may name a suite relative to its own. A git project whose
+        # sibling spells `python3 -m pytest <path>`, holding suites chosen so
+        # each case's spelling answers differently: one unique suffix match,
+        # one shared by two tracked files, and one that exists from the root
+        # AND shares its suffix with a deeper tracked file.
+        rr_manifest = {
+            "meta": {"version": 2,
+                     "buildCommands": {"test": "python3 -m pytest"}},
+            "phases": [{"id": "P1", "title": "Api", "status": "in_progress",
+                        "testGate": ["test"],
+                        "tasks": [{
+                            "id": "P1.1", "title": "seed", "status": "done",
+                            "files": ["backend/a.py"],
+                            "tests": {"mode": "gate-only", "add": [],
+                                      "expectRedFirst": False,
+                                      "gate": ["python3 -m pytest "
+                                               "backend/tests/test_a.py"]}}]},
+                       # A phase with NO testGate, for ff20's last fallback.
+                       {"id": "P2", "title": "Bare", "status": "in_progress",
+                        "testGate": [],
+                        "tasks": [{
+                            "id": "P2.1", "title": "seed", "status": "done",
+                            "files": ["backend/b.py"],
+                            "tests": {"mode": "gate-only", "add": [],
+                                      "expectRedFirst": False,
+                                      "gate": ["python3 -m pytest "
+                                               "backend/tests/test_a.py"]}}]}],
+            "fileIndex": {"backend/a.py": ["P1.1"], "backend/b.py": ["P2.1"]},
+            "bugs": [],
+        }
+        rr_proj, rr_mp = mk("ff-runner-relative", rr_manifest, git=True)
+        rr_suites = ["backend/tests/test_a.py", "backend/tests/test_old.py",
+                     "backend/tests/test_dup.py", "tools/tests/test_dup.py",
+                     "tests/test_root.py", "backend/tests/test_root.py"]
+        for rel in rr_suites:
+            os.makedirs(os.path.dirname(os.path.join(rr_proj, rel)),
+                        exist_ok=True)
+            with open(os.path.join(rr_proj, rel), "w") as fh:
+                fh.write("def test_x():\n    assert True\n")
+        subprocess.run(["git", "-C", rr_proj, "add", "--"] + rr_suites,
+                       check=True, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL)
+        rr_named = ("the 1 suite file(s) pytest %s, read from its FAILED "
+                    "<path> lines" % (_ff_ev.NAMED_FAILING,))
+        # A file OUTSIDE the project, real on disk, so an absolute spelling of
+        # it is refused for where it lies and not for being missing.
+        rr_outside = os.path.join(tmp, "outside_test_x.py")
+        with open(rr_outside, "w") as fh:
+            fh.write("def test_x():\n    assert True\n")
+        # The step's recorded `name` is the gate entry the run ran; RUN-STEP's
+        # is a literal command distinct from the phase's `test`, so a gate
+        # read off the step and one read off the phase disagree.
+        rr_step_entry = "python3 -m pytest backend/tests"
+        for rr_id, rr_list, rr_name in (
+                ("RUN-REL", ["test_old.py"], "test"),
+                ("RUN-DUP", ["test_dup.py"], "test"),
+                ("RUN-ROOT", ["tests/test_root.py"], "test"),
+                ("RUN-PART", ["test_old.py", "test_dup.py"], "test"),
+                ("RUN-STEP", ["test_dup.py"], rr_step_entry),
+                ("RUN-ABSIN", [os.path.join(rr_proj, "backend", "tests",
+                                            "test_old.py")], "test"),
+                ("RUN-ABSOUT", [rr_outside], "test"),
+                ("RUN-DOT", ["./test_old.py"], "test")):
+            _ff_ev.append_row(rr_proj, {
+                "v": 1, "runId": rr_id, "ts": "2026-09-01T00:00:00Z",
+                "scope": "phase", "phaseId": "P1", "status": "failed",
+                "steps": [{"name": rr_name, "exit": 1,
+                           "failingSuites": rr_list,
+                           "failingSuitesBasis": rr_named}]})
+
+        def rr_tests(tid):
+            return (task_in(rr_mp, tid) or {}).get("tests") or {}
+
+        coderr, txtrr = run(
+            ["add", "Fix the old suite", "--phase", "P1",
+             "--project-dir", rr_proj, "--failing-from", "RUN-REL"])
+        check("ff10 RED-FIRST: a runner that names its suite relative to its "
+              "own directory (`test_old.py`) gets the one tracked path it "
+              "names, spelled from the project root the gate runs in - not "
+              "the runner's spelling, which that directory cannot open: %r"
+              % ((coderr, rr_tests("P1.2").get("gate"),
+                  rr_tests("P1.2").get("gateBasis")),),
+              coderr == 0
+              and rr_tests("P1.2").get("gate")
+              == ["python3 -m pytest backend/tests/test_old.py"]
+              and rr_tests("P1.2").get("gateBasis")
+              == "failing-from-run:RUN-REL")
+
+        coderr, txtrr = run(
+            ["add", "Fix a suite two files could be", "--phase", "P1",
+             "--project-dir", rr_proj, "--failing-from", "RUN-DUP",
+             "--tests-add", "backend/tests/test_new.py: the case it writes"])
+        check("ff11 a spelling two tracked files end in names neither of "
+              "them, and a task WITH tests.add still gets the failed step's "
+              "own entry (`test`) rather than its tests.add narrowing, which "
+              "would run neither suite - the resolver's reason, naming both, "
+              "printed before the basis: %r"
+              % ((coderr, rr_tests("P1.3").get("gate"),
+                  rr_tests("P1.3").get("gateBasis"),
+                  [ln for ln in txtrr.splitlines() if "names each" in ln]),),
+              coderr == 0
+              and rr_tests("P1.3").get("gate") == ["test"]
+              and rr_tests("P1.3").get("gateBasis")
+              == "failing-from-run:RUN-DUP"
+              and "names each of backend/tests/test_dup.py, "
+                  "tools/tests/test_dup.py" in txtrr
+              and "so no suite is narrowed to" in txtrr
+              and txtrr.index("names each of") < txtrr.index(
+                  "so no suite is narrowed to"))
+
+        coderr, txtrr = run(
+            ["add", "Fix the root suite", "--phase", "P1",
+             "--project-dir", rr_proj, "--failing-from", "RUN-ROOT"])
+        check("ff12 ONE RULE FOR AMBIGUITY: a spelling that exists from the "
+              "project root while a deeper tracked file ends in it too is "
+              "ambiguous - the resolver's own rule, that an exact-equal path "
+              "breaks no tie - so it gates on the failed step, naming both: "
+              "%r" % ((coderr, rr_tests("P1.4").get("gate"),
+                       [ln for ln in txtrr.splitlines()
+                        if "names each" in ln]),),
+              coderr == 0
+              and rr_tests("P1.4").get("gate") == ["test"]
+              and rr_tests("P1.4").get("gateBasis")
+              == "failing-from-run:RUN-ROOT"
+              and "names each of backend/tests/test_root.py, "
+                  "tests/test_root.py" in txtrr)
+
+        coderr, txtrr = run(
+            ["add", "Fix one of two", "--phase", "P1",
+             "--project-dir", rr_proj, "--failing-from", "RUN-PART",
+             "--tests-add", "backend/tests/test_part.py: the case it writes"])
+        check("ff13 ONE UNRESOLVED SUITE REFUSES THEM ALL: a run naming one "
+              "pinnable suite and one ambiguous one narrows to NEITHER - a "
+              "gate over the pinnable one alone could pass while the other "
+              "failure never runs: %r"
+              % ((coderr, rr_tests("P1.5").get("gate"),
+                  rr_tests("P1.5").get("gateBasis")),),
+              coderr == 0
+              and rr_tests("P1.5").get("gate") == ["test"]
+              and rr_tests("P1.5").get("gateBasis")
+              == "failing-from-run:RUN-PART"
+              and "names each of" in txtrr
+              and "test_old.py" not in " ".join(
+                  rr_tests("P1.5").get("gate") or []))
+
+        coderr, txtrr = run(
+            ["add", "Fix from a literal step", "--phase", "P1",
+             "--project-dir", rr_proj, "--failing-from", "RUN-STEP",
+             "--files", "backend/a.py",
+             "--tests-add", "backend/tests/test_step.py: the case it writes"])
+        check("ff15 THE FAILURE STAYS IN THE GATE: a task with tests.add AND "
+              "files, from a run whose failed step ran a literal command and "
+              "named an unpinnable suite, is gated on THAT step's recorded "
+              "entry - not its own paths, and not the phase's `test`: %r"
+              % ((coderr, rr_tests("P1.6").get("gate"),
+                  rr_tests("P1.6").get("gateBasis")),),
+              coderr == 0
+              and rr_tests("P1.6").get("gate") == [rr_step_entry]
+              and rr_tests("P1.6").get("gateBasis")
+              == "failing-from-run:RUN-STEP"
+              and "(%s)" % (rr_step_entry,) in txtrr)
+
+        coderr, txtrr = run(
+            ["add", "Fix from an absolute path inside", "--phase", "P1",
+             "--project-dir", rr_proj, "--failing-from", "RUN-ABSIN"])
+        check("ff16 an ABSOLUTE spelling inside the project is written "
+              "relative to it - no machine path reaches the plan: %r"
+              % ((coderr, rr_tests("P1.7").get("gate")),),
+              coderr == 0
+              and rr_tests("P1.7").get("gate")
+              == ["python3 -m pytest backend/tests/test_old.py"]
+              and rr_proj not in " ".join(rr_tests("P1.7").get("gate") or []))
+
+        coderr, txtrr = run(
+            ["add", "Fix from an absolute path outside", "--phase", "P1",
+             "--project-dir", rr_proj, "--failing-from", "RUN-ABSOUT"])
+        check("ff17 an ABSOLUTE spelling OUTSIDE the project is refused with "
+              "the reason and gates on the failed step - the file exists, so "
+              "only where it lies can refuse it: %r"
+              % ((coderr, rr_tests("P1.8").get("gate"),
+                  [ln for ln in txtrr.splitlines() if "outside" in ln]),),
+              coderr == 0
+              and rr_tests("P1.8").get("gate") == ["test"]
+              and "lies outside the project" in txtrr
+              and rr_outside not in " ".join(
+                  rr_tests("P1.8").get("gate") or []))
+
+        coderr, txtrr = run(
+            ["add", "Fix from a dot-slash spelling", "--phase", "P1",
+             "--project-dir", rr_proj, "--failing-from", "RUN-DOT"])
+        check("ff18 `./test_old.py` is normalized before the resolver reads "
+              "it, and pins the one tracked path it names: %r"
+              % ((coderr, rr_tests("P1.9").get("gate")),),
+              coderr == 0
+              and rr_tests("P1.9").get("gate")
+              == ["python3 -m pytest backend/tests/test_old.py"])
+
+        # ---- a failed step with NO recorded `name` -------------------------
+        # Nothing names the entry that ran the failure, so the gate is the
+        # phase's testGate, wide - the gate the run was measured against -
+        # and only a phase with no testGate falls to the ordinary arms.
+        for rr_phase, rr_id in (("P1", "RUN-NONAME"), ("P2", "RUN-NONAME2")):
+            _ff_ev.append_row(rr_proj, {
+                "v": 1, "runId": rr_id, "ts": "2026-09-01T00:00:00Z",
+                "scope": "phase", "phaseId": rr_phase, "status": "failed",
+                "steps": [{"exit": 1, "failingSuites": ["test_dup.py"],
+                           "failingSuitesBasis": rr_named}]})
+        coderr, txtrr = run(
+            ["add", "Fix from a nameless step", "--phase", "P1",
+             "--project-dir", rr_proj, "--failing-from", "RUN-NONAME",
+             "--tests-add", "backend/tests/test_nn.py: the case it writes"])
+        coden2, txtn2 = run(
+            ["add", "Fix from a nameless step, bare phase", "--phase", "P2",
+             "--project-dir", rr_proj, "--failing-from", "RUN-NONAME2",
+             "--tests-add", "backend/tests/test_nn2.py: the case it writes"])
+        check("ff20 a failed step with no recorded name and an unpinnable "
+              "suite gates on the phase's testGate, wide, saying so - not on "
+              "this task's tests.add; with no testGate either, the ordinary "
+              "arms answer, the reason still printed first: %r"
+              % ((coderr, rr_tests("P1.10").get("gate"),
+                  rr_tests("P1.10").get("gateBasis"),
+                  [ln for ln in txtrr.splitlines() if "  gate: " in ln],
+                  coden2,
+                  (task_in(rr_mp, "P2.2") or {}).get("tests", {}).get("gate"),
+                  (task_in(rr_mp, "P2.2") or {}).get("tests", {}).get(
+                      "gateBasis")),),
+              coderr == 0
+              and rr_tests("P1.10").get("gate") == ["test"]
+              and rr_tests("P1.10").get("gateBasis")
+              == "failing-from-run:RUN-NONAME"
+              and "recorded no gate entry for its failed step" in txtrr
+              and coden2 == 0
+              and (task_in(rr_mp, "P2.2") or {}).get("tests", {}).get("gate")
+              == ["python3 -m pytest backend/tests/test_nn2.py"]
+              and (task_in(rr_mp, "P2.2") or {}).get("tests", {}).get(
+                  "gateBasis") == "tests.add"
+              and "names each of" in txtn2 and "so falling through" in txtn2)
+
+        # A NEWLINE IN A TRACKED PATH, at the unit level: a file name holding
+        # one cannot be created on every platform CI runs on, so the listing
+        # is handed in. It is the ONLY suffix match, so the resolver would
+        # answer with it and nothing but the control-character refusal
+        # keeps it out of a one-line shell gate.
+        _nl_path = "nl" + chr(10) + "dir/test_nl.py"
+
+        def _nl_listing(_root, _args, timeout=60):
+            return 0, "backend/a.py\0%s\0" % (_nl_path,), ""
+        _nl_got = M._root_spelled_suites(["test_nl.py"], rr_proj,
+                                         run=_nl_listing)
+        check("ff19 a tracked candidate holding a newline is refused, never "
+              "returned into a gate: %r" % (_nl_got,),
+              _nl_got[0] is None
+              and "control character" in (_nl_got[1] or "")
+              and chr(10) not in (_nl_got[1] or ""))
+
+        # ---- git CANNOT list, so there is no candidate set at all -----------
+        # `ff_proj` is not a git repository. A spelling that is not on disk
+        # there must gate on the failed step naming the listing failure - an
+        # unlisted tree read as an empty one would print a "no candidate"
+        # reason that blames the spelling for what git never said. The spy on
+        # `_git` counts `ls-files` calls: each add asks once, and a suite
+        # that exists from the root is kept as written when git cannot
+        # answer, since nothing is left that could show it a twin.
+        _ff_ev.append_row(ff_proj, {
+            "v": 1, "runId": "RUN-NOGIT", "ts": "2026-09-01T00:30:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "failed",
+            "steps": [{"name": "test", "exit": 1,
+                       "failingSuites": ["gone.test.ts"],
+                       "failingSuitesBasis": ("the 1 suite file(s) vitest "
+                                              "named as failing, read from "
+                                              "vitest's FAIL <file> line(s)")}]})
+        _ls_calls = []
+        _ls_real = M._worktrees._git
+
+        def _ls_spy(git_root, args, timeout=60):
+            if list(args)[:1] == ["ls-files"]:
+                _ls_calls.append(git_root)
+            return _ls_real(git_root, args, timeout=timeout)
+        M._worktrees._git = _ls_spy
+        try:
+            codeng, txtng = run(
+                ["add", "Fix where git cannot list", "--phase", "P1",
+                 "--project-dir", ff_proj, "--failing-from", "RUN-NOGIT",
+                 "--tests-add", "src/nogit.test.ts: the case it writes"])
+            _ls_after_nogit = len(_ls_calls)
+            codeon, _txton = run(
+                ["add", "Fix a suite on disk", "--phase", "P1",
+                 "--project-dir", ff_proj, "--failing-from", "RUN-VITEST"])
+        finally:
+            M._worktrees._git = _ls_real
+        check("ff14 FAIL LOUD: where git cannot list the tracked files, a "
+              "spelling not on disk gates on the failed step's entry with "
+              "the LISTING failure named, and no gate entry carries the "
+              "unresolved spelling; a suite that exists from the root is "
+              "then kept as written, git asked once per add: %r"
+              % ((codeng, ff_tests("P1.7").get("gate"),
+                  ff_tests("P1.7").get("gateBasis"),
+                  [ln for ln in txtng.splitlines() if "could not be listed"
+                   in ln], _ls_calls, codeon,
+                  ff_tests("P1.8").get("gate")),),
+              codeng == 0
+              and ff_tests("P1.7").get("gate") == ["test"]
+              and ff_tests("P1.7").get("gateBasis")
+              == "failing-from-run:RUN-NOGIT"
+              and "gone.test.ts is not on disk from the project root, and "
+                  "the tracked files could not be listed (git ls-files: "
+                  in txtng
+              and "no candidate path" not in txtng
+              and "gone.test.ts" not in " ".join(
+                  ff_tests("P1.7").get("gate") or [])
+              and _ls_after_nogit == 1
+              and codeon == 0 and len(_ls_calls) == 2
+              and ff_tests("P1.8").get("gate")
+              == ["lint", "vitest run src/cart.test.ts"])
 
         # ---- (cp) couple / uncouple: `meta.coupling`, an index-only write --
         import _evidence_io as _cp_ev
@@ -8989,6 +9510,407 @@ def _cases(check):
               "would hide that nothing was there to drop: %r" % (txtcp6[:140],),
               codecp6 == 2 and "carries no meta.coupling entry" in txtcp6)
 
+        # ---- (cc) couple --caught: a coupling that earned its place --------
+        # `lastCaught` is the ts of a third-place (scope `full`) run whose
+        # runner NAMED the coupled test as failing. Without a writer, every
+        # coupling ages from `learnedAt` as though it never caught anything.
+        cc_proj, cc_mp = mk("cc-caught", base_manifest())
+        _cc_named = ("the 1 suite file(s) pytest named as failing, read "
+                     "from pytest's FAILED <path> line(s)")
+
+        def cc_row(run_id, ts, scope, suites, basis, **extra):
+            step = {"name": "test", "exit": 1, "failingSuites": suites,
+                    "failingSuitesBasis": basis}
+            step.update(extra)
+            row = {"v": 1, "runId": run_id, "ts": ts, "scope": scope,
+                   "status": "failed", "steps": [step]}
+            if scope == "phase":
+                row["phaseId"] = "P2"
+            _cp_ev.append_row(cc_proj, row)
+
+        def cc_entry():
+            return next((e for e in cp_coupling(cc_mp)
+                         if e.get("test") == "tests/test_c.py"), None)
+
+        cc_row("RUN-CC-MISS", "2026-09-01T00:00:00Z", "phase",
+               ["tests/test_c.py"], _cc_named)
+        codecc0, _ = run(
+            ["couple", "--test", "tests/test_c.py", "--sources", "src/c.ts",
+             "--basis-run", "RUN-CC-MISS", "--basis-head", "deadbeef",
+             "--project-dir", cc_proj])
+        _cc_first = dict(cc_entry() or {})
+        check("cc0 a coupling first written from a miss carries no "
+              "lastCaught: %r" % ((codecc0, _cc_first),),
+              codecc0 == 0 and _cc_first.get("test") == "tests/test_c.py"
+              and "lastCaught" not in _cc_first)
+
+        cc_row("RUN-CC-FULL", "2026-09-03T00:00:00Z", "full",
+               ["tests/test_c.py"], _cc_named)
+        codecc1, txtcc1 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught", "RUN-CC-FULL",
+             "--project-dir", cc_proj])
+        _cc_after = dict(cc_entry() or {})
+        _cc_rows = cp_journal(cc_proj, "coupling.caught")
+        _cc_det = (_cc_rows[0].get("details") or {}) if _cc_rows else {}
+        check("cc1 RED-FIRST: `couple --test <coupled> --caught <runId>` on a "
+              "full row whose runner NAMED the test as failing sets "
+              "lastCaught to that row's ts, changes nothing else on the "
+              "entry, and writes exactly one `coupling.caught` journal row - "
+              "on current code `--caught` is not a flag at all: %r"
+              % ((codecc1, txtcc1[:160], _cc_after, _cc_rows),),
+              codecc1 == 0
+              and _cc_after.get("lastCaught") == "2026-09-03T00:00:00Z"
+              and dict((k, v) for k, v in _cc_after.items()
+                       if k != "lastCaught") == _cc_first
+              and len(_cc_rows) == 1
+              and _cc_det.get("field") == "tests/test_c.py"
+              and _cc_det.get("runId") == "RUN-CC-FULL"
+              and _cc_det.get("to") == "2026-09-03T00:00:00Z")
+
+        # ---- MUTATION GUARD: a TAIL basis is not a runner naming a test ----
+        cc_row("RUN-CC-TAIL", "2026-09-04T00:00:00Z", "full",
+               ["tests/test_c.py"],
+               "no runner this gate can count recognised; the last lines of "
+               "its output are kept instead")
+        codecc2, txtcc2 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught", "RUN-CC-TAIL",
+             "--project-dir", cc_proj])
+        check("cc2 MUTATION GUARD: a full row whose failing suites came off a "
+              "TAIL, not a runner's own summary, is refused exit 2 naming the "
+              "run, and lastCaught stays where cc1 put it: %r"
+              % ((codecc2, txtcc2[:200], cc_entry()),),
+              codecc2 == 2 and "RUN-CC-TAIL" in txtcc2
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-03T00:00:00Z"
+              and len(cp_journal(cc_proj, "coupling.caught")) == 1)
+
+        # ---- ALLOW CASES: --caught never creates, and reads only `full` ----
+        cc_row("RUN-CC-OTHER", "2026-09-05T00:00:00Z", "full",
+               ["tests/test_d.py"], _cc_named)
+        codecc3, txtcc3 = run(
+            ["couple", "--test", "tests/test_d.py", "--caught",
+             "RUN-CC-OTHER", "--project-dir", cc_proj])
+        check("cc3 ALLOW CASE: --caught on a test that is NOT coupled is "
+              "refused exit 2 and creates no entry - a catch is recorded "
+              "against a coupling, never in place of one: %r"
+              % ((codecc3, txtcc3[:200], cp_coupling(cc_mp)),),
+              codecc3 == 2 and "carries no meta.coupling entry" in txtcc3
+              and [e.get("test") for e in cp_coupling(cc_mp)]
+              == ["tests/test_c.py"])
+        cc_row("RUN-CC-PHASE", "2026-09-06T00:00:00Z", "phase",
+               ["tests/test_c.py"], _cc_named)
+        codecc4, txtcc4 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught",
+             "RUN-CC-PHASE", "--project-dir", cc_proj])
+        check("cc4 ALLOW CASE: a phase-scope row naming the test is refused "
+              "exit 2, naming its scope - only a third-place run is a catch "
+              "the coupling itself earned: %r" % ((codecc4, txtcc4[:200]),),
+              codecc4 == 2 and "'phase'" in txtcc4
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-03T00:00:00Z")
+        codecc5, txtcc5 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught",
+             "RUN-CC-OTHER", "--project-dir", cc_proj])
+        check("cc5 ALLOW CASE: a full row that named OTHER suites is refused "
+              "exit 2 - it caught something, not this test: %r"
+              % ((codecc5, txtcc5[:200]),),
+              codecc5 == 2 and "tests/test_c.py" in txtcc5
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-03T00:00:00Z")
+        cc_row("RUN-CC-MUTED", "2026-09-07T00:00:00Z", "full",
+               ["tests/test_c.py"], _cc_named,
+               muted=[{"test": "tests/test_c.py", "bugId": "BUG-1",
+                       "until": "2999-01-01"}])
+        codecc6, txtcc6 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught",
+             "RUN-CC-MUTED", "--project-dir", cc_proj])
+        check("cc6 ALLOW CASE: a full row whose step naming the test was "
+              "MUTED is refused exit 2 - a quarantined failure is not a "
+              "catch: %r" % ((codecc6, txtcc6[:200]),),
+              codecc6 == 2
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-03T00:00:00Z")
+        codecc7, txtcc7 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught",
+             "RUN-CC-FULL", "--sources", "src/z.ts",
+             "--project-dir", cc_proj])
+        check("cc7 ALLOW CASE: --caught with --sources is refused exit 2 and "
+              "the sources stay as they were - recording a catch never "
+              "changes what the test is coupled to: %r"
+              % ((codecc7, txtcc7[:200], cc_entry()),),
+              codecc7 == 2 and "--sources" in txtcc7
+              and (cc_entry() or {}).get("sources") == ["src/c.ts"])
+        codecc8, txtcc8 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught", "NO-SUCH-RUN",
+             "--project-dir", cc_proj])
+        check("cc8 ALLOW CASE: an unknown runId is refused exit 2: %r"
+              % ((codecc8, txtcc8[:200]),),
+              codecc8 == 2 and "no run with this id" in txtcc8)
+        cc_row("RUN-CC-OLD", "2026-09-02T00:00:00Z", "full",
+               ["tests/test_c.py"], _cc_named)
+        codecc9, txtcc9 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught", "RUN-CC-OLD",
+             "--project-dir", cc_proj])
+        check("cc9 a catch OLDER than the recorded lastCaught writes nothing "
+              "and adds no journal row, but exits 0 saying lastCaught "
+              "already records a newer catch - newest only, and an "
+              "out-of-order import is not an error: %r"
+              % ((codecc9, txtcc9[:200], cc_entry()),),
+              codecc9 == 0 and "already records" in txtcc9
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-03T00:00:00Z"
+              and len(cp_journal(cc_proj, "coupling.caught")) == 1)
+        codecc10, txtcc10 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught", "RUN-CC-FULL",
+             "--project-dir", cc_proj])
+        check("cc10 the SAME run replayed is idempotent: exit 0, nothing "
+              "written, no second journal row: %r"
+              % ((codecc10, txtcc10[:200], cc_entry()),),
+              codecc10 == 0 and "already records" in txtcc10
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-03T00:00:00Z"
+              and len(cp_journal(cc_proj, "coupling.caught")) == 1)
+
+        # ---- MUTATION GUARD: moments are compared, never text ---------------
+        # `2026-09-03T01:00:00+02:00` sorts AFTER `2026-09-03T00:00:00Z` as
+        # text and is an hour BEFORE it as a moment; `...00.5Z` sorts before
+        # `...00Z` as text ('.' < 'Z') and is half a second after it.
+        cc_row("RUN-CC-OFFSET", "2026-09-03T01:00:00+02:00", "full",
+               ["tests/test_c.py"], _cc_named)
+        codecc11, txtcc11 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught",
+             "RUN-CC-OFFSET", "--project-dir", cc_proj])
+        check("cc11 MUTATION GUARD: a row whose ts is LATER as text but "
+              "EARLIER as a moment (an offset against Z) writes nothing: %r"
+              % ((codecc11, txtcc11[:200], cc_entry()),),
+              codecc11 == 0 and "already records" in txtcc11
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-03T00:00:00Z"
+              and len(cp_journal(cc_proj, "coupling.caught")) == 1)
+        cc_row("RUN-CC-FRAC", "2026-09-03T00:00:00.5Z", "full",
+               ["tests/test_c.py"], _cc_named)
+        codecc12, txtcc12 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught",
+             "RUN-CC-FRAC", "--project-dir", cc_proj])
+        check("cc12 MUTATION GUARD: a row whose ts is EARLIER as text but "
+              "LATER as a moment (a fraction against Z) is written: %r"
+              % ((codecc12, txtcc12[:200], cc_entry()),),
+              codecc12 == 0
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-03T00:00:00.5Z"
+              and len(cp_journal(cc_proj, "coupling.caught")) == 2)
+
+        # ---- ALLOW CASE: a ts no parser reads is refused, naming it --------
+        # Written as a raw ledger line, so no writer's own normalising can
+        # repair the value before the verb sees it.
+        with open(_cp_ev.ledger_files(cc_proj)[-1], "a",
+                  encoding="utf-8") as _cc_fh:
+            _cc_fh.write(json.dumps({
+                "v": 1, "runId": "RUN-CC-BADTS", "ts": "last tuesday",
+                "scope": "full", "status": "failed",
+                "steps": [{"name": "test", "exit": 1,
+                           "failingSuites": ["tests/test_c.py"],
+                           "failingSuitesBasis": _cc_named}]}) + "\n")
+        codecc13, txtcc13 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught",
+             "RUN-CC-BADTS", "--project-dir", cc_proj])
+        check("cc13 ALLOW CASE: a row whose ts does not parse as a moment is "
+              "refused exit 2, naming the ts: %r"
+              % ((codecc13, txtcc13[:200], cc_entry()),),
+              codecc13 == 2 and "last tuesday" in txtcc13
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-03T00:00:00.5Z")
+
+        # ---- ALLOW CASE: a torn ledger line is named, never silence --------
+        # A run not found among the READABLE rows may sit on the line the read
+        # lost, so both lookups say which file could not be read in full.
+        tl_proj, tl_mp = mk("cc-torn", base_manifest())
+        _cp_ev.append_row(tl_proj, {
+            "v": 1, "runId": "RUN-TL", "ts": "2026-09-01T00:00:00Z",
+            "scope": "phase", "phaseId": "P2", "status": "failed",
+            "steps": []})
+        codetl0, _ = run(
+            ["couple", "--test", "tests/test_t.py", "--sources", "src/t.ts",
+             "--basis-run", "RUN-TL", "--basis-head", "deadbeef",
+             "--project-dir", tl_proj])
+        _tl_ledger = _cp_ev.ledger_files(tl_proj)[-1]
+        with open(_tl_ledger, "a", encoding="utf-8") as _tl_fh:
+            _tl_fh.write('{"v": 1, "runId": "RUN-TL-LOST", "ts": "2026-09\n')
+        _tl_name = os.path.basename(_tl_ledger)
+        codetl1, txttl1 = run(
+            ["couple", "--test", "tests/test_t.py", "--caught", "RUN-TL-LOST",
+             "--project-dir", tl_proj])
+        codetl2, txttl2 = run(
+            ["couple", "--test", "tests/test_u.py", "--sources", "src/u.ts",
+             "--basis-run", "RUN-TL-LOST", "--basis-head", "deadbeef",
+             "--project-dir", tl_proj])
+        check("cc14 ALLOW CASE: with a torn ledger line, a run not found is "
+              "refused exit 2 by BOTH --caught and --basis-run, each naming "
+              "the file that could not be read in full: %r"
+              % ((codetl0, codetl1, txttl1[:240], codetl2, txttl2[:240]),),
+              codetl0 == 0
+              and codetl1 == 2 and _tl_name in txttl1
+              and "could not be read" in txttl1
+              and codetl2 == 2 and _tl_name in txttl2
+              and "could not be read" in txttl2
+              and [e.get("test") for e in cp_coupling(tl_mp)]
+              == ["tests/test_t.py"])
+
+        # ---- ONE READING, the --caught half: the spy answers WITHOUT the ---
+        # coupled test, so a verb reading its own copy would accept a row that
+        # really names it - the refusal has to come from the shared function.
+        cc_row("RUN-CC-SPY", "2026-09-09T00:00:00Z", "full",
+               ["tests/test_c.py"], _cc_named)
+        _sp_calls2 = []
+
+        def _sp_spy2(steps):
+            _sp_calls2.append(steps)
+            return ["tests/other.py"]
+        _cp_ev.named_failing_suites = _sp_spy2
+        try:
+            codesp2, txtsp2 = run(
+                ["couple", "--test", "tests/test_c.py", "--caught",
+                 "RUN-CC-SPY", "--project-dir", cc_proj])
+        finally:
+            _cp_ev.named_failing_suites = _sp_real
+        check("cc15 `--caught` reads the catch through "
+              "`_evidence_io.named_failing_suites`, handed the row's steps, "
+              "and refuses when IT does not name the test: %r"
+              % ((codesp2, txtsp2[:200], len(_sp_calls2)),),
+              codesp2 == 2 and len(_sp_calls2) == 1
+              and isinstance(_sp_calls2[0], list)
+              and _sp_calls2[0][0].get("failingSuites") == ["tests/test_c.py"]
+              and "tests/other.py" in txtsp2
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-03T00:00:00.5Z")
+
+        # ---- a runner naming the suite relative to its own directory -------
+        # `_evidence_io.listed_by` is the one reading of "this suite is one of
+        # those": equal, or either a `/`-bounded path suffix of the other.
+        cc_row("RUN-CC-REL", "2026-09-10T00:00:00Z", "full",
+               ["test_c.py"], _cc_named)
+        _cc_caught_before = len(cp_journal(cc_proj, "coupling.caught"))
+        codecc16, txtcc16 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught", "RUN-CC-REL",
+             "--project-dir", cc_proj])
+        check("cc16 RED-FIRST: a full row whose runner named test_c.py - the "
+              "coupled tests/test_c.py, relative to the runner's own "
+              "directory - is a catch, recorded under the PLAN'S key and no "
+              "other: %r" % ((codecc16, txtcc16[:200], cp_coupling(cc_mp)),),
+              codecc16 == 0
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-10T00:00:00Z"
+              and [e.get("test") for e in cp_coupling(cc_mp)]
+              == ["tests/test_c.py"]
+              and len(cp_journal(cc_proj, "coupling.caught"))
+              == _cc_caught_before + 1)
+        # ALLOW CASE: the same basename under ANOTHER directory is neither
+        # equal to the key nor a `/`-bounded suffix of it, either way round,
+        # so `listed_by` says it is a different suite - the mutation
+        # 'compare basenames' is what this is here to turn red.
+        cc_row("RUN-CC-ELSEWHERE", "2026-09-11T00:00:00Z", "full",
+               ["other/test_c.py"], _cc_named)
+        codecc17, txtcc17 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught",
+             "RUN-CC-ELSEWHERE", "--project-dir", cc_proj])
+        check("cc17 ALLOW CASE: a full row naming other/test_c.py - the same "
+              "basename in another directory - is refused exit 2, the "
+              "refusal names what the runner named, and lastCaught stays "
+              "where cc16 put it: %r" % ((codecc17, txtcc17[:240]),),
+              codecc17 == 2 and "other/test_c.py" in txtcc17
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-10T00:00:00Z"
+              and len(cp_journal(cc_proj, "coupling.caught"))
+              == _cc_caught_before + 1)
+
+        # ---- one bare name, two coupled suites carrying it -----------------
+        # `test_c.py` is listed by BOTH pkg_a/ and pkg_b/tests/test_c.py, so
+        # the run cannot say which one failed; crediting either would reset
+        # the age of a coupling that caught nothing.
+        am_manifest = base_manifest()
+        am_manifest["meta"]["coupling"] = [
+            {"test": test, "sources": [src],
+             "basis": {"runId": "RUN-AM-OLD", "head": "deadbeef",
+                       "phases": ["P2"]},
+             "learnedAt": "2026-01-01T00:00:00Z"}
+            for test, src in (("pkg_a/tests/test_c.py", "pkg_a/c.ts"),
+                              ("pkg_b/tests/test_c.py", "pkg_b/c.ts"))]
+        am_proj, am_mp = mk("cc-ambiguous", am_manifest)
+        _cp_ev.append_row(am_proj, {
+            "v": 1, "runId": "RUN-AM", "ts": "2026-09-12T00:00:00Z",
+            "scope": "full", "status": "failed",
+            "steps": [{"name": "test", "exit": 1,
+                       "failingSuites": ["test_c.py"],
+                       "failingSuitesBasis": _cc_named}]})
+        codecc18, txtcc18 = run(
+            ["couple", "--test", "pkg_a/tests/test_c.py", "--caught",
+             "RUN-AM", "--project-dir", am_proj])
+        check("cc18 RED-FIRST: --caught for pkg_a/tests/test_c.py off a run "
+              "that named only test_c.py, while pkg_b/tests/test_c.py is "
+              "coupled too, is refused exit 2 naming both keys, and neither "
+              "lastCaught moves: %r"
+              % ((codecc18, txtcc18[-320:], cp_coupling(am_mp)),),
+              codecc18 == 2
+              and "pkg_a/tests/test_c.py" in txtcc18
+              and "pkg_b/tests/test_c.py" in txtcc18
+              and not any(e.get("lastCaught") for e in cp_coupling(am_mp))
+              and cp_journal(am_proj, "coupling.caught") == [])
+
+        # ---- a row listing the suite as its OWN miss is no catch of it -----
+        # `full-gate.py` credits no catch off such a row; the verb must refuse
+        # it by the same reading (`_evidence_io.own_miss`), whichever of the
+        # runner's spelling or the plan's key the row recorded the miss under.
+        _cc_before_own = len(cp_journal(cc_proj, "coupling.caught"))
+        for _own_id, _own_spelled in (("RUN-CC-OWN", "tests/test_c.py"),
+                                      ("RUN-CC-OWN-REL", "test_c.py")):
+            _cp_ev.append_row(cc_proj, {
+                "v": 1, "runId": _own_id, "ts": "2026-09-13T00:00:00Z",
+                "scope": "full", "status": "failed",
+                "steps": [{"name": "test", "exit": 1,
+                           "failingSuites": [_own_spelled],
+                           "failingSuitesBasis": _cc_named}],
+                "selectionMiss": [{"test": _own_spelled, "phases": ["P2"],
+                                   "sources": ["src/c.ts"]}]})
+        codecc19, txtcc19 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught", "RUN-CC-OWN",
+             "--project-dir", cc_proj])
+        codecc19r, txtcc19r = run(
+            ["couple", "--test", "tests/test_c.py", "--caught",
+             "RUN-CC-OWN-REL", "--project-dir", cc_proj])
+        check("cc19 RED-FIRST: --caught off a full row whose own "
+              "selectionMiss lists the suite - under the plan's key or the "
+              "runner's own spelling - is refused exit 2, saying so, and "
+              "lastCaught stays where cc16 put it: %r"
+              % ((codecc19, txtcc19[:240], codecc19r, txtcc19r[:240]),),
+              codecc19 == 2 and "its own selection miss" in txtcc19
+              and codecc19r == 2 and "its own selection miss" in txtcc19r
+              and (cc_entry() or {}).get("lastCaught")
+              == "2026-09-10T00:00:00Z"
+              and len(cp_journal(cc_proj, "coupling.caught"))
+              == _cc_before_own)
+
+        # ---- a date-only ts is placed where the ledger places it -----------
+        # `_evidence_io.stamp_moment` reads `2026-09-20` as that day's start,
+        # the reading the ledger orders its rows by.
+        cc_row("RUN-CC-DAY", "2026-09-20", "full", ["tests/test_c.py"],
+               _cc_named)
+        codecc20, txtcc20 = run(
+            ["couple", "--test", "tests/test_c.py", "--caught", "RUN-CC-DAY",
+             "--project-dir", cc_proj])
+        cc_row("RUN-CC-DAY-OLD", "2026-09-19", "full", ["tests/test_c.py"],
+               _cc_named)
+        codecc20b, txtcc20b = run(
+            ["couple", "--test", "tests/test_c.py", "--caught",
+             "RUN-CC-DAY-OLD", "--project-dir", cc_proj])
+        check("cc20 RED-FIRST: a full row stamped with a date alone is a "
+              "catch at that day's start (lastCaught 2026-09-20), and an "
+              "older date-only row after it writes nothing: %r"
+              % ((codecc20, txtcc20[:200], codecc20b, txtcc20b[:200],
+                  (cc_entry() or {}).get("lastCaught")),),
+              codecc20 == 0 and codecc20b == 0
+              and (cc_entry() or {}).get("lastCaught") == "2026-09-20"
+              and "nothing written" in txtcc20b)
+
         # ---- (cp) --basis-head is asked of git, exactly as `done --commit` -
         cp_projg, cp_mpg, cp_head = cp_repo("cp-git", base_manifest())
         _cp_ev.append_row(cp_projg, {
@@ -9023,6 +9945,414 @@ def _cases(check):
               % (txtcp9[:140],),
               codecp9 == 2 and "P404" in txtcp9
               and len(cp_coupling(cp_mpg)) == 1)
+
+        # ---- (ba) bug-add: the bug shape `commands/bug.md` spells, by a verb --
+        # The shape is spelled here as a literal, not read off the verb: a
+        # case that asked the verb which keys it writes would agree with any
+        # verb. The fixture already holds a closed bug with a HIGH number, so
+        # an id computed by hand from the list length and the allocator's
+        # max+1 answer are different strings.
+        BA_KEYS = ["id", "title", "status", "severity", "reportedAt",
+                   "reportedBy", "description", "repro", "expected", "actual",
+                   "files", "taskId", "fixedIn", "notes"]
+
+        def ba_bugs(mpath):
+            try:
+                return _mio.load_manifest(mpath).get("bugs")
+            except Exception:
+                return None
+
+        def ba_bytes(mpath):
+            with open(mpath, "rb") as fh:
+                return fh.read()
+
+        _ba_fx = base_manifest()
+        _ba_fx["bugs"] = [{"id": "BUG-7", "title": "older", "status": "wontfix"}]
+        ba_proj, ba_mp = mk("ba-add", _ba_fx)
+        _ba_pre = _mio.load_manifest(ba_mp)
+        _ba_want_id = M._id_shape.next_bug_id(_ba_pre,
+                                              M._mint_suffix(ba_mp, _ba_pre))
+        # A doubled space and a trailing one in the operator's words, on the
+        # stdin route the prose guard leaves open for exactly such text:
+        # stored as typed, not tidied.
+        _ba_desc = "Login  crashes on an empty email "
+        codeba, txtba = run_on_stdin(
+            ["bug-add", "Login crashes", "--severity", "high",
+             "--description", "-", "--files", "src/a.ts,src/b.ts",
+             "--repro", "submit the form empty", "--expected", "a message",
+             "--actual", "a stack trace", "--project-dir", ba_proj],
+            _ba_desc + "\n")
+        _ba_new = [b for b in (ba_bugs(ba_mp) or []) if b.get("id") != "BUG-7"]
+        _ba_bug = _ba_new[0] if len(_ba_new) == 1 else {}
+        check("ba1 RED-FIRST: `bug-add` writes exactly the step-3 shape of "
+              "`commands/bug.md` - every key present, `status` open, the "
+              "operator's words unchanged, and the unset links null. On "
+              "current code the verb is unknown and a bug is a hand edit: %r"
+              % ((codeba, txtba[:160], _ba_new),),
+              codeba == 0 and len(_ba_new) == 1
+              and list(_ba_bug) == BA_KEYS
+              and _ba_bug.get("title") == "Login crashes"
+              and _ba_bug.get("status") == "open"
+              and _ba_bug.get("severity") == "high"
+              and _ba_bug.get("description") == _ba_desc
+              and _ba_bug.get("repro") == "submit the form empty"
+              and _ba_bug.get("expected") == "a message"
+              and _ba_bug.get("actual") == "a stack trace"
+              and _ba_bug.get("files") == ["src/a.ts", "src/b.ts"]
+              and _ba_bug.get("reportedBy") is None
+              and _ba_bug.get("taskId") is None
+              and _ba_bug.get("fixedIn") is None
+              and _ba_bug.get("notes") is None
+              and bool(_ba_bug.get("reportedAt")))
+        check("ba1b the id is the allocator's answer (max+1 over the bugs the "
+              "plan holds, suffix included), not a count: %r"
+              % ((_ba_bug.get("id"), _ba_want_id),),
+              _ba_want_id == "BUG-8" and _ba_bug.get("id") == _ba_want_id)
+        _ba_rows = cp_journal(ba_proj, "bug.add")
+        check("ba1c exactly one `bug.add` journal row, naming the bug it "
+              "wrote: %r" % (_ba_rows,),
+              len(_ba_rows) == 1
+              and ((_ba_rows[0].get("details") or {}).get("field")
+                   == _ba_want_id))
+
+        # A plan with no `bugs` key at all: the verb creates the list rather
+        # than refusing, which is step 1 of `commands/bug.md`.
+        _ba_nokey = base_manifest()
+        del _ba_nokey["bugs"]
+        ba_proj2, ba_mp2 = mk("ba-nokey", _ba_nokey)
+        codeba2, txtba2 = run(
+            ["bug-add", "No list yet", "--severity", "low",
+             "--description", "d", "--project-dir", ba_proj2])
+        _ba_list2 = ba_bugs(ba_mp2)
+        check("ba2 on a plan with no `bugs` key, `bug-add` creates the list "
+              "and writes the one bug, with `files` an empty list when none "
+              "was named: %r" % ((codeba2, txtba2[:160], _ba_list2),),
+              codeba2 == 0 and isinstance(_ba_list2, list)
+              and len(_ba_list2) == 1
+              and _ba_list2[0].get("id") == "BUG-1"
+              and _ba_list2[0].get("files") == []
+              and _ba_list2[0].get("repro") is None)
+
+        # THE DOCUMENT AND THE CODE, ONE ORDER. The brace list step 3 of
+        # `commands/bug.md` spells is parsed out of the file and compared with
+        # the verb's own template, so neither can gain, lose or reorder a key
+        # without the other.
+        with open(os.path.join(_output.PLUGIN_ROOT, "commands", "bug.md"),
+                  "r", encoding="utf-8") as _fh:
+            _ba_doc = _fh.read()
+        _ba_braces = re.findall(r"\{id, title,[^{}]*\}", _ba_doc)
+        _ba_doc_keys = ([part.strip().split(":")[0].strip()
+                         for part in _ba_braces[0].strip("{}").split(",")]
+                        if len(_ba_braces) == 1 else [])
+        check("ba1d the `{id, title, ...}` shape `commands/bug.md` step 3 "
+              "spells is, key for key and in order, the verb's "
+              "`_BUG_TEMPLATE_KEYS` - and the spelling occurs once, so the "
+              "case reads the one the document means: %r"
+              % ((len(_ba_braces), _ba_doc_keys),),
+              len(_ba_braces) == 1
+              and _ba_doc_keys == list(M._BUG_TEMPLATE_KEYS) == BA_KEYS)
+
+        # Refusals: after the lock, before the read and before any byte
+        # moves. Each sub-case also asserts the VERB's own sentence, so an
+        # argparse exit 2 (an unknown verb, say) cannot stand in for it.
+        _ba_before = ba_bytes(ba_mp)
+        _ba_ref = {}
+        for _baargv, _bawhat, _bawant in (
+                (["bug-add", "T", "--description", "d"], "no --severity",
+                 "bug-add needs --severity"),
+                (["bug-add", "T", "--severity", "urgent", "--description", "d"],
+                 "bad --severity", "bug-add needs --severity"),
+                (["bug-add", "T", "--severity", "low"], "no --description",
+                 "bug-add needs --description"),
+                (["bug-add", "", "--severity", "low", "--description", "d"],
+                 "no title", "bug-add needs a title")):
+            _bacode, _batxt = run(_baargv + ["--project-dir", ba_proj])
+            _ba_ref[_bawhat] = (_bacode, _bawant in _batxt)
+        check("ba3 a bug-add missing its severity, description or title, or "
+              "carrying a severity outside low/med/high, is refused exit 2 "
+              "IN THE VERB'S OWN WORDS and writes nothing: %r" % (_ba_ref,),
+              sorted(_ba_ref.values()) == [(2, True)] * len(_ba_ref)
+              and ba_bytes(ba_mp) == _ba_before)
+
+        # Sharded: the bug lands in the index and no shard is rewritten.
+        ba_proj3, ba_mp3 = mk("ba-shard", base_manifest(), sharded=True)
+        _ba_shards = dict(
+            (os.path.join(dp, fn), ba_bytes(os.path.join(dp, fn)))
+            for dp, _dn, fns in os.walk(os.path.dirname(ba_mp3))
+            for fn in fns if os.path.join(dp, fn) != ba_mp3
+            and fn.endswith(".json"))
+        codeba3, txtba3 = run(
+            ["bug-add", "Sharded", "--severity", "med", "--description", "d",
+             "--project-dir", ba_proj3])
+        _ba_idx = _mio.read_json(ba_mp3)
+        check("ba4 on a sharded plan the bug is written into the INDEX and "
+              "every shard keeps its bytes: %r"
+              % ((codeba3, txtba3[:160], _ba_idx.get("bugs")),),
+              codeba3 == 0 and bool(_ba_shards)
+              and [b.get("id") for b in (_ba_idx.get("bugs") or [])]
+              == ["BUG-1"]
+              and all(ba_bytes(p) == b for p, b in _ba_shards.items()))
+
+        # ---- (mu) mute / unmute: the only writers of `meta.muted` ----------
+        def mu_muted(mpath):
+            return cp_meta(mpath).get("muted")
+
+        _mu_fx = base_manifest()
+        _mu_fx["bugs"] = [{"id": "BUG-3", "title": "flaky", "status": "open"}]
+        mu_proj, mu_mp = mk("mu-mute", _mu_fx)
+        codemu, txtmu = run_on_stdin(
+            ["mute", "--test", "tests/test_a.py", "--reason", "-",
+             "--owner", "alice", "--until", "2998-01-01", "--bug", "BUG-3",
+             "--project-dir", mu_proj], "flaky  on CI \n")
+        check("mu1 RED-FIRST: `mute` writes one `meta.muted` entry carrying "
+              "the five fields the validator grades, the reason unchanged. On "
+              "current code the verb is unknown and a quarantine is a hand "
+              "edit: %r" % ((codemu, txtmu[:160], mu_muted(mu_mp)),),
+              codemu == 0
+              and mu_muted(mu_mp) == [
+                  {"test": "tests/test_a.py", "reason": "flaky  on CI ",
+                   "owner": "alice", "until": "2998-01-01",
+                   "bugId": "BUG-3"}])
+        _mu_rows = cp_journal(mu_proj, "test.muted")
+        check("mu1b exactly one `test.muted` journal row, naming the test: %r"
+              % (_mu_rows,),
+              len(_mu_rows) == 1
+              and ((_mu_rows[0].get("details") or {}).get("field")
+                   == "tests/test_a.py"))
+
+        _mu_before = ba_bytes(mu_mp)
+        codemu2, txtmu2 = run(
+            ["mute", "--test", "tests/test_b.py", "--reason", "r",
+             "--owner", "alice", "--until", "2998-01-01",
+             "--project-dir", mu_proj])
+        check("mu2 a mute with no --bug is refused exit 2 before anything "
+              "is written - a quarantine nothing tracks is the shape it "
+              "exists to refuse: %r" % (txtmu2[:160],),
+              codemu2 == 2 and "--bug" in txtmu2
+              and ba_bytes(mu_mp) == _mu_before)
+
+        # The verb does NOT look the bug up itself: the validator's
+        # `rules.muted.bug-unknown` finding refuses it on the revalidation,
+        # and the write is rolled back. Skipping the revalidation turns this
+        # red, which is the mutation it is here for.
+        codemu3, txtmu3 = run(
+            ["mute", "--test", "tests/test_b.py", "--reason", "r",
+             "--owner", "alice", "--until", "2998-01-01", "--bug", "BUG-404",
+             "--project-dir", mu_proj])
+        check("mu3 a mute naming a bug the plan lacks is refused by the "
+              "validator's finding (exit 1, the FINDING line printed) and "
+              "rolled back byte for byte: %r" % (txtmu3[:240],),
+              codemu3 == 1 and "REFUSED" in txtmu3
+              and "FINDING: " in txtmu3 and "BUG-404" in txtmu3
+              and ba_bytes(mu_mp) == _mu_before
+              and not cp_journal(mu_proj, "test.muted")[1:])
+
+        codemu4, txtmu4 = run(
+            ["mute", "--test", "tests/test_a.py", "--reason", "still flaky",
+             "--owner", "bob", "--until", "2999-06-30", "--bug", "BUG-3",
+             "--project-dir", mu_proj])
+        check("mu4 a mute on an already-muted test with a LATER until "
+              "extends that one entry rather than appending a second: %r"
+              % ((codemu4, txtmu4[:160], mu_muted(mu_mp)),),
+              codemu4 == 0
+              and mu_muted(mu_mp) == [
+                  {"test": "tests/test_a.py", "reason": "still flaky",
+                   "owner": "bob", "until": "2999-06-30", "bugId": "BUG-3"}])
+        _mu_before4 = ba_bytes(mu_mp)
+        _mu_short = {}
+        for _muargv, _muwhat, _muwant in (
+                (["--until", "2999-06-30"], "same until", "a re-mute only EXTENDS"),
+                (["--until", "2998-01-01"], "earlier until",
+                 "a re-mute only EXTENDS"),
+                (["--until", "2000-01-01"], "past until", "is already past"),
+                (["--until", "next week"], "unreadable until",
+                 "mute needs --until")):
+            _mucode, _mutxt = run(
+                ["mute", "--test", "tests/test_a.py", "--reason", "r",
+                 "--owner", "bob", "--bug", "BUG-3"] + _muargv
+                + ["--project-dir", mu_proj])
+            _mu_short[_muwhat] = (_mucode, _muwant in _mutxt)
+        check("mu4b a re-mute whose until does not extend the entry, an until "
+              "already past, and one that is not a calendar day are refused "
+              "exit 2 IN THE VERB'S OWN WORDS and write nothing: %r"
+              % (_mu_short,),
+              sorted(_mu_short.values()) == [(2, True)] * len(_mu_short)
+              and ba_bytes(mu_mp) == _mu_before4)
+
+        # ALLOW CASE: unmute removes exactly the entry it names.
+        codemu5, _t = run(
+            ["mute", "--test", "tests/test_c.py", "--reason", "r",
+             "--owner", "carol", "--until", "2998-01-01", "--bug", "BUG-3",
+             "--project-dir", mu_proj])
+        _mu_keep = [e for e in (mu_muted(mu_mp) or [])
+                    if e.get("test") == "tests/test_c.py"]
+        codemu6, txtmu6 = run(
+            ["unmute", "--test", "tests/test_a.py", "--project-dir", mu_proj])
+        check("mu5 ALLOW CASE: `unmute --test` removes exactly the entry it "
+              "names and leaves every other mute as it was: %r"
+              % ((codemu5, codemu6, txtmu6[:160], mu_muted(mu_mp)),),
+              codemu5 == 0 and codemu6 == 0 and len(_mu_keep) == 1
+              and mu_muted(mu_mp) == _mu_keep)
+        _mu_un = cp_journal(mu_proj, "test.unmuted")
+        check("mu5b exactly one `test.unmuted` journal row, naming the "
+              "test: %r" % (_mu_un,),
+              len(_mu_un) == 1
+              and ((_mu_un[0].get("details") or {}).get("field")
+                   == "tests/test_a.py"))
+        codemu7, txtmu7 = run(
+            ["unmute", "--test", "tests/test_a.py", "--project-dir", mu_proj])
+        check("mu6 `unmute` of a test carrying no mute is refused exit 2 - a "
+              "no-op reporting success would hide that nothing was muted: %r"
+              % (txtmu7[:160],),
+              codemu7 == 2 and "tests/test_a.py" in txtmu7)
+
+        # An EXPIRED mute is a warning, so a plan carrying one is not refused
+        # by the pre-check: extending it and lifting it both run.
+        _mu_old = base_manifest()
+        _mu_old["bugs"] = [{"id": "BUG-3", "title": "flaky", "status": "open"}]
+        _mu_old["meta"]["muted"] = [
+            {"test": "tests/test_x.py", "reason": "r", "owner": "o",
+             "until": "2000-01-01", "bugId": "BUG-3"},
+            {"test": "tests/test_y.py", "reason": "r", "owner": "o",
+             "until": "2000-01-01", "bugId": "BUG-3"}]
+        mu_proj8, mu_mp8 = mk("mu-expired", _mu_old)
+        codemu8, txtmu8 = run(
+            ["mute", "--test", "tests/test_x.py", "--reason", "r",
+             "--owner", "o", "--until", "2998-01-01", "--bug", "BUG-3",
+             "--project-dir", mu_proj8])
+        codemu9, txtmu9 = run(
+            ["unmute", "--test", "tests/test_y.py", "--project-dir", mu_proj8])
+        check("mu7 on a plan carrying an expired mute, an extending mute and "
+              "an unmute both run like every other verb: %r"
+              % ((codemu8, txtmu8[:160], codemu9, txtmu9[:160],
+                  mu_muted(mu_mp8)),),
+              codemu8 == 0 and codemu9 == 0
+              and [(e.get("test"), e.get("until"))
+                   for e in (mu_muted(mu_mp8) or [])]
+              == [("tests/test_x.py", "2998-01-01")])
+
+        # ---- (mo) the optional manifest positional AFTER the flags --------
+        # Documented for `bug-add`, `mute` and `couple` alike, and plain
+        # `parse_args` has refused a trailing positional after options on
+        # interpreters this project still supports (3.9 measured). The manifest each call
+        # names sits at a path the fixture's config does NOT name, so a
+        # trailing positional that was dropped - and the configured file
+        # written instead - reads differently from one that was used.
+        def mo_alt(name):
+            fx = base_manifest()
+            fx["bugs"] = [{"id": "BUG-3", "title": "flaky", "status": "open"}]
+            proj, conf = mk(name, fx)
+            alt = os.path.join(proj, "alt", "plan.json")
+            os.makedirs(os.path.dirname(alt), exist_ok=True)
+            _panel_write._atomic_write_json(alt, fx)
+            _cp_ev.append_row(proj, {
+                "v": 1, "runId": "RUN-IX", "ts": "2026-09-01T00:00:00Z",
+                "scope": "phase", "phaseId": "P2", "status": "failed",
+                "steps": []})
+            return proj, conf, alt
+
+        def mo_facts(alt):
+            man = _mio.load_manifest(alt)
+            meta = man.get("meta") or {}
+            return ([b.get("id") for b in man.get("bugs") or []],
+                    [e.get("test") for e in meta.get("muted") or []],
+                    [e.get("test") for e in meta.get("coupling") or []])
+
+        ix_proj, ix_conf, ix_alt = mo_alt("mo-order")
+        _ix_conf_before = ba_bytes(ix_conf)
+        _ix = {}
+        _ix["bug-add"] = run(
+            ["bug-add", "T", "--severity", "low", "--description", "d",
+             "--project-dir", ix_proj, ix_alt])[0]
+        _ix["mute"] = run(
+            ["mute", "--test", "tests/test_ix.py", "--reason", "r",
+             "--owner", "o", "--until", "2998-01-01", "--bug", "BUG-3",
+             "--project-dir", ix_proj, ix_alt])[0]
+        _ix["couple"] = run(
+            ["couple", "--test", "tests/test_ix.py", "--sources", "src/a.ts",
+             "--basis-run", "RUN-IX", "--basis-head", "deadbeef",
+             "--project-dir", ix_proj, ix_alt])[0]
+        check("mo1 a manifest path passed AFTER the flags parses on every "
+              "supported interpreter, for `bug-add`, `mute` and `couple`, and "
+              "each call writes into THAT manifest while the configured one "
+              "keeps its bytes: %r" % ((_ix, mo_facts(ix_alt)),),
+              _ix == {"bug-add": 0, "mute": 0, "couple": 0}
+              and mo_facts(ix_alt) == (["BUG-3", "BUG-4"],
+                                       ["tests/test_ix.py"],
+                                       ["tests/test_ix.py"])
+              and ba_bytes(ix_conf) == _ix_conf_before)
+
+        # ...and with NO --project-dir, from a cwd that is another project:
+        # the named manifest alone decides the root, so the lock, the config,
+        # the evidence lookup and the journal row all belong to ITS project.
+        # The verbs that take no id move the lone positional into the
+        # manifest slot, and that has to happen before the root is resolved.
+        mo_proj, mo_conf, mo_alt_mp = mo_alt("mo-named")
+        mo_home, mo_home_mp = mk("mo-elsewhere", base_manifest())
+        _mo_conf_before = ba_bytes(mo_conf)
+        _mo_home_before = ba_bytes(mo_home_mp)
+        _mo_cwd, _mo_env = os.getcwd(), os.environ.get("CLAUDE_PROJECT_DIR")
+        _mo = {}
+        try:
+            os.chdir(mo_home)
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            _mo["bug-add"] = run(
+                ["bug-add", "T", "--severity", "low", "--description", "d",
+                 mo_alt_mp])[0]
+            _mo["mute"] = run(
+                ["mute", "--test", "tests/test_mo.py", "--reason", "r",
+                 "--owner", "o", "--until", "2998-01-01", "--bug", "BUG-3",
+                 mo_alt_mp])[0]
+            _mo["unmute"] = run(["unmute", "--test", "tests/test_mo.py",
+                                 mo_alt_mp])[0]
+            _mo["couple"] = run(
+                ["couple", "--test", "tests/test_mo.py", "--sources",
+                 "src/a.ts", "--basis-run", "RUN-IX", "--basis-head",
+                 "deadbeef", mo_alt_mp])[0]
+            _mo["uncouple"] = run(["uncouple", "--test", "tests/test_mo.py",
+                                   mo_alt_mp])[0]
+        finally:
+            os.chdir(_mo_cwd)
+            if _mo_env is None:
+                os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            else:
+                os.environ["CLAUDE_PROJECT_DIR"] = _mo_env
+        _mo_actions = ("bug.add", "test.muted", "test.unmuted",
+                       "coupling.learned", "coupling.dropped")
+        _mo_rows = dict((a, len(cp_journal(mo_proj, a))) for a in _mo_actions)
+        _mo_stray = dict((a, len(cp_journal(mo_home, a))) for a in _mo_actions)
+        check("mo2 with no --project-dir and the cwd in ANOTHER project, a "
+              "trailing manifest decides the root for `bug-add`, `mute`, "
+              "`unmute`, `couple` and `uncouple`: each writes that manifest "
+              "and journals into its project, and the other project is "
+              "untouched: %r"
+              % ((_mo, mo_facts(mo_alt_mp), _mo_rows, _mo_stray),),
+              _mo == {"bug-add": 0, "mute": 0, "unmute": 0, "couple": 0,
+                      "uncouple": 0}
+              and mo_facts(mo_alt_mp) == (["BUG-3", "BUG-4"], [], [])
+              and _mo_rows == dict((a, 1) for a in _mo_actions)
+              and _mo_stray == dict((a, 0) for a in _mo_actions)
+              and ba_bytes(mo_conf) == _mo_conf_before
+              and ba_bytes(mo_home_mp) == _mo_home_before)
+        # ...and the ORDER, for every door that takes no id - `settle`
+        # included, whose write leaves no journal row to catch it by: the
+        # positional is moved by the one helper, before the root is resolved,
+        # and nowhere else in the file moves it.
+        import inspect as _mo_inspect
+        _mo_src = _mo_inspect.getsource(M)
+        _mo_order = {}
+        for _mo_door in (M.cmd_settle, M.cmd_couple, M.cmd_uncouple,
+                         M.cmd_mute, M.cmd_unmute):
+            _mo_body = _mo_inspect.getsource(_mo_door)
+            _mo_move = _mo_body.find("_manifest_from_positional(args)")
+            _mo_root = _mo_body.find("_resolve_project(args)")
+            _mo_order[_mo_door.__name__] = 0 <= _mo_move < _mo_root
+        check("mo3 every door that takes no id moves a lone positional into "
+              "the manifest slot BEFORE resolving the root, through one "
+              "helper, and the move is spelled nowhere else: %r"
+              % ((_mo_order, _mo_src.count("args.manifest = args.title")),),
+              all(_mo_order.values()) and len(_mo_order) == 5
+              and _mo_src.count("args.manifest = args.title") == 1)
 
     finally:
         _harness.remove_tree(tmp)

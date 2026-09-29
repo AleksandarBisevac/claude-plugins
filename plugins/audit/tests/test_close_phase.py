@@ -821,17 +821,11 @@ def _landed_cases(check):
     Against a real repository: a composed name is a prediction, and with another
     identity at the keyboard it names a branch that never existed - while the one
     that did may still hold work."""
-    import subprocess
     import _branch
     root = _harness.fixture_root("closephase-landed")
     try:
-        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
-                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
-
-        def git(*a):
-            return subprocess.run(["git", "-C", root] + list(a), env=env,
-                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        git("init", "-q", "-b", "main")
+        git = _fixture_git(root)
+        _init_fixture_repo(git)
         git("config", "user.name", "Zed Quill")
         meta = {"developmentBranch": "main",
                 "branch": {"template": "{type}/{initials}-{phase}-{slug}"}}
@@ -879,6 +873,19 @@ def _fixture_git(root):
     return git
 
 
+def _init_fixture_repo(git):
+    """`git init` on `main`, then a REPO-LOCAL identity.
+
+    The environment `_fixture_git` sets reaches only the fixture's own git calls;
+    close-phase runs its merge with the process's environment, and a `--no-ff`
+    merge needs a committer. Where git cannot guess one from the host (a CI
+    runner, a container) that merge fails, so the identity lives in the repo's
+    config, where every git process run inside it finds it."""
+    git("init", "-q", "-b", "main")
+    git("config", "user.name", "t")
+    git("config", "user.email", "t@t")
+
+
 def _signed_phase(pid, branch):
     return {"id": pid, "title": "One", "status": "in_progress",
             "branch": branch, "baseRef": None, "mergedAt": None,
@@ -905,7 +912,7 @@ def _main_tree_cases(check):
     root = _harness.fixture_root("closephase-maintree")
     try:
         git = _fixture_git(root)
-        git("init", "-q", "-b", "main")
+        _init_fixture_repo(git)
         meta = {"developmentBranch": "main"}
         mpath = _write_plan(root, meta, [_signed_phase("P1", "audit/p1-demo")])
         git("add", "-A")
@@ -953,7 +960,7 @@ def _composed_cases(check):
     root = _harness.fixture_root("closephase-composed")
     try:
         git = _fixture_git(root)
-        git("init", "-q", "-b", "main")
+        _init_fixture_repo(git)
         git("config", "user.name", "Zed Quill")
         meta = {"developmentBranch": "main"}
         phase = _signed_phase("P1", None)
@@ -1008,7 +1015,7 @@ def _worktree_fixture(root, meta_extra=None, nested=False):
     written), signed off, one commit ahead. `nested` puts the worktree under
     `<root>/.claude/worktrees/p1`, the layout Claude Code makes."""
     git = _fixture_git(root)
-    git("init", "-q", "-b", "main")
+    _init_fixture_repo(git)
     meta = dict({"developmentBranch": "main"}, **(meta_extra or {}))
     mpath = _write_plan(root, meta, [_signed_phase("P1", "audit/p1-demo")])
     if nested:
@@ -1406,7 +1413,7 @@ def _recovery_cases(check):
 
         def head(ref):
             return git("rev-parse", "refs/heads/" + ref).stdout.decode().strip()
-        git("init", "-q", "-b", "main")
+        _init_fixture_repo(git)
         commit("base")
         git("checkout", "-q", "-b", "ff")
         tip = commit("f1")

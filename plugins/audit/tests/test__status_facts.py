@@ -448,6 +448,114 @@ def _cases(check):
           and "provisional" not in M.DEFAULT_GATE
           and "stale-full-run" not in M.DEFAULT_GATE)
 
+    # --- (fu) a merged phase whose full-run answer is UNKNOWN --------------------
+    # `provisional` refuses UNKNOWN on purpose (fr4), which left a plan whose third
+    # place cannot be answered at all green under every condition the gate knew.
+    # Each of the three causes `full_run_block` can hand back is a row here, with
+    # the basis the producer writes, so a condition that recognised only one of
+    # them - the ledger read is the cause most easily forgotten, being produced
+    # outside `full_status` - goes red by the cause it forgot.
+    _fu_reader = getattr(M, "unknown_full_runs", None)
+    _fu_bases = {
+        "P1": "phase P1 records no mergedHead, so ancestry cannot be asked at all",
+        "P2": "whether abc is contained in run r1's head could not be "
+              "established: git exited 128",
+        "P3": _vocab_sf.LEDGER_READ_FAILED % ("disk said no",),
+        "P4": _vocab_sf.LEDGER_LOCATION_FAILED % ("no project root",),
+    }
+    _fu_mixed = {"fullRun": dict(
+        [(pid, {"answer": _vocab_sf.FULL_STATUS_UNKNOWN, "basis": b, "runId": None})
+         for pid, b in _fu_bases.items()]
+        + [("P5", {"answer": _vocab_sf.FULL_STATUS_WHOLE, "basis": "contained",
+                   "runId": "r1"}),
+           ("P6", {"answer": _vocab_sf.FULL_STATUS_NOT_DECLARED, "basis": "none",
+                   "runId": None}),
+           ("P7", {"answer": _vocab_sf.FULL_STATUS_PROVISIONAL, "basis": "not yet",
+                   "runId": None})])}
+    _fu_lines = (_fu_reader(_fu_mixed) or []) if _fu_reader else []
+    check("fu1 a merged phase reading UNKNOWN fails --fail-on unknown-full-run, "
+          "one line per phase, each naming its phase and full_status's basis - "
+          "for every cause: no mergedHead, git could not answer, the ledger "
+          "could not be read or located: %r" % (_fu_lines,),
+          M.evaluate_gate(_fu_mixed, ("unknown-full-run",)) == ["unknown-full-run"]
+          and len(_fu_lines) == len(_fu_bases)
+          and all(any(ln.startswith("phase %s:" % pid) and b in ln
+                      for ln in _fu_lines)
+                  for pid, b in _fu_bases.items()))
+    check("fu2 THE ALLOW CASE: WHOLE and NOT_DECLARED pass, and so does "
+          "PROVISIONAL - that is `provisional`'s claim, not this one's",
+          _fu_reader is not None
+          and not any(("phase %s:" % pid) in " ".join(_fu_lines)
+                      for pid in ("P5", "P6", "P7"))
+          and M.evaluate_gate(
+              {"fullRun": {"P5": _fu_mixed["fullRun"]["P5"],
+                           "P6": _fu_mixed["fullRun"]["P6"],
+                           "P7": _fu_mixed["fullRun"]["P7"]}},
+              ("unknown-full-run",)) == [])
+    check("fu3 a plan naming no meta.fullGate is never tripped - its block is "
+          "`{}`, the silence `full_run_block` returns before reading a ledger",
+          _fu_reader is not None and _fu_reader({"fullRun": {}}) is None
+          and M.evaluate_gate({"fullRun": {}}, ("unknown-full-run",)) == [])
+    check("fu4 a summary with NO fullRun block FAILS it - nobody asked is not "
+          "an answer, the same three states `provisional` keeps",
+          _fu_reader is not None and _fu_reader({}) is not None
+          and M.evaluate_gate({}, ("unknown-full-run",)) == ["unknown-full-run"])
+    check("fu5 OPT-IN: accepted by --fail-on and outside DEFAULT_GATE, and "
+          "`provisional` still does not count the UNKNOWN rows fu1 trips on",
+          "unknown-full-run" in M.CONDITIONS
+          and "unknown-full-run" not in M.DEFAULT_GATE
+          and M.evaluate_gate(
+              {"fullRun": dict((pid, _fu_mixed["fullRun"][pid])
+                               for pid in _fu_bases)},
+              ("provisional",)) == [])
+
+    # FULL_RUN_CONDITIONS is what `audit-status.py` fetches the block for, so a
+    # reader missing from it is handed no block and reads "never asked" forever.
+    # The readers are DERIVED from `evaluate_gate`'s own arms - every condition
+    # whose arm reaches the literal "fullRun", directly or through a function of
+    # this module it calls - rather than listed a second time here.
+    with open(M.__file__, encoding="utf-8") as _fq_fh:
+        _fq_tree = ast.parse(_fq_fh.read())
+    _fq_defs = dict((n.name, n) for n in _fq_tree.body
+                    if isinstance(n, ast.FunctionDef))
+
+    def _fq_reads_block(node, seen):
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Constant) and sub.value == "fullRun":
+                return True
+            if (isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name)
+                    and sub.func.id in _fq_defs and sub.func.id not in seen):
+                seen.add(sub.func.id)
+                if _fq_reads_block(_fq_defs[sub.func.id], seen):
+                    return True
+        return False
+
+    def _fq_arm_names(test):
+        first = test.values[0] if isinstance(test, ast.BoolOp) else test
+        if not (isinstance(first, ast.Compare)
+                and isinstance(first.left, ast.Name) and first.left.id == "c"):
+            return []
+        right = first.comparators[0]
+        items = right.elts if isinstance(right, (ast.Tuple, ast.List)) else [right]
+        return [e.value for e in items
+                if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+
+    _fq_readers = set()
+    for _fq_if in ast.walk(_fq_defs["evaluate_gate"]):
+        if isinstance(_fq_if, ast.If):
+            for _fq_name in _fq_arm_names(_fq_if.test):
+                if _fq_reads_block(_fq_if.test, set()):
+                    _fq_readers.add(_fq_name)
+    _fq_decl = set(getattr(M, "FULL_RUN_CONDITIONS", ()))
+    check("fu6 FULL_RUN_CONDITIONS holds every condition whose reader grades "
+          "summary['fullRun'], derived from evaluate_gate's arms, and nothing "
+          "outside CONDITIONS or beyond those readers: readers %r, declared %r"
+          % (sorted(_fq_readers), sorted(_fq_decl)),
+          "unknown-full-run" in _fq_readers
+          and _fq_readers <= _fq_decl
+          and _fq_decl <= set(M.CONDITIONS)
+          and _fq_decl <= _fq_readers)
+
     # --- (ur) a run that stopped mid-phase ---------------------------------------
     # `/audit:phase P5` means "run every ready task, then sign off". A phase
     # planned as waves of parallel subagents committed wave one, named wave two
@@ -1173,6 +1281,65 @@ def _cases(check):
           and _eb_torn_ok["testEvidence"]["recorded"] == 2
           and M.evaluate_gate(_eb_torn_ok, ("no-test-evidence",)) == [],
           repr(M.unevidenced(_eb_torn_ok)))
+
+    # A LEDGER WHOSE ONLY RUN CARRIES NO ts, read from disk by the real door:
+    # a run IS recorded, so "nothing was recorded" is false, and where it falls
+    # is unknown - the excuse over the pre-boundary subjects cannot be trusted.
+    _eb_disk = _harness.fixture_root("status-facts-no-ts-")
+    try:
+        os.makedirs(os.path.join(_eb_disk, ".claude"))
+        os.makedirs(os.path.join(_eb_disk, "docs", "audit"))
+        with open(os.path.join(_eb_disk, ".claude", "audit.config.json"),
+                  "w", encoding="utf-8") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        _eb_plan_path = os.path.join(_eb_disk, "docs", "audit",
+                                     "audit-plan.json")
+        with open(_eb_plan_path, "w", encoding="utf-8") as fh:
+            json.dump(_eb_pre, fh)
+        _eb_evdir = _ebio.evidence_dir(_eb_disk)
+        os.makedirs(_eb_evdir)
+        with open(os.path.join(_eb_evdir, "2026-06.w.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(json.dumps({"runId": "R-no-ts", "scope": "task",
+                                 "status": "passed"}) + "\n")
+        _eb_nots = _ebio.evidence_boundary(_eb_disk, _eb_plan_path)
+    finally:
+        _harness.remove_tree(_eb_disk)
+    _eb_nots_s = M.rollup(_eb_pre, [], [], boundary=_eb_nots)
+    check("eb18 RED-FIRST: a ledger whose run carries NO ts does not excuse "
+          "in silence - the run is named in `unknown`, so the gate FAILS the "
+          "excuse, and the basis does not claim no run is readable: %r"
+          % (_eb_nots,),
+          M.evaluate_gate(_eb_nots_s, ("no-test-evidence",))
+          == ["no-test-evidence"]
+          and any("R-no-ts" in u for u in _eb_nots["unknown"])
+          and "no run is readable" not in _eb_nots["basis"],
+          repr(M.unevidenced(_eb_nots_s)))
+    # A DATE-ONLY evidenceSince, as a person writes it: the start of that day
+    # in UTC. The consumer reads what the producer hands it, so a subject
+    # finished before the day is excused and one finished after it is not.
+    _eb_day = _ebio.boundary_of({"at": "2026-09-01"}, None)
+    _eb_day_pre = M.rollup(_eb_plan([("PE.1", "2026-08-15T00:00:00Z")],
+                                    merged="2026-08-15T00:00:00Z"),
+                           [], [], boundary=_eb_day)
+    check("eb19 RED-FIRST: a date-only evidenceSince EXCUSES a subject "
+          "finished before that day - the gate passes: %r / at=%r"
+          % (M.unevidenced(_eb_day_pre), _eb_day["at"]),
+          _eb_ids(_eb_day_pre, M.GAP_BEFORE) == ["PE", "PE.1"]
+          and M.evaluate_gate(_eb_day_pre, ("no-test-evidence",)) == [],
+          repr(_eb_day_pre["testEvidence"]))
+    _eb_day_led = _ebio.boundary_of({"at": "2026-09-01"},
+                                    "2026-10-01T00:00:00Z")
+    _eb_day_post = M.rollup(_eb_plan([("PE.1", "2026-09-15T00:00:00Z")],
+                                     merged="2026-09-15T00:00:00Z"),
+                            [], [], boundary=_eb_day_led)
+    check("eb20 SECOND DIRECTION: the same date-only start beside a later "
+          "ledger run does NOT excuse a subject finished after that day - the "
+          "gate fails: %r" % (M.unevidenced(_eb_day_post),),
+          _eb_ids(_eb_day_post, M.GAP_SINCE) == ["PE", "PE.1"]
+          and M.evaluate_gate(_eb_day_post, ("no-test-evidence",))
+          == ["no-test-evidence"],
+          repr(_eb_day_post["testEvidence"]))
     _eb_part_s = M.rollup(_eb_plan([("PE.1", "2026-05-01T00:00:00Z"),
                                     ("PE.2", "2026-07-01T00:00:00Z"),
                                     ("PE.3", None)],
