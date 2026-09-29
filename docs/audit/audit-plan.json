@@ -786,7 +786,8 @@
       "P80.11",
       "P87.3-bpl",
       "P92.5",
-      "P92.6-a1x"
+      "P92.6-a1x",
+      "P93.4-287"
     ],
     "COMPATIBILITY.md": [
       "P18.8",
@@ -834,7 +835,8 @@
       "P87.9-bpl",
       "P87.10-bpl",
       "P92.5",
-      "P92.6-a1x"
+      "P92.6-a1x",
+      "P93.4-287"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -3993,7 +3995,8 @@
       "P80.18-rtb",
       "P81.11",
       "P81.16-j7p",
-      "P93.1"
+      "P93.1",
+      "P93.3-287"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
@@ -4155,7 +4158,8 @@
       "P72.2-ttl",
       "P92.4",
       "P92.6-a1x",
-      "P93.2"
+      "P93.2",
+      "P93.4-287"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -4228,7 +4232,8 @@
       "P87.1",
       "P87.3-bpl",
       "P92.4",
-      "P93.2"
+      "P93.2",
+      "P93.4-287"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
