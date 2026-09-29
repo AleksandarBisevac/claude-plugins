@@ -554,6 +554,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **The history guard and `guard-secrets-read` read the shapes BUG-12 left open.** A here-string
+  fed to an interpreter is exempt as its program's input only when the interpreter names a
+  program of its own, through its inline flag or a plain script operand after its options; the
+  stdin marker `-`, an option whose value may be a separate word, and an operand carrying an
+  expansion all leave it graded as inline evaluation. In the history guard, a quoted git phrase
+  an emitter prints is now followed through:
+  - the word `in` as an ordinary argument inside a `case` arm, which no longer reopens pattern
+    reading;
+  - a process substitution whose own command writes it into a hook or an unresolvable target;
+  - a bare hook name after a `cd` into a hooks directory;
+  - a program named by a variable behind a wrapper option that takes a value;
+  - a pass-through filter's own redirect after the pipe;
+  - a receiving group or loop that `eval`s a line it `read`.
+
+  `SECURITY.md`'s open-residuals list drops these shapes and keeps the ones still open.
 - **A `phase.merged` trail row names the parent the phase reached.** `close-phase.py` handed
   the parent over in the row's details, and the journal kept only the keys on its allow-list and
   dropped the rest without a word, so the row read `{phaseId, branch}`. `parent` is now on the

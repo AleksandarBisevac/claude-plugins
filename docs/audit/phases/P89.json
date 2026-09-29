@@ -1,7 +1,7 @@
 {
   "id": "P89",
   "title": "the history and secrets guards read the shapes BUG-12 left open, and the documents stop listing them",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "The maintainer's fix for BUG-12 (branch fix/bug-12) lands: every red test it answers passes, no ordinary command the guards allowed on main is refused, the hooks stay within their budget; SECURITY.md no longer lists the shapes the fix reads, and the CHANGELOG records it.",
   "testGate": [
@@ -13,8 +13,8 @@
     "lint"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "2657365ff45b2a509270d1e4281e54259afda8bd",
+  "branch": "audit/p89-the-history-and-secrets-guards",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -27,7 +27,7 @@
     {
       "id": "P89.1",
       "title": "BUG-12's fix lands, and SECURITY.md and the CHANGELOG describe what the guards now read",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Merge branch fix/bug-12 (906ab8b9 red tests; f3b9f891 the maintainer's fix) into this phase's branch. Then remove from SECURITY.md's open-residuals list every shape the fix now reads - the three BUG-12 items and, since gp76/gp77 pass, the pass-through filter redirect and the receiving group or loop that evals - each confirmed by the passing test that pins it; keep every residual the fix does not touch. Add a CHANGELOG [Unreleased] Fixed entry naming BUG-12 and what the guards now read, at shape level. Gate: the three guard suites all-pass, the full sweep, bench-hooks --gate, ruff, vermin, prose-number lints.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -57,16 +57,17 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-27T20:59:03Z",
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-27T20:59:03Z"
 }
