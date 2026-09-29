@@ -1430,17 +1430,56 @@ def _cases(check):
                  (["python3", "-", "x.py"], False),
                  (["node", "--title", "x.js"], False),
                  (["python3", "$SCRIPT"], False),
-                 (["python3", "-u", "tools/x.py"], True))
+                 (["python3", "-u", "tools/x.py"], True),
+                 (["python3", "--", "tools/x.py"], True))
     _pc = M.program_candidates
     check("pc1 behind a wrapper whose options are known, the program is exact",
-          _pc(["sudo", "-u", "root", "$SH"])[1] == ["$SH"]
-          and _pc(["timeout", "5", "grep", "x"])[1] == ["grep"]
-          and _pc(["xargs", "-0", "printf", "%s"])[1] == ["printf"],
+          _pc(["sudo", "-u", "root", "$SH"])[0][:1] == ["$SH"]
+          and _pc(["timeout", "5", "grep", "x"])[0][:1] == ["grep"]
+          and _pc(["env", "FOO=1", "ls"])[0][:1] == ["ls"]
+          and _pc(["sudo", "FOO=1", "ls"])[0][:1] == ["ls"]
+          and _pc(["chrt", "10", "ls"])[0][:1] == ["ls"]
+          and _pc(["timeout", "-s", "KILL", "5", "ls"])[0][:1] == ["ls"]
+          and _pc(["exec", "-a", "name", "ls"])[0][:1] == ["ls"],
           repr([_pc(["sudo", "-u", "root", "$SH"]), _pc(["timeout", "5", "grep", "x"]),
-                _pc(["xargs", "-0", "printf", "%s"])]))
-    check("pc2 ...while an unknown wrapper option leaves every word a candidate",
-          "bash" in _pc(["sudo", "--frobnicate", "x", "bash"])[1],
-          repr(_pc(["sudo", "--frobnicate", "x", "bash"])))
+                _pc(["env", "FOO=1", "ls"]), _pc(["sudo", "FOO=1", "ls"]),
+                _pc(["chrt", "10", "ls"]),
+                _pc(["timeout", "-s", "KILL", "5", "ls"]),
+                _pc(["exec", "-a", "name", "ls"])]))
+    check("pc2 ...while an uncertain wrapper option leaves every word a candidate",
+          "bash" in _pc(["sudo", "--frobnicate", "x", "bash"])[1]
+          and "echo" in _pc(["xargs", "-i", "echo", "{}"])[1],
+          repr([_pc(["sudo", "--frobnicate", "x", "bash"]),
+                _pc(["xargs", "-i", "echo", "{}"])]))
+    _pc_floor = (["xargs", "-l", "ls"], ["xargs", "-e", "ls"],
+                 ["xargs", "--replace", "ls"], ["xargs", "--eof", "ls"],
+                 ["xargs", "--max-lines", "ls"], ["xargs", "-a", "input", "ls"],
+                 ["time", "-f", "format", "ls"], ["sudo", "-a", "type", "ls"],
+                 ["doas", "-a", "style", "ls"], ["ionice", "-t", "ls"],
+                 ["chrt", "-R", "ls"], ["time", "FOO=1", "ls"])
+    check("pc3 an exact wrapper parse keeps every program main finds in rest",
+          all(_pc(words)[0][:1] == ["ls"] and "ls" in _pc(words)[1]
+              for words in _pc_floor),
+          repr([(words, _pc(words)) for words in _pc_floor]))
+    _pc_fallback = ((["sudo", "-E", "$SH"], ["$SH"]),
+                    (["sudo", "-H", "$SH"], ["$SH"]),
+                    (["nice", "-5", "$SH"], ["$SH"]),
+                    (["env", "-", "$SH"], ["$SH"]),
+                    (["stdbuf", "-oL", "$SH"], ["$SH"]),
+                    (["nice", "-5", "sudo", "$SH"], ["$SH"]),
+                    (["sudo", "-E", "env", "$SH"], ["$SH"]),
+                    (["sudo", "-E", "FOO=1", "$SH"], ["$SH"]))
+    check("pc4 an uncertain wrapper keeps main's complete stripped rest",
+          all(_pc(words)[0] == rest for words, rest in _pc_fallback),
+          repr([(words, _pc(words)) for words, rest in _pc_fallback]))
+    _pc_heads = ("ionice -t python3 tools/x.py", "xargs -l python3 tools/x.py",
+                 "xargs -e python3 tools/x.py",
+                 "xargs -a input python3 tools/x.py",
+                 "chrt -R python3 tools/x.py",
+                 "time FOO=1 python3 tools/x.py")
+    check("pc5 a wrapper before an ordinary script leaves its heredoc as data",
+          all(M._head_runs_body(head) is None for head in _pc_heads),
+          repr([(head, M._head_runs_body(head)) for head in _pc_heads]))
     check("ro1 an interpreter runs a program of its own only through its own "
           "inline flag or a script operand after its options",
           all(_ro(w) is want for w, want in _ro_cases),

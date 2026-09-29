@@ -625,6 +625,8 @@ def _cases(check):
                  "...and so does a backquoted one inside an argument"),
                 ("gp12", "sudo " + _G, "deny", "sudo runs its argument"),
                 ("gp13", "env FOO=1 " + _G, "deny", "env runs its argument"),
+                ("gp13a", "echo '" + _G + "' | env FOO=1 sh", "deny",
+                 "an assignment under env cannot hide a receiving shell"),
                 ("gp14", "echo x | xargs " + _G + " drop", "deny",
                  "xargs runs its argument"),
                 ("gp15", "timeout 5 " + _G, "deny",
