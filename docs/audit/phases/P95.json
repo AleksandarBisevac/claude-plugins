@@ -20,7 +20,18 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P95-R1",
+        "severity": "med",
+        "file": "plugins/audit/hooks/_config.py:1243-1269 (with SECURITY.md:191-195, docs/audit/audit-plan.json BUG-13)",
+        "issue": "The class stays open in a second spelling. A cd target whose whitespace is escaped with a backslash rather than quoted still tokenizes as two words, so effective_cwd returns None (same as main, verified). In the history guard that None falls back to the payload cwd (guard-history-rewrite.py:1429-1430), which is the BUG-13 mechanism. This spelling is common because bash printf %q and tab completion produce it. The diff marks BUG-13 fixed and adds a SECURITY.md sentence that lists what remains unresolvable (expansion, glob, home shorthand, unbalanced quote) without naming this shape. Unread shape: an unquoted backslash-escaped space in a cd/pushd target.",
+        "resolution": "fixed in P95.1 (ceb04c89): fix task P95.1 (review-BUG13.json)",
+        "fixTask": "P95.1",
+        "commit": "ceb04c89"
+      }
+    ],
+    "outcome": "[findings: 1 - 0 high, 1 med, 0 low; 1 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
