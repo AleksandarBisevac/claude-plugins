@@ -599,7 +599,7 @@
     {
       "id": "P94",
       "title": "the suites and the plugin run on Windows as they do on POSIX",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P94.json"
     }
   ],
