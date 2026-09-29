@@ -20,7 +20,90 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P89-R1",
+        "severity": "high",
+        "file": "plugins/audit/hooks/_config.py:1495-1560 (_wrapper_rest, program_candidates)",
+        "issue": "A regression against main. Wrappers now resolve to one exact program, but the parse gets several ordinary shapes wrong. Each one then returns a non-program word as the only candidate. On main, every word was a candidate. The shapes: (1) An assignment after a wrapper. The assignment strip now runs only before the first wrapper, so `env FOO=1 ls` and `sudo FOO=1 ls` give ['FOO=1']. That is env's main use. (2) A wrapper's required positional: `chrt 10 ls` and `chrt -f 10 ls` give ['10']. (3) A value-taking option in the generic no-value tuple: `timeout -s KILL 5 ls` gives ['5']. (4) xargs's optional-argument flags -i, -l and -e are listed as taking a separate value: `xargs -i echo {}` gives ['{}'], and `xargs -l ls` gives []. (5) `exec -a name ls` gives ['name']. All of this was measured with benign `ls` word lists. The effect in the guard, measured with benign `git status`: git_calls finds the call for a pipe into a shell behind `env FOO=1`, and for a here-string into one. It finds it on main and returns [] on the fix. Every other program_candidates consumer is affected the same way: _runs_input, _printed, _tee_targets, _runs_file, _head_runs_body, and the secrets-guard here-string arm. The heredoc arm is still covered by _STDIN_SHELL. The docstring was not updated, and it still states the rationale the change dropped: 'a wrapper's own operands cannot be told from the program by position ... every remaining word is a candidate'.",
+        "resolution": "fixed in P89.1 (99f1e646): fix task P89.1 (review-BUG12.json)",
+        "fixTask": "P89.1",
+        "commit": "99f1e646"
+      },
+      {
+        "id": "P89-R2",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-history-rewrite.py:809-876 (_substitution_end)",
+        "issue": "A regression against main, in a function finding 2 said did not have the defect ('_substitution_end tracks by command position and does not have it'). The new per-case state sets pattern mode only on the case's own `in`, and nothing sets it again after `;;`. So the `)` of the SECOND arm's pattern is read as the substitution's close. Measured on benign text: in `echo \"$(case x in a) echo 1;; b) echo 2;; esac)\"`, _substitution_end returns 31 (after `b)`) on the fix and 46 (after `esac)`) on main. _quoted_substitutions yields 'case x in a) echo 1;; b' instead of the whole case. Every arm after the first, in any substitution holding a multi-arm case without parenthesised patterns, is no longer read as commands. The docstring still says the body 'is read to its real end rather than cut at the first arm'.",
+        "resolution": "fixed in P89.1 (99f1e646): fix task P89.1 (review-BUG12.json)",
+        "fixTask": "P89.1",
+        "commit": "99f1e646"
+      },
+      {
+        "id": "P89-R3",
+        "severity": "med",
+        "file": "plugins/audit/hooks/_config.py:1475-1477 (runs_own_program, the `--` branch)",
+        "issue": "Finding 1's resolution says 'Treat \"--\" as the end of options, so the next word is the script'. The code does `skip = True; continue`, which SKIPS the next word instead of reading it. Measured: runs_own_program(['python3','--','x.py']) is False on the fix and True on main, so an ordinary script run is over-graded. The skipped word is never checked against the stdin marker either. That leaves a finding-1 shape unread: the stdin marker right after `--`, followed by a script-named word.",
+        "resolution": "fixed in P89.1 (99f1e646): fix task P89.1 (review-BUG12.json)",
+        "fixTask": "P89.1",
+        "commit": "99f1e646"
+      },
+      {
+        "id": "P89-R4",
+        "severity": "med",
+        "file": "plugins/audit/tests/test_guard_history_rewrite.py:768-783; SECURITY.md:254-287 (on main)",
+        "issue": "The branch forks at e96506fb, before P88 landed on main. P88 added cases with the SAME ids, gp61a, gp62a, gp64a, gp68a, gp69a, gp70a and gp71a, but different text. `git merge-tree e96506fb main f3b9f891` reports 'changed in both' with conflict markers in this file. P88 also rewrote SECURITY.md. It lists every shape this fix now reads as 'open and tracked as BUG-12'. It adds the pass-through `cat` redirect and the read-then-eval loop to 'Not followed', and this fix follows both (gp76, gp77). The fix touches no SECURITY.md, so after the merge the document states that shapes the code reads are not read. Main's P88 allow twins still read nothing under the fix code (measured with git_calls), so the conflict is textual and in the documentation, not behavioural.",
+        "resolution": "fixed in P89.1 (99f1e646): fix task P89.1 (review-BUG12.json)",
+        "fixTask": "P89.1",
+        "commit": "99f1e646"
+      },
+      {
+        "id": "P89-R5",
+        "severity": "med",
+        "file": "plugins/audit/hooks/_config.py:1497-1549 (_WRAPPER_VALUE_OPTIONS, _wrapper_rest)",
+        "issue": "Item 1 is only partly closed. The five shapes the previous review listed now resolve correctly: env/sudo assignment, chrt priority, timeout -s, xargs -i and exec -a. The fallback, though, fires only for an option the tables do not know. An option the tables know but classify wrongly still counts as a certain parse, and that parse drops the program main read. Measured on e593de54 with benign `ls` word lists (main's candidates first, then the fix's). xargs -l, -e, --replace, --eof and --max-lines take only an attached value but are listed as taking a separate one, so they give [] where main gave ['ls']. The previous resolution named -l and -e, and only -i was handled. xargs -a takes a file but sits in the shared no-value tuple, giving ['f'] where main gave ['f','ls']. time -f takes a format but sits in the same tuple, giving ['FMT'] where main gave ['FMT','ls']. sudo -a and doas -a take a value but sit in the same tuple, giving ['t'] and ['s']. ionice -t and chrt -R take no value but are listed as taking one, giving [] for both. `time` is a shell keyword timing a pipeline, so an assignment may follow it, but only env and sudo strip assignments: `time FOO=1 ls` gives ['FOO=1'] where main gave ['ls']. The new docstring says 'A wrapper whose grammar is known yields its command', which is false for each of these.",
+        "resolution": "fixed in P89.1 (99f1e646): fix task P89.1 (review-BUG12b.json)",
+        "fixTask": "P89.1",
+        "commit": "99f1e646"
+      },
+      {
+        "id": "P89-R6",
+        "severity": "med",
+        "file": "plugins/audit/hooks/_config.py:1562-1565 (program_candidates fallback) -> plugins/audit/hooks/guard-history-rewrite.py:664-666 (_runs_input rest[0] check)",
+        "issue": "The uncertain-parse fallback is not main's rule. It returns (words[1:], words[1:]), so rest[0] is the wrapper's first option. Main stripped leading options and digits first. Candidates are a superset of main's, but `rest` is not. _runs_input's check that rest[0] carries a `$` or a backquote therefore stops seeing a variable program behind any wrapper option the table does not know. Measured with the benign word list ['sudo','-E','$X']: rest is ['$X'] on main and ['-E','$X'] on the fix. The same holds for sudo -H, nice -5, `env -`, and stdbuf -oL, the attached form. This dates from f3b9f891 and was missed by the previous review. It is still in the diff under review, and the new docstring's 'an uncertain parse cannot drop a program' covers candidates only. pc2 asserts only membership in candidates, so it cannot see this.",
+        "resolution": "fixed in P89.1 (99f1e646): fix task P89.1 (review-BUG12b.json)",
+        "fixTask": "P89.1",
+        "commit": "99f1e646"
+      },
+      {
+        "id": "P89-R7",
+        "severity": "high",
+        "file": "plugins/audit/hooks/_config.py:1568-1579 (program_candidates) -> plugins/audit/hooks/guard-secrets-read.py:1124-1131 (_interpreter_herestrings) and :2214-2222 (main)",
+        "issue": "This is a new regression. The fix appends fallback candidates to the exact reading, so `candidates` is no longer drawn from `rest`. _interpreter_herestrings still calls `rest.index(runner[0])`. When the exact rest omits the first interpreter candidate, that call raises ValueError. This happens when a wrapper option's table entry swallows the program: ionice -t, xargs -l, xargs -e and chrt -R. The exception leaves decide(), and main() turns any decide() exception into exit 0, which is allow. Every graded arm below the here-string line is then skipped for the whole command: the per-clause inline-eval grading, the heredoc bodies and the plan gate. Measured on benign here-string commands behind those three wrappers: fix gives RAISE:ValueError, main gives allow, and e593de54 does not raise (0 of 6). Main cannot raise here, because its candidates were always rest or rest[:1].",
+        "resolution": "fixed in P89.1 (99f1e646): fix task P89.1 (review-BUG12c.json)",
+        "fixTask": "P89.1",
+        "commit": "99f1e646"
+      },
+      {
+        "id": "P89-R8",
+        "severity": "med",
+        "file": "plugins/audit/hooks/_config.py:1595-1601 (_head_runs_body) <- :1578-1579 (program_candidates return)",
+        "issue": "This is a new over-refusal against main. _head_runs_body enumerates `candidates` and slices `words[index:]` by the candidate's position. On the exact path, candidates are now [exact program] + fallback words, so the index no longer points into `words`. _plain_script_run gets a misaligned slice and a plain script run is graded 'code'. Over an 882-head grid (49 wrapper prefixes x 18 tails), 12 heads go from main's None to 'code' on the fix. They are python3/node/ruby with a script file behind ionice -t, xargs -l, xargs -e, xargs -a f, chrt -R and `time` followed by an assignment. On decide(), the secrets guard BLOCKS a heredoc data body fed to a script run behind `time` + assignment, where main allows it. e593de54 did not misalign, because its exact candidates were words[:1].",
+        "resolution": "fixed in P89.1 (99f1e646): fix task P89.1 (review-BUG12c.json)",
+        "fixTask": "P89.1",
+        "commit": "99f1e646"
+      },
+      {
+        "id": "P89-R9",
+        "severity": "med",
+        "file": "plugins/audit/hooks/_config.py:1552-1557 (_wrapper_fallback), :1568-1576 (wrapper loop) -> plugins/audit/hooks/guard-history-rewrite.py:666-676, 633-642, 679-685, 734-739 (_runs_input, _printed, _tee_targets, _runs_file)",
+        "issue": "Regression 2 is closed only for the five single-wrapper shapes it named, and `rest` is still weaker than main in two ways. Both were carried from e593de54, not introduced by this commit. (a) _wrapper_fallback strips only leading options and digits. Main's loop then re-entered and also stripped assignments and a following wrapper. So a fallback followed by an assignment or by a second wrapper leaves rest[0] on that word. Grid rows affected: nice -5 sudo, sudo -E env and sudo -E FOO=1, each before a variable program. On all three, _runs_input is True on main and False on the fix. (b) An exact parse whose option table consumes the program returns rest = [] where main kept the program: ionice -t, xargs -l/-e/--replace/--eof/--max-lines and chrt -R. The candidate floor recovers the word, but _runs_input (variable program), _tee_targets, _printed and _runs_file all require the program to be in rest. Each loses it on 4 grid heads against main. pc3 asserts candidates only, and pc4 covers only single-wrapper fallbacks. The docstring 'uses main's option-stripped reading outright' is not main's reading.",
+        "resolution": "fixed in P89.1 (99f1e646): fix task P89.1 (review-BUG12c.json)",
+        "fixTask": "P89.1",
+        "commit": "99f1e646"
+      }
+    ],
+    "outcome": "[findings: 9 - 2 high, 7 med, 0 low; 9 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
