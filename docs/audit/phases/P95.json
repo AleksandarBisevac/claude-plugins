@@ -27,7 +27,7 @@
     {
       "id": "P95.1",
       "title": "BUG-13's fix lands, and SECURITY.md, the CHANGELOG and the bug record describe it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Merge branch fix/bug-13 (5adb3bba, 3744a6b4, 9ea779f1 - the maintainer's fix) into this phase's branch. Then correct the documents to what the code does: SECURITY.md's sentence that a glob stays unresolvable (a bracket glob is not in the unresolvable marks), and that effective_cwd is shared - guard-secrets-read and journal-writes now place a quoted or escaped spaced cd too; the CHANGELOG entry says the same. Complete the BUG-13 record: taskId this task, fixedIn the fixing commit, the full files list, a note without a working-tree claim. Gate: the three guard suites, the full sweep, bench-hooks --gate, check-committed-pii.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -57,14 +57,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ceb04c89",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "maintainer's fix merged (5adb3bba..9ea779f1); SECURITY.md and CHANGELOG describe the shared reading and BUG-14's open fallback; BUG-13 record completed",
+        "descriptive": "BUG-13 is fixed: the guards follow a cd into a directory whose name holds a quoted or escaped space"
       },
       "startedAt": "2026-09-29T23:33:13Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-29T23:41:15Z",
+      "verifiedBy": [
+        "guard suites 279/258/383",
+        "full sweep",
+        "check-committed-pii",
+        "manifest valid"
+      ],
       "bugId": "BUG-13"
     }
   ],
