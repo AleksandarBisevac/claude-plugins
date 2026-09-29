@@ -1128,6 +1128,17 @@ def _cases(check):
                  % _escaped_wt, "deny",
                  "the same worktree reached through a backslash-escaped "
                  "space in its `cd` target"),
+                ("gw12", _wt["main"], 'cd "$WT" && git rebase main', "deny",
+                 "a `cd` whose target cannot be read at all does not place "
+                 "the rewrite in the session's directory"),
+                ("gw13", _wt["main"], 'git -C "$WT" rebase main', "deny",
+                 "...and neither does a `-C` value that cannot be read"),
+                ("gw12a", _wt["main"], 'cd "$WT" && git status', "allow",
+                 "an unreadable `cd` followed by a read"),
+                ("gw12b", _wt["main"], 'cd "$WT" && git reset --hard', "allow",
+                 "...and by a reset with no ref"),
+                ("gw13a", _wt["main"], 'git -C "$WT" status', "allow",
+                 "...and an unreadable `-C` value on a read"),
                 ("gw3", _wt["wt"], "git commit --amend -m x", "deny",
                  "a session standing in the worktree amends the commit its plan "
                  "records"),

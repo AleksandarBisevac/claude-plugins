@@ -93,7 +93,8 @@ REFUSAL_PHASE_CAP = 5
 PUBLISHERS = (
     # A tag is the release object. Creating one locally is refused with the push,
     # because a created tag is a loaded trap and refusing only the push leaves it.
-    (r"git\s+tag\b(?!.*\s-(?:d|-delete|l|-list)\b)", "creates a git tag"),
+    (r"git(?:\s+-C(?:\s+\S+|\S*))*\s+tag\b"
+     r"(?!.*\s-(?:d|-delete|l|-list)\b)", "creates a git tag"),
     # `git push … v1.2.3`, `--tags`, or an explicit refs/tags spec.
     (r"git\s+push\b.*(?:--tags\b|--follow-tags\b|\brefs/tags/|\sv\d+\.\d+)",
      "pushes a tag"),
@@ -304,6 +305,27 @@ def _hooks_config(project):
     return None
 
 
+def _git_c_directory(command):
+    """A release command's `git -C` operand, "" when absent, or None unreadable."""
+    import shlex
+    try:
+        words = shlex.split(command or "")
+    except ValueError:
+        return None
+    for index, word in enumerate(words):
+        if word != "git":
+            continue
+        if index + 1 >= len(words):
+            return ""
+        option = words[index + 1]
+        if option == "-C":
+            return words[index + 2] if index + 2 < len(words) else None
+        if option.startswith("-C") and len(option) > 2:
+            return option[2:]
+        return ""
+    return ""
+
+
 def resolved_tree(payload, project):
     """The tree whose PLAN a release command answers to.
 
@@ -314,17 +336,27 @@ def resolved_tree(payload, project):
     the project unconditionally would be asking the wrong tree the question
     this file exists to ask.
 
-    Falls back to `project` (today's reading, unconditionally) when `_config`
-    cannot be reached or answers nothing usable - never a THIRD guess at a
-    tree neither `project` nor `_config` named.
+    Falls back to `project` when `_config` cannot be reached. An unreadable
+    directory change instead answers None: placing it in `project` would
+    silently judge a release where the shell does not run it.
     """
     cfg_mod = _hooks_config(project)
     if cfg_mod is None:
         return project
     data = payload if isinstance(payload, dict) else {}
+    if not data:
+        return project
     command = (data.get("tool_input") or {}).get("command", "")
     try:
         target = cfg_mod.effective_cwd(command, data.get("cwd"))
+        if target is None:
+            return None
+        cdir = _git_c_directory(command)
+        if cdir is None or (cdir and not cfg_mod.resolvable_destination(cdir)):
+            return None
+        if cdir:
+            target = (cdir if os.path.isabs(cdir)
+                      else os.path.join(target, cdir))
         placed = cfg_mod.tree_for(data, target, project=project)
     except Exception:
         return project
@@ -607,6 +639,11 @@ def decide(command, project, session_id, now=None, payload=None):
     if not why:
         return None
     tree = resolved_tree(payload, project) if payload else project
+    if tree is None:
+        return ("Release target is UNKNOWN: the command's directory change "
+                "cannot be read, so this guard cannot establish which plan "
+                "the publishing command answers to. Use a literal directory "
+                "and retry.")
     bugs, bug_problem = read_bugs(tree)
     held, phase_problem = read_held_phases(tree)
     if not (bugs or bug_problem or held or phase_problem):
@@ -1169,6 +1206,15 @@ def _selftest():
               "directory - `tree_for` reached and agreeing, not a second "
               "tree invented for the ordinary call",
               resolved_tree(payload_here, tmp2) == tmp2)
+        payload_unknown = {"cwd": tmp2, "tool_input": {
+            "command": 'cd "$WT" && git tag -a v1 -m x'}}
+        check("gr33a an unreadable `cd` is UNKNOWN, never the session "
+              "directory: %r" % (resolved_tree(payload_unknown, tmp2),),
+              resolved_tree(payload_unknown, tmp2) is None)
+        got = decide('cd "$WT" && git tag -a v1 -m x', tmp2, "s1",
+                     payload=payload_unknown)
+        check("gr33b an UNKNOWN release target refuses before it reads a plan: "
+              "%r" % (got,), bool(got) and "UNKNOWN" in got)
         wt = tempfile.mkdtemp(prefix="guard-release-wt-")
         shutil.rmtree(wt)
         subprocess.run(git + ["worktree", "add", "-b", "gr34-side", wt],
@@ -1185,6 +1231,20 @@ def _selftest():
                   % (moved,),
                   moved is not None
                   and os.path.realpath(moved) == os.path.realpath(wt))
+            payload_cdir = {"cwd": tmp2, "tool_input": {
+                "command": "git -C %s tag -a v1 -m x" % (wt,)}}
+            check("gr34c `git -C` into the linked worktree answers to its "
+                  "plan too: %r" % (resolved_tree(payload_cdir, tmp2),),
+                  os.path.realpath(resolved_tree(payload_cdir, tmp2))
+                  == os.path.realpath(wt))
+            payload_cdir_unknown = {"cwd": tmp2, "tool_input": {
+                "command": 'git -C "$WT" tag -a v1 -m x'}}
+            got = decide('git -C "$WT" tag -a v1 -m x', tmp2, "s1",
+                        payload=payload_cdir_unknown)
+            check("gr34d an unreadable `git -C` release target refuses UNKNOWN: "
+                  "%r" % (got,),
+                  resolved_tree(payload_cdir_unknown, tmp2) is None
+                  and bool(got) and "UNKNOWN" in got)
         finally:
             subprocess.run(git + ["worktree", "remove", "--force", wt],
                           cwd=tmp2, check=True, capture_output=True,

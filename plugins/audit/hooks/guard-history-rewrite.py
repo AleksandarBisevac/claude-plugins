@@ -1405,8 +1405,8 @@ def command_roots(project, trees):
     The project stays first whatever the command did, and the union is the
     conservative direction for a guard: a commit recorded in either plan is
     one this command may not orphan. A `-C` value or a `cd` this cannot read
-    adds no tree, which leaves the project's plan standing - never fewer
-    trees than before this existed. `trees` is `call_trees`' answer."""
+    is refused for a history rewrite while a plan exists, rather than placed
+    in the project. `trees` is `call_trees`' answer."""
     roots = [project]
     for _call, tree in trees:
         if tree is not None and all(
@@ -1422,10 +1422,9 @@ def call_trees(data, cfg, project, command, calls):
     Refs resolve per working tree (`HEAD`, `HEAD~1`, `ORIG_HEAD`), so the tree
     a reset or an amend is asked about is ITS OWN, not the first one the
     command reached: in `git -C <a> status; git -C <b> reset --hard HEAD~1`
-    the `HEAD~1` is `<b>`'s. A `-C` value this cannot resolve places the call
-    in no worktree (None), which is the project - the reading before this
-    existed. An unparseable command (`calls` None) is one call where the shell
-    stands."""
+    the `HEAD~1` is `<b>`'s. A `-C` value this cannot resolve is rejected
+    before this function for a history rewrite while a plan exists. An
+    unparseable command (`calls` None) is one call where the shell stands."""
     base = _config.effective_cwd(runnable(command), (data or {}).get("cwd"))
     base = base or (data or {}).get("cwd") or ""
     out = []
@@ -1446,6 +1445,22 @@ def call_trees(data, cfg, project, command, calls):
                 tree = placed["root"]
         out.append((call, tree))
     return out
+
+
+def unplaceable_directory(data, command, calls):
+    """Which directory spelling prevents placing a git call, else None.
+
+    `tree_for(data, None)` deliberately means the session directory, so a
+    directory this reader cannot establish must be identified before that
+    legitimate session reading is requested.
+    """
+    cwd = (data or {}).get("cwd")
+    if cwd and _config.effective_cwd(runnable(command), cwd) is None:
+        return "`cd` or `pushd` target"
+    for call in calls or []:
+        if call[2] is not None and not _config.resolvable_destination(call[2]):
+            return "`git -C` target"
+    return None
 
 
 def _tree_of_verb(trees, project_git, match):
@@ -1483,6 +1498,16 @@ def decide(data):
     calls = git_calls(command)
     if calls == []:
         return ("allow", "")
+    unplaced = unplaceable_directory(data, command, calls)
+    rewrite = (always_refused(command) or amend_requested(command)
+               or any(target for target, _index in reset_targets(command)))
+    if unplaced and rewrite and plan_present(root, cfg):
+        return ("deny",
+                "this command carries a history rewrite, but its %s cannot "
+                "be read, so the guard cannot establish where Git runs it. "
+                "Use a literal directory, or `git -C <absolute path>`, so "
+                "the rewrite can be checked against that tree's plan."
+                % (unplaced,))
     trees = call_trees(data, cfg, root, command, calls)
     roots = command_roots(root, trees)
 
