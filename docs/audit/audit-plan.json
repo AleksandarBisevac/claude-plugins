@@ -4860,13 +4860,14 @@
       "actual": null,
       "files": [
         "plugins/audit/hooks/_config.py",
-        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/tests/test__config.py",
         "plugins/audit/tests/test_guard_history_rewrite.py",
-        "SECURITY.md"
+        "SECURITY.md",
+        "CHANGELOG.md"
       ],
-      "taskId": null,
-      "fixedIn": null,
-      "notes": "The fixing commit will be recorded when this working-tree change lands."
+      "taskId": "P95.1",
+      "fixedIn": "9ea779f1",
+      "notes": "Fixed by the human maintainer on branch fix/bug-13 (5adb3bba, 3744a6b4, 9ea779f1): a cd target whose name holds a space, quoted or backslash-escaped, is followed, and gw2/gw2b pin it. Reviewed twice until clean and landed through P95 (task P95.1). The wider fallback when a cd or -C value cannot be placed at all is BUG-14; the review's low edges are PLAN.md F547."
     }
   ],
   "deferred": {
