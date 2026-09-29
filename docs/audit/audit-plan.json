@@ -784,7 +784,8 @@
       "P81.14-j7p",
       "P88.1",
       "P81.18-j7p",
-      "P89.1"
+      "P89.1",
+      "P94.5-579"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -961,7 +962,8 @@
       "P82.13-fye",
       "P82.14-fye",
       "P82.15-fye",
-      "P94.3"
+      "P94.3",
+      "P94.5-579"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1702,7 +1704,8 @@
       "P82.12-fye",
       "P82.13-fye",
       "P82.14-fye",
-      "P82.15-fye"
+      "P82.15-fye",
+      "P94.5-579"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -2308,7 +2311,8 @@
       "P74.10-qq5",
       "P86.1",
       "P81.16-j7p",
-      "P94.2"
+      "P94.2",
+      "P94.5-579"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -2331,7 +2335,8 @@
       "P82.13-fye",
       "P82.14-fye",
       "P82.15-fye",
-      "P94.3"
+      "P94.3",
+      "P94.6-579"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -4020,7 +4025,8 @@
       "P81.16-j7p",
       "P93.1",
       "P93.3-287",
-      "P94.2"
+      "P94.2",
+      "P94.5-579"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
@@ -4051,7 +4057,8 @@
       "P82.13-fye",
       "P82.14-fye",
       "P82.15-fye",
-      "P94.3"
+      "P94.3",
+      "P94.6-579"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
@@ -4277,7 +4284,8 @@
       "P85.4",
       "P81.3",
       "P81.4",
-      "P94.2"
+      "P94.2",
+      "P94.5-579"
     ],
     "plugins/audit/tests/test_derive_phase_gate.py": [
       "P79.3",
@@ -4291,7 +4299,8 @@
       "P80.19-rtb",
       "P81.10",
       "P81.14-j7p",
-      "P81.17-j7p"
+      "P81.17-j7p",
+      "P94.7-579"
     ],
     "plugins/audit/tests/test_import_evidence.py": [
       "P80.5",
@@ -4299,7 +4308,8 @@
       "P81.10",
       "P81.14-j7p",
       "P81.17-j7p",
-      "P94.4"
+      "P94.4",
+      "P94.7-579"
     ],
     "tools/ui-tests/full-run-verified.test.mjs": [
       "P80.8"
@@ -4365,11 +4375,13 @@
     ],
     "plugins/audit/scripts/governance/_proc_group.py": [
       "P77.3-6u9",
-      "P94.2"
+      "P94.2",
+      "P94.5-579"
     ],
     "plugins/audit/tests/test__proc_group.py": [
       "P77.3-6u9",
-      "P94.2"
+      "P94.2",
+      "P94.5-579"
     ],
     "plugins/audit/scripts/governance/_verdict_binding.py": [
       "P74.3-qq5",
