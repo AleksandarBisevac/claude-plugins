@@ -370,7 +370,7 @@
     {
       "id": "P94.6-579",
       "title": "the Windows temp-dir fallback of stamp-verification is reached by a case that can fail",
-      "status": "in_progress",
+      "status": "done",
       "description": "_platform_temp_dirs takes the platform as an argument, and a case where every environment candidate is inside the repository or unset proves LOCALAPPDATA/Temp is chosen, without patching os.name for the process",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -399,18 +399,27 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "577bab77",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "holder_base(root, platform=None, environ=None); _platform_temp_dirs(platform=None, environ=None); sr191 reworked; sr192-sr194.",
+        "descriptive": "The Windows temp-directory fallback is reached and pinned by a test, including its order, without patching os.name for the whole process."
       },
       "startedAt": "2026-09-29T11:03:38Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-29T11:31:30Z",
+      "verifiedBy": [
+        "task gate run 2026-09-29T11:29:18Z.67567b green; orchestrator ran the executor's mutation probe: five mutations killed",
+        "shas restored"
+      ],
       "testEvidence": {
         "runId": "2026-09-29T11:29:18Z.67567b",
         "status": "passed",
         "at": "2026-09-29T11:29:18Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "577bab77",
+        "at": "2026-09-29T11:31:30Z",
+        "basis": "holder_base and _platform_temp_dirs take the platform and environment, read at call time when omitted; sr192 reaches the nt branch with every environment candidate inside the repository and pins LOCALAPPDATA ahead of SystemRoot; sr193 and sr194 are the allow twins; sr191 no longer patches os.name"
       }
     },
     {

@@ -99,6 +99,15 @@ def _cases(check):
             fh.write(data)
         return path
 
+    def canon_manifest(path):
+        # The spelling the command prints, derived here rather than asked of
+        # the module: the manifest's directory resolved through links, its
+        # own name kept. Every call shape prints this one spelling, so an
+        # expectation built any other way asserts how a path was typed.
+        path = os.path.abspath(path)
+        return os.path.join(os.path.realpath(os.path.dirname(path)),
+                            os.path.basename(path))
+
     def run(argv):
         lines = []
         held = sys.stderr
@@ -437,8 +446,8 @@ def _cases(check):
         told = [ln for ln in out.splitlines() if "--learn-from" in ln]
         want = ("python3 %s %s --learn-from run-r1 --project-dir %s"
                 % (shlex.quote(_loader.script_path("full-gate.py")),
-                   shlex.quote(os.path.abspath(mp10)),
-                   shlex.quote(os.path.abspath(d10))))
+                   shlex.quote(canon_manifest(mp10)),
+                   shlex.quote(os.path.realpath(d10))))
         check("i27 RED-FIRST: a red full row among the imported ones prints "
               "exactly one line, ending in the python3 <full-gate.py> "
               "--learn-from command for that run, over the manifest this "
@@ -516,8 +525,8 @@ def _cases(check):
         answer12 = json.loads(out)
         want12 = ("python3 %s %s --learn-from run-t1 --project-dir %s"
                   % (shlex.quote(_loader.script_path("full-gate.py")),
-                     shlex.quote(os.path.abspath(mp12)),
-                     shlex.quote(os.path.abspath(d12))))
+                     shlex.quote(canon_manifest(mp12)),
+                     shlex.quote(os.path.realpath(d12))))
         check("i32 RED-FIRST: an import typed from another directory with no "
               "--project-dir lands under the manifest's project, and nothing "
               "lands under the directory it was typed in: %r (%r, %r)"
@@ -571,8 +580,7 @@ def _cases(check):
         answer15 = json.loads(out)
         want15 = ("python3 %s %s --learn-from run-v1 --project-dir %s"
                   % (shlex.quote(_loader.script_path("full-gate.py")),
-                     shlex.quote(os.path.join(os.path.realpath(d15), "docs",
-                                              "audit", "audit-plan.json")),
+                     shlex.quote(canon_manifest(mp15)),
                      shlex.quote(os.path.realpath(d15))))
         check("i35 ALLOW: an import typed from inside the project with no "
               "--project-dir lands in that project and prints its command: "
@@ -606,8 +614,8 @@ def _cases(check):
         def lands_in(project_dir, name, answer, run_id, mpath):
             want = ("python3 %s %s --learn-from %s --project-dir %s"
                     % (shlex.quote(_loader.script_path("full-gate.py")),
-                       shlex.quote(os.path.abspath(mpath)), run_id,
-                       shlex.quote(project_dir)))
+                       shlex.quote(canon_manifest(mpath)), run_id,
+                       shlex.quote(os.path.realpath(project_dir))))
             return (os.path.isfile(os.path.join(_ev.evidence_dir(project_dir),
                                                 name))
                     and answer.get("learnFrom") == [want])
@@ -670,6 +678,132 @@ def _cases(check):
               % (code, answer18),
               code == 0 and lands_in(t18, "2026-01.ci-w22.jsonl", answer18,
                                      "run-w3", mp18))
+
+        # --- one project, however its directory is spelled -----------------
+        # The same directory reached two ways - through a link here, the way
+        # an 8.3 short name reaches it on Windows. A relative manifest takes
+        # its spelling from the current directory, which the system hands
+        # back in ITS spelling; an absolute one or a --project-dir comes back
+        # as typed. Every shape must print one pair, the --project-dir
+        # form's, and land in one ledger. A version that echoes the typed
+        # spelling prints the link's pair for some shapes and the target's
+        # for others.
+        base19 = tempfile.mkdtemp(dir=root)
+        real19 = os.path.join(base19, "real")
+        link19 = os.path.join(base19, "link")
+        os.makedirs(real19)
+        linked = True
+        try:
+            os.symlink(real19, link19, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            linked = False
+        if not linked:
+            _harness.skip(check, "i39-i40 one project printed one way through "
+                          "a second spelling of its directory",
+                          "os.symlink refused to make a directory link here",
+                          not linked)
+        else:
+            def spelled_project(name):
+                for sub in (".claude", os.path.join("docs", "audit")):
+                    os.makedirs(os.path.join(real19, name, sub))
+                with io.open(os.path.join(real19, name, "docs", "audit",
+                                          "audit-plan.json"),
+                             "w", encoding="utf-8") as fh:
+                    fh.write(json.dumps(_manifest(), indent=2))
+                return (os.path.join(real19, name), os.path.join(link19, name))
+
+            def printed_pair(argv, name, run_id, cwd):
+                data, _ = _shard_bytes(name, [
+                    {"runId": run_id, "v": 1, "scope": "full",
+                     "status": "failed"}])
+                src = write_shard(name, data)
+                os.chdir(cwd)
+                try:
+                    code, out = run(argv(src) + ["--json"])
+                finally:
+                    os.chdir(held_cwd)
+                try:
+                    told = json.loads(out).get("learnFrom") or [""]
+                except ValueError:
+                    told = [out]
+                words = shlex.split(told[0])
+                pair = ((words[2], words[-1]) if len(words) > 5
+                        else ("unparsed", told[0]))
+                return code, pair
+
+            rel_plan = os.path.join("docs", "audit", "audit-plan.json")
+            realp, linkp = spelled_project("p")
+            away19 = tempfile.mkdtemp(dir=root)
+            shapes = [
+                ("--project-dir, target spelling",
+                 lambda src: [os.path.join(realp, rel_plan), src,
+                              "--project-dir", realp], away19),
+                ("absolute manifest, link spelling",
+                 lambda src: [os.path.join(linkp, rel_plan), src], away19),
+                ("relative manifest, typed inside the link spelling",
+                 lambda src: [rel_plan, src], linkp),
+                ("target manifest, --project-dir in the link spelling",
+                 lambda src: [os.path.join(realp, rel_plan), src,
+                              "--project-dir", linkp], away19),
+            ]
+            seen19 = []
+            for n, (label, argv, cwd) in enumerate(shapes):
+                code, pair = printed_pair(argv, "2026-01.ci-w3%d.jsonl" % n,
+                                          "run-x%d" % n, cwd)
+                seen19.append((label, code, pair))
+            pairs19 = sorted(set(pair for _l, _c, pair in seen19))
+            landed19 = sorted(os.listdir(_ev.evidence_dir(realp)))
+            check("i39 RED-FIRST: one project reached through a second "
+                  "spelling of its directory prints ONE manifest/project "
+                  "pair for every call shape - the --project-dir form's - "
+                  "and every shape lands in its one ledger: %r (landed %r)"
+                  % (seen19, landed19),
+                  all(code == 0 for _l, code, _p in seen19)
+                  and pairs19 == [seen19[0][2]]
+                  and os.path.samefile(pairs19[0][1], realp)
+                  and os.path.samefile(pairs19[0][0],
+                                       os.path.join(realp, rel_plan))
+                  and landed19 == ["2026-01.ci-w3%d.jsonl" % n
+                                   for n in range(len(shapes))])
+
+            # ALLOW DIRECTION: resolving spellings must not merge DIFFERENT
+            # directories. A second project under the same link prints its
+            # own pair, and a --project-dir naming it in the link spelling is
+            # still refused for the first project's manifest - a version that
+            # canonicalised by collapsing to a shared ancestor, or that let
+            # the resolved spelling wave the containment check through, goes
+            # red here.
+            realq, linkq = spelled_project("q")
+            code_q, pair_q = printed_pair(
+                lambda src: [os.path.join(linkq, rel_plan), src],
+                "2026-01.ci-w39.jsonl", "run-x9", away19)
+            refused_lines = []
+            held_err = sys.stderr
+            sys.stderr = io.StringIO()
+            try:
+                code_mis = M.main([os.path.join(linkp, rel_plan),
+                                   write_shard("2026-01.ci-w40.jsonl",
+                                               _shard_bytes(
+                                                   "2026-01.ci-w40.jsonl",
+                                                   [{"runId": "run-x10",
+                                                     "v": 1, "scope": "full",
+                                                     "status": "failed"}])[0]),
+                                   "--project-dir", linkq],
+                                  out=refused_lines.append)
+                mis_err = sys.stderr.getvalue()
+            finally:
+                sys.stderr = held_err
+            check("i40 ALLOW: a different project under the same link prints "
+                  "its own pair, and a --project-dir naming it is still "
+                  "refused for the first project's manifest: %r %r / %r %r"
+                  % (code_q, pair_q, code_mis, mis_err),
+                  code_q == 0 and pair_q != pairs19[0]
+                  and os.path.samefile(pair_q[1], realq)
+                  and not os.path.samefile(pair_q[1], realp)
+                  and code_mis == 2 and "is not under --project-dir" in mis_err
+                  and not refused_lines
+                  and "2026-01.ci-w40.jsonl" not in os.listdir(
+                      _ev.evidence_dir(realq)))
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

@@ -141,7 +141,8 @@ def learn_from_commands(rows, manifest_path, project):
     and the script is the absolute path `_loader.script_path` resolves by
     basename - the resolution `full-gate.py` itself uses for
     `run-test-gate.py` - because a bare `full-gate.py` is 'command not found'
-    in a shell. The caller hands both paths in absolute for the same reason."""
+    in a shell. The caller hands both paths in absolute for the same reason,
+    and canonical (`canonical_manifest`) so one project prints one command."""
     script = shlex.quote(_loader.script_path("full-gate.py"))
     return ["python3 %s %s --learn-from %s --project-dir %s"
             % (script, shlex.quote(manifest_path),
@@ -384,10 +385,14 @@ def resolve_project(manifest_path, project_dir):
 
     WITH `--project-dir`, a manifest that does not sit under it is refused:
     the printed command would pair one project's plan with another's ledger,
-    and there is no reading of the pair that is not a mistake."""
+    and there is no reading of the pair that is not a mistake.
+
+    The project returned is resolved through symlinks either way, the
+    spelling `canonical_manifest` gives the manifest beside it."""
     manifest_abs = os.path.abspath(manifest_path)
     if project_dir is None:
-        return _panel_write.project_of_manifest(manifest_abs), ""
+        return os.path.realpath(
+            _panel_write.project_of_manifest(manifest_abs)), ""
     project = os.path.abspath(project_dir)
     if not _is_under(manifest_abs, project):
         return project, (
@@ -396,7 +401,27 @@ def resolve_project(manifest_path, project_dir):
             "plan. Pass the directory the manifest belongs to, or leave "
             "--project-dir out and the manifest's own project is used"
             % (manifest_abs, project))
-    return project, ""
+    return os.path.realpath(project), ""
+
+
+def canonical_manifest(manifest_path):
+    """The manifest spelled the one way this command prints it: its
+    DIRECTORY resolved through symlinks, its own name kept.
+
+    ONE SPELLING PER DIRECTORY, WHATEVER THE CALL SHAPE. A relative manifest
+    is made absolute off the current directory, and the current directory
+    comes back from the operating system in its own spelling - physical on
+    POSIX however it was reached, the short 8.3 form on Windows when that is
+    how it was entered - while an absolute manifest or a `--project-dir`
+    comes back as typed. Left alone, one project printed two different
+    commands depending on how the import was typed. The project is resolved
+    the same way (`resolve_project`), so the pair always agrees.
+
+    The file's own name is not followed: a manifest that is itself a link
+    stays the file this import was handed, not wherever the link points."""
+    manifest_abs = os.path.abspath(manifest_path)
+    return os.path.join(os.path.realpath(os.path.dirname(manifest_abs)),
+                        os.path.basename(manifest_abs))
 
 
 def build_parser():
@@ -444,9 +469,9 @@ def main(argv, out=print):
         sys.stderr.write("ERROR: %s\n" % (refusal,))
         return E_USAGE
     # ABSOLUTE, so the printed command does not depend on the directory it
-    # is pasted into.
+    # is pasted into; CANONICAL, so it does not depend on how it was typed.
     code, answer = import_shard(project, args.shard,
-                                manifest_path=os.path.abspath(args.manifest))
+                                manifest_path=canonical_manifest(args.manifest))
     if args.as_json:
         out(json.dumps(answer, indent=2, sort_keys=True))
     else:
