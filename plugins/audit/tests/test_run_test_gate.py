@@ -1464,6 +1464,26 @@ def _step(python, script, *args):
     return " ".join('"%s"' % (part,) for part in (python, script) + args)
 
 
+def _on_legacy_codec(run):
+    """`run()`'s result, with every child it spawns writing through a cp1252
+    stdout, and the caller's `PYTHONIOENCODING` restored afterwards.
+
+    A fixture that stands in for a runner must write the bytes a runner writes;
+    one printing through a text stream only fails where the codec cannot spell
+    its output. Pinning the codec here measures that on every run, not only on
+    the sweep's encoding pass, which a fast local sweep skips.
+    """
+    was = os.environ.get("PYTHONIOENCODING")
+    os.environ["PYTHONIOENCODING"] = "cp1252"
+    try:
+        return run()
+    finally:
+        if was is None:
+            os.environ.pop("PYTHONIOENCODING", None)
+        else:
+            os.environ["PYTHONIOENCODING"] = was
+
+
 def _written(path):
     """How many bytes the survivor has written, or -1 when it never started.
 
@@ -5612,18 +5632,7 @@ def _no_verdict_cases(check):
           p_code == M.E_FAIL
           and not any("graded by" in ln for ln in p_lines))
 
-    # The child's stream codec is pinned to a legacy code page for this run, so
-    # the fixture's byte echo is measured on every run, not only on the sweep's
-    # encoding pass.
-    codec_was = os.environ.get("PYTHONIOENCODING")
-    os.environ["PYTHONIOENCODING"] = "cp1252"
-    try:
-        e_code, e_lines = _main("--task", "P1.2")
-    finally:
-        if codec_was is None:
-            os.environ.pop("PYTHONIOENCODING", None)
-        else:
-            os.environ["PYTHONIOENCODING"] = codec_was
+    e_code, e_lines = _on_legacy_codec(lambda: _main("--task", "P1.2"))
     e_text = "\n".join(e_lines)
     check("gb6 on a child stream that cannot spell jest's bullet, the gate still "
           "reads the runner's own output - the bullet's title reaches the "
@@ -8663,7 +8672,7 @@ def _selection_miss_cases(check):
         second = _sm_commit(fx, "cart.ts")
         _sm_plan(fx, [_sm_phase("P2", second, ["e2e/other.spec.ts"],
                                 ["src/cart.ts", "src/pay.ts"])])
-        code, lines, row = _sm_run(fx, "named")
+        code, lines, row = _on_legacy_codec(lambda: _sm_run(fx, "named"))
         run_id = row.get("runId")
         # The row records the head abbreviated; it must still be the commit
         # the phase merged at, or ancestry was never asked.
@@ -8682,7 +8691,9 @@ def _selection_miss_cases(check):
               "with one phase merged since the earlier green run (%s) whose "
               "derived gate does not list it, prints exactly one SELECTION "
               "MISS whose remedy is the couple and bug-add spelling "
-              "audit-task accepts: %r" % (green.get("runId"), misses),
+              "audit-task accepts - with the runner's stream pinned to cp1252, "
+              "so a fake runner that cannot write jest's bullet as bytes loses "
+              "the suite name on every run: %r" % (green.get("runId"), misses),
               code_green == M.E_OK and code == M.E_FAIL and len(misses) == 1
               and len(head) >= 7 and second.startswith(head)
               and misses[0].startswith(want))

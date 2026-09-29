@@ -20,7 +20,51 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P93-R1",
+        "severity": "med",
+        "file": "tools/gate-parity.py (sweep_legs, _shell_scan)",
+        "issue": "The sweep reader counts one literal call per line and loses a second call joined by && or ;, a call spelled through ./, a variable or an interpreter flag, and an env-prefixed call (read as an assignment); the empty-side guard never trips because the plain leg is always present, so a leg added in any of these spellings on one side only is reported as agreement.",
+        "resolution": "Read every mention of the sweep on a non-comment line, split each line into its commands, treat NAME=val followed by words as a command with an env prefix, and report any mention the parser cannot resolve as a problem; cases for the env prefix and two calls on one line."
+      },
+      {
+        "id": "P93-R2",
+        "severity": "med",
+        "file": "tools/gate-parity.py (sweep_legs vs _shell_scan docstring)",
+        "issue": "sweep_legs never expands loop variables, so a leg run inside a for loop comes back unresolved although report_targets resolves the same form through the same scan, which contradicts the shared reader's own docstring.",
+        "resolution": "Expand a bare loop variable to one leg per loop word; a case where a looped leg agrees with the same leg written bare."
+      },
+      {
+        "id": "P93-R3",
+        "severity": "low",
+        "file": "tools/gate-parity.py (_command_words, _first_argument)",
+        "issue": "A call inside a subshell reads the closing parenthesis as part of the call, producing a false drift against the same call written bare.",
+        "resolution": "Stop at a closing parenthesis; a subshell case."
+      },
+      {
+        "id": "P93-R4",
+        "severity": "low",
+        "file": "CLAUDE.md (Tests command list), CONTRIBUTING.md (gate list)",
+        "issue": "Both lists of the commands verify.sh calls name the plain and selftest sweep legs but not the encoding leg verify.sh now runs, and no gate compares the document sides' legs.",
+        "resolution": "Add the encoding leg to both lists."
+      },
+      {
+        "id": "P93-R5",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_run_test_gate.py (_sm_run)",
+        "issue": "The selection-miss fixture's byte echo is measured only under the sweep's encoding leg, which verify.sh --fast skips; gb6 pins the codec itself for the same reason.",
+        "resolution": "Pin PYTHONIOENCODING=cp1252 around at least one selection-miss run, as gb6 does."
+      },
+      {
+        "id": "P93-R6",
+        "severity": "low",
+        "file": "tools/verify.sh (the encoding-leg comment)",
+        "issue": "A ratio claim about the leg's cost in prose with no command beside it.",
+        "resolution": "State the cost without the ratio."
+      }
+    ],
+    "outcome": "[findings: 6 - 0 high, 2 med, 4 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -131,6 +175,99 @@
         "commit": "6bc98d68",
         "at": "2026-09-28T07:49:55Z",
         "basis": "the missing local leg and the parity check that would have named it"
+      }
+    },
+    {
+      "id": "P93.3-287",
+      "title": "a selection-miss run is measured on a cp1252 stream on every sweep",
+      "status": "in_progress",
+      "description": "Phase review fix task: pin PYTHONIOENCODING=cp1252 around at least one selection-miss run, as gb6 does, so the byte echo is measured on every sweep and not only on the encoding leg.",
+      "files": [
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_run_test_gate.py: repro that FAILS on current code - reverting the fake runner's byte echo leaves every selection-miss case green on a plain run"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-29T08:39:07Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-29T08:53:40Z.58b211",
+        "status": "passed",
+        "at": "2026-09-29T08:53:40Z"
+      }
+    },
+    {
+      "id": "P93.4-287",
+      "title": "the runners' readers read every sweep call and checker call the shell would run",
+      "status": "in_progress",
+      "description": "Phase review fix task: read every sweep and checker call on a line, splitting it on the shell's list operators; treat an env-prefixed command as a command; report any mention the parser cannot resolve; expand loop variables in sweep legs; stop a call at a closing parenthesis. Also the verify.sh cost comment without a ratio, and CLAUDE.md and CONTRIBUTING.md list the encoding leg.",
+      "files": [
+        "tools/gate-parity.py",
+        "tools/verify.sh",
+        "CLAUDE.md",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/gate-parity.py: repro that FAILS on current code - an env-prefixed or and-joined sweep call adds a leg on one side only and gate-parity reports agreement"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-29T08:39:08Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-29T08:55:23Z.ccb96f",
+        "status": "passed",
+        "at": "2026-09-29T08:55:23Z"
       }
     }
   ],
