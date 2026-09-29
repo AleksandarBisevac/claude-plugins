@@ -691,6 +691,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **A `cd` or `pushd` into a directory whose name holds whitespace is followed (BUG-13).**
+  `_config.effective_cwd` had split the target before removing its shell quotes, so a later
+  rewrite was graded from the session's directory rather than the linked worktree the shell
+  entered. It now reads the directory-change words itself: balanced quotes and a backslash
+  directly before whitespace both spell literal whitespace, and any other backslash stays
+  literal. The reading is shared, so the history guard's Git operations, the release guard's
+  release commands, `guard-secrets-read`'s relative write targets and the journal recorder's
+  rows are all placed in the directory the shell entered.
 - **Plan commands run under one POSIX `sh` on every platform, and are refused rather than
   handed to `cmd.exe`.** `run-test-gate.py` spawned gate steps through `shell=True`, which is
   `cmd.exe` on Windows and reads none of a plan's `export`, single quotes or `${VAR}` while

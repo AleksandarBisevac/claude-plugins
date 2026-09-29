@@ -1,7 +1,7 @@
 {
   "id": "P95",
   "title": "the history guard follows a cd whose target holds a quoted or escaped space",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "The maintainer's fix for BUG-13 (branch fix/bug-13) lands: a cd into a directory whose name holds a space, quoted or escaped, is followed, so a history rewrite of that worktree's recorded commit is judged against the worktree; nothing measured is weaker than main and no benign command is refused. SECURITY.md and the CHANGELOG say what the shared reader now resolves and what it still does not, and BUG-13 is closed with its fixing commit.",
   "testGate": [
@@ -13,21 +13,32 @@
     "lint"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "80e14affe7f163ad8f821971636013b84f48680b",
+  "branch": "audit/p95-the-history-guard-follows-a-cd",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P95-R1",
+        "severity": "med",
+        "file": "plugins/audit/hooks/_config.py:1243-1269 (with SECURITY.md:191-195, docs/audit/audit-plan.json BUG-13)",
+        "issue": "The class stays open in a second spelling. A cd target whose whitespace is escaped with a backslash rather than quoted still tokenizes as two words, so effective_cwd returns None (same as main, verified). In the history guard that None falls back to the payload cwd (guard-history-rewrite.py:1429-1430), which is the BUG-13 mechanism. This spelling is common because bash printf %q and tab completion produce it. The diff marks BUG-13 fixed and adds a SECURITY.md sentence that lists what remains unresolvable (expansion, glob, home shorthand, unbalanced quote) without naming this shape. Unread shape: an unquoted backslash-escaped space in a cd/pushd target.",
+        "resolution": "fixed in P95.1 (ceb04c89): fix task P95.1 (review-BUG13.json)",
+        "fixTask": "P95.1",
+        "commit": "ceb04c89"
+      }
+    ],
+    "outcome": "matches; two reviews of the human fix, the last clean; one recorded-order invariant breach named, cause F549 [findings: 1 - 0 high, 1 med, 0 low; 1 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "The history guard follows a cd into a directory whose name holds a space, quoted or backslash-escaped, so a history rewrite of that worktree's recorded commit is judged against the worktree. The fix was written by the human maintainer on branch fix/bug-13 (5adb3bba, 3744a6b4, 9ea779f1), and gw2 and gw2b pin it red-first. Two reviews: the first found the escaped-space shape still open, the second was clean. Nothing measured is weaker than main, no input raises, and no benign command is refused. SECURITY.md and the CHANGELOG describe the shared reading and each caller's behaviour when it cannot place a command, which stays open as BUG-14; BUG-13 is recorded as fixed with its task and commit. The phase gate is green with the tree unchanged. The invariant check reports one breach: the task commit ceb04c89 recorded the task's half of the BUG-13 link before the index commit recorded the bug's half, so that one commit's manifest does not validate while the next one and the live tree do. The cause is the pipeline committing the two halves apart, recorded as PLAN.md F549; it is not in the fix.",
   "tasks": [
     {
       "id": "P95.1",
       "title": "BUG-13's fix lands, and SECURITY.md, the CHANGELOG and the bug record describe it",
-      "status": "pending",
+      "status": "done",
       "description": "Merge branch fix/bug-13 (5adb3bba, 3744a6b4, 9ea779f1 - the maintainer's fix) into this phase's branch. Then correct the documents to what the code does: SECURITY.md's sentence that a glob stays unresolvable (a bracket glob is not in the unresolvable marks), and that effective_cwd is shared - guard-secrets-read and journal-writes now place a quoted or escaped spaced cd too; the CHANGELOG entry says the same. Complete the BUG-13 record: taskId this task, fixedIn the fixing commit, the full files list, a note without a working-tree claim. Gate: the three guard suites, the full sweep, bench-hooks --gate, check-committed-pii.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -55,16 +66,28 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ceb04c89",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "maintainer's fix merged (5adb3bba..9ea779f1); SECURITY.md and CHANGELOG describe the shared reading and BUG-14's open fallback; BUG-13 record completed",
+        "descriptive": "BUG-13 is fixed: the guards follow a cd into a directory whose name holds a quoted or escaped space"
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-09-29T23:33:13Z",
+      "completedAt": "2026-09-29T23:41:15Z",
+      "verifiedBy": [
+        "guard suites 279/258/383",
+        "full sweep",
+        "check-committed-pii",
+        "manifest valid"
+      ],
+      "bugId": "BUG-13"
     }
-  ]
+  ],
+  "startedAt": "2026-09-29T23:33:13Z",
+  "testEvidence": {
+    "runId": "2026-09-29T23:45:07Z.6707fd",
+    "status": "passed",
+    "at": "2026-09-29T23:45:07Z"
+  }
 }
