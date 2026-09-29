@@ -19,7 +19,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P94-R1",
@@ -103,9 +103,9 @@
         "commit": "4ba784f9"
       }
     ],
-    "outcome": "[findings: 9 - 0 high, 1 med, 8 low; 9 with a recorded fix commit]"
+    "outcome": "Two review rounds: round one over the phase (one med, five low), a delta round over the fixes (three low, one of them a regression) - all nine resolved by fix tasks P94.5-P94.8; three further low edges batched to PLAN.md F546 and the pre-existing items to F544. Phase gate 2026-09-29T11:56:19Z.926e3a green; verify.sh VERIFY OK; invariants: no breach. [findings: 9 - 0 high, 1 med, 8 low; 9 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "The suites and the plugin run on Windows: every plan command runs under one POSIX sh (Git's, with its tools on PATH, beside git) or is refused by name rather than handed to cmd.exe; fixtures remove read-only trees; stamp-verification grades HEAD's bytes and finds a temp dir; import-evidence prints one canonical spelling. windows-latest selftests green in CI run 36564652372 at cb77d333, alongside ubuntu, lint, validate and plugin validate.",
   "tasks": [
     {
       "id": "P94.1",
@@ -575,5 +575,10 @@
       }
     }
   ],
-  "startedAt": "2026-09-29T10:15:50Z"
+  "startedAt": "2026-09-29T10:15:50Z",
+  "testEvidence": {
+    "runId": "2026-09-29T11:56:19Z.926e3a",
+    "status": "passed",
+    "at": "2026-09-29T11:56:19Z"
+  }
 }
