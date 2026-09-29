@@ -1,7 +1,7 @@
 {
   "id": "P94",
   "title": "the suites and the plugin run on Windows as they do on POSIX",
-  "status": "in_progress",
+  "status": "done",
   "description": "Nineteen files fail on windows-latest for twelve causes, three of them product bugs a Windows user hits. Fix each cause red first (most reproduce on POSIX under an emulation of the Windows rule), and run every plan command under one POSIX shell on every platform.",
   "desiredOutcome": "CI's windows-latest selftests job is green, and the plugin's own commands (the raw log of an own run, a derived gate's observations, a printed remedy) work on Windows",
   "testGate": [
@@ -15,7 +15,7 @@
   "blockedBy": [],
   "baseRef": "4eb1ac17c2b15f20f158670e8e880859cbe8cab1",
   "branch": "audit/p94-the-suites-and-the-plugin-run",
-  "mergedAt": null,
+  "mergedAt": "2026-09-29T12:19:22Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -580,5 +580,6 @@
     "runId": "2026-09-29T11:56:19Z.926e3a",
     "status": "passed",
     "at": "2026-09-29T11:56:19Z"
-  }
+  },
+  "mergedHead": "d18dd9a5f59384937206888c71eba77df64ff047"
 }
