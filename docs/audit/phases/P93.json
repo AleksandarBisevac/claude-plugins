@@ -1,7 +1,7 @@
 {
   "id": "P93",
   "title": "every leg of CI's ubuntu job passes, and verify.sh runs each of them",
-  "status": "in_progress",
+  "status": "done",
   "description": "The ubuntu job's encoding leg fails on a selection-miss fixture that prints a character a cp1252 stream cannot encode, and no local command runs that leg. Make the fixture independent of its child's stream encoding, then run the leg locally and hold the sweep's legs to both runners.",
   "desiredOutcome": "CI's ubuntu job is green on both of its sweeps, including the one on a stream that cannot spell every character, and verify.sh runs that leg too, held to CI by gate-parity",
   "testGate": [
@@ -15,7 +15,7 @@
   "blockedBy": [],
   "baseRef": "42078c3cd5934cf61b06db9d1dfc41992913c1a8",
   "branch": "audit/p93-every-leg-of-ci-s-ubuntu-job-p",
-  "mergedAt": null,
+  "mergedAt": "2026-09-29T09:07:40Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -306,5 +306,6 @@
     "runId": "2026-09-29T08:57:14Z.f548ff",
     "status": "passed",
     "at": "2026-09-29T08:57:14Z"
-  }
+  },
+  "mergedHead": "94eccd0856fc06cca05bbd292146fda16828adfd"
 }
