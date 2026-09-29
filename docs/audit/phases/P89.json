@@ -1,7 +1,7 @@
 {
   "id": "P89",
   "title": "the history and secrets guards read the shapes BUG-12 left open, and the documents stop listing them",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "The maintainer's fix for BUG-12 (branch fix/bug-12) lands: every red test it answers passes, no ordinary command the guards allowed on main is refused, the hooks stay within their budget; SECURITY.md no longer lists the shapes the fix reads, and the CHANGELOG records it.",
   "testGate": [
@@ -15,7 +15,7 @@
   "blockedBy": [],
   "baseRef": "2657365ff45b2a509270d1e4281e54259afda8bd",
   "branch": "audit/p89-the-history-and-secrets-guards",
-  "mergedAt": null,
+  "mergedAt": "2026-09-29T10:07:20Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -163,5 +163,6 @@
     "runId": "2026-09-29T10:06:35Z.2bf646",
     "status": "passed",
     "at": "2026-09-29T10:06:35Z"
-  }
+  },
+  "mergedHead": "4763d0bffcfb0c48f5f88fe1d4a897ae514d851d"
 }
