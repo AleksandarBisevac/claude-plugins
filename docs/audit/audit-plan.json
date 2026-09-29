@@ -569,7 +569,7 @@
     {
       "id": "P89",
       "title": "the history and secrets guards read the shapes BUG-12 left open, and the documents stop listing them",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P89.json"
     }
   ],
