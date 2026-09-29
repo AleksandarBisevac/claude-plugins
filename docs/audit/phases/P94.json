@@ -1,0 +1,208 @@
+{
+  "id": "P94",
+  "title": "the suites and the plugin run on Windows as they do on POSIX",
+  "status": "pending",
+  "description": "Nineteen files fail on windows-latest for twelve causes, three of them product bugs a Windows user hits. Fix each cause red first (most reproduce on POSIX under an emulation of the Windows rule), and run every plan command under one POSIX shell on every platform.",
+  "desiredOutcome": "CI's windows-latest selftests job is green, and the plugin's own commands (the raw log of an own run, a derived gate's observations, a printed remedy) work on Windows",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P94.1",
+      "title": "test fixtures remove what they made on every platform",
+      "status": "pending",
+      "description": "Git writes loose objects read-only and Windows refuses to unlink a read-only file, so shutil.rmtree(ignore_errors=True) leaves a fixture behind; route each of these suites' fixture removal through the harness's remove_tree (or fixture_root). Red first with the diagnosis's emulation (scratchpad p94diag_winemu/sitecustomize.py).",
+      "files": [
+        "plugins/audit/tests/test__id_shape.py",
+        "plugins/audit/tests/test_audit_lock.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        "plugins/audit/tests/test__panel_state.py",
+        "plugins/audit/tests/test_panel_server.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/tests/test_merge_manifest.py",
+        "plugins/audit/tests/test__doctor_setup.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__id_shape.py: repro that FAILS on current code - under an emulation of Windows' refusal to unlink a read-only file, the fixture a suite made is left behind in the working directory"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P94.2",
+      "title": "every plan command runs under one POSIX shell on every platform, and the own run's raw log and the printed remedy are portable",
+      "status": "pending",
+      "description": "Product: derive-phase-gate spawns through a hard-coded /bin/sh and run-test-gate through shell=True (cmd.exe on Windows) while plan spellings are POSIX; give both one spawn that resolves a POSIX sh (Git for Windows' sh there) and refuses by name when none exists. run-test-gate --own names its raw log after the run id, whose colon is illegal on Windows: a filename-safe name, the run id unchanged in the ledger. The duplicate-suite remedy quotes the manifest path. Fixtures fg10/fg10c and rv2 use shell-neutral commands or run through the resolved sh. Red first with the diagnosis's nobinsh and nocolon emulations and a spaced path.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test_derive_phase_gate.py",
+        "plugins/audit/scripts/governance/_proc_group.py",
+        "plugins/audit/tests/test__proc_group.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_derive_phase_gate.py: repro that FAILS on current code - with no /bin/sh the derived gate observes nothing, and an own run's raw log named after a run id with a colon cannot be written"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P94.3",
+      "title": "stamp-verification works with Windows paths, line endings and temp directories",
+      "status": "pending",
+      "description": "sr105: the throwaway inherits core.autocrlf from Git for Windows' system config because _git_env strips GIT_*; pin autocrlf false in the seeded repo. sr160: quote the interpreter path in the printed command. sr24 and _remove_throwaway: compare paths through the shared worktree parser (normcase/realpath), not a native path against porcelain text. sr40: give holder_base a Windows temp fallback or expect its refusal there, and decide which. Red first on POSIX where an emulation or a spaced path shows it.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: repro that FAILS on current code - a throwaway seeded under autocrlf=true, an interpreter path with a space, and a worktree path spelled natively against git's porcelain spelling each break a case"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P94.4",
+      "title": "the remaining suites and the repo's release hook spell shells and paths portably",
+      "status": "pending",
+      "description": "rmtree fixtures in test__refs, test__merge_install and guard-release.py's own copy go through a remove that clears the read-only bit; lr2 runs shutil.which(shell), not a bare name that hits the WSL stub; gw1/gw5/gw6 quote the -C path; i30 runs the printed command through the resolved sh or skips; mv61 grades a skip (or proves on a fake clock) where time.tzset is absent; sv3 compares paths normalised; gr36b and mi2 display shell-facing paths with forward slashes; .gitattributes pins eol=lf for .sh and .yml so ra29 reads LF on a Windows checkout. Red first on POSIX where an emulation shows it.",
+      "files": [
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/tests/test__merge_install.py",
+        ".claude/hooks/guard-release.py",
+        "plugins/audit/tests/test_guard_history_rewrite.py",
+        "plugins/audit/tests/test_import_evidence.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/tests/test_close_phase.py",
+        ".gitattributes"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_import_evidence.py: repro that FAILS on current code - with no /bin/sh the import's printed-command case aborts the suite"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
