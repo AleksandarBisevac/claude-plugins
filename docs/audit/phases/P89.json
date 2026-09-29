@@ -155,7 +155,8 @@
         "full sweep",
         "bench-hooks",
         "check-committed-pii"
-      ]
+      ],
+      "bugId": "BUG-12"
     }
   ],
   "startedAt": "2026-09-27T20:59:03Z",
