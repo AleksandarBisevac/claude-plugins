@@ -142,6 +142,7 @@ import fnmatch
 import json
 import os
 import re
+import shlex
 import sys
 import time
 from pathlib import Path
@@ -1310,8 +1311,11 @@ def effective_cwd(cmd, payload_cwd):
         verb = m.group(1).lower()
         if verb == "popd":
             return None
-        args = [w.strip("'\"") for w in (m.group(2) or "").split()
-                if not w.startswith("-")]
+        try:
+            args = [w for w in shlex.split(m.group(2) or "")
+                    if not w.startswith("-")]
+        except ValueError:
+            return None
         if len(args) != 1 or not resolvable_destination(args[0]):
             return None
         try:

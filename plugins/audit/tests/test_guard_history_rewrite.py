@@ -1089,7 +1089,7 @@ def _cases(check):
     # does not hold until a merge - so a rebase of the worktree branch orphaned
     # them with nothing refused. The tree is the one git runs in: `-C <dir>`, or
     # the directory a `cd` moved the shell to, or the payload's own.
-    _wt_ok, _wt = _harness.attempt(_harness.worktree_pair, "histguard-wt-")
+    _wt_ok, _wt = _harness.attempt(_harness.worktree_pair, "histguard wt-")
     if not _wt_ok:
         check("gw0 the worktree fixture builds (%s)" % (_wt,), False)
         return

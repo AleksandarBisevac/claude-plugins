@@ -188,6 +188,12 @@ defect as one that fires on a read. `--help` and `-h` are reads for the same
 reason. A shell's `-c` argument and `eval`'s argument *are* commands and are
 parsed as such, so an interpreter is not a way around it.
 
+**A quoted directory change is followed as one destination.** The history guard
+places a later Git operation in the directory a preceding `cd` or `pushd` names,
+including a literal path containing whitespace. An expansion, glob, home shorthand
+or unbalanced quote remains unresolvable, so the guard does not invent a location
+the shell may not use.
+
 **Every `git` word counts, prose included, and that over-refusal is deliberate.** This
 is not a command-position reader: `git` is an invocation wherever it sits in a command,
 so `echo attempt used git stash` and `grep git stash notes.md` are refused as a stash.
