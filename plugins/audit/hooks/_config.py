@@ -1440,8 +1440,8 @@ def is_shell(word):
 
 # Per interpreter family: the flags that hand it its program inline (or name
 # a module to run), and the options that take a separate value, so the value
-# is not read as the script. Anything else before the first operand is an
-# option; the first operand is the script when it carries a script extension.
+# is not read as the script. Unknown options do not name a program, and `--`
+# makes the following word the script.
 _OWN_PROGRAM = (
     (re.compile(r"^python(?:3(?:\.\d+)?)?$"), ("-c", "-m"), ("-W", "-X", "-Q"),
      ("-B", "-E", "-I", "-O", "-OO", "-q", "-s", "-S", "-u", "-v", "-x")),
@@ -1468,13 +1468,16 @@ def runs_own_program(words):
         if not pattern.match(program):
             continue
         skip = False
-        for word in words[1:]:
+        for index, word in enumerate(words[1:], 1):
             if skip:
                 skip = False
                 continue
             if word == "--":
-                skip = True
-                continue
+                if index + 1 >= len(words):
+                    return False
+                script = words[index + 1]
+                return (not any(ch in script for ch in "'\"$`()<>*?[")
+                        and script.lower().endswith(_SCRIPT_EXTS))
             if word == "-" or any(ch in word for ch in "'\"$`()<>*?["):
                 return False
             if word in inline:
@@ -1499,23 +1502,29 @@ _WRAPPER_VALUE_OPTIONS = {
     "xargs": ("-E", "-e", "-I", "-i", "-L", "-l", "-n", "-P", "-s", "-S",
               "--eof", "--replace", "--max-lines", "--max-args",
               "--max-procs", "--max-chars", "--arg-file"),
-    "timeout": ("-k", "--kill-after"),
+    "timeout": ("-k", "-s", "--kill-after", "--signal"),
     "nice": ("-n", "--adjustment"),
     "ionice": ("-c", "-n", "-t", "--class", "--classdata"),
     "stdbuf": ("-i", "-o", "-e", "--input", "--output", "--error"),
     "chrt": ("-R", "-T", "-P", "-D", "--runtime", "--period", "--deadline"),
+    "exec": ("-a",),
 }
 
 
 def _wrapper_rest(name, words):
-    """The command past one known wrapper, or None when its options are not
-    known well enough to identify that command."""
-    index, duration = 0, name == "timeout"
+    """The command past one known wrapper, or None when parsing is uncertain."""
+    index, operand = 0, name in ("timeout", "chrt")
     value_options = _WRAPPER_VALUE_OPTIONS.get(name, ())
     while index < len(words):
         word = words[index]
         if word == "--":
             return words[index + 1:]
+        if name in ("env", "sudo") and re.match(
+                r"^[A-Za-z_][A-Za-z0-9_]*=", word):
+            index += 1
+            continue
+        if name == "xargs" and word == "-i":
+            return None
         if word in value_options:
             if index + 1 >= len(words):
                 return None
@@ -1532,8 +1541,8 @@ def _wrapper_rest(name, words):
                 index += 1
                 continue
             return None
-        if duration:
-            duration = False
+        if operand:
+            operand = False
             index += 1
             continue
         return words[index:]
@@ -1544,11 +1553,9 @@ def program_candidates(words):
     """(words past the prefix, the words that may be the program run).
 
     One command's words with leading assignments and wrappers that run their
-    argument (`env`, `sudo`, `timeout 5`, ...) stepped over. Behind no wrapper
-    only the first remaining word is the program; behind one, a wrapper's own
-    operands cannot be told from the program by position (`sudo -u x bash`), so
-    every remaining word is a candidate - the reading that grades rather than
-    drops."""
+    argument (`env`, `sudo`, `timeout 5`, ...) stepped over. A wrapper whose
+    grammar is known yields its command; one that cannot be parsed leaves every
+    remaining word as a candidate, so an uncertain parse cannot drop a program."""
     words = list(words)
     while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
         words = words[1:]

@@ -1430,17 +1430,27 @@ def _cases(check):
                  (["python3", "-", "x.py"], False),
                  (["node", "--title", "x.js"], False),
                  (["python3", "$SCRIPT"], False),
-                 (["python3", "-u", "tools/x.py"], True))
+                 (["python3", "-u", "tools/x.py"], True),
+                 (["python3", "--", "tools/x.py"], True))
     _pc = M.program_candidates
     check("pc1 behind a wrapper whose options are known, the program is exact",
           _pc(["sudo", "-u", "root", "$SH"])[1] == ["$SH"]
           and _pc(["timeout", "5", "grep", "x"])[1] == ["grep"]
-          and _pc(["xargs", "-0", "printf", "%s"])[1] == ["printf"],
+          and _pc(["env", "FOO=1", "ls"])[1] == ["ls"]
+          and _pc(["sudo", "FOO=1", "ls"])[1] == ["ls"]
+          and _pc(["chrt", "10", "ls"])[1] == ["ls"]
+          and _pc(["timeout", "-s", "KILL", "5", "ls"])[1] == ["ls"]
+          and _pc(["exec", "-a", "name", "ls"])[1] == ["ls"],
           repr([_pc(["sudo", "-u", "root", "$SH"]), _pc(["timeout", "5", "grep", "x"]),
-                _pc(["xargs", "-0", "printf", "%s"])]))
-    check("pc2 ...while an unknown wrapper option leaves every word a candidate",
-          "bash" in _pc(["sudo", "--frobnicate", "x", "bash"])[1],
-          repr(_pc(["sudo", "--frobnicate", "x", "bash"])))
+                _pc(["env", "FOO=1", "ls"]), _pc(["sudo", "FOO=1", "ls"]),
+                _pc(["chrt", "10", "ls"]),
+                _pc(["timeout", "-s", "KILL", "5", "ls"]),
+                _pc(["exec", "-a", "name", "ls"])]))
+    check("pc2 ...while an uncertain wrapper option leaves every word a candidate",
+          "bash" in _pc(["sudo", "--frobnicate", "x", "bash"])[1]
+          and "echo" in _pc(["xargs", "-i", "echo", "{}"])[1],
+          repr([_pc(["sudo", "--frobnicate", "x", "bash"]),
+                _pc(["xargs", "-i", "echo", "{}"])]))
     check("ro1 an interpreter runs a program of its own only through its own "
           "inline flag or a script operand after its options",
           all(_ro(w) is want for w, want in _ro_cases),
