@@ -599,7 +599,7 @@
     {
       "id": "P94",
       "title": "the suites and the plugin run on Windows as they do on POSIX",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P94.json"
     }
   ],
@@ -960,7 +960,8 @@
       "P82.12-fye",
       "P82.13-fye",
       "P82.14-fye",
-      "P82.15-fye"
+      "P82.15-fye",
+      "P94.3"
     ],
     "QUICKSTART.md": [
       "P18.10",
