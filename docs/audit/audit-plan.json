@@ -593,7 +593,7 @@
     {
       "id": "P93",
       "title": "every leg of CI's ubuntu job passes, and verify.sh runs each of them",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P93.json"
     }
   ],
