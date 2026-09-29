@@ -19,7 +19,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P95-R1",
@@ -31,9 +31,9 @@
         "commit": "ceb04c89"
       }
     ],
-    "outcome": "[findings: 1 - 0 high, 1 med, 0 low; 1 with a recorded fix commit]"
+    "outcome": "matches; two reviews of the human fix, the last clean; one recorded-order invariant breach named, cause F549 [findings: 1 - 0 high, 1 med, 0 low; 1 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "The history guard follows a cd into a directory whose name holds a space, quoted or backslash-escaped, so a history rewrite of that worktree's recorded commit is judged against the worktree. The fix was written by the human maintainer on branch fix/bug-13 (5adb3bba, 3744a6b4, 9ea779f1), and gw2 and gw2b pin it red-first. Two reviews: the first found the escaped-space shape still open, the second was clean. Nothing measured is weaker than main, no input raises, and no benign command is refused. SECURITY.md and the CHANGELOG describe the shared reading and each caller's behaviour when it cannot place a command, which stays open as BUG-14; BUG-13 is recorded as fixed with its task and commit. The phase gate is green with the tree unchanged. The invariant check reports one breach: the task commit ceb04c89 recorded the task's half of the BUG-13 link before the index commit recorded the bug's half, so that one commit's manifest does not validate while the next one and the live tree do. The cause is the pipeline committing the two halves apart, recorded as PLAN.md F549; it is not in the fix.",
   "tasks": [
     {
       "id": "P95.1",
@@ -84,5 +84,10 @@
       "bugId": "BUG-13"
     }
   ],
-  "startedAt": "2026-09-29T23:33:13Z"
+  "startedAt": "2026-09-29T23:33:13Z",
+  "testEvidence": {
+    "runId": "2026-09-29T23:45:07Z.6707fd",
+    "status": "passed",
+    "at": "2026-09-29T23:45:07Z"
+  }
 }
