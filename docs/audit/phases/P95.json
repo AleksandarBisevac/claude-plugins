@@ -1,0 +1,70 @@
+{
+  "id": "P95",
+  "title": "the history guard follows a cd whose target holds a quoted or escaped space",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "The maintainer's fix for BUG-13 (branch fix/bug-13) lands: a cd into a directory whose name holds a space, quoted or escaped, is followed, so a history rewrite of that worktree's recorded commit is judged against the worktree; nothing measured is weaker than main and no benign command is refused. SECURITY.md and the CHANGELOG say what the shared reader now resolves and what it still does not, and BUG-13 is closed with its fixing commit.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P95.1",
+      "title": "BUG-13's fix lands, and SECURITY.md, the CHANGELOG and the bug record describe it",
+      "status": "pending",
+      "description": "Merge branch fix/bug-13 (5adb3bba, 3744a6b4, 9ea779f1 - the maintainer's fix) into this phase's branch. Then correct the documents to what the code does: SECURITY.md's sentence that a glob stays unresolvable (a bracket glob is not in the unresolvable marks), and that effective_cwd is shared - guard-secrets-read and journal-writes now place a quoted or escaped spaced cd too; the CHANGELOG entry says the same. Complete the BUG-13 record: taskId this task, fixedIn the fixing commit, the full files list, a note without a working-tree claim. Gate: the three guard suites, the full sweep, bench-hooks --gate, check-committed-pii.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py",
+        "plugins/audit/tests/test_guard_history_rewrite.py",
+        "SECURITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
