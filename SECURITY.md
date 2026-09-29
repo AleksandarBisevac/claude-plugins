@@ -188,11 +188,22 @@ defect as one that fires on a read. `--help` and `-h` are reads for the same
 reason. A shell's `-c` argument and `eval`'s argument *are* commands and are
 parsed as such, so an interpreter is not a way around it.
 
-**A quoted directory change is followed as one destination.** The history guard
-places a later Git operation in the directory a preceding `cd` or `pushd` names,
-including a literal path containing whitespace. An expansion, glob, home shorthand
-or unbalanced quote remains unresolvable, so the guard does not invent a location
-the shell may not use.
+**A quoted or backslash-escaped directory change is followed as one destination.**
+The history guard places a later Git operation in the directory a preceding `cd` or
+`pushd` names, including a literal path whose whitespace is quoted or escaped with a
+backslash. The reading is shared (`_config.effective_cwd`): the release guard places
+a release command, `guard-secrets-read` places a relative write target and the
+journal recorder places its rows in that same directory. An expansion or
+substitution, a `*`, `?` or brace glob, a home shorthand or an unbalanced quote
+leaves the directory unresolvable, so no reader invents a location the shell may not
+use. A bracket class is not one of those marks, and is read as a literal directory
+name.
+
+Open and tracked as BUG-14: what a caller does when that reading cannot place a
+directory change. The history guard, the release guard and the journal recorder
+fall back to the session's own directory, and the history guard places a `-C`
+value it cannot resolve in the project; `guard-secrets-read` reports a relative
+write target after it as unestablished instead of placing it.
 
 **Every `git` word counts, prose included, and that over-refusal is deliberate.** This
 is not a command-position reader: `git` is an invocation wherever it sits in a command,

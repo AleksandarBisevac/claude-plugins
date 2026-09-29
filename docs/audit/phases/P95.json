@@ -64,7 +64,8 @@
       },
       "startedAt": "2026-09-29T23:33:13Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "bugId": "BUG-13"
     }
   ],
   "startedAt": "2026-09-29T23:33:13Z"
