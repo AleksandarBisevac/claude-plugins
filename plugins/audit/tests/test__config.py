@@ -1380,11 +1380,20 @@ def _cases(check):
               "by containment with no git call at all",
               _tr["moved"] is False and _tr["command"] is None, repr(_tr))
         _cd = M.effective_cwd("cd %s && sed -i x f.ts" % wlink, str(wprim))
+        _spaced = os.path.join(str(wprim), "linked worktree")
         check("tr7 effective_cwd reads a literal `cd` - the reading every hook "
               "that places a Bash command now shares - and declines one it "
               "cannot resolve", M._same_dir(_cd, wlink)
               and M.effective_cwd("cd $X && y", str(wprim)) is None
               and M.effective_cwd("y", str(wprim)) == str(wprim), repr(_cd))
+        check("tr8 effective_cwd keeps a quoted whitespace path as one `cd` "
+              "destination, while an unbalanced quote remains unreadable",
+              M.effective_cwd("cd 'linked worktree' && y", str(wprim))
+              == _spaced
+              and M.effective_cwd('cd "linked worktree" && y', str(wprim))
+              == _spaced
+              and M.effective_cwd("cd 'linked worktree && y", str(wprim))
+              is None)
     finally:
         _harness.remove_tree(str(wroot))
 

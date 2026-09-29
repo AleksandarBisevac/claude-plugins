@@ -142,7 +142,6 @@ import fnmatch
 import json
 import os
 import re
-import shlex
 import sys
 import time
 from pathlib import Path
@@ -1241,6 +1240,35 @@ _DIR_CHANGE_CLAUSE = re.compile(
     r"^\s*(cd|pushd|popd)(?:\s+(.*))?$", re.IGNORECASE)
 
 
+def _dir_change_words(text):
+    """Directory-change words with balanced quotes removed, else None.
+
+    Backslashes stay literal so a quoted Windows path remains one destination.
+    This deliberately reads only the shell shape `effective_cwd` can establish.
+    """
+    words, current, quote, has_word = [], [], None, False
+    for ch in text:
+        if quote:
+            if ch == quote:
+                quote = None
+            else:
+                current.append(ch)
+        elif ch in ("'", '"'):
+            quote, has_word = ch, True
+        elif ch.isspace():
+            if has_word:
+                words.append("".join(current))
+            current, has_word = [], False
+        else:
+            current.append(ch)
+            has_word = True
+    if quote:
+        return None
+    if has_word:
+        words.append("".join(current))
+    return words
+
+
 def effective_cwd(cmd, payload_cwd):
     """Where this command's shell is standing when its writes actually run.
 
@@ -1311,11 +1339,10 @@ def effective_cwd(cmd, payload_cwd):
         verb = m.group(1).lower()
         if verb == "popd":
             return None
-        try:
-            args = [w for w in shlex.split(m.group(2) or "")
-                    if not w.startswith("-")]
-        except ValueError:
+        words = _dir_change_words(m.group(2) or "")
+        if words is None:
             return None
+        args = [w for w in words if not w.startswith("-")]
         if len(args) != 1 or not resolvable_destination(args[0]):
             return None
         try:
