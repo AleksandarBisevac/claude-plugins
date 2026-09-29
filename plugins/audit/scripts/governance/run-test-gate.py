@@ -2718,11 +2718,14 @@ def render_reuse(res, out=print):
 
 
 def _spawn_kwargs():
-    """Popen kwargs for one gate step: a shell, its output captured, and the
-    process group `_proc_group.group_kwargs` gives, so the step's whole tree can
-    be torn down on every path."""
-    kwargs = {"shell": True, "stdout": subprocess.PIPE,
-              "stderr": subprocess.STDOUT}
+    """Popen kwargs for one gate step: its output captured, and the process
+    group `_proc_group.group_kwargs` gives, so the step's whole tree can be torn
+    down on every path.
+
+    NO `shell=True`. That is `cmd.exe` on Windows, which reads none of a plan's
+    POSIX spellings; the shell is in the argv `_proc_group.shell_argv` builds,
+    and on POSIX that argv is the very one `shell=True` would have built."""
+    kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.STDOUT}
     kwargs.update(_proc_group.group_kwargs())
     return kwargs
 
@@ -2743,8 +2746,11 @@ def _shell(project, command, timeout=None):
     which is the overwhelming majority and pays nothing for the rest.
     """
     timeout = DEFAULT_TIMEOUT_SECONDS if timeout is None else timeout
+    argv, refusal = _proc_group.shell_argv(command)
+    if argv is None:
+        return 127, "could not run: %s" % (refusal,), {"outcome": CANNOT_RUN}
     try:
-        proc = subprocess.Popen(command, cwd=project, **_spawn_kwargs())
+        proc = subprocess.Popen(argv, cwd=project, **_spawn_kwargs())
     except Exception as exc:
         return 127, "could not run: %s" % (exc,), {"outcome": CANNOT_RUN}
     try:
@@ -3810,10 +3816,15 @@ def _render_verdict(res, out):
             manifest_path = res.get("manifestPath")
             if manifest_path:
                 phase_id = res.get("subject")
+                # EVERY ARGUMENT SHELL-QUOTED: a manifest path with a space in
+                # it split into two words, and the printed command then named
+                # a plan that does not exist. `shlex.quote` leaves a plain word
+                # as it was, so the ordinary line reads unchanged.
                 for name in grp["names"][1:]:
                     out('  remedy: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/'
                         'manifest/audit-task.py" retarget %s --gate-drop %s '
-                        '%s' % (phase_id, name, manifest_path))
+                        '%s' % (shlex.quote(str(phase_id)), shlex.quote(name),
+                                shlex.quote(manifest_path)))
         else:
             out("SAME COUNT, SAME SUITE NOT ESTABLISHED: %s each reported %d "
                 "check(s), and %s named no suite file - so nothing here can "
@@ -4368,9 +4379,21 @@ def _own_log_dir(manifest_path, project_dir):
         hooks_cfg.logs_dir(Path(log_project), log_config) / "gate-raw")
 
 
+def own_log_name(run_id):
+    """The file name `--own`'s raw log is written under, for `run_id`.
+
+    NOT THE RUN ID VERBATIM. Its time stamp carries colons, and a colon is not
+    a legal character in a Windows file name - so every `--own` run there died
+    on `open` before its log existed. Anything outside a portable file-name
+    alphabet becomes `-`; the id itself is not touched, so the ledger's `runId`
+    reads exactly as it did.
+    """
+    return "%s.log" % (re.sub(r"[^A-Za-z0-9._-]", "-", run_id),)
+
+
 def _write_own_log(manifest_path, project_dir, step_text):
-    """Write every step's WHOLE output to `<logsDir>/gate-raw/<runId>.log`;
-    return the path.
+    """Write every step's WHOLE output to `<logsDir>/gate-raw/<name>.log`,
+    `<name>` being `own_log_name` of a fresh run id; return the path.
 
     ONE FILE PER RUN, named by `_evidence_io.new_run_id()` - the same
     generator a recorded run's `runId` comes from, reused here for the one
@@ -4387,8 +4410,7 @@ def _write_own_log(manifest_path, project_dir, step_text):
     filed off it.
     """
     directory = _own_log_dir(manifest_path, project_dir)
-    run_id = _ev.new_run_id()
-    path = directory / ("%s.log" % (run_id,))
+    path = directory / own_log_name(_ev.new_run_id())
     with open(str(path), "w", encoding="utf-8", errors="replace") as fh:
         for name, text in step_text:
             fh.write("=== %s ===\n" % (name,))

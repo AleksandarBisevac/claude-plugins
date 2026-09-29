@@ -27,7 +27,7 @@
     {
       "id": "P94.1",
       "title": "test fixtures remove what they made on every platform",
-      "status": "in_progress",
+      "status": "done",
       "description": "Git writes loose objects read-only and Windows refuses to unlink a read-only file, so shutil.rmtree(ignore_errors=True) leaves a fixture behind; route each of these suites' fixture removal through the harness's remove_tree (or fixture_root). Red first with the diagnosis's emulation (scratchpad p94diag_winemu/sitecustomize.py).",
       "files": [
         "plugins/audit/tests/test__id_shape.py",
@@ -62,18 +62,27 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "60e73979",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixture-tree rmtree call sites in the task's suites replaced by _harness.remove_tree.",
+        "descriptive": "Suites no longer fail on Windows when git leaves read-only object files in a fixture tree."
       },
       "startedAt": "2026-09-29T10:15:50Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-29T10:51:55Z",
+      "verifiedBy": [
+        "task gate run 2026-09-29T10:46:22Z.2c9556",
+        "green"
+      ],
       "testEvidence": {
         "runId": "2026-09-29T10:46:22Z.2c9556",
         "status": "passed",
         "at": "2026-09-29T10:46:22Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "60e73979",
+        "at": "2026-09-29T10:51:55Z",
+        "basis": "the rmtree call sites over fixture trees in the task's suites now go through _harness.remove_tree, which clears the read-only bit and retries the unlink"
       }
     },
     {

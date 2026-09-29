@@ -18,6 +18,7 @@ to `derive()` directly.
 
 import json
 import os
+import shlex
 import stat
 import subprocess
 import sys
@@ -28,7 +29,10 @@ import _loader                                     # noqa: E402
 
 M = _loader.load_script("derive-phase-gate.py", modname="derive_phase_gate")
 
-PY = sys.executable
+# The interpreter as it is SPELLED IN A PLAN COMMAND, which is POSIX shell: an
+# unquoted path with a space in it (a venv under a spaced directory, Windows'
+# `Program Files`) split into two words and every observation failed.
+PY = shlex.quote(sys.executable)
 
 _VERSION_SCRIPT = "version.py"
 _FULL_LIST_SCRIPT = "full_list.py"
@@ -508,6 +512,30 @@ def _cases(check):
           % ((facts_sh.get("lastFailedSuites"), seen),),
           facts_sh.get("lastFailedSuites") == ["spy.test.ts"]
           and seen == [red["steps"]])
+
+    # --- dp-no-sh: a machine with no POSIX shell is told so, ONCE -----------
+    # Every observation here is a plan command run under `_proc_group`'s one
+    # POSIX shell. With none, each skip line below would read as that
+    # command's own failure; the missing prerequisite is said by name ahead of
+    # them, and no observation claims an exit it never had.
+    real_resolve = M._proc_group.resolve_sh
+    M._proc_group.resolve_sh = lambda: (None, M._proc_group.NO_POSIX_SH)
+    try:
+        facts_ns, lines_ns = M._gather_facts(
+            manifest_sh, manifest_sh["phases"][0], d_sh, lambda _l: None)
+    finally:
+        M._proc_group.resolve_sh = real_resolve
+    shell_lines = [ln for ln in lines_ns if ln.startswith("shell:")]
+    check("dp-no-sh with no POSIX shell the derivation says so in ONE line "
+          "naming Git for Windows, and no observation carries an exit it "
+          "never had (mutation: `_spawn` ignores the refusal and spawns "
+          "through `shell=True` -> the listings report an exit -> red): %r"
+          % ((shell_lines, facts_ns.get("fullListing"),
+              facts_ns.get("versionCheckFailed")),),
+          len(shell_lines) == 1 and "Git for Windows" in shell_lines[0]
+          and (facts_ns.get("fullListing") or {}).get("exit") is None
+          and facts_ns.get("versionCheckFailed") is True
+          and "changedSince" not in facts_ns)
 
     # --- dp-usage: unknown phase is an error, never a silent fallback ---------
     d7, m7, _base7 = _project(root, mode="shadow")

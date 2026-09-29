@@ -25,6 +25,7 @@ is an actual repository and the "mutation" is an actual file appearing in it.
 import datetime
 import json
 import os
+import re
 import shlex
 import signal
 import subprocess
@@ -6578,19 +6579,62 @@ def _remedy_cases(check):
           and mp in remedy[0] and "CLAUDE_PLUGIN_ROOT" in remedy[0]
           and "audit-task.py" in remedy[0])
 
-    cmd = remedy[0][len("remedy:"):].strip()
-    env = dict(os.environ)
-    env["CLAUDE_PLUGIN_ROOT"] = _output.PLUGIN_ROOT
-    proc = subprocess.run(cmd + " --project-dir " + root, shell=True,
-                          cwd=root, env=env, stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE)
+    def _run_printed(line, project):
+        """The printed remedy, run the way the plan's own commands run - under
+        the POSIX shell `_proc_group` resolves, never `shell=True`, which is
+        `cmd.exe` on Windows and would leave `${CLAUDE_PLUGIN_ROOT}` unexpanded.
+        Nothing is added but the project directory a real terminal would
+        already be standing in, itself quoted."""
+        env = dict(os.environ)
+        env["CLAUDE_PLUGIN_ROOT"] = _output.PLUGIN_ROOT
+        argv, why = _pg.shell_argv(line[len("remedy:"):].strip()
+                                   + " --project-dir " + shlex.quote(project))
+        if argv is None:
+            return None, why
+        proc = subprocess.run(argv, cwd=project, env=env, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT)
+        return proc.returncode, proc.stdout.decode("utf-8", "replace")[-400:]
+
+    rv2_code, rv2_text = _run_printed(remedy[0], root)
     with open(mp, encoding="utf-8") as fh:
         after = json.load(fh)
     check("rv2 RUNNING THE PRINTED COMMAND, argv split and nothing added but "
           "the project directory a real terminal would already be standing "
           "in, drops `coverage` from the phase's own testGate: %r"
-          % ((proc.returncode, after["phases"][0].get("testGate")),),
-          proc.returncode == 0 and after["phases"][0]["testGate"] == ["test"])
+          % ((rv2_code, rv2_text, after["phases"][0].get("testGate")),),
+          rv2_code == 0 and after["phases"][0]["testGate"] == ["test"])
+
+    # A MANIFEST WHOSE PATH HAS A SPACE IN IT: the remedy printed it unquoted,
+    # so the shell split it into two words and the command named a plan that
+    # does not exist - on every platform, not only on Windows.
+    spaced = os.path.join(root, "with space")
+    os.mkdir(spaced)
+    subprocess.run(["git", "init", "-q", spaced], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    sp_mp = os.path.join(spaced, "audit-plan.json")
+    with open(mp, encoding="utf-8") as fh:
+        sp_plan = json.load(fh)
+    sp_plan["phases"][0]["testGate"] = ["test", "coverage"]
+    with open(sp_mp, "w") as fh:
+        json.dump(sp_plan, fh)
+    sp_lines = []
+    M.main([sp_mp, "P1", "--project-dir", spaced, "--no-reuse"],
+           out=sp_lines.append)
+    sp_remedy = [ln.strip() for ln in sp_lines
+                 if ln.strip().startswith("remedy:")]
+    sp_code, sp_text = (_run_printed(sp_remedy[0], spaced) if sp_remedy
+                        else (None, "no remedy printed"))
+    with open(sp_mp, encoding="utf-8") as fh:
+        sp_after = json.load(fh)
+    check("rv5 RED-FIRST: from a manifest path WITH A SPACE the remedy carries "
+          "the path as ONE quoted word, and runs as printed to drop `coverage` "
+          "(mutation: print the path unquoted -> the command names a plan that "
+          "does not exist -> red): %r"
+          % ((sp_remedy, sp_code, sp_text,
+              sp_after["phases"][0].get("testGate")),),
+          len(sp_remedy) == 1 and shlex.quote(sp_mp) in sp_remedy[0]
+          and shlex.split(sp_remedy[0])[-1] == sp_mp
+          and sp_code == 0 and sp_after["phases"][0]["testGate"] == ["test"])
 
     task_lines = []
     M.main([mp, "P1", "--project-dir", root, "--no-reuse", "--task", "P1.1"],
@@ -7093,6 +7137,27 @@ def _own_cases(check):
     check("tk1b ...and the LOG holds every line the bounded render dropped: "
           "%r" % (log_text.count("FAILED tests/test_a.py::test_"),),
           log_text.count("FAILED tests/test_a.py::test_") == big_n)
+
+    # A COLON IS NOT A LEGAL CHARACTER IN A WINDOWS FILE NAME, and the run id's
+    # time stamp carries two - so a log named by the raw id died on `open` and
+    # every `--own` run there crashed. The name is made portable; the id is not.
+    log_name = os.path.basename(log_path)
+    fresh_id = _ev_io.new_run_id()
+    check("own11 RED-FIRST: the raw log's FILE NAME is portable - the run id "
+          "with every character outside `[A-Za-z0-9._-]` made `-`, so no colon "
+          "(mutation: name the log by the raw run id -> red): %r"
+          % ((log_name, M.own_log_name("2026-09-29T10:20:02Z.536528")),),
+          ":" not in log_name
+          and re.match(r"^\d{4}-\d\d-\d\dT\d\d-\d\d-\d\dZ\.[0-9a-f]{6}\.log$",
+                        log_name) is not None
+          and M.own_log_name("2026-09-29T10:20:02Z.536528")
+          == "2026-09-29T10-20-02Z.536528.log")
+    check("own12 ALLOW: ...and the RUN ID ITSELF is untouched - the ledger's "
+          "`runId` keeps its colons, because only the file name was the "
+          "problem and the id is a recorded value readers already hold: %r"
+          % (fresh_id,),
+          re.match(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\.[0-9a-f]{6}$",
+                    fresh_id) is not None)
 
     own2_lines = []
     own2_code = M.main([mp, "P1", "--project-dir", root, "--own"],
@@ -8773,17 +8838,21 @@ def _selection_miss_cases(check):
         # THE PRINTED REMEDY IS RUN AS A SHELL WOULD RUN IT, from a directory
         # that is not the project: a bare `audit-task.py` is 'command not
         # found' there, and a plan the command does not name is not found.
-        if not os.path.exists("/bin/sh"):
-            _harness.skip(check, "sm16", "no POSIX `/bin/sh` here to run the "
-                          "printed remedy through", True)
+        # The shell is the one the plan's own commands run under, so this
+        # case runs wherever the product does - Windows with Git's `sh`
+        # included - and skips only where the product itself refuses.
+        sm_argv, sm_why = _pg.shell_argv(_sm_remedy_text(misses[0])
+                                         if misses else "false")
+        if sm_argv is None:
+            _harness.skip(check, "sm16", "no POSIX shell here to run the "
+                          "printed remedy through: %s" % (sm_why,), True)
         else:
             away = _harness.fixture_root("run-test-gate-miss-away-")
             env = dict(os.environ)
             env.pop("CLAUDE_PROJECT_DIR", None)
             try:
                 proc = subprocess.run(
-                    ["/bin/sh", "-c", _sm_remedy_text(misses[0])
-                     if misses else "false"], cwd=away, env=env,
+                    sm_argv, cwd=away, env=env,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     universal_newlines=True)
             finally:
@@ -8795,7 +8864,7 @@ def _selection_miss_cases(check):
             bugs = [(b.get("title"), b.get("files"))
                     for b in ran_plan.get("bugs") or []]
             check("sm16 RED-FIRST: the SELECTION MISS remedy runs as printed "
-                  "under /bin/sh -c from another directory, exit 0, and "
+                  "under the resolved POSIX sh from another directory, exit 0, and "
                   "leaves the coupling and the bug it spells in the plan: "
                   "%r" % ((proc.returncode, proc.stdout[-400:], coupled,
                            bugs),),

@@ -12,11 +12,17 @@ registered in git after a SIGTERM, and a grandchild writing into a directory
 being removed - so the answer moved here, where both entry points share it,
 instead of being written a second time.
 
+AND THE SHELL A PLAN COMMAND RUNS UNDER. `run-test-gate.py` spawned through
+`shell=True` - `cmd.exe` on Windows - while `derive-phase-gate.py` named
+`/bin/sh`, which Windows does not have; neither ran a plan's POSIX spellings
+there. `shell_argv` is the one answer both now take.
+
 WHAT IT CANNOT COVER: SIGKILL. It cannot be caught, so no handler runs and no
 `finally` runs; a caller that must account for what it built says so, and reports
 a leftover by name the next time it runs.
 """
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -61,8 +67,8 @@ def group_kwargs():
     controlling terminal means a Ctrl-C no longer reaches the children BY
     ACCIDENT; that is given up to gain a teardown that is the same on all three
     paths - timeout, SIGINT and SIGTERM - instead of one that happens to work on
-    one of them. Only the grouping lives here: whether a caller runs a shell,
-    and where the output goes, is the caller's.
+    one of them. Only the grouping lives here: which shell a plan command runs
+    under is `shell_argv`'s, and where the output goes is the caller's.
     """
     if hasattr(os, "setsid"):
         return {"start_new_session": True}
@@ -151,6 +157,96 @@ def drain(proc):
         return (out or b"").decode("utf-8", "replace")
     except Exception:
         return ""
+
+
+# --- one POSIX shell, on every platform ---------------------------------------
+# A plan's commands are written in POSIX shell - `export`, single quotes,
+# `${VAR}`, `&&` chains a `meta.nodePreamble` builds - so they are run by ONE
+# POSIX `sh` wherever this runs. `shell=True` is not that: on Windows it is
+# `cmd.exe`, which reads none of those spellings, and a command it misreads
+# still exits with a code that looks like an answer.
+POSIX_SH = "/bin/sh"
+
+NO_POSIX_SH = (
+    "no POSIX shell was found to run this plan's commands: %s is absent, no "
+    "`sh` is on PATH, and none sits beside `git`. The plan's commands are POSIX "
+    "shell, so they are NOT handed to cmd.exe instead. On Windows, install Git "
+    "for Windows (https://gitforwindows.org) and run from Git Bash, or put its "
+    "`usr\\bin` directory on PATH." % (POSIX_SH,))
+
+# Where Git for Windows keeps its `sh.exe`, relative to its install root. The
+# default installer puts only `<root>\cmd` on PATH, so a `git` that resolves
+# while `sh` does not is the ordinary Windows state, not an exotic one.
+_GIT_SH_RELS = (("usr", "bin", "sh.exe"), ("bin", "sh.exe"))
+
+
+def _in_system_dir(path, environ):
+    """Whether `path` sits under Windows' own system directory.
+
+    `System32\\bash.exe` is the WSL launcher: it runs the command inside a Linux
+    VM with its own filesystem view, so the plan's paths would not name the
+    files the gate is judging. Nothing found there is taken as the shell -
+    which is why there is no bare `bash` fallback at all: every Git or MSYS
+    directory that holds a `bash` holds an `sh` beside it, so the one `bash` a
+    fallback could add is exactly this one.
+    """
+    root = (environ.get("SystemRoot") or environ.get("SYSTEMROOT")
+            or environ.get("windir") or "")
+    if not root or not path:
+        return False
+    base = os.path.normcase(os.path.normpath(root))
+    here = os.path.normcase(os.path.normpath(path))
+    return here == base or here.startswith(base.rstrip("\\/") + os.sep)
+
+
+def resolve_sh(isfile=None, which=None, environ=None):
+    """`(path, None)` for the POSIX shell a plan command runs under, or
+    `(None, sentence)` saying none exists and what to install.
+
+    `/bin/sh` FIRST, and when it is there nothing else is asked - that is the
+    exact interpreter `subprocess`'s `shell=True` uses on POSIX, so a POSIX
+    machine runs every command byte for byte as before. Then the `sh` on PATH,
+    which is Git for Windows' under Git Bash; then the one beside `git`, for the
+    default Windows install that puts only `git` on PATH.
+
+    NEVER A FALLBACK TO `cmd.exe`, and never a bare `"sh"` handed to the OS to
+    find: the first reads the plan's commands in another language, and the
+    second fails at spawn time with an error that names no remedy. The refusal
+    is the answer, and the callers turn it into could-not-run.
+
+    The three arguments are seams for the cases; production passes none.
+    """
+    isfile = isfile if isfile is not None else os.path.isfile
+    which = which if which is not None else shutil.which
+    environ = environ if environ is not None else os.environ
+    if isfile(POSIX_SH):
+        return POSIX_SH, None
+    found = which("sh")
+    if found and not _in_system_dir(found, environ):
+        return found, None
+    git = which("git")
+    if git and not _in_system_dir(git, environ):
+        here = os.path.dirname(os.path.normpath(git))
+        for root in (os.path.dirname(here), os.path.dirname(os.path.dirname(here))):
+            for rel in _GIT_SH_RELS:
+                candidate = os.path.join(root, *rel)
+                if isfile(candidate):
+                    return candidate, None
+    return None, NO_POSIX_SH
+
+
+def shell_argv(command):
+    """`(argv, None)` running `command` under the resolved POSIX shell, or
+    `(None, sentence)` when there is none.
+
+    `resolve_sh` is looked up at CALL time, not bound as a default, so a case
+    can swap it for one that finds nothing and drive a caller's refusal path -
+    the same seam `shares_our_group` gives `tear_down`.
+    """
+    sh, refusal = resolve_sh()
+    if sh is None:
+        return None, refusal
+    return [sh, "-c", command], None
 
 
 # --- stopping this process ----------------------------------------------------

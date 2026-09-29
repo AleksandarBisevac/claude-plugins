@@ -166,10 +166,18 @@ def _with_preamble(command, preamble):
 def _spawn(command, cwd, timeout):
     """`{"exit", "output", "durationMs", "timedOut"}` for one shell command,
     run through `_proc_group` so a child that hangs is torn down WHOLE rather
-    than leaving a grandchild running past this process's own patience."""
+    than leaving a grandchild running past this process's own patience.
+
+    The shell is `_proc_group.shell_argv`'s: the same POSIX `sh` the gate runs
+    a plan command under, and on a machine with none, the refusal naming what
+    to install carried as `error` rather than a spawn error that names none."""
     start = time.time()
+    argv, refusal = _proc_group.shell_argv(command)
+    if argv is None:
+        return {"exit": None, "output": "", "durationMs": 0, "timedOut": False,
+                "error": refusal}
     try:
-        proc = subprocess.Popen(["/bin/sh", "-c", command], cwd=cwd,
+        proc = subprocess.Popen(argv, cwd=cwd,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 **_proc_group.group_kwargs())
     except Exception as exc:
@@ -215,6 +223,12 @@ def _gather_facts(manifest, phase, project, out):
     preamble = meta.get("nodePreamble")
 
     facts, lines = {}, []
+    # SAID ONCE, AHEAD OF EVERY SKIP IT CAUSES: with no POSIX shell each
+    # observation below fails, and each skip line would otherwise read as that
+    # command's own failure rather than as the one missing prerequisite.
+    _sh, no_sh = _proc_group.resolve_sh()
+    if no_sh:
+        lines.append("shell: could not run - %s" % (no_sh,))
     if derived_cfg is None:
         lines.append("importers: skipped - meta.phaseGate.derived is not set, "
                      "so there is no listing to run")
