@@ -19,7 +19,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P93-R1",
@@ -76,9 +76,9 @@
         "commit": "e08387b4"
       }
     ],
-    "outcome": "[findings: 6 - 0 high, 2 med, 4 low; 6 with a recorded fix commit]"
+    "outcome": "Phase review drove the encoding leg and both readers; its two meds (sweep calls lost when list-joined, env-prefixed, dot-pathed or looped) and four lows were fixed in P93.3 and P93.4 and resolved; the phase gate and verify.sh (with the encoding leg) are green, invariants found no breach. Comparing the document sides' sweep legs is left as a follow-up. [findings: 6 - 0 high, 2 med, 4 low; 6 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "The selection-miss fixtures write UTF-8 bytes like a real runner and one run of them is pinned to a cp1252 stream, so the ubuntu encoding leg and every local sweep see a named suite; verify.sh runs the sweep's encoding leg, and gate-parity reads both runners as shell and holds their sweep legs and report targets to each other, reporting any call it cannot resolve.",
   "tasks": [
     {
       "id": "P93.1",
@@ -301,5 +301,10 @@
       }
     }
   ],
-  "startedAt": "2026-09-28T07:34:13Z"
+  "startedAt": "2026-09-28T07:34:13Z",
+  "testEvidence": {
+    "runId": "2026-09-29T08:57:14Z.f548ff",
+    "status": "passed",
+    "at": "2026-09-29T08:57:14Z"
+  }
 }
