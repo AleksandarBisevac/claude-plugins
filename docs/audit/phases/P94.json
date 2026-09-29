@@ -88,7 +88,7 @@
     {
       "id": "P94.2",
       "title": "every plan command runs under one POSIX shell on every platform, and the own run's raw log and the printed remedy are portable",
-      "status": "in_progress",
+      "status": "done",
       "description": "Product: derive-phase-gate spawns through a hard-coded /bin/sh and run-test-gate through shell=True (cmd.exe on Windows) while plan spellings are POSIX; give both one spawn that resolves a POSIX sh (Git for Windows' sh there) and refuses by name when none exists. run-test-gate --own names its raw log after the run id, whose colon is illegal on Windows: a filename-safe name, the run id unchanged in the ledger. The duplicate-suite remedy quotes the manifest path. Fixtures fg10/fg10c and rv2 use shell-neutral commands or run through the resolved sh. Red first with the diagnosis's nobinsh and nocolon emulations and a spaced path.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -121,18 +121,27 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "649163dc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_proc_group gains resolve_sh/shell_argv; derive-phase-gate._spawn and run-test-gate._shell use it; shell=True removed; own_log_name(run_id); shlex.quote in the remedy.",
+        "descriptive": "On Windows every plan command runs under Git's POSIX sh or is refused with a sentence naming Git for Windows; --own no longer crashes on a colon in its log name; the duplicate-suite remedy runs as printed from a path with spaces."
       },
       "startedAt": "2026-09-29T10:15:50Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-29T10:52:11Z",
+      "verifiedBy": [
+        "task gate run 2026-09-29T10:48:03Z.d7f416",
+        "green; executor mutation table M1-M5 each turned its named case red"
+      ],
       "testEvidence": {
         "runId": "2026-09-29T10:48:03Z.d7f416",
         "status": "passed",
         "at": "2026-09-29T10:48:03Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "649163dc",
+        "at": "2026-09-29T10:52:11Z",
+        "basis": "_proc_group.shell_argv resolves /bin/sh, then sh on PATH, then Git's sh beside git, rejects anything under SystemRoot, and returns a named refusal instead of cmd.exe; derive-phase-gate and run-test-gate both spawn through it; the --own raw log name maps non-portable characters; the SAME SUITE remedy quotes its words"
       }
     },
     {

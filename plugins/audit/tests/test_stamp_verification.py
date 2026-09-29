@@ -30,7 +30,9 @@ import hashlib
 import importlib.util
 import io
 import json
+import ntpath
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -43,6 +45,7 @@ from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _tree_stamp                                 # noqa: E402
 import _proc_group                                 # noqa: E402
+import _worktrees as _wt                           # noqa: E402
 
 M = _loader.load_script("stamp-verification.py", modname="stamp_verification")
 M_PLUGIN = _output.PLUGIN_ROOT
@@ -64,9 +67,16 @@ def _write(path, text):
 
 
 def _seeded_repo(prefix):
+    """A committed fixture repository with its line endings pinned in the
+    REPOSITORY's own config. The helper drops every GIT_* variable before it
+    calls git, the sweep's GIT_CONFIG_NOSYSTEM with them, so without the pin its
+    git reads a system config this suite's git never saw - Git for Windows ships
+    one setting core.autocrlf - and the two disagree about the bytes a
+    checkout writes."""
     root = _harness.fixture_root(prefix)
     subprocess.run(["git", "init", "-q", root], check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _git(root, "config", "core.autocrlf", "false")
     os.makedirs(os.path.join(root, "src"))
     _write(os.path.join(root, "src", "mine.py"), "v = 1\n")
     _git(root, "add", "src/mine.py")
@@ -343,6 +353,22 @@ def _worktrees(root):
                           stdout=subprocess.PIPE, universal_newlines=True).stdout
 
 
+def _lists(root, path):
+    """Whether git's worktree list names `path`, compared as a path. git prints
+    its own spelling - forward slashes and long names on Windows - so a
+    substring test of a native path against the listing answers "absent" for a
+    tree git lists, and an `x not in listing` assertion passes for nothing."""
+    return any(_wt.same_tree(rec["path"], path)
+               for rec in _wt.parse_list(_worktrees(root)))
+
+
+def _sh_word(path):
+    """`path` as one word of an `sh -c` script: quoted, so a space does not split
+    it, and forward-slashed, so the POSIX shell Git for Windows runs does not
+    read a backslash as an escape."""
+    return shlex.quote(path.replace("\\", "/"))
+
+
 def _red(root, man, cmd, *extra):
     code, text = _run(["red", "--project", root, "--manifest", man,
                        "--task", "P1.1", "--json"] + list(extra) + ["--"] + cmd)
@@ -384,7 +410,7 @@ def _red_cases(check):
           "list: %r" % (tw,),
           tw.get("path") and tw.get("removed") is True
           and not os.path.exists(tw["path"])
-          and tw["path"] not in _worktrees(root))
+          and not _lists(root, tw["path"]))
     check("sr4 the throwaway held HEAD's implementation and the working tree's "
           "test, split on what the task declares, and says which was which: %r"
           % ((got.get("atHead"), got.get("copied")),),
@@ -715,9 +741,9 @@ def _process_cases(check):
     check("sr24 a throwaway an earlier run could not remove (SIGKILL cannot be "
           "caught) is REPORTED by name, and never pruned - it may be another "
           "run's, still going: %r" % (got_l.get("leftovers"),),
-          [os.path.realpath(x["path"]) for x in got_l.get("leftovers") or []]
-          == [os.path.realpath(leftover)]
-          and os.path.realpath(leftover) in _worktrees(root)
+          [_wt.same_tree(x["path"], leftover)
+           for x in got_l.get("leftovers") or []] == [True]
+          and _lists(root, leftover)
           and code_l == M.E_PROVED)
     _git(root, "worktree", "remove", "--force", leftover)
 
@@ -1769,7 +1795,8 @@ def _round5_cases(check):
                                              [py, "tests/test_mine.py"] + flags)[0])
                 for flags in (["-vf"], ["-fv"], ["-v", "-cf"], ["-v", "--failf"]))
     runs["sh -c"] = _suite_red("stamp-red-sh-", head_u, wt_u,
-                               ["sh", "-c", "%s tests/test_mine.py -v -f" % (py,)])[0]
+                               ["sh", "-c", "%s tests/test_mine.py -v -f"
+                                % (_sh_word(py),)])[0]
     check("sr109 HEAD red under failfast in any spelling, or under a wrapper, is "
           "not proved - the baseline is red whatever stopped it: %r" % (runs,),
           all(c == M.E_CANNOT_PROVE for c in runs.values()))
@@ -2260,7 +2287,7 @@ def _reach_cases(check):
         ("sr146", "a new test file that imports HEAD's red TestCase", importing,
          unit + ["tests/test_new.py"], None),
         ("sr147", "a shell wrapper whose script is a discovery",
-         _NEW_TRIVIAL, ["sh", "-c", py + " -m unittest discover -s tests -v",
+         _NEW_TRIVIAL, ["sh", "-c", _sh_word(py) + " -m unittest discover -s tests -v",
                         "tests/test_new.py"], None),
         ("sr148", "HEAD's red file deleted in the working tree, undeclared, named "
          "beside the new file", _NEW_TRIVIAL,
@@ -2322,7 +2349,7 @@ def _reach_cases(check):
               "basis says why: exit=%r %s" % (cid, how, code, basis[:400]),
               code == M.E_CANNOT_PROVE and why in basis)
     two = "%s -m unittest -v tests/test_old.py; %s -m unittest -v tests/test_new.py" % (
-        py, py)
+        _sh_word(py), _sh_word(py))
     root_z, man_z = _reach_repo("stamp-red-sr160-", new_text=fixing, declare_old=True)
     code_z, got_z = _red(root_z, man_z, ["sh", "-c", two, "--", "-m", "unittest"],
                          "--case", "test_value_is_two")
@@ -2732,7 +2759,125 @@ def _unit_suite(methods):
                      + ["if __name__ == '__main__':", "    unittest.main()"]) + "\n"
 
 
+def _crlf_cases(check):
+    """The throwaway holds HEAD's bytes whatever the configs around it say."""
+    root = _seeded_repo("stamp-crlf-")
+    committed = b"x = 1\n\n\n"
+    with open(os.path.join(root, "src", "lf.py"), "wb") as fh:
+        fh.write(committed)
+    _git(root, "add", "src/lf.py")
+    _git(root, "commit", "-q", "-m", "lf")
+    # The repository's own config, which no environment scrub can drop: the
+    # shape a Windows machine's system config takes once git reads it.
+    _git(root, "config", "core.autocrlf", "true")
+    path = os.path.join(_harness.fixture_root("stamp-crlf-tree-"), "tree")
+    built, problem = M._build_throwaway(root, path, [])
+    target = os.path.join(path, "src", "lf.py")
+    try:
+        with open(target, "rb") as fh:
+            after_add = fh.read()
+        with open(target, "wb") as fh:
+            fh.write(b"x = 2\r\n")
+        reset = M._isolate(path, time.time() + 30)
+        with open(target, "rb") as fh:
+            after_reset = fh.read()
+    finally:
+        _git(root, "worktree", "remove", "--force", path)
+    check("sr187 a repository whose config sets core.autocrlf still gets HEAD's "
+          "bytes in the throwaway, both when it is built and when it is reset - a "
+          "checkout rewriting line endings would grade bytes HEAD does not hold: "
+          "%r" % ((problem, after_add, reset, after_reset),),
+          problem is None and reset is None and built == []
+          and after_add == committed and after_reset == committed)
+
+
+def _listing_cases(check):
+    """Whether git still lists a throwaway is a comparison of PATHS."""
+    real = os.path.realpath(_harness.fixture_root("stamp-listed-"))
+    holder = os.path.join(real, M.THROWAWAY_PREFIX + "x")
+    path = os.path.join(holder, "tree")
+    link = os.path.join(_harness.fixture_root("stamp-listed-link-"), "link")
+    try:
+        os.symlink(real, link)
+        linked = None
+    except (OSError, NotImplementedError) as exc:
+        linked = exc
+    real_git = M._git
+
+    def removed_given(listed_as):
+        os.makedirs(path)
+        listing = "worktree %s\nHEAD %s\ndetached\n" % (listed_as, "a" * 40)
+
+        def fake(where, args, timeout=120, strip=True):
+            if args[:2] == ["worktree", "list"]:
+                return 0, listing
+            return 1, "fatal: refused"
+        M._git = fake
+        try:
+            return M._remove_throwaway(real, holder, path)
+        finally:
+            M._git = real_git
+    if linked is not None:
+        _harness.skip(check, "sr188 a throwaway git lists by another spelling is "
+                      "not reported removed", "symlink", True)
+    else:
+        spelled = os.path.join(link, M.THROWAWAY_PREFIX + "x", "tree")
+        check("sr188 a throwaway git still lists, under ANOTHER spelling of the "
+              "same directory (here a symlink; on Windows forward slashes and a "
+              "long name against a short one), is not reported removed: %r"
+              % (spelled,), removed_given(spelled) is False)
+    # The second direction, for a comparison widened until everything matches:
+    # a sibling whose path merely BEGINS with this one is not this throwaway.
+    check("sr189 THE ALLOW CASE: a listing naming only a sibling whose path "
+          "begins with this throwaway's does not keep it listed - it was "
+          "removed: %r" % (path + "-other",),
+          removed_given(path + "-other") is True)
+    win_listing = ("worktree C:/Users/runneradmin/work/repo\nHEAD %s\nbranch "
+                   "refs/heads/main\n\nworktree C:/Users/runneradmin/AppData/Local/"
+                   "Temp/audit-red-x/tree\nHEAD %s\ndetached\n" % ("b" * 40, "b" * 40))
+    native = "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\audit-red-x\\tree"
+
+    def as_windows(p):
+        return ntpath.normcase(ntpath.normpath(p)).replace("runner~1", "runneradmin")
+    check("sr190 git's porcelain spelling and a native Windows spelling of one "
+          "tree compare equal under Windows' resolution, and a different tree "
+          "does not: %r" % (native,),
+          M.still_listed(win_listing, native, as_windows) is True
+          and M.still_listed(win_listing, native + "2", as_windows) is False)
+
+
+def _holder_cases(check):
+    """The throwaway's temp directory, when the configured one is inside the repo."""
+    root = _seeded_repo("stamp-holder-")
+    inside = os.path.join(root, "untracked-tmp")
+    os.makedirs(inside)
+    outside = _harness.fixture_root("stamp-holder-out-")
+    held = (os.name, tempfile.tempdir, os.environ.get("TEMP"))
+    try:
+        os.environ["TEMP"] = outside
+        tempfile.tempdir = outside
+        preferred = M.holder_base(root)
+        os.name = "nt"
+        tempfile.tempdir = inside
+        fallback = M.holder_base(root)
+    finally:
+        os.name, tempfile.tempdir = held[0], held[1]
+        if held[2] is None:
+            os.environ.pop("TEMP", None)
+        else:
+            os.environ["TEMP"] = held[2]
+    real_root = os.path.realpath(root) + os.sep
+    check("sr191 on Windows too, a temp directory inside the repository is passed "
+          "over for one outside it, while an outside one is still used first: "
+          "%r" % ((preferred, fallback),),
+          preferred == outside and fallback is not None
+          and not (os.path.realpath(fallback) + os.sep).startswith(real_root))
+
+
 def _cases(check):
+    _harness.stage(check, "sr-crlf", _crlf_cases)
+    _harness.stage(check, "sr-listing", _listing_cases)
+    _harness.stage(check, "sr-holder", _holder_cases)
     _harness.stage(check, "sv-take", _take_cases)
     _harness.stage(check, "sv-compare", _compare_cases)
     _harness.stage(check, "sv-shape", _shape_cases)

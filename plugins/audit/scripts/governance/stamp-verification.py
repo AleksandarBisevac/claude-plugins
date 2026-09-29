@@ -113,6 +113,7 @@ import _tree_stamp  # noqa: E402  (the ONE tree identity, shared with run-test-g
 import _manifest_io as _mio  # noqa: E402  (dual-format loader: single file OR shards)
 import _proc_group  # noqa: E402  (a child tree stopped whole; a stop signal as an exception)
 import _locks  # noqa: E402  (pid_alive: whether a leftover throwaway's owner still runs)
+import _worktrees  # noqa: E402  (git's worktree list read, and two spellings of one tree compared)
 
 USAGE = ("usage: stamp-verification.py take|compare|red [--project DIR] ...\n")
 
@@ -617,10 +618,20 @@ def _git_env():
 def _git(root, args, timeout=120, strip=True):
     """`(code, text)` for one git call; the hooks path points nowhere, so no hook
     the repository carries runs on the throwaway's behalf. `strip=False` keeps
-    the output as git wrote it, for a file's contents."""
+    the output as git wrote it, for a file's contents.
+
+    `core.autocrlf` is pinned off because the throwaway is checked out by these
+    calls, and a system or user config setting it - Git for Windows ships one
+    that does, and `_git_env` drops the variable that would skip it - would
+    rewrite HEAD's line endings on checkout: the run would then grade bytes HEAD
+    does not hold, and `_head_text`, which reads the blob, would disagree with
+    the file the run read. A `.gitattributes` the repository commits still
+    applies; that conversion is HEAD's own. No call here reads the shared tree's
+    status, so the pin changes nothing there."""
     try:
         out = subprocess.run(["git", "-C", root, "-c",
-                              "core.hooksPath=%s" % os.devnull] + list(args),
+                              "core.hooksPath=%s" % os.devnull,
+                              "-c", "core.autocrlf=false"] + list(args),
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              timeout=timeout, env=_git_env())
     except (OSError, subprocess.SubprocessError) as exc:
@@ -1297,15 +1308,32 @@ def leftover_line(left):
 def holder_base(root):
     """A temp directory OUTSIDE the shared tree, or None. A TMPDIR pointing inside
     the repository would put the throwaway worktree where siblings' `git status`
-    sees it, so the platform's own temp directories are tried next."""
+    sees it, so the environment's own temp variables and then the platform's own
+    temp directories are tried next - on every platform, since a Windows host
+    whose temp directory sits in the repository needs the fallback as much as a
+    POSIX one does."""
     roots = [r for r in set((root, os.path.realpath(root))) if r]
-    candidates = [tempfile.gettempdir()]
-    if os.name != "nt":
-        candidates += ["/tmp", "/var/tmp"]
+    candidates = [tempfile.gettempdir()] + [os.environ.get(name) for name in
+                                            ("TMPDIR", "TEMP", "TMP")]
+    candidates += _platform_temp_dirs()
     for cand in candidates:
-        if os.path.isdir(cand) and not _under(os.path.abspath(cand), roots):
+        if (cand and os.path.isdir(cand) and os.access(cand, os.W_OK)
+                and not _under(os.path.abspath(cand), roots)):
             return cand
     return None
+
+
+def _platform_temp_dirs():
+    """The temp directories a platform keeps whatever its environment says:
+    the per-user one under the local application data and the system one on
+    Windows, `/tmp` and `/var/tmp` elsewhere."""
+    if os.name != "nt":
+        return ["/tmp", "/var/tmp"]
+    local = os.environ.get("LOCALAPPDATA") or os.path.join(
+        os.path.expanduser("~"), "AppData", "Local")
+    system = os.environ.get("SystemRoot") or os.environ.get("SYSTEMROOT")
+    return [os.path.join(local, "Temp")] + ([os.path.join(system, "Temp")]
+                                            if system else [])
 
 
 def _build_throwaway(root, path, tests, timeout=120):
@@ -1345,8 +1373,28 @@ def _remove_throwaway(root, holder, path):
     shutil.rmtree(holder, ignore_errors=True)
     code, listing = _git(root, ["worktree", "list", "--porcelain"],
                          timeout=REMOVE_GIT_TIMEOUT)
-    listed = code != 0 or path in listing or os.path.realpath(path) in listing
+    listed = code != 0 or still_listed(listing, path)
     return not os.path.exists(holder) and not listed
+
+
+def still_listed(listing, path, resolve=None):
+    """Whether `git worktree list --porcelain` output still names `path`.
+
+    Each record's path is compared as a PATH, both sides resolved, never
+    searched for as text: git prints its own spelling - forward slashes and
+    long names on Windows, a resolved path through a symlink - while `path` is
+    this platform's, so a substring test answers "gone" for a tree git still
+    lists, and answers "listed" for a sibling whose path merely begins with
+    this one. `resolve` defaults to the resolved, case-folded path."""
+    fn = resolve if resolve is not None else _canonical_path
+    return any(_worktrees.same_tree(rec["path"], path, fn)
+               for rec in _worktrees.parse_list(listing))
+
+
+def _canonical_path(path):
+    """One spelling per directory: resolved, and case-folded where the platform
+    folds case."""
+    return os.path.normcase(os.path.realpath(path))
 
 
 def _run_in(path, cmd, timeout, env):
