@@ -601,6 +601,12 @@
       "title": "the suites and the plugin run on Windows as they do on POSIX",
       "status": "done",
       "shard": "phases/P94.json"
+    },
+    {
+      "id": "P95",
+      "title": "the history guard follows a cd whose target holds a quoted or escaped space",
+      "status": "pending",
+      "shard": "phases/P95.json"
     }
   ],
   "fileIndex": {
@@ -786,7 +792,8 @@
       "P81.18-j7p",
       "P89.1",
       "P94.5-579",
-      "P94.8-579"
+      "P94.8-579",
+      "P95.1"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1012,7 +1019,8 @@
       "P88.1",
       "P88.2-dnb",
       "P88.3-dnb",
-      "P89.1"
+      "P89.1",
+      "P95.1"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -1519,7 +1527,8 @@
       "P83.3-wkm",
       "P83.4-wkm",
       "P83.5-wkm",
-      "P89.1"
+      "P89.1",
+      "P95.1"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -3046,7 +3055,8 @@
       "P83.4-wkm",
       "P83.5-wkm",
       "P86.3",
-      "P89.1"
+      "P89.1",
+      "P95.1"
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
@@ -3834,7 +3844,8 @@
       "P88.1",
       "P88.2-dnb",
       "P89.1",
-      "P94.4"
+      "P94.4",
+      "P95.1"
     ],
     "plugins/audit/tests/test_guard_secrets_read.py": [
       "P22.6",
