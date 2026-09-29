@@ -1,7 +1,7 @@
 {
   "id": "P95",
   "title": "the history guard follows a cd whose target holds a quoted or escaped space",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "The maintainer's fix for BUG-13 (branch fix/bug-13) lands: a cd into a directory whose name holds a space, quoted or escaped, is followed, so a history rewrite of that worktree's recorded commit is judged against the worktree; nothing measured is weaker than main and no benign command is refused. SECURITY.md and the CHANGELOG say what the shared reader now resolves and what it still does not, and BUG-13 is closed with its fixing commit.",
   "testGate": [
@@ -13,8 +13,8 @@
     "lint"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "80e14affe7f163ad8f821971636013b84f48680b",
+  "branch": "audit/p95-the-history-guard-follows-a-cd",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -27,7 +27,7 @@
     {
       "id": "P95.1",
       "title": "BUG-13's fix lands, and SECURITY.md, the CHANGELOG and the bug record describe it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Merge branch fix/bug-13 (5adb3bba, 3744a6b4, 9ea779f1 - the maintainer's fix) into this phase's branch. Then correct the documents to what the code does: SECURITY.md's sentence that a glob stays unresolvable (a bracket glob is not in the unresolvable marks), and that effective_cwd is shared - guard-secrets-read and journal-writes now place a quoted or escaped spaced cd too; the CHANGELOG entry says the same. Complete the BUG-13 record: taskId this task, fixedIn the fixing commit, the full files list, a note without a working-tree claim. Gate: the three guard suites, the full sweep, bench-hooks --gate, check-committed-pii.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -55,16 +55,17 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-29T23:33:13Z",
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-09-29T23:33:13Z"
 }
