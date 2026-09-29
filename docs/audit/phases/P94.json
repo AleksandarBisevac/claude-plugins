@@ -80,24 +80,30 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/import-evidence.py (canonical_manifest, resolve_project)",
         "issue": "The printed manifest realpaths its own directory while the project is found on the unresolved path and realpathed afterwards, so a directory link between manifest and project root that leaves the project prints a manifest that is not under the printed --project-dir - the pair this command's own --project-dir branch refuses; before this round both halves were abspath spellings and one sat inside the other.",
-        "resolution": "Build the printed manifest from the project it belongs to: realpath(project) joined with the manifest's path relative to the unresolved project when it is lexically under it, else the realpath-of-directory spelling; a case with a linked docs/audit leaving the project asserts the printed manifest sits under the printed --project-dir."
+        "resolution": "fixed in P94.8-579 (4ba784f9): Build the printed manifest from the project it belongs to: realpath(project) joined with the manifest's path relative to the unresolved project when it is lexically under it, else the realpath-of-directory spelling; a case with a linked docs/audit leaving the project asserts the printed manifest sits under the printed --project-dir.",
+        "fixTask": "P94.8-579",
+        "commit": "4ba784f9"
       },
       {
         "id": "P94-R8",
         "severity": "low",
         "file": "CHANGELOG.md [Unreleased]",
         "issue": "The printed --learn-from command now names the manifest and project resolved through links and short names rather than as typed, and no entry says so.",
-        "resolution": "Add the entry."
+        "resolution": "fixed in P94.8-579 (4ba784f9): Add the entry.",
+        "fixTask": "P94.8-579",
+        "commit": "4ba784f9"
       },
       {
         "id": "P94-R9",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_proc_group.py (locate_sh docstring)",
         "issue": "A present-tense count of the function's arguments in prose, which this round already had to change once.",
-        "resolution": "Delete the number."
+        "resolution": "fixed in P94.8-579 (4ba784f9): Delete the number.",
+        "fixTask": "P94.8-579",
+        "commit": "4ba784f9"
       }
     ],
-    "outcome": "[findings: 9 - 0 high, 1 med, 8 low; 6 with a recorded fix commit]"
+    "outcome": "[findings: 9 - 0 high, 1 med, 8 low; 9 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -513,7 +519,7 @@
     {
       "id": "P94.8-579",
       "title": "the printed manifest sits under the printed project whatever links lie between them",
-      "status": "in_progress",
+      "status": "done",
       "description": "import-evidence prints the manifest built from the project it belongs to, so a directory link between manifest and project root that leaves the project cannot print a pair the command's own --project-dir branch refuses; the CHANGELOG names the resolved spelling; the locate_sh docstring loses its argument count",
       "files": [
         "plugins/audit/scripts/governance/import-evidence.py",
@@ -544,18 +550,28 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4ba784f9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "resolve_project -> (project, manifest, refusal); canonical_manifest(manifest, project); _lexically_under in _is_under; i41, i42; printed_dir() in i20/i25.",
+        "descriptive": "The printed --learn-from command always puts the manifest under the printed --project-dir, even through a link out of the project, and typing that pair back is accepted; the cases that failed on Windows expect the spelling the command prints."
       },
       "startedAt": "2026-09-29T11:38:55Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-29T11:54:14Z",
+      "verifiedBy": [
+        "task gate run 2026-09-29T11:53:53Z.141250 green; orchestrator ran the executor's mutation probe: four rows killed",
+        "shas restored; i20/i25 reproduced red on macOS through a symlinked TMPDIR whose target is not a suffix-extension of the link",
+        "matching windows-latest run 36562329762"
+      ],
       "testEvidence": {
         "runId": "2026-09-29T11:53:53Z.141250",
         "status": "passed",
         "at": "2026-09-29T11:53:53Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "4ba784f9",
+        "at": "2026-09-29T11:54:14Z",
+        "basis": "resolve_project returns the project and the printed manifest from one unresolved project, so the manifest is printed as realpath(project) joined with its path under the project as spelled; the containment check accepts a manifest under the project as spelled or as resolved, the relation the no-flag branch already walks, so the printed pair typed back is accepted; i20/i25 expect the canonical spelling the refusal prints; CHANGELOG entry added; the locate_sh docstring count removed"
       }
     }
   ],
