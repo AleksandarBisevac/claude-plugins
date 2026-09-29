@@ -124,7 +124,7 @@ def _cases(check):
                 fh.write(obj if isinstance(obj, str) else json.dumps(obj))
         rep = base.Report()
         M.check_sandbox(rep, proj_dir, home=home)
-        shutil.rmtree(box, ignore_errors=True)
+        _harness.remove_tree(box)
         return rep
 
     unattested = sandbox_rep()
@@ -761,7 +761,7 @@ def _cases(check):
                   "than clearing the repo: an unanswerable question is not an "
                   "all-clear", rep.rows == [])
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
     # ------------------------------------------------- the plugin's own files
     # This product installs hooks that run on every tool call, so whether those
@@ -861,10 +861,10 @@ def _cases(check):
                       _got["verdict"] == "unverifiable" and _got["detail"],
                       repr(_got))
             finally:
-                shutil.rmtree(nogit, ignore_errors=True)
+                _harness.remove_tree(nogit)
         finally:
             _harness.remove_tree(pin)
-            shutil.rmtree(elsewhere, ignore_errors=True)
+            _harness.remove_tree(elsewhere)
     else:
         _harness.skip(check, "ds37-ds40 plugin_integrity against a real checkout",
                       "git", "git is not on PATH")
@@ -1045,7 +1045,7 @@ def _cache_install_cases(check):
     got_rec = M.plugin_integrity(cache, project=project, home=home)
     with open(records, "w", encoding="utf-8") as fh:
         fh.write(held)
-    shutil.rmtree(os.path.join(clone, ".git"))
+    _harness.remove_tree(os.path.join(clone, ".git"))
     got_clone = M.plugin_integrity(cache, project=project, home=home)
     check("pc4 UNVERIFIABLE only when one side is missing, and each says which: "
           "a recorded commit the clone does not hold, no install record, and a "
@@ -1208,7 +1208,7 @@ def _merge_driver_cases(check):
     finally:
         os.environ.clear()
         os.environ.update(held)
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 def _selftest():

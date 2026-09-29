@@ -1,7 +1,7 @@
 {
   "id": "P94",
   "title": "the suites and the plugin run on Windows as they do on POSIX",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Nineteen files fail on windows-latest for twelve causes, three of them product bugs a Windows user hits. Fix each cause red first (most reproduce on POSIX under an emulation of the Windows rule), and run every plan command under one POSIX shell on every platform.",
   "desiredOutcome": "CI's windows-latest selftests job is green, and the plugin's own commands (the raw log of an own run, a derived gate's observations, a printed remedy) work on Windows",
   "testGate": [
@@ -13,8 +13,8 @@
     "lint"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "4eb1ac17c2b15f20f158670e8e880859cbe8cab1",
+  "branch": "audit/p94-the-suites-and-the-plugin-run",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -27,7 +27,7 @@
     {
       "id": "P94.1",
       "title": "test fixtures remove what they made on every platform",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Git writes loose objects read-only and Windows refuses to unlink a read-only file, so shutil.rmtree(ignore_errors=True) leaves a fixture behind; route each of these suites' fixture removal through the harness's remove_tree (or fixture_root). Red first with the diagnosis's emulation (scratchpad p94diag_winemu/sitecustomize.py).",
       "files": [
         "plugins/audit/tests/test__id_shape.py",
@@ -60,21 +60,26 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-29T10:15:50Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-29T10:46:22Z.2c9556",
+        "status": "passed",
+        "at": "2026-09-29T10:46:22Z"
+      }
     },
     {
       "id": "P94.2",
       "title": "every plan command runs under one POSIX shell on every platform, and the own run's raw log and the printed remedy are portable",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Product: derive-phase-gate spawns through a hard-coded /bin/sh and run-test-gate through shell=True (cmd.exe on Windows) while plan spellings are POSIX; give both one spawn that resolves a POSIX sh (Git for Windows' sh there) and refuses by name when none exists. run-test-gate --own names its raw log after the run id, whose colon is illegal on Windows: a filename-safe name, the run id unchanged in the ledger. The duplicate-suite remedy quotes the manifest path. Fixtures fg10/fg10c and rv2 use shell-neutral commands or run through the resolved sh. Red first with the diagnosis's nobinsh and nocolon emulations and a spaced path.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -105,25 +110,31 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-29T10:15:50Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-29T10:48:03Z.d7f416",
+        "status": "passed",
+        "at": "2026-09-29T10:48:03Z"
+      }
     },
     {
       "id": "P94.3",
       "title": "stamp-verification works with Windows paths, line endings and temp directories",
-      "status": "pending",
+      "status": "in_progress",
       "description": "sr105: the throwaway inherits core.autocrlf from Git for Windows' system config because _git_env strips GIT_*; pin autocrlf false in the seeded repo. sr160: quote the interpreter path in the printed command. sr24 and _remove_throwaway: compare paths through the shared worktree parser (normcase/realpath), not a native path against porcelain text. sr40: give holder_base a Windows temp fallback or expect its refusal there, and decide which. Red first on POSIX where an emulation or a spaced path shows it.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
-        "plugins/audit/tests/test_stamp_verification.py"
+        "plugins/audit/tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "regression",
@@ -146,21 +157,26 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-29T10:15:51Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-29T10:49:41Z.4659f1",
+        "status": "passed",
+        "at": "2026-09-29T10:49:41Z"
+      }
     },
     {
       "id": "P94.4",
       "title": "the remaining suites and the repo's release hook spell shells and paths portably",
-      "status": "pending",
+      "status": "in_progress",
       "description": "rmtree fixtures in test__refs, test__merge_install and guard-release.py's own copy go through a remove that clears the read-only bit; lr2 runs shutil.which(shell), not a bare name that hits the WSL stub; gw1/gw5/gw6 quote the -C path; i30 runs the printed command through the resolved sh or skips; mv61 grades a skip (or proves on a fake clock) where time.tzset is absent; sv3 compares paths normalised; gr36b and mi2 display shell-facing paths with forward slashes; .gitattributes pins eol=lf for .sh and .yml so ra29 reads LF on a Windows checkout. Red first on POSIX where an emulation shows it.",
       "files": [
         "plugins/audit/tests/test__refs.py",
@@ -193,16 +209,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-29T10:15:51Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-29T10:51:15Z.d63b6b",
+        "status": "passed",
+        "at": "2026-09-29T10:51:15Z"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-09-29T10:15:50Z"
 }

@@ -359,7 +359,6 @@ def _cases(check):
     # --- phase budgets ------------------------------------------------------------
     # The client has no manifest, so budgets come off usage_state(); assert the
     # server side by exercising it rather than by grepping this file's own source.
-    import shutil as _sh
     _bproj = tempfile.mkdtemp(prefix="panel-budget-")
     try:
         os.makedirs(os.path.join(_bproj, "docs", "audit"), exist_ok=True)
@@ -390,7 +389,7 @@ def _cases(check):
               % repr(_bs.get("phaseBudgets")),
               _bs["phaseBudgets"] == {"P1": 40.0})
     finally:
-        _sh.rmtree(_bproj, ignore_errors=True)
+        _harness.remove_tree(_bproj)
     # The no-ledger stub must carry every key the populated branch does, or a
     # fresh install hands the client `undefined` for half the tab.
     _eproj = tempfile.mkdtemp(prefix="panel-empty-")
@@ -400,7 +399,7 @@ def _cases(check):
               {"phaseBudgets", "bands", "taskMeta", "phaseTitles", "counts"}
               <= set(_es))
     finally:
-        _sh.rmtree(_eproj, ignore_errors=True)
+        _harness.remove_tree(_eproj)
 
     # --- report export ------------------------------------------------------------
     # There is deliberately no path parameter on /report: the location is derived
@@ -711,8 +710,7 @@ def _cases(check):
           and 'if path == "/api/version"' in _get_src
           and "/api/version" not in _write_src)
 
-    import shutil
-    shutil.rmtree(tmp, ignore_errors=True)
+    _harness.remove_tree(tmp)
     _harness.stage(check, "hr-block", _handler_race_cases)
 
 
@@ -723,7 +721,6 @@ def _cases(check):
 # token. Driven over HTTP against `_make_handler` on a ThreadingHTTPServer, with
 # the first write slowed so the second request lands while it is under way.
 def _handler_race_cases(check):
-    import shutil
     import subprocess
     import threading
     import time
@@ -834,7 +831,7 @@ def _handler_race_cases(check):
         if httpd is not None:
             httpd.shutdown()
             httpd.server_close()
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 
@@ -881,7 +878,6 @@ def _full_run_cache_cases(check):
     which is what panel-server.py itself never does, so this is the seam a
     real deployment's calls go through."""
     import http.client
-    import shutil
     import threading
     import tempfile
 
@@ -964,7 +960,7 @@ def _full_run_cache_cases(check):
               phases2.get("P1", {}).get("fullRun", {}).get("answer") == "whole"
               and after_second == after_first == 1)
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 def _selftest():

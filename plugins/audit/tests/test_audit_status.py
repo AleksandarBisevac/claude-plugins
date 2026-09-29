@@ -137,7 +137,7 @@ def _own_project(root=None):
         else:
             os.environ["CLAUDE_PROJECT_DIR"] = before
         if made:
-            shutil.rmtree(root, ignore_errors=True)
+            _harness.remove_tree(root)
 
 
 # --- cases --------------------------------------------------------------------
@@ -1276,8 +1276,7 @@ def _cases(_record):
               and "rates as of 2026-08-06" in M.render_status(
                   _fx, M.rollup(_fx, [], [], usage=_u_basis("2026-08-06"))))
     finally:
-        import shutil as _sh
-        _sh.rmtree(_empty, ignore_errors=True)
+        _harness.remove_tree(_empty)
 
     # (g) gate conditions
     s = summarize(_fixture())
@@ -1588,7 +1587,7 @@ def _cases(_record):
             _op_back2 = os.environ.get("CLAUDE_PROJECT_DIR", "<unset>")
             _op_kept = os.path.isdir(_op_keep)
         finally:
-            shutil.rmtree(_op_keep, ignore_errors=True)
+            _harness.remove_tree(_op_keep)
     finally:
         if _op_before is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)
@@ -1829,8 +1828,7 @@ def _cases(_record):
               and isinstance(_dfail["error"], str) and _dfail["error"]
               and "\n" not in _dfail["error"], repr(_dfail))
     finally:
-        import shutil as _sh_dv
-        _sh_dv.rmtree(_dtmp, ignore_errors=True)
+        _harness.remove_tree(_dtmp)
 
     # --- (ap) the CLI contract itself: --help, and one JSON document on stdout ----
     # Both halves. `--help` used to be read as a MANIFEST PATH ("ERROR: cannot
@@ -1988,7 +1986,7 @@ def _cases(_record):
               _c_b != 0 and "baseline" in str(_p_b.get("error"))
               and "breaches" not in _p_b)
     finally:
-        shutil.rmtree(_ai_dir, ignore_errors=True)
+        _harness.remove_tree(_ai_dir)
 
     # --- (ev) test evidence: the two conditions, and the column that shows them -
     # A `testEvidence` block is a POINTER at a recorded run plus the verdict that
@@ -2296,8 +2294,6 @@ def _cases(_record):
     # afterwards: left to the ambient environment every one of these resolves the
     # record of whatever repository the suite happens to be running inside, and
     # the case would then be measuring that repository.
-    import shutil as _sh_bd
-
     _bd_root = tempfile.mkdtemp(prefix="audit-status-boundary-")
     try:
         def _bd_project(name, tasks, since=None, ledger=None, merged=None,
@@ -2458,7 +2454,7 @@ def _cases(_record):
               _bd_cd == 0 and "excused" not in _bd_od
               and "GATE PASSED" in _bd_od and _bd_ed == "")
     finally:
-        _sh_bd.rmtree(_bd_root, ignore_errors=True)
+        _harness.remove_tree(_bd_root)
 
     # --- (uf) a run that stopped mid-phase, driven end to end -------------------
     # The fact and its three states are pinned next door, over the same
@@ -2610,7 +2606,7 @@ def _cases(_record):
 
         _harness.stage(check, "uf", _uf_wired)
     finally:
-        _sh_uf.rmtree(_uf_root, ignore_errors=True)
+        _harness.remove_tree(_uf_root)
 
 
     # --- the third place: provisional / stale-full-run --------------------------
@@ -2875,7 +2871,7 @@ def _cases(_record):
                       _c8 == 0 and "GATE PASSED: provisional" in _o8,
                       repr(_o8.strip()[-200:]))
         finally:
-            _sh_fr.rmtree(_fr_root, ignore_errors=True)
+            _harness.remove_tree(_fr_root)
 
 
     # --- render_short: the condensed form the pipeline echoes, never the default

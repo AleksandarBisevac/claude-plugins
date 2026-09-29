@@ -265,7 +265,7 @@ def _cases(check):
         check("c13b acquire outside a repo errors clearly",
               code == M.E_ERR and "not a git repository" in txt)
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
     # (u) a user lock is shared across worktrees - the reason tooling takes it
     utmp = tempfile.mkdtemp(prefix="audit-lock-user-")
@@ -332,7 +332,7 @@ def _cases(check):
                   "%r" % ((first, second, " ".join(lines)[:100]),),
                   first == 0 and second == M.E_LIVE)
     finally:
-        shutil.rmtree(utmp, ignore_errors=True)
+        _harness.remove_tree(utmp)
 
     # (p) a lock directory that cannot be written
     # THE CREATE WAS GUARDED AGAINST THE NAME ALREADY EXISTING AND NOTHING ELSE.
@@ -413,7 +413,7 @@ def _cases(check):
             finally:
                 os.chmod(pld, 0o700)
     finally:
-        shutil.rmtree(pro, ignore_errors=True)
+        _harness.remove_tree(pro)
 
     # argparse writes its usage text to stderr on an invalid choice; swallow it so
     # a passing suite prints only its own lines.
@@ -476,7 +476,7 @@ def _shell_code_cases(check):
               "%s %r" % (ran.returncode, (ran.stdout + ran.stderr)[-200:]))
         M.release(tmp, "phase-P5", session="sess-X", out=quiet)
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 # --- this process is never the holder, and a live one is waited out -----------
@@ -537,7 +537,7 @@ def _handed_off_cases(check):
             os.environ.pop("CLAUDE_PID", None)
         else:
             os.environ["CLAUDE_PID"] = prev
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 def _selftest():

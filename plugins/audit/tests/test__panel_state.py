@@ -72,7 +72,6 @@ _SPLIT = ("_panel_paths", "_panel_viewer", "_panel_composition", "_panel_policy"
 
 # --- cases --------------------------------------------------------------------
 def _cases(check):
-    import shutil
     import tempfile
 
     _src = _harness.module_source(M)
@@ -139,7 +138,7 @@ def _cases(check):
               str((_bst["rollup"].get("evidenceBoundary")
                    or {}).get("basis") or "").strip() != "")
     finally:
-        shutil.rmtree(_bd, ignore_errors=True)
+        _harness.remove_tree(_bd)
 
     # --- report export ------------------------------------------------------------
     # There is deliberately no path parameter on /report: the location is derived
@@ -165,14 +164,14 @@ def _cases(check):
               "will not follow file:// from an http:// page",
               _res["href"] == "/report" and _res["exists"] is True)
     finally:
-        shutil.rmtree(_rp, ignore_errors=True)
+        _harness.remove_tree(_rp)
     _np = tempfile.mkdtemp(prefix="panel-noreport-")
     try:
         check("a project with no manifest refuses instead of raising",
               M.report_paths(_np) is None
               and M.render_report(_np)["ok"] is False)
     finally:
-        shutil.rmtree(_np, ignore_errors=True)
+        _harness.remove_tree(_np)
 
     # --- the basename, and where it is asked -----------------------------------------
     # `report_paths` used to reach `render-report.py` - an ENTRY POINT at layer 7 -
@@ -218,7 +217,7 @@ def _cases(check):
               os.path.basename(_rb_default) == "audit-report.html"
               and _rb_default != _rb_html)
     finally:
-        shutil.rmtree(_rb, ignore_errors=True)
+        _harness.remove_tree(_rb)
 
     # Same function object either way - the layer-2 module owns it, the layer-7
     # command aliases it - which is what makes the move above a change of ROUTE and
@@ -331,7 +330,7 @@ def _cases(check):
           "other - a sideways edge is not strictly downward and would cost them "
           "their shared layer: %r" % (_sideways,), not _sideways)
 
-    shutil.rmtree(tmp, ignore_errors=True)
+    _harness.remove_tree(tmp)
 
 
 # --- the third place, wired all the way to a live build_state --------------
@@ -424,7 +423,6 @@ def _counting_run():
 
 
 def _full_run_cases(check):
-    import shutil
     import tempfile
 
     tmp = tempfile.mkdtemp(prefix="panel-state-fullrun-")
@@ -518,7 +516,7 @@ def _full_run_cases(check):
               "compares against" % (with_memo, without_memo),
               with_memo >= 0 and without_memo >= 0)
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 def _selftest():

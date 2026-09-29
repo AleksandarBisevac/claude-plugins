@@ -23,7 +23,6 @@ import ast
 import datetime
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -1186,7 +1185,7 @@ def _cases(check):
               "every committed artifact depends on: %r" % (cli_claims,),
               bool(cli_doc["phases"]) and cli_claims == [])
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 # --- the fixture's git history -------------------------------------------------
@@ -1427,7 +1426,7 @@ def _history_cases(check):
               "write: %r" % (_codes,), _codes == [0, 0]
               and _git_out(again, ["fsck", "--strict", "--no-dangling"])[0] == 0)
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 def _all_cases(check):

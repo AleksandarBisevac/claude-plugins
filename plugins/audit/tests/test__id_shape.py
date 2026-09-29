@@ -146,11 +146,11 @@ def _cases(check):
         try:
             check("is16 ...and None outside a repository", M.current_branch(loose) is None)
         finally:
-            shutil.rmtree(loose, ignore_errors=True)
+            _harness.remove_tree(loose)
     finally:
         os.environ.clear()
         os.environ.update(held)
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 def _selftest():

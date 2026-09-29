@@ -18,7 +18,6 @@ import copy
 import io
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -144,7 +143,7 @@ def _cases(check):
         _install_cases(check, tmp)
         _git_cases(check, tmp)
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 def _driver_cases(check, tmp):
