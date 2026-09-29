@@ -785,7 +785,8 @@
       "P88.1",
       "P81.18-j7p",
       "P89.1",
-      "P94.5-579"
+      "P94.5-579",
+      "P94.8-579"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -4300,7 +4301,8 @@
       "P81.10",
       "P81.14-j7p",
       "P81.17-j7p",
-      "P94.7-579"
+      "P94.7-579",
+      "P94.8-579"
     ],
     "plugins/audit/tests/test_import_evidence.py": [
       "P80.5",
@@ -4309,7 +4311,8 @@
       "P81.14-j7p",
       "P81.17-j7p",
       "P94.4",
-      "P94.7-579"
+      "P94.7-579",
+      "P94.8-579"
     ],
     "tools/ui-tests/full-run-verified.test.mjs": [
       "P80.8"
@@ -4376,7 +4379,8 @@
     "plugins/audit/scripts/governance/_proc_group.py": [
       "P77.3-6u9",
       "P94.2",
-      "P94.5-579"
+      "P94.5-579",
+      "P94.8-579"
     ],
     "plugins/audit/tests/test__proc_group.py": [
       "P77.3-6u9",
