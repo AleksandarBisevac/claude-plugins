@@ -691,6 +691,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **The history guard follows a quoted `cd` target containing whitespace.**
+  `_config.effective_cwd` had split the target before removing its shell quotes,
+  so the guard graded a later rewrite from the payload directory rather than the
+  linked worktree the shell entered. It now tokenizes the directory-change
+  arguments before placing the Git operation.
 - **Plan commands run under one POSIX `sh` on every platform, and are refused rather than
   handed to `cmd.exe`.** `run-test-gate.py` spawned gate steps through `shell=True`, which is
   `cmd.exe` on Windows and reads none of a plan's `export`, single quotes or `${VAR}` while
