@@ -26,45 +26,57 @@
         "severity": "med",
         "file": "tools/gate-parity.py (sweep_legs, _shell_scan)",
         "issue": "The sweep reader counts one literal call per line and loses a second call joined by && or ;, a call spelled through ./, a variable or an interpreter flag, and an env-prefixed call (read as an assignment); the empty-side guard never trips because the plain leg is always present, so a leg added in any of these spellings on one side only is reported as agreement.",
-        "resolution": "Read every mention of the sweep on a non-comment line, split each line into its commands, treat NAME=val followed by words as a command with an env prefix, and report any mention the parser cannot resolve as a problem; cases for the env prefix and two calls on one line."
+        "resolution": "fixed in P93.4-287 (e08387b4): Read every mention of the sweep on a non-comment line, split each line into its commands, treat NAME=val followed by words as a command with an env prefix, and report any mention the parser cannot resolve as a problem; cases for the env prefix and two calls on one line.",
+        "fixTask": "P93.4-287",
+        "commit": "e08387b4"
       },
       {
         "id": "P93-R2",
         "severity": "med",
         "file": "tools/gate-parity.py (sweep_legs vs _shell_scan docstring)",
         "issue": "sweep_legs never expands loop variables, so a leg run inside a for loop comes back unresolved although report_targets resolves the same form through the same scan, which contradicts the shared reader's own docstring.",
-        "resolution": "Expand a bare loop variable to one leg per loop word; a case where a looped leg agrees with the same leg written bare."
+        "resolution": "fixed in P93.4-287 (e08387b4): Expand a bare loop variable to one leg per loop word; a case where a looped leg agrees with the same leg written bare.",
+        "fixTask": "P93.4-287",
+        "commit": "e08387b4"
       },
       {
         "id": "P93-R3",
         "severity": "low",
         "file": "tools/gate-parity.py (_command_words, _first_argument)",
         "issue": "A call inside a subshell reads the closing parenthesis as part of the call, producing a false drift against the same call written bare.",
-        "resolution": "Stop at a closing parenthesis; a subshell case."
+        "resolution": "fixed in P93.4-287 (e08387b4): Stop at a closing parenthesis; a subshell case.",
+        "fixTask": "P93.4-287",
+        "commit": "e08387b4"
       },
       {
         "id": "P93-R4",
         "severity": "low",
         "file": "CLAUDE.md (Tests command list), CONTRIBUTING.md (gate list)",
         "issue": "Both lists of the commands verify.sh calls name the plain and selftest sweep legs but not the encoding leg verify.sh now runs, and no gate compares the document sides' legs.",
-        "resolution": "Add the encoding leg to both lists."
+        "resolution": "fixed in P93.4-287 (e08387b4): Add the encoding leg to both lists.",
+        "fixTask": "P93.4-287",
+        "commit": "e08387b4"
       },
       {
         "id": "P93-R5",
         "severity": "low",
         "file": "plugins/audit/tests/test_run_test_gate.py (_sm_run)",
         "issue": "The selection-miss fixture's byte echo is measured only under the sweep's encoding leg, which verify.sh --fast skips; gb6 pins the codec itself for the same reason.",
-        "resolution": "Pin PYTHONIOENCODING=cp1252 around at least one selection-miss run, as gb6 does."
+        "resolution": "fixed in P93.3-287 (bf011c39): Pin PYTHONIOENCODING=cp1252 around at least one selection-miss run, as gb6 does.",
+        "fixTask": "P93.3-287",
+        "commit": "bf011c39"
       },
       {
         "id": "P93-R6",
         "severity": "low",
         "file": "tools/verify.sh (the encoding-leg comment)",
         "issue": "A ratio claim about the leg's cost in prose with no command beside it.",
-        "resolution": "State the cost without the ratio."
+        "resolution": "fixed in P93.4-287 (e08387b4): State the cost without the ratio.",
+        "fixTask": "P93.4-287",
+        "commit": "e08387b4"
       }
     ],
-    "outcome": "[findings: 6 - 0 high, 2 med, 4 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 6 - 0 high, 2 med, 4 low; 6 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -234,7 +246,7 @@
     {
       "id": "P93.4-287",
       "title": "the runners' readers read every sweep call and checker call the shell would run",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase review fix task: read every sweep and checker call on a line, splitting it on the shell's list operators; treat an env-prefixed command as a command; report any mention the parser cannot resolve; expand loop variables in sweep legs; stop a call at a closing parenthesis. Also the verify.sh cost comment without a ratio, and CLAUDE.md and CONTRIBUTING.md list the encoding leg.",
       "files": [
         "tools/gate-parity.py",
@@ -265,18 +277,27 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e08387b4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "gate-parity.py: _shell_commands, _shell_scan yielding commands, tool_calls with _loop_choices; report_targets and sweep_legs on tool_calls; regex call finders removed; sl8-sl14, rt9. verify.sh comment without a ratio; CLAUDE.md and CONTRIBUTING.md list the encoding leg.",
+        "descriptive": "Both runner readers read each line as shell, so an env prefix, list-joined calls, ./ paths, variable interpreters, interpreter options, loops and subshells no longer read as agreement, and an unresolvable mention is reported."
       },
       "startedAt": "2026-09-29T08:39:08Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-29T08:55:24Z",
+      "verifiedBy": [
+        "sl8-sl14",
+        "rt9"
+      ],
       "testEvidence": {
         "runId": "2026-09-29T08:55:23Z.ccb96f",
         "status": "passed",
         "at": "2026-09-29T08:55:23Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "e08387b4",
+        "at": "2026-09-29T08:55:24Z",
+        "basis": "the phase review's reader findings and the two document lists"
       }
     }
   ],
