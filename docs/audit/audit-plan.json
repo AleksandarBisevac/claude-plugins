@@ -4767,7 +4767,7 @@
     {
       "id": "BUG-12",
       "title": "The widened history-guard and secrets-guard reading (P83) still has the gaps its third phase review found; handed to a human maintainer",
-      "status": "open",
+      "status": "fixed",
       "severity": "med",
       "reportedAt": "2026-09-26T21:53:59Z",
       "reportedBy": null,
@@ -4785,9 +4785,9 @@
         "plugins/audit/hooks/guard-secrets-read.py",
         "SECURITY.md"
       ],
-      "taskId": null,
-      "fixedIn": null,
-      "notes": "Lane: human maintainer (the automated executor and the orchestrator were both stopped by a safety classifier on this work). Release is blocked while this is open unless the user ships over it with #release-with-bugs."
+      "taskId": "P89.1",
+      "fixedIn": "99f1e646",
+      "notes": "Fixed by the human maintainer on branch fix/bug-12 (f3b9f891, e593de54, e04076d8, 0b426515), reviewed four times until clean, and landed through P89 (task P89.1, merge 4763d0bf). The final review's low follow-ups are PLAN.md F542."
     }
   ],
   "deferred": {
