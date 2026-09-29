@@ -1549,22 +1549,34 @@ def _wrapper_rest(name, words):
     return []
 
 
+def _wrapper_fallback(words):
+    """Main's conservative wrapper reading: discard only leading flags and numbers."""
+    words = list(words)
+    while words and (words[0].startswith("-") or words[0].isdigit()):
+        words = words[1:]
+    return words
+
+
 def program_candidates(words):
     """(words past the prefix, the words that may be the program run).
 
     One command's words with leading assignments and wrappers that run their
-    argument (`env`, `sudo`, `timeout 5`, ...) stepped over. A wrapper whose
-    grammar is known yields its command; one that cannot be parsed leaves every
-    remaining word as a candidate, so an uncertain parse cannot drop a program."""
+    argument (`env`, `sudo`, `timeout 5`, ...) stepped over. An exact parse
+    narrows the command position, but every word main would consider stays a
+    candidate; an uncertain parse uses main's option-stripped reading outright."""
     words = list(words)
+    fallback_candidates = []
     while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
         words = words[1:]
     while words and _program_of(words[0]) in _HEAD_WRAPPERS:
+        fallback = _wrapper_fallback(words[1:])
         rest = _wrapper_rest(_program_of(words[0]), words[1:])
         if rest is None:
-            return (words[1:], words[1:])
+            return (fallback, fallback)
+        fallback_candidates.extend(fallback)
         words = rest
-    return (words, words[:1] if words else [])
+    candidates = words[:1] if words else []
+    return (words, candidates + fallback_candidates)
 
 
 def _head_runs_body(head):

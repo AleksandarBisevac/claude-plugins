@@ -1434,13 +1434,13 @@ def _cases(check):
                  (["python3", "--", "tools/x.py"], True))
     _pc = M.program_candidates
     check("pc1 behind a wrapper whose options are known, the program is exact",
-          _pc(["sudo", "-u", "root", "$SH"])[1] == ["$SH"]
-          and _pc(["timeout", "5", "grep", "x"])[1] == ["grep"]
-          and _pc(["env", "FOO=1", "ls"])[1] == ["ls"]
-          and _pc(["sudo", "FOO=1", "ls"])[1] == ["ls"]
-          and _pc(["chrt", "10", "ls"])[1] == ["ls"]
-          and _pc(["timeout", "-s", "KILL", "5", "ls"])[1] == ["ls"]
-          and _pc(["exec", "-a", "name", "ls"])[1] == ["ls"],
+          _pc(["sudo", "-u", "root", "$SH"])[0][:1] == ["$SH"]
+          and _pc(["timeout", "5", "grep", "x"])[0][:1] == ["grep"]
+          and _pc(["env", "FOO=1", "ls"])[0][:1] == ["ls"]
+          and _pc(["sudo", "FOO=1", "ls"])[0][:1] == ["ls"]
+          and _pc(["chrt", "10", "ls"])[0][:1] == ["ls"]
+          and _pc(["timeout", "-s", "KILL", "5", "ls"])[0][:1] == ["ls"]
+          and _pc(["exec", "-a", "name", "ls"])[0][:1] == ["ls"],
           repr([_pc(["sudo", "-u", "root", "$SH"]), _pc(["timeout", "5", "grep", "x"]),
                 _pc(["env", "FOO=1", "ls"]), _pc(["sudo", "FOO=1", "ls"]),
                 _pc(["chrt", "10", "ls"]),
@@ -1451,6 +1451,23 @@ def _cases(check):
           and "echo" in _pc(["xargs", "-i", "echo", "{}"])[1],
           repr([_pc(["sudo", "--frobnicate", "x", "bash"]),
                 _pc(["xargs", "-i", "echo", "{}"])]))
+    _pc_floor = (["xargs", "-l", "ls"], ["xargs", "-e", "ls"],
+                 ["xargs", "--replace", "ls"], ["xargs", "--eof", "ls"],
+                 ["xargs", "--max-lines", "ls"], ["xargs", "-a", "input", "ls"],
+                 ["time", "-f", "format", "ls"], ["sudo", "-a", "type", "ls"],
+                 ["doas", "-a", "style", "ls"], ["ionice", "-t", "ls"],
+                 ["chrt", "-R", "ls"], ["time", "FOO=1", "ls"])
+    check("pc3 an exact wrapper parse keeps every program main finds",
+          all("ls" in _pc(words)[1] for words in _pc_floor),
+          repr([(words, _pc(words)) for words in _pc_floor]))
+    _pc_fallback = ((["sudo", "-E", "$SH"], ["$SH"]),
+                    (["sudo", "-H", "$SH"], ["$SH"]),
+                    (["nice", "-5", "$SH"], ["$SH"]),
+                    (["env", "-", "$SH"], ["$SH"]),
+                    (["stdbuf", "-oL", "$SH"], ["$SH"]))
+    check("pc4 an uncertain wrapper keeps main's option-stripped rest",
+          all(_pc(words)[0] == rest for words, rest in _pc_fallback),
+          repr([(words, _pc(words)) for words, rest in _pc_fallback]))
     check("ro1 an interpreter runs a program of its own only through its own "
           "inline flag or a script operand after its options",
           all(_ro(w) is want for w, want in _ro_cases),
