@@ -156,7 +156,7 @@ claude-plugins/                           # this repo (personal, public)
           record-outside-run.py           # a suite that ran where this plugin could not see it, so a gate run in the same window is not credited with its effects
           import-evidence.py              # a CI build's own evidence ledger file, brought in whole after its chain verifies - never rewrites a row, never re-chains; prints (never runs) the full-gate.py --learn-from command for each red full row it brought in
           full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, then a coupling and a bug per named selection miss of a red run (the red still blocks), or the sentence and exit 0 when no meta.fullGate is declared; --learn-from <runId> runs nothing and learns from an imported row through the same function
-          _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs
+          _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs; the one POSIX sh (and its PATH) every plan command runs under, or a refusal - never cmd.exe
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
           _verdict_binding.py             # the ONE rule for whether a recorded gate verdict binds the declared work now - a task commit's and a sign-off's
           stamp-verification.py           # the CLI over it: take a stamp, or grade one - current / stale (naming the field) / unestablished; `red` proves a red-first in a throwaway tree
@@ -3616,7 +3616,7 @@ be one answer — both were swallowed into `except Exception` and reported as ex
 hung" and "the binary is missing" arrived identical. They are different repairs, so they are
 different words, and neither is read out of an exit code: 124 and 127 are codes a real command may
 return on its own, so the category comes from what the wrapper observed and travels beside the code.
-A missing binary under `shell=True` is read off the **shell's own diagnostic** beside the 127 —
+A missing binary under `sh -c` is read off the **shell's own diagnostic** beside the 127 —
 `no_verdict_signature()` holds each spelling a case holds the tool's own output for, and vitest's `No test files found` beside its
 exit 1 — and only where the output carries no end-of-run report, so `reached_a_verdict()` stays the
 guard for a runner whose exit status is a count. A bare 127 is still a failure, pinned by a case.
@@ -3625,7 +3625,7 @@ A jest worker killed by a signal leaves jest's own exit at 1, so that kill is re
 only of steps that reached a verdict.
 
 **The process GROUP is torn down, not just the child.** `subprocess.run(timeout=)` kills the direct
-child, and under `shell=True` that child is the shell: `npx` → `node` → its workers outlive it, keep
+child, and under `sh -c` that child is the shell: `npx` → `node` → its workers outlive it, keep
 running and keep **writing** — into the very tree this script is about to describe. So a step is
 spawned into its own session (or process group on Windows) and stopped with `killpg`, a grace
 period, then `SIGKILL`; `taskkill /T /F` where `killpg` does not exist. `shares_our_group()` guards
@@ -3961,6 +3961,24 @@ from aiming at its own caller), `drain` reads what was written after the group i
 naming the signal. What it cannot cover is SIGKILL, which no handler sees. Layer 1; its cases are
 in `plugins/audit/tests/test__proc_group.py`, and `run-test-gate.py`'s names are this module's
 objects.
+
+**It also owns the shell a plan command runs under.** A plan's commands are POSIX shell, and
+`shell=True` is `cmd.exe` on Windows, which reads none of `export`, single quotes or `${VAR}`
+and still returns an exit code. `locate_sh` resolves in order: `/bin/sh` when it exists, and then
+nothing else is asked (the argv is `shell=True`'s own, so a POSIX machine runs every command byte
+for byte as before); else the `sh` on PATH; else the `sh.exe` Git for Windows installs beside
+`git` — `bin\sh.exe` before `usr\bin\sh.exe` — and never anything under `%SystemRoot%`, whose
+`bash.exe` is the WSL launcher. There is no fallback to `cmd.exe` and no bare `sh` left for the
+OS to fail on: with no shell, `resolve_sh` and `shell_argv` return `NO_POSIX_SH`, a sentence
+naming Git for Windows, which `run-test-gate._shell` turns into a `could-not-run` step (exit 127)
+and `derive-phase-gate._spawn` into an observation with no exit and that sentence as its error.
+A beside-git shell is started from a native process, so it does not get the PATH a Git Bash
+would give it; `locate_sh` returns `<root>\usr\bin` and `<root>\mingw64\bin` with it, and
+`shell_env` puts them ahead of the inherited PATH on a copy of the child's environment. A
+`/bin/sh` or PATH `sh` gets none, and its child's environment is the caller's own object,
+untouched. Both spawn sites take argv and env from ONE call, `shell_invocation`, so the shell and
+its PATH cannot drift apart between them. The path module is a parameter throughout, so the
+cases judge Windows spellings under `ntpath` on every host.
 
 ### `plugins/audit/scripts/governance/stamp-verification.py`
 The CLI over it: `take` a stamp, or `compare` one against the tree now — and `red`, which

@@ -79,7 +79,9 @@ not need to.
      ```
      `--own` writes no row and no pointer, ever — it is the executor's own quick check, through
      the same bracket and coverage answer as the recorded run, with its whole output kept on disk
-     at `<logsDir>/gate-raw/<runId>.log` (printed as `raw log:`) rather than spent in the
+     under `<logsDir>/gate-raw/`, in a file named from the run id with every character outside
+     `[A-Za-z0-9._-]`, its colons included, turned to `-` — so read the path off the printed `raw log:` line rather than composing it from the
+     `runId` — rather than spent in the
      subagent's context. Tell it the finished command in the spawn prompt rather than leaving it
      to compose its own.
    - Give it `task.description`, `task.files`, `task.docs`, the phase's `desiredOutcome` (so the work

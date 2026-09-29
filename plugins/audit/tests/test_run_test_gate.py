@@ -272,7 +272,9 @@ ZSH_NOT_FOUND = "zsh:1: command not found: lint,format,typecheck,test\n"
 BASH_NOT_FOUND = "bash: line 1: lint,format,typecheck,test: command not found\n"
 # cmd.exe's wording, which `_NO_VERDICT_SIGNATURES` deliberately does NOT read:
 # no capture of it exists here, and an unanchored phrase at exit 1 would turn a
-# windows harness's real failure into an infrastructure excuse.
+# windows harness's real failure into an infrastructure excuse. No plan command
+# is handed to cmd.exe any more, but a command may still start it itself - a
+# `cmd /c` step prints exactly this - so `nv7` still pins the refusal to read it.
 CMD_NOT_RECOGNIZED = ("'lint' is not recognized as an internal or external "
                       "command,\r\noperable program or batch file.\r\n")
 VITEST_NO_FILES = """\
@@ -1457,10 +1459,9 @@ JEST_OVER_SUMMARY_THRESHOLD = (
 def _step(python, script, *args):
     """One gate step that runs `script` and nothing else - quoted, no operators.
 
-    `shell=True` is the product's, not this file's: `_shell` always goes through a
-    shell, so the string still has to survive one. Quoting each path is what makes
-    that survivable on both - `cmd.exe` and `sh` agree about a double-quoted word
-    and agree about nothing else here.
+    The shell is the product's, not this file's: `_shell` always goes through
+    `sh -c`, so the string still has to survive one. Quoting each path is what
+    makes a Windows interpreter path with a space in it survive that shell.
     """
     return " ".join('"%s"' % (part,) for part in (python, script) + args)
 
@@ -3507,7 +3508,7 @@ def _cases(check):
 
     # --- the REAL runner, against a real process tree ----------------------
     # The one case that cannot be written with a fixture: `subprocess.run`'s own
-    # timeout kills the direct child, and with `shell=True` that child is the
+    # timeout kills the direct child, and under `sh -c` that child is the
     # shell. A grandchild outlives it, keeps writing, and is exactly what makes
     # the after-snapshot a race. Proven by what the survivor WRITES, not by prose
     # and not by a pid probe - `CHILD_SOURCE` carries why.
@@ -3729,25 +3730,22 @@ def _cases(check):
           and facts.get("timeoutSeconds") == TREE_TIMEOUT)
 
     res_127 = M.run_gate(tmp, [("x", "definitely-not-a-real-binary-xyz")])
-    check("lc16 a MISSING BINARY under `shell=True` is `could-not-run`, read "
+    # ONE EXPECTATION ON EVERY HOST. A plan command runs under the POSIX `sh`
+    # `_proc_group` resolves, Windows included, so the missing program is read
+    # off that shell's diagnostic everywhere; the arm that once expected
+    # cmd.exe's silence on Windows described a spawn that no longer happens.
+    check("lc16 a MISSING BINARY under `sh -c` is `could-not-run`, read "
           "off the SHELL'S OWN DIAGNOSTIC and not off the number: the shell "
           "started, could not find the program, and said so before printing "
           "any report a runner prints at its end. 127 alone stays a failure - "
           "`nv2` pins that half - because a real command may return it: %r"
           % ((res_127["status"], res_127["steps"][0].get("outcome"),
               res_127["steps"][0].get("outcomeBasis")),),
-          # WHICH SHELL `shell=True` STARTS is `subprocess`'s own switch, read
-          # here rather than a platform name. Under cmd.exe no diagnostic is
-          # read (none was captured, see CMD_NOT_RECOGNIZED), so there the
-          # missing binary stays the failure it always was - a stated gap.
-          (res_127["status"] == "failed"
-           and res_127["steps"][0].get("outcome") is None)
-          if getattr(subprocess, "_mswindows", False) else
-          (res_127["status"] == M.CANNOT_RUN
-           and res_127["steps"][0].get("outcome") == M.CANNOT_RUN
-           and res_127["failed"] == []
-           and "could not find" in (res_127["steps"][0].get("outcomeBasis")
-                                    or "")))
+          res_127["status"] == M.CANNOT_RUN
+          and res_127["steps"][0].get("outcome") == M.CANNOT_RUN
+          and res_127["failed"] == []
+          and "could not find" in (res_127["steps"][0].get("outcomeBasis")
+                                   or ""))
 
     # --- a signal-killed runner is not a failing test -----------------------
     # DRIVEN, and the two commands are the whole fault: `sh -c 'kill -9 $$'`
@@ -3757,7 +3755,7 @@ def _cases(check):
     # observed it and the verdict threw the observation away.
     #
     # `hasattr(signal, "SIGKILL")` IS THE MECHANISM READ, not a platform name:
-    # windows has no SIGKILL and `cmd.exe` has no `kill`, so a case that guessed
+    # windows' `signal` module has no SIGKILL, so a case that guessed
     # by platform could be right about the name and wrong about the thing it
     # needed. It is read fresh here rather than off a constant a branch above
     # already consulted, for `console_events()`'s reason.
@@ -3769,7 +3767,7 @@ def _cases(check):
         # THE SHELL'S OWN SPELLING OF A SEGFAULT, driven rather than stubbed:
         # this is the code `sh` returns when the command it ran died of signal
         # 11, and it is the only channel a grandchild's kill can reach us
-        # through under `shell=True`.
+        # through under `sh -c`.
         res_139 = M.run_gate(tmp, [("test", "exit 139")])
         kill_lines, one_lines = [], []
         kill_code = M.render(res_kill, out=kill_lines.append)
@@ -3818,7 +3816,7 @@ def _cases(check):
               # false of a suite killed mid-run. That half of the old single
               # sentence was wrong for this member before the split.
               and "never got as far as a check" not in kill_text)
-        check("sk3 THE CHANNEL THE FIELD ACTUALLY MEASURED: under `shell=True` "
+        check("sk3 THE CHANNEL THE FIELD ACTUALLY MEASURED: under `sh -c` "
               "the negative code stops at the shell, so a runner two levels down "
               "that segfaults arrives as exit 139 - and 2 of 10 recorded failures "
               "on one project were exactly that. A reader taking only the OS's "
@@ -6587,8 +6585,9 @@ def _remedy_cases(check):
         already be standing in, itself quoted."""
         env = dict(os.environ)
         env["CLAUDE_PLUGIN_ROOT"] = _output.PLUGIN_ROOT
-        argv, why = _pg.shell_argv(line[len("remedy:"):].strip()
-                                   + " --project-dir " + shlex.quote(project))
+        argv, env, why = _pg.shell_invocation(
+            line[len("remedy:"):].strip()
+            + " --project-dir " + shlex.quote(project), env)
         if argv is None:
             return None, why
         proc = subprocess.run(argv, cwd=project, env=env, stdout=subprocess.PIPE,
@@ -8841,15 +8840,15 @@ def _selection_miss_cases(check):
         # The shell is the one the plan's own commands run under, so this
         # case runs wherever the product does - Windows with Git's `sh`
         # included - and skips only where the product itself refuses.
-        sm_argv, sm_why = _pg.shell_argv(_sm_remedy_text(misses[0])
-                                         if misses else "false")
+        env = dict(os.environ)
+        env.pop("CLAUDE_PROJECT_DIR", None)
+        sm_argv, env, sm_why = _pg.shell_invocation(
+            _sm_remedy_text(misses[0]) if misses else "false", env)
         if sm_argv is None:
             _harness.skip(check, "sm16", "no POSIX shell here to run the "
                           "printed remedy through: %s" % (sm_why,), True)
         else:
             away = _harness.fixture_root("run-test-gate-miss-away-")
-            env = dict(os.environ)
-            env.pop("CLAUDE_PROJECT_DIR", None)
             try:
                 proc = subprocess.run(
                     sm_argv, cwd=away, env=env,

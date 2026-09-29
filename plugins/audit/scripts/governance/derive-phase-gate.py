@@ -168,16 +168,17 @@ def _spawn(command, cwd, timeout):
     run through `_proc_group` so a child that hangs is torn down WHOLE rather
     than leaving a grandchild running past this process's own patience.
 
-    The shell is `_proc_group.shell_argv`'s: the same POSIX `sh` the gate runs
-    a plan command under, and on a machine with none, the refusal naming what
-    to install carried as `error` rather than a spawn error that names none."""
+    The shell and its environment are `_proc_group.shell_invocation`'s: the
+    same POSIX `sh` the gate runs a plan command under, with the same PATH, and
+    on a machine with none, the refusal naming what to install carried as
+    `error` rather than a spawn error that names none."""
     start = time.time()
-    argv, refusal = _proc_group.shell_argv(command)
+    argv, env, refusal = _proc_group.shell_invocation(command)
     if argv is None:
         return {"exit": None, "output": "", "durationMs": 0, "timedOut": False,
                 "error": refusal}
     try:
-        proc = subprocess.Popen(argv, cwd=cwd,
+        proc = subprocess.Popen(argv, cwd=cwd, env=env,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 **_proc_group.group_kwargs())
     except Exception as exc:

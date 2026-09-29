@@ -15,7 +15,8 @@ instead of being written a second time.
 AND THE SHELL A PLAN COMMAND RUNS UNDER. `run-test-gate.py` spawned through
 `shell=True` - `cmd.exe` on Windows - while `derive-phase-gate.py` named
 `/bin/sh`, which Windows does not have; neither ran a plan's POSIX spellings
-there. `shell_argv` is the one answer both now take.
+there. `shell_invocation` is the one answer both now take - the shell, and
+for a shell found beside `git`, the PATH its child needs.
 
 WHAT IT CANNOT COVER: SIGKILL. It cannot be caught, so no handler runs and no
 `finally` runs; a caller that must account for what it built says so, and reports
@@ -101,7 +102,7 @@ def tear_down(proc):
     """Kill the process GROUP. True when that could be confirmed, False when not.
 
     THE FAULT THIS EXISTS FOR: `subprocess.run(timeout=)` kills the DIRECT child,
-    and under `shell=True` the direct child is the shell. `npx` -> `node` -> its
+    and under `sh -c` the direct child is the shell. `npx` -> `node` -> its
     workers outlive it, keep running, and keep WRITING - into the tree the gate is
     about to describe, or the throwaway `red` is about to remove. A survivor does
     not merely leak a process; it turns whatever the caller does next into a race.
@@ -177,10 +178,21 @@ NO_POSIX_SH = (
 # Where Git for Windows keeps its `sh.exe`, relative to its install root. The
 # default installer puts only `<root>\cmd` on PATH, so a `git` that resolves
 # while `sh` does not is the ordinary Windows state, not an exotic one.
-_GIT_SH_RELS = (("usr", "bin", "sh.exe"), ("bin", "sh.exe"))
+# `bin\sh.exe` FIRST: `usr\bin\sh.exe` is the MSYS binary itself, and nothing
+# here has observed what either one does to PATH when a native process starts
+# it - so the order is a preference, and the PATH the child needs is supplied
+# by `shell_env` rather than left to whichever spelling was found.
+_GIT_SH_RELS = (("bin", "sh.exe"), ("usr", "bin", "sh.exe"))
+
+# The directories a Git Bash puts ahead of PATH, relative to the install root.
+# Without them a plan command's `grep`, `sed` and `xargs` are missing and its
+# `find` and `sort` resolve to System32's `find.exe` and `sort.exe` - another
+# language that still returns an exit code, the failure `cmd.exe` is refused
+# for.
+_GIT_PATH_RELS = (("usr", "bin"), ("mingw64", "bin"))
 
 
-def _in_system_dir(path, environ):
+def _in_system_dir(path, environ, pathmod=None):
     """Whether `path` sits under Windows' own system directory.
 
     `System32\\bash.exe` is the WSL launcher: it runs the command inside a Linux
@@ -189,19 +201,24 @@ def _in_system_dir(path, environ):
     which is why there is no bare `bash` fallback at all: every Git or MSYS
     directory that holds a `bash` holds an `sh` beside it, so the one `bash` a
     fallback could add is exactly this one.
+
+    `pathmod` is the path module that folds case and separators - `ntpath`
+    does both, `posixpath` neither - so the cases can judge a Windows spelling
+    on any host. Production passes none and gets `os.path`.
     """
+    pathmod = pathmod if pathmod is not None else os.path
     root = (environ.get("SystemRoot") or environ.get("SYSTEMROOT")
             or environ.get("windir") or "")
     if not root or not path:
         return False
-    base = os.path.normcase(os.path.normpath(root))
-    here = os.path.normcase(os.path.normpath(path))
-    return here == base or here.startswith(base.rstrip("\\/") + os.sep)
+    base = pathmod.normcase(pathmod.normpath(root))
+    here = pathmod.normcase(pathmod.normpath(path))
+    return here == base or here.startswith(base.rstrip("\\/") + pathmod.sep)
 
 
-def resolve_sh(isfile=None, which=None, environ=None):
-    """`(path, None)` for the POSIX shell a plan command runs under, or
-    `(None, sentence)` saying none exists and what to install.
+def locate_sh(isfile=None, which=None, environ=None, pathmod=None):
+    """`(path, pathEntries, None)` for the POSIX shell a plan command runs
+    under, or `(None, (), sentence)` saying none exists and what to install.
 
     `/bin/sh` FIRST, and when it is there nothing else is asked - that is the
     exact interpreter `subprocess`'s `shell=True` uses on POSIX, so a POSIX
@@ -209,30 +226,49 @@ def resolve_sh(isfile=None, which=None, environ=None):
     which is Git for Windows' under Git Bash; then the one beside `git`, for the
     default Windows install that puts only `git` on PATH.
 
+    `pathEntries` is what the child's PATH needs ahead of what it inherits, and
+    only the beside-git shell has any: `/bin/sh` and a PATH `sh` already run
+    with their caller's PATH, so theirs is `()` and their child's environment
+    is left exactly as it was.
+
     NEVER A FALLBACK TO `cmd.exe`, and never a bare `"sh"` handed to the OS to
     find: the first reads the plan's commands in another language, and the
     second fails at spawn time with an error that names no remedy. The refusal
     is the answer, and the callers turn it into could-not-run.
 
-    The three arguments are seams for the cases; production passes none.
+    The four arguments are seams for the cases; production passes none.
     """
     isfile = isfile if isfile is not None else os.path.isfile
     which = which if which is not None else shutil.which
     environ = environ if environ is not None else os.environ
+    pathmod = pathmod if pathmod is not None else os.path
     if isfile(POSIX_SH):
-        return POSIX_SH, None
+        return POSIX_SH, (), None
     found = which("sh")
-    if found and not _in_system_dir(found, environ):
-        return found, None
+    if found and not _in_system_dir(found, environ, pathmod):
+        return found, (), None
     git = which("git")
-    if git and not _in_system_dir(git, environ):
-        here = os.path.dirname(os.path.normpath(git))
-        for root in (os.path.dirname(here), os.path.dirname(os.path.dirname(here))):
+    if git and not _in_system_dir(git, environ, pathmod):
+        here = pathmod.dirname(pathmod.normpath(git))
+        for root in (pathmod.dirname(here), pathmod.dirname(pathmod.dirname(here))):
             for rel in _GIT_SH_RELS:
-                candidate = os.path.join(root, *rel)
+                candidate = pathmod.join(root, *rel)
                 if isfile(candidate):
-                    return candidate, None
-    return None, NO_POSIX_SH
+                    return candidate, tuple(pathmod.join(root, *d)
+                                            for d in _GIT_PATH_RELS), None
+    return None, (), NO_POSIX_SH
+
+
+def resolve_sh(isfile=None, which=None, environ=None, pathmod=None):
+    """`(path, None)` or `(None, sentence)` - `locate_sh` without the PATH
+    entries, for a caller that asks only WHETHER a shell exists and which.
+
+    `locate_sh` is looked up at call time, so a case that swaps it steers this
+    too; a case that swaps THIS steers `shell_argv`, and `shell_env` then gives
+    the swapped shell no entries, because they were found for another one.
+    """
+    sh, _entries, refusal = locate_sh(isfile, which, environ, pathmod)
+    return sh, refusal
 
 
 def shell_argv(command):
@@ -247,6 +283,48 @@ def shell_argv(command):
     if sh is None:
         return None, refusal
     return [sh, "-c", command], None
+
+
+def shell_env(sh, env=None, located=None, pathmod=None):
+    """The environment a child of `sh` is started with.
+
+    `env` ITSELF - the same object, `None` included - unless `sh` is the shell
+    `located` found with PATH entries, which is only ever the beside-git one.
+    Then a copy of `env` (or of this process's environment, for `None`) with
+    those entries AHEAD of the inherited PATH, under whatever key the
+    environment already spells PATH with. Returning the caller's own object on
+    every other path is the promise that a `/bin/sh` or PATH `sh` child starts
+    exactly as it did before this function existed.
+
+    `located` defaults to `locate_sh()`; `pathmod` gives the separator and the
+    key comparison. Both are seams for the cases.
+    """
+    pathmod = pathmod if pathmod is not None else os.path
+    found, entries, _refusal = located if located is not None else locate_sh()
+    if not entries or found != sh:
+        return env
+    grown = dict(os.environ if env is None else env)
+    key = next((k for k in grown
+                if pathmod.normcase(k) == pathmod.normcase("PATH")), "PATH")
+    inherited = grown.get(key) or ""
+    grown[key] = pathmod.pathsep.join(list(entries)
+                                      + ([inherited] if inherited else []))
+    return grown
+
+
+def shell_invocation(command, env=None):
+    """`(argv, env, None)` to start `command` under the POSIX shell, or
+    `(None, None, sentence)` when there is none.
+
+    THE ONE CALL EVERY SPAWN SITE MAKES, so the shell and the PATH it needs
+    cannot come from two places that drift apart: `derive-phase-gate._spawn`
+    and `run-test-gate._shell` pass what this returns straight to `Popen`.
+    `env` is the environment the site would have passed; `None` means inherit.
+    """
+    argv, refusal = shell_argv(command)
+    if argv is None:
+        return None, None, refusal
+    return argv, shell_env(argv[0], env), None
 
 
 # --- stopping this process ----------------------------------------------------

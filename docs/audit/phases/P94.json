@@ -20,7 +20,51 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P94-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_proc_group.py (_GIT_SH_RELS, resolve_sh)",
+        "issue": "The beside-git fallback tries usr\\bin\\sh.exe before bin\\sh.exe; on a default Git for Windows install with only Git\\cmd on PATH, the usr\\bin shell started from a native process does not get usr\\bin and mingw64\\bin on PATH, so a plan command's grep/sed/xargs are missing and find/sort resolve to System32's find.exe and sort.exe, which run a different language and still return an exit code.",
+        "resolution": "Prefer bin\\sh.exe (Git's wrapper, which sets PATH and MSYSTEM); when only usr\\bin\\sh.exe exists, hand the spawn the PATH entries it needs (usr\\bin, mingw64\\bin) through the same helper both spawn sites use; pin the order and the PATH in a case."
+      },
+      {
+        "id": "P94-R2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py (docstring near the signal-death reading)",
+        "issue": "The docstring still says every step runs under shell=True, which this diff removed.",
+        "resolution": "Say sh -c through _proc_group.shell_argv; keep the rest of the sentence."
+      },
+      {
+        "id": "P94-R3",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md (_proc_group tree line and section; gate-step paragraphs)",
+        "issue": "The architecture document does not describe resolve_sh/shell_argv or the refusal naming Git for Windows, and two paragraphs still say gate steps run under shell=True.",
+        "resolution": "Describe the resolution order, the absence of a cmd.exe fallback and the could-not-run refusal in the tree line and the section; say sh -c where it says shell=True."
+      },
+      {
+        "id": "P94-R4",
+        "severity": "low",
+        "file": "plugins/audit/reference/execute-task.md; CHANGELOG.md [Unreleased]",
+        "issue": "Both say the --own raw log is gate-raw/<runId>.log, while its name is now the run id with non-portable characters mapped to '-'; no [Unreleased] entry covers the Windows spawn, the refusal or the log name.",
+        "resolution": "Describe the name as derived from the run id (colons become '-') or point at the printed raw log line; add the [Unreleased] entries."
+      },
+      {
+        "id": "P94-R5",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_stamp_verification.py (sr191) vs stamp-verification.py (_platform_temp_dirs)",
+        "issue": "The Windows half of _platform_temp_dirs is never reached by sr191, because an environment candidate answers first, so a mutation emptying the nt branch stays green; the case also patches os.name for the whole process.",
+        "resolution": "Pass the platform into _platform_temp_dirs; add a case where every environment candidate is inside the repository or unset and LOCALAPPDATA points outside, asserting LOCALAPPDATA\\Temp is chosen."
+      },
+      {
+        "id": "P94-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_proc_group.py (SystemRoot rejection); plugins/audit/tests/test__proc_group.py (pg10)",
+        "issue": "The SystemRoot rejection relies on os.path.normcase folding case and separators, which only ntpath does; on a POSIX host no case pins it, so dropping normcase stays green.",
+        "resolution": "Take the path module as a parameter defaulting to os.path; add a case calling it with ntpath and mixed case and separators, asserting rejection."
+      }
+    ],
+    "outcome": "[findings: 6 - 0 high, 1 med, 5 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -260,6 +304,150 @@
         "commit": "8be1b6b1",
         "at": "2026-09-29T10:52:30Z",
         "basis": "the named suites resolve sh through shutil.which, quote interpreter and path words with shlex.quote, pin a fake clock where timezone setting is absent, compare directories through same-dir helpers; guard-release carries its own remover checked against the harness copy; .gitattributes pins LF for .sh and .yml"
+      }
+    },
+    {
+      "id": "P94.5-579",
+      "title": "the shell found beside git runs with Git's tools on PATH, the system-dir rejection is pinned under Windows path rules, and the documents say sh -c",
+      "status": "in_progress",
+      "description": "A Windows host with only Git's cmd directory on PATH runs plan commands under Git's wrapper sh (or under usr/bin sh with usr/bin and mingw64/bin on the child's PATH), the SystemRoot rejection is proved under ntpath on every host, and run-test-gate's docstring, PLUGIN-BUILD-GUIDE.md, execute-task.md and CHANGELOG.md describe the spawn and the raw log name as they now are",
+      "files": [
+        "plugins/audit/scripts/governance/_proc_group.py",
+        "plugins/audit/tests/test__proc_group.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/execute-task.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__proc_group.py: with only Git's cmd dir on PATH the resolver picks bin/sh.exe first, a usr/bin-only layout carries usr/bin and mingw64/bin on the child PATH, and a mixed-case forward-slash System32 sh is rejected under ntpath"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-29T11:03:38Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-29T11:27:44Z.693853",
+        "status": "passed",
+        "at": "2026-09-29T11:27:44Z"
+      }
+    },
+    {
+      "id": "P94.6-579",
+      "title": "the Windows temp-dir fallback of stamp-verification is reached by a case that can fail",
+      "status": "in_progress",
+      "description": "_platform_temp_dirs takes the platform as an argument, and a case where every environment candidate is inside the repository or unset proves LOCALAPPDATA/Temp is chosen, without patching os.name for the process",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: with TMPDIR, TEMP and TMP inside the repository or unset and LOCALAPPDATA outside, holder_base on the nt platform returns LOCALAPPDATA/Temp"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-29T11:03:38Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-29T11:29:18Z.67567b",
+        "status": "passed",
+        "at": "2026-09-29T11:29:18Z"
+      }
+    },
+    {
+      "id": "P94.7-579",
+      "title": "an import typed from inside the project prints the project and manifest in one spelling on every host",
+      "status": "in_progress",
+      "description": "On windows-latest (CI run 36558328327) i35 went red: the printed --learn-from command names the project in the 8.3 short spelling the cwd carried (RUNNER~1) while the case expects os.path.realpath's long spelling; decide whether the product answers different spellings for different call shapes (then it is the product's fault) or the case over-specifies (then the case compares by identity), and make both agree on every host",
+      "files": [
+        "plugins/audit/tests/test_import_evidence.py",
+        "plugins/audit/scripts/governance/import-evidence.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_import_evidence.py: an import typed from inside the project, the project reached through a second spelling of the same directory (a symlink on POSIX), prints the same project and manifest spelling as the --project-dir form"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-29T11:07:39Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-29T11:30:50Z.4f7be4",
+        "status": "passed",
+        "at": "2026-09-29T11:30:50Z"
       }
     }
   ],

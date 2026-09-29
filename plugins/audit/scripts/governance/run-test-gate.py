@@ -1215,9 +1215,11 @@ def reached_a_verdict(text, command=None):
 # NEITHER HALF IS ENOUGH ALONE. 127 is a code a command may return by choice,
 # and a diagnostic can be quoted inside a real report - so `no_verdict_signature`
 # asks for both, and only of output that carries no end-of-run report. A row
-# is here only when its tool's own output is a fixture a case reads; cmd.exe
-# has none, so on windows a missing program stays a failure - a stated gap,
-# pinned by `lc16`, and the loose phrase it prints at exit 1 is not read.
+# is here only when its tool's own output is a fixture a case reads. A plan
+# command runs under `sh -c` on every platform, so a missing program is read
+# off the shell's own diagnostic everywhere (`lc16`); cmd.exe's loose phrase at
+# exit 1 has no capture here and is not read, which matters still for a
+# command that starts cmd.exe itself.
 _NO_VERDICT_SIGNATURES = (
     # `sh` as bash (`/bin/sh: x: command not found`), dash (`/bin/sh: 1: x: not
     # found`), zsh (`zsh:1: command not found: x`) and bash (`bash: line 1: x:
@@ -1531,7 +1533,8 @@ def ended_by_signal(exit_code, text, command=None):
         it, which is why this arm asks nothing else.
       * `128 + N` IS THE SHELL'S CONVENTION, and it is the only channel that
         exists for the case actually measured. Every step runs under
-        `shell=True`, so a runner two levels down that segfaults is reaped by
+        `sh -c`, through `_proc_group.shell_argv`, so a runner two levels down
+        that segfaults is reaped by
         `sh`, which then exits 139 - the negative code stops at the shell. A
         reader that took the observation alone would have left the field's own
         instances (2 of 10 recorded failures at exit 139) exactly as they were.
@@ -2723,8 +2726,9 @@ def _spawn_kwargs():
     down on every path.
 
     NO `shell=True`. That is `cmd.exe` on Windows, which reads none of a plan's
-    POSIX spellings; the shell is in the argv `_proc_group.shell_argv` builds,
-    and on POSIX that argv is the very one `shell=True` would have built."""
+    POSIX spellings; the shell is in the argv `_proc_group.shell_invocation`
+    builds, and on POSIX that argv is the very one `shell=True` would have
+    built. The environment is that call's too, so it is not set here."""
     kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.STDOUT}
     kwargs.update(_proc_group.group_kwargs())
     return kwargs
@@ -2746,11 +2750,11 @@ def _shell(project, command, timeout=None):
     which is the overwhelming majority and pays nothing for the rest.
     """
     timeout = DEFAULT_TIMEOUT_SECONDS if timeout is None else timeout
-    argv, refusal = _proc_group.shell_argv(command)
+    argv, env, refusal = _proc_group.shell_invocation(command)
     if argv is None:
         return 127, "could not run: %s" % (refusal,), {"outcome": CANNOT_RUN}
     try:
-        proc = subprocess.Popen(argv, cwd=project, **_spawn_kwargs())
+        proc = subprocess.Popen(argv, cwd=project, env=env, **_spawn_kwargs())
     except Exception as exc:
         return 127, "could not run: %s" % (exc,), {"outcome": CANNOT_RUN}
     try:

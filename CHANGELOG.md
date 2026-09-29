@@ -83,8 +83,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `gate:` line.
 - **`run-test-gate.py <m> <P> --task <T> --own [--quiet]`** runs a task's own tests through the
   same bracket and coverage answer as the recorded run, writes no row and no pointer, ever, and
-  keeps its whole output on disk at `<logsDir>/gate-raw/<runId>.log` (printed as `raw log:`)
-  rather than spending a subagent's context on it. `--record` and `--reconcile` are refused
+  keeps its whole output on disk under `<logsDir>/gate-raw/`, in a file named from the run id
+  (printed as `raw log:`) rather than spending a subagent's context on it. `--record` and `--reconcile` are refused
   alongside it — there is nothing here for either to act on.
 - **`audit-lookup.py <manifest> run <runId|latest> [--phase <id> | --task <id>] [--json]`** —
   the bounded evidence-ledger row a background gate's verdict is read back from, never re-derived
@@ -683,6 +683,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **Plan commands run under one POSIX `sh` on every platform, and are refused rather than
+  handed to `cmd.exe`.** `run-test-gate.py` spawned gate steps through `shell=True`, which is
+  `cmd.exe` on Windows and reads none of a plan's `export`, single quotes or `${VAR}` while
+  still returning an exit code, and `derive-phase-gate.py` named `/bin/sh`, which Windows does
+  not have. Both now start `sh -c` through `_proc_group.shell_invocation`: `/bin/sh` when it
+  exists (the argv `shell=True` built, so a POSIX machine runs every command as before), else
+  the `sh` on PATH, else the `sh.exe` Git for Windows installs beside `git` - never one under
+  `%SystemRoot%`, where `bash.exe` is the WSL launcher. With none, the step is `could-not-run`
+  and the derivation says so once, naming Git for Windows. A missing program is now read off the
+  shell's own diagnostic on Windows too.
+- **A shell found beside `git` gets the PATH a Git Bash would have given it.** The default Git
+  for Windows install puts only `<root>\cmd` on PATH, so a shell started from beside it had no
+  `grep`, `sed` or `xargs`, and its `find` and `sort` were System32's. `bin\sh.exe` is now
+  preferred over `usr\bin\sh.exe`, and the child's PATH carries `<root>\usr\bin` and
+  `<root>\mingw64\bin` ahead of what it inherits. A `/bin/sh` or a PATH `sh` child's environment
+  is left exactly as it was.
+- **`--own`'s raw log is named from the run id, not by it.** A run id's time stamp carries
+  colons, which a Windows file name cannot, so every `--own` run there died before its log
+  existed. Every character outside `[A-Za-z0-9._-]` now becomes `-` in the file name; the id in
+  the ledger is unchanged, and the path is the one printed on the `raw log:` line.
 - **The history guard and `guard-secrets-read` read the shapes BUG-12 left open.** A here-string
   fed to an interpreter is exempt as its program's input only when the interpreter names a
   program of its own, through its inline flag or a plain script operand after its options; the
@@ -1114,7 +1134,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   vitest's `No test files found` were graded `GATE RED` and recorded `failed` against the task,
   and the shell's diagnostic was read for paths - `/bin/sh` became a printed path and produced a
   false `NO OVERLAP`. `run-test-gate.py` now reads each diagnostic a case holds the tool's own
-  output for (sh, dash, zsh, bash and vitest - not cmd.exe, which stays a failure) beside its exit code,
+  output for (sh, dash, zsh, bash and vitest - not cmd.exe, which no plan command is handed to)
+  beside its exit code,
   only where the output carries no end-of-run report (`reached_a_verdict` stays the guard for a
   runner whose exit status is a count, and a bare 127 stays a failure), prints the words it read
   as the basis, and asks the coverage question only of steps that reached a verdict.

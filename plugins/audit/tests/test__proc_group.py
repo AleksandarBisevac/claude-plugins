@@ -11,6 +11,7 @@ there is one teardown and not two that can come to disagree.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 import json
+import ntpath
 import os
 import signal
 import subprocess
@@ -26,18 +27,129 @@ GATE = _loader.load_script("run-test-gate.py", modname="rtg_for_proc_group")
 RED = _loader.load_script("stamp-verification.py", modname="sv_for_proc_group")
 DERIVE = _loader.load_script("derive-phase-gate.py", modname="dpg_for_proc_group")
 
-# A Windows-shaped install, spelled with forward slashes so `os.path` on either
-# platform reads it the same way.
-_GIT_ROOT = "C:/Program Files/Git"
-_WIN_ENV = {"SystemRoot": "C:/Windows"}
+# A Windows-shaped install. The Windows cases read it through `ntpath` on EVERY
+# host, so the bytes they expect are one spelling - backslashes - whether the
+# suite runs on macOS, Linux or Windows; read through the host's `os.path` the
+# expectation had been posix-spelled on one host and ntpath-spelled on another.
+_GIT_ROOT = "C:\\Program Files\\Git"
+_WIN_ENV = {"SystemRoot": "C:\\Windows"}
+_BESIDE_PATH = (_GIT_ROOT + "\\usr\\bin", _GIT_ROOT + "\\mingw64\\bin")
 
 
-def _fake_fs(files, path_hits):
+def _fake_fs(files, path_hits, pathmod=ntpath):
     """`(isfile, which)` over an invented machine: `files` exist, and `which`
-    answers from `path_hits` - no real filesystem or PATH is read."""
-    norm = set(os.path.normpath(f) for f in files)
-    return ((lambda p: os.path.normpath(p) in norm),
-            (lambda name: path_hits.get(name)))
+    answers from `path_hits` - no real filesystem or PATH is read. Paths are
+    compared the way `pathmod` compares them, so `C:/x` and `c:\\X` are one
+    file under `ntpath`, as they are on Windows."""
+    def key(path):
+        return pathmod.normcase(pathmod.normpath(path))
+    norm = set(key(f) for f in files)
+
+    def isfile(path):
+        return key(path) in norm
+
+    def which(name):
+        return path_hits.get(name)
+    return isfile, which
+
+
+def _beside_git_cases(check):
+    """The shell found beside `git` is the one run from a native process, so it
+    is the one that owes its child the PATH a Git Bash would have given it."""
+    git = _GIT_ROOT + "\\cmd\\git.exe"
+    wrapper = _GIT_ROOT + "\\bin\\sh.exe"
+    inner = _GIT_ROOT + "\\usr\\bin\\sh.exe"
+    isfile, which = _fake_fs([wrapper, inner], {"git": git})
+    got = M.locate_sh(isfile, which, _WIN_ENV, ntpath)
+    check("pg15 BOTH SPELLINGS BESIDE `git`: `bin\\sh.exe` is preferred over "
+          "`usr\\bin\\sh.exe`, and the shell comes with `<root>\\usr\\bin` and "
+          "`<root>\\mingw64\\bin` for its child's PATH - without them a plan's "
+          "`find`/`sort` resolve to System32's and `grep`/`sed` are missing "
+          "(mutation: usr\\bin first again, or no entries -> red): %r" % (got,),
+          got == (wrapper, _BESIDE_PATH, None))
+
+    isfile, which = _fake_fs([inner], {"git": git})
+    got = M.locate_sh(isfile, which, _WIN_ENV, ntpath)
+    check("pg16 ...and the `usr\\bin` spelling alone, still beside `git`, owes "
+          "its child the same PATH entries: %r" % (got,),
+          got == (inner, _BESIDE_PATH, None))
+
+    # THE ALLOW DIRECTION. A `/bin/sh` or a PATH `sh` already runs with the
+    # PATH its caller has, so it is given none - the mutation that adds the
+    # entries whatever the origin turns these red.
+    isfile, which = _fake_fs([M.POSIX_SH, wrapper], {"sh": inner, "git": git})
+    posix = M.locate_sh(isfile, which, _WIN_ENV, ntpath)
+    isfile, which = _fake_fs([inner, wrapper], {"sh": inner, "git": git})
+    on_path = M.locate_sh(isfile, which, _WIN_ENV, ntpath)
+    check("pg17 `/bin/sh`, and an `sh` found on PATH, carry NO PATH entries - "
+          "their child's environment is the caller's own, untouched: %r"
+          % ((posix, on_path),),
+          posix == (M.POSIX_SH, (), None) and on_path == (inner, (), None))
+
+    env = {"Path": "C:\\Windows\\System32", "OTHER": "kept"}
+    grown = M.shell_env(wrapper, env, (wrapper, _BESIDE_PATH, None), ntpath)
+    same = M.shell_env(M.POSIX_SH, env, (M.POSIX_SH, (), None), ntpath)
+    other = M.shell_env(M.POSIX_SH, env, (wrapper, _BESIDE_PATH, None), ntpath)
+    inherited = M.shell_env(M.POSIX_SH, None, (M.POSIX_SH, (), None), ntpath)
+    check("pg18 THE CHILD'S ENV: a beside-git shell's entries go AHEAD of the "
+          "inherited PATH under the key the environment already spells it with, "
+          "on a copy; a shell with no entries - or one that is not the shell "
+          "the entries were found for - gets back the very env it was handed, "
+          "and `None` stays `None` so the child inherits exactly as before: %r"
+          % ((grown, same is env, other is env, inherited),),
+          grown == {"Path": ";".join(_BESIDE_PATH + ("C:\\Windows\\System32",)),
+                    "OTHER": "kept"}
+          and env["Path"] == "C:\\Windows\\System32"
+          and same is env and other is env and inherited is None)
+
+    root = "C:\\Windows"
+    check("pg19 THE SYSTEM DIRECTORY IS JUDGED THE WAY WINDOWS SPELLS IT, case "
+          "and separator folded: `c:/WINDOWS/System32/sh.exe` is under "
+          "SystemRoot `C:\\Windows`, and Git's own `bin\\sh.exe` is not "
+          "(mutation: drop the case fold -> red): %r"
+          % ((M._in_system_dir("c:/WINDOWS/System32/sh.exe",
+                               {"SystemRoot": root}, ntpath),
+              M._in_system_dir(wrapper, {"SystemRoot": root}, ntpath)),),
+          M._in_system_dir("c:/WINDOWS/System32/sh.exe",
+                           {"SystemRoot": root}, ntpath) is True
+          and M._in_system_dir(wrapper, {"SystemRoot": root}, ntpath) is False)
+
+    real_sh = M.resolve_sh()[0]
+    if real_sh is None:
+        _harness.skip(check, "pg20 the PATH reaches both sites' children",
+                      "no POSIX shell here to start a child under", True)
+        return
+    marks = ("p945-usr-bin-mark", "p945-mingw-mark", "p945-inherited-mark")
+    scratch = _harness.fixture_root("proc-group-path-")
+    fake = tuple(os.path.join(scratch, m) for m in marks[:2])
+    seen = {}
+    real_locate, real_path = M.locate_sh, os.environ.get("PATH")
+    os.environ["PATH"] = os.pathsep.join(
+        [os.path.join(scratch, marks[2])] + ([real_path] if real_path else []))
+    try:
+        for label, entries in (("beside", fake), ("posix", ())):
+            M.locate_sh = (lambda *_a, _e=entries: (real_sh, _e, None))
+            _c, g_text, _f = GATE._shell(scratch, 'printf "%s" "$PATH"',
+                                         timeout=10)
+            d_text = DERIVE._spawn('printf "%s" "$PATH"', scratch, 10)["output"]
+            seen[label] = (g_text, d_text)
+    finally:
+        M.locate_sh = real_locate
+        if real_path is None:
+            os.environ.pop("PATH", None)
+        else:
+            os.environ["PATH"] = real_path
+
+    def ordered(text):
+        spots = [text.find(m) for m in marks]
+        return -1 not in spots and spots == sorted(spots)
+    check("pg20 THE PATH REACHES BOTH SITES' CHILDREN: under a beside-git shell "
+          "the gate's step and the derivation's listing each see the two "
+          "entries AHEAD of the inherited PATH, and under a shell with none "
+          "they see the inherited PATH and no entry at all: %r" % (seen,),
+          all(ordered(t) for t in seen["beside"])
+          and all(marks[2] in t and marks[0] not in t and marks[1] not in t
+                  for t in seen["posix"]))
 
 
 def _shell_cases(check):
@@ -46,25 +158,27 @@ def _shell_cases(check):
     check("pg7 `/bin/sh` WINS WHENEVER IT EXISTS, whatever else PATH offers - "
           "the exact interpreter `shell=True` used on POSIX, so a POSIX machine "
           "runs every plan command as before: %r"
-          % (M.resolve_sh(isfile, which, {}),),
-          M.resolve_sh(isfile, which, {}) == (M.POSIX_SH, None))
+          % (M.resolve_sh(isfile, which, {}, ntpath),),
+          M.resolve_sh(isfile, which, {}, ntpath) == (M.POSIX_SH, None))
 
-    on_path = _GIT_ROOT + "/usr/bin/sh.exe"
+    on_path = _GIT_ROOT + "\\usr\\bin\\sh.exe"
     isfile, which = _fake_fs([on_path], {"sh": on_path, "bash": on_path})
     check("pg8 NO `/bin/sh` (Windows): the `sh` on PATH - Git Bash's - is the "
-          "shell: %r" % (M.resolve_sh(isfile, which, _WIN_ENV),),
-          M.resolve_sh(isfile, which, _WIN_ENV) == (on_path, None))
+          "shell: %r" % (M.resolve_sh(isfile, which, _WIN_ENV, ntpath),),
+          M.resolve_sh(isfile, which, _WIN_ENV, ntpath) == (on_path, None))
 
-    beside = os.path.join(_GIT_ROOT, "usr", "bin", "sh.exe")
-    isfile, which = _fake_fs([beside], {"git": _GIT_ROOT + "/cmd/git.exe"})
+    beside = _GIT_ROOT + "\\usr\\bin\\sh.exe"
+    isfile, which = _fake_fs([beside], {"git": _GIT_ROOT + "\\cmd\\git.exe"})
     check("pg9 NO `sh` ON PATH BUT `git` IS (the default Windows install puts "
-          "only `<root>/cmd` there): the `sh.exe` Git ships beside it is found: "
-          "%r" % (M.resolve_sh(isfile, which, _WIN_ENV),),
-          M.resolve_sh(isfile, which, _WIN_ENV) == (beside, None))
+          "only `<root>\\cmd` there): the `sh.exe` Git ships beside it is found, "
+          "spelled the same on every host: %r"
+          % (M.resolve_sh(isfile, which, _WIN_ENV, ntpath),),
+          M.resolve_sh(isfile, which, _WIN_ENV, ntpath) == (beside, None))
 
-    wsl = "C:/Windows/System32/bash.exe"
-    isfile, which = _fake_fs([wsl], {"bash": wsl, "sh": "C:/Windows/System32/sh.exe"})
-    got = M.resolve_sh(isfile, which, _WIN_ENV)
+    wsl = "C:\\Windows\\System32\\bash.exe"
+    isfile, which = _fake_fs([wsl], {"bash": wsl,
+                                     "sh": "C:\\Windows\\System32\\sh.exe"})
+    got = M.resolve_sh(isfile, which, _WIN_ENV, ntpath)
     argv, why = (None, None)
     real = M.resolve_sh
     try:
@@ -142,6 +256,7 @@ def _shell_cases(check):
 
 def _cases(check):
     _shell_cases(check)
+    _beside_git_cases(check)
     shared = [(name, getattr(GATE, name) is getattr(M, target))
               for name, target in (("shares_our_group", "shares_our_group"),
                                    ("_tear_down", "tear_down"),
