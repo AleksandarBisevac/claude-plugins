@@ -1566,12 +1566,27 @@ def failmode_table_drift(repo=None):
 #
 # A target that cannot be resolved is a named PROBLEM and not a match or a miss:
 # an unexpanded `$x` compared with anything would say something false either way.
+#
+# A CALL IS FOUND BY READING THE LINE AS SHELL, not by matching one literal on it.
+# The line is split into its commands on the list and pipe operators, a subshell's
+# parentheses and a brace group's braces; redirections and their targets are
+# dropped; a command's leading keywords (`if`, `do`, `!` ...) are stripped; and a
+# word naming the tool - after expansion and with a leading `./` removed - is a
+# call when the word before it, past any interpreter options, is the interpreter
+# or a variable standing for one. A regex over the line read the first call alone,
+# missed `./` and a path or interpreter held in a variable, and took an
+# env-prefixed command for an assignment - each of which read as agreement,
+# because the plain call on another line kept the "no call" guard quiet.
+#
+# EVERY MENTION IS ACCOUNTED FOR. A word naming the tool that is not a call this
+# reader can shape is a problem naming the line. WHAT IT CANNOT SEE, said rather
+# than implied: a call inside a quoted string handed to another shell
+# (`sh -c "..."`) is one word with spaces in it, and is read as text - the
+# `--affected` dispatcher's `case` patterns are that shape and are text.
 REPORT_CHECKER = "tools/check-report-interactive.mjs"
 TARGET_SIDES = ("verify.sh", "ci.yml")
 SCRATCH = "<scratch>"
 
-_CHECKER_CALL_RE = re.compile(
-    r"(?:^|[\s(;&|])node\s+" + re.escape(REPORT_CHECKER) + r"(?:\s+(.*))?$")
 _ASSIGN_RE = re.compile(r"^(?:local\s+|export\s+)?([A-Za-z_]\w*)=(.*)$")
 _MKTEMP_RE = re.compile(r"^\$\(\s*mktemp\b")
 _FOR_RE = re.compile(r"^for\s+([A-Za-z_]\w*)\s+in\s+(.*?)\s*;\s*do\b")
@@ -1580,6 +1595,20 @@ _FOR_RE = re.compile(r"^for\s+([A-Za-z_]\w*)\s+in\s+(.*?)\s*;\s*do\b")
 # no line ever matched, and everything after it vanished without a finding.
 _HEREDOC_RE = re.compile(r"(?<!<)<<(?!<)-?\s*['\"]?([A-Za-z_]\w*)['\"]?")
 _VAR_RE = re.compile(r"\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))")
+# The characters shlex groups into operator tokens. A token made only of them is
+# a list, pipe or grouping operator - or, holding an angle bracket, a redirection.
+_OPERATOR_CHARS = "();<>|&"
+# A file-descriptor number glued to a redirection (`2>&1`). shlex splits it off as
+# a word of its own, which would put a `2` into a leg.
+_FD_RE = re.compile(r"(^|[\s;&|(])\d+(?=[<>])")
+_ENV_WORD_RE = re.compile(r"^[A-Za-z_]\w*=")
+# Words that open a command without being it - a keyword, a negation, or a
+# builtin that runs the rest of the line as the command.
+_LEADING_WORDS = ("if", "then", "else", "elif", "do", "while", "until", "!",
+                  "time", "exec", "command", "env")
+_PYTHON_RE = re.compile(r"^(?:.*/)?python[0-9.]*(?:\.exe)?$")
+# Interpreter options that take the next word as their value (`-X utf8`).
+_INTERPRETER_VALUED = ("-X", "-W")
 
 
 def _logical_lines(lines):
@@ -1612,47 +1641,154 @@ def _logical_lines(lines):
     return out
 
 
-def _command_words(rest):
-    """The words of a command's remainder up to the first shell operator, or None.
+def _strip_leading(words):
+    """`words` past the keywords that open a command without being it."""
+    i = 0
+    while i < len(words) and words[i] in _LEADING_WORDS:
+        i += 1
+    return words[i:]
+
+
+def _shell_commands(line):
+    """[[word, ...]] - one list per command on a logical line - or None.
 
     PUNCTUATION IS ITS OWN TOKEN. `shlex.split` keeps a trailing `;` on the word
     before it, so `if node <checker> /tmp/x.html; then` named a document called
-    `x.html;` and disagreed with the same call written bare. None when the text
-    does not tokenise at all, which is not the same answer as a command with no
-    words after it.
+    `x.html;` and disagreed with the same call written bare. Every operator token
+    ends the command it follows, a subshell's `)` included; a redirection drops
+    itself and its target. None when the line does not tokenise at all, which is
+    not the same answer as a line holding no command.
     """
-    lexer = shlex.shlex(rest or "", posix=True, punctuation_chars=True)
+    lexer = shlex.shlex(_FD_RE.sub(r"\1", line), posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     try:
-        words = list(lexer)
+        tokens = list(lexer)
     except ValueError:
         return None
-    out = []
-    for word in words:
-        if word[:1] in (">", "<", "|", "&", ";") or word[:2] in ("2>", "1>"):
-            break
-        out.append(word)
-    return out
-
-
-def _first_argument(rest):
-    """The first positional argument of a command's remainder, or None."""
-    for word in _command_words(rest) or []:
-        if word.startswith("-"):
+    commands = []
+    current = []
+    skip = False
+    for token in tokens:
+        if skip:
+            skip = False
             continue
-        return word
-    return None
+        if token and all(c in _OPERATOR_CHARS for c in token):
+            if "<" in token or ">" in token:
+                skip = True
+                continue
+            commands.append(current)
+            current = []
+            continue
+        if token in ("{", "}"):
+            commands.append(current)
+            current = []
+            continue
+        current.append(token)
+    commands.append(current)
+    return [c for c in (_strip_leading(c) for c in commands) if c]
+
+
+def _is_python(word):
+    return bool(_PYTHON_RE.match(word)) or word.startswith("$")
+
+
+def _is_node(word):
+    return word == "node" or word.startswith("$")
+
+
+def _interpreter_options(words):
+    """True when `words` are all interpreter options, `-X utf8` counted as one."""
+    i = 0
+    while i < len(words):
+        if not words[i].startswith("-"):
+            return False
+        i += 2 if words[i] in _INTERPRETER_VALUED else 1
+    return i == len(words)
+
+
+def _loop_choices(words, bound):
+    """Every expansion of `words`: a bare loop variable stands for each loop word.
+
+    A list of word lists - one per combination - so a leg or a target written
+    over a loop is compared as each value the loop gives it, as written out.
+    """
+    choices = [[]]
+    for word in words:
+        bare = _VAR_RE.fullmatch(word)
+        name = bare and (bare.group(1) or bare.group(2))
+        if name and name in bound["loops"] and bound["loops"][name]:
+            alts = bound["loops"][name]
+        else:
+            alts = [_expand(word, bound["assigns"], bound["scratch"])]
+        choices = [done + [alt] for done in choices for alt in alts]
+    return choices
+
+
+def _strip_dot(word):
+    while word.startswith("./"):
+        word = word[2:]
+    return word
+
+
+def tool_calls(lines, tool, is_interpreter):
+    """{"calls": [(env, options, args)], "unresolved": [line]} for one runner.
+
+    Every command on every logical line is read; a call is shaped as the env
+    prefix it runs under, the interpreter options before the tool and the words
+    after it, each expanded through the file's own variables. A word naming the
+    tool that is not a call this reader can shape - no interpreter before it, or a
+    path it cannot expand - is unresolved, never skipped.
+    """
+    name = os.path.basename(tool)
+    calls = []
+    unresolved = []
+    for line, bound, commands in _shell_scan(lines):
+        if commands is None:
+            if name in line:
+                unresolved.append(line)
+            continue
+        for words in commands:
+            for expanded in _loop_choices(words, bound):
+                mentions = [i for i, w in enumerate(expanded)
+                            if name in w and not re.search(r"\s", w)]
+                if not mentions:
+                    continue
+                at = mentions[0]
+                if _strip_dot(expanded[at]) != tool:
+                    unresolved.append(line)
+                    continue
+                starts = [k for k in range(at - 1, -1, -1)
+                          if is_interpreter(expanded[k])
+                          and _interpreter_options(expanded[k + 1:at])]
+                if not starts:
+                    unresolved.append(line)
+                    continue
+                k = starts[0]
+                env = []
+                for word in expanded[:k]:
+                    if not _ENV_WORD_RE.match(word):
+                        break
+                    env.append(word)
+                calls.append((tuple(env), tuple(expanded[k + 1:at]),
+                              list(expanded[at + 1:])))
+    return {"calls": calls, "unresolved": unresolved}
 
 
 def _shell_scan(lines):
-    """Yield `(line, bindings)` for every logical line that is not an assignment.
+    """Yield `(line, bindings, commands)` for every logical line not a bare assignment.
 
     `bindings` is {"assigns", "scratch", "loops"} as the file has built it by that
     line - the variables it assigned one word, the ones it assigned a `mktemp`
     directory, and the word lists its `for` loops bind. One reader of a runner's
     variables, so two questions asked of the same file cannot disagree about what
     `$x` means in it. The dict is the scan's own state and is advanced between
-    yields; a consumer reads it and never writes it.
+    yields; a consumer reads it and never writes it. `commands` is
+    `_shell_commands(line)`.
+
+    `NAME=val cmd ...` IS A COMMAND, not an assignment: when words follow the
+    value, the line runs `cmd` with `NAME` in its environment, and it is yielded
+    like any other line. Read as an assignment, it bound nothing and swallowed the
+    call.
     """
     bindings = {"assigns": {}, "scratch": set(), "loops": {}}
     for line in _logical_lines(lines):
@@ -1668,7 +1804,9 @@ def _shell_scan(lines):
                 parts = []
             if len(parts) == 1:
                 bindings["assigns"][name] = parts[0]
-            continue
+                continue
+            if len(parts) < 2 or value.startswith("$("):
+                continue
         loop = _FOR_RE.match(line)
         if loop:
             try:
@@ -1680,7 +1818,7 @@ def _shell_scan(lines):
                 expanded.extend(_expand(word, bindings["assigns"],
                                         bindings["scratch"]).split())
             bindings["loops"][loop.group(1)] = expanded
-        yield line, bindings
+        yield line, bindings, _shell_commands(line)
 
 
 def _expand(word, assigns, scratch_vars, depth=0):
@@ -1707,30 +1845,19 @@ def report_targets(lines):
     checker, a reader that stopped matching - is told apart from a runner that
     genuinely checks nothing.
     """
+    found = tool_calls(lines, REPORT_CHECKER, _is_node)
     targets = set()
-    unresolved = []
-    calls = 0
-    for line, bound in _shell_scan(lines):
-        call = _CHECKER_CALL_RE.search(line)
-        if not call:
-            continue
-        calls += 1
-        raw = _first_argument(call.group(1))
-        if raw is None:
-            unresolved.append(line)
-            continue
-        loops = bound["loops"]
-        bare = _VAR_RE.fullmatch(raw)
-        if bare and (bare.group(1) or bare.group(2)) in loops:
-            found = loops[bare.group(1) or bare.group(2)]
+    unresolved = list(found["unresolved"])
+    for _env, _options, args in found["calls"]:
+        target = next((w for w in args if not w.startswith("-")), None)
+        if target is None:
+            unresolved.append(" ".join([REPORT_CHECKER] + args))
+        elif "$" in target:
+            unresolved.append(target)
         else:
-            found = [_expand(raw, bound["assigns"], bound["scratch"])]
-        for target in found:
-            if "$" in target or not target:
-                unresolved.append(raw)
-            else:
-                targets.add(target)
-    return {"targets": targets, "unresolved": unresolved, "calls": calls}
+            targets.add(target)
+    return {"targets": targets, "unresolved": unresolved,
+            "calls": len(found["calls"])}
 
 
 def _side_lines(path):
@@ -1815,9 +1942,11 @@ def report_target_verdict(repo=None):
 # parity was perfect, and a fixture that failed only under the codec went red on
 # CI having been green at every local run.
 #
-# A LEG IS AN INVOCATION'S FLAGS, compared as a set, after two normalisations and
-# nothing else: `--name=value` and `--name value` are one flag, and a value is
-# expanded through the runner's own variables exactly as a report target is. Every
+# A LEG IS AN INVOCATION'S FLAGS, compared as a set, together with the env prefix
+# and the interpreter options it runs under (`leg_name()` says why), found by the
+# same shell reader the report targets are. Two normalisations and nothing else:
+# `--name=value` and `--name value` are one flag, and a value is expanded through
+# the runner's own variables - a loop variable into one leg per loop word. Every
 # flag the sweep reads defines a leg UNLESS `NOT_LEG_FLAGS` below says why it does
 # not - so a flag added to the sweep tomorrow is compared by default, and leaving it
 # out takes a sentence somebody can disagree with. The other default, a list of
@@ -1841,8 +1970,6 @@ NOT_LEG_FLAGS = {
                "suites run or how each one is graded",
 }
 
-_SWEEP_CALL_RE = re.compile(
-    r"(?:^|[\s(;&|])python3?\s+" + re.escape(SWEEP) + r"(?=$|[\s;&|)])(.*)$")
 _FLAG_RE = re.compile(r"^--[a-z][a-z0-9-]*$")
 
 
@@ -1910,30 +2037,30 @@ def sweep_legs(lines, valued, not_legs=None):
     no call must not look like a runner that runs no leg.
     """
     not_legs = NOT_LEG_FLAGS if not_legs is None else not_legs
+    found = tool_calls(lines, SWEEP, _is_python)
     legs = set()
-    unresolved = []
-    calls = 0
-    for line, bound in _shell_scan(lines):
-        call = _SWEEP_CALL_RE.search(line)
-        if not call:
+    unresolved = list(found["unresolved"])
+    for env, options, args in found["calls"]:
+        words = list(env) + list(options) + args
+        if any("$" in w for w in words):
+            unresolved.append(" ".join(words + [SWEEP]))
             continue
-        calls += 1
-        words = _command_words(call.group(1))
-        if words is None:
-            unresolved.append(line)
-            continue
-        expanded = [_expand(w, bound["assigns"], bound["scratch"]) for w in words]
-        if any("$" in w for w in expanded):
-            unresolved.append(line)
-            continue
-        legs.add(_leg_of(expanded, valued, not_legs))
-    return {"legs": legs, "unresolved": unresolved, "calls": calls}
+        legs.add((tuple(sorted(env)), options, _leg_of(args, valued, not_legs)))
+    return {"legs": legs, "unresolved": unresolved,
+            "calls": len(found["calls"])}
 
 
 def leg_name(leg):
-    """How a leg is printed: the call it stands for, or that it carries no flag."""
-    return "%s %s" % (SWEEP, " ".join(leg)) if leg else \
-        "%s (no leg flag)" % (SWEEP,)
+    """How a leg is printed: the call it stands for, or that it carries no flag.
+
+    A leg is `(env prefix, interpreter options, sweep flags)`, and every part of it
+    is compared: `PYTHONIOENCODING=cp1252` and `-X utf8` change the codec a suite
+    prints through as surely as `--encoding` does. The interpreter's own name is
+    not compared - `python` in CI and `python3` locally are one leg.
+    """
+    env, options, flags = leg
+    words = list(env) + list(options) + [SWEEP] + list(flags)
+    return " ".join(words) if len(words) > 1 else "%s (no leg flag)" % (SWEEP,)
 
 
 def sweep_leg_drift(repo=None, read=None, source=None, not_legs=None):
@@ -3287,7 +3414,7 @@ def _cases(check):
           % (live_legs, _sl_sets),
           live_legs == {"findings": [], "stale": [], "problem": None}
           and _sl_sets["verify.sh"] == _sl_sets["ci.yml"]
-          and ("--encoding cp1252",) in _sl_sets["verify.sh"])
+          and ((), (), ("--encoding cp1252",)) in _sl_sets["verify.sh"])
 
     _sl_red = sweep_leg_drift(read={"verify.sh": _sl_head, "ci.yml": _sl_ci},
                               source=_sl_src)
@@ -3375,6 +3502,87 @@ def _cases(check):
           "gate sets otherwise in agreement, naming the leg and the side",
           code == 1 and "--encoding cp1252" in buf.getvalue()
           and "MISSING from verify.sh" in buf.getvalue())
+
+    # --- the spellings a line-regex reader lost --------------------------------
+    # Each pair below differs from CI by exactly one spelling of a leg, and each
+    # was read as agreement by a reader that took one literal call per line: the
+    # plain leg is always there, so its "no call" guard never tripped.
+    _sl_env = sweep_leg_drift(read={"verify.sh": _sl_fixed + _shell_command_lines(
+        "PYTHONIOENCODING=cp1252 python3 tools/sweep-selftests.py\n"),
+        "ci.yml": _sl_ci}, source=_sl_src)
+    check("sl8 a call behind an ENV PREFIX is a call, and the prefix is part of "
+          "its leg - `NAME=val cmd` is not an assignment line: %r" % (_sl_env,),
+          _sl_env["problem"] is None
+          and [(leg, side) for leg, side, _n in _sl_env["findings"]]
+          == [("PYTHONIOENCODING=cp1252 " + SWEEP, "ci.yml")])
+
+    _sl_listed = sweep_leg_drift(read={"verify.sh": _shell_command_lines(
+        "python3 tools/sweep-selftests.py; python3 tools/sweep-selftests.py "
+        "--selftest && python3 tools/sweep-selftests.py --encoding cp1252\n"),
+        "ci.yml": _sl_ci}, source=_sl_src)
+    check("sl9 every call on a line joined by `;` or `&&` is read, not the first "
+          "one alone - the three legs on one line agree with CI's three: %r"
+          % (_sl_listed,),
+          _sl_listed == {"findings": [], "stale": [], "problem": None})
+
+    _sl_spelt = sweep_leg_drift(read={"verify.sh": _shell_command_lines(
+        'run "selftests" python3 tools/sweep-selftests.py\n'
+        '"$PYTHON" ./tools/sweep-selftests.py --selftest\n'
+        'SWP=tools/sweep-selftests.py\n'
+        'python3 "$SWP" --encoding cp1252\n'),
+        "ci.yml": _sl_ci}, source=_sl_src)
+    check("sl10 a `./` path, an interpreter in a variable the file never assigns "
+          "(the environment's), and the sweep's path in a variable are each the "
+          "same call - the legs they run agree with CI's: %r" % (_sl_spelt,),
+          _sl_spelt == {"findings": [], "stale": [], "problem": None})
+
+    _sl_opt = sweep_leg_drift(read={"verify.sh": _sl_fixed + _shell_command_lines(
+        "python3 -X utf8 tools/sweep-selftests.py\n"),
+        "ci.yml": _sl_ci}, source=_sl_src)
+    check("sl11 an interpreter option before the sweep is read, and it is part of "
+          "the leg - `-X utf8` changes the codec the suites print through: %r"
+          % (_sl_opt,),
+          _sl_opt["problem"] is None
+          and [(leg, side) for leg, side, _n in _sl_opt["findings"]]
+          == [("-X utf8 " + SWEEP, "ci.yml")])
+
+    _sl_lost = sweep_leg_drift(read={"verify.sh": _sl_fixed + _shell_command_lines(
+        'python3 "$here/../tools/sweep-selftests.py" --encoding utf-16\n'),
+        "ci.yml": _sl_ci}, source=_sl_src)
+    check("sl12 a mention of the sweep this reader cannot resolve is a PROBLEM "
+          "naming the line, never silence: %r" % (_sl_lost,),
+          _sl_lost["findings"] == []
+          and "here/../tools/sweep-selftests.py" in (_sl_lost["problem"] or ""))
+
+    _sl_loop = sweep_leg_drift(read={"verify.sh": _sl_head + _shell_command_lines(
+        'for e in cp1252; do python3 tools/sweep-selftests.py --encoding "$e"; '
+        'done\n'), "ci.yml": _sl_ci}, source=_sl_src)
+    check("sl13 a loop variable is expanded into one leg per loop word, as the "
+          "report reader does through the same scan - the looped codec leg "
+          "agrees with CI's bare one: %r" % (_sl_loop,),
+          _sl_loop == {"findings": [], "stale": [], "problem": None})
+
+    _sl_sub = sweep_leg_drift(read={"verify.sh": _sl_head + _shell_command_lines(
+        "( python3 tools/sweep-selftests.py --encoding cp1252 )\n"),
+        "ci.yml": _sl_ci}, source=_sl_src)
+    check("sl14 a subshell's closing `)` ends the command and is not a flag of "
+          "the leg: %r" % (_sl_sub,),
+          _sl_sub == {"findings": [], "stale": [], "problem": None})
+
+    _rt_env = report_targets(_shell_command_lines(
+        "FOO=1 node tools/check-report-interactive.mjs docs/c.html\n"))
+    _rt_two = report_targets(_shell_command_lines(
+        "node tools/check-report-interactive.mjs docs/a.html && "
+        "node tools/check-report-interactive.mjs docs/b.html\n"))
+    _rt_sub = report_targets(_shell_command_lines(
+        "( node tools/check-report-interactive.mjs --quiet )\n"))
+    check("rt9 the report reader shares those readers: a call behind an env "
+          "prefix is read, a second call on a line is read, and a subshell's `)` "
+          "is not a document - a call with no document is unresolved: "
+          "%r / %r / %r" % (_rt_env, _rt_two, _rt_sub),
+          _rt_env["targets"] == set(["docs/c.html"])
+          and _rt_two["targets"] == set(["docs/a.html", "docs/b.html"])
+          and _rt_sub["targets"] == set() and _rt_sub["unresolved"] != [])
 
     # --- the fourth side ------------------------------------------------------
     # CLAUDE.md's list said of itself that it was one of the sides being

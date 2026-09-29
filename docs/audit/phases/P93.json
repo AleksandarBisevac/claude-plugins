@@ -180,7 +180,7 @@
     {
       "id": "P93.3-287",
       "title": "a selection-miss run is measured on a cp1252 stream on every sweep",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase review fix task: pin PYTHONIOENCODING=cp1252 around at least one selection-miss run, as gb6 does, so the byte echo is measured on every sweep and not only on the encoding leg.",
       "files": [
         "plugins/audit/tests/test_run_test_gate.py"
@@ -208,18 +208,27 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "bf011c39",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "test_run_test_gate.py: _on_legacy_codec helper; sm1's failing run and gb6 go through it.",
+        "descriptive": "The selection-miss fixture's byte output is measured on a plain run, so verify.sh --fast catches a text print coming back."
       },
       "startedAt": "2026-09-29T08:39:07Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-29T08:55:24Z",
+      "verifiedBy": [
+        "sm1",
+        "gb6"
+      ],
       "testEvidence": {
         "runId": "2026-09-29T08:53:40Z.58b211",
         "status": "passed",
         "at": "2026-09-29T08:53:40Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "bf011c39",
+        "at": "2026-09-29T08:55:24Z",
+        "basis": "the phase review's pin"
       }
     },
     {

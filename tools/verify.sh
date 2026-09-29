@@ -263,7 +263,7 @@ run "...and the runner's own cases, read directly" \
 # that gate red by the leg's flags.
 #
 # `--fast` SKIPS it and says so in the summary: it re-runs every suite the plain
-# leg just ran, which doubles the python leg's wall clock for a class of failure
+# leg just ran, so it costs a second full sweep's wall clock for a class of failure
 # that only a printed character can trigger. The full run and CI both keep it.
 if [ "$FAST" -eq 1 ]; then
   printf '  %-44s%s\n' "selftests on a legacy code page" "skipped (--fast)"

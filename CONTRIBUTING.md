@@ -127,6 +127,14 @@ python3 tools/sweep-selftests.py
 # that always answered "ok" would report its own suite as passing while hiding it.
 python3 tools/sweep-selftests.py --selftest
 
+# ...and the sweep AGAIN, on a stream that cannot spell every character. A pipe on
+# Windows is the machine's legacy code page, and a suite printing a character that
+# page lacks dies there while every other OS stays green; the forced codec
+# reproduces that anywhere. CI runs this leg and so does verify.sh (`--fast` skips
+# it and says so). gate-parity compares the runners' sweep legs, so one side
+# dropping it fails by the leg's flags.
+python3 tools/sweep-selftests.py --encoding cp1252
+
 # the meta-gate: this list, verify.sh and ci.yml describe one gate set, and they had
 # drifted in both directions at once before anything compared them. All THREE are
 # compared now, and this document was the last one added — while claiming to be the
