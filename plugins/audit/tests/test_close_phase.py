@@ -27,6 +27,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 import json
 import os
+import re
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -1045,6 +1046,43 @@ def _merged_at(path):
                 if p.get("id") == "P1"][0]
 
 
+def _from_dirs(text):
+    """Every directory a `From <dir>, run:` line in close-phase's output names."""
+    return re.findall(r"\bFrom (.+?), run:", text)
+
+
+def _same_dir(printed, want):
+    """True when `printed` and `want` name one directory, however each is spelled.
+
+    The printed directory is GIT'S spelling - on windows `C:/Users/...`, forward
+    slashes, long names - while a fixture path is Python's, backslashes and
+    possibly the 8.3 short form a runner's temp directory carries. Comparing the
+    text asked whether the two programs spell alike, which is not the question;
+    `realpath` resolves both to the one real spelling and `normcase` folds the
+    case a windows path does not distinguish.
+    """
+    return (os.path.normcase(os.path.realpath(printed))
+            == os.path.normcase(os.path.realpath(want)))
+
+
+def _same_dir_cases(check):
+    """The comparison sv3 relies on, pinned without a fixture.
+
+    POSIX has neither 8.3 names nor a second separator, so the windows spelling
+    that made a text comparison fail cannot be produced here. What can be is the
+    same CLASS: one directory written two ways. Reverting `_same_dir` to a string
+    comparison turns sv3b red on any platform.
+    """
+    base = os.path.abspath("closephase-same-dir")
+    text = "  cleanup is not finished. From %s, run:" % (base + os.sep + ".",)
+    froms = _from_dirs(text)
+    check("sv3b a `From <dir>, run:` line naming the fixture in another spelling "
+          "is read as that directory, while a sibling directory is not: %r"
+          % (froms,),
+          froms == [base + os.sep + "."] and _same_dir(froms[0], base)
+          and not _same_dir(froms[0], base + "-other"))
+
+
 def _surviving_copy_cases(check):
     """The landing stamp goes to the manifest of the tree the merge lands in, never
     to the copy inside the phase's own worktree - whichever path was passed."""
@@ -1088,12 +1126,13 @@ def _surviving_copy_cases(check):
             os.chdir(here)
         text = "\n".join(lines)
         follow = [ln.strip() for ln in lines if "close-phase.py" in ln]
+        froms = _from_dirs(text)
         check("sv3 a dry-run standing inside the worktree prints a follow-up naming the "
-              "SURVIVING manifest - main's - never the worktree's copy: %r" % (follow,),
+              "SURVIVING manifest - main's - never the worktree's copy, from the main "
+              "checkout: %r from %r" % (follow, froms),
               len(follow) == 1 and "docs/audit/audit-plan.json" in follow[0]
               and os.path.realpath(wt) not in follow[0] and wt not in follow[0]
-              and ("From %s," % (os.path.realpath(root),) in text
-                   or "From %s," % (root,) in text))
+              and len(froms) == 1 and _same_dir(froms[0], root))
         check("sv4 ...and the preview wrote nothing anywhere: %r"
               % (_merged_at(mpath),), _merged_at(mpath) is None
               and _merged_at(wt_mpath) is None)
@@ -1855,6 +1894,7 @@ def _selftest():
         _landed_cases(check)
         _main_tree_cases(check)
         _composed_cases(check)
+        _same_dir_cases(check)
         _surviving_copy_cases(check)
         _merged_head_cases(check)
         _backfill_cases(check)

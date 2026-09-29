@@ -106,6 +106,94 @@ def project_dir():
     return os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
 
 
+def shell_path(rel):
+    """`rel` spelled for a shell a reader pastes into: forward slashes only.
+
+    The `*_REL` constants are built with `os.path.join`, so on windows they hold
+    backslashes - and the reader there types into Git Bash, where an unquoted
+    backslash escapes the next character and `plugins\\audit\\...` reaches the
+    program as `pluginsaudit...`. Python on windows opens a forward-slash path as
+    readily as a backslash one, so this spelling is correct on every platform.
+    Every segment those constants join is a fixed name with no backslash in it,
+    which is why any backslash here can only be a separator.
+    """
+    return str(rel).replace("\\", "/")
+
+
+def remove_tree(path):
+    """`shutil.rmtree` that also works on a fixture containing a git repository.
+
+    A COPY OF `plugins/audit/tests/_harness.remove_tree`, which holds the
+    measurement that chose it: git writes its loose objects read-only, windows
+    refuses to unlink a read-only file, and `ignore_errors=True` hides that, so a
+    plain removal leaves `.git/objects/**` behind there and says nothing. This
+    file is a repository hook and may not import the test harness, so it keeps a
+    copy, and `gr48` compares the two statement for statement.
+
+    THE COPY DIFFERS IN WHERE `shutil` IS IMPORTED, and in nothing else. Only the
+    selftest removes anything, and this hook starts on every Bash call; a
+    module-level import is a measurable start-up cost on every one of them for a
+    function no ordinary call reaches (`python3 -X importtime -c "import shutil"`
+    shows it). `gr48` drops that leading import before comparing.
+    """
+    import shutil
+    shutil.rmtree(path, ignore_errors=True)
+    if not os.path.exists(path):
+        return
+    for base, dirs, names in os.walk(path):
+        for name in dirs + names:
+            try:
+                os.chmod(os.path.join(base, name), 0o700)
+            except OSError:
+                pass
+    shutil.rmtree(path, ignore_errors=True)
+
+
+def removal_copy_drift(own_source, home_source, name="remove_tree"):
+    """Why this file's `name` no longer runs the home's statements, or None.
+
+    Both functions are compared with their docstrings dropped - the home carries
+    the measurement and this copy carries the pointer, so they must read
+    differently - and with this copy's leading `import shutil` dropped, the one
+    difference `remove_tree` above states. A source that does not parse, or that
+    has lost the function, is reported by side rather than read as agreement.
+    """
+    import ast
+
+    def shape(source, side, drop_import):
+        try:
+            tree = ast.parse(source)
+        except (SyntaxError, ValueError) as exc:
+            return None, "%s does not parse: %s" % (side, exc)
+        for node in tree.body:
+            if not isinstance(node, ast.FunctionDef) or node.name != name:
+                continue
+            body = node.body
+            if (body and isinstance(body[0], ast.Expr)
+                    and isinstance(body[0].value, ast.Constant)
+                    and isinstance(body[0].value.value, str)):
+                body = body[1:]
+            if drop_import and body and isinstance(body[0], ast.Import) \
+                    and [a.name for a in body[0].names] == ["shutil"]:
+                body = body[1:]
+            if not body:
+                return None, "%s carries `%s` with no statements" % (side, name)
+            return "\n".join(ast.dump(stmt) for stmt in body), None
+        return None, "%s carries no module-level `def %s`" % (side, name)
+
+    own, why = shape(own_source, "this hook's copy", True)
+    if why is not None:
+        return why
+    home, why = shape(home_source, "the harness home", False)
+    if why is not None:
+        return why
+    if own != home:
+        return ("this hook's `%s` no longer runs the statements the harness "
+                "home does - one of the two was changed without the other"
+                % (name,))
+    return None
+
+
 def publishing(command):
     """`reason` when `command` would publish a release, else None.
 
@@ -477,8 +565,8 @@ def refusal(why, bugs, bug_problem, held, phase_problem):
                 "`python3 %s %s <phase> --project <dir>`; a phase that "
                 "re-run refuses to backfill (a squash merge, whose task "
                 "commits the parent does not contain) stays unanswerable, "
-                "and only the keyword releases over it" % (CLOSE_PHASE_REL,
-                                                           MANIFEST_REL))
+                "and only the keyword releases over it"
+                % (shell_path(CLOSE_PHASE_REL), shell_path(MANIFEST_REL)))
         unreachable = _phase_parts(
             [h for h in unanswerable if h[3]],
             "are unanswerable - a mergedHead is recorded, but git could not "
@@ -1162,7 +1250,53 @@ def _selftest():
               bool(got) and "UNKNOWN" in got)
         os.rename(mpath2 + ".away", mpath2)
     finally:
-        shutil.rmtree(tmp2, ignore_errors=True)
+        # The fixture holds a git repository, whose loose objects windows will
+        # not unlink - the plain call left this directory behind there.
+        remove_tree(tmp2)
+
+    # --- the removal copy, and the shell-facing spelling --------------------
+    here_src = os.path.abspath(__file__)
+    home_path = os.path.join(repo, "plugins", "audit", "tests", "_harness.py")
+    try:
+        with open(here_src, encoding="utf-8") as fh:
+            own_src = fh.read()
+        with open(home_path, encoding="utf-8") as fh:
+            home_src = fh.read()
+        drift = removal_copy_drift(own_src, home_src)
+    except OSError as exc:
+        drift = "could not read a side: %s" % (exc,)
+    check("gr48 this hook's `remove_tree` runs the statements "
+          "plugins/audit/tests/_harness.py's does, bar its lazy import - "
+          "nothing else compares the two, so this is what keeps the copy a "
+          "copy: %r" % (drift,), drift is None)
+    one = ('def remove_tree(path):\n    """home"""\n'
+           '    shutil.rmtree(path, ignore_errors=True)\n')
+    lazy = ('def remove_tree(path):\n    """copy"""\n    import shutil\n'
+            '    shutil.rmtree(path, ignore_errors=True)\n')
+    moved = ('def remove_tree(path):\n    """copy"""\n    import shutil\n'
+             '    shutil.rmtree(path)\n')
+    # THE SECOND DIRECTION: the docstring and the lazy import are the
+    # differences the copy is REQUIRED to have, so a comparison that stopped
+    # dropping either would convict the arrangement it exists to police.
+    check("gr49 a copy differing only by its docstring and its lazy import is "
+          "not drift, while one whose statements moved is reported, and a "
+          "side that lost the function or will not parse is named: %r"
+          % ([removal_copy_drift(lazy, one), removal_copy_drift(moved, one),
+              removal_copy_drift("x = 1\n", one),
+              removal_copy_drift(lazy, "def remove_tree(:\n")],),
+          removal_copy_drift(lazy, one) is None
+          and "no longer runs" in (removal_copy_drift(moved, one) or "")
+          and "this hook's copy carries no" in (
+              removal_copy_drift("x = 1\n", one) or "")
+          and "the harness home does not parse" in (
+              removal_copy_drift(lazy, "def remove_tree(:\n") or ""))
+    win_rel = "plugins\\audit\\scripts\\git\\close-phase.py"
+    check("gr50 a shell-facing path is spelled with forward slashes whatever "
+          "separator built it - Git Bash reads an unquoted backslash as an "
+          "escape: %r %r" % (shell_path(win_rel), shell_path(CLOSE_PHASE_REL)),
+          shell_path(win_rel) == "plugins/audit/scripts/git/close-phase.py"
+          and shell_path(CLOSE_PHASE_REL)
+          == "plugins/audit/scripts/git/close-phase.py")
 
     print("")
     print("%s: %d/%d cases passed"

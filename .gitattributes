@@ -15,3 +15,11 @@ plugins/audit/scripts/ui/** text eol=lf
 # no re-capture from any other platform could clear it. The rule above already
 # stated the reason; the file it applies to was one directory short.
 plugins/audit/scripts/_ui_theme.py text eol=lf
+# Shell scripts and workflow files are read LINE BY LINE by checkers that treat a
+# trailing carriage return as part of the line, the way the shell itself does - so
+# a CRLF checkout turned `tools/verify.sh`'s and `ci.yml`'s exact call lines into
+# lines no checker recognised, and `check-rendered-artifacts.py` refused them on
+# windows-latest. A script that sh runs wants LF anyway: a CR ends up inside the
+# last word of every line.
+*.sh text eol=lf
+*.yml text eol=lf

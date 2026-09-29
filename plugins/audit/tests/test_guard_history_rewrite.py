@@ -29,6 +29,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 import json
 import os
+import shlex
 import subprocess
 import sys
 
@@ -1106,13 +1107,20 @@ def _cases(check):
         json.dump(_doc, fh)
     _prev = os.environ.get("CLAUDE_PROJECT_DIR")
     os.environ["CLAUDE_PROJECT_DIR"] = _wt["main"]
+    # EVERY PATH GOES INTO A COMMAND QUOTED, the way a shell user must type it.
+    # A fixture path is whatever the temp directory is: on windows it carries
+    # backslashes, which an unquoted shell word reads as escapes (`C:\Users\x`
+    # becomes `C:Usersx`), and anywhere it may carry a space, which splits it in
+    # two. Either way the command names a directory that is not the fixture, and
+    # a case expecting deny reads allow.
+    _q_wt = shlex.quote(_wt["wt"])
     try:
         for _cid, _cwd, _cmd, _want, _what in (
-                ("gw1", _wt["main"], "git -C %s rebase main" % _wt["wt"], "deny",
+                ("gw1", _wt["main"], "git -C %s rebase main" % _q_wt, "deny",
                  "`git -C <worktree>` rebases the worktree branch, whose plan "
                  "records a commit the rebase rewrites"),
                 ("gw2", _wt["main"], "cd %s && git reset --hard HEAD~1"
-                 % _wt["wt"], "deny",
+                 % _q_wt, "deny",
                  "a `cd` into the worktree, then a reset that orphans the "
                  "commit ITS plan records"),
                 ("gw3", _wt["wt"], "git commit --amend -m x", "deny",
@@ -1130,16 +1138,17 @@ def _cases(check):
         # git cannot answer, and an unanswerable question is an allow.
         _wt_b = os.path.join(_wt["root"], "main-B")
         _git(_wt["main"], "worktree", "add", "-q", _wt_b, "-b", "wt-b")
+        _q_b = shlex.quote(_wt_b)
         for _cid, _cmd, _want, _what in (
                 ("gw5", "git -C %s status; git -C %s reset --hard HEAD~1"
-                 % (_wt_b, _wt["wt"]), "deny",
+                 % (_q_b, _q_wt), "deny",
                  "the reset's `HEAD~1` is resolved in the tree the RESET runs "
                  "in, not in the first tree the command reached"),
                 ("gw6", "git -C %s status; git -C %s commit --amend -m x"
-                 % (_wt_b, _wt["wt"]), "deny",
+                 % (_q_b, _q_wt), "deny",
                  "...and the amend's HEAD is the amended tree's"),
                 ("gw7", "git -C %s status; git -C %s reset --hard HEAD"
-                 % (_wt_b, _wt["wt"]), "allow",
+                 % (_q_b, _q_wt), "allow",
                  "while a reset of the worktree onto ITS OWN HEAD, which holds "
                  "the recorded commit, is allowed - asked in the first tree, "
                  "HEAD there is the base and the reset read as orphaning it")):

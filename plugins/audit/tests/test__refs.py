@@ -3833,6 +3833,7 @@ def _cases(check):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    _shell_argv_cases(check)
     _lock_recipe_cases(check)
 
 
@@ -3853,21 +3854,64 @@ def _lock_recipe():
     return match.group(1) if match else None
 
 
-def _run_recipe(shell, script, env):
-    return subprocess.Popen([shell, "-c", script], env=env,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+def _shell_argv(shell, script):
+    """`[<absolute path of shell>, "-c", script]`, or None when `shell` is not on PATH.
+
+    RESOLVED HERE, NEVER HANDED OVER BARE. On windows a bare program name is looked
+    up by CreateProcess, which searches System32 BEFORE PATH - and System32 holds
+    the WSL `bash.exe` stub, which answers every script with a UTF-16 notice about
+    installing a distribution. So a bare `bash` ran that stub instead of the Git Bash
+    this case's own PATH lookup had found, and the case failed on output that was not
+    a shell's at all. `shutil.which` searches PATH alone, the lookup the skip above
+    it already answers by, so the program that runs is the one that was checked.
+    """
+    exe = shutil.which(shell)
+    return None if exe is None else [exe, "-c", script]
 
 
-def _msys_pid(shell):
+def _run_recipe(shell, script, env, popen=subprocess.Popen):
+    return popen(_shell_argv(shell, script), env=env,
+                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+
+def _msys_pid(shell, run=subprocess.run):
     """True when `shell`'s `$$` is an MSYS pid rather than an OS pid.
 
     Git for Windows' shells publish the Windows pid beside their own at
     `/proc/$$/winpid`; the recipe records `$$`, which the lock then probes as an
     OS pid, so there the recipe's liveness is not what it says.
     """
-    done = subprocess.run([shell, "-c", "[ -r /proc/$$/winpid ]"],
-                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    done = run(_shell_argv(shell, "[ -r /proc/$$/winpid ]"),
+               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return done.returncode == 0
+
+
+def _shell_argv_cases(check):
+    """What the recipe launchers HAND OVER, captured rather than run.
+
+    A POSIX machine cannot show the windows search order that made a bare name
+    wrong, so the pin is on the argument itself: the program each launcher passes
+    is the absolute path PATH resolves, never the name it was asked for. Reverting
+    `_shell_argv` to the bare name turns lr0 red here, on any platform.
+    """
+    seen = []
+
+    def fake(argv, **_kw):
+        seen.append(list(argv))
+        return subprocess.CompletedProcess(argv, 1)
+
+    name = next((s for s in ("sh", "bash", "zsh") if shutil.which(s)), None)
+    if name is None:
+        _harness.skip(check, "lr0", "no POSIX shell is on PATH", True)
+        return
+    _msys_pid(name, run=fake)
+    _run_recipe(name, "true", {}, popen=fake)
+    want = shutil.which(name)
+    check("lr0 both recipe launchers hand over %s's RESOLVED absolute path as "
+          "argv[0], never the bare name a windows CreateProcess would look up in "
+          "System32 first: %r" % (name, [a[0] for a in seen]),
+          len(seen) == 2 and all(a[0] == want and os.path.isabs(a[0])
+                                 and a[0] != name for a in seen))
 
 
 def _lock_recipe_cases(check):
@@ -3965,7 +4009,10 @@ def _lock_recipe_cases(check):
             if holder.poll() is None:
                 holder.kill()
                 holder.wait()
-        shutil.rmtree(tmp, ignore_errors=True)
+        # The main and the linked work tree live in here, and windows will not
+        # unlink their read-only loose objects - the plain call left the whole
+        # fixture behind there.
+        _harness.remove_tree(tmp)
 
 
 def _selftest():

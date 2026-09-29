@@ -147,7 +147,7 @@
     {
       "id": "P94.3",
       "title": "stamp-verification works with Windows paths, line endings and temp directories",
-      "status": "in_progress",
+      "status": "done",
       "description": "sr105: the throwaway inherits core.autocrlf from Git for Windows' system config because _git_env strips GIT_*; pin autocrlf false in the seeded repo. sr160: quote the interpreter path in the printed command. sr24 and _remove_throwaway: compare paths through the shared worktree parser (normcase/realpath), not a native path against porcelain text. sr40: give holder_base a Windows temp fallback or expect its refusal there, and decide which. Red first on POSIX where an emulation or a spaced path shows it.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -177,18 +177,28 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8bac69de",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_git -c core.autocrlf=false; still_listed over _worktrees; holder_base + _platform_temp_dirs; the module map line in PLUGIN-BUILD-GUIDE.md gains _worktrees.",
+        "descriptive": "stamp-verification red now grades HEAD's exact bytes, can tell when git still lists a throwaway on Windows, and finds a temp directory outside the repository there."
       },
       "startedAt": "2026-09-29T10:15:51Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-09-29T10:52:22Z",
+      "verifiedBy": [
+        "task gate run 2026-09-29T10:49:41Z.4659f1",
+        "green; executor mutation table M1-M4 and M6 each turned its named case red",
+        "M5 green with the reason stated"
+      ],
       "testEvidence": {
         "runId": "2026-09-29T10:49:41Z.4659f1",
         "status": "passed",
         "at": "2026-09-29T10:49:41Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8bac69de",
+        "at": "2026-09-29T10:52:22Z",
+        "basis": "_git pins core.autocrlf=false so the throwaway holds HEAD's bytes; still_listed compares git's listing through _worktrees.parse_list and same_tree instead of a substring; holder_base falls back through TMPDIR/TEMP/TMP and the platform temp dirs, each checked writable"
       }
     },
     {

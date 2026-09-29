@@ -31,6 +31,7 @@ import datetime
 import os
 import sys
 import time
+import types
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 import _output                                     # noqa: E402  (SCRIPTS_DIR + py_files, for the inline scan)
@@ -977,6 +978,10 @@ def _cases(check):
     # `mute_today()` is UTC, told apart from a local-clock read by running it
     # under two zones a day apart: at any hour at least one of them has a local
     # date that differs from the UTC date, so a local read fails one of them.
+    # The process zone can only be moved where `time.tzset` exists - windows
+    # CPython has none, and there the zone loop below would run nothing and the
+    # check read an empty result as a failure. So it is a graded skip there, and
+    # mv61b carries the same proof on every platform through a fake clock.
     _mu_zones = {}
     if hasattr(time, "tzset"):
         _saved_tz = os.environ.get("TZ")
@@ -995,10 +1000,40 @@ def _cases(check):
             else:
                 os.environ["TZ"] = _saved_tz
             time.tzset()
-    check("mv61 `mute_today()` answers the UTC day under a zone fourteen hours "
-          "ahead and one twelve hours behind - the clock the ledger stamps, not "
-          "the local one: %r" % (_mu_zones,),
-          len(_mu_zones) == 2 and all(v[0] for v in _mu_zones.values()))
+        check("mv61 `mute_today()` answers the UTC day under a zone fourteen "
+              "hours ahead and one twelve hours behind - the clock the ledger "
+              "stamps, not the local one: %r" % (_mu_zones,),
+              len(_mu_zones) == 2 and all(v[0] for v in _mu_zones.values()))
+    else:
+        _harness.skip(check, "mv61 `mute_today()` under two real process zones",
+                      "time.tzset is absent, so the process zone cannot be "
+                      "moved", not hasattr(time, "tzset"))
+    # A FAKE CLOCK standing in for the module's `datetime`: the UTC moment is
+    # early on one day while every local read - `now()` with no zone,
+    # `date.today()` - answers the day before, so a local read and a UTC read
+    # name different days whatever the machine's zone and whatever the hour.
+    _mu_utc = datetime.datetime(2026, 3, 2, 1, 30, tzinfo=datetime.timezone.utc)
+    _mu_local = datetime.datetime(2026, 3, 1, 20, 30)
+
+    def _mu_now(tz=None):
+        return _mu_local if tz is None else _mu_utc.astimezone(tz)
+
+    _mu_fake = types.SimpleNamespace(
+        datetime=types.SimpleNamespace(
+            now=_mu_now, utcnow=lambda: _mu_utc.replace(tzinfo=None)),
+        date=types.SimpleNamespace(today=lambda: _mu_local.date()),
+        timezone=datetime.timezone, timedelta=datetime.timedelta)
+    _mu_real_dt = M.datetime
+    try:
+        M.datetime = _mu_fake
+        _mu_faked = M.mute_today()
+    except Exception as exc:
+        _mu_faked = "raised: %r" % (exc,)
+    finally:
+        M.datetime = _mu_real_dt
+    check("mv61b `mute_today()` answers the UTC day when the clock's local day "
+          "is the day before - a fake clock, so this runs on every platform: "
+          "%r" % (_mu_faked,), _mu_faked == datetime.date(2026, 3, 2))
     # ...and `_check_muted` asks it when no day is pinned, rather than reading a
     # clock of its own. Proved by answering for it: with `mute_today` standing in
     # for a day far past a far-future `until`, only a fallback that CALLS it can

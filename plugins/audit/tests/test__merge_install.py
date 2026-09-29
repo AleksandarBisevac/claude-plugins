@@ -29,8 +29,16 @@ def _cases(check):
     check("mi1 install owns a header and one line each for the plan and its shard glob",
           lines == [M.ATTR_HEADER, "docs/audit/plan.json merge=audit-manifest",
                     "docs/audit/phases/*.json merge=audit-manifest"], lines)
+    # The expectation is a LITERAL, compared after this platform's separator is
+    # respelled: on windows `shim_path` joins with a backslash, which stays a
+    # literal character inside the single quotes `sh_quote` writes, and a windows
+    # path accepts it as a separator - so only the spelling differs there, not
+    # what the driver names. On POSIX `os.sep` is
+    # already "/" and the respelling is a no-op, so a backslash the product
+    # wrote there would still fail this case.
     check("mi2 git config names the shim under the common dir, run through sh",
-          M.driver_value(loc) == "sh '/r/.git/%s' %%O %%A %%B %%P" % (M.SHIM_REL,),
+          M.driver_value(loc).replace(os.sep, "/")
+          == "sh '/r/.git/audit/merge-manifest.sh' %O %A %B %P",
           M.driver_value(loc))
 
     shim = M.shim_text("/opt/plugin root")
@@ -87,7 +95,7 @@ def _cases(check):
     finally:
         os.environ.clear()
         os.environ.update(held)
-        shutil.rmtree(tmp, ignore_errors=True)
+        _harness.remove_tree(tmp)
 
 
 def _history(root):

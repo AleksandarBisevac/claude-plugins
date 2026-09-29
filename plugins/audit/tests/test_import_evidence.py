@@ -451,17 +451,28 @@ def _cases(check):
         # THE PRINTED STRING IS RUN AS A SHELL WOULD RUN IT, from a directory
         # that is not the project: a bare script name is 'command not found'
         # there, and a path relative to the import's cwd names nothing.
+        # `sh` is RESOLVED OFF PATH, not spelled `/bin/sh`: windows has no such
+        # file, and starting it raised out of the whole suite, taking every case
+        # after this one with it. With no sh on PATH at all the case is a graded
+        # skip - there is then no shell to paste the command into.
         printed = (json.loads(out).get("learnFrom") or [""])[0]
         away = tempfile.mkdtemp(dir=root)
-        proc = subprocess.run(["/bin/sh", "-c", printed], cwd=away,
-                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                              universal_newlines=True)
-        check("i30 RED-FIRST: the printed command runs as printed under "
-              "/bin/sh -c from another directory, exit 0, and it is "
-              "full-gate.py learning from run-r1: %r (%s)"
-              % (proc.returncode, proc.stdout[-300:]),
-              proc.returncode == 0
-              and "[full-gate] learned nothing from run run-r1" in proc.stdout)
+        sh = shutil.which("sh")
+        if sh is None:
+            _harness.skip(check, "i30 the printed command runs under sh -c",
+                          "sh is not on PATH", True)
+        else:
+            proc = subprocess.run([sh, "-c", printed], cwd=away,
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.STDOUT,
+                                  universal_newlines=True)
+            check("i30 RED-FIRST: the printed command runs as printed under "
+                  "sh -c from another directory, exit 0, and it is "
+                  "full-gate.py learning from run-r1: %r (%s)"
+                  % (proc.returncode, proc.stdout[-300:]),
+                  proc.returncode == 0
+                  and "[full-gate] learned nothing from run run-r1"
+                  in proc.stdout)
 
         # A RELATIVE MANIFEST is printed absolute, so the command does not
         # depend on the directory it is pasted into.
