@@ -108,6 +108,15 @@ def _cases(check):
         return os.path.join(os.path.realpath(os.path.dirname(path)),
                             os.path.basename(path))
 
+    def printed_dir(project_dir):
+        # The evidence directory in the spelling the command prints it: under
+        # the project resolved through links. A fixture's own spelling is how
+        # the temp directory was handed out - a link on one machine, the 8.3
+        # short form on Windows - and an expectation built from it asserts
+        # that spelling, not the path. A membership test hides the mismatch
+        # only when one spelling happens to end with the other.
+        return _ev.evidence_dir(os.path.realpath(project_dir))
+
     def run(argv):
         lines = []
         held = sys.stderr
@@ -298,7 +307,7 @@ def _cases(check):
               "refusal with no next step leaves every later import blocked: %r"
               % (out,),
               "could not be made" in out
-              and os.path.join(ev6, broken_name) in out
+              and os.path.join(printed_dir(d6), broken_name) in out
               and "a writer was interrupted there" in out
               and "Truncate the partial line on purpose and re-run the import"
               in out)
@@ -377,7 +386,7 @@ def _cases(check):
               code == 1 and answer8.get("duplicates") == []
               and answer8.get("imported") is False
               and "could not be made" in refused8
-              and os.path.join(ev8, odd_name) in refused8
+              and os.path.join(printed_dir(d8), odd_name) in refused8
               and "`audit-journal.py verify` names the cause for each file"
               in refused8
               and "A file holding a byte that is not UTF-8 text is lost whole"
@@ -804,6 +813,95 @@ def _cases(check):
                   and not refused_lines
                   and "2026-01.ci-w40.jsonl" not in os.listdir(
                       _ev.evidence_dir(realq)))
+
+        # --- a directory between the manifest and its project is a link ----
+        # `<T>/docs/audit` pointing outside `<T>`. The project is found by
+        # walking the path as typed, so it is `<T>`; resolving the manifest's
+        # directory on its own would print a manifest under the link's target,
+        # which is not under the printed --project-dir - the pair this
+        # command's own --project-dir branch refuses. The expectation is
+        # built from the project's resolved spelling and the manifest's path
+        # below it as typed, not asked of the module.
+        def learn_command(argv, name, run_id, cwd):
+            data, _ = _shard_bytes(name, [
+                {"runId": run_id, "v": 1, "scope": "full",
+                 "status": "failed"}])
+            src = write_shard(name, data)
+            os.chdir(cwd)
+            try:
+                code, out = run(argv(src) + ["--json"])
+            finally:
+                os.chdir(held_cwd)
+            try:
+                told = json.loads(out).get("learnFrom") or [""]
+            except ValueError:
+                told = [out]
+            return code, told[0]
+
+        def spelled(manifest, run_id, project):
+            return ("python3 %s %s --learn-from %s --project-dir %s"
+                    % (shlex.quote(_loader.script_path("full-gate.py")),
+                       shlex.quote(manifest), run_id, shlex.quote(project)))
+
+        away41 = tempfile.mkdtemp(dir=root)
+        t41 = tempfile.mkdtemp(dir=root)
+        os.makedirs(os.path.join(t41, ".claude"))
+        os.makedirs(os.path.join(t41, "docs"))
+        outside41 = tempfile.mkdtemp(dir=root)
+        with io.open(os.path.join(outside41, "audit-plan.json"), "w",
+                     encoding="utf-8") as fh:
+            fh.write(json.dumps(_manifest(), indent=2))
+        link41 = os.path.join(t41, "docs", "audit")
+        linked41 = True
+        try:
+            os.symlink(outside41, link41, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            linked41 = False
+        if not linked41:
+            _harness.skip(check, "i41 a manifest whose directory is a link "
+                          "out of its project prints a pair it accepts back",
+                          "os.symlink refused to make a directory link here",
+                          not hasattr(os, "symlink"))
+        else:
+            mp41 = os.path.join(link41, "audit-plan.json")
+            code41, told41 = learn_command(
+                lambda src: [mp41, src], "2026-01.ci-w41.jsonl", "run-y1",
+                away41)
+            want_m41 = os.path.join(os.path.realpath(t41), "docs", "audit",
+                                    "audit-plan.json")
+            want41 = spelled(want_m41, "run-y1", os.path.realpath(t41))
+            words41 = shlex.split(told41)
+            pair41 = ((words41[2], words41[-1]) if len(words41) > 5
+                      else ("unparsed", told41))
+            code41b, told41b = learn_command(
+                lambda src: [pair41[0], src, "--project-dir", pair41[1]],
+                "2026-01.ci-w42.jsonl", "run-y2", away41)
+            landed41 = sorted(os.listdir(_ev.evidence_dir(t41)))
+            check("i41 RED-FIRST: <T>/docs/audit a link out of <T> prints "
+                  "the manifest under the printed --project-dir, and that "
+                  "pair typed back is accepted: %r %r / %r %r (landed %r)"
+                  % (code41, told41, code41b, told41b, landed41),
+                  code41 == 0 and told41 == want41
+                  and M._is_under(pair41[0], pair41[1])
+                  and code41b == 0
+                  and told41b == spelled(want_m41, "run-y2",
+                                         os.path.realpath(t41))
+                  and landed41 == ["2026-01.ci-w41.jsonl",
+                                   "2026-01.ci-w42.jsonl"])
+
+        # ALLOW DIRECTION: a project with no link anywhere below it prints
+        # the bytes it printed before - the manifest's directory resolved,
+        # its name kept, the project resolved. A version that respelled
+        # every manifest to fix the linked one goes red here.
+        d42, mp42 = project()
+        code42, told42 = learn_command(
+            lambda src: [mp42, src], "2026-01.ci-w43.jsonl", "run-y3",
+            away41)
+        check("i42 ALLOW: a project with no link below it prints the pair it "
+              "always printed: %r %r" % (code42, told42),
+              code42 == 0
+              and told42 == spelled(canon_manifest(mp42), "run-y3",
+                                    os.path.realpath(d42)))
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

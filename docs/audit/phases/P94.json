@@ -74,9 +74,30 @@
         "resolution": "fixed in P94.5-579 (5121f15a): Take the path module as a parameter defaulting to os.path; add a case calling it with ntpath and mixed case and separators, asserting rejection.",
         "fixTask": "P94.5-579",
         "commit": "5121f15a"
+      },
+      {
+        "id": "P94-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/import-evidence.py (canonical_manifest, resolve_project)",
+        "issue": "The printed manifest realpaths its own directory while the project is found on the unresolved path and realpathed afterwards, so a directory link between manifest and project root that leaves the project prints a manifest that is not under the printed --project-dir - the pair this command's own --project-dir branch refuses; before this round both halves were abspath spellings and one sat inside the other.",
+        "resolution": "Build the printed manifest from the project it belongs to: realpath(project) joined with the manifest's path relative to the unresolved project when it is lexically under it, else the realpath-of-directory spelling; a case with a linked docs/audit leaving the project asserts the printed manifest sits under the printed --project-dir."
+      },
+      {
+        "id": "P94-R8",
+        "severity": "low",
+        "file": "CHANGELOG.md [Unreleased]",
+        "issue": "The printed --learn-from command now names the manifest and project resolved through links and short names rather than as typed, and no entry says so.",
+        "resolution": "Add the entry."
+      },
+      {
+        "id": "P94-R9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_proc_group.py (locate_sh docstring)",
+        "issue": "A present-tense count of the function's arguments in prose, which this round already had to change once.",
+        "resolution": "Delete the number."
       }
     ],
-    "outcome": "[findings: 6 - 0 high, 1 med, 5 low; 6 with a recorded fix commit]"
+    "outcome": "[findings: 9 - 0 high, 1 med, 8 low; 6 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -487,6 +508,54 @@
         "commit": "ba6f7fc8",
         "at": "2026-09-29T11:31:31Z",
         "basis": "the product's spelling depended on the call shape (a relative manifest took getcwd's physical or 8.3 spelling, an absolute manifest or --project-dir was echoed as typed); resolve_project now returns realpath in both branches and canonical_manifest realpaths the manifest's directory, the containment check unchanged; i39 pins one pair across four call shapes through a symlinked parent, i40 the allow twin"
+      }
+    },
+    {
+      "id": "P94.8-579",
+      "title": "the printed manifest sits under the printed project whatever links lie between them",
+      "status": "in_progress",
+      "description": "import-evidence prints the manifest built from the project it belongs to, so a directory link between manifest and project root that leaves the project cannot print a pair the command's own --project-dir branch refuses; the CHANGELOG names the resolved spelling; the locate_sh docstring loses its argument count",
+      "files": [
+        "plugins/audit/scripts/governance/import-evidence.py",
+        "plugins/audit/tests/test_import_evidence.py",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/governance/_proc_group.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_import_evidence.py: with docs/audit a link to a directory outside the project, the printed manifest is under the printed --project-dir, and the same pair typed back with --project-dir is accepted"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-09-29T11:38:55Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-29T11:53:53Z.141250",
+        "status": "passed",
+        "at": "2026-09-29T11:53:53Z"
       }
     }
   ],

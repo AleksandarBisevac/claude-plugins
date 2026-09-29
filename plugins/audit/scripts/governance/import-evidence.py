@@ -357,20 +357,36 @@ def render(answer, out=print):
 
 
 # --- cli ------------------------------------------------------------------------
-def _is_under(path, directory):
-    """True when `path` sits at or below `directory`, both resolved through
-    symlinks first - a temp directory reached through a link is still the
-    directory it names."""
-    path, directory = os.path.realpath(path), os.path.realpath(directory)
+def _lexically_under(path, directory):
+    """True when `path` sits at or below `directory` as SPELLED, no link
+    followed - the relation `project_of_manifest` walks, from the manifest up
+    through its parents as typed."""
+    path, directory = os.path.abspath(path), os.path.abspath(directory)
     try:
         return os.path.commonpath([path, directory]) == directory
     except ValueError:
         return False
 
 
+def _is_under(path, directory):
+    """True when `path` sits at or below `directory` either as spelled or with
+    both resolved through symlinks.
+
+    RESOLVED, because a temp directory reached through a link is still the
+    directory it names. AS SPELLED, because a directory between the manifest
+    and its project may itself be a link leaving the project -
+    `<T>/docs/audit` pointing elsewhere - and that manifest is still `<T>`'s:
+    it is the project the walk without `--project-dir` names for it, so the
+    pair this command prints for it must be one this check accepts back."""
+    if _lexically_under(path, directory):
+        return True
+    return _lexically_under(os.path.realpath(path),
+                            os.path.realpath(directory))
+
+
 def resolve_project(manifest_path, project_dir):
-    """`(project, refusal)` - the project this import writes into, or why it
-    will not.
+    """`(project, manifest, refusal)` - the project this import writes into
+    and the manifest spelled beside it, or why it will not.
 
     WITHOUT `--project-dir` the project is the one the MANIFEST belongs to,
     by the plugin's one answer to that question,
@@ -387,26 +403,28 @@ def resolve_project(manifest_path, project_dir):
     the printed command would pair one project's plan with another's ledger,
     and there is no reading of the pair that is not a mistake.
 
-    The project returned is resolved through symlinks either way, the
-    spelling `canonical_manifest` gives the manifest beside it."""
+    The project returned is resolved through symlinks either way, and the
+    manifest beside it is spelled from that same unresolved project by
+    `canonical_manifest`, so the two cannot be computed apart."""
     manifest_abs = os.path.abspath(manifest_path)
     if project_dir is None:
-        return os.path.realpath(
-            _panel_write.project_of_manifest(manifest_abs)), ""
-    project = os.path.abspath(project_dir)
-    if not _is_under(manifest_abs, project):
-        return project, (
-            "the manifest %s is not under --project-dir %s - the shard would "
-            "land in one project's ledger and be learned from into another's "
-            "plan. Pass the directory the manifest belongs to, or leave "
-            "--project-dir out and the manifest's own project is used"
-            % (manifest_abs, project))
-    return os.path.realpath(project), ""
+        project = _panel_write.project_of_manifest(manifest_abs)
+    else:
+        project = os.path.abspath(project_dir)
+        if not _is_under(manifest_abs, project):
+            return project, manifest_abs, (
+                "the manifest %s is not under --project-dir %s - the shard "
+                "would land in one project's ledger and be learned from into "
+                "another's plan. Pass the directory the manifest belongs to, "
+                "or leave --project-dir out and the manifest's own project is "
+                "used" % (manifest_abs, project))
+    return (os.path.realpath(project),
+            canonical_manifest(manifest_abs, project), "")
 
 
-def canonical_manifest(manifest_path):
-    """The manifest spelled the one way this command prints it: its
-    DIRECTORY resolved through symlinks, its own name kept.
+def canonical_manifest(manifest_path, project):
+    """The manifest spelled the one way this command prints it beside
+    `project` - the project as found or typed, NOT yet resolved.
 
     ONE SPELLING PER DIRECTORY, WHATEVER THE CALL SHAPE. A relative manifest
     is made absolute off the current directory, and the current directory
@@ -414,12 +432,24 @@ def canonical_manifest(manifest_path):
     POSIX however it was reached, the short 8.3 form on Windows when that is
     how it was entered - while an absolute manifest or a `--project-dir`
     comes back as typed. Left alone, one project printed two different
-    commands depending on how the import was typed. The project is resolved
-    the same way (`resolve_project`), so the pair always agrees.
+    commands depending on how the import was typed.
 
-    The file's own name is not followed: a manifest that is itself a link
-    stays the file this import was handed, not wherever the link points."""
+    UNDER THE PROJECT IT IS PRINTED WITH. A manifest spelled below `project`
+    is the resolved project joined with the manifest's path below the
+    UNRESOLVED one, so a link between the two - `<T>/docs/audit` pointing out
+    of `<T>` - is kept as a path inside `<T>` rather than followed out of it.
+    Resolving the manifest's directory on its own would print a manifest that
+    is not under the printed `--project-dir`. A manifest reached only through
+    resolution (`--project-dir` typed in another spelling of the same
+    directory) has no such path, and takes its directory resolved instead.
+
+    The file's own name is not followed either way: a manifest that is itself
+    a link stays the file this import was handed, not wherever it points."""
     manifest_abs = os.path.abspath(manifest_path)
+    if _lexically_under(manifest_abs, project):
+        return os.path.join(os.path.realpath(project),
+                            os.path.relpath(manifest_abs,
+                                            os.path.abspath(project)))
     return os.path.join(os.path.realpath(os.path.dirname(manifest_abs)),
                         os.path.basename(manifest_abs))
 
@@ -464,14 +494,15 @@ def main(argv, out=print):
         sys.stderr.write("ERROR: %s is not a file\n" % (args.shard,))
         return E_USAGE
 
-    project, refusal = resolve_project(args.manifest, args.project_dir)
+    project, manifest_path, refusal = resolve_project(args.manifest,
+                                                      args.project_dir)
     if refusal:
         sys.stderr.write("ERROR: %s\n" % (refusal,))
         return E_USAGE
     # ABSOLUTE, so the printed command does not depend on the directory it
     # is pasted into; CANONICAL, so it does not depend on how it was typed.
     code, answer = import_shard(project, args.shard,
-                                manifest_path=canonical_manifest(args.manifest))
+                                manifest_path=manifest_path)
     if args.as_json:
         out(json.dumps(answer, indent=2, sort_keys=True))
     else:

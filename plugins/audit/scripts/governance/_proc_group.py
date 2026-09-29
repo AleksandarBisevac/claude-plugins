@@ -236,7 +236,7 @@ def locate_sh(isfile=None, which=None, environ=None, pathmod=None):
     second fails at spawn time with an error that names no remedy. The refusal
     is the answer, and the callers turn it into could-not-run.
 
-    The four arguments are seams for the cases; production passes none.
+    The arguments are seams for the cases; production passes none.
     """
     isfile = isfile if isfile is not None else os.path.isfile
     which = which if which is not None else shutil.which

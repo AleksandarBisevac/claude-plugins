@@ -491,6 +491,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   same way and hands it to `run-test-gate.py`, so a red run is learned from the ledger it was
   recorded into; a row it cannot find while some ledger file was read with losses names that file
   rather than calling the run absent.
+- **The `--learn-from` command `import-evidence.py` prints names the manifest and the project in
+  one resolved spelling, whatever the call shape.** A relative manifest, an absolute one, one
+  reached through a link, and a `--project-dir` typed in another spelling of the same directory
+  all print one pair. The manifest file's own name is not followed, so a manifest that is itself
+  a link keeps its name. The manifest printed always sits under the printed `--project-dir`,
+  including when a directory between them is a link out of the project (`<T>/docs/audit`
+  pointing elsewhere), and that pair typed back as `--project-dir` is accepted rather than
+  refused.
 - **A run that muted a coupled suite does not age that coupling.** `/audit:doctor` counts only
   the green measured full runs in which no mute excused the coupled test, since a muted failure is
   not a pass. The relearn command it prints for an entry it cannot age carries `--basis-run` and
