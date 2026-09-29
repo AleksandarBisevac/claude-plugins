@@ -1128,6 +1128,9 @@ def _interpreter_herestrings(text):
             # An interpreter already running a script or `-c` code reads the
             # here-string as its input, as the heredoc arm grades a body fed to
             # a script run.
+            if runner[0] not in rest:
+                out.append(body)
+                continue
             if _config.runs_own_program(rest[rest.index(runner[0]):]):
                 continue
             out.append(body)

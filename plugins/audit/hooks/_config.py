@@ -1496,17 +1496,18 @@ def runs_own_program(words):
 
 _WRAPPER_VALUE_OPTIONS = {
     "sudo": ("-u", "-g", "-h", "-p", "-r", "-t", "-C", "--user", "--group",
-             "--host", "--prompt", "--role", "--type", "--close-from"),
-    "doas": ("-u", "-C", "--user", "--config"),
+             "--host", "--prompt", "--role", "--type", "--close-from", "-a"),
+    "doas": ("-u", "-C", "--user", "--config", "-a"),
     "env": ("-C", "-u", "--chdir", "--unset"),
-    "xargs": ("-E", "-e", "-I", "-i", "-L", "-l", "-n", "-P", "-s", "-S",
-              "--eof", "--replace", "--max-lines", "--max-args",
+    "xargs": ("-E", "-I", "-i", "-L", "-n", "-P", "-s", "-S", "-a",
+              "--max-args",
               "--max-procs", "--max-chars", "--arg-file"),
     "timeout": ("-k", "-s", "--kill-after", "--signal"),
+    "time": ("-f",),
     "nice": ("-n", "--adjustment"),
-    "ionice": ("-c", "-n", "-t", "--class", "--classdata"),
+    "ionice": ("-c", "-n", "--class", "--classdata"),
     "stdbuf": ("-i", "-o", "-e", "--input", "--output", "--error"),
-    "chrt": ("-R", "-T", "-P", "-D", "--runtime", "--period", "--deadline"),
+    "chrt": ("-T", "-P", "-D", "--runtime", "--period", "--deadline"),
     "exec": ("-a",),
 }
 
@@ -1519,7 +1520,7 @@ def _wrapper_rest(name, words):
         word = words[index]
         if word == "--":
             return words[index + 1:]
-        if name in ("env", "sudo") and re.match(
+        if name in ("env", "sudo", "time") and re.match(
                 r"^[A-Za-z_][A-Za-z0-9_]*=", word):
             index += 1
             continue
@@ -1550,11 +1551,18 @@ def _wrapper_rest(name, words):
 
 
 def _wrapper_fallback(words):
-    """Main's conservative wrapper reading: discard only leading flags and numbers."""
+    """Conservative wrapper reading through options, assignments and wrappers."""
     words = list(words)
-    while words and (words[0].startswith("-") or words[0].isdigit()):
-        words = words[1:]
-    return words
+    while words:
+        while words and (words[0].startswith("-") or words[0].isdigit()):
+            words = words[1:]
+        while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
+            words = words[1:]
+        if words and _program_of(words[0]) in _HEAD_WRAPPERS:
+            words = words[1:]
+            continue
+        return words
+    return []
 
 
 def program_candidates(words):
@@ -1562,8 +1570,8 @@ def program_candidates(words):
 
     One command's words with leading assignments and wrappers that run their
     argument (`env`, `sudo`, `timeout 5`, ...) stepped over. An exact parse
-    narrows the command position, but every word main would consider stays a
-    candidate; an uncertain parse uses main's option-stripped reading outright."""
+    narrows the command position, while the conservative reading keeps every
+    word that can remain after wrapper prefixes as a candidate."""
     words = list(words)
     fallback_candidates = []
     while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
@@ -1593,12 +1601,14 @@ def _head_runs_body(head):
     if _HEAD_INDIRECTION.search(head):
         return "shell"
     words, candidates = program_candidates(_last_command(head))
-    for index, word in enumerate(candidates):
+    for word in candidates:
         program = _program_of(word)
         if program in _SHELL_PROGRAMS:
             return "shell"
         if _ANY_INTERPRETER.match(program):
-            return None if _plain_script_run(words[index:]) else "code"
+            at = words.index(word) if word in words else None
+            return (None if at is not None and _plain_script_run(words[at:])
+                    else "code")
     return None
 
 

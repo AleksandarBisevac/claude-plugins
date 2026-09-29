@@ -1457,17 +1457,29 @@ def _cases(check):
                  ["time", "-f", "format", "ls"], ["sudo", "-a", "type", "ls"],
                  ["doas", "-a", "style", "ls"], ["ionice", "-t", "ls"],
                  ["chrt", "-R", "ls"], ["time", "FOO=1", "ls"])
-    check("pc3 an exact wrapper parse keeps every program main finds",
-          all("ls" in _pc(words)[1] for words in _pc_floor),
+    check("pc3 an exact wrapper parse keeps every program main finds in rest",
+          all(_pc(words)[0][:1] == ["ls"] and "ls" in _pc(words)[1]
+              for words in _pc_floor),
           repr([(words, _pc(words)) for words in _pc_floor]))
     _pc_fallback = ((["sudo", "-E", "$SH"], ["$SH"]),
                     (["sudo", "-H", "$SH"], ["$SH"]),
                     (["nice", "-5", "$SH"], ["$SH"]),
                     (["env", "-", "$SH"], ["$SH"]),
-                    (["stdbuf", "-oL", "$SH"], ["$SH"]))
-    check("pc4 an uncertain wrapper keeps main's option-stripped rest",
+                    (["stdbuf", "-oL", "$SH"], ["$SH"]),
+                    (["nice", "-5", "sudo", "$SH"], ["$SH"]),
+                    (["sudo", "-E", "env", "$SH"], ["$SH"]),
+                    (["sudo", "-E", "FOO=1", "$SH"], ["$SH"]))
+    check("pc4 an uncertain wrapper keeps main's complete stripped rest",
           all(_pc(words)[0] == rest for words, rest in _pc_fallback),
           repr([(words, _pc(words)) for words, rest in _pc_fallback]))
+    _pc_heads = ("ionice -t python3 tools/x.py", "xargs -l python3 tools/x.py",
+                 "xargs -e python3 tools/x.py",
+                 "xargs -a input python3 tools/x.py",
+                 "chrt -R python3 tools/x.py",
+                 "time FOO=1 python3 tools/x.py")
+    check("pc5 a wrapper before an ordinary script leaves its heredoc as data",
+          all(M._head_runs_body(head) is None for head in _pc_heads),
+          repr([(head, M._head_runs_body(head)) for head in _pc_heads]))
     check("ro1 an interpreter runs a program of its own only through its own "
           "inline flag or a script operand after its options",
           all(_ro(w) is want for w, want in _ro_cases),
