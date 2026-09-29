@@ -595,6 +595,12 @@
       "title": "every leg of CI's ubuntu job passes, and verify.sh runs each of them",
       "status": "done",
       "shard": "phases/P93.json"
+    },
+    {
+      "id": "P94",
+      "title": "the suites and the plugin run on Windows as they do on POSIX",
+      "status": "pending",
+      "shard": "phases/P94.json"
     }
   ],
   "fileIndex": {
@@ -634,7 +640,8 @@
     ],
     ".gitattributes": [
       "BF2.1",
-      "P36.13"
+      "P36.13",
+      "P94.4"
     ],
     ".github/workflows/ci.yml": [
       "P2.5",
@@ -2299,7 +2306,8 @@
       "P79.9-5bh",
       "P74.10-qq5",
       "P86.1",
-      "P81.16-j7p"
+      "P81.16-j7p",
+      "P94.2"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -2321,7 +2329,8 @@
       "P82.12-fye",
       "P82.13-fye",
       "P82.14-fye",
-      "P82.15-fye"
+      "P82.15-fye",
+      "P94.3"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -3102,7 +3111,8 @@
       "P77.3-6u9",
       "P77.4-6u9",
       "P77.5-6u9",
-      "P86.1"
+      "P86.1",
+      "P94.1"
     ],
     "plugins/audit/tests/test__doctor_trail.py": [
       "P20.6",
@@ -3198,7 +3208,8 @@
     "plugins/audit/tests/test__id_shape.py": [
       "P61.1",
       "P61.8",
-      "P76.3-6qa"
+      "P76.3-6qa",
+      "P94.1"
     ],
     "plugins/audit/tests/test__invariants.py": [
       "P28.2",
@@ -3331,11 +3342,13 @@
       "P79.1",
       "P80.1",
       "P81.1",
-      "P76.4-6qa"
+      "P76.4-6qa",
+      "P94.4"
     ],
     "plugins/audit/tests/test__merge_install.py": [
       "P60.5",
-      "P62.1"
+      "P62.1",
+      "P94.4"
     ],
     "plugins/audit/tests/test__output.py": [
       "P29.5",
@@ -3402,7 +3415,8 @@
       "P18.7",
       "P85.1",
       "P80.8",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P94.1"
     ],
     "plugins/audit/tests/test__panel_write.py": [
       "P18.7",
@@ -3458,7 +3472,8 @@
       "P77.3-6u9",
       "P79.4",
       "P81.2",
-      "P92.1"
+      "P92.1",
+      "P94.4"
     ],
     "plugins/audit/tests/test__report_html.py": [
       "P25.1",
@@ -3570,7 +3585,8 @@
       "P59.13",
       "P75.1",
       "P75.2-j5h",
-      "P84.8-791"
+      "P84.8-791",
+      "P94.1"
     ],
     "plugins/audit/tests/test_audit_lookup.py": [
       "P56.3",
@@ -3601,7 +3617,8 @@
       "P80.14-rtb",
       "P80.15-rtb",
       "P81.9",
-      "P81.12"
+      "P81.12",
+      "P94.1"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -3710,7 +3727,8 @@
       "P74.10-qq5",
       "P80.17-rtb",
       "P87.2",
-      "P92.3"
+      "P92.3",
+      "P94.4"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
       "P28.2",
@@ -3775,7 +3793,8 @@
       "P81.1",
       "P84.7-791",
       "P80.20-rtb",
-      "P80.23-rtb"
+      "P80.23-rtb",
+      "P94.1"
     ],
     "plugins/audit/tests/test_guard_bash_writes.py": [
       "P20.1",
@@ -3807,7 +3826,8 @@
       "P83.5-wkm",
       "P88.1",
       "P88.2-dnb",
-      "P89.1"
+      "P89.1",
+      "P94.4"
     ],
     "plugins/audit/tests/test_guard_secrets_read.py": [
       "P22.6",
@@ -3873,7 +3893,8 @@
     ],
     "plugins/audit/tests/test_merge_manifest.py": [
       "P60.2",
-      "P61.11"
+      "P61.11",
+      "P94.1"
     ],
     "plugins/audit/tests/test_meter_usage.py": [
       "P72.1"
@@ -3891,7 +3912,8 @@
       "P85.1",
       "P85.5-axa",
       "P80.8",
-      "P84.8-791"
+      "P84.8-791",
+      "P94.1"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6",
@@ -3996,7 +4018,8 @@
       "P81.11",
       "P81.16-j7p",
       "P93.1",
-      "P93.3-287"
+      "P93.3-287",
+      "P94.2"
     ],
     "plugins/audit/tests/test_run_test_gate.py: a gate that passed its commands and rewrote the tree records the mutated verdict, not passed": [
       "P32.7"
@@ -4026,7 +4049,8 @@
       "P82.12-fye",
       "P82.13-fye",
       "P82.14-fye",
-      "P82.15-fye"
+      "P82.15-fye",
+      "P94.3"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
@@ -4251,13 +4275,15 @@
       "P79.8-5bh",
       "P85.4",
       "P81.3",
-      "P81.4"
+      "P81.4",
+      "P94.2"
     ],
     "plugins/audit/tests/test_derive_phase_gate.py": [
       "P79.3",
       "P79.8-5bh",
       "P81.3",
-      "P81.4"
+      "P81.4",
+      "P94.2"
     ],
     "plugins/audit/scripts/governance/import-evidence.py": [
       "P80.5",
@@ -4271,7 +4297,8 @@
       "P80.19-rtb",
       "P81.10",
       "P81.14-j7p",
-      "P81.17-j7p"
+      "P81.17-j7p",
+      "P94.4"
     ],
     "tools/ui-tests/full-run-verified.test.mjs": [
       "P80.8"
@@ -4292,7 +4319,8 @@
       "P80.11",
       "P86.2",
       "P80.16-rtb",
-      "P81.11"
+      "P81.11",
+      "P94.4"
     ],
     ".claude/hooks/arm-release-bypass.py": [
       "P80.11",
@@ -4335,10 +4363,12 @@
       "P77.2"
     ],
     "plugins/audit/scripts/governance/_proc_group.py": [
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P94.2"
     ],
     "plugins/audit/tests/test__proc_group.py": [
-      "P77.3-6u9"
+      "P77.3-6u9",
+      "P94.2"
     ],
     "plugins/audit/scripts/governance/_verdict_binding.py": [
       "P74.3-qq5",
