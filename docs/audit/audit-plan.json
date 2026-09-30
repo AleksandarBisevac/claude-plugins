@@ -607,6 +607,12 @@
       "title": "the history guard follows a cd whose target holds a quoted or escaped space",
       "status": "done",
       "shard": "phases/P95.json"
+    },
+    {
+      "id": "P96",
+      "title": "bug records written by bug-add validate against the published schema",
+      "status": "pending",
+      "shard": "phases/P96.json"
     }
   ],
   "fileIndex": {
@@ -793,7 +799,8 @@
       "P89.1",
       "P94.5-579",
       "P94.8-579",
-      "P95.1"
+      "P95.1",
+      "P96.1"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -834,7 +841,8 @@
       "P74.6-qq5",
       "P79.11-5bh",
       "P80.22-rtb",
-      "P87.2"
+      "P87.2",
+      "P96.1"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -1865,7 +1873,8 @@
       "P79.12-5bh",
       "P84.7-791",
       "P80.21-rtb",
-      "P80.17-rtb"
+      "P80.17-rtb",
+      "P96.1"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -3706,7 +3715,8 @@
       "P81.7",
       "P81.13-j7p",
       "P81.16-j7p",
-      "P92.2"
+      "P92.2",
+      "P96.1"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
