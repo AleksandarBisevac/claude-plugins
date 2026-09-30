@@ -1,9 +1,9 @@
 {
   "id": "P96",
   "title": "bug records written by bug-add validate against the published schema",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
-  "desiredOutcome": "A plan whose bugs were filed by bug-add with no repro, expected or actual validates under the published schema (ajv draft2020, CI's manifest validation job) as it does under validate-manifest, and validate-manifest rejects a bug field the schema rejects, so the two validators cannot disagree on bug records again",
+  "desiredOutcome": "A plan whose bugs were filed by bug-add with no repro, expected or actual validates under the published schema (ajv draft2020, CI's manifest validation job) as it does under validate-manifest, and validate-manifest reports every bug value the schema rejects - a warning inside the 3.x line that names 4.0.0 as the release that refuses it, per COMPATIBILITY's additive-validation promise - so the two validators can no longer disagree silently on bug records",
   "testGate": [
     "selftests",
     "validate",
@@ -13,27 +13,108 @@
     "lint"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "48e2620c74477eb02a41f821f1faf46fbb9616dc",
+  "branch": "audit/p96-bug-records-written-by-bug-add",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P96-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/_manifest_crossrefs.py (_check_bugs)",
+        "issue": "The phase's desiredOutcome promises that validate-manifest rejects a bug field the schema rejects; _check_bugs checks required fields, unknown keys, the id pattern, the status enum, ado and the taskId link but no value type, so a bug with repro 7, files as a string, severity 3 or description null passes validate-manifest and fails CI's ajv step - the two validators still disagree on any record the verb did not write.",
+        "resolution": "Type each bug value against the schema's bug item, derived from the schema file rather than a second table; a case walks the schema's bug properties and shows validate-manifest refuses a wrong-typed value for each, with the allow twin of each admitted type."
+      },
+      {
+        "id": "P96-R2",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_audit_task.py (ba_resolve, ba_admits)",
+        "issue": "The in-test reader counts a node as a fault only when it understands none of its keywords, so a node with one understood and one unread keyword (the id's type+pattern) is admitted on the understood part, and keywords beside $ref are dropped.",
+        "resolution": "Return 'cannot read' for any constraint keyword outside the read set (annotations excepted), read pattern, merge $ref siblings; a row with a pattern-violating id must be reported."
+      },
+      {
+        "id": "P96-R3",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_audit_task.py (ba5)",
+        "issue": "Only the no-flag bug-add record is typed against the schema; the record written with every optional flag is not.",
+        "resolution": "Type the full-flag record too."
+      },
+      {
+        "id": "P96-R4",
+        "severity": "low",
+        "file": "CHANGELOG.md [Unreleased]",
+        "issue": "The entry says every key is spelled like its nullable neighbours and that every key the verb writes is held, but repro gains a oneOf null arm and only the no-flag record is held.",
+        "resolution": "Say what was done for each key and which record is held."
+      },
+      {
+        "id": "P96-R5",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/_manifest_crossrefs.py (_check_bugs schema read) with _manifest_rules.py (validate docstring)",
+        "issue": "validate() is documented as pure - it reads no file and holds no module state, which is why the panel, audit-task's pre- and post-write checks and migrate-manifest share it - while _check_bugs now reads the schema from disk on every call for a plan holding bugs, and an unreadable schema becomes a finding inside that pure function.",
+        "resolution": "Pass the schema in as a second injected input, like today=: validate(manifest, today=None, schema=None) threads it to _check_bugs; the entry points load it once per process and hand it in; the docstring names the schema as the second input and says when a fallback read happens."
+      },
+      {
+        "id": "P96-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_manifest_crossrefs.py (the handled dedupe)",
+        "issue": "The dedupe is keyed by top-level property, so one hand-written ado finding hides a different schema fault in the same object (ado {id 7, url 5, origin x} reports origin only), contradicting the CHANGELOG's every-present-value claim and COMPATIBILITY's reported-once sentence.",
+        "resolution": "Record the path each hand-written check refused and drop only schema reasons at or under that path; a case for the ado example must give the origin finding and one ado.url warning."
+      },
+      {
+        "id": "P96-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_manifest_crossrefs.py (pattern matching); _manifest_vocab.py (BUG_ID_RE)",
+        "issue": "Patterns run through Python re.search, whose \\d matches any Unicode digit and whose $ matches before a trailing newline, so 'BUG-1\\n' and an id with a non-ASCII digit pass every local check and fail ajv (ECMA-262 with the u flag), contradicting COMPATIBILITY's sentence that the warning always names what the published schema says.",
+        "resolution": "Match with re.ASCII and translate an unescaped trailing $ to \\Z before compiling, and give BUG_ID_RE the same treatment or refuse a trailing newline; both strings as refused samples in a case."
+      },
+      {
+        "id": "P96-R8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_manifest_crossrefs.py (_in_enum)",
+        "issue": "Enum membership requires equal JSON type names, so 1.0 is not in [1], while draft 2020-12 compares numbers by value; no reachable enum is numeric today, so it cannot fire yet and nothing at build time would catch it.",
+        "resolution": "Treat integer and number as one class for enum/const (booleans excluded); a case where 1.0 is in [1] and True is not."
+      },
+      {
+        "id": "P96-R9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_manifest_crossrefs.py (warning suffix)",
+        "issue": "The suffix says validate-manifest refuses such a value from 4.0.0 in the present tense and never says the plan still validates in 3.x, so a reader can take the warning for a failure.",
+        "resolution": "Say the published schema refuses the value, validate-manifest will refuse it from 4.0.0, and it is a warning in 3.x; update the pinned substrings."
+      },
+      {
+        "id": "P96-R10",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py (_validator; _locked_signoff, _locked_group, _locked_seed)",
+        "issue": "The _validator docstring says an unreadable schema makes the verb's pre-check refuse rather than write, but signoff, group and seed have no pre-check: on a broken install they write, fail the post-write validation, roll back and blame the user's change ('would leave the manifest invalid').",
+        "resolution": "Carry the unreadable findings on the validator and have signoff, group and seed refuse on them before writing, with the install-broken sentence; a case per verb."
+      }
+    ],
+    "outcome": "[findings: 10 - 0 high, 2 med, 8 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P96.1",
       "title": "the schema admits null for a bug's repro, expected and actual, as it does for its neighbours",
-      "status": "pending",
+      "status": "in_progress",
       "description": "bug-add writes the documented shape (bug.md: every key present, an absent answer as null); the schema admits null for reportedBy, taskId, fixedIn and notes but not repro, expected, actual, so CI's ajv step rejects every plan with a bug-add record lacking them while validate-manifest (which does not apply the schema) accepts it. Admit null there (COMPATIBILITY: adding is free), and pin that the record bug-add writes with no optional flag carries only values the schema's declared type for each key admits",
       "files": [
         "plugins/audit/schema/audit-plan.schema.json",
         "plugins/audit/tests/test_audit_task.py",
         "CHANGELOG.md",
-        "COMPATIBILITY.md"
+        "COMPATIBILITY.md",
+        "plugins/audit/scripts/manifest/_manifest_crossrefs.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/tests/test__manifest_crossrefs.py",
+        "plugins/audit/tests/test_validate_manifest.py",
+        "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "plugins/audit/tests/test__manifest_rules.py",
+        "plugins/audit/scripts/manifest/validate-manifest.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test__manifest_vocab.py"
       ],
       "tests": {
         "mode": "regression",
@@ -56,16 +137,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-09-30T00:06:40Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-09-30T00:24:39Z.3bc6a3",
+        "status": "failed",
+        "at": "2026-09-30T00:24:39Z"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-09-30T00:06:40Z"
 }
