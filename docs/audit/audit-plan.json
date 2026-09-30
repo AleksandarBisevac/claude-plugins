@@ -611,7 +611,7 @@
     {
       "id": "P96",
       "title": "bug records written by bug-add validate against the published schema",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P96.json"
     }
   ],
@@ -2404,7 +2404,8 @@
       "P69.4-j6r",
       "P75.4-j5h",
       "P75.5-j5h",
-      "P84.7-791"
+      "P84.7-791",
+      "P96.1"
     ],
     "plugins/audit/scripts/manifest/_manifest_io.py": [
       "P10.4",
@@ -2463,7 +2464,8 @@
       "P75.4-j5h",
       "P75.5-j5h",
       "P84.2",
-      "P81.16-j7p"
+      "P81.16-j7p",
+      "P96.1"
     ],
     "plugins/audit/scripts/manifest/_manifest_vocab.py": [
       "P18.2",
@@ -2483,7 +2485,8 @@
       "P76.4-6qa",
       "P80.21-rtb",
       "P80.17-rtb",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P96.1"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -2577,7 +2580,8 @@
       "P84.6-791",
       "P81.7",
       "P81.13-j7p",
-      "P81.16-j7p"
+      "P81.16-j7p",
+      "P96.1"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -2626,7 +2630,8 @@
       "P69.3",
       "P69.4-j6r",
       "P78.5",
-      "P75.4-j5h"
+      "P75.4-j5h",
+      "P96.1"
     ],
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
@@ -3306,7 +3311,8 @@
       "P69.4-j6r",
       "P75.4-j5h",
       "P75.5-j5h",
-      "P84.7-791"
+      "P84.7-791",
+      "P96.1"
     ],
     "plugins/audit/tests/test__manifest_io.py": [
       "P22.8",
@@ -3356,7 +3362,8 @@
       "P80.1",
       "P81.1",
       "P75.4-j5h",
-      "P81.16-j7p"
+      "P81.16-j7p",
+      "P96.1"
     ],
     "plugins/audit/tests/test__manifest_vocab.py": [
       "P20.6",
@@ -3369,7 +3376,8 @@
       "P80.1",
       "P81.1",
       "P76.4-6qa",
-      "P94.4"
+      "P94.4",
+      "P96.1"
     ],
     "plugins/audit/tests/test__merge_install.py": [
       "P60.5",
@@ -4102,7 +4110,8 @@
       "P80.1",
       "P81.1",
       "P75.4-j5h",
-      "P81.16-j7p"
+      "P81.16-j7p",
+      "P96.1"
     ],
     "pyproject.toml": [
       "P9.1",
