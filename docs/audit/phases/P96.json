@@ -1,0 +1,71 @@
+{
+  "id": "P96",
+  "title": "bug records written by bug-add validate against the published schema",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "A plan whose bugs were filed by bug-add with no repro, expected or actual validates under the published schema (ajv draft2020, CI's manifest validation job) as it does under validate-manifest, and validate-manifest rejects a bug field the schema rejects, so the two validators cannot disagree on bug records again",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P96.1",
+      "title": "the schema admits null for a bug's repro, expected and actual, as it does for its neighbours",
+      "status": "pending",
+      "description": "bug-add writes the documented shape (bug.md: every key present, an absent answer as null); the schema admits null for reportedBy, taskId, fixedIn and notes but not repro, expected, actual, so CI's ajv step rejects every plan with a bug-add record lacking them while validate-manifest (which does not apply the schema) accepts it. Admit null there (COMPATIBILITY: adding is free), and pin that the record bug-add writes with no optional flag carries only values the schema's declared type for each key admits",
+      "files": [
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/tests/test_audit_task.py",
+        "CHANGELOG.md",
+        "COMPATIBILITY.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a bug written by bug-add with no --repro/--expected/--actual carries, for every key, a value the schema's declared type for that bug key admits"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
