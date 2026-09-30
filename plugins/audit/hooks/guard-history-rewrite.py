@@ -77,8 +77,11 @@ refused as soon as an audit plan exists on disk. Reading the second arm as the
 first is how it would end up silent on a plan whose first task is still mid-edit.
 
 WHAT IT DOES NOT DO. It never inspects the working tree, never runs a write, and
-never blocks a command it cannot decide: an unparseable command, an unreadable
-manifest, or a git that will not answer all resolve to ALLOW. It does not refuse
+never blocks a command it cannot decide about ancestry: an unreadable
+manifest, or a git that will not answer, resolves to ALLOW. An unparseable
+command that carries a rewrite is the exception, and it is refused while a
+plan exists, because the directory Git would run it in cannot be established
+and the session is a guess. It does not refuse
 `git push` without a force flag, and that is a decision rather than a gap - the
 reasoning is beside `STASH_READS` and the claim is driven from
 `tools/check-prohibitions.py`.
@@ -1058,7 +1061,7 @@ def git_calls(command, depth=0):
 # traded a hand-kept table of git's global options for a slightly weaker guard, on
 # input git itself rejects. Recorded here because the next reader will have the
 # same worry, and the probe that settles it is a regex comparison over both.
-_GIT_SUB = (r"\bgit\b(?:\s+(?:-C\s+\S+|-c\s+\S+"
+_GIT_SUB = (r"\bgit\b(?:\s+(?:-C(?:\s+(?:\"[^\"]*\"|'[^']*'|\S+)|\S+)|-c\s+\S+"
             r"|--(?:git-dir|work-tree|namespace|exec-path)(?:=\S*|\s+\S+)"
             r"|--[a-z][a-z-]*))*\s+")
 
@@ -1422,9 +1425,10 @@ def call_trees(data, cfg, project, command, calls):
     Refs resolve per working tree (`HEAD`, `HEAD~1`, `ORIG_HEAD`), so the tree
     a reset or an amend is asked about is ITS OWN, not the first one the
     command reached: in `git -C <a> status; git -C <b> reset --hard HEAD~1`
-    the `HEAD~1` is `<b>`'s. A `-C` value this cannot resolve is rejected
-    before this function for a history rewrite while a plan exists. An
-    unparseable command (`calls` None) is one call where the shell stands."""
+    the `HEAD~1` is `<b>`'s. A `-C` value this cannot resolve, and a command
+    that does not parse, are rejected before this function for a history
+    rewrite while a plan exists. An unparseable read is still one call where
+    the shell stands, because a read orphans nothing."""
     base = _config.effective_cwd(runnable(command), (data or {}).get("cwd"))
     base = base or (data or {}).get("cwd") or ""
     out = []
@@ -1498,9 +1502,19 @@ def decide(data):
     calls = git_calls(command)
     if calls == []:
         return ("allow", "")
-    unplaced = unplaceable_directory(data, command, calls)
     rewrite = (always_refused(command) or amend_requested(command)
                or any(target for target, _index in reset_targets(command)))
+    # An unparseable command has no `-C` reading at all. Judging the rewrite
+    # where the session stands is the bug: the unread `-C` may name another
+    # tree, and a plan there is exactly what this guard exists to see.
+    if calls is None and rewrite and plan_present(root, cfg):
+        return ("deny",
+                "this command carries a history rewrite, but it cannot be "
+                "parsed, so the guard cannot establish where Git runs it. "
+                "A `git -C` inside an unreadable command is not the session's "
+                "directory. Pass a command that parses, with a literal "
+                "`git -C <absolute path>` if the rewrite runs elsewhere.")
+    unplaced = unplaceable_directory(data, command, calls)
     if unplaced and rewrite and plan_present(root, cfg):
         return ("deny",
                 "this command carries a history rewrite, but its %s cannot "
@@ -1538,7 +1552,8 @@ def decide(data):
         return ("allow", "")
     # Refs resolve per working tree, so each question below is asked in the
     # tree of the invocation it is about (`call_trees`); an unparseable
-    # command falls back to the first worktree it reaches, else the project.
+    # command that was not refused above falls back to the first worktree
+    # it reaches, else the project.
     project_git = _config.git_root_dir(root, cfg)
     fallback_git = roots[1] if len(roots) > 1 else project_git
 

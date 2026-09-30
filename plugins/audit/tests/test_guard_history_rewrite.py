@@ -1139,6 +1139,16 @@ def _cases(check):
                  "...and by a reset with no ref"),
                 ("gw13a", _wt["main"], 'git -C "$WT" status', "allow",
                  "...and an unreadable `-C` value on a read"),
+                ("gw14", _wt["main"], "git -C %s rebase main '" % _q_wt,
+                 "deny",
+                 "an unparseable command does not place a rewrite in the "
+                 "session just because its `-C` could not be read"),
+                ("gw14b", _wt["main"], "git rebase main '", "deny",
+                 "the same refusal when the unreadable command names no "
+                 "`-C` either - the session is still a guess"),
+                ("gw14a", _wt["main"], "git -C %s status '" % _q_wt, "allow",
+                 "an unparseable command that is not a rewrite stays allowed "
+                 "- the mutation that denies every unreadable command"),
                 ("gw3", _wt["wt"], "git commit --amend -m x", "deny",
                  "a session standing in the worktree amends the commit its plan "
                  "records"),
