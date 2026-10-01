@@ -479,7 +479,7 @@ def _session_base(cfg_mod, data, project, command):
     """
     cwd = data.get("cwd")
     if cwd:
-        target = cfg_mod.effective_cwd(command, cwd)
+        target = cfg_mod.effective_cwd(cfg_mod.runnable_text(command or ""), cwd)
         if target is None:
             return None
         return target
@@ -1670,6 +1670,16 @@ def _selftest():
                   % (got,),
                   got is None
                   and os.path.realpath(resolved_tree(data_cd_payload, tmp2))
+                  == os.path.realpath(tmp2))
+            data_cwd_cd = ("cat > note.txt <<'EOF'\ncd %s\nEOF\n"
+                           "git tag -a v1 -m x" % wt)
+            data_cwd_payload = {"cwd": tmp2,
+                                "tool_input": {"command": data_cwd_cd}}
+            got = decide(data_cwd_cd, tmp2, "s1", payload=data_cwd_payload)
+            check("gr64c RED-FIRST: a payload cwd stays the release tree when "
+                  "file data names a linked-worktree `cd`: %r" % (got,),
+                  got is None
+                  and os.path.realpath(resolved_tree(data_cwd_payload, tmp2))
                   == os.path.realpath(tmp2))
             shell_cd = ("bash <<'EOF'\ncd /no/such/dir\nEOF\n"
                         "git tag -a v1 -m x")
