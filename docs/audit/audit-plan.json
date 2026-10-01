@@ -611,7 +611,7 @@
     {
       "id": "P96",
       "title": "bug records written by bug-add validate against the published schema",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P96.json"
     },
     {
