@@ -1,0 +1,68 @@
+{
+  "id": "P98",
+  "title": "the release guard's speed case holds on any runner",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "guard-release's case for a long run of quoted -C operands proves the grading does not grow faster than the command does, by a measure independent of the machine's speed, so it is green on windows-latest and still red against the pre-fix behaviour",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P98.1",
+      "title": "gr60 measures growth, not seconds",
+      "status": "pending",
+      "description": "guard-release.py's gr60 asserts a wall-clock bound (_elapsed < 0.05) on grading a command with a long run of quoted -C operands; windows-latest measured 0.137 (CI run 36834328047). The property the case guards is that grading does not blow up with the operand count; assert that by a measure independent of the machine's speed, red against the pre-fix behaviour of 536f017a",
+      "files": [
+        ".claude/hooks/guard-release.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          ".claude/hooks/guard-release.py: gr60 shows grading a long run of quoted -C operands grows no faster than the command, independent of machine speed, and goes red against the behaviour before the fix"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
