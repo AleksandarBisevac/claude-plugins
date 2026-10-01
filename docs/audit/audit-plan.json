@@ -613,6 +613,12 @@
       "title": "bug records written by bug-add validate against the published schema",
       "status": "pending",
       "shard": "phases/P96.json"
+    },
+    {
+      "id": "P97",
+      "title": "the human maintainer's BUG-14 fix lands",
+      "status": "pending",
+      "shard": "phases/P97.json"
     }
   ],
   "fileIndex": {
@@ -800,7 +806,8 @@
       "P94.5-579",
       "P94.8-579",
       "P95.1",
-      "P96.1"
+      "P96.1",
+      "P97.1"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1028,7 +1035,8 @@
       "P88.2-dnb",
       "P88.3-dnb",
       "P89.1",
-      "P95.1"
+      "P95.1",
+      "P97.1"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -1581,7 +1589,8 @@
       "P83.3-wkm",
       "P83.4-wkm",
       "P83.5-wkm",
-      "P89.1"
+      "P89.1",
+      "P97.1"
     ],
     "plugins/audit/hooks/guard-secrets-read.py": [
       "P1.4",
@@ -3855,7 +3864,8 @@
       "P88.2-dnb",
       "P89.1",
       "P94.4",
-      "P95.1"
+      "P95.1",
+      "P97.1"
     ],
     "plugins/audit/tests/test_guard_secrets_read.py": [
       "P22.6",
