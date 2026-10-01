@@ -94,6 +94,11 @@ BUG_STATUS = ("open", "triaged", "in_progress", "fixed", "wontfix", "not_a_bug")
 # (`_id_shape`), so two branches cannot both mint `BUG-12`. Its one spelling is
 # here because the pattern below and every allocator must agree on it.
 ID_SUFFIX = r"(?:-[0-9a-z]{3})?"
+# Read with Python's defaults ON PURPOSE: this pattern backs a finding, and it
+# admitted an id ending in a newline or spelled with a non-ASCII digit in 3.0.1,
+# so tightening it here would refuse a plan that validated then. The published
+# schema's reading of the same pattern (ASCII digits, `$` as end of string) is
+# applied by `_manifest_crossrefs.ecma_pattern`, as a warning naming 4.0.0.
 BUG_ID_RE = re.compile(r"^BUG-\d+%s$" % (ID_SUFFIX,))
 # A decision is the FOURTH kind of thing the plan holds and it wears no status
 # vocabulary of its own: `STATUS` above is what it carries, so `_manifest_io`'s one

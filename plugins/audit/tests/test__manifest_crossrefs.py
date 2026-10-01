@@ -26,14 +26,148 @@ fires.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import copy
+import json
+import os
+import shutil
 import sys
+import tempfile
 
-import _harness                                    # sets sys.path for scripts/ + hooks/
+import _harness                                   # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _output                                     # noqa: E402  (finding_code: the rule a line carries)
 import _manifest_crossrefs as M                    # noqa: E402
 import _manifest_vocab as _vocab                   # noqa: E402
 import _manifest_rules as _rules                   # noqa: E402
+import _manifest_io as _mio                        # noqa: E402  (loads a sharded plan whole)
+
+
+# --- the bug item's types, as the SAMPLES the cases feed the checker ---------
+# These helpers only pick values; the verdict on each value is the checker's.
+# They read the schema file directly and share nothing with the checker's own
+# reader, so an error in that reader cannot be copied into what judges it.
+_BUG_SCHEMA_PATH = os.path.join(_output.PLUGIN_ROOT, "schema",
+                                "audit-plan.schema.json")
+_TYPE_SAMPLES = {"string": "s", "integer": 7, "number": 1.5, "boolean": True,
+                 "null": None, "array": [], "object": {}}
+# A patterned string needs a value that satisfies the pattern; a property that
+# gains a pattern without a row here fails bt0 by name rather than being skipped.
+_PATTERN_SAMPLES = {"id": "BUG-1"}
+
+
+def _bt_resolve(node, doc):
+    while isinstance(node, dict) and "$ref" in node:
+        target = doc
+        for part in node["$ref"][2:].split("/"):
+            target = target[part]
+        node = target
+    return node
+
+
+def _bt_arms(node, doc):
+    node = _bt_resolve(node, doc)
+    arms = node.get("oneOf") or node.get("anyOf")
+    if arms:
+        return [a for arm in arms for a in _bt_arms(arm, doc)]
+    return [node]
+
+
+def _bt_samples(prop, node, doc):
+    """(admitted values, refused values) for one bug property."""
+    ok, types = [], set()
+    for arm in _bt_arms(node, doc):
+        names = arm.get("type", [])
+        names = [names] if isinstance(names, str) else list(names)
+        types.update(names)
+        ok.extend(arm.get("enum") or [])
+        for name in names:
+            if name == "string" and "pattern" in arm:
+                ok.append(_PATTERN_SAMPLES.get(prop, "(no sample)"))
+            elif name == "array" and "items" in arm:
+                item_types = _bt_resolve(arm["items"], doc).get("type")
+                item_types = ([item_types] if isinstance(item_types, str)
+                              else list(item_types or []))
+                ok.append([_TYPE_SAMPLES[item_types[0]]] if item_types else [])
+                wrong_item = [v for t, v in sorted(_TYPE_SAMPLES.items())
+                              if t not in item_types and t != "null"]
+                types.add("array-item-refusal:%s" % json.dumps(wrong_item[:1]))
+            else:
+                ok.append(_TYPE_SAMPLES[name])
+    bad = [v for t, v in (("integer", 7), ("string", "s"), ("object", {}),
+                          ("array", []))
+           if t not in types and not (t == "integer" and "number" in types)][:1]
+    if "null" not in types and not any(v is None for v in ok):
+        bad.append(None)
+    if any("pattern" in arm for arm in _bt_arms(node, doc)):
+        bad.append("not a match")
+    bad += [json.loads(t.split(":", 1)[1]) for t in sorted(types)
+            if t.startswith("array-item-refusal:")]
+    return ok, bad
+
+
+def _bt_names(line, prop):
+    return (": %s " % prop in line or ": %s[" % prop in line
+            or ": %s." % prop in line or "bugs[].%s:" % prop in line
+            or "'%s'" % prop in line)
+
+
+def _bt_report(prop, value, **kw):
+    """(findings, warnings) `_check_bugs` gives naming `prop`, for a valid bug
+    with `prop` set to `value`."""
+    bug = {"id": "BUG-1", "title": "t", "status": "open"}
+    bug[prop] = value
+    f, w = M._check_bugs({"bugs": [bug]},
+                         _index(bug_list=[bug], bug_ids=[str(bug["id"])],
+                                bug_by_id={str(bug["id"]): bug}), **kw)
+    return ([x for x in f if _bt_names(x, prop)],
+            [x for x in w if _bt_names(x, prop)])
+
+
+def _bt_check(prop, value, schema=None):
+    """The schema check's lines naming `prop`, on either channel."""
+    f, w = _bt_report(prop, value,
+                      **({"schema": schema} if schema is not None else {}))
+    return [x for x in f + w if (_output.finding_code(x) or "").startswith(
+        "crossrefs.bugs.schema-")]
+
+
+# The walk the build-time case makes: every key of every schema node the bug
+# item reaches, through $ref and every subschema position. Keyword NAMES only;
+# `enum` values and `properties` names are data, not keywords.
+_BW_MAPS = ("properties", "$defs", "patternProperties", "dependentSchemas")
+_BW_ONE = ("items", "additionalProperties", "not", "if", "then", "else",
+           "contains", "propertyNames", "unevaluatedProperties",
+           "unevaluatedItems", "additionalItems")
+_BW_LISTS = ("oneOf", "anyOf", "allOf", "prefixItems")
+
+
+def _bw_keywords(node, doc, seen=None):
+    seen = set() if seen is None else seen
+    out = set()
+    if not isinstance(node, dict):
+        return out
+    ref = node.get("$ref")
+    if isinstance(ref, str) and ref not in seen:
+        seen.add(ref)
+        out |= _bw_keywords(_bt_resolve({"$ref": ref}, doc), doc, seen)
+    for key, val in node.items():
+        out.add(key)
+        if key in _BW_MAPS and isinstance(val, dict):
+            for sub in val.values():
+                out |= _bw_keywords(sub, doc, seen)
+        elif key in _BW_ONE:
+            out |= _bw_keywords(val, doc, seen)
+        elif key in _BW_LISTS and isinstance(val, list):
+            for sub in val:
+                out |= _bw_keywords(sub, doc, seen)
+    return out
+
+
+def _bw_unread(doc):
+    """Constraint keywords the bug item reaches that the checker cannot read."""
+    item = doc["properties"]["bugs"]["items"]
+    return sorted(k for k in _bw_keywords(item, doc)
+                  if k not in M.SCHEMA_READ and k not in M.SCHEMA_ANNOTATIONS)
 
 
 def _index(**kw):
@@ -202,6 +336,195 @@ def _cases(check):
           "BUG-<number>-<suffix>" in " ".join(
               M._check_bugs({"bugs": [bad]}, _index(bug_list=[bad], bug_ids=["BUG-x"],
                                                    bug_by_id={"BUG-x": bad}))[0]))
+
+    # --- a bug value's TYPE, as the published schema declares it ---
+    # Walked off the schema file, so a property the bug item gains later is
+    # covered here with no edit to this case.
+    with open(_BUG_SCHEMA_PATH, "r", encoding="utf-8") as fh:
+        _bt_doc = json.load(fh)
+    _bt_props = _bt_resolve(_bt_doc["properties"]["bugs"]["items"],
+                            _bt_doc)["properties"]
+    # A value the schema refuses VALIDATED in 3.0.1, so in this major line the
+    # schema check says so as ONE WARNING, never as a finding - or says nothing
+    # where a hand-written check already refuses that property (bt5 pins that
+    # half). Lines from the other checks (a taskId that resolves to no task)
+    # answer a different question and are not counted here.
+    def _bt_schema_lines(lines):
+        return [x for x in lines if (_output.finding_code(x) or "")
+                .startswith("crossrefs.bugs.schema-")]
+    _bt_faults = {}
+    for _bt_prop in sorted(_bt_props):
+        _bt_ok, _bt_bad = _bt_samples(_bt_prop, _bt_props[_bt_prop], _bt_doc)
+        for _bt_val in _bt_ok:
+            _bt_f, _bt_w = _bt_report(_bt_prop, _bt_val)
+            if _bt_schema_lines(_bt_f + _bt_w):
+                _bt_faults.setdefault(_bt_prop, []).append(
+                    ("admitted value reported", _bt_val, (_bt_f, _bt_w)))
+        for _bt_val in _bt_bad:
+            _bt_f, _bt_w = _bt_report(_bt_prop, _bt_val)
+            _bt_sw = _bt_schema_lines(_bt_w)
+            _bt_hand = [x for x in _bt_f if x not in _bt_schema_lines(_bt_f)]
+            if (_bt_schema_lines(_bt_f)
+                    or not (len(_bt_sw) == 1 or (not _bt_sw and _bt_hand))):
+                _bt_faults.setdefault(_bt_prop, []).append(
+                    ("wrong-typed value not reported once as a warning, nor "
+                     "by a hand-written finding", _bt_val, (_bt_f, _bt_w)))
+        if not _bt_ok or not _bt_bad:
+            _bt_faults.setdefault(_bt_prop, []).append(
+                ("no sample derived", _bt_ok, _bt_bad))
+    check("bt0 RED-FIRST: for EVERY property the schema declares under the bug "
+          "item, a value of a type it refuses is reported exactly once, naming "
+          "the field - a warning in this major line unless a hand-written check "
+          "already refuses it - and one value of each type it admits is not "
+          "reported at all: %r" % (_bt_faults,),
+          _bt_faults == {}
+          and set(["repro", "expected", "actual", "files", "severity",
+                   "description", "status", "id"]) <= set(_bt_props), _bt_faults)
+    _bt_f1, _bt_line = _bt_report("repro", 7)
+    check("bt1 the warning says what the value IS, what the schema admits, and "
+          "the release that refuses it, and no finding is raised: %r"
+          % ((_bt_f1, _bt_line),),
+          _bt_f1 == [] and len(_bt_line) == 1
+          and _output.finding_code(_bt_line[0]) == "crossrefs.bugs.schema-arms"
+          and "repro is integer" in _bt_line[0]
+          and "string" in _bt_line[0] and "null" in _bt_line[0]
+          and "the published schema refuses this value; validate-manifest "
+          "will refuse it from 4.0.0 (a warning in 3.x)" in _bt_line[0],
+          _bt_line)
+    _bt_dup = dict((what, _bt_report(prop, val)) for what, prop, val in (
+        ("id off its pattern", "id", "BUG-x"),
+        ("status off its enum", "status", 7),
+        ("ado.id not an integer", "ado", {"id": "x"})))
+    check("bt5 ONE FAULT, ONE LINE: a value a hand-written check already refuses "
+          "(the id pattern, the status vocabulary, the ado link) carries that "
+          "finding alone, with no schema warning beside it: %r" % (_bt_dup,),
+          all(len(f5) == 1 and w5 == []
+              and not (_output.finding_code(f5[0]) or "").startswith(
+                  "crossrefs.bugs.schema-")
+              for f5, w5 in _bt_dup.values()), _bt_dup)
+    # A constraint the reader does not interpret is REPORTED, not passed: the
+    # doctored schema adds one to `title`, a property the real one leaves
+    # un-lengthed. The allow half is bt3, where the real schema's annotations
+    # (every property's `description`) produce no such finding.
+    _bt_doctored = copy.deepcopy(_bt_doc)
+    _bt_resolve(_bt_doctored["properties"]["bugs"]["items"],
+                _bt_doctored)["properties"]["title"]["minLength"] = 1
+    _bt_uf, _bt_unread = _bt_report("title", "t", schema=_bt_doctored)
+    check("bt2 at a user's site, a constraint keyword outside the reader's set "
+          "is ONE WARNING naming the property and the keyword - the value is "
+          "said to be unverified, never silently admitted, and never refused, "
+          "since the fault is this plugin's: %r" % ((_bt_uf, _bt_unread),),
+          _bt_uf == [] and len(_bt_unread) == 1
+          and _output.finding_code(_bt_unread[0])
+          == "crossrefs.bugs.schema-unchecked"
+          and "title" in _bt_unread[0] and "minLength" in _bt_unread[0],
+          (_bt_uf, _bt_unread))
+    # THE BUILD, NOT THE USER, CATCHES A READER BEHIND ITS SCHEMA. Every
+    # keyword the bug item reaches - through $ref too - must be one the
+    # checker reads; the doctored copies prove the walk sees a keyword on the
+    # item's own property AND one reachable only through a $ref.
+    _bw_ref = copy.deepcopy(_bt_doc)
+    _bw_ref["$defs"]["adoLink"]["properties"]["url"]["maxLength"] = 9
+    _bw = {"shipped schema": _bw_unread(_bt_doc),
+           "keyword on a bug property": _bw_unread(_bt_doctored),
+           "keyword behind a $ref": _bw_unread(_bw_ref)}
+    check("bt2b BUILD-TIME: every constraint keyword the shipped schema's bug "
+          "item reaches, through every $ref, is one the checker reads - and a "
+          "keyword added on a property or behind a $ref is named here: %r"
+          % (_bw,),
+          _bw == {"shipped schema": [],
+                  "keyword on a bug property": ["minLength"],
+                  "keyword behind a $ref": ["maxLength"]}
+          and "ado" in _bt_props and "$ref" in _bt_props["ado"], _bw)
+    # A schema the plugin cannot read is a broken INSTALL, not a refusable
+    # plan: the entry point's load says so as a FINDING. Inside the rules it
+    # is quieter by design - handed False (the entry point reported it) they
+    # say nothing more, and with nothing handed their own fallback read says
+    # so as a WARNING. The root is injected so both the missing file and the
+    # unparsable one are reached.
+    _bu_bug = {"id": "BUG-1", "title": "t", "status": "open"}
+
+    def _bu_run(**kw):
+        return M._check_bugs({"bugs": [_bu_bug]},
+                             _index(bug_list=[_bu_bug], bug_ids=["BUG-1"],
+                                    bug_by_id={"BUG-1": _bu_bug}), **kw)
+
+    def _bu_state(root):
+        loaded, found = M.load_validation_schema(root)
+        return {"load": (loaded, found),
+                "fallback": _bu_run(schema_root=root),
+                "handed False": _bu_run(schema=False)}
+    _bu_root = tempfile.mkdtemp(prefix="xref-schema-")
+    try:
+        _bu = {"missing": _bu_state(_bu_root)}
+        os.makedirs(os.path.join(_bu_root, "schema"))
+        with open(os.path.join(_bu_root, *M.PLAN_SCHEMA_REL), "w",
+                  encoding="utf-8") as fh:
+            fh.write("{ not json")
+        _bu["unparsable"] = _bu_state(_bu_root)
+    finally:
+        shutil.rmtree(_bu_root, ignore_errors=True)
+
+    def _bu_ok(state):
+        loaded, found = state["load"]
+        fb_f, fb_w = state["fallback"]
+        return (loaded is False and len(found) == 1
+                and _output.finding_code(found[0])
+                == "crossrefs.bugs.schema-unreadable"
+                and "install is broken" in found[0]
+                and fb_f == [] and len(fb_w) == 1
+                and _output.finding_code(fb_w[0])
+                == "crossrefs.bugs.schema-unavailable"
+                and state["handed False"] == ([], []))
+    check("bt4 FAIL LOUD WHERE IT IS LOADED: a missing or unparsable schema is "
+          "ONE FINDING from the entry point's load, saying the install is "
+          "broken; the rules handed False say nothing twice, and their own "
+          "fallback read says so as one warning: %r" % (_bu,),
+          all(_bu_ok(state) for state in _bu.values()), _bu)
+    # One fault at a path, one line - and a SIBLING path is another fault.
+    _ba_ado = _bt_report("ado", {"id": 7, "url": 5, "origin": "x"})
+    check("bt6 an ado whose origin a hand-written check refuses keeps that ONE "
+          "finding, and its integer url - which no hand-written check reads - "
+          "is still exactly one schema warning: %r" % (_ba_ado,),
+          len(_ba_ado[0]) == 1 and "ado.origin" in _ba_ado[0][0]
+          and len(_ba_ado[1]) == 1 and "ado.url is integer" in _ba_ado[1][0],
+          _ba_ado)
+    # The schema's patterns are read as ajv reads them: ASCII digits, and `$`
+    # the end of the string. The hand-written id check keeps its 3.0.1 reading
+    # (it backs a finding), so these ids are a warning naming 4.0.0, not refused.
+    _bp = dict((repr(v), _bt_report("id", v)) for v in (
+        "BUG-1\n", u"BUG-٣", "BUG-1", "BUG-12-abc"))
+    check("bt7 an id ending in a newline or spelled with a non-ASCII digit is "
+          "ONE schema-pattern warning and no finding; `BUG-1` and `BUG-12-abc` "
+          "are not reported at all: %r" % (_bp,),
+          all(f7 == [] and len(w7) == 1
+              and _output.finding_code(w7[0]) == "crossrefs.bugs.schema-pattern"
+              for f7, w7 in (_bp[repr("BUG-1\n")], _bp[repr(u"BUG-٣")]))
+          and _bp[repr("BUG-1")] == ([], [])
+          and _bp[repr("BUG-12-abc")] == ([], []), _bp)
+    _be = dict((what, M.schema_check({"enum": [1]}, val, {}, "x")[0])
+               for what, val in (("1.0", 1.0), ("True", True), ("1", 1)))
+    check("bt8 an enum compares numbers by value and keeps booleans apart: 1.0 "
+          "is in [1], True is not: %r" % (_be,),
+          _be["1.0"] == [] and _be["1"] == [] and len(_be["True"]) == 1, _be)
+    _bt_plans = {}
+    for _bt_rel in ("docs/audit/audit-plan.json",
+                    "plugins/audit/templates/audit-plan.starter.json",
+                    "examples/acme-store/audit-plan.json"):
+        _bt_m = _mio.load_manifest(os.path.join(_output.REPO_ROOT, _bt_rel))
+        _bt_f, _bt_w = _rules.validate(_bt_m)
+        _bt_plans[_bt_rel] = (len(_bt_m.get("bugs") or []),
+                              [x for x in _bt_f + _bt_w
+                               if (_output.finding_code(x) or "").startswith(
+                                   "crossrefs.bugs.schema-")])
+    check("bt3 ALLOW CASE: the dogfood plan, the starter and the shipped "
+          "example raise no schema finding or warning, and the dogfood "
+          "and example plans do hold bugs, so the check ran over real "
+          "records: %r" % (_bt_plans,),
+          all(not fl for _n, fl in _bt_plans.values())
+          and _bt_plans["docs/audit/audit-plan.json"][0] > 0
+          and _bt_plans["examples/acme-store/audit-plan.json"][0] > 0,
+          _bt_plans)
 
     # --- proposals ---
     prop = {"id": "PROP-1", "status": "proposed",

@@ -148,9 +148,9 @@
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-09-30T00:24:39Z.3bc6a3",
-        "status": "failed",
-        "at": "2026-09-30T00:24:39Z"
+        "runId": "2026-10-01T07:35:01Z.b3aa25",
+        "status": "passed",
+        "at": "2026-10-01T07:35:01Z"
       }
     }
   ],

@@ -311,9 +311,66 @@ def _cases(record):
         _cases_test_evidence(record, path2)
         _cases_gate_evidence(record, path2)
         _cases_muted(record, path2)
+        _cases_bug_value_types(record, path2)
     finally:
         if os.path.exists(path2):
             os.unlink(path2)
+
+
+def _cases_bug_value_types(record, path):
+    """A bug value the published schema refuses validated in 3.0.1, so inside
+    the 3.x line it is a warning and the command still exits 0 - the half a CI
+    job and every mutating verb's pre-check actually read."""
+    plan = _valid_manifest()
+    plan["bugs"][0]["files"] = "src/a.ts"
+    plan["bugs"][0]["severity"] = 3
+    f, w = M.validate(plan)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh)
+    code, out = _run([path])
+    typed = [x for x in w if "the published schema refuses this value; "
+             "validate-manifest will refuse it from 4.0.0 (a warning in 3.x)" in x]
+    record("c49 a bug whose `files` is a string and whose `severity` is a "
+           "number VALIDATES in this major line: no finding, one warning per "
+           "field naming 4.0.0, and validate-manifest exits 0: %r"
+           % ((f, typed, code),),
+           f == [] and code == 0 and len(typed) == 2
+           and any("files is string" in x for x in typed)
+           and any("severity is integer" in x for x in typed))
+
+    # THE ENTRY POINT LOADS THE SCHEMA, ONCE, AND HANDS IT IN. The loader is
+    # replaced by a counter for the span of one run: handed the schema, the
+    # rules read nothing, so exactly one read means main() loaded it and
+    # passed it; two would mean the rules fell back to their own.
+    import _manifest_crossrefs as _xr                             # noqa: E402
+    real = _xr.load_plan_schema
+    reads = []
+
+    def counting(root=None):
+        reads.append(root)
+        return real(root)
+
+    def broken(root=None):
+        raise OSError("schema gone")
+    _xr.load_plan_schema = counting
+    try:
+        code_once, out_once = _run([path])
+    finally:
+        _xr.load_plan_schema = real
+    record("c50 validate-manifest reads the schema ONCE and hands it to the "
+           "rules, which type the bug values with it (reads %d, exit %d)"
+           % (len(reads), code_once),
+           len(reads) == 1 and code_once == 0 and "files is string" in out_once)
+    _xr.load_plan_schema = broken
+    try:
+        code_gone, out_gone = _run([path])
+    finally:
+        _xr.load_plan_schema = real
+    record("c51 FAIL LOUD AT THE ENTRY POINT: a schema the command cannot read is "
+           "a FINDING saying the install is broken, and it exits 1: %r"
+           % ((code_gone, out_gone[:300]),),
+           code_gone == 1 and "install is broken" in out_gone
+           and "FINDING" in out_gone)
 
 
 def _cases_output(record, path):

@@ -691,6 +691,34 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   to done by hand is found whichever row the original close left.
 
 ### Fixed
+- **A bug `bug-add` files with no `--repro`, `--expected` or `--actual` validates under the
+  published schema.** The verb writes every key of the bug shape and an absent answer as
+  `null`, which is what `commands/bug.md` documents, but `audit-plan.schema.json` typed
+  `repro` as a string or a list of strings and `expected`/`actual` as strings, so the strict
+  `ajv` validation refused such a plan while `validate-manifest.py`, which applies no JSON
+  Schema, accepted it as it always had. The schema now admits `null` for all three:
+  `expected` and `actual` are typed `["string", "null"]`, spelled like the neighbouring
+  nullable keys (`severity`, `reportedBy`, `taskId`, `fixedIn`, `notes`), and `repro` gains a
+  `null` arm in its `oneOf`. Cases hold the record `bug-add` writes with no answers, and the
+  one it writes with every answer, against the types the schema file declares.
+- **`validate-manifest.py` warns on a bug value the published schema refuses, and 4.0.0
+  refuses it.** It checked a bug's required fields, id pattern, status and links but no
+  value's type, so a bug with `repro: 7`, `files: "src/a.ts"` or `description: null` passed it
+  and failed the strict `ajv` step. Every present bug value is now typed against the schema's
+  bug item, read from `audit-plan.schema.json` at validate time rather than from a second
+  table, with its patterns read the way `ajv` reads them. Such a plan validated under 3.0.1,
+  so in the 3.x line a wrong value is a **warning** naming the field, the value's JSON type
+  and what the schema admits, and saying the published schema refuses it and
+  `validate-manifest` will from 4.0.0; the plan still validates. `COMPATIBILITY.md` carries
+  the announcement beside the `tests.add` one. A path an existing check already refuses (the
+  id, the status, `ado.id`, `ado.origin`) keeps that one finding and gets no second line; a
+  sibling path is still warned on. The schema is an input to `validate()` like its date:
+  `validate-manifest` and `audit-task` load it once per run and hand it in, and report an
+  unreadable one as a finding (a broken install); a consumer that hands none gets a
+  fallback read, and a warning if that read fails. A schema keyword the reader does not
+  interpret is at most a warning at a user's site, and a build-time case refuses a schema
+  whose bug item, through every `$ref`, uses one. A case walks every property the bug item
+  declares.
 - **A `cd` or `pushd` into a directory whose name holds whitespace is followed (BUG-13).**
   `_config.effective_cwd` had split the target before removing its shell quotes, so a later
   rewrite was graded from the session's directory rather than the linked worktree the shell

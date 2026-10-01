@@ -1066,6 +1066,41 @@ def _cases(record):
            M.tests_add_path(_ta_named_entry))
 
     _cases_muted(record)
+    _cases_schema_input(record)
+
+
+def _cases_schema_input(record):
+    """The schema is an INPUT: handed one, validate() reads no file.
+
+    The loader the rules' fallback calls is replaced by a counter for the span
+    of the calls, so a read is observed rather than inferred from timing."""
+    import _manifest_crossrefs as _xr               # noqa: E402  (the loader both halves call)
+    real = _xr.load_plan_schema
+    schema = real()
+    reads = []
+
+    def counting(root=None):
+        reads.append(root)
+        return real(root)
+    plan = _valid_manifest()
+    plan["bugs"][0]["files"] = "src/a.ts"
+    _xr.load_plan_schema = counting
+    try:
+        handed = M.validate(plan, schema=schema)
+        handed_reads = len(reads)
+        fallback = M.validate(plan)
+        fallback_reads = len(reads) - handed_reads
+    finally:
+        _xr.load_plan_schema = real
+    typed = [w for w in handed[1] if "files is string" in w]
+    record("pu1 PURE WHEN HANDED: validate() given `schema=` reads no file, and "
+           "still types the bug value with it (one warning for `files`): "
+           "reads %d, typed %r" % (handed_reads, typed),
+           handed_reads == 0 and handed[0] == [] and len(typed) == 1)
+    record("pu2 ...and with nothing handed it falls back to ONE read of the "
+           "plugin's schema, reaching the same answer - the documented fallback "
+           "for a consumer that loads none: reads %d" % (fallback_reads,),
+           fallback_reads == 1 and fallback == handed)
 
 
 # --- meta.muted: the warnings, graded against a pinned day ----------------------

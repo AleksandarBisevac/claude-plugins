@@ -110,8 +110,12 @@ def main(argv):
         sys.stderr.write("ERROR: cannot read/parse %s: %s\n" % (paths[0], exc))
         return 2
 
+    # The schema bug values are typed against is loaded HERE, once, so the rules
+    # read no file; an unreadable one is this command's finding to report.
+    schema, unreadable = _manifest_rules.load_validation_schema()
     try:
-        findings, warnings = validate(manifest)
+        findings, warnings = validate(manifest, schema=schema)
+        findings = list(unreadable) + findings
     except Exception as exc:  # defensive; validate() should never raise
         print("FINDING: internal validator error: %s" % exc)
         return 1

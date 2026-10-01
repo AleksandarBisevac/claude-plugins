@@ -27,7 +27,9 @@ This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__manifest_crossrefs.py` - see
 `plugins/audit/tests/_harness.py`.
 """
+import json
 import os
+import re
 import sys
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -582,15 +584,339 @@ def _check_file_index(manifest, index):
     return (f, [])
 
 
-def _check_bugs(manifest, index):
+# --- a bug value's type, read off the published schema ------------------------
+# `validate-manifest.py` applies no JSON Schema, and the strict CI step does, so
+# a bug value typed one way by the schema and never checked here passed every
+# local gate and failed CI. The types are READ from the schema at check time
+# rather than restated in a table, so a property the schema gains is typed here
+# with no edit. The reader knows the keywords the bug item is written in; any
+# other constraint keyword is reported as uncheckable, never taken as a pass.
+PLAN_SCHEMA_REL = ("schema", "audit-plan.schema.json")
+SCHEMA_READ = frozenset(["$ref", "type", "enum", "items", "oneOf", "anyOf",
+                         "pattern", "properties", "required",
+                         "additionalProperties"])
+SCHEMA_ANNOTATIONS = frozenset(["description", "title", "default", "examples",
+                                "$comment", "deprecated", "readOnly",
+                                "writeOnly", "$id", "$schema"])
+_JSON_TYPE_NAMES = ((bool, "boolean"), (int, "integer"), (float, "number"),
+                    (str, "string"), (list, "array"), (dict, "object"))
+
+
+def load_plan_schema(root=None):
+    """The shipped manifest schema, parsed. Raises OSError/ValueError."""
+    path = os.path.join(root or _output.PLUGIN_ROOT, *PLAN_SCHEMA_REL)
+    with open(path, "r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def json_type(value):
+    """The JSON type name of a parsed value (`null` for None)."""
+    if value is None:
+        return "null"
+    for pytype, name in _JSON_TYPE_NAMES:
+        if isinstance(value, pytype):
+            return name
+    return type(value).__name__
+
+
+def _type_admits(name, value):
+    got = json_type(value)
+    if name == "number":
+        return got in ("integer", "number")
+    if name == "integer" and got == "number":
+        return float(value).is_integer()
+    return got == name
+
+
+def _schema_parts(node, doc, depth=0):
+    """`node` as the list of schema objects that must ALL hold: a `$ref` is
+    followed and its siblings kept as a second part, since JSON Schema reads
+    them as a conjunction. A ref that cannot be followed becomes a part
+    carrying a keyword outside SCHEMA_READ, so it is reported, not passed."""
+    if not isinstance(node, dict) or "$ref" not in node:
+        return [node]
+    ref = node["$ref"]
+    siblings = dict((k, v) for k, v in node.items() if k != "$ref")
+    target = doc
+    if isinstance(ref, str) and ref.startswith("#/") and depth < 32:
+        for part in ref[2:].split("/"):
+            target = target.get(part) if isinstance(target, dict) else None
+    else:
+        target = None
+    parts = ([{"$ref (unresolved)": ref}] if not isinstance(target, dict)
+             else _schema_parts(target, doc, depth + 1))
+    return parts + ([siblings] if siblings else [])
+
+
+def schema_admitted(node, doc):
+    """The words for what `node` admits, e.g. ['string', 'array of string']."""
+    words = []
+    for part in _schema_parts(node, doc):
+        if not isinstance(part, dict):
+            continue
+        names = part.get("type")
+        names = [names] if isinstance(names, str) else list(names or [])
+        items = part.get("items")
+        for name in names:
+            if name == "array" and isinstance(items, dict):
+                name = "array of %s" % "/".join(schema_admitted(items, doc))
+            words.append(name)
+        if "enum" in part:
+            words.append("one of %s" % json.dumps(part["enum"]))
+        for combiner in ("oneOf", "anyOf"):
+            for arm in part.get(combiner) or []:
+                words.extend(schema_admitted(arm, doc))
+    return words
+
+
+def _arm_types(node, doc):
+    names = []
+    for part in _schema_parts(node, doc):
+        got = part.get("type") if isinstance(part, dict) else None
+        names.extend([got] if isinstance(got, str) else list(got or []))
+    return names
+
+
+def _value_class(value):
+    """JSON Schema compares numbers by value (1.0 equals 1); a boolean is
+    never a number, although Python's bool is an int."""
+    got = json_type(value)
+    return "number" if got == "integer" else got
+
+
+def _in_enum(value, enum):
+    return any(_value_class(v) == _value_class(value) and v == value
+               for v in enum)
+
+
+def ecma_pattern(pattern):
+    """`pattern` compiled to read as ajv reads it (`new RegExp(p, 'u')`) on the
+    constructs the schema uses: `\\d` is ASCII only, and a trailing `$` is the
+    end of the string, not the end of a last line. Python's defaults differ on
+    both, so `BUG-1` plus a newline, or with a non-ASCII digit, would match."""
+    if pattern.endswith("$"):
+        body = pattern[:-1]
+        escapes = len(body) - len(body.rstrip("\\"))
+        if escapes % 2 == 0:
+            pattern = body + r"\Z"
+    return re.compile(pattern, re.ASCII)
+
+
+def schema_check(node, value, doc, where, depth=0):
+    """(reasons, unread) for `value` against the schema `node`.
+
+    `reasons` are findings naming `where`; `unread` is the set of constraint
+    keywords met on the way that this reader does not interpret."""
+    reasons, unread = [], set()
+    for part in _schema_parts(node, doc):
+        r, u = _check_schema_part(part, value, doc, where, depth)
+        reasons.extend(r)
+        unread |= u
+    return reasons, unread
+
+
+def _check_schema_part(part, value, doc, where, depth):
+    if part is True or part == {}:
+        return [], set()
+    if not isinstance(part, dict):
+        return [_output.finding("crossrefs.bugs.schema-false",
+                                "%s: the schema admits no value here" % where)], set()
+    unread = set(k for k in part
+                 if k not in SCHEMA_READ and k not in SCHEMA_ANNOTATIONS)
+    reasons = []
+    names = part.get("type")
+    if names is not None:
+        names = [names] if isinstance(names, str) else list(names)
+        if not any(_type_admits(n, value) for n in names):
+            reasons.append(_output.finding(
+                "crossrefs.bugs.schema-type", "%s is %s, the schema admits %s"
+                % (where, json_type(value), ", ".join(schema_admitted(part, doc)))))
+    if "enum" in part and not _in_enum(value, part["enum"]):
+        reasons.append(_output.finding(
+            "crossrefs.bugs.schema-enum", "%s %s is not one of %s"
+            % (where, json.dumps(value), json.dumps(part["enum"]))))
+    if ("pattern" in part and isinstance(value, str)
+            and not ecma_pattern(part["pattern"]).search(value)):
+        reasons.append(_output.finding(
+            "crossrefs.bugs.schema-pattern",
+            "%s %r does not match the schema's pattern %s"
+            % (where, value, part["pattern"])))
+    if "items" in part and isinstance(value, list):
+        for i, item in enumerate(value):
+            r, u = schema_check(part["items"], item, doc,
+                                "%s[%d]" % (where, i), depth + 1)
+            reasons.extend(r)
+            unread |= u
+    if isinstance(value, dict):
+        r, u = _check_schema_object(part, value, doc, where, depth)
+        reasons.extend(r)
+        unread |= u
+    for combiner in ("oneOf", "anyOf"):
+        if combiner not in part:
+            continue
+        verdicts = [schema_check(arm, value, doc, where, depth + 1)
+                    for arm in part[combiner]]
+        for _r, u in verdicts:
+            unread |= u
+        passing = [not r for r, _u in verdicts].count(True)
+        # An arm of the value's own type that still failed says WHY (a list
+        # holding a number); otherwise the sentence names what is admitted.
+        same_type = [r for (r, _u), arm in zip(verdicts, part[combiner])
+                     if any(_type_admits(n, value) for n in _arm_types(arm, doc))]
+        if passing == 0 and len(same_type) == 1:
+            reasons.extend(same_type[0])
+        elif passing == 0 or (combiner == "oneOf" and passing > 1):
+            reasons.append(_output.finding(
+                "crossrefs.bugs.schema-arms", "%s is %s, the schema admits %s%s"
+                % (where, json_type(value),
+                   ", ".join(schema_admitted(part, doc)) or "nothing",
+                   " - and it matches more than one of them"
+                   if passing > 1 else "")))
+    return reasons, unread
+
+
+def _check_schema_object(part, value, doc, where, depth):
+    reasons, unread = [], set()
+    props = part.get("properties") or {}
+    for key in part.get("required") or []:
+        if key not in value:
+            reasons.append(_output.finding(
+                "crossrefs.bugs.schema-required",
+                "%s.%s is required by the schema" % (where, key)))
+    for key in sorted(value):
+        if key in props:
+            sub = props[key]
+        elif "additionalProperties" in part:
+            sub = part["additionalProperties"]
+        else:
+            continue
+        if sub is True:
+            continue
+        if sub is False:
+            reasons.append(_output.finding(
+                "crossrefs.bugs.schema-additional",
+                "%s.%s is not a property the schema allows" % (where, key)))
+            continue
+        r, u = schema_check(sub, value[key], doc, "%s.%s" % (where, key),
+                            depth + 1)
+        reasons.extend(r)
+        unread |= u
+    return reasons, unread
+
+
+def _bug_item_properties(doc):
+    """The bug item's `properties`, reached through the schema's own refs."""
+    item = ((doc.get("properties") or {}).get("bugs") or {}).get("items") or {}
+    props = {}
+    for part in _schema_parts(item, doc):
+        if isinstance(part, dict):
+            props.update(part.get("properties") or {})
+    return props
+
+
+# A bug value the schema refuses VALIDATED in 3.0.1, so inside the 3.x line it
+# is a warning naming the release that refuses it - `COMPATIBILITY.md`,
+# *Validation stays additive*, and the `tests.add` path rule before it.
+BUG_VALUE_REFUSAL_RELEASE = "4.0.0"
+
+
+def load_validation_schema(root=None):
+    """(schema, findings) for an ENTRY POINT to hand `validate(schema=...)`.
+
+    Loaded where the process starts, so the rules themselves read no file. A
+    schema that cannot be read is a FINDING here - the plugin install is broken,
+    which is not the user's plan being refused - and the schema comes back as
+    False, which `validate()` reads as "the caller tried, and has reported it"."""
+    try:
+        return load_plan_schema(root), []
+    except (OSError, ValueError) as exc:
+        return False, [_output.finding(
+            "crossrefs.bugs.schema-unreadable",
+            "bugs: the plugin's manifest schema could not be read, so no bug "
+            "value was type-checked - the install is broken: %s" % (exc,))]
+
+
+def _fallback_schema(root):
+    """(schema or False, warnings) when no caller handed one: the documented
+    read for a consumer that loads none. Failing is a WARNING, since the only
+    thing lost is the type check the caller did not ask to own."""
+    try:
+        return load_plan_schema(root), []
+    except (OSError, ValueError) as exc:
+        return False, [_output.finding(
+            "crossrefs.bugs.schema-unavailable",
+            "bugs: no schema was handed to validate() and the plugin's could "
+            "not be read, so no bug value was type-checked: %s" % (exc,))]
+
+
+def _bug_value_warnings(bug, bwhere, props, schema, handled):
+    """(warnings, unread (property, keyword) pairs) for one bug's values.
+
+    `handled` holds the PATHS (`id`, `ado`, `ado.origin`) a hand-written check
+    already refused for this bug; a schema reason at or under one of them is
+    that same fault, and is dropped so it is reported once. A sibling path
+    (`ado.url` beside a refused `ado.origin`) is a different fault and stays."""
+    warnings, unread = [], set()
+    for key in bug:
+        if key not in props:
+            continue
+        reasons, kws = schema_check(props[key], bug[key], schema,
+                                    "%s: %s" % (bwhere, key))
+        unread |= set((key, kw) for kw in kws)
+        warnings.extend(
+            _output.finding(_output.finding_code(r),
+                            "%s - the published schema refuses this value; "
+                            "validate-manifest will refuse it from %s (a "
+                            "warning in 3.x)" % (r, BUG_VALUE_REFUSAL_RELEASE))
+            for r in reasons
+            if not any(_at_or_under(r, bwhere, p) for p in handled))
+    return warnings, unread
+
+
+def _at_or_under(reason, bwhere, path):
+    """True when the schema reason is about `path` or something inside it."""
+    head = "%s: %s" % (bwhere, path)
+    return reason.startswith(head) and reason[len(head):len(head) + 1] in (
+        " ", ".", "[")
+
+
+def _fields_reported(new_findings, fields):
+    """The fields among `fields` that a just-added finding names in quotes."""
+    return set(k for k in fields
+               if any(("'%s'" % k) in x for x in new_findings))
+
+
+# The path each of `_check_ado`'s findings is about, read off its code. A code
+# this table does not know is taken to be about the whole `ado` value, which
+# suppresses more rather than reporting one fault twice.
+_ADO_FINDING_PATHS = {"vocab.ado.ado-object-null": "ado",
+                      "vocab.ado.ado-id-integer": "ado.id",
+                      "vocab.ado.ado-origin-one": "ado.origin"}
+
+
+def _check_bugs(manifest, index, schema=None, schema_root=None):
     """bugs[] shape and vocabulary, and the RECIPROCAL task <-> bug link.
 
     Returns (findings, warnings). Both directions of the link are checked from
     here because a one-sided link is invisible from either end alone: a bug
     naming a task whose bugId names a different bug is two records that each
-    look fine and disagree about which fix belongs to which report.
+    look fine and disagree about which fix belongs to which report. Every
+    present value is also typed against the schema's bug item, as a warning
+    (see BUG_VALUE_REFUSAL_RELEASE).
+
+    `schema` is the parsed schema an entry point loaded
+    (`load_validation_schema`); False means it tried and reported the failure
+    itself, so nothing is typed and nothing is said twice; None falls back to
+    reading the plugin's (or `schema_root`'s) schema, and only when the plan
+    holds a bug.
     """
     f, w = [], []
+    props, unchecked = {}, set()
+    if index["bug_list"]:
+        if schema is None:
+            schema, unavailable = _fallback_schema(schema_root)
+            w.extend(unavailable)
+        props = _bug_item_properties(schema) if isinstance(schema, dict) else {}
     bugs = manifest.get("bugs")
     if bugs is not None and not isinstance(bugs, list):
         f.append(_output.finding("crossrefs.bugs.array", "bugs: not an array"))
@@ -601,14 +927,28 @@ def _check_bugs(manifest, index):
             continue
         bid = bug.get("id")
         bwhere = "bug %s" % (bid or ("bugs[%d]" % bi))
+        # `handled` is every property a hand-written check below refuses for
+        # this bug; the schema's warning for it would be the same fault twice.
+        mark = len(f)
         _require_fields(bug, bwhere, f)
+        handled = _fields_reported(f[mark:], ("id", "title", "status"))
         _unknown_keys(bug, KNOWN_BUG, bwhere, w)
         if bid and not BUG_ID_RE.match(str(bid)):
             f.append(_output.finding("crossrefs.bugs.id-match-bug", "%s: id must match BUG-<number> or, minted off the development "
                      "branch, BUG-<number>-<suffix>" % bwhere))
+            handled.add("id")
         if bug.get("status") not in BUG_STATUS:
             f.append(_output.finding("crossrefs.bugs.status", "%s: status %r not in %s" % (bwhere, bug.get("status"), list(BUG_STATUS))))
+            handled.add("status")
+        mark = len(f)
         _check_ado(bug, bwhere, f)
+        handled |= set(_ADO_FINDING_PATHS.get(_output.finding_code(x), "ado")
+                       for x in f[mark:])
+        if props:
+            value_w, unread = _bug_value_warnings(bug, bwhere, props, schema,
+                                                  handled)
+            w.extend(value_w)
+            unchecked |= unread
         if bug.get("taskId"):
             if bug["taskId"] not in task_ids:
                 f.append(_output.finding("crossrefs.bugs.taskid-does-resolve", "%s: taskId '%s' does not resolve to a task" % (bwhere, bug["taskId"])))
@@ -619,6 +959,14 @@ def _check_bugs(manifest, index):
                              "link must be reciprocal"
                              % (bwhere, bug["taskId"], linked.get("bugId"))))
 
+    # A keyword the reader does not interpret is this plugin being behind its
+    # own schema, never a fault in the plan, so it is at most a warning; the
+    # build keeps it from shipping (test__manifest_crossrefs, the keyword walk).
+    w.extend(_output.finding(
+        "crossrefs.bugs.schema-unchecked",
+        "bugs[].%s: the schema constrains it with `%s`, which validate-manifest "
+        "cannot check - the value was NOT verified against it" % (key, kw))
+        for key, kw in sorted(unchecked))
     for twhere, tid, bug_ref in index["bug_links"]:
         if bug_ref not in index["bug_ids"]:
             f.append(_output.finding("crossrefs.bugs.bugid-does-resolve", "%s: bugId '%s' does not resolve to a bug" % (twhere, bug_ref)))

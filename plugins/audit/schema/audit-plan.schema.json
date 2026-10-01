@@ -1637,7 +1637,7 @@
           "type": "string"
         },
         "repro": {
-          "description": "Reproduction steps: a string or array of step strings.",
+          "description": "Reproduction steps: a string or array of step strings; null when none was recorded.",
           "oneOf": [
             {
               "type": "string"
@@ -1647,14 +1647,25 @@
               "items": {
                 "type": "string"
               }
+            },
+            {
+              "type": "null"
             }
           ]
         },
         "expected": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The behaviour the reporter expected; null when none was recorded."
         },
         "actual": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The behaviour the reporter observed; null when none was recorded."
         },
         "files": {
           "type": "array",

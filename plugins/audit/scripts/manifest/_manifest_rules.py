@@ -50,13 +50,19 @@ of the split: the four pieces at layer 2 sit above `_manifest_vocab` at layer 1,
 so their only consumer has to sit above them. Nothing at layer 3 imports this
 and this imports nothing at layer 3, so the move is free.
 
-Pure by construction, with one input beyond the manifest: `validate()` takes
+Pure by construction, with two inputs beyond the manifest: `validate()` takes
 parsed JSON and returns `(findings, warnings)`, never raises on arbitrary input,
-reads no file and holds no module state. That is what lets every consumer share
-it without sharing a process, and it is why the cases below need no fixture
-directory. The one other input is the calendar day an expired mute is graded
-against: a caller pins it with `today=`, and otherwise it comes from
-`_manifest_vocab.mute_today()`. Who the consumers are is derived, not listed:
+holds no module state, and reads no file when it is handed both. That is what
+lets every consumer share it without sharing a process, and it is why the cases
+below need no fixture directory. The first other input is the calendar day an
+expired mute is graded against: a caller pins it with `today=`, and otherwise it
+comes from `_manifest_vocab.mute_today()`. The second is the parsed manifest
+schema bug values are typed against: an entry point loads it once with
+`load_validation_schema()` and passes `schema=`, and reports an unreadable one
+itself. Only a consumer that hands none - `schema=None` - makes `validate()`
+read the plugin's schema file, once per call and only for a plan holding a bug;
+that read failing is a warning, not a finding. Who the consumers are is derived,
+not listed:
 
     python3 -c "import sys;sys.path.insert(0,'plugins/audit/scripts');import _deps;\
     e,_=_deps.import_graph();print(sorted(a for a,b in e if b=='_manifest_rules'))"
@@ -207,6 +213,7 @@ _ref_findings = _crossrefs._ref_findings
 _check_refs_and_cycles = _crossrefs._check_refs_and_cycles
 _check_file_index = _crossrefs._check_file_index
 _check_bugs = _crossrefs._check_bugs
+load_validation_schema = _crossrefs.load_validation_schema
 _check_decisions = _crossrefs._check_decisions
 _check_proposals = _crossrefs._check_proposals
 _check_priority = _crossrefs._check_priority
@@ -549,11 +556,15 @@ def finding_subject(line):
                      locus.strip()] + ids)
 
 
-def validate(manifest, today=None):
+def validate(manifest, today=None, schema=None):
     """Return (findings, warnings) — two lists of strings; empty findings = valid.
 
     `today` pins the calendar day `_check_muted` grades an expiry against; None
-    reads the clock. It is the one input here that is not the manifest.
+    reads the clock. `schema` is the parsed manifest schema the bug values are
+    typed against, loaded by the entry point with `load_validation_schema()`;
+    False means that load failed and the entry point reported it; None falls
+    back to reading the plugin's own copy, and only for a plan holding a bug.
+    Those two are the only inputs here that are not the manifest.
 
     ORCHESTRATION ONLY. Every question lives in a piece above that answers it
     and returns its own pair; this decides the ORDER, which is the one thing
@@ -603,7 +614,7 @@ def validate(manifest, today=None):
     add(_check_skills(manifest))
     add(_check_skill_typos(manifest))
     add(_check_file_index(manifest, index))
-    add(_check_bugs(manifest, index))
+    add(_check_bugs(manifest, index, schema))
     add(_check_decisions(manifest, index))
     add(_check_proposals(manifest, index))
     add(_check_priority(manifest, phases))

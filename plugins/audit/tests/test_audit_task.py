@@ -6321,6 +6321,59 @@ def _cases(check):
               == "matches [findings: 1 - 0 high, 1 med, 0 low; "
                  "0 with a recorded fix commit]"
               and (_gt_ph["P1"].get("review") or {}).get("outcome") == "matches")
+
+        # A BROKEN INSTALL IS REFUSED BEFORE THE WRITE, on the verbs that have no
+        # pre-write validation of their own: sign-off, the group sign-off and
+        # seed. Otherwise they write, fail the post-write check on the missing
+        # schema and roll back with a sentence blaming the operator's change.
+        import _manifest_crossrefs as _bi_xr                      # noqa: E402
+        _bi_real = _bi_xr.load_plan_schema
+
+        def _bi_broken(root=None):
+            raise OSError("schema gone")
+
+        def _bi_run(argv):
+            _bi_xr.load_plan_schema = _bi_broken
+            try:
+                return run(argv)
+            finally:
+                _bi_xr.load_plan_schema = _bi_real
+
+        def _bi_ok(code, txt, unchanged):
+            return (code == E_INVALID_CODE and unchanged
+                    and "install is broken" in txt
+                    and "would leave the manifest invalid" not in txt
+                    and "is not valid, so nothing was kept" not in txt)
+        E_INVALID_CODE = M.E_INVALID
+        _bi_one = base_manifest()
+        _bi_one["phases"][1]["tasks"][1]["status"] = "done"
+        _bi_proj1, _bi_mp1 = mk("bi-signoff", _bi_one, git=True)
+        _bi_before1 = open(_bi_mp1, "rb").read()
+        _bi_r1 = _bi_run(["signoff", "P2", "--verdict", "skipped", "--summary",
+                          "s", "--project-dir", _bi_proj1])
+        check("bi1 RED-FIRST: `signoff` on an install whose schema cannot be "
+              "read refuses BEFORE writing, says the install is broken, and "
+              "the manifest keeps its bytes: %r" % ((_bi_r1[0], _bi_r1[1][-400:]),),
+              _bi_ok(_bi_r1[0], _bi_r1[1],
+                     open(_bi_mp1, "rb").read() == _bi_before1))
+        _bi_proj2, _bi_mp2, _bi_shas = gs_fixture("bi-group")
+        run(["signoff", "P1,P2", "--branch", "combined", "--bind",
+             "--project-dir", _bi_proj2])
+        _bi_before2 = open(_bi_mp2, "rb").read()
+        _bi_r2 = _bi_run(["signoff", "P1,P2", "--branch", "combined",
+                          "--verdict", "skipped", "--summary", "s",
+                          "--project-dir", _bi_proj2])
+        check("bi2 RED-FIRST: the GROUP sign-off on the same broken install "
+              "refuses before writing, in the same words, and the manifest "
+              "keeps its bytes: %r" % ((_bi_r2[0], _bi_r2[1][-400:]),),
+              _bi_ok(_bi_r2[0], _bi_r2[1],
+                     open(_bi_mp2, "rb").read() == _bi_before2))
+        _bi_proj3, _bi_mp3 = mk_empty("bi-seed")
+        _bi_r3 = _bi_run(["seed", "--project-dir", _bi_proj3])
+        check("bi3 RED-FIRST: `seed` on the same broken install refuses before "
+              "writing and creates no file: %r"
+              % ((_bi_r3[0], _bi_r3[1][-400:], os.path.exists(_bi_mp3)),),
+              _bi_ok(_bi_r3[0], _bi_r3[1], not os.path.exists(_bi_mp3)))
         g4_proj, g4_mp, g4_shas = gs_fixture("gs-stray")
         _g4 = _mio.load_manifest(g4_mp)
         _g4["phases"][1]["tasks"][0]["commit"] = g4_shas["stray"]
@@ -10032,6 +10085,171 @@ def _cases(check):
               and _ba_list2[0].get("id") == "BUG-1"
               and _ba_list2[0].get("files") == []
               and _ba_list2[0].get("repro") is None)
+
+        # THE VERB AND THE PUBLISHED SCHEMA, ONE SHAPE. The bug `ba2` wrote
+        # (no --repro, --expected or --actual, so those answers are null) is
+        # read back and every key is held against the type the schema file
+        # declares for it under the bug item. `validate-manifest.py` applies
+        # no JSON Schema, so without this a record the verb writes can fail
+        # the strict CI validation while every local gate stays green.
+        with open(os.path.join(_output.PLUGIN_ROOT, "schema",
+                               "audit-plan.schema.json"),
+                  "r", encoding="utf-8") as _fh:
+            _ba_schema = json.load(_fh)
+
+        _BA_READ = ("$ref", "type", "enum", "items", "oneOf", "anyOf", "pattern")
+        _BA_ANNOTATIONS = ("description", "title", "default", "examples",
+                           "$comment", "deprecated", "readOnly", "writeOnly")
+
+        def ba_resolve(node):
+            # A `$ref` is followed and its siblings merged in; a sibling that
+            # restates a key of the target is kept apart as an unread key, so
+            # the conjunction is never read as the sibling alone.
+            ref = node.get("$ref") if isinstance(node, dict) else None
+            if not ref:
+                return node
+            target = _ba_schema
+            for part in ref.lstrip("#/").split("/"):
+                target = target.get(part, {}) if isinstance(target, dict) else {}
+            merged = dict(ba_resolve(target))
+            for key, val in node.items():
+                if key == "$ref" or key in _BA_ANNOTATIONS:
+                    continue
+                merged["$ref sibling " + key if key in merged else key] = val
+            return merged
+
+        _BA_JSON_TYPES = {
+            "string": lambda v: isinstance(v, str),
+            "null": lambda v: v is None,
+            "array": lambda v: isinstance(v, list),
+            "object": lambda v: isinstance(v, dict),
+            "boolean": lambda v: isinstance(v, bool),
+            "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
+            "number": lambda v: (isinstance(v, (int, float))
+                                 and not isinstance(v, bool))}
+
+        def ba_admits(node, value):
+            # Reads $ref, type, enum, items, pattern, oneOf/anyOf - not a validator.
+            # None means the node carries a constraint this reader does not
+            # read, or none at all; the case treats that as a fault, not a pass.
+            node = ba_resolve(node)
+            if not isinstance(node, dict):
+                return None
+            if any(k not in _BA_READ and k not in _BA_ANNOTATIONS for k in node):
+                return None
+            verdicts = []
+            if "pattern" in node:
+                verdicts.append(not isinstance(value, str)
+                                or re.search(node["pattern"], value) is not None)
+            if "type" in node:
+                names = node["type"]
+                names = [names] if isinstance(names, str) else list(names)
+                verdicts.append(any(_BA_JSON_TYPES.get(n, lambda v: False)(value)
+                                    for n in names))
+            if "enum" in node:
+                verdicts.append(value in node["enum"])
+            if isinstance(value, list) and "items" in node:
+                verdicts.append(all(ba_admits(node["items"], item) is True
+                                    for item in value))
+            for combiner in ("oneOf", "anyOf"):
+                if combiner in node:
+                    hits = [ba_admits(arm, value) is True
+                            for arm in node[combiner]]
+                    verdicts.append(hits.count(True) == 1 if combiner == "oneOf"
+                                    else any(hits))
+            return all(verdicts) if verdicts else None
+
+        _ba_item = ba_resolve(
+            _ba_schema.get("properties", {}).get("bugs", {}).get("items", {}))
+        _ba_props = _ba_item.get("properties", {})
+
+        def ba_type_faults(record):
+            unknown = sorted(k for k in record if k not in _ba_props)
+            wrong = sorted(k for k in record if k in _ba_props
+                           and ba_admits(_ba_props[k], record[k]) is not True)
+            return unknown, wrong
+
+        _ba_rec = dict(_ba_list2[0]) if len(_ba_list2 or []) == 1 else {}
+        _ba_faults = ba_type_faults(_ba_rec)
+        check("ba5 RED-FIRST: every key of a bug `bug-add` writes with no "
+              "--repro/--expected/--actual is a property the published schema "
+              "declares under the bug item, and every value - the null "
+              "answers included - is a type the schema admits for it "
+              "(unknown keys, wrong-typed keys): %r"
+              % ((_ba_faults, sorted(_ba_rec)),),
+              list(_ba_rec) == BA_KEYS and bool(_ba_props)
+              and _ba_faults == ([], []))
+        # The allow twin: the same reader must pass the shapes the schema
+        # does admit and REPORT one it does not, or ba5 could be green over
+        # a reader that admits everything.
+        _ba_twin = {}
+        for _ba_what, _ba_val in (("repro string", "step one"),
+                                  ("repro list", ["step one", "step two"]),
+                                  ("repro integer", 7),
+                                  ("repro list of integers", [7])):
+            _ba_twin[_ba_what] = ba_type_faults(dict(_ba_rec, repro=_ba_val))
+        _ba_twin["id off its pattern"] = ba_type_faults(dict(_ba_rec, id="BUG-x"))
+        _ba_twin["an unread keyword"] = ba_admits(
+            {"type": "string", "minLength": 1}, "s")
+        check("ba5b ALLOW CASE: `repro` as a string or a list of strings "
+              "passes the same reader, `repro` as an integer or a list of "
+              "integers and an id off the schema's pattern are reported by "
+              "name, and a constraint the reader does not read is 'cannot "
+              "read', not a pass: %r" % (_ba_twin,),
+              _ba_twin == {"repro string": ([], []),
+                           "repro list": ([], []),
+                           "repro integer": ([], ["repro"]),
+                           "repro list of integers": ([], ["repro"]),
+                           "id off its pattern": ([], ["id"]),
+                           "an unread keyword": None})
+        _ba_full = ba_type_faults(_ba_bug)
+        check("ba5c the bug `bug-add` writes with EVERY answer given (ba1's "
+              "record) is typed clean by the same reader: %r" % (_ba_full,),
+              list(_ba_bug) == BA_KEYS and _ba_full == ([], []))
+
+        # THE VERB LOADS THE SCHEMA ONCE AND HANDS IT IN. A verb validates before
+        # its write and after it; the loader is replaced by a counter, so one read
+        # across both calls means the schema was loaded once and passed - the
+        # rules' own fallback would read again on every call.
+        import _manifest_crossrefs as _xr                         # noqa: E402
+        _vs_real = _xr.load_plan_schema
+        _vs_reads = []
+
+        def _vs_counting(root=None):
+            _vs_reads.append(root)
+            return _vs_real(root)
+
+        def _vs_broken(root=None):
+            raise OSError("schema gone")
+        _vs_plan = _mio.load_manifest(ba_mp)
+        _vs_plan["bugs"][-1]["files"] = "src/a.ts"
+        _xr.load_plan_schema = _vs_counting
+        try:
+            _vs_v = M._validator()
+            _vs_pre = _vs_v.validate(_vs_plan)
+            _vs_post = _vs_v.validate(_vs_plan)
+        finally:
+            _xr.load_plan_schema = _vs_real
+        _xr.load_plan_schema = _vs_broken
+        try:
+            _vs_gone = M._validator().validate(_vs_plan)
+        finally:
+            _xr.load_plan_schema = _vs_real
+        with open(os.path.join(_output.SCRIPTS_DIR, "manifest", "audit-task.py"),
+                  "r", encoding="utf-8") as _fh:
+            _vs_src = _fh.read()
+        check("ba6 a verb's validator reads the schema ONCE for its pre- and "
+              "post-write checks and types bug values with it; every verb takes "
+              "the rules through that one validator; an unreadable schema is a "
+              "finding its pre-check refuses on: %r"
+              % ((len(_vs_reads), _vs_src.count("_cores()"),
+                  _vs_pre[1][-1:], _vs_gone[0][:1]),),
+              len(_vs_reads) == 1 and _vs_pre == _vs_post
+              and any("files is string" in x for x in _vs_pre[1])
+              and _vs_src.count("_cores()") == 1
+              and _vs_src.count("vm = _validator()") >= 1
+              and len(_vs_gone[0]) >= 1
+              and "install is broken" in _vs_gone[0][0])
 
         # THE DOCUMENT AND THE CODE, ONE ORDER. The brace list step 3 of
         # `commands/bug.md` spells is parsed out of the file and compared with

@@ -109,6 +109,31 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   satisfy the new rule in the same change, and said nothing at all about the entries
   the commands generate. A rule measured only against a corpus is measured against
   half of its input.
+
+  **A bug value the published schema refuses is the second announcement, and it
+  arrives the same way.** `validate-manifest.py` checked a bug's required fields, id
+  pattern, status and links but never a value's *type*, while
+  `schema/audit-plan.schema.json` types every bug property — so the plugin's own
+  validator, which every verb and gate runs, accepted bugs the published schema
+  refuses (`files: "src/a.ts"`, `severity: 3`, `description: null`). Such a plan
+  validated under 3.0.1, and this promise is what it validated under. So in the 3.x line
+  each such value is a **warning** naming the field, the type it has, the types the
+  schema admits, and **4.0.0** as the release that refuses it; 4.0.0 makes it a finding.
+  The types are read from the schema file at validate time, and its patterns are read
+  the way `ajv` reads them (ASCII digits; `$` is the end of the string), so what the
+  warning names is what the published schema says for every keyword the bug item
+  uses. That covers the id too: an id ending in a newline or spelled with a non-ASCII
+  digit passed the id check in 3.0.1, and that check keeps its reading; the
+  schema's stricter one reaches it as this same warning. The warning buys the time:
+  the repair is to write a value the schema admits, and nothing that validated before
+  stops validating inside 3.x. Not under this announcement: a value a check that
+  already existed refuses (a malformed id, a status outside the vocabulary, a
+  non-integer `ado.id`) stays the finding it was, and the schema adds no second line
+  about that path, though a different path beside it (an integer `ado.url`) is still
+  its own warning; a schema the plugin cannot read at all is a finding from the
+  command that loads it, because that is a broken install rather than a plan; and a
+  schema keyword the validator does not interpret is at most a warning, because that
+  fault is the plugin's — the build refuses to ship a schema whose bug item uses one.
 - **A manifest key a released version READS keeps being read** — the promise the
   config section below makes about a config key, made here for the same reason: the
   manifest is a file you wrote. `phases[].adoTracked` is the newest one. A phase

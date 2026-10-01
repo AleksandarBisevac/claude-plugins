@@ -306,6 +306,7 @@ import os
 import re
 import subprocess
 import sys
+import types
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -2653,7 +2654,7 @@ def _locked_add(args, project, config, mpath, title, out):
         out("[audit-task] manifest root is not an object")
         return E_USAGE
 
-    vm = _panel_write._cores()[0]
+    vm = _validator()
     pre_findings, _pre_w = vm.validate(assembled)
     if pre_findings:
         # Refusing BEFORE the write is what tells "your add broke it" apart
@@ -2960,7 +2961,7 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
     except Exception as exc:
         out("[audit-task] cannot read/assemble manifest: %s" % exc)
         return E_USAGE
-    vm = _panel_write._cores()[0]
+    vm = _validator()
     pre_findings, _w = vm.validate(assembled)
     if pre_findings:
         out("[audit-task] the manifest is already invalid -- nothing written; "
@@ -3432,7 +3433,7 @@ def _locked_start(args, project, config, mpath, tid, out):
     except Exception as exc:
         out("[audit-task] cannot read/assemble manifest: %s" % exc)
         return E_USAGE
-    vm = _panel_write._cores()[0]
+    vm = _validator()
     pre_findings, _w = vm.validate(assembled)
     if pre_findings:
         out("[audit-task] the manifest is already invalid -- nothing written; "
@@ -3932,7 +3933,7 @@ def _locked_done(args, project, config, mpath, tid, out):
     except Exception as exc:
         out("[audit-task] cannot read/assemble manifest: %s" % exc)
         return E_USAGE
-    vm = _panel_write._cores()[0]
+    vm = _validator()
     pre_findings, _w = vm.validate(assembled)
     if pre_findings:
         out("[audit-task] the manifest is already invalid -- nothing written; "
@@ -4243,7 +4244,7 @@ def _locked_reopen(args, project, config, mpath, tid, reason, out):
     except Exception as exc:
         out("[audit-task] cannot read/assemble manifest: %s" % exc)
         return E_USAGE
-    vm = _panel_write._cores()[0]
+    vm = _validator()
     pre_findings, _w = vm.validate(assembled)
     if pre_findings:
         out("[audit-task] the manifest is already invalid -- nothing written; "
@@ -4348,6 +4349,36 @@ def _locked_reopen(args, project, config, mpath, tid, reason, out):
 # refuses on a started task, and `commands/task.md`'s six-step move procedure run
 # with Edit. They take the path every mutating verb here takes - the index lock,
 # validate before and after, byte-for-byte rollback on findings, a journal row.
+def _validator():
+    """The manifest rules with the plan schema LOADED ONCE and bound in.
+
+    A verb validates before its write and again after it; both calls share
+    the one schema read here, so `validate()` itself reads no file. A schema
+    that cannot be read is this entry point's finding: it is carried on every
+    validation the verb makes, so a verb with a pre-write check refuses there,
+    and it is exposed as `unreadable` for the verbs that validate only after
+    writing, which refuse on it up front (`_refuse_broken_install`)."""
+    rules = _panel_write._cores()[0]
+    schema, unreadable = rules.load_validation_schema()
+
+    def validate(manifest):
+        findings, warnings = rules.validate(manifest, schema=schema)
+        return list(unreadable) + findings, warnings
+    return types.SimpleNamespace(validate=validate, unreadable=list(unreadable))
+
+
+def _refuse_broken_install(vm, out):
+    """E_INVALID after saying so, or None: a verb whose only validation runs
+    after its write asks this first, so a broken install is refused before
+    anything is written rather than rolled back as if the change were at fault."""
+    if not vm.unreadable:
+        return None
+    out("[audit-task] the plugin install is broken -- nothing written:")
+    for line in vm.unreadable:
+        out("FINDING: " + line)
+    return E_INVALID
+
+
 def _read_plan(mpath, out):
     """`(raw_index, assembled, validator)`, or the exit code after saying why not.
 
@@ -4360,7 +4391,7 @@ def _read_plan(mpath, out):
     except Exception as exc:
         out("[audit-task] cannot read/assemble manifest: %s" % exc)
         return E_USAGE
-    vm = _panel_write._cores()[0]
+    vm = _validator()
     pre_findings, _w = vm.validate(assembled)
     if pre_findings:
         out("[audit-task] the manifest is already invalid -- nothing written; "
@@ -4969,7 +5000,7 @@ def _locked_phase_add(args, project, config, mpath, title, out):
         out("[audit-task] manifest root is not an object")
         return E_USAGE
 
-    vm = _panel_write._cores()[0]
+    vm = _validator()
     pre_findings, _pre_w = vm.validate(assembled)
     if pre_findings:
         out("[audit-task] the manifest is already invalid -- nothing "
@@ -5389,7 +5420,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
     except Exception as exc:
         out("[audit-task] cannot read/assemble manifest: %s" % exc)
         return E_USAGE
-    vm = _panel_write._cores()[0]
+    vm = _validator()
     pre_findings, _w = vm.validate(assembled)
     if pre_findings:
         out("[audit-task] the manifest is already invalid -- nothing written; "
@@ -5971,7 +6002,7 @@ def _locked_retarget(args, project, config, mpath, pid, out):
     except Exception as exc:
         out("[audit-task] cannot read/assemble manifest: %s" % exc)
         return E_USAGE
-    vm = _panel_write._cores()[0]
+    vm = _validator()
     pre_findings, _w = vm.validate(assembled)
     if pre_findings:
         out("[audit-task] the manifest is already invalid -- nothing written; "
@@ -6373,7 +6404,10 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
     except Exception as exc:
         out("[audit-task] cannot read/assemble manifest: %s" % exc)
         return E_USAGE
-    vm = _panel_write._cores()[0]
+    vm = _validator()
+    broken = _refuse_broken_install(vm, out)
+    if broken is not None:
+        return broken
     kind, phase, _owner = _find_target(assembled, pid)
     if kind != "phase":
         out("[audit-task] no phase %r in %s" % (pid, mpath))
@@ -7575,7 +7609,10 @@ def _locked_group(args, project, config, mpath, ids, summary, out):
     sharded = _mio.is_sharded(raw_index)
     if args.plan:
         return _print_group_plan(args, plan, ids, mrel, landing, sharded, out)
-    vm = _panel_write._cores()[0]
+    vm = _validator()
+    broken = _refuse_broken_install(vm, out)
+    if broken is not None:
+        return broken
     if args.bind:
         return _bind_group(args, project, config, mpath, raw_index, assembled,
                            plan, ids, vm, out)
@@ -7809,7 +7846,7 @@ def _locked_settle(args, project, config, mpath, out):
     except Exception as exc:
         out("[audit-task] cannot read/assemble manifest: %s" % exc)
         return E_USAGE
-    vm = _panel_write._cores()[0]
+    vm = _validator()
     pre_findings, _w = vm.validate(assembled)
     if pre_findings:
         out("[audit-task] the manifest is already invalid -- nothing written; "
@@ -8890,13 +8927,16 @@ def _locked_seed(args, project, config, mpath, out):
                       task_gate_word)
     phase["tasks"].append(task)
 
+    vm = _validator()
+    broken = _refuse_broken_install(vm, out)
+    if broken is not None:
+        return broken
     try:
         written = _mio.save_single_file(mpath, assembled)
     except Exception as exc:
         out("[audit-task] write failed: %s" % exc)
         return E_INVALID
 
-    vm = _panel_write._cores()[0]
     try:
         written_manifest = _mio.load_manifest(mpath)
         findings, warnings = vm.validate(written_manifest)
