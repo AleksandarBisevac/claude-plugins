@@ -613,6 +613,12 @@
       "title": "bug records written by bug-add validate against the published schema",
       "status": "in_progress",
       "shard": "phases/P96.json"
+    },
+    {
+      "id": "P97",
+      "title": "the human maintainer's BUG-14 fix lands",
+      "status": "done",
+      "shard": "phases/P97.json"
     }
   ],
   "fileIndex": {
@@ -800,7 +806,8 @@
       "P94.5-579",
       "P94.8-579",
       "P95.1",
-      "P96.1"
+      "P96.1",
+      "P97.1"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1028,7 +1035,8 @@
       "P88.2-dnb",
       "P88.3-dnb",
       "P89.1",
-      "P95.1"
+      "P95.1",
+      "P97.1"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -1581,7 +1589,8 @@
       "P83.3-wkm",
       "P83.4-wkm",
       "P83.5-wkm",
-      "P89.1"
+      "P89.1",
+      "P97.1"
     ],
     "plugins/audit/hooks/guard-secrets-read.py": [
       "P1.4",
@@ -3863,7 +3872,8 @@
       "P88.2-dnb",
       "P89.1",
       "P94.4",
-      "P95.1"
+      "P95.1",
+      "P97.1"
     ],
     "plugins/audit/tests/test_guard_secrets_read.py": [
       "P22.6",
@@ -4891,7 +4901,7 @@
     {
       "id": "BUG-14",
       "title": "the guards judge a command where the shell does not run it when a cd or -C target cannot be placed",
-      "status": "open",
+      "status": "fixed",
       "severity": "high",
       "reportedAt": "2026-09-29T23:47:13Z",
       "reportedBy": null,
@@ -4904,6 +4914,24 @@
         "plugins/audit/hooks/guard-history-rewrite.py",
         ".claude/hooks/guard-release.py",
         "plugins/audit/hooks/journal-writes.py"
+      ],
+      "taskId": "P97.1",
+      "fixedIn": "bbc0be38",
+      "notes": "Fixed by the human maintainer on branch fix/bug-14 (ff194c30, aad1aa87, 536f017a, e3afc4ae, bbc0be38): a cd/pushd/popd/-C target this cannot place, and a payload naming no cwd at all, both answer unplaceable now instead of falling back to the session or project; gw12-gw15 and gw14b-gw14h pin it, and guard-release's own selftest covers the release guard's half. Reviewed four times until clean and landed through P97 (task P97.1). A heredoc-blind asymmetry in guard-release's own _shell_moves, found during the fourth review, is BUG-15 - a different, pre-existing defect in a different file, filed separately rather than folded into this one."
+    },
+    {
+      "id": "BUG-15",
+      "title": "guard-release's _shell_moves reads a heredoc body as live text, so a payload with no cwd over-refuses",
+      "status": "open",
+      "severity": "med",
+      "reportedAt": "2026-10-01T06:35:07Z",
+      "reportedBy": null,
+      "description": "A PreToolUse payload naming no cwd falls to _session_base, which asks _shell_moves(cfg_mod, command) whether the command moves the shell at all. That function is fed the RAW command text, unlike guard-history-rewrite.py own _shell_moves, which is fed runnable(command) - the same text with a heredoc body destined for a file already stripped, as every reading in that file does. A heredoc body that is pure file data and happens to contain a line starting with cd is read by guard-release.py as a real directory change, so a payload with no cwd and such a command is answered unplaceable (refused as UNKNOWN by callers that gate a publishing release on it) even though the shell never moves. Found while reviewing the BUG-14 fix e3afc4ae on fix/bug-14: pre-existing on main, not introduced by that commit - the asymmetry surfaced only because guard-history-rewrite.py was given the correct, heredoc-aware behaviour as part of that fix.",
+      "repro": "call _shell_moves(cfg_mod, command) directly (or decide(command, project, session_id, payload={\"tool_input\": {\"command\": command}}) with no payload cwd key) on a command built as the heredoc `cat > deploy.txt <<'EOF'`, a line reading `cd /somewhere`, a line reading the git publish verb with the force flag, then the `EOF` terminator - a heredoc body whose text happens to contain a cd line",
+      "expected": "False - the heredoc body is file data; the shell never runs a cd, so a payload with no cwd should answer to the project the same way guard-history-rewrite.py own _shell_moves already does on the identical command",
+      "actual": "True - _shell_moves reads the raw command text, sees the literal \"cd /somewhere\" line inside the heredoc body, and judges it a real directory change",
+      "files": [
+        ".claude/hooks/guard-release.py"
       ],
       "taskId": null,
       "fixedIn": null,
