@@ -1185,6 +1185,19 @@ def _cases(check):
               "cd is still refused, and the reason names the cd: %r"
               % ((v, why[:160]),),
               v == "deny" and "`cd`" in why and "cannot be parsed" not in why)
+        v, why = M.decide({"tool_name": "Bash",
+                           "tool_input": {"command": _cd_unread}})
+        check("gw14g the same unreadable cd is still refused when the "
+              "payload names no cwd at all - a silent payload is not "
+              "evidence the cd is readable: %r" % ((v, why[:160]),),
+              v == "deny" and "`cd`" in why)
+        v, why = M.decide({"tool_name": "Bash",
+                           "tool_input": {"command": "git rebase main"}})
+        check("gw14h ...while a rewrite that moves the shell nowhere stays "
+              "allowed with no payload cwd at all - a silent payload is "
+              "not evidence of an unplaced cd either: %r"
+              % ((v, why[:160]),),
+              v == "allow")
         _slow = "git" + (' -C "a"' * 18) + " rebase '"
         _t0 = time.perf_counter()
         M.always_refused(_slow)

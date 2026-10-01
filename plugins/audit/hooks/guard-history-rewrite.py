@@ -1507,15 +1507,39 @@ def _c_before_verb(rest):
     return False
 
 
+def _shell_moves(command):
+    """True when a clause of this command starts with cd, pushd or popd.
+
+    The same question `guard-release.py`'s `_shell_moves` asks of the same
+    command text, so a payload naming no `cwd` is judged the same way on
+    both sides of the guard set. `effective_cwd` itself answers None for a
+    missing payload `cwd` no matter what the command does - correct for
+    THAT function, which must return an actual directory - but leaning on
+    that None here would call every payload-less command unplaceable, not
+    only the ones that move the shell.
+    """
+    for clause in _config.command_clauses(runnable(command) or ""):
+        parts = clause.split(None, 1)
+        if parts and parts[0].lower() in ("cd", "pushd", "popd"):
+            return True
+    return False
+
+
 def unplaceable_directory(data, command, calls):
     """Which directory spelling prevents placing a git call, else None.
 
     `tree_for(data, None)` deliberately means the session directory, so a
     directory this reader cannot establish must be identified before that
-    legitimate session reading is requested.
+    legitimate session reading is requested. A payload naming no `cwd` at
+    all is answered the way `_session_base` answers it in `guard-release.py`:
+    unplaceable only when the command itself moves the shell, never merely
+    because the payload stayed silent.
     """
     cwd = (data or {}).get("cwd")
-    if cwd and _config.effective_cwd(runnable(command), cwd) is None:
+    if cwd:
+        if _config.effective_cwd(runnable(command), cwd) is None:
+            return "`cd` or `pushd` target"
+    elif _shell_moves(command):
         return "`cd` or `pushd` target"
     for call in calls or []:
         if call[2] is not None and not _config.resolvable_destination(call[2]):
