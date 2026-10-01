@@ -617,7 +617,7 @@
     {
       "id": "P97",
       "title": "the human maintainer's BUG-14 fix lands",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P97.json"
     }
   ],
