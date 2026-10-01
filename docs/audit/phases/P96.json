@@ -19,7 +19,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P96-R1",
@@ -112,9 +112,9 @@
         "commit": "db46cb6c"
       }
     ],
-    "outcome": "[findings: 10 - 0 high, 2 med, 8 low; 10 with a recorded fix commit]"
+    "outcome": "Five review rounds over one task (one med on the outcome, one med on validate()'s purity, the rest low); all ten findings resolved by P96.1 in db46cb6c; edges left for the full-schema-validator phase batched to PLAN.md F551/F552, verify.sh's truncated vitest output to F553. Task gate 2026-10-01T07:35:01Z.b3aa25 and phase gate 2026-10-01T07:37:23Z.f00ae9 green; verify.sh VERIFY OK; invariants clean. [findings: 10 - 0 high, 2 med, 8 low; 10 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "Bug records written by bug-add validate against the published schema: the schema admits null for repro, expected and actual as bug.md documents, and validate-manifest now types every bug value against the schema's bug item, injected once per entry point, warning (naming 4.0.0) on any value the schema refuses, per COMPATIBILITY's additive-validation promise; a reader behind its schema fails this repo's build.",
   "tasks": [
     {
       "id": "P96.1",
@@ -185,5 +185,10 @@
       }
     }
   ],
-  "startedAt": "2026-09-30T00:06:40Z"
+  "startedAt": "2026-09-30T00:06:40Z",
+  "testEvidence": {
+    "runId": "2026-10-01T07:37:23Z.f00ae9",
+    "status": "passed",
+    "at": "2026-10-01T07:37:23Z"
+  }
 }
