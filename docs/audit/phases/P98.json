@@ -1,7 +1,7 @@
 {
   "id": "P98",
   "title": "the release guard's speed case holds on any runner",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "guard-release's case for a long run of quoted -C operands proves the grading does not grow faster than the command does, by a measure independent of the machine's speed, so it is green on windows-latest and still red against the pre-fix behaviour",
   "testGate": [
@@ -13,8 +13,8 @@
     "lint"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "c2ec95c7473f738fb60612e2f530b8d143790ba0",
+  "branch": "audit/p98-the-release-guard-s-speed-case",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -27,7 +27,7 @@
     {
       "id": "P98.1",
       "title": "gr60 measures growth, not seconds",
-      "status": "pending",
+      "status": "in_progress",
       "description": "guard-release.py's gr60 asserts a wall-clock bound (_elapsed < 0.05) on grading a command with a long run of quoted -C operands; windows-latest measured 0.137 (CI run 36834328047). The property the case guards is that grading does not blow up with the operand count; assert that by a measure independent of the machine's speed, red against the pre-fix behaviour of 536f017a",
       "files": [
         ".claude/hooks/guard-release.py"
@@ -53,16 +53,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-01T08:21:44Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-01T08:37:01Z.f38ca9",
+        "status": "passed",
+        "at": "2026-10-01T08:37:01Z"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-10-01T08:21:44Z"
 }

@@ -958,13 +958,35 @@ def _selftest():
           and publishing('git tag -l "v1&x"') is None
           and publishing("git tag -l 'v1|x'") is None
           and publishing("git tag -a 'v1;x' -m m"))
-    _slow = "git" + (' -C "a"' * 20) + " status"
-    _t0 = time.perf_counter()
-    publishing(_slow)
-    _elapsed = time.perf_counter() - _t0
-    check("gr60 a long run of quoted -C operands that do not publish "
-          "is graded promptly: %.3f" % (_elapsed,),
-          _elapsed < 0.05, repr(_elapsed))
+    # How grading GROWS with the run of quoted -C operands, not how long it
+    # takes: an absolute bound measures the machine. The two sizes are timed
+    # interleaved and the fastest sample of each kept, so a slow runner or a
+    # scheduler stall inflates both sides or neither.
+    def _grading_time(operands):
+        command = "git" + (' -C "a"' * operands) + " status"
+        start = time.perf_counter()
+        publishing(command)
+        return time.perf_counter() - start
+
+    _short, _long = [], []
+    for _ in range(30):
+        _short.append(_grading_time(4))
+        _long.append(_grading_time(16))
+    _base, _grown = min(_short), min(_long)
+    _ratio = _grown / _base if _base > 0 else None
+    # Four times the operands: linear work grows at most fourfold, quadratic
+    # work up to sixteenfold, the backtracking regex by thousands. A call's
+    # fixed cost pulls both measured ratios below those ceilings, so the bound
+    # is six rather than their midpoint of eight: a re-scan per operand lands
+    # above it, as far from it as the linear reading lands below.
+    check("gr60 a long run of quoted -C operands that do not publish is "
+          "graded in time that grows linearly with the run, measured as a "
+          "ratio so the machine's speed cancels out",
+          _ratio is not None and _ratio < 6,
+          "fastest at 4 operands %r s, at 16 %r s, ratio %s"
+          % (_base, _grown,
+             "unmeasurable: the timer did not resolve the short run"
+             if _ratio is None else "%.2f" % (_ratio,)))
     check("gr9 reading releases is not publishing",
           not publishing("gh release view v2.0.1")
           and not publishing("gh release list"))
