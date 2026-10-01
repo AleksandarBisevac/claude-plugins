@@ -77,8 +77,11 @@ refused as soon as an audit plan exists on disk. Reading the second arm as the
 first is how it would end up silent on a plan whose first task is still mid-edit.
 
 WHAT IT DOES NOT DO. It never inspects the working tree, never runs a write, and
-never blocks a command it cannot decide: an unparseable command, an unreadable
-manifest, or a git that will not answer all resolve to ALLOW. It does not refuse
+never blocks a command it cannot decide about ancestry: an unreadable
+manifest, or a git that will not answer, resolves to ALLOW. An unparseable
+command that carries a rewrite is the exception, and it is refused while a
+plan exists, because the directory Git would run it in cannot be established
+and the session is a guess. It does not refuse
 `git push` without a force flag, and that is a decision rather than a gap - the
 reasoning is beside `STASH_READS` and the claim is driven from
 `tools/check-prohibitions.py`.
@@ -1058,7 +1061,12 @@ def git_calls(command, depth=0):
 # traded a hand-kept table of git's global options for a slightly weaker guard, on
 # input git itself rejects. Recorded here because the next reader will have the
 # same worry, and the probe that settles it is a regex comparison over both.
-_GIT_SUB = (r"\bgit\b(?:\s+(?:-C\s+\S+|-c\s+\S+"
+# A quoted `-C` operand must not also match the unquoted arm. Those two
+# arms matching the same text is what made a failed search retry every
+# split of a long `-C` run, and a hook that does not finish is a hook
+# that does not refuse.
+_GIT_SUB = (r"\bgit\b(?:\s+(?:-C(?:\s+\"[^\"]*\"|\s+'[^']*'|\s+[^\s\"']\S*"
+            r"|[^\s\"']\S+)|-c\s+\S+"
             r"|--(?:git-dir|work-tree|namespace|exec-path)(?:=\S*|\s+\S+)"
             r"|--[a-z][a-z-]*))*\s+")
 
@@ -1405,8 +1413,8 @@ def command_roots(project, trees):
     The project stays first whatever the command did, and the union is the
     conservative direction for a guard: a commit recorded in either plan is
     one this command may not orphan. A `-C` value or a `cd` this cannot read
-    adds no tree, which leaves the project's plan standing - never fewer
-    trees than before this existed. `trees` is `call_trees`' answer."""
+    is refused for a history rewrite while a plan exists, rather than placed
+    in the project. `trees` is `call_trees`' answer."""
     roots = [project]
     for _call, tree in trees:
         if tree is not None and all(
@@ -1422,10 +1430,12 @@ def call_trees(data, cfg, project, command, calls):
     Refs resolve per working tree (`HEAD`, `HEAD~1`, `ORIG_HEAD`), so the tree
     a reset or an amend is asked about is ITS OWN, not the first one the
     command reached: in `git -C <a> status; git -C <b> reset --hard HEAD~1`
-    the `HEAD~1` is `<b>`'s. A `-C` value this cannot resolve places the call
-    in no worktree (None), which is the project - the reading before this
-    existed. An unparseable command (`calls` None) is one call where the shell
-    stands."""
+    the `HEAD~1` is `<b>`'s. A `-C` value this cannot resolve, and an
+    unreadable command that still shows a `cd` or a `git -C`, are rejected
+    before this function for a history rewrite while a plan exists. An
+    unparseable rewrite that names neither is the session's, and an
+    unparseable read is still one call where the shell stands, because a
+    read orphans nothing."""
     base = _config.effective_cwd(runnable(command), (data or {}).get("cwd"))
     base = base or (data or {}).get("cwd") or ""
     out = []
@@ -1446,6 +1456,98 @@ def call_trees(data, cfg, project, command, calls):
                 tree = placed["root"]
         out.append((call, tree))
     return out
+
+
+def unparsed_git_c(command):
+    """True when an unreadable command still shows a `git -C`.
+
+    The parse is what places `-C`. Seeing the option and not being able to
+    read the command is the case the session must not be trusted for: the
+    unread operand may name another tree. A trailing quote, or an apostrophe
+    in a comment, names no directory and is not this case.
+    """
+    text = runnable(command)
+    start = 0
+    while True:
+        at = text.find("git", start)
+        if at < 0:
+            return False
+        after = at + 3
+        bounded = ((at == 0 or not text[at - 1].isalnum())
+                   and (after == len(text) or not text[after].isalnum()))
+        if bounded and _c_before_verb(text[after:]):
+            return True
+        start = after
+
+
+def _c_before_verb(rest):
+    """True when `-C` is a global option of the git that `rest` follows."""
+    index, end = 0, len(rest)
+    while index < end and rest[index] in " \t":
+        index += 1
+    while index < end and rest[index] == "-":
+        token_end = index
+        while token_end < end and rest[token_end] not in " \t;|&\n":
+            token_end += 1
+        token = rest[index:token_end]
+        name = token.split("=", 1)[0]
+        if name == "-C" or (name.startswith("-C") and len(name) > 2
+                            and name[2] not in "-="):
+            return True
+        index = token_end
+        while index < end and rest[index] in " \t":
+            index += 1
+        if "=" not in token and name in ("-c", "--git-dir", "--work-tree",
+                                         "--namespace", "--exec-path"):
+            if index < end and rest[index] != "-":
+                while index < end and rest[index] not in " \t;|&\n":
+                    index += 1
+                while index < end and rest[index] in " \t":
+                    index += 1
+    return False
+
+
+def _shell_moves(command):
+    """True when a clause of this command starts with cd, pushd or popd.
+
+    The analogous question `guard-release.py`'s `_shell_moves` asks when a
+    payload names no `cwd` - analogous, not identical, because the command
+    text each reads is prepared differently: this one is fed `runnable(command)`,
+    which drops a heredoc body destined for a file, as every reading in this
+    file does; `guard-release.py`'s own `_shell_moves` is fed the raw command,
+    so a `cd` spelled inside such a body still reads there as one.
+    `effective_cwd` itself answers None for a missing payload `cwd` no matter
+    what the command does - correct for THAT function, which must return an
+    actual directory - but leaning on that None here would call every
+    payload-less command unplaceable, not only the ones that move the shell.
+    """
+    for clause in _config.command_clauses(runnable(command) or ""):
+        parts = clause.split(None, 1)
+        if parts and parts[0].lower() in ("cd", "pushd", "popd"):
+            return True
+    return False
+
+
+def unplaceable_directory(data, command, calls):
+    """Which directory spelling prevents placing a git call, else None.
+
+    `tree_for(data, None)` deliberately means the session directory, so a
+    directory this reader cannot establish must be identified before that
+    legitimate session reading is requested. A payload naming no `cwd` at
+    all is answered the way `_session_base` answers it in `guard-release.py`:
+    unplaceable only when the command itself moves the shell, never merely
+    because the payload stayed silent.
+    """
+    cwd = (data or {}).get("cwd")
+    if cwd:
+        if _config.effective_cwd(runnable(command), cwd) is None:
+            return "`cd` or `pushd` target"
+    elif _shell_moves(command):
+        return "`cd` or `pushd` target"
+    for call in calls or []:
+        if call[2] is not None and not _config.resolvable_destination(call[2]):
+            return "`git -C` target"
+    return None
 
 
 def _tree_of_verb(trees, project_git, match):
@@ -1483,6 +1585,28 @@ def decide(data):
     calls = git_calls(command)
     if calls == []:
         return ("allow", "")
+    rewrite = (always_refused(command) or amend_requested(command)
+               or any(target for target, _index in reset_targets(command)))
+    # An unreadable `cd` is a directory change even when the command will
+    # not parse. An unreadable command that names no `cd` and no `git -C`
+    # runs where the session stands: a trailing quote, or an apostrophe in
+    # a comment, is not another tree.
+    unplaced = unplaceable_directory(data, command, calls)
+    if unplaced and rewrite and plan_present(root, cfg):
+        return ("deny",
+                "this command carries a history rewrite, but its %s cannot "
+                "be read, so the guard cannot establish where Git runs it. "
+                "Use a literal directory, or `git -C <absolute path>`, so "
+                "the rewrite can be checked against that tree's plan."
+                % (unplaced,))
+    if (calls is None and rewrite and plan_present(root, cfg)
+            and unparsed_git_c(command)):
+        return ("deny",
+                "this command carries a history rewrite, but it cannot be "
+                "parsed, so the guard cannot establish where Git runs it. "
+                "A `git -C` inside an unreadable command is not the session's "
+                "directory. Pass a command that parses, with a literal "
+                "`git -C <absolute path>` if the rewrite runs elsewhere.")
     trees = call_trees(data, cfg, root, command, calls)
     roots = command_roots(root, trees)
 
@@ -1513,7 +1637,8 @@ def decide(data):
         return ("allow", "")
     # Refs resolve per working tree, so each question below is asked in the
     # tree of the invocation it is about (`call_trees`); an unparseable
-    # command falls back to the first worktree it reaches, else the project.
+    # command that was not refused above falls back to the first worktree
+    # it reaches, else the project.
     project_git = _config.git_root_dir(root, cfg)
     fallback_git = roots[1] if len(roots) > 1 else project_git
 
