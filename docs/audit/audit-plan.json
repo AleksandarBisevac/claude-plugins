@@ -619,6 +619,12 @@
       "title": "the human maintainer's BUG-14 fix lands",
       "status": "done",
       "shard": "phases/P97.json"
+    },
+    {
+      "id": "P98",
+      "title": "the release guard's speed case holds on any runner",
+      "status": "pending",
+      "shard": "phases/P98.json"
     }
   ],
   "fileIndex": {
@@ -4374,7 +4380,8 @@
       "P86.2",
       "P80.16-rtb",
       "P81.11",
-      "P94.4"
+      "P94.4",
+      "P98.1"
     ],
     ".claude/hooks/arm-release-bypass.py": [
       "P80.11",
