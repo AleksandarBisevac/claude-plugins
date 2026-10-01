@@ -1685,12 +1685,19 @@ def _selftest():
                         "git tag -a v1 -m x" % (wt, tmp2))
             decoy_payload = {"cwd": tmp2, "tool_input": {"command": decoy_cd}}
             got = decide(decoy_cd, tmp2, "s1", payload=decoy_payload)
-            check("gr65 RED-FIRST: a Bash heredoc `cd` cannot move a tag back "
-                  "out of the bug-holding tree its parent shell entered: %r"
+            check("gr65 RED-FIRST: a Bash heredoc makes the release target "
+                  "UNKNOWN rather than guessing which shell runs its `cd`: %r"
                   % (got,),
-                  bool(got) and "BUG-WT" in got
-                  and os.path.realpath(resolved_tree(decoy_payload, tmp2))
-                  == os.path.realpath(wt))
+                  resolved_tree(decoy_payload, tmp2) is None
+                  and bool(got) and "UNKNOWN" in got)
+            eval_cd = ('eval "$(cat <<\'EOF\'\ncd %s\nEOF\n)"\n'
+                       "git tag -a v1 -m x" % wt)
+            eval_payload = {"cwd": tmp2, "tool_input": {"command": eval_cd}}
+            got = decide(eval_cd, tmp2, "s1", payload=eval_payload)
+            check("gr66 RED-FIRST: an eval heredoc that can move the parent "
+                  "shell makes the release target UNKNOWN: %r" % (got,),
+                  resolved_tree(eval_payload, tmp2) is None
+                  and bool(got) and "UNKNOWN" in got)
             shell_cd = ("bash <<'EOF'\ncd /no/such/dir\nEOF\n"
                         "git tag -a v1 -m x")
             shell_cd_payload = {"tool_input": {"command": shell_cd}}

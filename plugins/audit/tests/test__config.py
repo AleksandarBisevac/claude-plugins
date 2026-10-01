@@ -1396,10 +1396,13 @@ def _cases(check):
               is None)
         _heredoc_cd = ("cd %s; bash <<'EOF'\ncd %s\nEOF\ny"
                        % (wlink, wprim))
-        check("tr8b effective_cwd ignores a `cd` in a Bash heredoc because "
-              "that child cannot move the later parent-shell command",
-              M._same_dir(M.effective_cwd(_heredoc_cd, str(wprim)), wlink),
-              repr(M.effective_cwd(_heredoc_cd, str(wprim))))
+        _eval_heredoc = ('eval "$(cat <<\'EOF\'\ncd %s\nEOF\n)"\ny' % wlink)
+        check("tr8b a shell heredoc makes effective_cwd unreadable: it may "
+              "reach a child or the parent through `eval`",
+              M.effective_cwd(_heredoc_cd, str(wprim)) is None
+              and M.effective_cwd(_eval_heredoc, str(wprim)) is None,
+              repr((M.effective_cwd(_heredoc_cd, str(wprim)),
+                    M.effective_cwd(_eval_heredoc, str(wprim)))))
     finally:
         _harness.remove_tree(str(wroot))
 

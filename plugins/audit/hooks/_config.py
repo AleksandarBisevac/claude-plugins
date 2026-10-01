@@ -1318,9 +1318,11 @@ def effective_cwd(cmd, payload_cwd):
 
     ONE PASS, ACCUMULATING, over every non-heredoc clause in the command in the
     order it is written - not the directory change nearest a particular write's
-    own clause. A heredoc feeds its consumer, which is a child process, so a
-    `cd` in its body cannot move the parent shell that runs a later write. That
-    is coarser than a real shell, and coarser on purpose:
+    own clause. Data and interpreter bodies cannot move the parent shell, so
+    they leave that walk. A shell body is unreadable: it may belong to a child
+    process, or reach the current shell through an indirection such as `eval`.
+    That uncertainty ends the walk rather than guessing either destination.
+    This is coarser than a real shell, and coarser on purpose:
     `guard-secrets-read` reasons about the whole command for the shell-write
     grammars and clause-by-clause only for the eval heuristics, and a write's
     position relative to a `cd` is evidence read nowhere else in it. What this may not
@@ -1342,7 +1344,9 @@ def effective_cwd(cmd, payload_cwd):
     if not payload_cwd:
         return None
     current = str(payload_cwd)
-    text, _code, _shell = split_heredocs(cmd)
+    text, _code, shell = split_heredocs(cmd)
+    if shell:
+        return None
     for clause in command_clauses(text):
         m = _DIR_CHANGE_CLAUSE.match(clause)
         if not m:
