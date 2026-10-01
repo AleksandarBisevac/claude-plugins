@@ -1436,7 +1436,7 @@ def call_trees(data, cfg, project, command, calls):
     unparseable rewrite that names neither is the session's, and an
     unparseable read is still one call where the shell stands, because a
     read orphans nothing."""
-    base = _config.effective_cwd(runnable(command), (data or {}).get("cwd"))
+    base = _config.effective_cwd(command, (data or {}).get("cwd"))
     base = base or (data or {}).get("cwd") or ""
     out = []
     for call in (calls if calls is not None else [(None, None, None)]):
@@ -1511,11 +1511,10 @@ def _shell_moves(command):
     """True when a clause of this command starts with cd, pushd or popd.
 
     The analogous question `guard-release.py`'s `_shell_moves` asks when a
-    payload names no `cwd` - analogous, not identical, because the command
-    text each reads is prepared differently: this one is fed `runnable(command)`,
-    which drops a heredoc body destined for a file, as every reading in this
-    file does; `guard-release.py`'s own `_shell_moves` is fed the raw command,
-    so a `cd` spelled inside such a body still reads there as one.
+    payload names no `cwd`. Both readers use `runnable(command)`, which drops
+    a heredoc body destined for a file; their shared `effective_cwd` reader
+    instead accepts raw command text and drops every heredoc body itself,
+    because no such body can move the parent shell.
     `effective_cwd` itself answers None for a missing payload `cwd` no matter
     what the command does - correct for THAT function, which must return an
     actual directory - but leaning on that None here would call every
@@ -1540,7 +1539,7 @@ def unplaceable_directory(data, command, calls):
     """
     cwd = (data or {}).get("cwd")
     if cwd:
-        if _config.effective_cwd(runnable(command), cwd) is None:
+        if _config.effective_cwd(command, cwd) is None:
             return "`cd` or `pushd` target"
     elif _shell_moves(command):
         return "`cd` or `pushd` target"

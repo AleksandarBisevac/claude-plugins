@@ -1394,6 +1394,12 @@ def _cases(check):
               == _spaced
               and M.effective_cwd("cd 'linked worktree && y", str(wprim))
               is None)
+        _heredoc_cd = ("cd %s; bash <<'EOF'\ncd %s\nEOF\ny"
+                       % (wlink, wprim))
+        check("tr8b effective_cwd ignores a `cd` in a Bash heredoc because "
+              "that child cannot move the later parent-shell command",
+              M._same_dir(M.effective_cwd(_heredoc_cd, str(wprim)), wlink),
+              repr(M.effective_cwd(_heredoc_cd, str(wprim))))
     finally:
         _harness.remove_tree(str(wroot))
 

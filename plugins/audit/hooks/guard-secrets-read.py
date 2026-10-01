@@ -2109,7 +2109,7 @@ def _decide_core(data, root, cfg):
         # exactly as it already treats a mark in the target's own text: a
         # destination this process cannot place, reported as unestablished -
         # never guessed to be either inside or outside.
-        cwd = _effective_cwd(runnable, data.get("cwd"))
+        cwd = _effective_cwd(cmd, data.get("cwd"))
         # Judged on the paths the write calls NAME, not on a write shape
         # and a path that merely share a clause. And graded on the same tier
         # the shell arm below is graded on, which it was not — a `.ts` file

@@ -479,7 +479,7 @@ def _session_base(cfg_mod, data, project, command):
     """
     cwd = data.get("cwd")
     if cwd:
-        target = cfg_mod.effective_cwd(cfg_mod.runnable_text(command or ""), cwd)
+        target = cfg_mod.effective_cwd(command or "", cwd)
         if target is None:
             return None
         return target
@@ -1681,6 +1681,16 @@ def _selftest():
                   got is None
                   and os.path.realpath(resolved_tree(data_cwd_payload, tmp2))
                   == os.path.realpath(tmp2))
+            decoy_cd = ("cd %s; bash <<'EOF'\ncd %s\nEOF\n"
+                        "git tag -a v1 -m x" % (wt, tmp2))
+            decoy_payload = {"cwd": tmp2, "tool_input": {"command": decoy_cd}}
+            got = decide(decoy_cd, tmp2, "s1", payload=decoy_payload)
+            check("gr65 RED-FIRST: a Bash heredoc `cd` cannot move a tag back "
+                  "out of the bug-holding tree its parent shell entered: %r"
+                  % (got,),
+                  bool(got) and "BUG-WT" in got
+                  and os.path.realpath(resolved_tree(decoy_payload, tmp2))
+                  == os.path.realpath(wt))
             shell_cd = ("bash <<'EOF'\ncd /no/such/dir\nEOF\n"
                         "git tag -a v1 -m x")
             shell_cd_payload = {"tool_input": {"command": shell_cd}}
