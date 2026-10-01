@@ -1,7 +1,7 @@
 {
   "id": "P96",
   "title": "bug records written by bug-add validate against the published schema",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "A plan whose bugs were filed by bug-add with no repro, expected or actual validates under the published schema (ajv draft2020, CI's manifest validation job) as it does under validate-manifest, and validate-manifest reports every bug value the schema rejects - a warning inside the 3.x line that names 4.0.0 as the release that refuses it, per COMPATIBILITY's additive-validation promise - so the two validators can no longer disagree silently on bug records",
   "testGate": [
@@ -15,7 +15,7 @@
   "blockedBy": [],
   "baseRef": "48e2620c74477eb02a41f821f1faf46fbb9616dc",
   "branch": "audit/p96-bug-records-written-by-bug-add",
-  "mergedAt": null,
+  "mergedAt": "2026-10-01T08:06:15Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -190,5 +190,6 @@
     "runId": "2026-10-01T07:37:23Z.f00ae9",
     "status": "passed",
     "at": "2026-10-01T07:37:23Z"
-  }
+  },
+  "mergedHead": "60372480d8c9af5745ec0b874b679f2f8aa20464"
 }
