@@ -1061,7 +1061,12 @@ def git_calls(command, depth=0):
 # traded a hand-kept table of git's global options for a slightly weaker guard, on
 # input git itself rejects. Recorded here because the next reader will have the
 # same worry, and the probe that settles it is a regex comparison over both.
-_GIT_SUB = (r"\bgit\b(?:\s+(?:-C(?:\s+(?:\"[^\"]*\"|'[^']*'|\S+)|\S+)|-c\s+\S+"
+# A quoted `-C` operand must not also match the unquoted arm. Those two
+# arms matching the same text is what made a failed search retry every
+# split of a long `-C` run, and a hook that does not finish is a hook
+# that does not refuse.
+_GIT_SUB = (r"\bgit\b(?:\s+(?:-C(?:\s+\"[^\"]*\"|\s+'[^']*'|\s+[^\s\"']\S*"
+            r"|[^\s\"']\S+)|-c\s+\S+"
             r"|--(?:git-dir|work-tree|namespace|exec-path)(?:=\S*|\s+\S+)"
             r"|--[a-z][a-z-]*))*\s+")
 
@@ -1425,10 +1430,12 @@ def call_trees(data, cfg, project, command, calls):
     Refs resolve per working tree (`HEAD`, `HEAD~1`, `ORIG_HEAD`), so the tree
     a reset or an amend is asked about is ITS OWN, not the first one the
     command reached: in `git -C <a> status; git -C <b> reset --hard HEAD~1`
-    the `HEAD~1` is `<b>`'s. A `-C` value this cannot resolve, and a command
-    that does not parse, are rejected before this function for a history
-    rewrite while a plan exists. An unparseable read is still one call where
-    the shell stands, because a read orphans nothing."""
+    the `HEAD~1` is `<b>`'s. A `-C` value this cannot resolve, and an
+    unreadable command that still shows a `cd` or a `git -C`, are rejected
+    before this function for a history rewrite while a plan exists. An
+    unparseable rewrite that names neither is the session's, and an
+    unparseable read is still one call where the shell stands, because a
+    read orphans nothing."""
     base = _config.effective_cwd(runnable(command), (data or {}).get("cwd"))
     base = base or (data or {}).get("cwd") or ""
     out = []
@@ -1449,6 +1456,55 @@ def call_trees(data, cfg, project, command, calls):
                 tree = placed["root"]
         out.append((call, tree))
     return out
+
+
+def unparsed_git_c(command):
+    """True when an unreadable command still shows a `git -C`.
+
+    The parse is what places `-C`. Seeing the option and not being able to
+    read the command is the case the session must not be trusted for: the
+    unread operand may name another tree. A trailing quote, or an apostrophe
+    in a comment, names no directory and is not this case.
+    """
+    text = runnable(command)
+    start = 0
+    while True:
+        at = text.find("git", start)
+        if at < 0:
+            return False
+        after = at + 3
+        bounded = ((at == 0 or not text[at - 1].isalnum())
+                   and (after == len(text) or not text[after].isalnum()))
+        if bounded and _c_before_verb(text[after:]):
+            return True
+        start = after
+
+
+def _c_before_verb(rest):
+    """True when `-C` is a global option of the git that `rest` follows."""
+    index, end = 0, len(rest)
+    while index < end and rest[index] in " \t":
+        index += 1
+    while index < end and rest[index] == "-":
+        token_end = index
+        while token_end < end and rest[token_end] not in " \t;|&\n":
+            token_end += 1
+        token = rest[index:token_end]
+        name = token.split("=", 1)[0]
+        if name == "-C" or (name.startswith("-C") and len(name) > 2
+                            and name[2] not in "-="):
+            return True
+        index = token_end
+        while index < end and rest[index] in " \t":
+            index += 1
+        if "=" not in token and name in ("-c", "--git-dir", "--work-tree",
+                                         "--namespace", "--exec-path"):
+            if index < end and rest[index] != "-":
+                while index < end and rest[index] not in " \t;|&\n":
+                    index += 1
+                while index < end and rest[index] in " \t":
+                    index += 1
+    return False
 
 
 def unplaceable_directory(data, command, calls):
@@ -1504,16 +1560,10 @@ def decide(data):
         return ("allow", "")
     rewrite = (always_refused(command) or amend_requested(command)
                or any(target for target, _index in reset_targets(command)))
-    # An unparseable command has no `-C` reading at all. Judging the rewrite
-    # where the session stands is the bug: the unread `-C` may name another
-    # tree, and a plan there is exactly what this guard exists to see.
-    if calls is None and rewrite and plan_present(root, cfg):
-        return ("deny",
-                "this command carries a history rewrite, but it cannot be "
-                "parsed, so the guard cannot establish where Git runs it. "
-                "A `git -C` inside an unreadable command is not the session's "
-                "directory. Pass a command that parses, with a literal "
-                "`git -C <absolute path>` if the rewrite runs elsewhere.")
+    # An unreadable `cd` is a directory change even when the command will
+    # not parse. An unreadable command that names no `cd` and no `git -C`
+    # runs where the session stands: a trailing quote, or an apostrophe in
+    # a comment, is not another tree.
     unplaced = unplaceable_directory(data, command, calls)
     if unplaced and rewrite and plan_present(root, cfg):
         return ("deny",
@@ -1522,6 +1572,14 @@ def decide(data):
                 "Use a literal directory, or `git -C <absolute path>`, so "
                 "the rewrite can be checked against that tree's plan."
                 % (unplaced,))
+    if (calls is None and rewrite and plan_present(root, cfg)
+            and unparsed_git_c(command)):
+        return ("deny",
+                "this command carries a history rewrite, but it cannot be "
+                "parsed, so the guard cannot establish where Git runs it. "
+                "A `git -C` inside an unreadable command is not the session's "
+                "directory. Pass a command that parses, with a literal "
+                "`git -C <absolute path>` if the rewrite runs elsewhere.")
     trees = call_trees(data, cfg, root, command, calls)
     roots = command_roots(root, trees)
 

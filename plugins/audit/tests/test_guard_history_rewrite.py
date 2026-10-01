@@ -32,6 +32,7 @@ import os
 import shlex
 import subprocess
 import sys
+import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
@@ -1143,9 +1144,19 @@ def _cases(check):
                  "deny",
                  "an unparseable command does not place a rewrite in the "
                  "session just because its `-C` could not be read"),
-                ("gw14b", _wt["main"], "git rebase main '", "deny",
-                 "the same refusal when the unreadable command names no "
-                 "`-C` either - the session is still a guess"),
+                ("gw14b", _wt["main"], "git rebase main '", "allow",
+                 "an unparseable rewrite that names no cd and no -C runs "
+                 "where the session stands - a trailing quote is not a "
+                 "directory change"),
+                ("gw14c", _wt["main"],
+                 "git commit --amend -m x # it's ready", "allow",
+                 "an apostrophe in a trailing comment is not a directory "
+                 "change, so the amend is judged in the session"),
+                ("gw14e", _wt["main"],
+                 "git commit --amend -m \"$(cat <<'EOF'\nit's ready\nEOF\n)\"",
+                 "allow",
+                 "the house commit-message form, a quoted heredoc inside "
+                 "a substitution, is not a directory change either"),
                 ("gw14a", _wt["main"], "git -C %s status '" % _q_wt, "allow",
                  "an unparseable command that is not a rewrite stays allowed "
                  "- the mutation that denies every unreadable command"),
@@ -1159,6 +1170,28 @@ def _cases(check):
                                "tool_input": {"command": _cmd}})
             check("%s %s: %s" % (_cid, _want, _what), v == _want,
                   repr((v, why[:160])))
+        _house = "git commit --amend -m \"$(cat <<'EOF'\nit's ready\nEOF\n)\""
+        v, why = M.decide({"tool_name": "Bash", "cwd": _wt["wt"],
+                           "tool_input": {"command": _house}})
+        check("gw14d an unparseable amend in the worktree is refused for "
+              "the amend, not because the guard cannot place it: %r"
+              % ((v, why[:160]),),
+              v == "deny" and "amending would replace HEAD" in why
+              and "cannot establish" not in why)
+        _cd_unread = "cd \"$WT\" && git rebase main '"
+        v, why = M.decide({"tool_name": "Bash", "cwd": _wt["main"],
+                           "tool_input": {"command": _cd_unread}})
+        check("gw14f an unparseable rewrite that does carry an unreadable "
+              "cd is still refused, and the reason names the cd: %r"
+              % ((v, why[:160]),),
+              v == "deny" and "`cd`" in why and "cannot be parsed" not in why)
+        _slow = "git" + (' -C "a"' * 18) + " rebase '"
+        _t0 = time.perf_counter()
+        M.always_refused(_slow)
+        _elapsed = time.perf_counter() - _t0
+        check("gw15 a long run of quoted -C operands in an unparsed "
+              "rewrite is graded promptly: %.3f" % (_elapsed,),
+              _elapsed < 0.05, repr(_elapsed))
         # A SECOND worktree, still at the base commit, so `HEAD~1` does not
         # resolve there: a reset asked about in the wrong tree is a question
         # git cannot answer, and an unanswerable question is an allow.

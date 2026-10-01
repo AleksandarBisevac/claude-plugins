@@ -93,7 +93,12 @@ REFUSAL_PHASE_CAP = 5
 # in the command: a quoted operand may contain spaces, and a tag push carries
 # the same option the tag creation does.
 _BOUNDARY = r"(?:^|[;&|]\s*|\s&&\s*|\s\|\|\s*)\s*"
-_C_OPTS = r"(?:\s+-C(?:\s+(?:\"[^\"]*\"|'[^']*'|\S+)|\S*))*"
+# A quoted operand must not also match the unquoted arm. Those two arms
+# matching the same text is what made a failed search retry every split of
+# a long `-C` run, and a hook that does not finish is a hook that does not
+# refuse. No empty arm: that split is the same retry.
+_C_OPTS = (r"(?:\s+-C(?:\s+\"[^\"]*\"|\s+'[^']*'|\s+[^\s\"']\S*"
+           r"|[^\s\"']\S*))*")
 _GIT_AT = _BOUNDARY + r"git(?P<copts>" + _C_OPTS + r")\s+"
 _TAG_AT = re.compile(_GIT_AT + r"tag\b(?P<rest>[^;&|\n]*)")
 _PUSH_AT = re.compile(_GIT_AT + r"push\b(?P<rest>[^;&|\n]*)")
@@ -105,9 +110,13 @@ _C_OPERAND = re.compile(r"-C(?:\s+(\"[^\"]*\"|'[^']*'|\S+)|\S*)")
 # words of the tag invocation, not a lookahead over the rest of the command:
 # a later `echo -l`, or the same letters inside a quoted message, must not
 # un-publish a tag that was actually created.
-_TAG_LIST = ("-l", "--list", "--contains", "--no-contains", "--points-at",
-             "--merged", "--no-merged", "--sort", "--format", "--column",
-             "--no-column", "--verify", "-v", "-d", "--delete")
+# `--sort`, `--format`, `--column` and `--no-column` do not force list mode.
+# With a tag name beside them, git creates the tag.
+_TAG_FORCE_LIST = ("-l", "--list", "--contains", "--no-contains",
+                   "--points-at", "--merged", "--no-merged")
+_TAG_NOT_CREATE = ("--verify", "-v", "-d", "--delete")
+_TAG_VALUE = ("-m", "-F", "--message", "--file", "--sort", "--format",
+              "-u", "--local-user")
 
 
 def project_dir():
@@ -235,14 +244,26 @@ def _invocation_words(rest):
     return words
 
 
-def _tag_lists(word):
-    """A tag-invocation word that lists, verifies or deletes, rather than creates."""
-    if word in _TAG_LIST:
-        return True
+def _option_name(word):
     if word.startswith("--") and "=" in word:
-        return word.split("=", 1)[0] in _TAG_LIST
-    return (len(word) >= 2 and word[0] == "-" and word[1] == "n"
+        return word.split("=", 1)[0]
+    return word
+
+
+def _forces_list(word):
+    """An option that puts `git tag` in list mode, name or not."""
+    if _option_name(word) in _TAG_FORCE_LIST:
+        return True
+    return (len(word) >= 2 and word[0] == "-" and not word.startswith("--")
+            and word[1] == "n"
             and (len(word) == 2 or word[2:].isdigit()))
+
+
+def _skips_next(word):
+    """True when the next word is this option's value, not a tag name."""
+    if word.startswith("--") and "=" in word:
+        return False
+    return _option_name(word) in _TAG_VALUE
 
 
 def _tag_creates(rest):
@@ -250,14 +271,29 @@ def _tag_creates(rest):
 
     An invocation whose words cannot be read is treated as creating: a release
     guard that cannot tell a list from a create must refuse the create, not
-    wave it through. A bare invocation lists.
+    wave it through. A bare invocation lists. So does one that carries no tag
+    name: `--sort` and `--format` without a name list, and with a name they
+    create. A sort key or a message is not that name.
     """
     words = _invocation_words(rest)
     if words is None:
         return True
     if not words:
         return False
-    return not any(_tag_lists(word) for word in words)
+    if any(_forces_list(word) or _option_name(word) in _TAG_NOT_CREATE
+           for word in words):
+        return False
+    index, total = 0, len(words)
+    while index < total:
+        word = words[index]
+        if _skips_next(word):
+            index += 2
+            continue
+        if word.startswith("-"):
+            index += 1
+            continue
+        return True
+    return False
 
 
 def _unquote(word):
@@ -266,42 +302,47 @@ def _unquote(word):
     return word
 
 
-def _cdir_of(copts):
-    """The last `-C` operand in one git invocation's options.
+def _c_operands(copts):
+    """The `-C` operands of one invocation, in the order git applies them.
 
-    "" when that invocation names none. None when `-C` has no operand. The
-    last one wins, which is what git does with a repeated `-C`.
+    [] when that invocation names none. None when `-C` has no operand.
     """
-    found = list(_C_OPERAND.finditer(copts or ""))
-    if not found:
-        return ""
-    last = found[-1]
-    operand = last.group(1)
-    if operand is None:
-        glued = last.group(0)
-        if glued == "-C":
-            return None
-        return glued[2:]
-    return _unquote(operand)
+    found = []
+    for match in _C_OPERAND.finditer(copts or ""):
+        operand = match.group(1)
+        if operand is None:
+            glued = match.group(0)
+            if glued == "-C":
+                return None
+            found.append(glued[2:])
+            continue
+        found.append(_unquote(operand))
+    return found
 
 
-def _publisher(command):
-    """`(reason, cdir)` of the publishing invocation, or None.
+def _publishers(command):
+    """Every publishing invocation, as `(reason, operands)`.
 
-    `cdir` is that git's `-C` operand, "" when it names none, None when the
-    operand is missing. A `gh` release names no git `-C`. The match is the
-    publishing invocation, never the first `git` word in the command.
+    `operands` is that git's `-C` chain, [] when it names none, None when an
+    operand is missing. A `gh` release names no git `-C`. Each publishing
+    invocation is returned: a later one, in another tree, is still a release.
     """
     text = str(command or "")
+    found = []
     for match in _TAG_AT.finditer(text):
-        if _tag_creates(match.group("rest")):
-            return ("creates a git tag", _cdir_of(match.group("copts")))
+        # The match stops at a separator, including one inside quotes. The
+        # words are read from where the rest starts, so the quote can close;
+        # the reader itself stops at the unquoted separator, and the later
+        # publisher stays a later match.
+        if _tag_creates(text[match.start("rest"):]):
+            found.append(("creates a git tag",
+                          _c_operands(match.group("copts"))))
     for match in _PUSH_AT.finditer(text):
         if _PUSH_PUBLISHES.search(match.group("rest") or ""):
-            return ("pushes a tag", _cdir_of(match.group("copts")))
+            found.append(("pushes a tag", _c_operands(match.group("copts"))))
     if _GH_AT.search(text):
-        return ("publishes a GitHub Release", "")
-    return None
+        found.append(("publishes a GitHub Release", []))
+    return found
 
 
 def publishing(command):
@@ -311,8 +352,8 @@ def publishing(command):
     routinely typed as `git tag -a v1 -m … && git push origin v1`, and a guard
     that only inspected the head of the line would wave the second half through.
     """
-    found = _publisher(command)
-    return found[0] if found else None
+    found = _publishers(command)
+    return found[0][0] if found else None
 
 
 def _effective(project):
@@ -411,20 +452,6 @@ def _hooks_config(project):
     return None
 
 
-def _git_c_directory(command):
-    """The publishing git's `-C` operand, "" when that invocation names none.
-
-    None when the operand is missing. Not the first `git` word, and not a
-    shell split of the whole command: an apostrophe in a comment or a message
-    is not a directory change, and a split that raises on it refuses a
-    release the shell would have run where the session stands.
-    """
-    found = _publisher(command)
-    if found is None:
-        return ""
-    return found[1]
-
-
 def _shell_moves(cfg_mod, command):
     """True when a clause starts with cd, pushd or popd.
 
@@ -439,8 +466,52 @@ def _shell_moves(cfg_mod, command):
     return False
 
 
+def _session_base(cfg_mod, data, project, command):
+    """Where the shell stands for this command, or None when that cannot be read.
+
+    A payload that names no cwd, and a command that does not move the shell,
+    answers to `project`. An unreadable `cd` does not.
+    """
+    cwd = data.get("cwd")
+    if cwd:
+        target = cfg_mod.effective_cwd(command, cwd)
+        if target is None:
+            return None
+        return target
+    if _shell_moves(cfg_mod, command):
+        return None
+    return project
+
+
+def _apply_c_chain(cfg_mod, base, operands):
+    """The directory git uses after each `-C`, or None if one cannot be read.
+
+    Each relative operand joins onto the directory so far; an absolute one
+    replaces it. `.` and `..` are normalised, which is what a later `-C .`
+    means: stay where the previous `-C` landed, not the session. `base` when
+    the invocation names no `-C`.
+    """
+    if operands is None:
+        return None
+    target = base
+    for operand in operands:
+        if not cfg_mod.resolvable_destination(operand):
+            return None
+        if os.path.isabs(operand):
+            target = os.path.normpath(operand)
+        else:
+            target = os.path.normpath(os.path.join(target, operand))
+    return target
+
+
+def _placed_root(cfg_mod, data, project, target):
+    placed = cfg_mod.tree_for(data, target, project=project)
+    root = placed.get("root")
+    return str(root) if root else project
+
+
 def resolved_tree(payload, project):
-    """The tree whose PLAN a release command answers to.
+    """The tree whose PLAN the first publishing invocation answers to.
 
     `_config.tree_for`, asked about THIS COMMAND's own effective working
     directory - never `CLAUDE_PROJECT_DIR` alone. A release typed from a
@@ -454,6 +525,8 @@ def resolved_tree(payload, project):
     silently judge a release where the shell does not run it. A payload that
     names no cwd, and a command that does not move the shell, is not that
     case - it answers to `project`, which is the tree the call was given.
+    `decide` asks the same chain walker of every publishing invocation; this
+    function is the first of them, which is the question its own cases ask.
     """
     cfg_mod = _hooks_config(project)
     if cfg_mod is None:
@@ -463,26 +536,46 @@ def resolved_tree(payload, project):
         return project
     command = (data.get("tool_input") or {}).get("command", "")
     try:
-        cwd = data.get("cwd")
-        if cwd:
-            target = cfg_mod.effective_cwd(command, cwd)
-            if target is None:
-                return None
-        elif _shell_moves(cfg_mod, command):
+        target = _session_base(cfg_mod, data, project, command)
+        if target is None:
             return None
-        else:
-            target = project
-        cdir = _git_c_directory(command)
-        if cdir is None or (cdir and not cfg_mod.resolvable_destination(cdir)):
+        publishers = _publishers(command)
+        operands = publishers[0][1] if publishers else []
+        target = _apply_c_chain(cfg_mod, target, operands)
+        if target is None:
             return None
-        if cdir:
-            target = (cdir if os.path.isabs(cdir)
-                      else os.path.join(target, cdir))
-        placed = cfg_mod.tree_for(data, target, project=project)
+        return _placed_root(cfg_mod, data, project, target)
     except Exception:
         return project
-    root = placed.get("root")
-    return str(root) if root else project
+
+
+def _release_trees(payload, project, command, publishers):
+    """`(reason, tree)` for every publishing invocation.
+
+    `tree` is None when that invocation's directory cannot be read. A call
+    with no payload answers to `project`, which is the tree it was given.
+    """
+    paired = [(why, project) for why, _operands in publishers]
+    if not payload:
+        return paired
+    cfg_mod = _hooks_config(project)
+    data = payload if isinstance(payload, dict) else {}
+    if cfg_mod is None or not data:
+        return paired
+    try:
+        base = _session_base(cfg_mod, data, project, command)
+        if base is None:
+            return [(why, None) for why, _operands in publishers]
+        out = []
+        for why, operands in publishers:
+            target = _apply_c_chain(cfg_mod, base, operands)
+            if target is None:
+                out.append((why, None))
+                continue
+            out.append((why, _placed_root(cfg_mod, data, project, target)))
+        return out
+    except Exception:
+        return paired
 
 
 def _read_plan(mio, project):
@@ -754,24 +847,28 @@ def decide(command, project, session_id, now=None, payload=None):
     pure-ish function so its cases need no hook payload.
 
     `payload` is OPTIONAL and used for exactly one thing: resolving which
-    TREE this release answers to, through `resolved_tree`. A case passing no
-    `payload` reads `project` as the tree directly."""
-    why = publishing(command)
-    if not why:
+    tree each publishing invocation answers to. A case passing no `payload`
+    reads `project` as the tree directly. One clean publisher does not
+    answer for a later one.
+    """
+    publishers = _publishers(command)
+    if not publishers:
         return None
-    tree = resolved_tree(payload, project) if payload else project
-    if tree is None:
+    trees = _release_trees(payload, project, command, publishers)
+    if any(tree is None for _why, tree in trees):
         return ("Release target is UNKNOWN: the command's directory change "
                 "cannot be read, so this guard cannot establish which plan "
                 "the publishing command answers to. Use a literal directory "
                 "and retry.")
-    bugs, bug_problem = read_bugs(tree)
-    held, phase_problem = read_held_phases(tree)
-    if not (bugs or bug_problem or held or phase_problem):
-        return None
-    if bypass_armed(project, session_id, now):
-        return None
-    return refusal(why, bugs, bug_problem, held, phase_problem)
+    for why, tree in trees:
+        bugs, bug_problem = read_bugs(tree)
+        held, phase_problem = read_held_phases(tree)
+        if not (bugs or bug_problem or held or phase_problem):
+            continue
+        if bypass_armed(project, session_id, now):
+            return None
+        return refusal(why, bugs, bug_problem, held, phase_problem)
+    return None
 
 
 def main():
@@ -845,6 +942,29 @@ def _selftest():
           publishing('git tag -a v1 -m x && echo -l'))
     check("gr8f a list flag inside a quoted message does not un-publish",
           publishing('git tag -a v1 -m "notes -l"'))
+    check("gr8g --sort, --format, --column and --no-column with a tag "
+          "name create a tag; without a name they list",
+          publishing("git tag --sort=v:refname v1")
+          and publishing("git tag --format='%(refname)' v1")
+          and publishing("git tag --column v1")
+          and publishing("git tag --no-column v1")
+          and publishing("git tag --sort=v:refname") is None
+          and publishing("git tag --format='%(refname)'") is None
+          and publishing("git tag --column") is None
+          and publishing("git tag --no-column") is None)
+    check("gr8h a list pattern whose quotes contain a separator is not "
+          "a tag creation, while a name containing one still is",
+          publishing("git tag -l 'v1;x'") is None
+          and publishing('git tag -l "v1&x"') is None
+          and publishing("git tag -l 'v1|x'") is None
+          and publishing("git tag -a 'v1;x' -m m"))
+    _slow = "git" + (' -C "a"' * 20) + " status"
+    _t0 = time.perf_counter()
+    publishing(_slow)
+    _elapsed = time.perf_counter() - _t0
+    check("gr60 a long run of quoted -C operands that do not publish "
+          "is graded promptly: %.3f" % (_elapsed,),
+          _elapsed < 0.05, repr(_elapsed))
     check("gr9 reading releases is not publishing",
           not publishing("gh release view v2.0.1")
           and not publishing("gh release list"))
@@ -1424,6 +1544,46 @@ def _selftest():
             check("gr55 a tag push with `-C` on a later git answers to that "
                   "tree: %r" % (got,),
                   bool(got) and "BUG-WT" in got)
+            second = "git tag -a v1 -m x && git -C %s tag -a v2 -m y" % qwt
+            got = decide(second, tmp2, "s1", payload={
+                "cwd": tmp2, "tool_input": {"command": second}})
+            check("gr61 a second tag, in another tree, is judged too: %r"
+                  % (got,),
+                  bool(got) and "BUG-WT" in got)
+            both_clean = "git tag -a v1 -m x && git tag -a v2 -m y"
+            got = decide(both_clean, tmp2, "s1", payload={
+                "cwd": tmp2, "tool_input": {"command": both_clean}})
+            check("gr61b two tags in the clean session are allowed - the "
+                  "mutation that refuses every compound command: %r" % (got,),
+                  got is None)
+            second_push = ("git tag -a v1 -m x && git -C %s push origin "
+                           "v1.2.3" % qwt)
+            got = decide(second_push, tmp2, "s1", payload={
+                "cwd": tmp2, "tool_input": {"command": second_push}})
+            check("gr61c a later tag push into another tree is judged too: "
+                  "%r" % (got,),
+                  bool(got) and "BUG-WT" in got)
+            unread_second = ('git tag -a v1 -m x && git -C "$WT" tag -a '
+                             'v2 -m y')
+            got = decide(unread_second, tmp2, "s1", payload={
+                "cwd": tmp2, "tool_input": {"command": unread_second}})
+            check("gr61d an unreadable -C on a later publisher is UNKNOWN, "
+                  "not the first publisher's clean tree: %r" % (got,),
+                  bool(got) and "UNKNOWN" in got)
+            chain = "git -C %s -C . tag -a v1 -m x" % qwt
+            got = decide(chain, tmp2, "s1", payload={
+                "cwd": tmp2, "tool_input": {"command": chain}})
+            check("gr62 a relative -C resolves against the previous -C, "
+                  "not the session: %r" % (got,),
+                  bool(got) and "BUG-WT" in got)
+            qtmp = "'" + tmp2.replace("'", "'\\''") + "'"
+            replaced = "git -C %s -C %s tag -a v1 -m x" % (qwt, qtmp)
+            got = decide(replaced, tmp2, "s1", payload={
+                "cwd": tmp2, "tool_input": {"command": replaced}})
+            check("gr62b an absolute later -C replaces the earlier one - "
+                  "the mutation that always follows the first -C: %r"
+                  % (got,),
+                  got is None)
             spaced = wt + " space"
             subprocess.run(git + ["worktree", "add", "-b", "gr-space", spaced],
                           cwd=tmp2, check=True, capture_output=True, timeout=30)
