@@ -623,7 +623,7 @@
     {
       "id": "P98",
       "title": "the release guard's speed case holds on any runner",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P98.json"
     }
   ],
@@ -3465,7 +3465,8 @@
       "P85.1",
       "P80.8",
       "P80.15-rtb",
-      "P94.1"
+      "P94.1",
+      "P98.2-yie"
     ],
     "plugins/audit/tests/test__panel_write.py": [
       "P18.7",
@@ -3625,7 +3626,8 @@
       "P73.2-9h1",
       "P73.3-9h1",
       "P74.10-qq5",
-      "P81.10"
+      "P81.10",
+      "P98.2-yie"
     ],
     "plugins/audit/tests/test_audit_lock.py": [
       "P34.2",
@@ -3879,7 +3881,8 @@
       "P89.1",
       "P94.4",
       "P95.1",
-      "P97.1"
+      "P97.1",
+      "P98.2-yie"
     ],
     "plugins/audit/tests/test_guard_secrets_read.py": [
       "P22.6",
@@ -4381,7 +4384,8 @@
       "P80.16-rtb",
       "P81.11",
       "P94.4",
-      "P98.1"
+      "P98.1",
+      "P98.2-yie"
     ],
     ".claude/hooks/arm-release-bypass.py": [
       "P80.11",
