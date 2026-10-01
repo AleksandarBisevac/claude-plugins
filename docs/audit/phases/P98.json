@@ -20,14 +20,30 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P98-R1",
+        "severity": "med",
+        "file": "plugins/audit/tests/test_guard_history_rewrite.py (gw15)",
+        "issue": "gw15, the sibling case of the same backtracking fix in guard-history-rewrite, still asserts an absolute wall-clock bound (_elapsed < 0.05) on a run of quoted -C operands, so a slow runner can turn it red the way gr60 went red; the fix was applied to one instance of the class.",
+        "resolution": "Rewrite gw15 as gr60 now is - an interleaved min-of-N ratio between two operand counts, an unresolved timing failing, red-first against the code before the fix - and sweep the suites for any other absolute wall-clock bound."
+      },
+      {
+        "id": "P98-R2",
+        "severity": "low",
+        "file": ".claude/hooks/guard-release.py (gr60 comment)",
+        "issue": "The comment says a quadratic re-scan lands as far above the bound as the linear reading lands below, which holds only when the quadratic's per-operand cost is comparable to the call's fixed cost; a measured quadratic mutation gave 6.95-7.21 against the bound of 6.",
+        "resolution": "Say what the bound guarantees: red against backtracking by orders of magnitude, and against a quadratic only when its per-operand cost is comparable to the call's fixed cost."
+      }
+    ],
+    "outcome": "[findings: 2 - 0 high, 1 med, 1 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P98.1",
       "title": "gr60 measures growth, not seconds",
-      "status": "in_progress",
+      "status": "done",
       "description": "guard-release.py's gr60 asserts a wall-clock bound (_elapsed < 0.05) on grading a command with a long run of quoted -C operands; windows-latest measured 0.137 (CI run 36834328047). The property the case guards is that grading does not blow up with the operand count; assert that by a measure independent of the machine's speed, red against the pre-fix behaviour of 536f017a",
       "files": [
         ".claude/hooks/guard-release.py"
@@ -55,18 +71,75 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "f24beec7",
+      "outcome": {
+        "technical": "gr60 rewritten as a min-of-N interleaved timing ratio, bound 6.",
+        "descriptive": "gr60 no longer depends on the runner's speed: it is green under heavy load and red against the backtracking regex the fix removed."
+      },
+      "startedAt": "2026-10-01T08:21:44Z",
+      "completedAt": "2026-10-01T08:37:43Z",
+      "verifiedBy": [
+        "task gate run 2026-10-01T08:37:01Z.f38ca9 green; orchestrator ran the probe: the pre-fix regex and a quadratic re-scan both turn gr60 red",
+        "sha restored; reviewer measured ratio about 2920 on the pre-fix file and 3.2-3.4 on current code under load"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-01T08:37:01Z.f38ca9",
+        "status": "passed",
+        "at": "2026-10-01T08:37:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "f24beec7",
+        "at": "2026-10-01T08:37:43Z",
+        "basis": "gr60 times publishing() at 4 and 16 quoted -C operands, min of 30 interleaved samples each, and asserts the ratio below 6; an unresolved short timing fails; only the selftest block changed"
+      }
+    },
+    {
+      "id": "P98.2-yie",
+      "title": "no case asserts how fast the machine is",
+      "status": "in_progress",
+      "description": "gw15 (test_guard_history_rewrite.py), the sibling of gr60 from the same backtracking fix, still asserts _elapsed < 0.05 wall-clock; rewrite it as gr60 now is, correct gr60's comment to what its bound guarantees, and judge the other elapsed-time assertions in the suites (test_audit_journal g2, test__panel_state's memo comparison) by the same rule: a bound that depends on the machine's speed becomes a ratio or a deterministic count",
+      "files": [
+        "plugins/audit/tests/test_guard_history_rewrite.py",
+        ".claude/hooks/guard-release.py",
+        "plugins/audit/tests/test_audit_journal.py",
+        "plugins/audit/tests/test__panel_state.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_guard_history_rewrite.py: gw15 shows the history guard's reading of a long run of quoted -C operands grows no faster than the command, independent of machine speed, and goes red against the code before the fix"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-01T08:21:44Z",
+      "startedAt": "2026-10-01T08:38:28Z",
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-10-01T08:37:01Z.f38ca9",
+        "runId": "2026-10-01T08:50:31Z.5d13e4",
         "status": "passed",
-        "at": "2026-10-01T08:37:01Z"
+        "at": "2026-10-01T08:50:31Z"
       }
     }
   ],

@@ -1198,13 +1198,37 @@ def _cases(check):
               "not evidence of an unplaced cd either: %r"
               % ((v, why[:160]),),
               v == "allow")
-        _slow = "git" + (' -C "a"' * 18) + " rebase '"
-        _t0 = time.perf_counter()
-        M.always_refused(_slow)
-        _elapsed = time.perf_counter() - _t0
+        # How grading GROWS with the run of quoted -C operands, not how long
+        # it takes: an absolute bound measures the machine. The two sizes are
+        # timed interleaved and the fastest sample of each kept, so a slow
+        # runner or a scheduler stall inflates both sides or neither. The
+        # trailing quote never closes, so the command is unparsed and graded
+        # by the regex fallback, which is where the backtracking lived.
+        def _rewrite_grading_time(operands):
+            command = "git" + (' -C "a"' * operands) + " rebase '"
+            start = time.perf_counter()
+            M.always_refused(command)
+            return time.perf_counter() - start
+
+        _short, _long = [], []
+        for _ in range(30):
+            _short.append(_rewrite_grading_time(4))
+            _long.append(_rewrite_grading_time(16))
+        _base, _grown = min(_short), min(_long)
+        _ratio = _grown / _base if _base > 0 else None
+        # What a bound of six guarantees at four times the operands: red
+        # against the backtracking regex, which grows by orders of magnitude
+        # here; red against a quadratic only when its per-operand cost is
+        # comparable to the call's fixed cost - a cheaper quadratic can stay
+        # under it.
         check("gw15 a long run of quoted -C operands in an unparsed "
-              "rewrite is graded promptly: %.3f" % (_elapsed,),
-              _elapsed < 0.05, repr(_elapsed))
+              "rewrite is graded without backtracking, measured as a ratio "
+              "so the machine's speed cancels out",
+              _ratio is not None and _ratio < 6,
+              "fastest at 4 operands %r s, at 16 %r s, ratio %s"
+              % (_base, _grown,
+                 "unmeasurable: the timer did not resolve the short run"
+                 if _ratio is None else "%.2f" % (_ratio,)))
         # A SECOND worktree, still at the base commit, so `HEAD~1` does not
         # resolve there: a reset asked about in the wrong tree is a question
         # git cannot answer, and an unanswerable question is an allow.

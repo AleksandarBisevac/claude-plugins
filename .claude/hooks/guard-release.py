@@ -974,14 +974,13 @@ def _selftest():
         _long.append(_grading_time(16))
     _base, _grown = min(_short), min(_long)
     _ratio = _grown / _base if _base > 0 else None
-    # Four times the operands: linear work grows at most fourfold, quadratic
-    # work up to sixteenfold, the backtracking regex by thousands. A call's
-    # fixed cost pulls both measured ratios below those ceilings, so the bound
-    # is six rather than their midpoint of eight: a re-scan per operand lands
-    # above it, as far from it as the linear reading lands below.
+    # What a bound of six guarantees at four times the operands: red against
+    # the backtracking regex, which grows by orders of magnitude here; red
+    # against a quadratic only when its per-operand cost is comparable to the
+    # call's fixed cost - a cheaper quadratic can stay under it.
     check("gr60 a long run of quoted -C operands that do not publish is "
-          "graded in time that grows linearly with the run, measured as a "
-          "ratio so the machine's speed cancels out",
+          "graded without backtracking, measured as a ratio so the "
+          "machine's speed cancels out",
           _ratio is not None and _ratio < 6,
           "fastest at 4 operands %r s, at 16 %r s, ratio %s"
           % (_base, _grown,
