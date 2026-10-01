@@ -1,0 +1,74 @@
+{
+  "id": "P97",
+  "title": "the human maintainer's BUG-14 fix lands",
+  "status": "pending",
+  "description": "Lands fix/bug-14 (ff194c30, aad1aa87, 536f017a, e3afc4ae, bbc0be38), already reviewed clean across four rounds by the orchestrator's audit-reviewer agent. The fix is the human maintainer's; this phase's own work is the landing bookkeeping (SECURITY.md, bug close, review record, sign-off, merge) - no new guard code is written in this phase.",
+  "desiredOutcome": "BUG-14 is closed: every guard that could not place a cd/pushd/popd/-C target, or that treated a missing payload cwd as evidence the shell never moved, now answers unplaceable rather than falling back to the session",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P97.1",
+      "title": "BUG-14's fix lands, and SECURITY.md, the CHANGELOG and the bug record describe it",
+      "status": "pending",
+      "description": "Merge branch fix/bug-14 (ff194c30, aad1aa87, 536f017a, e3afc4ae, bbc0be38 - the\nmaintainer's fix, reviewed clean across four rounds) into this phase's branch.\nThen correct the documents to what the code does: SECURITY.md gains the\nunplaceable-target behaviour (a cd/pushd/popd/-C target that cannot be read\nnow answers unplaceable rather than falling back to the session or project),\nand that a payload naming no cwd at all is judged by whether the command\nmoves the shell, not treated as evidence it did not. The CHANGELOG entry\nsays the same. Complete the BUG-14 record: taskId this task, fixedIn the\nfixing commit, the full files list, a note recording the four review rounds\nand that BUG-15 (guard-release's heredoc-blind _shell_moves, found during\nround 4) is filed separately rather than folded into this bug, since it is\na different file and a different, pre-existing defect. Gate: the history\nguard suite, the full sweep, bench-hooks --gate, check-committed-pii.",
+      "files": [
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/tests/test_guard_history_rewrite.py",
+        "SECURITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ],
+  "area": "guards"
+}
