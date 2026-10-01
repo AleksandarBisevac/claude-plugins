@@ -21,10 +21,11 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [],
+    "outcome": "no review skill configured for this area; tests are the signer. The guard code itself was reviewed four times before this phase existed."
   },
-  "summary": null,
+  "summary": "BUG-14 is closed. The human maintainer's fix (fix/bug-14: ff194c30, aad1aa87, 536f017a, e3afc4ae, bbc0be38) merged into this phase, reviewed clean by the orchestrator's audit-reviewer agent across four rounds (findings from rounds 1-3 each fixed by the next commit; round 4 clean, with one pre-existing, unrelated defect in guard-release.py's own _shell_moves found and filed separately as BUG-15). SECURITY.md and CHANGELOG.md now describe the fixed behaviour: every guard answers unplaceable rather than falling back to the session or project when a cd/pushd/popd/-C target cannot be read, and a payload naming no working directory is judged by whether the command moves the shell, not treated as evidence it did not. The journal recorder's own session-directory fallback is unchanged on purpose, since it is advisory. Phase gate green on all 8 steps; invariants clean.",
   "tasks": [
     {
       "id": "P97.1",
@@ -83,5 +84,10 @@
     }
   ],
   "area": "guards",
-  "startedAt": "2026-10-01T06:56:03Z"
+  "startedAt": "2026-10-01T06:56:03Z",
+  "testEvidence": {
+    "runId": "2026-10-01T07:26:17Z.3a4e6f",
+    "status": "passed",
+    "at": "2026-10-01T07:26:17Z"
+  }
 }
