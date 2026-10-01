@@ -29,7 +29,7 @@
     {
       "id": "P97.1",
       "title": "BUG-14's fix lands, and SECURITY.md, the CHANGELOG and the bug record describe it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Merge branch fix/bug-14 (ff194c30, aad1aa87, 536f017a, e3afc4ae, bbc0be38 - the\nmaintainer's fix, reviewed clean across four rounds) into this phase's branch.\nThen correct the documents to what the code does: SECURITY.md gains the\nunplaceable-target behaviour (a cd/pushd/popd/-C target that cannot be read\nnow answers unplaceable rather than falling back to the session or project),\nand that a payload naming no cwd at all is judged by whether the command\nmoves the shell, not treated as evidence it did not. The CHANGELOG entry\nsays the same. Complete the BUG-14 record: taskId this task, fixedIn the\nfixing commit, the full files list, a note recording the four review rounds\nand that BUG-15 (guard-release's heredoc-blind _shell_moves, found during\nround 4) is filed separately rather than folded into this bug, since it is\na different file and a different, pre-existing defect. Gate: the history\nguard suite, the full sweep, bench-hooks --gate, check-committed-pii.",
       "files": [
         "plugins/audit/hooks/guard-history-rewrite.py",
@@ -60,14 +60,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "cccc000bd86a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "merged fix/bug-14 (ff194c30..bbc0be38, reviewed clean across four rounds); SECURITY.md and CHANGELOG.md describe the unplaceable-target behaviour and the journal recorder's unchanged advisory fallback; BUG-14 record completed with fixedIn pinned to bbc0be38",
+        "descriptive": "BUG-14 is fixed: the guards answer unplaceable, and no payload cwd is judged by whether the command moves the shell, not treated as evidence it did not"
       },
       "startedAt": "2026-10-01T06:56:03Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-01T07:19:06Z",
+      "verifiedBy": [
+        "history guard selftest 273/273",
+        "release guard selftest 90/90",
+        "full sweep",
+        "check-committed-pii",
+        "manifest valid"
+      ],
       "bugId": "BUG-14",
       "testEvidence": {
         "runId": "2026-10-01T07:18:45Z.22a841",
