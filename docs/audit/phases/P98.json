@@ -19,7 +19,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P98-R1",
@@ -40,9 +40,9 @@
         "commit": "48a9aabc"
       }
     ],
-    "outcome": "[findings: 2 - 0 high, 1 med, 1 low; 2 with a recorded fix commit]"
+    "outcome": "One review round: one med (gw15, the same wall-clock class) and one low (gr60's comment overclaimed a quadratic guarantee), both resolved by P98.2 in 48a9aabc, plus gr60's label corrected. Task gates and phase gate 2026-10-01T08:52:56Z.097839 green; verify.sh VERIFY OK; invariants clean. [findings: 2 - 0 high, 1 med, 1 low; 2 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "Neither guard's speed case measures the machine any more: gr60 (guard-release) and gw15 (history guard) assert that grading a long run of quoted -C operands grows no faster than the command, as a ratio of the fastest of interleaved samples at two sizes, red against the backtracking regexes the BUG-14 fix removed; every other elapsed-time assertion in the tree judged and left as a hang bound or a sleep discriminator. Test-only: no guard reading code changed.",
   "tasks": [
     {
       "id": "P98.1",
@@ -156,5 +156,10 @@
       }
     }
   ],
-  "startedAt": "2026-10-01T08:21:44Z"
+  "startedAt": "2026-10-01T08:21:44Z",
+  "testEvidence": {
+    "runId": "2026-10-01T08:52:56Z.097839",
+    "status": "passed",
+    "at": "2026-10-01T08:52:56Z"
+  }
 }
