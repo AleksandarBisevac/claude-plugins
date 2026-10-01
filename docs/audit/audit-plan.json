@@ -617,7 +617,7 @@
     {
       "id": "P97",
       "title": "the human maintainer's BUG-14 fix lands",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P97.json"
     }
   ],
@@ -4892,7 +4892,7 @@
     {
       "id": "BUG-14",
       "title": "the guards judge a command where the shell does not run it when a cd or -C target cannot be placed",
-      "status": "open",
+      "status": "fixed",
       "severity": "high",
       "reportedAt": "2026-09-29T23:47:13Z",
       "reportedBy": null,
@@ -4906,9 +4906,9 @@
         ".claude/hooks/guard-release.py",
         "plugins/audit/hooks/journal-writes.py"
       ],
-      "taskId": null,
-      "fixedIn": null,
-      "notes": null
+      "taskId": "P97.1",
+      "fixedIn": "bbc0be38",
+      "notes": "Fixed by the human maintainer on branch fix/bug-14 (ff194c30, aad1aa87, 536f017a, e3afc4ae, bbc0be38): a cd/pushd/popd/-C target this cannot place, and a payload naming no cwd at all, both answer unplaceable now instead of falling back to the session or project; gw12-gw15 and gw14b-gw14h pin it, and guard-release's own selftest covers the release guard's half. Reviewed four times until clean and landed through P97 (task P97.1). A heredoc-blind asymmetry in guard-release's own _shell_moves, found during the fourth review, is BUG-15 - a different, pre-existing defect in a different file, filed separately rather than folded into this one."
     },
     {
       "id": "BUG-15",
