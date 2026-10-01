@@ -199,11 +199,23 @@ leaves the directory unresolvable, so no reader invents a location the shell may
 use. A bracket class is not one of those marks, and is read as a literal directory
 name.
 
-Open and tracked as BUG-14: what a caller does when that reading cannot place a
-directory change. The history guard, the release guard and the journal recorder
-fall back to the session's own directory, and the history guard places a `-C`
-value it cannot resolve in the project; `guard-secrets-read` reports a relative
-write target after it as unestablished instead of placing it.
+**When that reading cannot place a directory change at all, every guard answers
+unplaceable rather than inventing a location the shell may not stand in.** A
+target held in a variable, a home shorthand, `cd -`, a bare `cd`, `popd`, an
+unbalanced quote, or a `-C` value this cannot read all leave the shell's own
+directory unknown. The history guard refuses a rewrite it cannot place instead
+of judging it in the session or the project, and the same is true of a `-C`
+operand the release guard cannot resolve, including a later one in a chain that
+joins onto an earlier, resolvable `-C` the way git itself resolves it;
+`guard-secrets-read` already reported a relative write target after such a `cd`
+as unestablished rather than placing it. **A payload naming no working
+directory at all is judged by whether the command itself moves the shell** —
+`cd`, `pushd` or `popd` — never answered as if a silent payload were evidence
+the shell stood still; a command that does not move the shell still answers to
+the project as it always did. The journal recorder is the one exception, kept
+on purpose: it is advisory, not a guard, so it keeps placing its rows in the
+session's own directory when a `cd` cannot be placed, the same fail-open this
+file's own table asks of advisory paths.
 
 **Every `git` word counts, prose included, and that over-refusal is deliberate.** This
 is not a command-position reader: `git` is an invocation wherever it sits in a command,

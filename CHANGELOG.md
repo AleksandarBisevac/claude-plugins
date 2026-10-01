@@ -699,6 +699,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   literal. The reading is shared, so the history guard's Git operations, the release guard's
   release commands, `guard-secrets-read`'s relative write targets and the journal recorder's
   rows are all placed in the directory the shell entered.
+- **A directory change this cannot place at all is answered unplaceable, not the session or
+  the project (BUG-14).** A target held in a variable, a home shorthand, `cd -`, a bare `cd`,
+  `popd`, an unbalanced quote, and a `-C` value this cannot read, all left the history guard
+  judging a rewrite where the shell did not run it, and the release guard judging a release the
+  same way; a payload naming no working directory at all was treated as evidence the shell never
+  moved, rather than as a question still open. Both guards now refuse rather than guess. The
+  release guard also judges every publishing invocation in a command, not only the first, and
+  resolves a `-C` chain the way git does - each relative operand joining onto the one before it.
+  The journal recorder is unchanged on purpose: it is advisory, and keeps placing its rows in the
+  session's own directory when a `cd` cannot be placed.
 - **Plan commands run under one POSIX `sh` on every platform, and are refused rather than
   handed to `cmd.exe`.** `run-test-gate.py` spawned gate steps through `shell=True`, which is
   `cmd.exe` on Windows and reads none of a plan's `export`, single quotes or `${VAR}` while
