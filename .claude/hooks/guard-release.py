@@ -320,28 +320,33 @@ def _c_operands(copts):
     return found
 
 
-def _publishers(command):
+def _publishers(command, cfg_mod=None):
     """Every publishing invocation, as `(reason, operands)`.
 
     `operands` is that git's `-C` chain, [] when it names none, None when an
     operand is missing. A `gh` release names no git `-C`. Each publishing
     invocation is returned: a later one, in another tree, is still a release.
+
+    A clause begins where a shell can begin a command. Matching only there
+    keeps a `git tag` example inside a quoted argument from reading as a
+    publisher, while `command_clauses` still separates every live publisher.
+    `runnable_text` removes heredoc data before either reader sees it.
     """
-    text = str(command or "")
     found = []
-    for match in _TAG_AT.finditer(text):
-        # The match stops at a separator, including one inside quotes. The
-        # words are read from where the rest starts, so the quote can close;
-        # the reader itself stops at the unquoted separator, and the later
-        # publisher stays a later match.
-        if _tag_creates(text[match.start("rest"):]):
+    cfg_mod = cfg_mod or _hooks_config(project_dir())
+    text = str(command or "")
+    clauses = (cfg_mod.command_clauses(cfg_mod.runnable_text(text))
+               if cfg_mod is not None else [text])
+    for clause in clauses:
+        match = _TAG_AT.match(clause)
+        if match and _tag_creates(clause[match.start("rest"):]):
             found.append(("creates a git tag",
                           _c_operands(match.group("copts"))))
-    for match in _PUSH_AT.finditer(text):
-        if _PUSH_PUBLISHES.search(match.group("rest") or ""):
+        match = _PUSH_AT.match(clause)
+        if match and _PUSH_PUBLISHES.search(match.group("rest") or ""):
             found.append(("pushes a tag", _c_operands(match.group("copts"))))
-    if _GH_AT.search(text):
-        found.append(("publishes a GitHub Release", []))
+        if _GH_AT.match(clause):
+            found.append(("publishes a GitHub Release", []))
     return found
 
 
@@ -459,7 +464,7 @@ def _shell_moves(cfg_mod, command):
     payload cwd is unknown only when that walk would have had a directory
     change to follow. A comment's apostrophe must not count as one.
     """
-    for clause in cfg_mod.command_clauses(command or ""):
+    for clause in cfg_mod.command_clauses(cfg_mod.runnable_text(command or "")):
         parts = clause.split(None, 1)
         if parts and parts[0].lower() in ("cd", "pushd", "popd"):
             return True
@@ -539,7 +544,7 @@ def resolved_tree(payload, project):
         target = _session_base(cfg_mod, data, project, command)
         if target is None:
             return None
-        publishers = _publishers(command)
+        publishers = _publishers(command, cfg_mod)
         operands = publishers[0][1] if publishers else []
         target = _apply_c_chain(cfg_mod, target, operands)
         if target is None:
@@ -991,6 +996,19 @@ def _selftest():
           and not publishing("gh release list"))
     check("gr10 the words inside a commit message do not trip it",
           not publishing('git commit -m "prepare gh release create notes"'))
+    quoted_publishers = (
+        "echo '; git tag -a v1 -m x'",
+        'echo "; git tag -a v1 -m x"',
+        "cat > note.txt <<'EOF'\necho '; git tag -a v1 -m x'\nEOF",
+        'python3 - <<\'PY\'\nprint("; git tag -a v1 -m x")\nPY',
+    )
+    check("gr63 RED-FIRST: a publisher-looking phrase in single quotes, "
+          "double quotes, file data or Python source is not a publisher: %r"
+          % ([_publishers(command) for command in quoted_publishers],),
+          all(not _publishers(command) for command in quoted_publishers))
+    check("gr63b ALLOW-TWIN: a tag after a live separator remains a publisher",
+          publishing("echo ready; git tag -a v1 -m x")
+          == "creates a git tag")
 
     # --- the rule, end to end -------------------------------------------------
     tmp = tempfile.mkdtemp(prefix="guard-release-")
@@ -1643,6 +1661,24 @@ def _selftest():
                   got is None
                   and os.path.realpath(resolved_tree(payload_nocwd, tmp2))
                   == os.path.realpath(tmp2))
+            file_data_cd = ("cat > note.txt <<'EOF'\ncd /no/such/dir\nEOF\n"
+                            "git tag -a v1 -m x")
+            data_cd_payload = {"tool_input": {"command": file_data_cd}}
+            got = decide(file_data_cd, tmp2, "s1", payload=data_cd_payload)
+            check("gr64 RED-FIRST: a no-cwd payload whose file-data heredoc "
+                  "names `cd` stays placeable and allows the clean release: %r"
+                  % (got,),
+                  got is None
+                  and os.path.realpath(resolved_tree(data_cd_payload, tmp2))
+                  == os.path.realpath(tmp2))
+            shell_cd = ("bash <<'EOF'\ncd /no/such/dir\nEOF\n"
+                        "git tag -a v1 -m x")
+            shell_cd_payload = {"tool_input": {"command": shell_cd}}
+            got = decide(shell_cd, tmp2, "s1", payload=shell_cd_payload)
+            check("gr64b ALLOW-TWIN: the identical `cd` fed to Bash leaves "
+                  "the no-cwd release target UNKNOWN: %r" % (got,),
+                  resolved_tree(shell_cd_payload, tmp2) is None
+                  and bool(got) and "UNKNOWN" in got)
             moved_nocwd = {"tool_input": {
                 "command": "cd /no/such/dir && git tag -a v1 -m x"}}
             check("gr57b ...and a payload with no cwd that DOES move the "
