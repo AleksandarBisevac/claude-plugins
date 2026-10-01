@@ -26,17 +26,21 @@
         "severity": "med",
         "file": "plugins/audit/tests/test_guard_history_rewrite.py (gw15)",
         "issue": "gw15, the sibling case of the same backtracking fix in guard-history-rewrite, still asserts an absolute wall-clock bound (_elapsed < 0.05) on a run of quoted -C operands, so a slow runner can turn it red the way gr60 went red; the fix was applied to one instance of the class.",
-        "resolution": "Rewrite gw15 as gr60 now is - an interleaved min-of-N ratio between two operand counts, an unresolved timing failing, red-first against the code before the fix - and sweep the suites for any other absolute wall-clock bound."
+        "resolution": "fixed in P98.2-yie (48a9aabc): Rewrite gw15 as gr60 now is - an interleaved min-of-N ratio between two operand counts, an unresolved timing failing, red-first against the code before the fix - and sweep the suites for any other absolute wall-clock bound.",
+        "fixTask": "P98.2-yie",
+        "commit": "48a9aabc"
       },
       {
         "id": "P98-R2",
         "severity": "low",
         "file": ".claude/hooks/guard-release.py (gr60 comment)",
         "issue": "The comment says a quadratic re-scan lands as far above the bound as the linear reading lands below, which holds only when the quadratic's per-operand cost is comparable to the call's fixed cost; a measured quadratic mutation gave 6.95-7.21 against the bound of 6.",
-        "resolution": "Say what the bound guarantees: red against backtracking by orders of magnitude, and against a quadratic only when its per-operand cost is comparable to the call's fixed cost."
+        "resolution": "fixed in P98.2-yie (48a9aabc): Say what the bound guarantees: red against backtracking by orders of magnitude, and against a quadratic only when its per-operand cost is comparable to the call's fixed cost.",
+        "fixTask": "P98.2-yie",
+        "commit": "48a9aabc"
       }
     ],
-    "outcome": "[findings: 2 - 0 high, 1 med, 1 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 2 - 0 high, 1 med, 1 low; 2 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -97,7 +101,7 @@
     {
       "id": "P98.2-yie",
       "title": "no case asserts how fast the machine is",
-      "status": "in_progress",
+      "status": "done",
       "description": "gw15 (test_guard_history_rewrite.py), the sibling of gr60 from the same backtracking fix, still asserts _elapsed < 0.05 wall-clock; rewrite it as gr60 now is, correct gr60's comment to what its bound guarantees, and judge the other elapsed-time assertions in the suites (test_audit_journal g2, test__panel_state's memo comparison) by the same rule: a bound that depends on the machine's speed becomes a ratio or a deterministic count",
       "files": [
         "plugins/audit/tests/test_guard_history_rewrite.py",
@@ -128,18 +132,27 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "48a9aabc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "gw15 rewritten as a ratio; gr60 comment and label reworded.",
+        "descriptive": "No case in the tree asserts how fast the machine is: both guards' speed cases measure growth, and say only what that proves."
       },
       "startedAt": "2026-10-01T08:38:28Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-01T08:50:52Z",
+      "verifiedBy": [
+        "task gate run 2026-10-01T08:50:31Z.5d13e4 green; orchestrator ran the probe: pre-fix regexes and quadratic re-scans turn gr60 and gw15 red",
+        "shas restored"
+      ],
       "testEvidence": {
         "runId": "2026-10-01T08:50:31Z.5d13e4",
         "status": "passed",
         "at": "2026-10-01T08:50:31Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "48a9aabc",
+        "at": "2026-10-01T08:50:52Z",
+        "basis": "gw15 times always_refused at 4 and 16 quoted -C operands, min of 30 interleaved samples each, ratio below 6, an unresolved timing failing; gr60's and gw15's comments and labels say the bound is red against backtracking and against a quadratic only when its per-operand cost is comparable to the call's fixed cost; every other elapsed-time assertion in the tree judged as a hang bound, a sleep discriminator or a report, none machine-speed dependent"
       }
     }
   ],
