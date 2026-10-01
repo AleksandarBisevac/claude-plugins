@@ -1510,13 +1510,16 @@ def _c_before_verb(rest):
 def _shell_moves(command):
     """True when a clause of this command starts with cd, pushd or popd.
 
-    The same question `guard-release.py`'s `_shell_moves` asks of the same
-    command text, so a payload naming no `cwd` is judged the same way on
-    both sides of the guard set. `effective_cwd` itself answers None for a
-    missing payload `cwd` no matter what the command does - correct for
-    THAT function, which must return an actual directory - but leaning on
-    that None here would call every payload-less command unplaceable, not
-    only the ones that move the shell.
+    The analogous question `guard-release.py`'s `_shell_moves` asks when a
+    payload names no `cwd` - analogous, not identical, because the command
+    text each reads is prepared differently: this one is fed `runnable(command)`,
+    which drops a heredoc body destined for a file, as every reading in this
+    file does; `guard-release.py`'s own `_shell_moves` is fed the raw command,
+    so a `cd` spelled inside such a body still reads there as one.
+    `effective_cwd` itself answers None for a missing payload `cwd` no matter
+    what the command does - correct for THAT function, which must return an
+    actual directory - but leaning on that None here would call every
+    payload-less command unplaceable, not only the ones that move the shell.
     """
     for clause in _config.command_clauses(runnable(command) or ""):
         parts = clause.split(None, 1)
