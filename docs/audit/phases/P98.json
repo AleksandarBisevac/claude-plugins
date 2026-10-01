@@ -1,7 +1,7 @@
 {
   "id": "P98",
   "title": "the release guard's speed case holds on any runner",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "guard-release's case for a long run of quoted -C operands proves the grading does not grow faster than the command does, by a measure independent of the machine's speed, so it is green on windows-latest and still red against the pre-fix behaviour",
   "testGate": [
@@ -15,7 +15,7 @@
   "blockedBy": [],
   "baseRef": "c2ec95c7473f738fb60612e2f530b8d143790ba0",
   "branch": "audit/p98-the-release-guard-s-speed-case",
-  "mergedAt": null,
+  "mergedAt": "2026-10-01T09:05:05Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -161,5 +161,6 @@
     "runId": "2026-10-01T08:52:56Z.097839",
     "status": "passed",
     "at": "2026-10-01T08:52:56Z"
-  }
+  },
+  "mergedHead": "ec3cb827db2b64f384ded3d0342e5e9a79cfc882"
 }
