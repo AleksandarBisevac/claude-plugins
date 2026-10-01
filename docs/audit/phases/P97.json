@@ -1,7 +1,7 @@
 {
   "id": "P97",
   "title": "the human maintainer's BUG-14 fix lands",
-  "status": "in_progress",
+  "status": "done",
   "description": "Lands fix/bug-14 (ff194c30, aad1aa87, 536f017a, e3afc4ae, bbc0be38), already reviewed clean across four rounds by the orchestrator's audit-reviewer agent. The fix is the human maintainer's; this phase's own work is the landing bookkeeping (SECURITY.md, bug close, review record, sign-off, merge) - no new guard code is written in this phase.",
   "desiredOutcome": "BUG-14 is closed: every guard that could not place a cd/pushd/popd/-C target, or that treated a missing payload cwd as evidence the shell never moved, now answers unplaceable rather than falling back to the session",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "3891073b6151c5e64154ade0a0a9d6955de67856",
   "branch": "audit/p97-the-human-maintainer-s-bug-14",
-  "mergedAt": null,
+  "mergedAt": "2026-10-01T07:27:56Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -89,5 +89,6 @@
     "runId": "2026-10-01T07:26:17Z.3a4e6f",
     "status": "passed",
     "at": "2026-10-01T07:26:17Z"
-  }
+  },
+  "mergedHead": "9c93df8511547c6358656491ff43530d37ef22c4"
 }
