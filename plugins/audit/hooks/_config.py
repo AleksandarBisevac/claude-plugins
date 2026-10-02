@@ -1411,7 +1411,8 @@ _STDIN_INTERP = re.compile(
 # `python3 -` is a program in another language, where a shell READ VERB is a word
 # inside a string and the interpreter arms are what grade it.
 _STDIN_SHELL = re.compile(
-    r"\b(?:bash|sh|zsh)\b(?:\s+-[A-Za-z-]+)*\s*(?:-|/dev/stdin)?\s*$",
+    r"(?:\b(?:bash|sh|zsh|source)\b|\.)"
+    r"(?:\s+-[A-Za-z-]+)*\s*(?:-|/dev/stdin)?\s*$",
     re.IGNORECASE)
 
 
@@ -1430,7 +1431,8 @@ _DATA_SCRIPT_EXTS = (
 _HEAD_WRAPPERS = ("env", "sudo", "doas", "xargs", "timeout", "nice", "ionice",
                   "nohup", "command", "builtin", "exec", "time", "stdbuf", "chrt",
                   "setsid")
-_SHELL_PROGRAMS = ("sh", "bash", "zsh", "dash", "ksh", "fish", "mksh", "ash")
+_SHELL_PROGRAMS = ("sh", "bash", "zsh", "dash", "ksh", "fish", "mksh", "ash",
+                   "source", ".")
 _ANY_INTERPRETER = re.compile(
     r"^(?:python(?:3(?:\.\d+)?)?|node|nodejs|deno|bun|ruby|perl|php|awk|gawk"
     r"|lua|tclsh|Rscript|osascript)$")

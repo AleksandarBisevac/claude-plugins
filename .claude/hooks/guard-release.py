@@ -1698,6 +1698,19 @@ def _selftest():
                   "shell makes the release target UNKNOWN: %r" % (got,),
                   resolved_tree(eval_payload, tmp2) is None
                   and bool(got) and "UNKNOWN" in got)
+            source_cd = ("source /dev/stdin <<'EOF'\ncd %s\nEOF\n"
+                         "git tag -a v1 -m x" % wt)
+            dot_cd = (". /dev/stdin <<'EOF'\ncd %s\nEOF\n"
+                      "git tag -a v1 -m x" % wt)
+            source_got = decide(source_cd, tmp2, "s1", payload={
+                "cwd": tmp2, "tool_input": {"command": source_cd}})
+            dot_got = decide(dot_cd, tmp2, "s1", payload={
+                "cwd": tmp2, "tool_input": {"command": dot_cd}})
+            check("gr67 RED-FIRST: source and dot heredocs that can move the "
+                  "parent shell make the release target UNKNOWN: %r / %r"
+                  % (source_got, dot_got,),
+                  all(bool(got) and "UNKNOWN" in got
+                      for got in (source_got, dot_got)))
             shell_cd = ("bash <<'EOF'\ncd /no/such/dir\nEOF\n"
                         "git tag -a v1 -m x")
             shell_cd_payload = {"tool_input": {"command": shell_cd}}
