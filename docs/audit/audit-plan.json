@@ -629,7 +629,7 @@
     {
       "id": "P99",
       "title": "the release guard's heredoc and quote reading, from BUG-15 through BUG-16",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P99.json"
     }
   ],
