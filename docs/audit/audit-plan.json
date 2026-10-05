@@ -625,6 +625,12 @@
       "title": "the release guard's speed case holds on any runner",
       "status": "done",
       "shard": "phases/P98.json"
+    },
+    {
+      "id": "P99",
+      "title": "the release guard's heredoc and quote reading, from BUG-15 through BUG-16",
+      "status": "pending",
+      "shard": "phases/P99.json"
     }
   ],
   "fileIndex": {
