@@ -1410,8 +1410,21 @@ _STDIN_INTERP = re.compile(
 # `bash -s` is shell text and the shell-grammar rules must read it; a body fed to
 # `python3 -` is a program in another language, where a shell READ VERB is a word
 # inside a string and the interpreter arms are what grade it.
+#
+# THE NAMED PROGRAMS STAY `\b`-BOUNDED ONLY, ON PURPOSE - matched anywhere a
+# word boundary allows, including a REDIRECT TARGET's own extension
+# (`cat > probe.sh`). That is gh35's pinned case: narrowing it to the head's
+# command-verb position would also narrow `guard-secrets-read`, which shares
+# this classification, and the conservative direction for a secret-reading
+# guard is to over-match, never under-match. The bare `.` added below carries
+# no such history - nothing before it relied on a trailing, unanchored dot -
+# so IT ALONE requires start-of-head or a real separator (the same class
+# `_last_command` already splits a head's simple commands on) immediately
+# before it: `git add .` ends in an argument, not the dot-source builtin, and
+# reads as one without this anchor, grading an unrelated heredoc body as live
+# shell it was never going to be.
 _STDIN_SHELL = re.compile(
-    r"(?:\b(?:bash|sh|zsh|source)\b|\.)"
+    r"(?:\b(?:bash|sh|zsh|source)\b|(?:^|[;&|(\n])\s*\.)"
     r"(?:\s+-[A-Za-z-]+)*\s*(?:-|/dev/stdin)?\s*$",
     re.IGNORECASE)
 
