@@ -1,0 +1,29 @@
+{
+  "id": "P99",
+  "title": "the release guard's heredoc and quote reading, from BUG-15 through BUG-16",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "guard-release.py's cwd placement and publish detection are heredoc-aware and quote-aware, both bugs closed",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": []
+}
