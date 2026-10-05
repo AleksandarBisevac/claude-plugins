@@ -1332,6 +1332,40 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   worktree's key is kept in the process only while its `.git` file is the same file, so one
   removed and added back at the same path gets a new key; a caller that passes no config gets
   the project's own.
+- **The release guard places a command's directory by what a heredoc body actually does, not by
+  what consumes it or where it sits in the text (BUG-15, BUG-16).** `_shell_moves` and
+  `_session_base` read a command's raw text, so a heredoc body destined for a file - never run
+  by anything - was read as a real `cd` whenever it contained a line shaped like one, over-
+  refusing a release or an amend with no cwd in its payload. The first fix traded that for two
+  narrower ones, each closed in turn: `_config.runnable_text` keeps a shell- or code-consumed
+  body but moves it to the END of the returned text, so a decoy heredoc `cd` could outrank a
+  real, earlier one to a bug-holding tree; and `eval`/`source`/`.` reaching the CURRENT shell
+  through a captured substitution or a direct heredoc were read as inert, so the real move was
+  invisible. `effective_cwd` now reads every clause in order from the text with heredoc bodies
+  removed, and answers the whole command's directory UNKNOWN - never a guessed value - whenever
+  any heredoc body is graded `shell` (a named shell binary, or `eval`/`source`/`.` reached
+  through a head carrying `$(…)`/a backtick), because such a body MAY reach the parent shell and
+  this reading cannot tell a definite case from an ambiguous one. A bare `.`/`..` ending an
+  unrelated heredoc's own head line (`git add .`, `cd ..`) is no longer mistaken for the
+  dot-source builtin - that match is now anchored to the head's own command-word position,
+  narrower than the named programs, which stay unanchored on purpose: `guard-secrets-read.py`
+  shares the same classification for its own, oppositely-conservative question, and a redirect
+  target merely ending in an interpreter's name (`cat > probe.sh`) must keep reading as a
+  script there.
+
+  Separately, `_publishers` tracked no quote state: a release-shaped phrase inside a single- or
+  double-quoted string, or any heredoc body regardless of its destination, was read as a real
+  `git tag`/`git push`/`gh release create` - reachable by ordinary prose describing a release
+  step, not only a crafted command. It now matches only against clauses `_config.command_clauses`
+  already treats as live, heredoc-stripped text, anchored to each clause's own start.
+
+  **Known residual, accepted rather than chased:** a bare variable reference built from a
+  substitution captured earlier in the same command (`x=$(cat <<'EOF'…); $x`) is unreadable by
+  a lexical check, the same class this file's opening paragraph already names. Spell a
+  multi-line commit or tag message with `-F <path>` rather than `-m "$(cat <<'EOF' … EOF)"` for
+  any history rewrite or release - `_HEAD_INDIRECTION`'s `$(…)` check cannot tell that shape's
+  heredoc apart from one actually `eval`'d, so it answers UNKNOWN for both; `CONTRIBUTING.md`
+  carries the convention.
 
 ## [3.0.1] - 2026-09-18
 

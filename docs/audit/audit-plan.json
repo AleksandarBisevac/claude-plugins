@@ -4947,7 +4947,7 @@
     {
       "id": "BUG-15",
       "title": "guard-release's _shell_moves reads a heredoc body as live text, so a payload with no cwd over-refuses",
-      "status": "open",
+      "status": "fixed",
       "severity": "med",
       "reportedAt": "2026-10-01T06:35:07Z",
       "reportedBy": null,
@@ -4959,13 +4959,13 @@
         ".claude/hooks/guard-release.py"
       ],
       "taskId": null,
-      "fixedIn": null,
-      "notes": null
+      "fixedIn": "fc7210f6",
+      "notes": "Fixed by the human maintainer across seven rounds of fix-then-review on fix/bug-15 (7f8a9fd2..fc7210f6); landed via P99.1."
     },
     {
       "id": "BUG-16",
       "title": "guard-release's _publishers matches a tag/push/release pattern inside ANY quoted text, heredoc or not",
-      "status": "open",
+      "status": "fixed",
       "severity": "med",
       "reportedAt": "2026-10-01T11:52:48Z",
       "reportedBy": null,
@@ -4977,8 +4977,8 @@
         ".claude/hooks/guard-release.py"
       ],
       "taskId": null,
-      "fixedIn": null,
-      "notes": null
+      "fixedIn": "fc7210f6",
+      "notes": "Fixed by the human maintainer across seven rounds of fix-then-review on fix/bug-15 (7f8a9fd2..fc7210f6); landed via P99.1."
     }
   ],
   "deferred": {
