@@ -217,6 +217,63 @@ on purpose: it is advisory, not a guard, so it keeps placing its rows in the
 session's own directory when a `cd` cannot be placed, the same fail-open this
 file's own table asks of advisory paths.
 
+**A heredoc body graded `shell` makes the whole command's directory
+unplaceable, never a destination of its own — `effective_cwd` asks
+`_config.split_heredocs` for the same three buckets it already grades a body's
+content by.** A body destined for a file, or run by a named interpreter as its
+own program (`python3`, `node`, …), is removed before the walk and contributes
+nothing either way — the shell never ran it, and an interpreter's own body
+cannot move the CURRENT shell even when it moves a CHILD process. A body
+graded `shell` — fed to a named shell binary (`bash <<EOF`) or reached through
+`eval` or a `$(…)`/backquote the heredoc's own head carries — answers UNKNOWN
+for the whole command rather than asking which of those it was. The two are
+not the same risk: a body fed to a literal `bash` only ever moves a CHILD
+process, never the parent a later write runs in, while one `eval`'d from a
+captured substitution can move the parent itself — and a reading that told
+the two apart by the program name alone, rather than answering UNKNOWN for
+both, once let a `bash <<EOF`'s own decoy `cd` outrank a real, earlier `cd` to
+the directory a later write actually ran in, wherever in the command text the
+heredoc sat, and separately once let an `eval`'d `cd` through unseen because
+nothing asked whether its destination could move the parent at all. Grading
+both the same removes both gaps rather than closing only whichever shape was
+found, which is the trade this file asks for everywhere else a directory
+cannot be read with confidence.
+
+**`source` and `.` are graded exactly like `bash` — both really do run a
+heredoc in the CURRENT shell, the same capability `eval` has, with no `$(…)`
+anywhere in the command for `_HEAD_INDIRECTION` to catch on its own.**
+`source /dev/stdin <<'EOF'` and `. /dev/stdin <<'EOF'` both answer UNKNOWN now,
+the same as `bash <<EOF` and an `eval`'d substitution; before `_SHELL_PROGRAMS`
+and `_STDIN_SHELL` named them, this reading answered confidently with the
+shell's STARTING directory instead, a gap found and closed the same session
+the collapse above was.
+
+**What stays open, by the nature of the reading rather than by an omission in
+it: a bare variable reference in command position, built from a substitution
+captured earlier in the same command** (`x=$(cat <<'EOF'…); $x`). Nothing
+above helps here, and nothing bounded would: telling this shape apart from an
+inert string assignment means tracking which variable gets referenced bare,
+later, in command position — a data-flow question a lexical reader does not
+ask of anything else in this file either. This is the general residual this
+document's opening paragraph already names — text inspection is bypassable in
+principle — holding in the one concrete shape found for directory placement
+specifically, named here rather than chased by hand one more spelling at a
+time.
+
+**A separate, accepted cost of the same collapse: a heredoc carrying no
+executable content at all can still make a command's directory UNKNOWN.**
+`-m "$(cat <<'EOF'\n…\nEOF\n)"` — a value built by capturing a heredoc's own
+output through `cat`, which never interprets what it is handed — is graded
+`shell` the same way `eval "$(cat <<'EOF'…)"` is, because both heads carry the
+same `$(…)` the reading cannot look past. **The release guard answers UNKNOWN
+for a command spelled this way unconditionally — with no manifest at all, the
+same as with one and an open bug** (it refuses before it has asked either
+question); the history guard's own UNKNOWN answer is the one that is gated on
+a plan being present. Either way an ordinary commit — not an amend, not a
+publish — is never asked this question at all. **Write the message to a file
+and pass `-F <path>` instead** — nothing for this reading to grade, and the
+same message either way.
+
 **Every `git` word counts, prose included, and that over-refusal is deliberate.** This
 is not a command-position reader: `git` is an invocation wherever it sits in a command,
 so `echo attempt used git stash` and `grep git stash notes.md` are refused as a stash.

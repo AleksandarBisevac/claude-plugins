@@ -1513,8 +1513,11 @@ def _shell_moves(command):
     The analogous question `guard-release.py`'s `_shell_moves` asks when a
     payload names no `cwd`. Both readers use `runnable(command)`, which drops
     a heredoc body destined for a file; their shared `effective_cwd` reader
-    instead accepts raw command text and drops every heredoc body itself,
-    because no such body can move the parent shell.
+    instead accepts raw command text and answers unreadable for the whole
+    command whenever any heredoc body is graded shell, because a shell body
+    MAY reach the parent through `eval` even where it is more often a child
+    process's own input - this function stays presence-only (does ANY clause
+    read cd/pushd/popd) rather than ordered, so it has no decoy to confuse.
     `effective_cwd` itself answers None for a missing payload `cwd` no matter
     what the command does - correct for THAT function, which must return an
     actual directory - but leaning on that None here would call every

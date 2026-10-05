@@ -445,12 +445,34 @@ Checklist for a new `.py` under `hooks/` or `scripts/`:
 Most of this list is enforced by lints, not by review: the checklist is the
 map, the lints are the territory.
 
+## Spelling a multi-line commit or tag message
+
+**For `git commit --amend` or any release command (`git tag`, a tag push,
+`gh release create`), write the message to a file and pass `-F <path>` —
+never `-m "$(cat <<'EOF' … EOF)"`.** Both guards share one reader
+(`_config.effective_cwd`) for "where does this command's shell actually
+stand," and that reader cannot tell a heredoc whose output only becomes a
+string argument apart from one that is later executed (`eval "$(…)"`) — both
+heads carry the same `$(…)`. It answers UNKNOWN for either shape rather than
+guessing, so an amend or a release spelled with the heredoc form is refused
+even though the message itself was never going to run as a command — the
+release guard refuses this unconditionally, manifest or not; the history
+guard's refusal is the one that depends on a plan being present. See
+SECURITY.md's heredoc-grading section for the full reasoning.
+
+A plain `git commit -m "one line"` is never asked this question — only a
+history rewrite or a publish is. Use `-F <path>` for those regardless, so a
+message that later grows past one line does not quietly start tripping this.
+
 ## Release rule
 
 One release = **one commit** that:
 1. bumps `plugins/audit/.claude-plugin/plugin.json` `version`,
 2. finalizes the `CHANGELOG.md` section for that version,
 3. carries the annotated tag `v<version>` on that same commit.
+
+Spell the tag's own message with `-F <path>` — see *Spelling a multi-line
+commit or tag message* above before reaching for a heredoc here.
 
 **The bump has followers, and they have an order.** The version is not only a
 number in one file. The README's `curl` pins name the tag a reader fetches from;
