@@ -21,15 +21,66 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P99-R1",
+        "severity": "med",
+        "file": ".claude/hooks/guard-release.py",
+        "issue": "BUG-15 as filed: _shell_moves read raw command text, so a file-data heredoc body containing a cd-shaped line was read as a real directory change. BUG-16 as filed: _publishers tracked no quote state, so a publish-shaped phrase inside any quoted text or heredoc body was read as a real publish.",
+        "resolution": "fixed in 7f8a9fd2: _shell_moves fed runnable_text; _publishers rewritten to match only against command_clauses's own, heredoc-stripped, quote-safe clauses."
+      },
+      {
+        "id": "P99-R2",
+        "severity": "high",
+        "file": ".claude/hooks/guard-release.py",
+        "issue": "7f8a9fd2 fixed the cwd-absent branch only; _session_base's cwd-present branch still called effective_cwd with raw command text, so the identical heredoc-blindness survived there - a real release command could be placed in a tree the heredoc only pretended to cd into.",
+        "resolution": "fixed in cc40dae8: _session_base's cwd-present branch also feeds effective_cwd runnable_text."
+      },
+      {
+        "id": "P99-R3",
+        "severity": "high",
+        "file": "plugins/audit/hooks/_config.py",
+        "issue": "cc40dae8's fix relied on runnable_text, which keeps a shell/code heredoc body but REORDERS it to the end of the returned text - so a decoy heredoc cd, placed anywhere in the command, could outrank a real, earlier cd to a bug-holding tree. Confirmed end-to-end with real git worktrees: a decoy bash heredoc let a release past an open high bug.",
+        "resolution": "fixed in 783648bb: effective_cwd now strips every heredoc body itself (via split_heredocs) before its ordered cd-walk, rather than relying on runnable_text's reordered view."
+      },
+      {
+        "id": "P99-R4",
+        "severity": "high",
+        "file": "plugins/audit/hooks/_config.py",
+        "issue": "783648bb's blanket heredoc-discard was wrong for eval: `eval \"$(cat <<'EOF' ... EOF)\"` genuinely executes in the CURRENT shell (confirmed live with bash -c), but was discarded as if it only ever moved a child process - so the same class of bypass survived via eval instead of a decoy heredoc.",
+        "resolution": "fixed in 5898818e: effective_cwd now answers the whole command's directory UNKNOWN whenever any heredoc body is graded 'shell' (named shell binary or eval/indirection), rather than discarding it."
+      },
+      {
+        "id": "P99-R5",
+        "severity": "high",
+        "file": "plugins/audit/hooks/_config.py",
+        "issue": "5898818e's 'shell' bucket did not recognize source or . (dot-source) reading a heredoc/stdin directly - no $(...) involved, so _HEAD_INDIRECTION never fired either, and _SHELL_PROGRAMS/_STDIN_SHELL had never listed source/. - silently graded as data. Confirmed live: source /dev/stdin <<EOF really moves the calling shell; effective_cwd answered with the stale starting directory instead of UNKNOWN.",
+        "resolution": "fixed in 251232c7: source and . added to _SHELL_PROGRAMS and _STDIN_SHELL, the same recognition bash/sh/zsh already had."
+      },
+      {
+        "id": "P99-R6",
+        "severity": "high",
+        "file": "plugins/audit/hooks/_config.py",
+        "issue": "251232c7's own fix for the bare dot-source had no position anchor, so _STDIN_SHELL's new `.` alternative matched a trailing `.`/`..` ANYWHERE at the end of a heredoc head - ordinary commands (git add ., cp file.txt ., cd .., rsync -av src/ .) sharing a line with any unrelated heredoc were misclassified as shell, over-refusing everyday work.",
+        "resolution": "fixed in fc7210f6: only the bare `.` alternative is anchored to start-of-head or a real command separator; the named programs (bash/sh/zsh/source) and all of _STDIN_INTERP are explicitly left unanchored, because narrowing those breaks an existing, deliberately-pinned test (gh35: a redirect target merely ending in an interpreter's name, e.g. cat > probe.sh, must stay graded as code/shell, since guard-secrets-read.py shares this classification and must stay conservative in the opposite risk direction)."
+      },
+      {
+        "id": "P99-R7",
+        "severity": "low",
+        "file": "plugins/audit/hooks/_config.py",
+        "issue": "The fc7210f6 fix also surfaced (not fixed, deliberately) a sibling gap: _STDIN_INTERP has the identical unanchored-trailing-word shape for interpreter names (mv a.js b.node, touch report.php both still match on the file extension) - and a permanent, structurally unreachable residual: a bare variable reference built from an earlier substitution used later in command position (x=$(cat <<'EOF'...); $x) is a data-flow question no lexical reader here answers.",
+        "resolution": "not a fix - both are documented as accepted residuals (SECURITY.md) rather than chased: the first is gh35's class (over-matching is the safe, intentional direction for guard-secrets-read); the second is the same structurally-unbounded-in-principle residual this file's SECURITY.md already opens with. CONTRIBUTING.md adds the -F <path> convention for any history-rewrite or release commit message as the practical mitigation."
+      }
+    ],
+    "outcome": "matches; four independent defensive review rounds on the final rounds, no blocking finding on the tip [findings: 7 - 5 high, 1 med, 1 low; 0 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "BUG-15 and BUG-16 fixed across seven rounds of fix-then-review; final review clean; merged into main via P99",
   "tasks": [
     {
       "id": "P99.1",
       "title": "Land the maintainer's BUG-15/BUG-16 fix: guard-release.py's heredoc-blind cwd placement and quote-blind publish detection, seven rounds of fix-then-review on fix/bug-15",
-      "status": "in_progress",
+      "status": "done",
       "description": "",
       "files": [
         ".claude/hooks/guard-release.py",
@@ -64,15 +115,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8158b402",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "7f8a9fd2..fc7210f6 on fix/bug-15; merged into P99 as c0a050b1",
+        "descriptive": "BUG-15 and BUG-16 (guard-release's heredoc-blind cwd placement and quote-blind publish detection) fixed across seven rounds of fix-then-review on fix/bug-15, landed via a merge into P99"
       },
       "startedAt": "2026-10-05T09:19:13Z",
-      "completedAt": null,
-      "verifiedBy": []
+      "completedAt": "2026-10-05T09:24:29Z",
+      "verifiedBy": [
+        "guard-release.py --selftest 98/98; test__config.py --selftest 281/281; test_guard_history_rewrite.py --selftest 273/273; test_guard_secrets_read.py --selftest 383/383; full sweep-selftests.py 305/305; four independent defensive reviews across the branch's seven rounds"
+      ]
     }
   ],
-  "startedAt": "2026-10-05T09:19:13Z"
+  "startedAt": "2026-10-05T09:19:13Z",
+  "testEvidence": {
+    "runId": "2026-10-05T09:32:29Z.db40ed",
+    "status": "passed",
+    "at": "2026-10-05T09:32:29Z"
+  }
 }
