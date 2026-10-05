@@ -1,7 +1,7 @@
 {
   "id": "P99",
   "title": "the release guard's heredoc and quote reading, from BUG-15 through BUG-16",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "guard-release.py's cwd placement and publish detection are heredoc-aware and quote-aware, both bugs closed",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "c3ff5bb93e800b32e6ba6c46d7f367782ff16ddb",
+  "branch": "audit/p99-the-release-guard-s-heredoc-an",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,7 +29,7 @@
     {
       "id": "P99.1",
       "title": "Land the maintainer's BUG-15/BUG-16 fix: guard-release.py's heredoc-blind cwd placement and quote-blind publish detection, seven rounds of fix-then-review on fix/bug-15",
-      "status": "pending",
+      "status": "in_progress",
       "description": "",
       "files": [
         ".claude/hooks/guard-release.py",
@@ -62,16 +62,17 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-05T09:19:13Z",
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-10-05T09:19:13Z"
 }
