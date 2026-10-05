@@ -1,7 +1,7 @@
 {
   "id": "P99",
   "title": "the release guard's heredoc and quote reading, from BUG-15 through BUG-16",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "guard-release.py's cwd placement and publish detection are heredoc-aware and quote-aware, both bugs closed",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "c3ff5bb93e800b32e6ba6c46d7f367782ff16ddb",
   "branch": "audit/p99-the-release-guard-s-heredoc-an",
-  "mergedAt": null,
+  "mergedAt": "2026-10-05T09:33:08Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -132,5 +132,6 @@
     "runId": "2026-10-05T09:32:29Z.db40ed",
     "status": "passed",
     "at": "2026-10-05T09:32:29Z"
-  }
+  },
+  "mergedHead": "9f0252ceffa7d2715b20ef90c514c89032263c80"
 }
