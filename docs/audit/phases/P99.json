@@ -25,5 +25,53 @@
     "findings": []
   },
   "summary": null,
-  "tasks": []
+  "tasks": [
+    {
+      "id": "P99.1",
+      "title": "Land the maintainer's BUG-15/BUG-16 fix: guard-release.py's heredoc-blind cwd placement and quote-blind publish detection, seven rounds of fix-then-review on fix/bug-15",
+      "status": "pending",
+      "description": "",
+      "files": [
+        ".claude/hooks/guard-release.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/tests/test__config.py",
+        "SECURITY.md",
+        "CONTRIBUTING.md",
+        "CHANGELOG.md",
+        "docs/audit/audit-plan.json"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
 }
