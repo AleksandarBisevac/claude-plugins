@@ -819,7 +819,8 @@
       "P94.8-579",
       "P95.1",
       "P96.1",
-      "P97.1"
+      "P97.1",
+      "P99.1"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -879,7 +880,8 @@
       "P87.10-bpl",
       "P92.5",
       "P92.6-a1x",
-      "P93.4-287"
+      "P93.4-287",
+      "P99.1"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -1048,12 +1050,14 @@
       "P88.3-dnb",
       "P89.1",
       "P95.1",
-      "P97.1"
+      "P97.1",
+      "P99.1"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
       "P20.4",
-      "P53.6"
+      "P53.6",
+      "P99.1"
     ],
     "docs/demo-large.html": [
       "P18.10",
@@ -1556,7 +1560,8 @@
       "P83.4-wkm",
       "P83.5-wkm",
       "P89.1",
-      "P95.1"
+      "P95.1",
+      "P99.1"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -1602,7 +1607,8 @@
       "P83.4-wkm",
       "P83.5-wkm",
       "P89.1",
-      "P97.1"
+      "P97.1",
+      "P99.1"
     ],
     "plugins/audit/hooks/guard-secrets-read.py": [
       "P1.4",
@@ -3091,7 +3097,8 @@
       "P83.5-wkm",
       "P86.3",
       "P89.1",
-      "P95.1"
+      "P95.1",
+      "P99.1"
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
@@ -4391,7 +4398,8 @@
       "P81.11",
       "P94.4",
       "P98.1",
-      "P98.2-yie"
+      "P98.2-yie",
+      "P99.1"
     ],
     ".claude/hooks/arm-release-bypass.py": [
       "P80.11",
