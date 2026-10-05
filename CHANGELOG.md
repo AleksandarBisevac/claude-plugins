@@ -6,6 +6,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-05
+
 ### Added
 - **A sign-off's review findings are recorded by a verb: `audit-task.py finding`,
   `resolve-finding` and `correct`.** The findings sign-off step 1 records were a hand edit of
