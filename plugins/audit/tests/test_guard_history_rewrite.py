@@ -1154,9 +1154,9 @@ def _cases(check):
                  "change, so the amend is judged in the session"),
                 ("gw14e", _wt["main"],
                  "git commit --amend -m \"$(cat <<'EOF'\nit's ready\nEOF\n)\"",
-                 "allow",
-                 "the house commit-message form, a quoted heredoc inside "
-                 "a substitution, is not a directory change either"),
+                 "deny",
+                 "the house commit-message form carries a shell heredoc, "
+                 "whose effect on the current shell cannot be established"),
                 ("gw14a", _wt["main"], "git -C %s status '" % _q_wt, "allow",
                  "an unparseable command that is not a rewrite stays allowed "
                  "- the mutation that denies every unreadable command"),
@@ -1173,11 +1173,10 @@ def _cases(check):
         _house = "git commit --amend -m \"$(cat <<'EOF'\nit's ready\nEOF\n)\""
         v, why = M.decide({"tool_name": "Bash", "cwd": _wt["wt"],
                            "tool_input": {"command": _house}})
-        check("gw14d an unparseable amend in the worktree is refused for "
-              "the amend, not because the guard cannot place it: %r"
+        check("gw14d a shell heredoc in an amend makes its directory "
+              "UNKNOWN rather than guessing the worktree: %r"
               % ((v, why[:160]),),
-              v == "deny" and "amending would replace HEAD" in why
-              and "cannot establish" not in why)
+              v == "deny" and "cannot establish" in why)
         _cd_unread = "cd \"$WT\" && git rebase main '"
         v, why = M.decide({"tool_name": "Bash", "cwd": _wt["main"],
                            "tool_input": {"command": _cd_unread}})

@@ -1316,9 +1316,13 @@ def effective_cwd(cmd, payload_cwd):
     for a mark in the target's OWN text, extended to the one case it was one
     short of - a plain word with nothing to resolve it against.
 
-    ONE PASS, ACCUMULATING, over every clause in the command in the order it
-    is written - not the directory change nearest a particular write's own
-    clause. That is coarser than a real shell, and coarser on purpose:
+    ONE PASS, ACCUMULATING, over every non-heredoc clause in the command in the
+    order it is written - not the directory change nearest a particular write's
+    own clause. Data and interpreter bodies cannot move the parent shell, so
+    they leave that walk. A shell body is unreadable: it may belong to a child
+    process, or reach the current shell through an indirection such as `eval`.
+    That uncertainty ends the walk rather than guessing either destination.
+    This is coarser than a real shell, and coarser on purpose:
     `guard-secrets-read` reasons about the whole command for the shell-write
     grammars and clause-by-clause only for the eval heuristics, and a write's
     position relative to a `cd` is evidence read nowhere else in it. What this may not
@@ -1340,7 +1344,10 @@ def effective_cwd(cmd, payload_cwd):
     if not payload_cwd:
         return None
     current = str(payload_cwd)
-    for clause in command_clauses(cmd):
+    text, _code, shell = split_heredocs(cmd)
+    if shell:
+        return None
+    for clause in command_clauses(text):
         m = _DIR_CHANGE_CLAUSE.match(clause)
         if not m:
             continue
@@ -1403,8 +1410,22 @@ _STDIN_INTERP = re.compile(
 # `bash -s` is shell text and the shell-grammar rules must read it; a body fed to
 # `python3 -` is a program in another language, where a shell READ VERB is a word
 # inside a string and the interpreter arms are what grade it.
+#
+# THE NAMED PROGRAMS STAY `\b`-BOUNDED ONLY, ON PURPOSE - matched anywhere a
+# word boundary allows, including a REDIRECT TARGET's own extension
+# (`cat > probe.sh`). That is gh35's pinned case: narrowing it to the head's
+# command-verb position would also narrow `guard-secrets-read`, which shares
+# this classification, and the conservative direction for a secret-reading
+# guard is to over-match, never under-match. The bare `.` added below carries
+# no such history - nothing before it relied on a trailing, unanchored dot -
+# so IT ALONE requires start-of-head or a real separator (the same class
+# `_last_command` already splits a head's simple commands on) immediately
+# before it: `git add .` ends in an argument, not the dot-source builtin, and
+# reads as one without this anchor, grading an unrelated heredoc body as live
+# shell it was never going to be.
 _STDIN_SHELL = re.compile(
-    r"\b(?:bash|sh|zsh)\b(?:\s+-[A-Za-z-]+)*\s*(?:-|/dev/stdin)?\s*$",
+    r"(?:\b(?:bash|sh|zsh|source)\b|(?:^|[;&|(\n])\s*\.)"
+    r"(?:\s+-[A-Za-z-]+)*\s*(?:-|/dev/stdin)?\s*$",
     re.IGNORECASE)
 
 
@@ -1423,7 +1444,8 @@ _DATA_SCRIPT_EXTS = (
 _HEAD_WRAPPERS = ("env", "sudo", "doas", "xargs", "timeout", "nice", "ionice",
                   "nohup", "command", "builtin", "exec", "time", "stdbuf", "chrt",
                   "setsid")
-_SHELL_PROGRAMS = ("sh", "bash", "zsh", "dash", "ksh", "fish", "mksh", "ash")
+_SHELL_PROGRAMS = ("sh", "bash", "zsh", "dash", "ksh", "fish", "mksh", "ash",
+                   "source", ".")
 _ANY_INTERPRETER = re.compile(
     r"^(?:python(?:3(?:\.\d+)?)?|node|nodejs|deno|bun|ruby|perl|php|awk|gawk"
     r"|lua|tclsh|Rscript|osascript)$")

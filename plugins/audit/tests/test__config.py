@@ -1394,6 +1394,41 @@ def _cases(check):
               == _spaced
               and M.effective_cwd("cd 'linked worktree && y", str(wprim))
               is None)
+        _heredoc_cd = ("cd %s; bash <<'EOF'\ncd %s\nEOF\ny"
+                       % (wlink, wprim))
+        _eval_heredoc = ('eval "$(cat <<\'EOF\'\ncd %s\nEOF\n)"\ny' % wlink)
+        _source_heredoc = ("source /dev/stdin <<'EOF'\ncd %s\nEOF\ny" % wlink)
+        _dot_heredoc = (". /dev/stdin <<'EOF'\ncd %s\nEOF\ny" % wlink)
+        check("tr8b a shell heredoc makes effective_cwd unreadable: it may "
+              "reach a child, the parent through `eval`, `source` or `.`",
+              M.effective_cwd(_heredoc_cd, str(wprim)) is None
+              and M.effective_cwd(_eval_heredoc, str(wprim)) is None
+              and M.effective_cwd(_source_heredoc, str(wprim)) is None
+              and M.effective_cwd(_dot_heredoc, str(wprim)) is None,
+              repr((M.effective_cwd(_heredoc_cd, str(wprim)),
+                    M.effective_cwd(_eval_heredoc, str(wprim)),
+                    M.effective_cwd(_source_heredoc, str(wprim)),
+                    M.effective_cwd(_dot_heredoc, str(wprim)))))
+        _add_dot = "git add . <<'EOF'\nignored\nEOF\ny"
+        _cp_dot = "cp file.txt . <<'EOF'\nignored\nEOF\ny"
+        _ls_dotdot = "ls .. <<'EOF'\nignored\nEOF\ny"
+        _rsync_dot = "rsync -av src/ . <<'EOF'\nignored\nEOF\ny"
+        check("tr8c a trailing `.` or `..` that is an ARGUMENT, not the dot-"
+              "source builtin, does not make an unrelated heredoc's command "
+              "unreadable - the builtin is only the command's own first word",
+              M.effective_cwd(_add_dot, str(wprim)) == str(wprim)
+              and M.effective_cwd(_cp_dot, str(wprim)) == str(wprim)
+              and M.effective_cwd(_ls_dotdot, str(wprim)) == str(wprim)
+              and M.effective_cwd(_rsync_dot, str(wprim)) == str(wprim),
+              repr((M.effective_cwd(_add_dot, str(wprim)),
+                    M.effective_cwd(_cp_dot, str(wprim)),
+                    M.effective_cwd(_ls_dotdot, str(wprim)),
+                    M.effective_cwd(_rsync_dot, str(wprim)))))
+        # NOT widened the same way: an interpreter NAME ending a redirect
+        # target (`cat > probe.sh`) stays classified as code/shell on purpose
+        # - narrowing it would also narrow `guard-secrets-read`, which shares
+        # this classification and must stay conservative. See gh35 in
+        # test_guard_history_rewrite.py, which pins that case.
     finally:
         _harness.remove_tree(str(wroot))
 

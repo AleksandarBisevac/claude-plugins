@@ -4961,6 +4961,24 @@
       "taskId": null,
       "fixedIn": null,
       "notes": null
+    },
+    {
+      "id": "BUG-16",
+      "title": "guard-release's _publishers matches a tag/push/release pattern inside ANY quoted text, heredoc or not",
+      "status": "open",
+      "severity": "med",
+      "reportedAt": "2026-10-01T11:52:48Z",
+      "reportedBy": null,
+      "description": "While researching BUG-15, found _publishers (and the _TAG_AT/_PUSH_AT/_GH_AT regexes it drives) tracks no quote state at all - it is a plain regex scan over the raw command string. Any text that merely LOOKS like a boundary-preceded publishing invocation is read as a real one, whether it sits inside a single-quoted string, a double-quoted string, or a heredoc body - no heredoc is required to trigger it, which makes this broader than BUG-15 and not fixed by the same runnable(command) swap. Confirmed live: a research command describing a release step in prose, quoted with single quotes, with double quotes, and separately placed inside a heredoc destined for a file and inside one destined for python3, were ALL read by _publishers as a real tag-creating invocation - in the heredoc-to-python3 case the describing text was a Python string literal, never shell at all. The live guard actually refused this very bug report while it was being filed, because the repro text itself matched the pattern it describes - confirming the class is already reachable by ordinary work, not only by a crafted exploit. Over-refusal direction (safe, not a fail-open), but it can block ordinary documentation or script-writing work whenever its content happens to describe a publishing step after a separator word.",
+      "repro": "call _publishers(command) with command built from a plain echo of a release-step description, once in single quotes and once in double quotes, and separately from a heredoc (one destined for cat, one destined for python3) whose body contains that same description, where the description itself happens to read as a boundary-preceded publishing invocation",
+      "expected": "no publishers detected in any of the four forms above - the description text never actually invokes a publishing command, it only appears inside something the current shell treats as inert (a quoted string, or a heredoc body)",
+      "actual": "_publishers reports a publishing invocation in all four forms - its regex boundary match fires on the separator before the embedded text regardless of the quoting or heredoc context around it, with no tracking of whether that span is actually live shell text",
+      "files": [
+        ".claude/hooks/guard-release.py"
+      ],
+      "taskId": null,
+      "fixedIn": null,
+      "notes": null
     }
   ],
   "deferred": {
