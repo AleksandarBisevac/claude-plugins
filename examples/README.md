@@ -51,7 +51,8 @@ script underneath.
 | Command | What it does |
 |---|---|
 | `examples/panel.sh` | Foreground; opens your browser. `Ctrl-C` stops it. |
-| `examples/panel.sh --detach` | Background; prints the URL. Survives the shell. |
+| `examples/panel.sh --detach` | Background; opens your browser at the full URL and prints where that URL is kept (the URL `status` prints is redacted and will not open the page). Survives the shell. |
+| `examples/panel.sh --detach --no-open` | Background, no browser; prints the full URL, session token included, for you to open. Survives the shell. |
 | `examples/panel.sh status` | Is one running for this example, and where. |
 | `examples/panel.sh stop` | Stop it. |
 

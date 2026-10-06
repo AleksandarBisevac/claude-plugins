@@ -43,11 +43,16 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import ast
+import fnmatch
 import io
 import json
 import os
+import shutil
+import socket
+import subprocess
 import sys
 import tempfile
+import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
@@ -59,6 +64,10 @@ import _worktrees                                  # noqa: E402  (the runner sea
 import _evidence_io as _evidence                    # noqa: E402  (the ledger, for the fullRun fixture)
 
 M = _loader.load_script("panel-server.py", modname="panel_server")
+
+# How old a fixture temp file is made to look: past any grace period an
+# in-flight pidfile write could plausibly be given.
+_AN_HOUR = 3600
 
 
 def _mentions_url(node):
@@ -484,11 +493,18 @@ def _cases(check):
     check("i3 appending to a newline-less .gitignore does not glue lines",
           M._ensure_panel_files_ignored(proj)
           and open(_gi, encoding="utf-8").read().splitlines()[0] == "node_modules")
-    _n_before = open(_gi, encoding="utf-8").read().count("audit-panel.json")
+    # Whole LINES are counted: the temp-sibling rule contains the pidfile's
+    # name as a substring, so a substring count reads it as a duplicate.
+    def _rule_lines():
+        with open(_gi, encoding="utf-8") as fh:
+            lines = [ln.strip() for ln in fh.read().splitlines()]
+        return sorted((r, lines.count(r)) for r, _n in M._PANEL_PRIVATE_FILES)
+    _n_before = _rule_lines()
     M._ensure_panel_files_ignored(proj)
-    check("i4 re-ensuring is idempotent - no duplicate lines",
-          open(_gi, encoding="utf-8").read().count("audit-panel.json")
-          == _n_before == 1)
+    _n_after = _rule_lines()
+    check("i4 re-ensuring is idempotent - each rule line exactly once: %r"
+          % (_n_after,),
+          _n_after == _n_before and all(n == 1 for _r, n in _n_after))
     _proj_bad = os.path.join(tmp, "badproj")
     os.makedirs(_proj_bad, exist_ok=True)
     with open(os.path.join(_proj_bad, ".claude"), "w", encoding="utf-8") as fh:
@@ -505,13 +521,31 @@ def _cases(check):
     # outside every rule. This reads the BASENAMES OF THE REAL PATHS and compares
     # them as a set, so a literal typed back into either function is red here
     # rather than in somebody's git history.
-    _written = sorted(set(os.path.basename(p)
-                          for p in (M._pidfile(proj), M._log_path(proj))))
+    # The pidfile's temp sibling is one of those files too, and its name is
+    # built inside `_write_pidfile` - so it is read off the real `os.replace`
+    # call that write makes rather than re-spelled here.
+    _replaced = []
+    _real_replace = os.replace
+
+    def _recording_replace(src, dst):
+        _replaced.append(src)
+        return _real_replace(src, dst)
+    os.replace = _recording_replace
+    try:
+        M._write_pidfile(proj, {"pid": 1, "port": 1, "url": "http://x"})
+    finally:
+        os.replace = _real_replace
+    _written = sorted(set(os.path.basename(p) for p in
+                          [M._pidfile(proj), M._log_path(proj)] + _replaced))
     _ruled = sorted(row[0] for row in M._PANEL_PRIVATE_FILES)
+    _unruled = [w for w in _written
+                if not any(fnmatch.fnmatchcase(w, r) for r in _ruled)]
+    _unused = [r for r in _ruled
+               if not any(fnmatch.fnmatchcase(w, r) for w in _written)]
     check("i6 every file the panel writes into .claude/ is a file it writes an "
-          "ignore rule for, and nothing else is - %r vs %r"
-          % (_written, _ruled),
-          _written and _written == _ruled)
+          "ignore rule for, and no rule names a file it does not write - "
+          "unruled %r, unused %r" % (_unruled, _unused),
+          len(_written) == 3 and not _unruled and not _unused)
 
     # --- no surface prints the session token -------------------------------------
     # `--status` hid it and `--stop` printed it in full, one line apart in the
@@ -994,6 +1028,46 @@ def _root_token_guard_cases(check):
             check("GET / without the token is refused, and the refusal body "
                   "carries no token: status %r" % (resp.status,),
                   resp.status == 403 and token not in body)
+            # A person who opened the page without its token reads this body in
+            # a browser tab, so it has to be readable there and has to say where
+            # the real URL is - while still echoing no token.
+            _ctype = resp.getheader("Content-Type") or ""
+            check("tp1 a tokenless GET / answers a text/plain 403 naming "
+                  "`/audit:panel status` and the pidfile, with no token in it: "
+                  "%r %r" % (_ctype, body[:200]),
+                  resp.status == 403 and _ctype.startswith("text/plain")
+                  and "/audit:panel status" in body
+                  and ".claude/audit-panel.json" in body
+                  and token not in body)
+
+            conn4 = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            conn4.request("GET", "/?t=not-the-token")
+            resp4 = conn4.getresponse()
+            body4 = resp4.read().decode("utf-8", "replace")
+            conn4.close()
+            check("tp1b ...and so does a page request carrying the WRONG token, "
+                  "which names neither token: %r" % (body4[:200],),
+                  resp4.status == 403
+                  and (resp4.getheader("Content-Type") or "").startswith(
+                      "text/plain")
+                  and "/audit:panel status" in body4
+                  and token not in body4 and "not-the-token" not in body4)
+
+            # The other direction: the readable refusal is the PAGE's. An API
+            # call is read by the page's own script, which parses JSON - so a
+            # tokenless /api/* request keeps its JSON 403.
+            conn5 = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            conn5.request("GET", "/api/version")
+            resp5 = conn5.getresponse()
+            body5 = resp5.read().decode("utf-8", "replace")
+            conn5.close()
+            check("tp1c ...while a tokenless /api/* request keeps its JSON 403, "
+                  "since the page's own script is what reads that one: %r %r"
+                  % (resp5.getheader("Content-Type"), body5[:120]),
+                  resp5.status == 403
+                  and (resp5.getheader("Content-Type") or "").startswith(
+                      "application/json")
+                  and "error" in json.loads(body5 or "{}"))
 
             conn2 = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
             conn2.request("GET", "/?t=%s" % token)
@@ -1075,12 +1149,248 @@ def _pidfile_mode_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _git_ignored(project, rel):
+    """`git check-ignore`'s own answer for `rel`: True, False, or None when
+    git could not answer at all - which is not the same as "not ignored"."""
+    try:
+        res = subprocess.run(["git", "check-ignore", "-q", rel], cwd=project,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return {0: True, 1: False}.get(res.returncode)
+
+
+def _pidfile_temp_cases(check):
+    """A launch killed between creating the pidfile's temp sibling and renaming
+    it leaves `audit-panel.json.tmp-<hex>` behind, holding the live token. It
+    must sit under the panel's own ignore rules, and the next launch or stop
+    must remove it - while leaving every other file in .claude/ alone."""
+    tmp = tempfile.mkdtemp(prefix="panel-server-tmpfile-")
+    held = None
+    try:
+        proj = os.path.join(tmp, "proj")
+        claude = os.path.join(proj, ".claude")
+        os.makedirs(claude)
+        subprocess.run(["git", "init", "-q", proj], stdout=subprocess.PIPE,
+                       stderr=subprocess.PIPE, timeout=30)
+        stale_name = os.path.basename(M._pidfile(proj)) + ".tmp-5eed0bad5eed0bad"
+        stale = os.path.join(claude, stale_name)
+        neighbour = os.path.join(claude, "audit.config.json")
+
+        def plant():
+            for path in (stale, neighbour):
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write('{"url": "http://127.0.0.1:1/?t=stale"}')
+            # A killed launch's temp is OLD by the time anything sweeps it;
+            # an hour back is past any grace an in-flight write is given.
+            aged = time.time() - _AN_HOUR
+            os.utime(stale, (aged, aged))
+
+        plant()
+        M._ensure_panel_files_ignored(proj)
+        ignored = _git_ignored(proj, ".claude/" + stale_name)
+        check("tp2 a stale pidfile temp is covered by the panel's own ignore "
+              "rules (git check-ignore answered %r)" % (ignored,),
+              ignored is True)
+        kept = _git_ignored(proj, ".claude/audit.config.json")
+        check("tp2b ...and the rules stay targeted: the config beside it is "
+              "NOT ignored (git check-ignore answered %r)" % (kept,),
+              kept is False)
+
+        # A real launch, stopped at the bind: the port is held by this case,
+        # so serve() returns its own refusal code before ever serving.
+        held = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        held.bind(("127.0.0.1", 0))
+        held.listen(1)
+        port = held.getsockname()[1]
+        real_err = sys.stderr
+        sys.stderr = io.StringIO()
+        try:
+            rc = M.serve(proj, port, False)
+        finally:
+            sys.stderr = real_err
+        check("tp3 the next launch removes the stale temp a killed launch left "
+              "(serve returned %r, temp still there: %r)"
+              % (rc, os.path.exists(stale)),
+              rc == 2 and not os.path.exists(stale))
+        check("tp3b ...and removes nothing else in .claude/ - the config beside "
+              "it survives the sweep", os.path.exists(neighbour))
+
+        plant()
+        M.stop_panel(proj)
+        check("tp4 --stop sweeps a stale temp too, and leaves the config: "
+              "temp %r, config %r"
+              % (os.path.exists(stale), os.path.exists(neighbour)),
+              not os.path.exists(stale) and os.path.exists(neighbour))
+
+        # A temp written a moment ago may be ANOTHER launch's write in flight -
+        # created, not yet renamed. Removing it kills that launch after it has
+        # bound, so the sweep judges by age: the fresh one stays, the aged one
+        # goes. MUTATION: drop the age test -> the fresh one is removed, red.
+        fresh = os.path.join(claude, stale_name.replace("5eed", "f4e5"))
+        with open(fresh, "w", encoding="utf-8") as fh:
+            fh.write('{"url": "http://127.0.0.1:1/?t=inflight"}')
+        plant()
+        M._sweep_pidfile_temps(proj)
+        check("tp5 the sweep leaves a temp written just now (another launch "
+              "mid-write) and removes one an hour old: fresh kept %r, aged "
+              "kept %r" % (os.path.exists(fresh), os.path.exists(stale)),
+              os.path.exists(fresh) and not os.path.exists(stale))
+    finally:
+        if held is not None:
+            held.close()
+        _harness.remove_tree(tmp)
+
+
+def _pidfile_tighten_cases(check):
+    """A pidfile an older build left at a wider mode is tightened the moment
+    `--status` or the already-running branch of a launch reads it, not only
+    when a new launch rewrites it."""
+    import stat
+
+    if os.name != "posix":
+        check("tm1 an existing pidfile is tightened on read (skipped: no POSIX "
+              "file modes on this platform - os.name is %r)" % (os.name,), True)
+        return
+    tmp = tempfile.mkdtemp(prefix="panel-server-tighten-")
+    real_kill = os.kill
+    try:
+        proj = os.path.join(tmp, "proj")
+        info = {"pid": 61734, "port": 1, "url": "http://127.0.0.1:1/?t=x"}
+        os.kill = lambda pid, sig: None          # every pid reads as alive
+        modes = []
+        for label, fn in (("--status", lambda: M.status_panel(proj)),
+                          ("already-running", lambda: M.serve(proj, 0, False))):
+            M._write_pidfile(proj, info)
+            os.chmod(M._pidfile(proj), 0o644)
+            _printed(fn)
+            modes.append((label,
+                          oct(stat.S_IMODE(os.stat(M._pidfile(proj)).st_mode))))
+        check("tm1 a 0644 pidfile is tightened to 0600 by --status and by the "
+              "already-running launch that read it: %r" % (modes,),
+              [m for _l, m in modes] == [oct(0o600)] * 2)
+    finally:
+        os.kill = real_kill
+        _harness.remove_tree(tmp)
+
+
+_STUB_PANEL_SERVER = '''import json, os, sys
+project = sys.argv[sys.argv.index("--project") + 1]
+pidfile = os.path.join(project, ".claude", "audit-panel.json")
+if "--status" in sys.argv:
+    if not os.path.exists(pidfile):
+        print("panel not running (project: %s)" % project)
+        sys.exit(0)
+    with open(pidfile, encoding="utf-8") as fh:
+        url = json.load(fh)["url"]
+    print("panel RUNNING: %s?t=<hidden> (PID 1)" % url.split("?t=")[0])
+elif sys.argv[-1] == "FAIL":
+    sys.exit(1)                  # a launch that dies before writing a pidfile
+else:
+    with open(pidfile, "w", encoding="utf-8") as fh:
+        json.dump({"pid": 1, "port": 1, "url": sys.argv[-1]}, fh)
+'''
+
+
+def _panel_sh_detach_cases(check):
+    """`examples/panel.sh --detach` promises a URL. `--status` prints it
+    redacted, and a URL without its token is refused by the page, so the
+    launcher has to say where the full URL is - and print it in full only under
+    `--no-open`, where nobody else will open it. Driven as a real `sh` run of
+    the real script, copied beside a stub server that records the URL it is
+    handed, so the claim is about what the script PRINTS."""
+    sh = shutil.which("sh")
+    src = os.path.join(M._output.REPO_ROOT, "examples", "panel.sh")
+    if not sh or not shutil.which("nohup") or not os.path.isfile(src):
+        check("ps1 panel.sh --detach prints a URL that opens (skipped: needs sh, "
+              "nohup and examples/panel.sh - sh %r, script present %r)"
+              % (sh, os.path.isfile(src)), True)
+        return
+    tmp = tempfile.mkdtemp(prefix="panel-sh-")
+    try:
+        os.makedirs(os.path.join(tmp, "examples", "acme-store", ".claude"))
+        server_dir = os.path.join(tmp, "plugins", "audit", "scripts", "panel")
+        os.makedirs(server_dir)
+        shutil.copy(src, os.path.join(tmp, "examples", "panel.sh"))
+        with open(os.path.join(server_dir, "panel-server.py"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(_STUB_PANEL_SERVER)
+        secret = "ps1SecretTokenXq"
+        live = "http://127.0.0.1:1/?t=" + secret
+
+        def run(*args, **kw):
+            res = subprocess.run(
+                [sh, os.path.join(tmp, "examples", "panel.sh"), "--detach"]
+                + list(args) + [kw.get("last", live)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+            return res.returncode, res.stdout.decode("utf-8", "replace")
+
+        rc, out = run("--no-open")
+        check("ps1 panel.sh --detach --no-open prints the full URL, token and "
+              "all, exactly once, so the page it names opens: rc %r, %r"
+              % (rc, out), rc == 0 and out.count(live) == 1)
+        rc2, out2 = run()
+        check("ps1b ...and plain --detach, whose browser was handed the URL, "
+              "prints no token and names the pidfile the full URL is in: "
+              "rc %r, %r" % (rc2, out2),
+              rc2 == 0 and secret not in out2
+              and os.path.join("acme-store", ".claude", "audit-panel.json") in out2)
+        os.remove(os.path.join(tmp, "examples", "acme-store", ".claude",
+                               "audit-panel.json"))
+        rc3, out3 = run(last="FAIL")
+        check("ps1c ...and a plain --detach whose launch never came up does "
+              "NOT say a browser was opened - it says the launch did not come "
+              "up: rc %r, %r" % (rc3, out3),
+              rc3 == 0 and "browser was opened" not in out3
+              and "did not come up" in out3)
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _example_gitignore_cases(check):
+    """The worked example commits `.claude/.gitignore` so its first panel launch
+    writes nothing. That holds only while the committed file already carries
+    every row the panel would append, so the panel's own writer is run over a
+    copy and the bytes compared - a row added to `_PANEL_PRIVATE_FILES` without
+    the example following is red here, not a dirty tree on somebody's launch."""
+    src = os.path.join(M._output.REPO_ROOT, "examples", "acme-store", ".claude",
+                       ".gitignore")
+    if not os.path.isfile(src):
+        check("eg1 the example's committed .claude/.gitignore exists, so there "
+              "is something to keep in step: %s" % (src,), False)
+        return
+    with open(src, "rb") as fh:
+        committed = fh.read()
+    tmp = tempfile.mkdtemp(prefix="panel-example-gi-")
+    try:
+        proj = os.path.join(tmp, "proj")
+        os.makedirs(os.path.join(proj, ".claude"))
+        copy = os.path.join(proj, ".claude", ".gitignore")
+        with open(copy, "wb") as fh:
+            fh.write(committed)
+        ok = M._ensure_panel_files_ignored(proj)
+        with open(copy, "rb") as fh:
+            after = fh.read()
+        check("eg1 the panel appends nothing to the example's committed "
+              ".claude/.gitignore, so its first launch leaves the tree clean "
+              "(ensured %r; appended %r)"
+              % (ok, after[len(committed):].decode("utf-8", "replace")),
+              ok is True and after == committed)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _full_run_cache_cases(check)
         _root_token_guard_cases(check)
         _pidfile_mode_cases(check)
+        _pidfile_temp_cases(check)
+        _pidfile_tighten_cases(check)
+        _panel_sh_detach_cases(check)
+        _example_gitignore_cases(check)
     return _harness.run(body)
 
 

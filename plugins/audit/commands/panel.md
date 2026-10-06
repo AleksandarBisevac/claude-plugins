@@ -24,14 +24,17 @@ and refuses if one is held). Let `PANEL="${CLAUDE_PLUGIN_ROOT}/scripts/panel/pan
      mkdir -p "$(pwd)/.claude"
      nohup python3 "$PANEL" --project "$(pwd)" >/dev/null 2>>"$(pwd)/.claude/audit-panel.log" &
      ```
-  2. Wait ~1s, then read the live URL back:
+  2. Wait ~1s, then check it came up:
      ```
      sleep 1; python3 "$PANEL" --project "$(pwd)" --status
      ```
   3. Tell the user **exactly what `--status` said**, and nothing it did not say. It reports
      one of three states and they are not interchangeable:
-     - `panel RUNNING: <url> (PID n)` → the panel is up; their browser opens automatically.
-       **Stop it anytime with `/audit:panel stop`** (or `/audit:panel status` to check).
+     - `panel RUNNING: <url> (PID n)` → the panel is up; their browser was opened at the
+       full URL, session token included. The `<url>` this line prints is **redacted**
+       (`t=<hidden>`) and will not open the page — a URL without its token answers a
+       plain-text 403 — so never hand it over as a link. The full one is in
+       `.claude/audit-panel.json`. **Stop it anytime with `/audit:panel stop`** (or `/audit:panel status` to check).
        It's per-project — launching again just points at the already-running one, so it
        never leaves an untracked process behind.
      - `panel not running` **with** an `its last launch left this on stderr …` line → the
@@ -47,7 +50,9 @@ A detached launch that discarded stderr left a failed launch looking **exactly**
 launch that succeeded and was then stopped — no pidfile, no message, nothing on record.
 The log is emptied by the server itself once it is actually listening, so anything
 left in it belongs to a launch that never got up, and `--status` prints its last line.
-`.claude/audit-panel.log` is gitignored by the panel itself, beside the pidfile.
+`.claude/audit-panel.log` is gitignored by the panel itself, beside the pidfile — and so is the
+pidfile's `audit-panel.json.tmp-*` sibling a killed launch can leave, which the next launch or
+stop removes.
 
 Two things are **expected and harmless** under Claude Code's sandbox, so do not chase them
 and do not report them as failures:
@@ -206,5 +211,7 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   empty result names the one filter emptying it rather than only offering to clear them all.
 
 Safety: binds `127.0.0.1` only, requires a per-launch token on the page itself and on every
-API call, and refuses any write whose path escapes the project directory. Ephemeral — it runs
+API call — a page request without it answers a plain-text 403 naming where the full URL is
+(`/audit:panel status`, `.claude/audit-panel.json`, or a relaunch) and echoing no token — and
+refuses any write whose path escapes the project directory. Ephemeral — it runs
 until you `stop` it.

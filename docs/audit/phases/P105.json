@@ -670,7 +670,7 @@
     {
       "id": "P105.10-m32",
       "title": "a bug link keeps the ADO card open, and the panel docs name what moved",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P105-R4 and P105-R5. adoVisible also counts linked bugs, so a plan whose only ADO record is a bug link keeps its connector card open. PLUGIN-BUILD-GUIDE.md's panel token sentence covers the page itself as well as /api/*, and names the owner-only pidfile written through a temp file and a replace; the panel parts README says run-status.js owns the page's liveness state that write confirmation reads, and that overview.js's planState is a helper other views call.",
       "files": [
         "plugins/audit/scripts/ui/panel/composition.js",
@@ -703,18 +703,26 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "17fd2c49",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "adoVisible in composition.js also counts linked bugs, so a plan whose only Azure DevOps record is a linked bug keeps its connector card open instead of reading as not set up; the existing counted-link case in tools/ui-tests/ado-panel.test.mjs now asserts that a bug link alone counts (red against HEAD's code in a scratch copy with node_modules linked: 1 failed, 51 passed; green with the fix, 52/52). PLUGIN-BUILD-GUIDE.md's panel paragraph says the page makes the same Host and token checks as the API inline, answering a person with a plain-text refusal and the script with JSON, and that on POSIX the pidfile is owner-only from creation through a temp file in the same directory and a replace (checked against panel-server.py's do_GET and _write_pidfile). The panel parts README says run-status.js owns the page's liveness state, which write confirmation reads before sending a save, and that overview.js's planState is a helper composition, policy and proposals views call (checked by grep).",
+        "descriptive": "A plan whose only Azure DevOps record is a linked bug keeps its connector card open, and the build guide and the panel parts README describe the token check and the parts as they now are."
       },
       "startedAt": "2026-10-06T20:02:34Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T21:22:16Z",
+      "verifiedBy": [
+        "ado-panel.test.mjs"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T20:59:46Z.918cb5",
         "status": "passed",
         "at": "2026-10-06T20:59:46Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "17fd2c49",
+        "at": "2026-10-06T21:22:16Z",
+        "basis": "audit-reviewer (phase mode) re-review: R4 and R5 fixed; the guide wording it then flagged (same checks inline, owner-only on POSIX) fixed"
       }
     }
   ],

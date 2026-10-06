@@ -6,6 +6,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ## [Unreleased]
 
+### Changed
+- **A panel URL without its session token now answers 403.** The panel page carries the
+  per-launch token substituted into it, so `GET /` is held to the same token check every API
+  call already was; before, a request that passed only the host check was handed the page and
+  the token in it. The refusal is plain text, because a person reads it in a browser tab: it
+  says where the full URL is (`/audit:panel status` for whether the panel runs,
+  `.claude/audit-panel.json` for the URL itself, or a relaunch) and echoes no token. The URL
+  `--status` prints is redacted and does not open the page; `commands/panel.md` says so, and
+  that the browser was opened with the full one.
+
+### Fixed
+- **A launch killed while writing the pidfile no longer leaves its token in an untracked
+  file.** The pidfile is written to an `audit-panel.json.tmp-*` sibling and renamed into
+  place; a launch killed between the two left the sibling behind, outside every ignore rule.
+  The panel's own `.claude/.gitignore` rows now cover that name, and the next launch or
+  `--stop` removes any such file, warning on one it cannot. A pidfile an older build left at a
+  wider mode is narrowed to owner-only when `--status` or a launch that finds a panel already
+  running reads it, on POSIX; the docstring claiming owner-only now limits that claim to POSIX.
+
 ## [3.1.0] - 2026-10-05
 
 ### Added
