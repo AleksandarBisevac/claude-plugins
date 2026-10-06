@@ -126,7 +126,7 @@
     {
       "id": "P103.3",
       "title": "SECURITY.md states the panel's trust boundary as the code holds it",
-      "status": "in_progress",
+      "status": "done",
       "description": "SECURITY.md says holding the panel's token is holding the panel but never says who can obtain it, and commands/panel.md's 'requires a per-launch token on every API call' reads as access control. Add one boundary statement: the panel trusts every local process that can read its token, and holding it grants config and composition writes, including the gate command the next gate run executes (journalled). Write the boundary the code holds when this lands, naming its mechanisms so it can be checked: panel-server.py serves GET / without asking for the token and embeds it in the page, and _write_pidfile's file mode decides who else can read it; today that is any local account, and once P105's token-on-GET and 0600 pidfile land it narrows to the same user, which is the sentence P105 names. gate-only: one documentation sentence; selftests runs the lints that read SECURITY.md.",
       "files": [
         "SECURITY.md"
@@ -149,18 +149,24 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c4eb5a30",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "SECURITY.md gains one bullet stating the panel's trust boundary as the code holds it: holding the per-launch token is holding the panel; panel-server.py serves GET / without asking for the token and embeds it in the page, and _write_pidfile writes the pidfile carrying the token with a plain open and no mode narrowing, so today any local account able to read the pidfile can read the token; holding it grants the composition-lever writes and the sweep, and the gate command a token holder sets is the one the next phase or review run executes, journalled. The bullet sits beside the existing panel-route bullets; splitting a dedicated panel section out of that list is left as a later structure change.",
+        "descriptive": "SECURITY.md now says who can obtain the panel's token today and what holding it allows, naming the code that decides it."
       },
       "startedAt": "2026-10-06T15:58:50Z",
-      "completedAt": null,
+      "completedAt": "2026-10-06T19:02:19Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-06T16:29:23Z.bab9b3",
         "status": "passed",
         "at": "2026-10-06T16:29:23Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c4eb5a30",
+        "at": "2026-10-06T19:02:19Z",
+        "basis": "audit-reviewer (task mode): clean; every claim checked against panel-server.py; placement follows the existing panel-route bullets"
       }
     },
     {
