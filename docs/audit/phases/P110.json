@@ -1,7 +1,7 @@
 {
   "id": "P110",
   "title": "the plugin owns only the guard rules only it can know",
-  "status": "in_progress",
+  "status": "done",
   "description": "Human-written (guard-reading code). Tasks: (1) Measure which share of 3.0.x guard refusals hit generic destructive operations the host would block anyway. (2) Design: keep plan scope, journal/manifest integrity and recorded-SHA protection; ship a recommended permissions.deny fragment for the rest. (3) One release reports instead of blocking the moved rules, then remove them. Risk: users without auto mode get only spelling-based permission rules; SECURITY.md must say so.",
   "desiredOutcome": "the plugin's command-reading guards keep the verdicts that depend on the plan and its own state, and generic destructive-command blocking is left to Claude Code's own layers through a recommended permissions fragment, with SECURITY.md saying which layer holds which guarantee",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "6d0ef731b5ac60e6bef3c015cf9967583e3625f8",
   "branch": "audit/p110-the-plugin-owns-only-the-guard",
-  "mergedAt": null,
+  "mergedAt": "2026-10-06T21:36:24Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -376,5 +376,6 @@
     "runId": "2026-10-06T21:35:50Z.6f4e0c",
     "status": "passed",
     "at": "2026-10-06T21:35:50Z"
-  }
+  },
+  "mergedHead": "b7cc643b6f2648a41fbd7cdd34267901b62501b0"
 }
