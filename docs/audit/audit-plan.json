@@ -1092,13 +1092,16 @@
       "P102.10",
       "P106.3",
       "P107.1",
-      "P107.4"
+      "P107.4",
+      "P110.4-exo"
     ],
     "QUICKSTART.md": [
       "P18.10",
       "P50.1",
       "P54.3",
-      "P110.3"
+      "P110.3",
+      "P110.4-exo",
+      "P110.5-exo"
     ],
     "README.md": [
       "P2.3",
@@ -1149,7 +1152,9 @@
       "P97.1",
       "P99.1",
       "P103.1",
-      "P103.3"
+      "P103.3",
+      "P110.4-exo",
+      "P110.5-exo"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -3072,7 +3077,8 @@
       "P77.4-6u9",
       "P77.5-6u9",
       "P86.1",
-      "P109.2"
+      "P109.2",
+      "P110.5-exo"
     ],
     "plugins/audit/scripts/status/_doctor_trail.py": [
       "P36.9",
@@ -3403,7 +3409,8 @@
       "P77.5-6u9",
       "P86.1",
       "P94.1",
-      "P109.2"
+      "P109.2",
+      "P110.5-exo"
     ],
     "plugins/audit/tests/test__doctor_trail.py": [
       "P20.6",
@@ -4186,7 +4193,9 @@
       "P110.3",
       "P108.2",
       "P108.4",
-      "P103.2"
+      "P103.2",
+      "P110.4-exo",
+      "P110.5-exo"
     ],
     "plugins/audit/tests/test_harvest_worktree.py": [
       "P43.3"
@@ -5005,13 +5014,17 @@
       "P109.9"
     ],
     "docs/research/guard-refusals-by-owner.md": [
-      "P110.1"
+      "P110.1",
+      "P110.5-exo"
     ],
     "docs/research/guard-ownership-design.md": [
-      "P110.2"
+      "P110.2",
+      "P110.4-exo",
+      "P110.5-exo"
     ],
     "plugins/audit/templates/permissions-deny.example.json": [
-      "P110.3"
+      "P110.3",
+      "P110.4-exo"
     ],
     "plugins/audit/scripts/governance/_runner_output.py": [
       "P102.3",
