@@ -6,6 +6,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ## [Unreleased]
 
+### Fixed
+- **A stamp now goes stale when a sibling rewrites a file the task does not declare.**
+  `stamp-verification.py compare` answered `current`, exit 0, after an already-dirty undeclared
+  file was rewritten: the three identity fields record HEAD, the declared files' contents and
+  WHICH paths were dirty, never the other files' bytes. A stamp is now version 2 and carries a
+  `content` field, which is `_tree_stamp.content_digest` over the tree with the paths this
+  plugin's recorder writes left out (`_evidence_io.recorded_paths`, derived again at compare
+  time from the manifest the stamp stores). It also carries a bounded per-path list of the
+  dirty set, so a stale answer prints a `moved:` line naming the path that moved; over the
+  bound (`_tree_stamp.DIRTY_PATHS_LIMIT`) the list is not kept and the line says so. A
+  version-1 token still compares, on its three fields, and says that it carries no content
+  field. Gate rows are unchanged: `dirtyDigest` and the row shape `tested_state` writes do not
+  move. `reference/execute-task.md` lists the new field and its limits.
+
 ## [3.1.0] - 2026-10-05
 
 ### Added

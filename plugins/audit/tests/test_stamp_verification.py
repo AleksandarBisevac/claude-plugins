@@ -234,6 +234,43 @@ def _compare_cases(check):
           [c for c, _t in (both_sources, no_file, garbage)] == [2, 2, 2])
 
 
+# --- the content field at the door: the recorder's own writes left out --------
+def _recorder_cases(check):
+    repo = _seeded_repo("stamp-door-recorder-")
+    man_path = os.path.join(repo, "audit-plan.json")
+    other = os.path.join(repo, "other.txt")
+    _write(man_path, json.dumps(MANIFEST))
+    _write(other, "a sibling's in-flight edit\n")
+    code, text = _run(["take", "--project", repo, "--manifest", man_path,
+                       "--task", "P1.1"])
+    stamp, problem = _tree_stamp.parse_stamp(text)
+    line = _tree_stamp.format_stamp(stamp) if stamp else ""
+    # The orchestrator's own bookkeeping, between the stamp and the compare.
+    _write(man_path, json.dumps(MANIFEST, indent=1))
+    kept_code, kept_text = _run(["compare", "--project", repo],
+                                stdin_text=line)
+    check("sv16 THE ALLOW CASE FOR THE CONTENT FIELD: a write to the plan the "
+          "stamp names, after the stamp, still compares `current`. The stamp "
+          "stores the manifest project-relative and `compare` derives the "
+          "recorder's paths from it again; left in, every stamp would go stale "
+          "on the orchestrator's next manifest write: take=%r problem=%r "
+          "manifest=%r compare=%r"
+          % (code, problem, (stamp or {}).get("manifest"), kept_code),
+          code == 0 and problem is None
+          and (stamp or {}).get("manifest") == "audit-plan.json"
+          and kept_code == 0 and _tree_stamp.CURRENT in kept_text)
+
+    _write(other, "the sibling rewrote it\n")
+    moved_code, moved_text = _run(["compare", "--project", repo],
+                                  stdin_text=line)
+    check("sv17 ...and a rewrite of the undeclared dirty file beside it is "
+          "`stale`, exit 1, with that path named once - the door reaches the "
+          "same content field the module grades: exit=%r named=%r"
+          % (moved_code, moved_text.count("moved: other.txt")),
+          moved_code == M.E_STALE
+          and moved_text.count("moved: other.txt") == 1)
+
+
 # --- the machine-readable half and the command's own shape --------------------
 def _shape_cases(check):
     repo = _seeded_repo("stamp-door-json-")
@@ -2899,6 +2936,7 @@ def _cases(check):
     _harness.stage(check, "sv-take", _take_cases)
     _harness.stage(check, "sv-compare", _compare_cases)
     _harness.stage(check, "sv-shape", _shape_cases)
+    _harness.stage(check, "sv-recorder", _recorder_cases)
     _harness.stage(check, "sr-red", _red_cases)
     _harness.stage(check, "sr-tally", _tally_cases)
     _harness.stage(check, "sr-introduces", _introduces_cases)
