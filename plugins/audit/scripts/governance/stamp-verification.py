@@ -18,10 +18,15 @@ it rather than agree by coincidence; what this adds is the second question - is
 the tree still the one the stamp names - and the third answer, that git may not be
 able to say.
 
-WHAT IT DOES NOT DO, so nobody has to discover it. A stamp is not a snapshot: the
-dirty digest records WHICH paths were dirty and never their contents, so a rewrite
-of an already-dirty file outside the declared scope moves nothing here. Every
-field prints that limit beside itself, on the way in and on the way out.
+WHAT EACH FIELD DOES NOT DO, so nobody has to discover it. The dirty digest
+records WHICH paths were dirty and never their contents, so on its own a rewrite
+of an already-dirty file outside the declared scope - a sibling's in-flight edit,
+in a tree several executors share - moves nothing. The `content` field is what
+reads those bytes: `_tree_stamp.content_digest` over the tree, with the paths this
+plugin's own recorder writes left out (`recorder_exclusion` below), and a bounded
+per-path list beside it so a stale answer can NAME the path that moved. Every
+field prints its limit beside itself, on the way in and on the way out, and a
+version-1 stamp - which has no content field - says so when it is compared.
 
 AND IT IS NOT THE DOCTOR. `/audit:doctor` already reports two neighbouring
 things - that the hooks running in this session are an OLDER installed copy of the
@@ -110,6 +115,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _tree_stamp  # noqa: E402  (the ONE tree identity, shared with run-test-gate)
+import _evidence_io  # noqa: E402  (recorded_paths: what the recorder writes, left out)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader: single file OR shards)
 import _proc_group  # noqa: E402  (a child tree stopped whole; a stop signal as an exception)
 import _locks  # noqa: E402  (pid_alive: whether a leftover throwaway's owner still runs)
@@ -164,6 +170,45 @@ def resolve_scope(args):
             return None, "manifest %s is not a JSON object" % (args.manifest,)
         return task_files(manifest, args.task)
     return list(args.files or []), None
+
+
+def recorder_exclusion(project, manifest):
+    """`(excluded, label, note)` - the paths the recorder writes, the manifest
+    spelling the stamp stores, and a sentence for any write left IN.
+
+    THE SAME DERIVATION ON BOTH SIDES. `take` passes `--manifest` as given and
+    `compare` passes the `manifest` the stamp stored, and both go through here to
+    `_evidence_io.recorded_paths` - the one list of what this plugin writes into
+    a tree. Left in, the first journal row or manifest write after a stamp would
+    move its content field and every stamp would go stale on the orchestrator's
+    own bookkeeping. `manifest` is an absolute path or None; `label` is it
+    project-relative where it sits inside the project, so a stamp compared from
+    another working directory finds it (`stored_manifest`). `note` is None unless
+    `recorded_paths` reported a write it could not exclude, which is said rather
+    than absorbed."""
+    root = os.path.abspath(project)
+    path, label = manifest or None, None
+    if path:
+        rel = _output.posix_rel(os.path.realpath(path), os.path.realpath(root))
+        label = path if rel == ".." or rel.startswith("../") else rel
+    excluded, dropped = _evidence_io.recorded_paths(root, path)
+    note = None
+    if dropped:
+        note = ("%d recorder write(s) could not be left out and stay inside the "
+                "content field: %s"
+                % (len(dropped), _output.some_of([d for d, _why in dropped])))
+    return excluded, label, note
+
+
+def stored_manifest(project, label):
+    """The absolute path a stamp's stored `manifest` names, or None.
+
+    The inverse of `recorder_exclusion`'s `label`: relative means relative to the
+    project, never to whichever directory `compare` happens to run from."""
+    if not isinstance(label, str) or not label.strip():
+        return None
+    return label if os.path.isabs(label) else os.path.join(
+        os.path.abspath(project), label)
 
 
 def read_stamp_text(args, stdin=None):
@@ -1925,7 +1970,13 @@ def run_take(args, out):
     if problem is not None:
         sys.stderr.write("ERROR: %s\n" % (problem,))
         return E_USAGE
-    stamp, state = _tree_stamp.take(os.path.abspath(args.project), files)
+    project = os.path.abspath(args.project)
+    excluded, label, note = recorder_exclusion(
+        project, os.path.abspath(args.manifest) if args.manifest else None)
+    stamp, state = _tree_stamp.take(project, files, excluded=excluded,
+                                    manifest=label)
+    if note:
+        state["contentBasis"] = "%s; %s" % (state.get("contentBasis"), note)
     if args.as_json:
         out(json.dumps({"stamp": stamp, "state": state,
                         "line": _tree_stamp.format_stamp(stamp)},
@@ -1953,7 +2004,13 @@ def run_compare(args, out, stdin=None):
     if problem is not None:
         sys.stderr.write("ERROR: %s\n" % (problem,))
         return E_USAGE
-    result = _tree_stamp.compare(stamp, os.path.abspath(args.project))
+    project = os.path.abspath(args.project)
+    excluded, _label, note = recorder_exclusion(
+        project, stored_manifest(project, stamp.get("manifest")))
+    result = _tree_stamp.compare(stamp, project, excluded=excluded)
+    if note:
+        result["state"]["contentBasis"] = "%s; %s" % (
+            result["state"].get("contentBasis"), note)
     if args.as_json:
         out(json.dumps(result, indent=2, sort_keys=True))
     else:

@@ -319,45 +319,52 @@ def scratch_debris(root, sentinel=SENTINEL, expected=SENTINEL_BYTES):
 
 
 # --- removing that directory, and the copy that does it -----------------------
-# ONE FACT, TWO HOMES, AND THIS SECTION IS BOTH THE COPY AND THE THING THAT
-# COMPARES THEM. The fact is that git writes its loose objects READ-ONLY, so on
-# windows the ordinary removal call cannot unlink them - and every caller here
-# spells it `ignore_errors=True`, which means the removal had never worked there
-# and nothing said so. `_harness.remove_tree()` is where that fact lives, with the
-# measurement that chose it and the two cases that prove both of its directions.
-REMOVAL_HELPER_HOME = os.path.join("plugins", "audit", "tests", "_harness.py")
+# ONE FACT, ONE HOME AND THIS COPY, AND THIS SECTION IS BOTH THE COPY AND THE
+# THING THAT COMPARES THEM. The fact is that git writes its loose objects
+# READ-ONLY, so on windows the ordinary removal call cannot unlink them - and every
+# caller here spells it `ignore_errors=True`, which means the removal had never
+# worked there and nothing said so. `_output.remove_tree()` in the scripts anchor
+# is where that fact lives, with the measurement that chose it; `_harness` binds
+# its own name to that function rather than holding a body.
+REMOVAL_HELPER_HOME = os.path.join("plugins", "audit", "scripts", "_output.py")
 REMOVAL_HELPER = "remove_tree"
 
 
 def remove_tree(path):
     """`shutil.rmtree` that also works on a fixture containing a git repository.
 
-    THE COPY, NOT THE HOME. `_harness.remove_tree()` under `plugins/audit/tests/`
-    owns this - the measurement that chose the fallback order and the pair of
-    cases proving both of its directions live there - and `removal_helper_drift()`
-    below compares the two statement for statement so the copy cannot drift.
+    THE COPY, NOT THE HOME. `_output.remove_tree()` under `plugins/audit/scripts/`
+    owns this - the measurement that chose the fallback order and why the
+    fallback never goes through a link are in its docstring, and its cases are in
+    `tests/test__output.py` and `tests/_harness.py` - and `removal_helper_drift()`
+    below compares the two statement for statement, the return value included,
+    so the copy cannot drift.
 
-    WHY THIS RUNNER MAY NOT IMPORT THE HOME, which is the reason the copy is
-    correct rather than merely cheap: that file is one of the files this sweep
-    RUNS. A runner that imports its own subject in order to start cannot report
-    that subject as red - a harness with a syntax error would arrive here as a
-    traceback out of this module instead of as one failing row among the rest,
-    and a checker that cannot start when the thing it checks is broken reports
-    nothing at all. The import cost is the smaller half of the argument and is
-    smaller than it reads: `_output.install_path()` above has already put
-    `scripts/` and every subdirectory of it on this path, and the pool below is
-    THREADS, so the import would be paid once per run rather than once per file.
+    A COPY THIS RUNNER IS NO LONGER FORCED TO KEEP. It was written while the home
+    was `tests/_harness.py`, a file this sweep RUNS and so may not import to
+    start: a harness with a syntax error would have arrived as a traceback out of
+    this module instead of as one failing row. The home is now the anchor, which
+    this runner imports above to start at all, so that reason is gone; binding
+    `remove_tree = _output.remove_tree` and retiring `rm1` is the remaining step.
+    Until it is taken, `rm1` is what keeps this a copy rather than a fork.
     """
     shutil.rmtree(path, ignore_errors=True)
-    if not os.path.exists(path):
-        return
+    if not os.path.lexists(path):
+        return True
+    if os.path.islink(path):
+        return False
+    # Top-down and lazy: a directory is made writable before it is descended
+    # into.
     for base, dirs, names in os.walk(path):
-        for name in dirs + names:
+        for entry in [base] + [os.path.join(base, name) for name in dirs + names]:
+            if os.path.islink(entry):
+                continue
             try:
-                os.chmod(os.path.join(base, name), 0o700)
+                os.chmod(entry, 0o700)
             except OSError:
                 pass
     shutil.rmtree(path, ignore_errors=True)
+    return not os.path.lexists(path)
 
 
 def _def_shape(source, name):
@@ -1318,13 +1325,14 @@ def _cases(check):
           ran["code"] == 0 and ran["debris"] == [])
 
     # -- the removal helper this runner keeps a copy of ------------------------
-    # ONE FACT, TWO HOMES, AND THESE ARE WHAT COMPARE THEM. `remove_tree` above is
-    # a copy of the one under `plugins/audit/tests/`, because this runner may not
-    # import a file it is one of the runners OF. A copy with nothing watching it is
-    # the divergence this repo keeps recording, so the copy only earns its place
-    # while rm1 is here. The BEHAVIOUR of the algorithm is proven where it lives -
-    # its own suite drives a read-only tree through it in both directions - and rm1
-    # is what carries that proof across to this file.
+    # ONE HOME AND THIS COPY, AND THESE ARE WHAT COMPARE THEM. `remove_tree` above
+    # is a copy of `_output.remove_tree` in the scripts anchor (its docstring says
+    # why the copy outlived its reason). A copy with nothing watching it is the
+    # divergence this repo keeps recording, so the copy only earns its place while
+    # rm1 is here. The BEHAVIOUR of the algorithm is proven where it lives - its
+    # suites drive a read-only tree through it in both directions, and a link out
+    # of the tree through the fallback - and rm1 is what carries that proof across
+    # to this file.
     _home_src = io.open(os.path.join(REPO, REMOVAL_HELPER_HOME),
                         encoding="utf-8").read()
     _self_src = io.open(os.path.abspath(__file__), encoding="utf-8").read()

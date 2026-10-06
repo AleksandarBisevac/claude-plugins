@@ -2820,9 +2820,9 @@ def screenshot_capture_drift(repo_root=None):
     - but forging it stops being something you do by accident, which is the failure
     this is about.
 
-    `demo-gate.gif` is deliberately NOT in scope: `tools/capture-demo-gif.py` writes
-    it, so demanding an entry here would report a missing basis against a producer
-    that was never asked to record one. It owes its own answer, not this one's.
+    `demo-gate.gif` is deliberately NOT in scope: its record lives in the same
+    sidecar under its own `gifs` key, written by `tools/capture-demo-gif.py` when it
+    records, and it is graded by that tool's `--check` rather than by this rule.
     """
     root = repo_root if repo_root is not None else REPO_ROOT
     shot_dir = os.path.join(root, SHOT_DIR_REL.replace("/", os.sep))

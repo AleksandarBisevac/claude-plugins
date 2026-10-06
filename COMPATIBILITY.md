@@ -442,6 +442,21 @@ depending on an implementation:
   reason. `close-phase.py`'s refusal for a phase that records no branch and whose composed
   name is not one moved from **exit 4 to exit 1**: git answered, and the command is what has
   to change (`--branch`),
+- **closing over a verdict that no longer holds — and it changed.** `audit-task.py done` and
+  `close-phase.py` used to exit 0 closing a task or landing a phase whatever its newest recorded
+  gate verdict said; each now refuses instead — `done` exits 2, `close-phase` exits 1 — naming
+  the verdict that no longer holds, **except** where there is no verdict to vouch for: no run is
+  recorded under the gate, the newest row answers `empty-gate`, the phase's branch has already
+  landed, or the newest green is stale behind a sign-off's `--no-evidence-reason` — none of those
+  refuse, and closing proceeds as before. The refusal takes `--override-verdict "<why>"`, which
+  journals `audit.verdict.close-overridden` and closes anyway — unless the override itself cannot
+  be recorded: with `journal.enabled` false, `done` still exits 2 and `close-phase` still exits 1
+  rather than closing with the exception nowhere written down; if the journal row fails to write,
+  `done` rolls back and exits 1 instead of 2, and `close-phase` exits 1 having merged or written
+  nothing. A sign-off given no `--no-evidence-reason` now drops an earlier phase review's
+  `noEvidenceReason` (the same additive key named above) rather than letting it outlive the
+  sign-off that recorded it. A pipeline that closed over a red gate is a pipeline that now stops,
+  and the repair is a green run or the override,
 - **the id `/audit:phase add` allocates when you do not pass `--id`.** It was the lowest free
   `P<n>` and is the **highest in use plus one**. The taken set is unchanged — live phases and
   every id a parked proposal reserves — and `--id` still overrides it. The old rule re-minted

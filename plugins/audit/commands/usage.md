@@ -13,15 +13,17 @@ Run
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/usage/audit-usage.py" <manifestPath> --format md $ARGUMENTS
 ```
 
-**Print it in your own reply, inside a fenced block** — a tool result is collapsed behind the tool
-call, so running the command is not delivering it.
-**Print its stdout verbatim. Do NOT re-format, summarize, re-tabulate, or "improve" it — and do
-NOT wrap it in a code fence.** The output is already markdown (pipe tables, bullets); a fence
-would disable the table rendering it exists for. The script renders its own final output for a
+**Print its stdout verbatim in your own reply** — a tool result is collapsed behind the tool
+call, so running the command is not delivering it. **Do NOT re-format, summarize, re-tabulate,
+or "improve" it.** Whether it goes in a code fence depends on the format, and only on that:
+the default `md` output is printed **unfenced**, because it is already markdown (pipe tables,
+bullets) and a fence would disable the table rendering it exists for; `ascii` output is printed
+**inside a fenced block**, because it is fixed-width text that only lines up in one. The script renders its own final output for a
 reason: a usage tool that spends a pile of tokens laying out its own tables every time you ask
 what you spent is self-defeating. Reading the numbers back to the user costs roughly as much as
 the report describes. Just show it. (A user-supplied `--format ascii` in the arguments wins over
-the default above — argparse takes the last occurrence; print that verbatim too, fenced.)
+the default above — argparse takes the last occurrence; print that verbatim too, fenced as
+said above.)
 
 The only thing worth adding is a single line of interpretation when something in the output is
 genuinely notable — a phase that cost several times its peers, a cache hit rate that collapsed, a
