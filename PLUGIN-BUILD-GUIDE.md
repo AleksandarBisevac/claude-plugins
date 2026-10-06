@@ -250,6 +250,7 @@ claude-plugins/                           # this repo (personal, public)
       templates/
         audit.config.example.json         # per-repo hook config template
         audit-plan.starter.json           # minimal manifest skeleton with $schema
+        permissions-deny.example.json     # optional Claude Code permissions.deny fragment
       README.md                           # end-user install/config/extend docs
 ```
 
@@ -4804,11 +4805,18 @@ server (the UI's HTML/CSS/JS lives as `scripts/ui/panel.html` plus the ordered p
 byte-identically — the served page is still one self-contained HTML file, the source just is not.
 It reuses the plugin's pure cores — `validate-manifest.py`, `validate-config.py`,
 `audit-status.py`, `hooks/_config.py` — via importlib). It binds `127.0.0.1`, checks the Host header, and requires a random per-launch token
-on every `/api/*` call (`X-Audit-Token`/`?t=`); it tracks **one panel per project** via a
-`.claude/audit-panel.json` pidfile (open/stop/status; stale pidfiles auto-cleaned), which
-carries a **build stamp** as well — written by `_write_pidfile` rather than by `serve()`, so
-every pidfile this plugin writes has it and `--status` always holds both halves of the
-comparison below.
+on every `/api/*` call AND on the page itself (`X-Audit-Token`/`?t=`) — `do_GET`'s `/` route
+makes the same Host and token checks inline, so reaching the Host check alone is not enough to
+read the token the served HTML carries, but it answers a refusal differently: a person in a
+browser tab reads plain text naming where the real URL lives, while `/api/*` stays JSON for the
+script calling it. It tracks **one panel per project** via a
+`.claude/audit-panel.json` pidfile (open/stop/status; stale pidfiles auto-cleaned), written
+owner-only from the instant it exists, on POSIX, through a temp file in the same directory and an
+`os.replace`, never through a plain write followed by a `chmod` — that order leaves a window,
+on every launch, during which another local user could hold a readable descriptor on a live
+credential. The pidfile carries a **build stamp** as well — written by `_write_pidfile` rather
+than by `serve()`, so every pidfile this plugin writes has it and `--status` always holds both
+halves of the comparison below.
 
 **The pidfile is no longer the panel's only per-project artifact.** A detached launch
 that discarded stderr left a launch that FAILED looking exactly like one that succeeded and
@@ -5074,6 +5082,19 @@ No client identifiers.
 ### `plugins/audit/templates/audit-plan.starter.json`
 Minimal manifest with `$schema`, a `meta` showing all new fields, one phase + one task. **TODO:**
 set the `$schema` URL to your published raw path and fill `repo`/`createdISO`.
+
+### `plugins/audit/templates/permissions-deny.example.json`
+Byte-for-byte the JSON block `docs/research/guard-ownership-design.md` derives. An optional
+`.claude/settings.json` fragment for users who also want Claude Code's own sandbox and
+`permissions.deny` layer to refuse secret reads — it sits alongside this plugin's guards and
+replaces no rule in them. `plugins/audit/tests/test_guard_secrets_read.py` parses `SECRET_PATH`'s
+own compiled alternation rather than reading it by line, so a grouped extension or two
+alternatives written on one source line are not merged or dropped; it pins that the template
+parses and is byte-identical to the design doc's block, that every top-level alternative is
+matched against an anchored shape for one of its known families (an unmatched alternative is
+reported as drift unless named, with a reason, in the suite's own `_OMITTED_ALTS`), and that
+EVERY member of every matched family — not only the first — carries its own `Read(...)` entry
+in the template, individually.
 
 ### `plugins/audit/README.md`
 End-user docs: install, run, the config table, the three-layer extensibility model, and a

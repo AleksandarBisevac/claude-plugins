@@ -331,6 +331,59 @@ def _cases(check):
                                                       % (_led_n,))
                   and "audit-panel" not in _others[0]["detail"])
 
+            # ------------------------- the pidfile's temp sibling (a glob row)
+            # A launch killed between writing the pidfile's temp sibling and
+            # renaming it leaves `audit-panel.json.tmp-<hex>` behind with that
+            # launch's token in it. Its row is a PATTERN, so the check has to
+            # match it as one - git fed a glob, the basename fnmatched.
+            stale = os.path.join(tmp, ".claude", "audit-panel.json.tmp-abc")
+            with open(stale, "w", encoding="utf-8") as fh:
+                json.dump({"url": "http://127.0.0.1:1/?t=dead"}, fh)
+            rep = base.Report()
+            M.check_local_artifacts(rep, tmp, {}, cfgmod, None, tmp)
+            _tmp_rows = [r for r in rep.rows if r["check"] == "hygiene"
+                         and "tmp-abc" in r["detail"]]
+            # THE SECOND DIRECTION: what fails if the pattern row reports
+            # whatever sits on disk instead of what git tracks.
+            check("dh32 an UNTRACKED pidfile temp draws no row: %r"
+                  % ([r["detail"] for r in _tmp_rows],), _tmp_rows == [])
+
+            subprocess.run(["git", "-C", tmp, "add", "-f",
+                            ".claude/audit-panel.json.tmp-abc"], check=True,
+                           stdout=subprocess.DEVNULL)
+            subprocess.run(["git", "-C", tmp, "-c", "commit.gpgsign=false",
+                            "commit", "-q", "-m", "tmp"], check=True,
+                           stdout=subprocess.DEVNULL)
+            rep = base.Report()
+            M.check_local_artifacts(rep, tmp, {}, cfgmod, None, tmp)
+            _tmp_rows = [r for r in rep.rows if r["check"] == "hygiene"
+                         and "tmp-abc" in r["detail"]]
+            _others = [r for r in rep.rows if r["check"] == "hygiene"
+                       and "local file(s) tracked" in r["detail"]]
+            check("dh33 a TRACKED pidfile temp is found through its glob row "
+                  "and NAMED - one row, saying it is the pidfile's temp file "
+                  "and carrying a repair: %r"
+                  % ([(r["detail"], r["fix"]) for r in _tmp_rows],),
+                  len(_tmp_rows) == 1
+                  and ".claude/audit-panel.json.tmp-abc" in _tmp_rows[0]["detail"]
+                  and "TRACKED" in _tmp_rows[0]["detail"]
+                  and "temp" in _tmp_rows[0]["detail"]
+                  and (_tmp_rows[0]["fix"] or "").startswith("git rm --cached"))
+            check("dh33b ...and is not ALSO counted in the ledger/state/logs "
+                  "row, which still counts the ledger alone: %r"
+                  % ([r["detail"] for r in _others],),
+                  len(_others) == 1
+                  and _others[0]["detail"].startswith("%d local file(s)"
+                                                      % (_led_n,))
+                  and "audit-panel" not in _others[0]["detail"])
+            _lit = [r for r in rep.rows if r["check"] == "hygiene"
+                    and ("audit-panel.json) is TRACKED" in r["detail"]
+                         or "audit-panel.log) is TRACKED" in r["detail"])]
+            check("dh33c ...while the literal rows behave as before: the "
+                  "pidfile and the log each still get exactly one row of their "
+                  "own: %r" % ([r["detail"] for r in _lit],),
+                  len(_lit) == 2)
+
         # Outside the git gate: this compares two tables and shells out to
         # nothing. The names live in TWO homes - here for the git check, and in
         # `panel-server.py` to write their ignore rules. That is a DECISION and

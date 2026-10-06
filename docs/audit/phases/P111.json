@@ -1,0 +1,29 @@
+{
+  "id": "P111",
+  "title": "sentences that changed when the phases landed are true on main",
+  "status": "pending",
+  "description": "Phases worked on separate branches; a sentence written on one branch can describe code another branch changed. This phase collects those corrections after the branches land, so no phase branch has to edit another's file.",
+  "desiredOutcome": "every sentence the landed phases made stale against each other's code is corrected on main, starting with SECURITY.md's panel trust boundary",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": []
+}

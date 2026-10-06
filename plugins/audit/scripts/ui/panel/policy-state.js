@@ -86,6 +86,12 @@ let POLICY=null;
 // a change this view must not make by rendering.
 /** @type {PolicyBlock|null} */
 let PDRAFT=null;
+// The block the draft was taken from, kept beside it. The disk refresh replaces
+// POLICY and STATE while the draft is dirty, so neither still says what the
+// reader started from; a diff against them names another writer's rule as the
+// reader's edit, and a patch built from it would send that rule back.
+/** @type {PolicyBlock|null} */
+let PBASE=null;
 
 /**
  * The three kinds a policy can decide, in the order the tab shows them. The
@@ -186,6 +192,27 @@ function pEdit(fn){PNOTE=null;fn();renderPolicy();}
  * @returns {PolicyBlock} the live draft — mutated in place by its callers
  */
 function pBlock(){if(PDRAFT===null)PDRAFT={};return PDRAFT;}
+
+/**
+ * Take the draft AND its base from one served block, in one place.
+ *
+ * Every site that resets the draft — boot, the disk refresh of a clean tab, the
+ * re-read after a save the server accepted, Discard — calls this, so a draft can
+ * never be reset while its base stays behind on an older block.
+ *
+ * @param {PolicyBlock|null|undefined} stored - the block as the server served it
+ * @returns {void} sets `PDRAFT` and `PBASE` to two separate copies of it
+ */
+function pTake(stored){PDRAFT=pClone(stored);PBASE=pClone(stored);}
+
+/**
+ * A block as the config document it is one key of, absence kept as absence.
+ *
+ * @param {PolicyBlock|null} b - a block, or null for "no block on disk"
+ * @returns {Object} `{policy: b}`, or `{}` for null — so the diff spells a
+ *   missing block the way the config file does
+ */
+const pAsConfig=b=>(b===null?{}:{policy:b});
 
 /**
  * One kind's rules out of a block, for READING.
@@ -413,10 +440,14 @@ function pPrune(){
  * The unsaved change rows for this tab, in the vocabulary the server echoes
  * back.
  *
- * The policy is ONE key of the config and the server writes it through the one
- * config writer, so the diff is computed by handing `configChanges` a whole
- * config with this block swapped in. Diffing the block alone would describe the
- * save in a vocabulary the echo does not answer in.
+ * The policy is ONE key of the config and the save goes through the same config
+ * patch Settings sends, so the diff is computed over the block as that key of a
+ * config. Diffing the block alone would describe the save in a vocabulary the
+ * echo does not answer in.
+ *
+ * Against `PBASE`, the block the draft was taken from — the same diff
+ * `policyPatch` sends, so the dialog lists exactly what the write changes and a
+ * rule another writer added since is neither listed nor touched.
  *
  * @returns {Array<{target: 'config', field: string,
  *   from: string|boolean|string[]|null, to: string|boolean|string[]|null}>}
@@ -428,10 +459,19 @@ function pPrune(){
  *   from the file
  */
 function policyChanges(){
- if(PDRAFT===null)return [];
- const cfg=JSON.parse(JSON.stringify(STATE.config||{}));
- cfg.policy=PDRAFT;
- return configChanges(cfg);}
+ return configChanges(pAsConfig(PDRAFT),pAsConfig(PBASE));}
+/**
+ * What the policy Save sends: the config patch for this block alone.
+ *
+ * Every path starts at `policy`, so the server applies it to the config it reads
+ * under its write lock and a key the patch does not name — another writer's rule
+ * included — keeps the value it has on disk.
+ *
+ * @returns {Array<{path: string[], value: *}|{path: string[], remove: true}>}
+ *   the entries `PUT /api/config` takes; empty when the draft matches its base
+ */
+function policyPatch(){
+ return configPatch(pAsConfig(PBASE),pAsConfig(PDRAFT),STATE.defaults||{});}
 // Every pattern in the draft, in the order `resolve` reads them: deny before
 // allow, project before area. Annotated from the server's own matching where the
 // server has seen the pattern — a rule typed a second ago has no match count and

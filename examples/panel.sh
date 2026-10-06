@@ -8,7 +8,11 @@
 # at the example.
 #
 #   examples/panel.sh                 open it (foreground — Ctrl-C stops it)
-#   examples/panel.sh --detach        open it in the background, print the URL
+#   examples/panel.sh --detach        open it in the background; your browser
+#                                     gets the full URL, this prints where it is
+#   examples/panel.sh --detach --no-open
+#                                     background, no browser: prints the full
+#                                     URL, session token included, to open by hand
 #   examples/panel.sh status          is one running, and where
 #   examples/panel.sh stop            stop the one running for this example
 #
@@ -44,6 +48,7 @@ fi
 
 action=start
 detach=0
+no_open=0
 # Rotate unrecognized arguments to the end of "$@" so they survive as
 # pass-through with their quoting intact (a string accumulator would not).
 n=$#
@@ -53,6 +58,7 @@ while [ "$i" -lt "$n" ]; do
   case "$arg" in
     start|stop|status) action=$arg ;;
     -d|--detach)       detach=1 ;;
+    --no-open)         no_open=1; set -- "$@" "$arg" ;;
     -h|--help)
       # The header comment IS the help text, so the two can never disagree:
       # print it from line 2 up to the first line that is not a comment.
@@ -68,8 +74,11 @@ case "$action" in
 esac
 
 if [ "$detach" -eq 1 ]; then
-  # Detached, so it outlives this shell — then read the URL back from the
-  # pidfile rather than guessing it, since --port 0 means the kernel picks one.
+  # Detached, so it outlives this shell. --status then says whether it came up,
+  # and prints the URL REDACTED - a URL without its token is refused by the
+  # page - so the one that opens is read from the pidfile, never guessed (with
+  # --port 0 the kernel picks the port). It reaches stdout only under --no-open,
+  # where nobody else will open it: the same rule panel-server.py follows.
   # Stderr goes to the launch log, NEVER to /dev/null: a child that dies at
   # startup would otherwise leave exactly the trace a clean stop leaves, and
   # --status would have nothing to report but its absence (F99). The append is
@@ -79,6 +88,21 @@ if [ "$detach" -eq 1 ]; then
   nohup "$PY" "$panel" --project "$project" "$@" >/dev/null 2>>"$project/.claude/audit-panel.log" &
   sleep 1
   "$PY" "$panel" --project "$project" --status
+  pidfile=$project/.claude/audit-panel.json
+  # Read in BOTH branches: a launch that never came up wrote no pidfile, and
+  # then nothing was opened - neither by this script nor by a browser.
+  url=$("$PY" -c 'import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    print(json.load(fh).get("url") or "")' "$pidfile" 2>/dev/null || true)
+  if [ -z "$url" ]; then
+    echo "no URL recorded in $pidfile - the launch did not come up (see --status above)"
+  elif [ "$no_open" -eq 1 ]; then
+    echo "open: $url"
+    echo "NOTE: that URL contains a live session token - avoid pasting it anywhere it will be kept."
+  else
+    echo "your browser was opened at the full URL; the one above is redacted and will not open the page."
+    echo "the full URL (with its session token) is in $pidfile"
+  fi
   echo "stop it with: examples/panel.sh stop"
 else
   exec "$PY" "$panel" --project "$project" "$@"

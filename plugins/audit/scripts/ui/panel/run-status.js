@@ -47,6 +47,68 @@
  */
 let RUNSTATUS=null, RUNPOLL=null, FP=null;
 /**
+ * Whether the last poll got no answer at all — the server has stopped with this
+ * tab still open. Written by `runOffline` alone, and only the poll calls that, so
+ * the page's belief about liveness has one source: a save that fails does not
+ * set it, because one lost request is not evidence the server is gone.
+ */
+let OFFLINE=false;
+/** What a Save pressed while offline is told; no request is made, so nothing was sent. */
+const OFFLINE_SAY='The panel server is not answering, so nothing was sent. '
+ +'Your edits are still in the form.';
+/**
+ * Every control that writes, by its own data- hook rather than a styling class.
+ * A view that adds a write control and no hook here is still held by
+ * `confirmSave`'s refusal and by `api()`'s refusal-shaped answer; it only loses
+ * the visible unavailable state.
+ */
+const WRITE_CONTROLS='[data-save],[data-psave],[data-thsave],[data-thsaveas],'
+ +'[data-thpreset],[data-threset],[data-sweep],[data-propmat],[data-propdrop],'
+ +'[data-proprevive],[data-gpprune]';
+/**
+ * Mark the page offline or live: the root's `data-offline`, every write control,
+ * and one page-level notice above the shell.
+ *
+ * A button is marked through `offState`, so it keeps its tab stop and the
+ * capture-phase listener refuses the press. Anything else — the theme picker is a
+ * `<select>`, whose change no click listener can refuse — is `disabled`. Each
+ * control this takes is tagged, and the clear hands back only those: one that was
+ * unavailable for its own reason before the outage stays so after it.
+ *
+ * Called on every tick, so a view re-rendered during an outage has its fresh
+ * Save taken on the next failed poll; between the two, `confirmSave` refuses.
+ *
+ * The notice is the build-stale notice's shape and place: `.findings warn` for
+ * the look, and a wrapper sharing `.buildstale`'s placement rule in
+ * app-shell.css. It persists until a poll answers — nothing here is a toast.
+ *
+ * @param {boolean} on - true when the poll's fetch got no answer
+ * @returns {void}
+ */
+function runOffline(on){
+ OFFLINE=!!on;
+ if(OFFLINE)root.setAttribute('data-offline','1');else root.removeAttribute('data-offline');
+ document.querySelectorAll(WRITE_CONTROLS).forEach(n=>{
+  const isBtn=n.tagName==='BUTTON';
+  const off=isBtn?n.getAttribute('aria-disabled')==='true':n.disabled;
+  if(OFFLINE&&!off){n.setAttribute('data-offlinetook','1');
+   if(isBtn)offState(n,true);else n.disabled=true;}
+  else if(!OFFLINE&&n.hasAttribute('data-offlinetook')){n.removeAttribute('data-offlinetook');
+   if(isBtn)offState(n,false);else n.disabled=false;}});
+ const note=$('[data-offlinenote]');
+ if(!OFFLINE){if(note)note.remove();return;}
+ if(note)return;
+ // Guarded, unlike the build-stale notice's insert: this runs inside the poll's
+ // catch, and a throw there would leave the controls marked with no notice and
+ // the next tick's clear never reached.
+ const shell=$('.shell');
+ if(shell&&shell.parentNode)shell.parentNode.insertBefore(
+  el('div',{class:'offlinenote','data-offlinenote':'1'},
+   el('div',{class:'findings warn',role:'status'},
+    el('strong',{},'The panel server is not answering.'),
+    ' Saving is off until it answers again, and this notice clears on its own '
+    +'when it does. Anything typed here stays in the form.')),shell);}
+/**
  * The part of a payload worth repainting for.
  *
  * The gate block IS in the key: a fresh gate event or a bypass arming repaints
@@ -103,14 +165,17 @@ function interacting(){
  * assembled page from this function to the Overview marker and asserts that.
  *
  * Assigns RUNSTATUS and FP, which it OWNS — see the note above their
- * declarations before writing either from anywhere else.
+ * declarations before writing either from anywhere else. It also owns liveness:
+ * a fetch that got no answer marks the page offline, and any answer at all —
+ * a refusal included — clears it.
  * @returns {Promise<void>} resolves when the tick is done; a failed fetch
- *   resolves too, leaving a stale badge rather than killing the panel
+ *   resolves too, with the page marked offline rather than the panel killed
  */
 async function pollRunStatus(){
  if(document.hidden)return;
  try{
   const next=await api('GET','/api/runstatus');
+  runOffline(false);
   // The fingerprint is the disk's change stamp, and it deliberately does NOT
   // enter runStatusKey — the poll itself still never refetches full state. A
   // moved stamp hands off to refreshFromDisk (defined past the Overview
@@ -129,7 +194,12 @@ async function pollRunStatus(){
   if(runStatusKey(next)===runStatusKey(RUNSTATUS))return;   // no repaint on no change
   RUNSTATUS=next;
   if(!$('#over').classList.contains('hidden'))renderOver();
- }catch(e){/* a panel that dies because a poll failed is worse than a stale badge */}
+ // Still caught, because a panel that dies because a poll failed is worse than a
+ // stale badge — but no longer swallowed. Only a fetch that got no answer means
+ // the server is gone; a body that would not parse, or a repaint that threw, came
+ // after an answer, so it clears the offline state and is said in the console.
+ }catch(e){runOffline(!!(e&&e.noAnswer));
+  if(!(e&&e.noAnswer))console.error('the run-status poll failed',e);}
 }
 /**
  * Start the 5s poll, replacing any interval already running.
