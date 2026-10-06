@@ -1,0 +1,29 @@
+{
+  "id": "P104",
+  "title": "the cost a user sees is the cost they paid",
+  "status": "pending",
+  "description": "Tasks: (1) Price table rows for claude-opus-5-5, claude-sonnet-5 at its current price and claude-fable-5-1 (cache read 0.25), with pricingAsOf and the source URL; the hook-side copy stays equal through pricing_divergences. (2) Print attribution coverage beside every cost-per-task figure (tasks with any attributed tokens / tasks done; main loop not attributed). (3) Pilot reading Claude Code's own costUSD or OTel cost instead of the plugin's table, and retire the table if it holds.",
+  "desiredOutcome": "every cost the plugin prints uses current official prices with their date and source, and every per-task cost says how much of the work it actually attributes",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": []
+}
