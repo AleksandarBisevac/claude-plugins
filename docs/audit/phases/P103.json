@@ -334,7 +334,7 @@
     {
       "id": "P103.7",
       "title": "QUICKSTART is the only quick-start; the plugin README and handbook link to it",
-      "status": "in_progress",
+      "status": "done",
       "description": "The first-run path still exists in three shapes that disagree: QUICKSTART.md, the plugin README's TL;DR (:28-43), its Install command list (:514-524) and its Quick start (:654-715), plus the handbook's install section. Replace the plugin README's TL;DR, the Install list and the Quick start with one link to QUICKSTART.md, keeping the '## Install' heading (prove-gates s15 anchors on it) and moving the hand-copy starter-manifest curl lines into the reference section beside the schema curl, so the README still carries current-tag pins (raw_url_pin_drift, prove-gates p1); the handbook's #install section keeps its anchor and content and gains a pointer to QUICKSTART for a first session (an absolute GitHub link, since the page is served from Pages). This completes the documentation split by audience in CONTRIBUTING's Decision record rather than reopening it. Acceptance: a reader goes from README.md to the first /audit:doctor through exactly one page, and no document other than QUICKSTART.md lists a first-command sequence.",
       "files": [
         "plugins/audit/README.md",
@@ -359,18 +359,24 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "74c6700a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/README.md no longer carries a first-run sequence of its own: the TL;DR command block is deleted, ## Install keeps its heading, the sentence naming the installed command surface and the /reload-plugins note, with its install block replaced by a link to QUICKSTART.md, and ## Quick start becomes a link to QUICKSTART.md plus a pointer to the hand-copy path. The hand-copy starter-manifest curl block (still pinned to v3.1.0) and its buildCommands note move into ## The manifest in one minute, beside the schema curl. docs/handbook.html's #install section gains one paragraph pointing a first-time reader at QUICKSTART.md through an absolute GitHub link, because the page is served from GitHub Pages; its anchor and existing content are unchanged. Checked with _refs.sweep_doc_drift, raw_url_pin_drift, handbook_drift, doc_link_drift, _output.house_style_violations and _deps.doc_prose_numbers over the two files, all clean.\nAfter review, the free backfill step moved into QUICKSTART.md as step 2, before the install check, worded to agree with the README's Token usage section (no tokens spent, no agent called, the only thing written is the self-ignoring ledger under .claude/usage/), with a pointer there for the rest; the later steps were renumbered after checking that nothing links to a QUICKSTART step by number or anchor. The README's sentence that QUICKSTART.md is the one page now holds.",
+        "descriptive": "There is now one first-run page: the plugin README and the handbook point to QUICKSTART.md instead of keeping their own command sequences, and QUICKSTART gains the free look at past spend that only the README used to show."
       },
       "startedAt": "2026-10-06T19:15:02Z",
-      "completedAt": null,
+      "completedAt": "2026-10-06T19:28:46Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-06T19:28:17Z.5fabd4",
         "status": "passed",
         "at": "2026-10-06T19:28:17Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "74c6700a",
+        "at": "2026-10-06T19:28:46Z",
+        "basis": "audit-reviewer (task mode): matches; one medium finding (the README claimed QUICKSTART covered the backfill step) fixed by moving the step into QUICKSTART.md, spot-checked by the orchestrator"
       }
     },
     {
@@ -379,12 +385,14 @@
       "status": "in_progress",
       "description": "demo-gate.gif was recorded at 0.24 and shows a bypass line that does not say only the human can arm it, while README.md says every line is the plugin's real output; --check asserts behaviour, never text, so nothing went red. Give the GIF a record in captured-at.json under its own top-level key (capture-screenshots.mjs today rewrites the file as note+images only, so it must preserve keys it does not own), make --check compare a fresh capture's text digest and the committed bytes against that record, then re-record with Pillow; derive the final hold from the refusal's length rather than the fixed 3600 ms, since today's refusal is roughly twice as long. Update the CI step's comment, which says nothing can tell the GIF is stale. Run --check twice with a gap and on a git archive export before calling the digest stable, and run npx vitest run and python3 tools/capture-demo-gif.py --check (neither is a build-command key).",
       "files": [
+        ".github/workflows/ci.yml",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/demo-gate.gif",
         "tools/capture-demo-gif.py",
         "tools/capture-screenshots.mjs",
         "tools/ui-tests/capture-provenance.test.mjs",
-        "docs/screenshots/captured-at.json",
-        "docs/screenshots/demo-gate.gif",
-        ".github/workflows/ci.yml"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/_refs.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -415,7 +423,12 @@
       },
       "startedAt": "2026-10-06T19:15:02Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T19:38:45Z.e6d7c3",
+        "status": "passed",
+        "at": "2026-10-06T19:38:45Z"
+      }
     },
     {
       "id": "P103.9",

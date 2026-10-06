@@ -736,13 +736,16 @@ jobs:
         run: |
           set -e
           # The README's headline image is a recording of the plan gate denying an
-          # edit. Nothing in CI can tell that a committed GIF has gone stale — it is
-          # just bytes — so this asserts the BEHAVIOUR the recording depends on:
-          # the in-plan edit allowed, the out-of-plan edit denied, and the refusal
-          # still naming the file and the way out. If the gate's wording moves, this
-          # fails and the GIF gets re-recorded, rather than shipping a picture of
-          # something the product no longer does. --check writes no file and needs
-          # no font.
+          # edit. Two things are asserted. The BEHAVIOUR the recording depends on:
+          # the in-plan edit allowed, the out-of-plan edit denied, the refusal still
+          # naming the file and the way out. And the TEXT: a recording writes the
+          # GIF's sha256 and a digest of the text it shows into
+          # docs/screenshots/captured-at.json, and this recomputes both - the text
+          # from a fresh capture, the hash from the committed file - failing by the
+          # GIF's name when either moved or no record exists. Behaviour alone once
+          # stayed green over a GIF showing a bypass line the gate no longer
+          # printed. The pixels are not compared (font rasterisation differs by
+          # host). --check writes no file and needs no font.
           python tools/capture-demo-gif.py --check
 
       - name: Screenshot preconditions (the report actually paints what it claims)

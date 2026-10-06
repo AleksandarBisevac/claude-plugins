@@ -1460,8 +1460,9 @@ than per run, because `--only report` rewrites some images and leaves others, an
 version would then claim the new build for pictures nobody re-shot. The hash is what stops the
 sidecar being edited into agreement without the pictures being the ones captured; it does not
 make the claim unforgeable, only impossible to break by accident. `demo-gate.gif` is out of
-scope on purpose — `tools/capture-demo-gif.py` writes it, so demanding an entry would report a
-missing basis against a producer never asked to record one.
+scope on purpose — its record lives in the same sidecar under its own `gifs` key, written by
+`tools/capture-demo-gif.py` when it records, and it is graded by that tool's `--check`, not by
+this rule.
 
 **That version answered only half the question, and the source digest below is the other half.**
 "Was this captured at this release" is not "does this picture still show the current UI", and

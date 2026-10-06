@@ -6090,14 +6090,13 @@ function loadUiSourceDigests() {
  */
 function recordCapture(name, file, surface) {
   const sidecar = path.join(OUT, CAPTURED_AT);
-  let body = { note: '', images: {} };
+  let prior = null;
   try {
-    const prior = JSON.parse(readFileSync(sidecar, 'utf8'));
-    if (prior && typeof prior === 'object' && prior.images) body = prior;
+    prior = JSON.parse(readFileSync(sidecar, 'utf8'));
   } catch { /* absent or unreadable: this run rebuilds what it can vouch for */ }
   const version = JSON.parse(
     readFileSync(REPO + '/plugins/audit/.claude-plugin/plugin.json', 'utf8')).version;
-  body.note = 'Written by tools/capture-screenshots.mjs. Each entry is the plugin '
+  const note = 'Written by tools/capture-screenshots.mjs. Each entry is the plugin '
     + 'version that was in the picture when that file was written, the hash of the '
     + 'bytes it was written as, the surface it is a picture of, and the digest of '
     + 'that surface\'s UI sources at the moment of the shutter '
@@ -6118,10 +6117,35 @@ function recordCapture(name, file, surface) {
   if (surface && UI_DIGESTS && UI_DIGESTS[surface]) {
     entry.uiDigest = UI_DIGESTS[surface];
   }
-  body.images[`${name}.png`] = entry;
-  const ordered = {};
-  Object.keys(body.images).sort().forEach((k) => { ordered[k] = body.images[k]; });
-  writeFileSync(sidecar, `${JSON.stringify({ note: body.note, images: ordered }, null, 2)}\n`);
+  const body = mergeCaptureRecord(prior, note, `${name}.png`, entry);
+  writeFileSync(sidecar, `${JSON.stringify(body, null, 2)}\n`);
+}
+
+/**
+ * The sidecar after one shot's record is merged in — a new object, the prior untouched.
+ *
+ * The file is SHARED: `images` is this tool's, and any other top-level key belongs to
+ * somebody else — `tools/capture-demo-gif.py` keeps the demo GIF's record beside these.
+ * Rewriting the file as note plus images dropped that record on every re-capture, so
+ * every key this function does not own is carried through as it was read, after the
+ * two it does. A prior that is not an object, or has no `images` table, contributes
+ * no images: a record this run cannot read is one it cannot vouch for.
+ *
+ * @param {unknown} prior the parsed sidecar, or null when it was absent or unreadable
+ * @param {string} note the explanation this tool writes at the top
+ * @param {string} file the image's file name, the key of its entry
+ * @param {Record<string, string>} entry what this shot recorded
+ * @returns {{note: string, images: Record<string, Record<string, string>>}}
+ */
+export function mergeCaptureRecord(prior, note, file, entry) {
+  const base = prior && typeof prior === 'object' && !Array.isArray(prior) ? prior : {};
+  const known = base.images && typeof base.images === 'object' ? base.images : {};
+  const images = { ...known, [file]: entry };
+  const ordered = Object.fromEntries(
+    Object.keys(images).sort().map((k) => [k, images[k]]));
+  const others = Object.fromEntries(
+    Object.entries(base).filter(([k]) => k !== 'note' && k !== 'images'));
+  return { note, images: ordered, ...others };
 }
 
 /* ---- the shutter may only open on a fixture (F137) --------------------------
