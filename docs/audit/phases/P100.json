@@ -35,7 +35,7 @@
     {
       "id": "P100.1",
       "title": "a stamp names an undeclared dirty file whose content moved",
-      "status": "in_progress",
+      "status": "done",
       "description": "Stamp v2 carries a content field built from _tree_stamp.content_digest (the one content identity; no third digest arithmetic), with the recorder's own paths excluded, so compare answers stale when an undeclared dirty file's bytes moved and names the path(s) it cannot vouch for (bounded per-path list for the dirty set). compare keeps reading v1 tokens. Measured cost of content_digest is about the cost of take itself at these sizes, so the 'expensive' premise in the module docstring is revised with the measurement. Gate rows keep dirtyDigest unchanged. Update the stamp's limits text and the field list in reference/execute-task.md. Red-first: the rewrite-of-undeclared-file case answers current at HEAD and stale after.",
       "files": [
         "plugins/audit/scripts/governance/_tree_stamp.py",
@@ -72,18 +72,31 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2ec163d7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Stamp v2 (STAMP_VERSION 2, READABLE_VERSIONS 1 and 2) adds content, dirtyPaths and manifest fields. content is built from _tree_stamp.content_digest, split into a reading and an answer half with no new digest arithmetic. stamp-verification derives the recorder's own paths from _evidence_io.recorded_paths and excludes them on take and compare. compare names moved paths up to DIRTY_PATHS_LIMIT and says so when it cannot name them. tested_state is unchanged, so gate rows and dirtyDigest are unchanged. The module docstring's 'expensive' premise is replaced by a dated measurement. execute-task.md's field list and limits, CHANGELOG and the module-map line are updated. Red-first: tsl3 and tsv1 fail against HEAD's module and pass after.",
+        "descriptive": "A verification stamp now notices when a file the task did not declare, but which was already modified, has its contents rewritten after the stamp was taken. compare answers stale and names that file instead of answering current. Older stamps keep comparing on the fields they carry."
       },
       "startedAt": "2026-10-06T14:06:10Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T14:38:46Z",
+      "verifiedBy": [
+        "tsl3",
+        "tsv1",
+        "tsb1",
+        "tsb2",
+        "sv16",
+        "sv17"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T14:32:59Z.914a8e",
         "status": "passed",
         "at": "2026-10-06T14:32:59Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2ec163d7",
+        "at": "2026-10-06T14:38:46Z",
+        "basis": "audit-reviewer (task mode): every point of the description is in the diff, no findings, redFirst proved, inheritedTests not-asked because the gate runs the whole-project sweep"
       }
     },
     {
