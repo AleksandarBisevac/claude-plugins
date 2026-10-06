@@ -1,0 +1,527 @@
+{
+  "id": "P102",
+  "title": "red-first proves a red outside Python",
+  "status": "pending",
+  "description": "Tasks: (1) When no runner-output reader matches, say so and quote nothing as decisive (the npm update banner was quoted as the cause). (2) Design first, then build: a shared runner-output module (jest/vitest tallies and case identity), a per-runner baseline that tolerates a new empty suite, and dependency provision for the throwaway tree (node_modules) with its two leaks named. (3) Every entry point's usage error names its own version and, through one shared hook, the newer installed copy for this project; orchestrator docs resolve the plugin root per spawn and re-resolve after an update.",
+  "desiredOutcome": "stamp-verification red proves a red in a jest or vitest project as it does under pytest, and an older cached copy that is asked for a newer verb names the newer installed copy",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P102.1",
+      "title": "red names no line as decisive when no runner reader matched",
+      "status": "pending",
+      "description": "`_decisive_line` falls back to the last non-blank line when neither a tally key nor an Error line matched. So a basis named npm's update banner, printed after the run, as the cause of a run it could not read. When no reader matched, the basis says so and quotes nothing as decisive. A first or last line may be shown only when labelled as unread output, never as a cause chosen by position. The fixture must be text that no reader matches, so the case keeps holding after the jest and vitest readers land.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: a run text no tally or error reader matches, ending in npm's update-notice banner, gets a basis that says no reader matched and quotes nothing as the decisive line",
+          "plugins/audit/tests/test_stamp_verification.py: a run whose pytest tally is read still quotes that tally line as decisive, and one ending in a final Error line still quotes that line (allow cases)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P100"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P102.2",
+      "title": "design note: how red reads, credits, baselines and provisions a jest or vitest run",
+      "status": "pending",
+      "description": "Before any code, write the design as a section of stamp-verification.py's module docstring; every implementation task below depends on it. It settles four things. (1) One runner-output module at layer 1, scripts/governance/_runner_output.py. It holds run-test-gate's summary and failure readers, moved and not copied, and red reads through it. It carries a per-case assertion flag that tells an expect failure apart from 'Test suite failed to run'. (2) Per-runner case identity and credit for jest and vitest: the FAIL <path> header plus the title chain. HEAD's case is the same chain with an identical body in HEAD's copy. Because ast is Python-only, choose between a text-level reading and a small stdlib tokenizer. (3) A per-runner baseline in which a new test file is absent rather than an empty stub. Settle it by first driving jest with and without --passWithNoTests on an empty suite, and vitest on an empty file (vitest was never driven), and record the results as dated history. (4) --deps-from <dir>, defaulting to --project, which links ignored dependency directories (node_modules at any depth, .venv) into the throwaway. Name the leaks a link opens: a workspace link into the shared tree, which is refused by name, and runner caches written back through the link. Also say how the project's .npmrc reaches the fresh HOME, or that it is named as dropped.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P100"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P102.3",
+      "title": "run-test-gate's runner readers move to one shared module",
+      "status": "pending",
+      "description": "Move _SUMMARY_READERS, _FAILURE_READERS, jest_failures and their helpers out of run-test-gate.py into the new layer-1 module the design names, and import them back. No behaviour changes. This avoids the layer debt of one entry point importing another. The new file owes every registration in CLAUDE.md's 'Adding a .py': the migrated --selftest pointer with its cases in tests/test__runner_output.py; safe_stdio first in __main__; a _deps.LAYERS entry at layer 1 with its reason; a tree line and a section in PLUGIN-BUILD-GUIDE.md plus the regenerated module map (`python3 plugins/audit/scripts/_deps.py --render`); and the PATH_PREAMBLE.",
+      "files": [
+        "plugins/audit/scripts/governance/_runner_output.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__runner_output.py",
+        "plugins/audit/tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__runner_output.py: the summary and failure tables hold every runner run-test-gate read before the move, and a runner present in one table is present in the other",
+          "plugins/audit/tests/test_run_test_gate.py: run-test-gate keeps no runner table of its own (the names it uses resolve to the shared module's objects) and its existing reader cases, the table-pairing case included, pass unchanged"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P102.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P102.4",
+      "title": "red reads a jest or vitest tally and its failing cases through the shared module",
+      "status": "pending",
+      "description": "TALLY_READERS, CASE_READERS and command_runner in stamp-verification.py know only house, pytest and unittest. run-test-gate reads jest, vitest, mocha, pytest and playwright. So red answered no-tally on a genuine jest assertion failure. red now reads tallies and cases through the shared module, which gains the per-case assertion flag red needs for jest and vitest. Mocha and playwright join only if the design note says their output carries what red needs. The house, pytest and unittest readings stay exactly as they are. Regenerate the module map for the new edge.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/governance/_runner_output.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/tests/test__runner_output.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: the probe's jest assertion text (`Tests: 1 failed, 1 total`, `● adds two numbers`, `Expected: 3` / `Received: -1`) classifies as red with that case named and its assertion true, where it classified as no-tally",
+          "plugins/audit/tests/test_stamp_verification.py: a jest `Test suite failed to run` block is named with assertion false, so the run stays could-not-prove (allow case)",
+          "plugins/audit/tests/test__runner_output.py: a vitest `FAIL <file> > <suite> > <name>` carrying an AssertionError reads as one failing case with assertion true, and `Tests  no tests` reads as nothing collected"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P100"
+      ],
+      "dependsOn": [
+        "P102.3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P102.5",
+      "title": "a jest or vitest failure is credited to the task by suite path and title chain",
+      "status": "pending",
+      "description": "case_site, credit_problem and module_key use Python's ast to decide whether a failing case is the task's own. So for a JS failure there is no notion of a case HEAD already has. Implement the per-runner identity the design note chose: jest and vitest locate a failure by suite path and title chain, and HEAD's case is the same chain with an identical body in HEAD's copy of the file. The Python credit rule is unchanged.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/governance/_runner_output.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: a failing jest case whose title chain is new in a declared test file is credited to the task",
+          "plugins/audit/tests/test_stamp_verification.py: a failing jest case whose title chain and body are identical in HEAD's copy of a test file is not credited, and the same chain with a body the task edited is credited",
+          "plugins/audit/tests/test_stamp_verification.py: a failure jest locates in a test file the task does not declare is not credited (allow case)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P100"
+      ],
+      "dependsOn": [
+        "P102.4"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P102.6",
+      "title": "a new jest or vitest test file's baseline runs with the file absent",
+      "status": "pending",
+      "description": "For HEAD's run, _isolated_run lays each declared test file that is new at HEAD over as an EMPTY file, and jest refuses an empty suite. So every new JS test file turned the baseline red, and the answer became 'HEAD's own tests are already red'. For the runners the design note names, the baseline runs with the new file absent and the command's other targets run. The measurement in the note decides whether --passWithNoTests, or its vitest equivalent, is passed. A fake runner script keeps the sweep free of npm.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: with a fake jest-shaped runner that exits 1 on an empty suite, a task adding a new failing test file gets a green baseline and answers proved",
+          "plugins/audit/tests/test_stamp_verification.py: a pytest task adding a new test file keeps today's baseline, the empty stub with exit 5 accepted (allow case)",
+          "plugins/audit/tests/test_stamp_verification.py: a baseline whose remaining targets are red at HEAD still answers could-not-prove (allow case)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P100"
+      ],
+      "dependsOn": [
+        "P102.4"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P102.7",
+      "title": "red links the project's ignored dependency directories into the throwaway",
+      "status": "pending",
+      "description": "The throwaway is a detached worktree that holds tracked files only, so node_modules is absent. Each run under its fresh HOME re-downloads an unpinned runner, or fails offline, and a private registry's ~/.npmrc is missing. Add --deps-from <dir>, defaulting to --project. It links into the throwaway the ignored dependency directories that `git ls-files --others --ignored --directory` names (node_modules at any depth, .venv). A workspace link that resolves into the shared tree would let HEAD's run read the fix and answer a false not-red, so it is refused by name. Writes a runner makes back through a link are named in the basis. The fresh HOME stays, and .npmrc is either resolved on purpose or named as dropped. In agents/audit-executor.md and reference/execute-task.md, replace the 'untracked dependency comes back could-not-prove' sentence with the flag and its leaks. The end-to-end check against real jest is the maintainer's field-report probe, driven by hand and recorded in the outcome.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/reference/execute-task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_stamp_verification.py: with --deps-from defaulting to --project, an ignored node_modules holding a fake jest-shaped runner is linked into the throwaway and a new failing test answers proved, where it answered could-not-prove before",
+          "plugins/audit/tests/test_stamp_verification.py: a node_modules entry that links into the shared working tree (a workspace package) is refused by name and no run is made",
+          "plugins/audit/tests/test_stamp_verification.py: a test that passes without the fix stays not red (exit 1) with dependencies linked, and the basis names the linked directories, the cache path a runner may write back through, and whether the project's .npmrc was carried or dropped (allow case)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "plugin-validate",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P100"
+      ],
+      "dependsOn": [
+        "P102.5",
+        "P102.6"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P102.8",
+      "title": "the docs name the runners red reads, derived from its table by a drift check",
+      "status": "pending",
+      "description": "'A run whose output carries no tally the helper reads' never said which runners the helper reads, so an operator who fixed dependencies learned nothing about the rest. Both documents name the runners red reads. A new `_drift` check in _refs.py derives that list from the table instead of letting it be written as prose. _refs.py and _runner_output.py are layer-mates, so the check reads the table from source by AST rather than importing it. The check gets a row in tools/prove-gates.py so a weakened check goes red.",
+      "files": [
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/reference/execute-task.md",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__refs.py: a document naming a runner red's tally table does not hold, or omitting one it holds, is reported by document and runner",
+          "plugins/audit/tests/test__refs.py: the shipped agents/audit-executor.md and reference/execute-task.md pass the check (allow case)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "plugin-validate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P100"
+      ],
+      "dependsOn": [
+        "P102.4",
+        "P102.7"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P102.9",
+      "title": "a usage error names this copy's version and a newer installed copy for this project",
+      "status": "pending",
+      "description": "When an older cached copy is asked for a newer subcommand, it exits 2 with a bare argparse 'invalid choice', no version and no hint. Executors concluded the helper did not exist. Add one shared usage hook to _claude_home.py, which sits at layer 1 and is reachable from every entry point. The hook names _output.plugin_version() and asks installed_copies() for the copy that applies to this project, project scope before user scope. installed_plugins.json is undocumented, so the hook fails open and states that basis. Decide in the docstring how the hook attaches under the free-functions rule: an instance patch of parser.error rather than a subclass. Apply it to stamp-verification.py, the reported case, and regenerate the module map.",
+      "files": [
+        "plugins/audit/scripts/status/_claude_home.py",
+        "plugins/audit/tests/test__claude_home.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__claude_home.py: with a fixture Claude home recording a newer project-scope copy beside the running one, an unknown subcommand's usage error names this copy's version and path, the newer version with its path and scope, and /reload-plugins",
+          "plugins/audit/tests/test__claude_home.py: a project-scope copy whose projectPath is this project is chosen before a user-scope copy, and another project's copy is never named",
+          "plugins/audit/tests/test__claude_home.py: with only this version installed the plain usage error carries the version, and with an unreadable installed_plugins.json it carries the version plus 'install records could not be read' (allow cases)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P100"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P102.10",
+      "title": "every entry point's parser goes through the one usage hook, held by a lint",
+      "status": "pending",
+      "description": "Apply the hook from the previous task to every other entry point that builds an ArgumentParser (`grep -rln 'ArgumentParser(' plugins/audit/scripts`). Each gets one call to the shared hook, never its own copy, which would be the DRY failure. A new lint beside the safe_stdio check in _output.py holds the rule, and it gets a row in tools/prove-gates.py. Regenerate the module map for the new edges (`python3 plugins/audit/scripts/_deps.py --render`). Entry points that parse argv by hand are listed in the outcome, not converted here. This touches files that P100, P106 and P107 also edit, so it is blocked by P106 and P107 and runs after them.",
+      "files": [
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__output.py",
+        "tools/prove-gates.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/scripts/demo/gen-demo-usage.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/scripts/git/manage-worktrees.py",
+        "plugins/audit/scripts/governance/audit-journal.py",
+        "plugins/audit/scripts/governance/audit-lock.py",
+        "plugins/audit/scripts/governance/commit-audit-state.py",
+        "plugins/audit/scripts/governance/commit-manifest-index.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/scripts/governance/full-gate.py",
+        "plugins/audit/scripts/governance/import-evidence.py",
+        "plugins/audit/scripts/governance/propose-gates.py",
+        "plugins/audit/scripts/governance/record-outside-run.py",
+        "plugins/audit/scripts/governance/record-risk-confirmation.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/verify-invariants.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/manifest/merge-manifest.py",
+        "plugins/audit/scripts/manifest/migrate-json-encoding.py",
+        "plugins/audit/scripts/manifest/set-priority.py",
+        "plugins/audit/scripts/panel/panel-server.py",
+        "plugins/audit/scripts/status/audit-doctor.py",
+        "plugins/audit/scripts/status/audit-logs.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/usage/audit-usage.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__output.py: an entry point under scripts/ that builds an ArgumentParser and never hands it to the usage hook is reported by file and line",
+          "plugins/audit/tests/test__output.py: the real tree has no such entry point, and _refs.py (a layer-1 dev lint that cannot import its layer-mate) is exempt with its reason (allow case)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P100",
+        "P106",
+        "P107"
+      ],
+      "dependsOn": [
+        "P102.9"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P102.11",
+      "title": "the orchestrator resolves the plugin root per spawn and again after an update",
+      "status": "pending",
+      "description": "A brief resolved under an older copy was reused after the plugin updated, so its executors ran the old helper. Change execute-task.md's 'Resolve ${CLAUDE_PLUGIN_ROOT} yourself' line and orchestrator.md to say: resolve the root per spawn from the copy this session runs, and after a plugin update mid-run, re-resolve and say so in the run's output. Name /audit:doctor's running-copy check as where a session still on the old copy shows up. CLAUDE_PLUGIN_ROOT is unset in the Bash tool, so the literal variable is never what a subagent should receive.",
+      "files": [
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/reference/orchestrator.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [
+        "P100"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
