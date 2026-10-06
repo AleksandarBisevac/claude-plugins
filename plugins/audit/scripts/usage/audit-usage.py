@@ -66,6 +66,7 @@ import _areas  # noqa: E402  (phase_tags: the read-time area join the ledger rec
 import _cli_fmt  # noqa: E402  (the one place CLI color lives - mode resolution + paint)
 import _ui_theme as _theme  # noqa: E402  (the one place a machine value gets its words)
 import _evidence_io  # noqa: E402  (the OTHER ledger `planCost` reads - gate scope + reuse)
+from _usage_economics import _coverage_sentence  # noqa: E402  (the one coverage sentence)
 
 
 def _load(name, filename):
@@ -420,6 +421,13 @@ def render(rows, args, manifest, window, show_cost, pt=None):
 
     if args.by:
         out += group_table(args.by, args.by.upper(), limit=args.top)
+        if args.by == "task" and show_cost:
+            meta_usage = ((manifest or {}).get("meta") or {}).get("usage") or {}
+            bands = ul.cost_bands(manifest, rows,
+                                  meta_usage if isinstance(meta_usage, dict) else {})
+            cov = _coverage_sentence(bands.get("doneTaskCoverage"))
+            if cov:
+                out.append(("" if md else "  ") + pt.paint(cov, "dim"))
         return "\n".join(out)
 
     out += group_table("phase", "BY PHASE")
@@ -443,6 +451,10 @@ def render(rows, args, manifest, window, show_cost, pt=None):
             out += group_table("task", "TOP TASKS", limit=args.top)
         out.append("")
         out.append(("" if md else "  ") + pt.paint(band_note(bands), "dim"))
+        if show_cost:
+            cov = _coverage_sentence(bands.get("doneTaskCoverage"))
+            if cov:
+                out.append(("" if md else "  ") + pt.paint(cov, "dim"))
         out += routing_advice_lines(
             ul.routing(manifest, rows,
                        (meta_usage or {}).get("pricing")).get("advice") or [],

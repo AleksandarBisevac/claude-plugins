@@ -200,7 +200,7 @@
     {
       "id": "P104.4",
       "title": "the report and its Markdown twin print attribution coverage beside cost per task",
-      "status": "in_progress",
+      "status": "done",
       "description": "Print the coverage from the previous task beside every cost-per-task figure the report renders: the HTML tile (_usage_overview.py:148), the Markdown fact (_usage_markdown.py:168) and the routing table in both (_usage_detail.py, _usage_markdown.py:190-205), following render-report's rule that a claim carries its basis and a basis with no claim is noise. Re-render the committed artifacts with the recipes tools/check-rendered-artifacts.py prints (docs/index.html is a byte copy of the example report). The committed acme Markdown twin is read by _deps.doc_prose_numbers(), so a rendered 'N of M <noun>' would fail the build: word the line so the lint's ratio shape does not form, or exempt the derived twin in _output.PROSE_SCAN_EXEMPT with the reason docs/audit/audit-report.md's row gives, and say which. Run tools/check-rendered-artifacts.py, which no build-command key runs.",
       "files": [
         "plugins/audit/scripts/report/_usage_overview.py",
@@ -242,18 +242,32 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "53540f42",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The coverage sentence lives once, as _coverage_sentence(cov) in usage/_usage_economics.py beside _done_task_coverage, worded \"Of the plan's N done task(s), M are priced; main-loop spend is not attributed to a task.\" so the rendered Markdown twin never forms the prose-number lint's ratio shape; the report modules import it by basename. The report prints it beside the cost-per-task tile, the Markdown 'Cost per completed task' fact and the risk-band table, and as the routing table's caption. Every dollar figure the report renders now obeys meta.usage.showCost: the cost-per-task tile, the Markdown fact and both routing tables' cost/task columns, the routing advice sentence (dropped, because its percentage has no basis without the two dollar figures it was computed from), the per-phase budget block, the projection, the retried- and blocked-spend facts and the most-expensive-tasks table, each gated inside its rendering function; a sufficient-sample projection hidden by showCost no longer falls through to a false 'suppressed - needs N tasks' notice. Committed renders re-rendered; check-rendered-artifacts --before-commit is OK. Cases cover each surface with showCost false and its true twin.",
+        "descriptive": "Every cost-per-task figure the report shows now says how many of the plan's done tasks it priced, and every dollar figure in the report respects a project's choice to hide costs."
       },
       "startedAt": "2026-10-06T15:43:57Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T19:03:09Z",
+      "verifiedBy": [
+        "uo30",
+        "uo31",
+        "um25",
+        "um26",
+        "um27",
+        "ud10b",
+        "ud10c"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T16:45:47Z.5bdb35",
         "status": "passed",
         "at": "2026-10-06T16:45:47Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "53540f42",
+        "at": "2026-10-06T19:03:09Z",
+        "basis": "audit-reviewer (task mode): matches; one medium finding (dollar figures leaking with showCost off) fixed as a class across every report surface, each guarded by a showCost-false case and its true twin"
       }
     },
     {

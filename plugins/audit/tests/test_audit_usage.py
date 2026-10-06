@@ -258,6 +258,85 @@ def _cases(check):
         check("render: --by renders one focused table",
               "MODEL" in one and "BY PHASE" not in one)
 
+        # --- attribution coverage (ac): how much of the plan's done work a ---
+        # --- per-task figure actually rests on -------------------------------
+        # Four done tasks, three of which carry a priced row (P2.2 is done but
+        # the ledger never attributed it any tokens) - a 3-of-4 fixture, not a
+        # trivial 100%, so the count in the line is the thing under test and
+        # not an accident of every done task having a row.
+        _man_cov = json.loads(json.dumps(manifest))
+        _man_cov["phases"][0]["tasks"][0]["status"] = "done"
+        _man_cov["phases"][0]["tasks"][1]["status"] = "done"
+        _man_cov["phases"][1]["tasks"][0]["status"] = "done"
+        _man_cov["phases"][1]["tasks"].append(
+            {"id": "P2.2", "title": "four", "status": "done"})
+        # The shared sentence (`_usage_economics._coverage_sentence`, the same
+        # one the report's HTML tile and Markdown twin already print): one
+        # home for the wording, so the CLI cannot drift from the other two
+        # surfaces that make the same "cost per task" claim.
+        _cov_sentence = ("Of the plan's 4 done task(s), 3 are priced; "
+                         "main-loop spend is not attributed to a task.")
+        _cov_text = M.render(loaded, args, _man_cov, "all time", True)
+        check("ac1 the dashboard prints the shared attribution-coverage "
+              "sentence beside the band note under TOP TASKS, with the "
+              "real 3-of-4 fraction",
+              _cov_sentence in _cov_text)
+        check("ac2 a plan with no done task at all stays silent - a 0-of-0 "
+              "would read as complete coverage of nothing",
+              "main-loop spend is not attributed" not in text)
+        check("ac3 --no-cost drops the coverage line too",
+              "main-loop spend is not attributed" not in M.render(
+                  loaded, args, _man_cov, "all time", False))
+        args_by_task = M.build_parser().parse_args(["--by", "task"])
+        args_by_task.ledger_dir = ledger
+        _cov_by_task = M.render(loaded, args_by_task, _man_cov,
+                                "all time", True)
+        check("ac4 --by task prints the same shared coverage sentence "
+              "under its own table",
+              "TASK" in _cov_by_task and _cov_sentence in _cov_by_task)
+        check("ac5 --by task says nothing when there is no done task",
+              "main-loop spend is not attributed" not in M.render(
+                  loaded, args_by_task, manifest, "all time", True))
+        check("ac6 --by task under --no-cost stays silent too",
+              "main-loop spend is not attributed" not in M.render(
+                  loaded, args_by_task, _man_cov, "all time", False))
+
+        # md7b/md7c: the twin this low finding asked for - no case anywhere
+        # rendered the coverage sentence through the md format before this.
+        args_by_task_md = M.build_parser().parse_args(["--by", "task",
+                                                       "--format", "md"])
+        args_by_task_md.ledger_dir = ledger
+        check("ac9 the md format carries the same sentence (--by task)",
+              _cov_sentence in M.render(loaded, args_by_task_md, _man_cov,
+                                        "all time", True))
+        args_md_cov = M.build_parser().parse_args(["--format", "md"])
+        args_md_cov.ledger_dir = ledger
+        check("ac10 ...and in the full md dashboard under TOP TASKS",
+              _cov_sentence in M.render(loaded, args_md_cov, _man_cov,
+                                        "all time", True))
+        check("ac11 ...its twin: --no-cost silences it in md too, rather "
+              "than only in ascii",
+              "main-loop spend is not attributed" not in M.render(
+                  loaded, args_md_cov, _man_cov, "all time", False))
+
+        _map_cov = os.path.join(tmp, "cov-plan.json")
+        with open(_map_cov, "w", encoding="utf-8") as fh:
+            json.dump(_man_cov, fh)
+        import io as _io_cov
+        _buf_cov, _real_cov = _io_cov.StringIO(), sys.stdout
+        sys.stdout = _buf_cov
+        try:
+            _code_cov = M.main([_map_cov, "--ledger-dir", ledger,
+                               "--project-dir", tmp, "--json"])
+        finally:
+            sys.stdout = _real_cov
+        _payload_cov = json.loads(_buf_cov.getvalue())
+        check("ac7 the json payload carries the denominator beside the "
+              "bands, not just the per-task figure",
+              _code_cov == 0
+              and _payload_cov["bands"]["doneTaskCoverage"]
+              == {"done": 4, "priced": 3})
+
         args_f = M.build_parser().parse_args(["--phase", "P1"])
         check("filter: --phase narrows rows",
               len(M.apply_filters(loaded, args_f)) == 2)
@@ -339,6 +418,9 @@ def _cases(check):
                                          "byAttribution", "heatmap")))
         check("json: heatmap is 7x24",
               len(payload["heatmap"]) == 7 and len(payload["heatmap"][0]) == 24)
+        check("ac8 with no done task, the bands' doneTaskCoverage is None "
+              "rather than a 0-of-0 that would read as complete coverage",
+              payload.get("bands", {}).get("doneTaskCoverage") is None)
 
         # --- month bucket (mo) ----------------------------------------------
         check("mo1 --by month is a legal choice, derived from GROUP_KEYS",
