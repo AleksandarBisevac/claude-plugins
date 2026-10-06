@@ -212,8 +212,8 @@ should be, and a widened excuse turns a build green where nobody is looking.
 **No backfill is offered, and that is a decision rather than an omission.** A gate
 run today measures one tree once, so writing a pointer onto every historical subject
 would manufacture claims out of a single measurement — the shape recorded evidence
-exists to remove, not one to add. `/audit:run-gate` is for a subject or a few; it is
-not a history tool.
+exists to remove, not one to add. `scripts/governance/run-test-gate.py --record` is for a
+subject or a few; it is not a history tool.
 
 **Neither condition resolves a pointer.** The block is a *cache* of a run recorded
 in the evidence file beside the plan; `failing-tests` opens nothing at all, and

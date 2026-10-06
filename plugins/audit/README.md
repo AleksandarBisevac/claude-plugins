@@ -995,7 +995,10 @@ The most common question testers ask is "what did that cost?" — so the plugin 
 
 **You can answer it before installing anything else.** `--backfill` reads the Claude Code
 transcripts already in `~/.claude/projects/`, so it works in a repo with no manifest, no
-config and no prior runs — nothing is generated and no agent is called:
+config and no prior runs — it spends no tokens and calls no agent; the only thing it writes
+is a local, self-ignoring ledger under `.claude/usage/` (`ensure_ledger_dir` in
+`scripts/usage/usage_ledger.py` drops a `.gitignore` marker inside on creation, so `git
+status` stays clean):
 
 ```bash
 /audit:usage --backfill               # free: past spend, from transcripts already on disk

@@ -79,7 +79,7 @@
     {
       "id": "P103.2",
       "title": "the open secret-read and shell-write shapes are pinned as characterization cases",
-      "status": "in_progress",
+      "status": "done",
       "description": "The documented gaps live only in a private corpus, so nothing in this repository goes red when one is closed or when the document stops naming it. Add each documented-gap shape as a characterization case in the existing guard suites, asserting today's verdict and following the existing 'KNOWN LIMIT' pattern (named as a decision, pointing at SECURITY.md). Tests only: this task changes no guard code. The boundary case where a string literal merely mentions a secret path is left to P108's verdict table. If a safeguard refuses the work, report could-not-run rather than rewording around it.",
       "files": [
         "plugins/audit/tests/test_guard_secrets_read.py",
@@ -109,18 +109,32 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "71d73bb5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Tests only; no guard code changed. test_guard_secrets_read.py: sr22 pins the twin the guard denies (reading a named secret file through a listed verb), and sr23-sr27 pin each documented open read shape (recursive grep over a directory, the Grep tool over a directory with no glob, diff of two env files, a loop over the env files, xargs cat) as allowed today, each message pointing at the SECURITY.md paragraph that names it. test_guard_bash_writes.py: a KNOWN_OPEN_CASES table beside the existing tables pins the four absorbed write shapes (git -C <dir> checkout --, env rm -rf, awk print to a file, sed's w command) beside two watched twins, registered in the tag-uniqueness check. test_guard_history_rewrite.py: gh8b pins that an interpreter program starting a force push from its own subprocess call is allowed in the recorded-commit fixture where gh8's plain force push is denied. Closing any gap turns its case red and forces the document to change with it. Writing these guard-shaped strings as test data met no host or model refusal.",
+        "descriptive": "Every documented gap in the read and write guards now has a test asserting today's verdict beside a twin the guard denies, so closing a gap, or the document dropping it, goes red in this repository."
       },
       "startedAt": "2026-10-06T15:58:49Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T19:02:20Z",
+      "verifiedBy": [
+        "sr22",
+        "sr23",
+        "sr24",
+        "sr25",
+        "sr26",
+        "sr27",
+        "gh8b"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T16:32:49Z.5ff754",
         "status": "passed",
         "at": "2026-10-06T16:32:49Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "71d73bb5",
+        "at": "2026-10-06T19:02:20Z",
+        "basis": "audit-reviewer (task mode): clean; every allow case has its deny twin in the same fixture and each message matches its SECURITY.md paragraph"
       }
     },
     {
@@ -219,7 +233,7 @@
     {
       "id": "P103.5",
       "title": "false claims about backfill, a missing verb and the example panel are corrected",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Four claims a reader acts on are false on main: README.md:120 says /audit:usage --backfill 'writes nothing' and plugins/audit/README.md:996-997 says 'nothing is generated', while commands/usage.md:30-31 says it rewrites the monthly ledger; commands/status.md:215 names /audit:run-gate, which does not exist (the recorder is scripts/governance/run-test-gate.py --record); examples/README.md:64-68 says running the panel 'never dirties the tree', while a first launch leaves .claude/state/panel-openstate.json untracked and not ignored. Say what each actually does: backfill spends no tokens and writes a local, self-ignoring ledger under .claude/usage/ (confirm in a scratch git repo that git status stays clean); the status sentence names the recorder; the example sentence states what is ignored and what is not until P105's ignore rule lands (re-run examples/panel.sh start/stop in a git archive export and read git status --porcelain). Acceptance: grep for 'writes nothing' and 'nothing is generated' beside backfill, '/audit:run-gate' and 'never dirties' across README.md, QUICKSTART.md, plugins/audit/, examples/ and docs/handbook.html finds nothing untrue.",
       "files": [
         "README.md",
@@ -243,16 +257,27 @@
       "dependsOn": [
         "P103.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T19:04:33Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-06T19:08:08Z",
+          "text": "Orchestrator decision, 2026-10-06: the example-panel claim (\"running the panel never dirties the tree\", in examples/README.md and the comment in examples/panel.sh) is made true by code rather than by rewording. The panel phase's task that makes the panel's state directory ignore itself is already done on its own branch; once both phases land, a first launch leaves nothing untracked and the original sentence is accurate again, while a reworded sentence saying the file stays untracked would become false and would conflict on the same lines. This task's edit to examples/README.md was therefore restored to the committed text, and examples/panel.sh is left as it is. This task keeps the backfill and missing-verb corrections."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T19:13:48Z.d4c4bd",
+        "status": "passed",
+        "at": "2026-10-06T19:13:48Z"
+      }
     },
     {
       "id": "P103.6",

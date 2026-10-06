@@ -117,7 +117,7 @@ a breach. [SECURITY.md](SECURITY.md) has the fail modes and the accepted bypass 
 
 ## Try it with no setup
 
-**Start here — it costs nothing and writes nothing:**
+**Start here — it spends no tokens and writes only a local, self-ignoring ledger:**
 
 ```
 /audit:usage --backfill    # reads transcripts already on disk → your own past spend
