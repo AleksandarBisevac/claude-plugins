@@ -417,6 +417,40 @@ def _cases(check):
           "forever", "allow",
           bash("python3 -c \"print(open(base + '/app.ts').read())\""))
 
+    # (sr22+) KNOWN OPEN, named in SECURITY.md's "a read is refused only where
+    # one call names a secret path ... beside a verb it lists" paragraph and
+    # again under "Secret-read guard is name-based" / "a read that reaches the
+    # file without the call naming it": these reach a secret's bytes with no
+    # single call the guard's readings parse as a read of that path, so today's
+    # verdict is allow. Each is pinned as a DECISION, not an oversight, and each
+    # sits beside the ordinary `cat .env.production` twin the guard still
+    # denies, so the gap is what moves and not an inert guard. Closing one of
+    # these must turn its case red and make SECURITY.md's own list shrink with
+    # it, rather than leaving a document and a suite that quietly disagree.
+    _expect("sr22 twin: `cat .env.production` is still denied", "block",
+          bash("cat .env.production"))
+    _expect("sr23 KNOWN OPEN: `grep -r TOKEN ./` reaches every file under a "
+          "directory with no single call naming the secret path - "
+          "SECURITY.md's 'a recursive grep -r over a directory'", "allow",
+          bash("grep -r TOKEN ./"))
+    _expect("sr24 KNOWN OPEN: the Grep TOOL over a directory with no glob "
+          "naming a secret is the same gap through the tool door - "
+          "SECURITY.md's 'the Grep tool over a directory with no glob that "
+          "names a secret'", "allow", grep(pattern="TOKEN", path="./"))
+    _expect("sr25 KNOWN OPEN: `diff .env.development .env.production` names "
+          "the verb instead of the file against a verb list the guard does "
+          "not read - SECURITY.md's 'diff of two env files'", "allow",
+          bash("diff .env.development .env.production"))
+    _expect("sr26 KNOWN OPEN: a `for` loop over `.env.*` reading the loop "
+          "variable never names a secret path in the call the guard parses - "
+          "SECURITY.md's 'a for loop over .env.* whose body reads the loop "
+          "variable'", "allow",
+          bash("for f in .env.*; do cat $f; done"))
+    _expect("sr27 KNOWN OPEN: `ls .env.production | xargs cat` hands the name "
+          "to `cat` on stdin rather than as a named argument - SECURITY.md's "
+          "'xargs cat handed the names on stdin'", "allow",
+          bash("ls .env.production | xargs cat"))
+
     # (sr16+) THE PROJECT'S OWN PATTERNS, WHICH REACHED EVERY MATCHER BUT THE
     # SHELL. The arm that was supposed to carry them required the BUILT-IN matcher
     # to fire as well, so no project pattern could ever be the reason for a

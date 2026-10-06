@@ -463,7 +463,7 @@
     {
       "id": "P103.11",
       "title": "issue and PR templates point a contributor at the one page",
-      "status": "in_progress",
+      "status": "done",
       "description": ".github holds only workflows, so an issue arrives without the version or the doctor output needed to act on it, and a PR without the checks the repo requires. Add a bug template asking for /audit:version, /audit:doctor output, the command run and what happened; a feature template asking which module and what it blocks, which is where the freeze decision's revisit trigger is observed; a config.yml that routes exploitable weaknesses to SECURITY.md's private address instead of a public issue; and a PR template linking 'Your first change' with tools/verify.sh green and a red-first proof for any new check. gate-only: new Markdown and YAML; selftests runs the prose-number lint, which reads every committed .md.",
       "files": [
         ".github/ISSUE_TEMPLATE/bug_report.md",
@@ -489,18 +489,24 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "cc797e15",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Four new files under .github: a bug template asking for /audit:version and /audit:doctor output, the command run and what happened; a feature template asking which module and what it blocks, naming CONTRIBUTING.md's 'Optional modules take fixes only' Decision record entry so a request about an optional module is the evidence its revisit trigger waits for, with a generic line for any other entry; a config.yml routing exploitable weaknesses to SECURITY.md's private reporting section instead of a public issue; and a pull request template linking 'Your first change', with checkboxes for a green tools/verify.sh and a red-first proof of any new check.",
+        "descriptive": "Issues and pull requests now arrive with the version, the doctor output and the checks the repository needs, and a request about an optional module is pointed at the decision it can reopen."
       },
       "startedAt": "2026-10-06T15:58:51Z",
-      "completedAt": null,
+      "completedAt": "2026-10-06T19:02:19Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-06T16:31:10Z.30e833",
         "status": "passed",
         "at": "2026-10-06T16:31:10Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "cc797e15",
+        "at": "2026-10-06T19:02:19Z",
+        "basis": "audit-reviewer (task mode): one medium finding (name the optional-modules decision entry) fixed as proposed"
       }
     },
     {

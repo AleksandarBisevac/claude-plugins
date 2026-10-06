@@ -113,6 +113,22 @@ RWP_CASES = (("gitstatus", "git status --porcelain", True),
 # the fix, the deny cases prove it did not become "anything starting with cd is fine".
 # A table of allow cases alone would pass equally against a guard that returned True
 # unconditionally.
+# KNOWN OPEN, named in SECURITY.md's `_command_is_read_only` paragraph: "'reads
+# as unable to write' is not 'provably unable to write' ... Each of these is
+# absorbed". Each row names today's verdict as a decision, not an oversight -
+# `want=True` means absorbed (read as read-only) though the command writes
+# through the listed program's own arguments or script. Each sits beside its
+# watched twin below (`rm -rf build`, `sed -i ...`) so the gap is what a fix
+# would move, not an inert table.
+KNOWN_OPEN_CASES = (("gitcheckout", "git -C /x checkout -- f.py", True),
+                     ("envrm", "env rm -rf build", True),
+                     ("awkprint", 'awk \'{print > "out.py"}\' in.txt', True),
+                     ("sedw", "sed -n 's/a/b/w out.py' in.txt", True),
+                     # the watched twins: the same two destructive operations,
+                     # spelled without the absorbing wrapper
+                     ("rmtwin", "rm -rf build", False),
+                     ("sedtwin", "sed -i 's/a/b/' out.py", False))
+
 CD_CASES = (("cdgrep", "cd /x/y && grep -n foo FILE", True),
             ("cdsed", "cd /x/y && sed -n '1,5p' FILE", True),
             ("cdbare", "cd /x/y", True),
@@ -1061,6 +1077,17 @@ def _cases(check):
                                     else "watched"),
               M._command_is_read_only(_cmd) == _want)
 
+    # (ko) KNOWN OPEN: a write spelled THROUGH a listed program's own
+    # arguments or script, which `_command_is_read_only` absorbs rather than
+    # watches - SECURITY.md names each of these as a decision, not an
+    # oversight, and the watched twins alongside them are what keeps the gap
+    # visible: closing one of these turns its row red without touching the
+    # twin beside it.
+    for _tag, _cmd, _want in KNOWN_OPEN_CASES:
+        check("ko1-%s %r is %s" % (_tag, _cmd, "absorbed (KNOWN OPEN)" if _want
+                                    else "watched"),
+              M._command_is_read_only(_cmd) == _want)
+
     # (cd) THE STRUCTURAL HALF, not just the predicate: a `cd`-prefixed read must
     # stop inheriting dirt, and a `cd`-prefixed WRITE must keep being warned about.
     # Run through `decide` rather than the predicate alone, because the predicate
@@ -1940,7 +1967,8 @@ def _cases(check):
     # there - that is the legitimate family shape. A duplicated TAG would
     # therefore be invisible until `prove-gates.py` refused a row that happened
     # to name it, which is late and only if somebody wrote such a row.
-    _tag_tables = (("dnp1", DNP_CASES), ("exp1", EXP_CASES), ("rwp1", RWP_CASES))
+    _tag_tables = (("dnp1", DNP_CASES), ("exp1", EXP_CASES), ("rwp1", RWP_CASES),
+                   ("ko1", KNOWN_OPEN_CASES))
     _tag_ids = ["%s-%s" % (_fam, _row[0]) for _fam, _rows in _tag_tables
                 for _row in _rows]
     _tag_dupes = sorted(set(_i for _i in _tag_ids if _tag_ids.count(_i) > 1))
