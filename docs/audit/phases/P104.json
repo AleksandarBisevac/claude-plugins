@@ -1,7 +1,7 @@
 {
   "id": "P104",
   "title": "the cost a user sees is the cost they paid",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Tasks: (1) Price table rows for claude-opus-5-5, claude-sonnet-5 at its current price and claude-fable-5-1 (cache read 0.25), with pricingAsOf and the source URL; the hook-side copy stays equal through pricing_divergences. (2) Print attribution coverage beside every cost-per-task figure (tasks with any attributed tokens / tasks done; main loop not attributed). (3) Pilot reading Claude Code's own costUSD or OTel cost instead of the plugin's table, and retire the table if it holds.",
   "desiredOutcome": "every cost the plugin prints uses current official prices with their date and source, and every per-task cost says how much of the work it actually attributes",
   "testGate": [
@@ -15,9 +15,15 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "80a7eed2f52726a06ca43309b66a08a04fda1ab4",
+  "branch": "audit/p104-the-cost-a-user-sees-is-the-co",
   "mergedAt": null,
+  "claim": {
+    "sessionId": "6c881c24-c1fd-461f-8c48-abb0170e0a5a",
+    "host": "MacBook-Pro-2",
+    "branch": "audit/p104-the-cost-a-user-sees-is-the-co",
+    "at": "2026-10-06T14:46:28Z"
+  },
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -29,13 +35,17 @@
     {
       "id": "P104.1",
       "title": "the demo fixtures price their ledgers with the table they declare",
-      "status": "pending",
+      "status": "in_progress",
       "description": "gen-demo-usage.py:181 prices each row with ul.price(counts, model) and no table, so the committed acme ledger, the example report and its twin, docs/index.html and docs/demo-large.html all move whenever DEFAULT_PRICING does, which contradicts the product's own rule that a row is priced once, when written, with the project's table. Price generated rows with the fixture's declared table (usage.pricing from its config, the table meter-usage would have used) and have gen-demo-manifest.py's write_config declare one matching its pricingAsOf; the acme config already declares one. Acceptance: no committed artifact changes in this task (verify.sh's derived-ledger diff and tools/check-rendered-artifacts.py stay green), and both stay green with DEFAULT_PRICING's sonnet row mutated. This must land before the price table changes.",
       "files": [
         "plugins/audit/scripts/demo/gen-demo-usage.py",
         "plugins/audit/scripts/demo/gen-demo-manifest.py",
         "plugins/audit/tests/test_gen_demo_usage.py",
-        "plugins/audit/tests/test_gen_demo_manifest.py"
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        "plugins/audit/scripts/report/_usage_load.py",
+        "plugins/audit/tests/test__usage_load.py",
+        "plugins/audit/scripts/usage/_usage_spend.py",
+        "plugins/audit/tests/test__usage_spend.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -55,16 +65,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T14:46:28Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T15:40:06Z.bf6cd0",
+        "status": "passed",
+        "at": "2026-10-06T15:40:06Z"
+      }
     },
     {
       "id": "P104.2",
@@ -114,7 +129,7 @@
     {
       "id": "P104.3",
       "title": "unit economics and cost bands report how many done tasks they priced",
-      "status": "pending",
+      "status": "in_progress",
       "description": "unit_economics' completed counts only done tasks that carry ledger rows, and cost_bands calibrates from the same set, so 'cost per task' reads as if it covered every done task; on this repository's ledger only about a third of done tasks were attributed and main-loop spend never is. Return the denominator beside the numerator in both (done tasks in the plan, and done tasks with any attributed tokens) as data, without changing costPerTask or the bands themselves, so every surface can print coverage from one computation. The renderers come in the following tasks.",
       "files": [
         "plugins/audit/scripts/usage/_usage_economics.py",
@@ -139,16 +154,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T14:46:29Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T15:43:01Z.38936c",
+        "status": "passed",
+        "at": "2026-10-06T15:43:01Z"
+      }
     },
     {
       "id": "P104.4",
@@ -381,5 +401,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-10-06T14:46:28Z"
 }

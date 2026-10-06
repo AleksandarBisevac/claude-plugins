@@ -223,6 +223,114 @@ def _cases(check):
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
+    # --- routing re-prices from the PROJECT'S table, never the shipped
+    # DEFAULT_PRICING, when the manifest declares none of its own -----------
+    # Two models, same risk band, same token volume, so the only thing that
+    # can move the RECOMMENDED DIRECTION is which rate table priced them.
+    # Under the shipped table sonnet is cheaper than opus; the project's own
+    # config below prices sonnet as the costlier model instead - so a version
+    # that still reached DEFAULT_PRICING would recommend the OPPOSITE move.
+    def _routing_rows(risk_pid, opus_tid_fmt, sonnet_tid_fmt):
+        tasks, rows = [], []
+        for i in range(3):
+            otid, stid = opus_tid_fmt % i, sonnet_tid_fmt % i
+            tasks.append({"id": otid, "title": "o", "status": "done",
+                          "risk": "high", "attempts": 1})
+            tasks.append({"id": stid, "title": "s", "status": "done",
+                          "risk": "high", "attempts": 1})
+            rows.append(_row("2026-07-01T03", model="claude-opus-5",
+                             taskId=otid, **{"in": 10000, "out": 200000}))
+            rows.append(_row("2026-07-01T03", model="claude-sonnet-5",
+                             taskId=stid, **{"in": 10000, "out": 200000}))
+        return tasks, rows
+
+    def _write_routing_project(proj_root, pid, meta_usage, config_pricing):
+        os.makedirs(os.path.join(proj_root, "docs", "audit"))
+        os.makedirs(os.path.join(proj_root, ".claude", "usage"))
+        tasks, rows = _routing_rows(pid, "O%d", "S%d")
+        meta = {"version": 2, "repo": "x"}
+        if meta_usage is not None:
+            meta["usage"] = meta_usage
+        manifest = {"meta": meta, "phases": [
+            {"id": pid, "title": "P", "status": "pending", "tasks": tasks}]}
+        mpath = os.path.join(proj_root, "docs", "audit", "audit-plan.json")
+        with io.open(mpath, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(json.dumps(manifest))
+        with io.open(os.path.join(proj_root, ".claude", "usage",
+                                  "2026-07.jsonl"), "w", encoding="utf-8",
+                    newline="\n") as fh:
+            for r in rows:
+                fh.write(json.dumps(r) + "\n")
+        if config_pricing is not None:
+            with io.open(os.path.join(proj_root, ".claude",
+                                      "audit.config.json"), "w",
+                        encoding="utf-8", newline="\n") as fh:
+                fh.write(json.dumps({"usage": {"pricing": config_pricing}}))
+        return manifest, mpath, rows
+
+    hooks_cfg = _loader.load_hooks_config(modname="hooks_cfg_for_routing_case")
+    expensive_sonnet = {"in": 300.0, "out": 1500.0, "cacheW5m": 375.0,
+                       "cacheW1h": 600.0, "cacheR": 30.0}
+
+    root2 = tempfile.mkdtemp(prefix="audit-usage-load-routing-")
+    try:
+        # --- deny twin: no meta.usage.pricing, so the PROJECT's own
+        # .claude/audit.config.json table is what routing must price at ---
+        p9 = os.path.join(root2, "p9")
+        m9, mp9, rows9 = _write_routing_project(
+            p9, "P9", {}, {"claude-sonnet-5": expensive_sonnet})
+        u9 = M.load_usage(m9, mp9, p9)
+        expected9 = hooks_cfg.usage_cfg(
+            {"usage": {"pricing": {"claude-sonnet-5": expensive_sonnet}}}
+        ).get("pricing")
+        check("ur1 routing re-prices from the PROJECT's own declared "
+              "usage.pricing when the manifest carries none - the advice "
+              "RECOMMENDS AWAY FROM THE MODEL THE PROJECT'S OWN TABLE PRICES "
+              "HIGHEST, which the shipped DEFAULT_PRICING cannot reproduce "
+              "because under it sonnet is the CHEAPER model: %r"
+              % (u9["routing"]["advice"][:1],),
+              bool(u9["routing"]["advice"])
+              and u9["routing"]["advice"][0]["from"] == "claude-sonnet-5"
+              and u9["routing"]["advice"][0]["to"] == "claude-opus-5")
+        check("ur2 ...and it matches a direct call to ul.routing() with that "
+              "SAME merged table - not a coincidence of direction only",
+              u9["routing"] == _UL.routing(m9, rows9, expected9),
+              u9["routing"])
+        check("ur3 ...and the vacuous direction: a version that still reached "
+              "DEFAULT_PRICING for this same ledger recommends the OPPOSITE "
+              "move, which is what proves ur1 is not reading the shipped "
+              "table under another name", _UL.routing(m9, rows9, None)
+              ["advice"][0]["from"] == "claude-opus-5")
+
+        # --- allow twin: the manifest DOES declare meta.usage.pricing, and a
+        # DIFFERENT table sits in the project's config - the manifest's own
+        # value must still win, unchanged from before this fallback existed ---
+        p10 = os.path.join(root2, "p10")
+        cheap_sonnet_in_config = {"in": 0.01, "out": 0.01, "cacheW5m": 0.01,
+                                  "cacheW1h": 0.01, "cacheR": 0.01}
+        # A FULL table, not a bare override: `_has_rates` treats a model
+        # absent from the table as an unpriced guess and routing then has no
+        # evidence to compare it against, so a manifest-declared table has to
+        # name both models the same way a real project's would.
+        manifest_declared9 = hooks_cfg.usage_cfg(
+            {"usage": {"pricing": {"claude-sonnet-5": expensive_sonnet}}}
+        ).get("pricing")
+        m10, mp10, rows10 = _write_routing_project(
+            p10, "P10", {"pricing": manifest_declared9},
+            {"claude-sonnet-5": cheap_sonnet_in_config})
+        u10 = M.load_usage(m10, mp10, p10)
+        check("ur4 a manifest that DOES declare meta.usage.pricing keeps "
+              "winning over the project's own config table, exactly as "
+              "before this fallback existed - the config here prices sonnet "
+              "as the CHEAP model, so a version that let it win would "
+              "recommend the other direction: %r"
+              % (u10["routing"]["advice"][:1],),
+              bool(u10["routing"]["advice"])
+              and u10["routing"]["advice"][0]["from"] == "claude-sonnet-5"
+              and u10["routing"]["advice"][0]["to"] == "claude-opus-5")
+    finally:
+        shutil.rmtree(root2, ignore_errors=True)
+
     # --- the aliases ---
     _names = ("load_usage", "_iso_day", "_pricing_stale", "_hourly")
     _forked = [n for n in _names if getattr(_RU, n) is not getattr(M, n)]

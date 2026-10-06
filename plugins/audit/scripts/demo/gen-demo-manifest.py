@@ -116,6 +116,23 @@ TITLE_NOUNS = ("the checkout payload", "the session cookie", "the product query"
                "the image pipeline", "the retry policy", "the audit log",
                "the feature flags", "the webhook handler", "the search index")
 
+# The fixture's OWN declared rate table, written into `.claude/audit.config.json`
+# by `write_config()` - a literal, the same way `examples/acme-store`'s committed
+# config carries one, rather than a read of `_usage_core.DEFAULT_PRICING`. A row
+# is priced once, with the project's own table: pointing this at the shipped
+# constant would mean every committed artifact `gen-demo-usage.py` prices from
+# this fixture moves the day that constant does, which is the drift a declared
+# table exists to stop. Its numbers equal the shipped table's AT THIS WRITING -
+# `tests/test_gen_demo_manifest.py` pins the shape, never the figures, because a
+# figure here is exactly the kind of number this project's own rule says rots.
+CONFIG_PRICING = {
+    "_default":          {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
+    "claude-opus-5":     {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
+    "claude-sonnet-5":   {"in":  3.0, "out": 15.0, "cacheW5m":  3.75, "cacheW1h":  6.0, "cacheR": 0.3},
+    "claude-haiku-4-5":  {"in":  1.0, "out":  5.0, "cacheW5m":  1.25, "cacheW1h":  2.0, "cacheR": 0.1},
+    "claude-fable-5":    {"in": 10.0, "out": 50.0, "cacheW5m": 12.50, "cacheW1h": 20.0, "cacheR": 1.0},
+}
+
 
 # --- generation -----------------------------------------------------------------
 def _load_manifest_io():
@@ -2298,7 +2315,7 @@ def write_evidence(manifest, out_dir):
     return written
 
 
-def write_config(out_dir):
+def write_config(out_dir, manifest):
     """Write `.claude/audit.config.json` pointing at the manifest we just wrote.
 
     Without this the fixture is unusable by the very surfaces it exists to
@@ -2314,15 +2331,30 @@ def write_config(out_dir):
     would be reporting a property of the FIXTURE as if it were a property of the
     product, and the marks would land in a committed artifact this repo diffs
     byte-for-byte against a fresh render.
+
+    `usage.pricing` is `CONFIG_PRICING`, the same acme-style literal table
+    `gen-demo-usage.py` then reads beside this file to price the ledger - the
+    fix that made a committed ledger stop moving every time the shipped
+    `DEFAULT_PRICING` does. `usage.pricingAsOf` is read off `manifest` rather than
+    restated as a second literal, so the two can never name different dates for
+    the same table - trimmed the same way every other reader of this key
+    trims it (`panel/_panel_paths.py`, `panel/_panel_usage.py`,
+    `report/_usage_load.py`, `status/audit-status.py`, `usage/audit-usage.py`),
+    so a hand-edited manifest's padded or blank date is not this generator's
+    own fifth answer to what the OTHER five already agree on.
     """
     cfg_dir = os.path.join(out_dir, ".claude")
     os.makedirs(cfg_dir, exist_ok=True)
     path = os.path.join(cfg_dir, "audit.config.json")
+    _as_of_raw = ((manifest.get("meta") or {}).get("usage") or {}).get("pricingAsOf")
+    pricing_as_of = (_as_of_raw.strip() or None) if isinstance(_as_of_raw, str) else None
     # Through the plugin's one JSON writer rather than a `json.dump` of its own:
     # a fixture written with a second escaping is a fixture that re-spells itself
     # the first time a real command touches it.
     _load_manifest_io().atomic_write_json(
-        path, {"manifestPath": "audit-plan.json", "portability": "off"}, indent=2)
+        path, {"manifestPath": "audit-plan.json", "portability": "off",
+               "usage": {"pricingAsOf": pricing_as_of, "pricing": CONFIG_PRICING}},
+        indent=2)
     return path
 
 
@@ -2347,7 +2379,7 @@ def write_manifest(manifest, out_dir, single_file=False):
         written = [index_path]
     else:
         written = mio.save_sharded(index_path, manifest)
-    written.append(write_config(out_dir))
+    written.append(write_config(out_dir, manifest))
     # ...AND THE LEDGER THE POINTERS NAME. A fixture that wrote the plan and not
     # the record would publish a `testEvidence` block resolving to nothing, which
     # every surface renders as `Pointer without evidence` - the one state a demo

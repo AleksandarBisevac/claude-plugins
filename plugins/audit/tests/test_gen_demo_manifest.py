@@ -927,6 +927,17 @@ def _cases(check):
         cf, cw = vc.validate_config(cfg)
         check("the generated config passes the plugin's config validator",
               not cf and not cw, "; ".join((cf + cw)[:3]))
+        # A ROW IS PRICED ONCE, WITH THE PROJECT'S OWN TABLE. Without this the
+        # fixture carried no `usage.pricing` at all, so `gen-demo-usage.py` priced
+        # every row at the shipped `DEFAULT_PRICING` and every committed artifact
+        # moved whenever that table did.
+        cfg_usage = cfg.get("usage") or {}
+        check("the generated config declares a usage.pricing table beside the "
+              "manifest's own meta.usage.pricingAsOf",
+              isinstance(cfg_usage.get("pricing"), dict)
+              and bool(cfg_usage.get("pricing"))
+              and cfg_usage.get("pricingAsOf") == m["meta"]["usage"]["pricingAsOf"],
+              repr(cfg_usage))
         mio = M._load_manifest_io()
         back = mio.load_manifest(os.path.join(tmp, "audit-plan.json"))
         check("sharded round-trip preserves phase count",

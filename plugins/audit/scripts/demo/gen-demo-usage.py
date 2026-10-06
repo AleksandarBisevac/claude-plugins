@@ -38,6 +38,15 @@ MANIFEST TIERS vs LEDGER MODEL IDS. A manifest records a *tier* ("opus") because
 records the concrete id Claude Code actually ran ("claude-opus-5"). This generator
 maps the former to the latter exactly as the runtime does, which is why analytics
 must join on taskId and read the model from the LEDGER — never map tiers.
+
+A ROW IS PRICED ONCE, WITH THE PROJECT'S OWN TABLE, NEVER THE SHIPPED DEFAULT.
+`main()` reads `usage.pricing` out of the `.claude/audit.config.json` that sits
+beside the manifest — the same file `meter-usage.py` reads for a real session —
+and hands it to `generate()`, which passes it straight through to `ul.price()`.
+A project that declares no table still prices every row: `ul.price()` falls back
+to the shipped `DEFAULT_PRICING` exactly as it always has. The difference is
+that a project that DOES declare one stops moving when the shipped table does,
+which is what a committed, regenerate-to-verify ledger requires.
 """
 import argparse
 import json
@@ -80,6 +89,25 @@ def _load_ledger_lib():
 def _load_manifest_io():
     return _loader.load_script("_manifest_io.py", modname="_manifest_io",
                                 cache=False)
+
+
+def _load_pricing(manifest_path):
+    """The project's own `usage.pricing`, read from the `.claude/audit.config.json`
+    that sits beside `manifest_path` - the same file and the same merge
+    `meter-usage.py` applies, so a model this table does not name still resolves
+    through the shipped `_default` row rather than failing. `None` when the
+    project declares no config, or no `usage` block, or no `pricing` table inside
+    it: `ul.price()` already treats `None` as "use the shipped table", so this
+    does not need a second fallback of its own."""
+    cfg_path = os.path.join(os.path.dirname(os.path.abspath(manifest_path)),
+                            ".claude", "audit.config.json")
+    try:
+        with open(cfg_path, encoding="utf-8") as fh:
+            cfg = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    hooks_cfg = _loader.load_hooks_config(modname="gen_demo_usage_hooks_config")
+    return hooks_cfg.usage_cfg(cfg if isinstance(cfg, dict) else {}).get("pricing")
 
 
 # --- vocab + scale --------------------------------------------------------------
@@ -150,8 +178,14 @@ def _author_for(key, authors):
     return authors[sum(ord(c) for c in str(key)) % len(authors)]
 
 
-def generate(manifest, seed=7, authors=DEFAULT_AUTHORS, adhoc_days=0, repo="demo"):
-    """Return ledger rows for `manifest`. Pure: no I/O, no clock."""
+def generate(manifest, seed=7, authors=DEFAULT_AUTHORS, adhoc_days=0, repo="demo",
+            pricing=None):
+    """Return ledger rows for `manifest`. Pure: no I/O, no clock.
+
+    `pricing` is a rate table in the shape `ul.price()` accepts, or `None` to
+    price every row at the shipped `DEFAULT_PRICING` - callers that have one
+    (`main()`, via `_load_pricing()`) pass it through rather than this function
+    reading any file itself."""
     ul = _load_ledger_lib()
     rng = random.Random(seed)
     rows = []
@@ -178,7 +212,7 @@ def generate(manifest, seed=7, authors=DEFAULT_AUTHORS, adhoc_days=0, repo="demo
             "repo": repo, "msgs": rng.randint(2, 9),
         }
         row.update(counts)
-        row["costUSD"] = round(ul.price(counts, row["model"]), 6)
+        row["costUSD"] = round(ul.price(counts, row["model"], pricing), 6)
         rows.append(row)
 
     for ph in phases:
@@ -275,7 +309,8 @@ def main(argv):
     repo = ((manifest.get("meta") or {}).get("repo")) or "demo"
     rows = generate(manifest, seed=args.seed,
                     authors=tuple(a.strip() for a in args.authors.split(",") if a.strip()),
-                    adhoc_days=args.adhoc_days, repo=repo)
+                    adhoc_days=args.adhoc_days, repo=repo,
+                    pricing=_load_pricing(args.manifest))
     if not rows:
         sys.stderr.write(
             "ERROR: no rows generated — every task in %s lacks startedAt, so there "
