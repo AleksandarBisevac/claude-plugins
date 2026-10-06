@@ -18,77 +18,87 @@
   "baseRef": "6d0ef731b5ac60e6bef3c015cf9967583e3625f8",
   "branch": "audit/p110-the-plugin-owns-only-the-guard",
   "mergedAt": null,
-  "claim": {
-    "sessionId": "6c881c24-c1fd-461f-8c48-abb0170e0a5a",
-    "host": "MacBook-Pro-2",
-    "branch": "audit/p110-the-plugin-owns-only-the-guard",
-    "at": "2026-10-06T14:44:48Z"
-  },
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P110-R1",
         "severity": "med",
         "file": "QUICKSTART.md:47-53, QUICKSTART.md:145-151, plugins/audit/scripts/status/_doctor_setup.py:262-264",
         "issue": "QUICKSTART's install-check step still recommends deny entries Read(.env*) and Grep(.env*) while the new note says to replace them because an appended Read(.env*) after the carve-outs denies .env.example again; the doctor's secret-rules fix text still says to add Read(.env*). The design recorded Grep(.env*) as having no documented effect.",
-        "resolution": "Make the install-check step's snippet the shipped template or a pointer to it so the page recommends one fragment, and have the doctor's fix text name the template, pinned by a case."
+        "resolution": "fixed in P110.5-exo (cf885925): Make the install-check step's snippet the shipped template or a pointer to it so the page recommends one fragment, and have the doctor's fix text name the template, pinned by a case.",
+        "fixTask": "P110.5-exo",
+        "commit": "cf885925"
       },
       {
         "id": "P110-R2",
         "severity": "med",
         "file": "plugins/audit/templates/permissions-deny.example.json; QUICKSTART.md:133-151; SECURITY.md:61-79",
         "issue": "Gitignore-style Read(.env) and Read(credentials) also match directories of that name (a .env virtualenv, a credentials package), which the $-anchored guard regex never refuses; Read(*.pem) hits public certificates and CA bundles; and the fragment's sandbox switch makes those denies OS-level for every subprocess and limits writes to the working directory, while sibling phase worktrees live outside it. No document names these costs, and the design calls the path entries SECRET_PATH spelled as gitignore patterns.",
-        "resolution": "Name the costs and the carve-outs a user would add in the QUICKSTART note, and correct the design sentence to say where the gitignore form is broader than the regex, keeping the template byte-identical to the design block."
+        "resolution": "fixed in P110.5-exo (cf885925): Name the costs and the carve-outs a user would add in the QUICKSTART note, and correct the design sentence to say where the gitignore form is broader than the regex, keeping the template byte-identical to the design block.",
+        "fixTask": "P110.5-exo",
+        "commit": "cf885925"
       },
       {
         "id": "P110-R3",
         "severity": "med",
         "file": "SECURITY.md:66-71",
         "issue": "SECURITY.md states Claude Code's behaviour (auto mode allows dotenv reads; a deny rule matches spelling; no rule can name an MCP payload path) in the present tense with no basis beside it, though it rests on one reading on CLI 2.1.291 that the design says must be re-read before a release relies on it.",
-        "resolution": "Carry the basis inline - the version and date read and a pointer to the design - or tie the sentence to a re-read step."
+        "resolution": "fixed in P110.5-exo (cf885925): Carry the basis inline - the version and date read and a pointer to the design - or tie the sentence to a re-read step.",
+        "fixTask": "P110.5-exo",
+        "commit": "cf885925"
       },
       {
         "id": "P110-R4",
         "severity": "low",
         "file": "plugins/audit/scripts/status/_doctor_setup.py:165-174,256-259",
         "issue": "The doctor's _is_env_read_deny counts a ! carve-out such as Read(!.env.example) as a rule that refuses dotenv reads, so a merged fragment lists the carve-outs as refusing rules and a carve-out-only list would pass.",
-        "resolution": "Reject a !-prefixed argument, with a case for a carve-out-only list proven red first."
+        "resolution": "fixed in P110.5-exo (cf885925): Reject a !-prefixed argument, with a case for a carve-out-only list proven red first.",
+        "fixTask": "P110.5-exo",
+        "commit": "cf885925"
       },
       {
         "id": "P110-R5",
         "severity": "low",
         "file": "SECURITY.md:63-64",
         "issue": "The paragraph says the history guard asks whether a git command would orphan a recorded commit; it refuses force-push, force-with-lease, --orphan, filter-branch and rebase whenever any SHA is recorded, and only the reset arm asks about orphaning.",
-        "resolution": "Say it refuses history rewrites in a repository whose manifest records a commit, and for reset whether one would be orphaned."
+        "resolution": "fixed in P110.5-exo (cf885925): Say it refuses history rewrites in a repository whose manifest records a commit, and for reset whether one would be orphaned.",
+        "fixTask": "P110.5-exo",
+        "commit": "cf885925"
       },
       {
         "id": "P110-R6",
         "severity": "low",
         "file": "docs/research/guard-refusals-by-owner.md:140,158-161",
         "issue": "The measurement's table still files secret reads as plugin-only by construction, which its own text and the design correct.",
-        "resolution": "Say the rule depends on the pattern, not plugin state, pointing at the design's correction."
+        "resolution": "fixed in P110.5-exo (cf885925): Say the rule depends on the pattern, not plugin state, pointing at the design's correction.",
+        "fixTask": "P110.5-exo",
+        "commit": "cf885925"
       },
       {
         "id": "P110-R7",
         "severity": "low",
         "file": "docs/research/guard-refusals-by-owner.md:34-48; docs/research/guard-ownership-design.md:133,264",
         "issue": "A wrong author-enforced count ('Two placements' introducing three bullets) and references to a private task or phase a public reader cannot see.",
-        "resolution": "Drop the count and restate each task or phase reference as the question itself."
+        "resolution": "fixed in P110.5-exo (cf885925): Drop the count and restate each task or phase reference as the question itself.",
+        "fixTask": "P110.5-exo",
+        "commit": "cf885925"
       },
       {
         "id": "P110-R8",
         "severity": "low",
         "file": "plugins/audit/tests/test_guard_secrets_read.py:335",
         "issue": "The template check turns the deny list into a set, so the load-bearing order (carve-outs after Read(.env.*)) is held only by the byte comparison; the Bash entries have no drift check against the guard's env-dump shapes.",
-        "resolution": "Assert each carve-out's index is after Read(.env.*), proven red on a reordered scratch copy."
+        "resolution": "fixed in P110.5-exo (cf885925): Assert each carve-out's index is after Read(.env.*), proven red on a reordered scratch copy.",
+        "fixTask": "P110.5-exo",
+        "commit": "cf885925"
       }
     ],
-    "outcome": "[findings: 8 - 0 high, 3 med, 5 low; 0 with a recorded fix commit]"
+    "outcome": "phase review (audit-reviewer, phase mode, no project skill): findings fixed by one fix task over the fragment, the doctor and the documents [findings: 8 - 0 high, 3 med, 5 low; 8 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "The plugin's guards were measured and designed against Claude Code's own layers, and no rule moved: every guard refusal of the 3.0.x era depended on plan, manifest, recorded-commit or secret-pattern state, and the guards hold no generic-destructive rule to hand over. The secret-read rules stay for coverage, because Claude Code's permission rules are opt-in and auto mode allows reading the agent's own credentials by default (one reading of the docs and auto-mode defaults on CLI 2.1.291, stated as such). A recommended permissions.deny fragment ships as a template beside the guards, kept in step with the secrets guard's own data by a total drift check; QUICKSTART and the doctor point at that one fragment and name its costs; SECURITY.md says which layer holds which guarantee. The task that would have retired rules was cancelled because the design found none to retire. The desired outcome is met as the evidence left it: the guards keep the plan- and state-dependent verdicts, and generic destructive blocking belongs to Claude Code's layers, where the plugin recommends a fragment rather than moving anything.",
   "tasks": [
     {
       "id": "P110.1",
@@ -294,7 +304,7 @@
     {
       "id": "P110.5-exo",
       "title": "the fragment, the doctor and the documents give one recommendation and name its costs",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P110-R1 to P110-R8. (1) QUICKSTART recommends one fragment: the install-check step's deny snippet becomes the shipped template (or a pointer to it), and the doctor's secret-rules fix text names plugins/audit/templates/permissions-deny.example.json instead of telling the user to add Read(.env*). (2) _doctor_setup._is_env_read_deny rejects a !-prefixed argument, so a carve-out is never counted as a refusing rule. (3) The QUICKSTART note names the template's costs and the carve-outs a user would add: Read(.env) and Read(credentials) also match directories of that name (a .env virtualenv), Read(*.pem) matches public certificates and CA bundles, and the sandbox switch makes those denies OS-level and limits writes to the working directory while sibling phase worktrees live outside it; the design's sentence calling the path entries SECRET_PATH spelled as gitignore patterns says where the gitignore form is broader. The template stays byte-identical to the design block. (4) SECURITY.md's statements about Claude Code's own behaviour carry their basis inline (the CLI version and date read, and a pointer to the design), and its history-guard clause says the guard refuses history rewrites in a repository whose manifest records a commit and, for reset, whether one would be orphaned. (5) The measurement document's secret-read row says the rule depends on the pattern, not plugin state; its wrong count and both documents' references to a task or phase a public reader cannot see are restated as the questions themselves. (6) The template check asserts every carve-out comes after Read(.env.*) in the parsed list.",
       "files": [
         "QUICKSTART.md",
@@ -331,20 +341,40 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "cf885925",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "One recommendation, its costs named, and its basis carried. _doctor_setup._is_env_read_deny no longer counts a !-prefixed carve-out as a refusing rule, and the secret-rules fix text tells the user to merge plugins/audit/templates/permissions-deny.example.json (PERMISSIONS_TEMPLATE), keeping its order, instead of adding Read(.env*) (cases ds0h2-ds0h6; helper red 88/92 at HEAD). QUICKSTART's install-check step points at the template instead of carrying its own Read(.env*)/Grep(.env*) snippet, and its optional hardening note names the template's costs: Read(.env) and Read(credentials) also match a directory of that name and everything under it (rename a .env virtualenv to .venv), Read(*.pem) matches public certificates and CA bundles (with a carve-out example placed after it), carve-outs come after the rule they carve from, and the sandbox makes the denies OS-level and limits Bash writes while phase worktrees sit beside the repository - the write limit stated with no dated reading behind it and a pointer to Claude Code's /sandbox panel. SECURITY.md's layer paragraph carries one inline basis for every statement about Claude Code's behaviour (the permissions, sandboxing and permission-modes docs and `claude auto-mode defaults`, read on 2.1.291 on 2026-10-06, quoted in the design, to be re-read before a release relies on them), and its history clause says the guard refuses a history rewrite in a repository whose manifest records a commit and, for reset --hard, whether a recorded commit would be orphaned. The design says where the gitignore form is broader than the guard's end-anchored regex, with its JSON block unchanged; the measurement document's secret-read row says the rule depends on a pattern, not plugin state, and both research documents restate references to a private task or phase as the questions themselves. The template check asserts every carve-out comes after Read(.env.*) (gs-tpl22, with fixture cases 22b and 22c showing the reader fires; the shipped template is already ordered, so gs-tpl22 locks the order rather than having been red).",
+        "descriptive": "The quick-start, the doctor and the security document now point to the one shipped permissions fragment, say what it costs a project (a .env virtual environment, public certificates, the sandbox's write limit), and say where their claims about Claude Code come from."
       },
       "startedAt": "2026-10-06T20:10:28Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T20:47:02Z",
+      "verifiedBy": [
+        "ds0h2",
+        "ds0h3",
+        "ds0h4",
+        "ds0h5",
+        "ds0h6",
+        "gs-tpl22",
+        "gs-tpl22b",
+        "gs-tpl22c"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T20:46:50Z.50255e",
         "status": "passed",
         "at": "2026-10-06T20:46:50Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "cf885925",
+        "at": "2026-10-06T20:47:02Z",
+        "basis": "orchestrator check against phase review findings P110-R1 to R8: each addressed; the doctor change is red-first proven; the template stays byte-identical to the design; no hook touched"
       }
     }
   ],
-  "startedAt": "2026-10-06T14:44:48Z"
+  "startedAt": "2026-10-06T14:44:48Z",
+  "testEvidence": {
+    "runId": "2026-10-06T21:35:50Z.6f4e0c",
+    "status": "passed",
+    "at": "2026-10-06T21:35:50Z"
+  }
 }
