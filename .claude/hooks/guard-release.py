@@ -140,12 +140,13 @@ def shell_path(rel):
 def remove_tree(path):
     """`shutil.rmtree` that also works on a fixture containing a git repository.
 
-    A COPY OF `plugins/audit/tests/_harness.remove_tree`, which holds the
+    A COPY OF `plugins/audit/scripts/_output.remove_tree`, which holds the
     measurement that chose it: git writes its loose objects read-only, windows
     refuses to unlink a read-only file, and `ignore_errors=True` hides that, so a
-    plain removal leaves `.git/objects/**` behind there and says nothing. This
-    file is a repository hook and may not import the test harness, so it keeps a
-    copy, and `gr48` compares the two statement for statement.
+    plain removal leaves `.git/objects/**` behind there and says nothing; and
+    its fallback never chmods or walks through a symbolic link. This file is a
+    repository hook and imports nothing from the plugin, so it keeps a copy, and
+    `gr48` compares the two statement for statement, the return value included.
 
     THE COPY DIFFERS IN WHERE `shutil` IS IMPORTED, and in nothing else. Only the
     selftest removes anything, and this hook starts on every Bash call; a
@@ -155,15 +156,22 @@ def remove_tree(path):
     """
     import shutil
     shutil.rmtree(path, ignore_errors=True)
-    if not os.path.exists(path):
-        return
+    if not os.path.lexists(path):
+        return True
+    if os.path.islink(path):
+        return False
+    # Top-down and lazy: a directory is made writable before it is descended
+    # into.
     for base, dirs, names in os.walk(path):
-        for name in dirs + names:
+        for entry in [base] + [os.path.join(base, name) for name in dirs + names]:
+            if os.path.islink(entry):
+                continue
             try:
-                os.chmod(os.path.join(base, name), 0o700)
+                os.chmod(entry, 0o700)
             except OSError:
                 pass
     shutil.rmtree(path, ignore_errors=True)
+    return not os.path.lexists(path)
 
 
 def removal_copy_drift(own_source, home_source, name="remove_tree"):
@@ -201,12 +209,12 @@ def removal_copy_drift(own_source, home_source, name="remove_tree"):
     own, why = shape(own_source, "this hook's copy", True)
     if why is not None:
         return why
-    home, why = shape(home_source, "the harness home", False)
+    home, why = shape(home_source, "the home", False)
     if why is not None:
         return why
     if own != home:
-        return ("this hook's `%s` no longer runs the statements the harness "
-                "home does - one of the two was changed without the other"
+        return ("this hook's `%s` no longer runs the statements the home "
+                "does - one of the two was changed without the other"
                 % (name,))
     return None
 
@@ -1823,7 +1831,7 @@ def _selftest():
 
     # --- the removal copy, and the shell-facing spelling --------------------
     here_src = os.path.abspath(__file__)
-    home_path = os.path.join(repo, "plugins", "audit", "tests", "_harness.py")
+    home_path = os.path.join(repo, "plugins", "audit", "scripts", "_output.py")
     try:
         with open(here_src, encoding="utf-8") as fh:
             own_src = fh.read()
@@ -1833,7 +1841,7 @@ def _selftest():
     except OSError as exc:
         drift = "could not read a side: %s" % (exc,)
     check("gr48 this hook's `remove_tree` runs the statements "
-          "plugins/audit/tests/_harness.py's does, bar its lazy import - "
+          "plugins/audit/scripts/_output.py's does, bar its lazy import - "
           "nothing else compares the two, so this is what keeps the copy a "
           "copy: %r" % (drift,), drift is None)
     one = ('def remove_tree(path):\n    """home"""\n'
@@ -1855,7 +1863,7 @@ def _selftest():
           and "no longer runs" in (removal_copy_drift(moved, one) or "")
           and "this hook's copy carries no" in (
               removal_copy_drift("x = 1\n", one) or "")
-          and "the harness home does not parse" in (
+          and "the home does not parse" in (
               removal_copy_drift(lazy, "def remove_tree(:\n") or ""))
     win_rel = "plugins\\audit\\scripts\\git\\close-phase.py"
     check("gr50 a shell-facing path is spelled with forward slashes whatever "

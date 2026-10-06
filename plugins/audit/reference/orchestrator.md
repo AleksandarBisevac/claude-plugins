@@ -185,6 +185,25 @@ never hardcode branch names, package ids, skills, or build tools here:
   `git branch -d` grades against HEAD rather than against the phase's declared parent — both were
   wrong in this document for as long as it existed, and neither is a rule prose can be trusted to
   remember.
+- **A close never vouches for a verdict that no longer holds.** `audit-task.py done` (with
+  `--commit` or `--no-change`) and `close-phase.py` ask the subject's newest recorded gate verdict
+  through `_verdict_binding.close_refusal`, and refuse — naming the run — on every arm in
+  `_verdict_binding.CLOSE_REFUSING_ARMS`: a red above all, and a green whose declared files changed
+  after it measured them. A red recorded after the run a sign-off was bound to is newer evidence,
+  and refuses the landing; a group member is asked through its carrier's run, and refused too by a
+  red on its own rows newer than that run. `close-phase.py` reads the verdict at the head it would
+  merge — the branch tip's committed ledger and the worktree holding the branch, and the declared
+  files as committed at the tip, never a worktree's uncommitted bytes — whichever tree
+  `--project` names, and asks only while the landing
+  is still to happen, so a re-run over a branch already landed is never refused. A sign-off
+  recorded with `--no-evidence-reason` is honoured: a stale green does not refuse its landing, a
+  red recorded after that sign-off does. No recorded run at all, or an `empty-gate` answer, does not refuse: there is no
+  measurement to vouch for, and the close prints so on its `gate:` line. The ways out are a green
+  run recorded on the work, or `--override-verdict "<why>"`, which writes an
+  `audit.verdict.close-overridden` journal row naming the run and the reason, and refuses instead
+  when `journal.enabled` is false or the row will not write. The two scripts are the
+  enforcement; a hand edit of `status` goes around them, and the validator does not ask this
+  question.
 - **Never read secrets** and **never log tokens** — enforced by the plugin's guard hooks; do not work around them.
 - If `meta.nodePreamble` is set, run it (un-piped) before any build/lint/test command **you type
   yourself**. You do not need to for `run-test-gate.py`: it applies the preamble to every gate

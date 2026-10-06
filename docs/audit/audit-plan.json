@@ -635,7 +635,7 @@
     {
       "id": "P100",
       "title": "a stamp or a close never vouches for a gate verdict that no longer holds",
-      "status": "pending",
+      "status": "done",
       "shard": "phases/P100.json",
       "priority": 1
     },
@@ -654,7 +654,7 @@
     {
       "id": "P103",
       "title": "what the plugin says about itself is true",
-      "status": "pending",
+      "status": "done",
       "shard": "phases/P103.json"
     },
     {
@@ -892,7 +892,9 @@
       "P95.1",
       "P96.1",
       "P97.1",
-      "P99.1"
+      "P99.1",
+      "P100.1",
+      "P100.4-zxo"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -935,7 +937,8 @@
       "P79.11-5bh",
       "P80.22-rtb",
       "P87.2",
-      "P96.1"
+      "P96.1",
+      "P100.4-zxo"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -959,7 +962,8 @@
       "P109.9",
       "P103.10",
       "P103.12",
-      "P104.7"
+      "P104.7",
+      "P103.14-xi3"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -1092,13 +1096,19 @@
       "P102.10",
       "P106.3",
       "P107.1",
-      "P107.4"
+      "P107.4",
+      "P100.1",
+      "P100.2",
+      "P100.3-zxo",
+      "P103.8"
     ],
     "QUICKSTART.md": [
       "P18.10",
       "P50.1",
       "P54.3",
-      "P110.3"
+      "P110.3",
+      "P103.7",
+      "P103.14-xi3"
     ],
     "README.md": [
       "P2.3",
@@ -1108,7 +1118,8 @@
       "P50.2",
       "P103.4",
       "P103.5",
-      "P103.9"
+      "P103.9",
+      "P103.14-xi3"
     ],
     "SECURITY.md": [
       "P2.2",
@@ -1149,7 +1160,8 @@
       "P97.1",
       "P99.1",
       "P103.1",
-      "P103.3"
+      "P103.3",
+      "P103.14-xi3"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -1355,7 +1367,9 @@
       "P105.5",
       "P103.4",
       "P103.5",
-      "P103.7"
+      "P103.7",
+      "P100.2",
+      "P103.14-xi3"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -1391,7 +1405,8 @@
       "P109.7",
       "P102.7",
       "P102.8",
-      "P108.3"
+      "P108.3",
+      "P100.4-zxo"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -1626,12 +1641,14 @@
       "P79.10-5bh",
       "P81.17-j7p",
       "P106.1",
-      "P106.2"
+      "P106.2",
+      "P100.2"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
       "P31.2",
-      "P107.3"
+      "P107.3",
+      "P103.14-xi3"
     ],
     "plugins/audit/commands/version.md": [
       "P67.2"
@@ -1720,7 +1737,8 @@
       "P54.2",
       "P72.1",
       "P72.2-ttl",
-      "P108.2"
+      "P108.2",
+      "P103.15-xi3"
     ],
     "plugins/audit/hooks/guard-capabilities.py": [
       "P15.4",
@@ -2018,7 +2036,8 @@
       "P84.1",
       "P84.4-791",
       "P84.6-791",
-      "P80.17-rtb"
+      "P80.17-rtb",
+      "P100.2"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
@@ -2114,7 +2133,8 @@
       "P81.7",
       "P109.9",
       "P102.3",
-      "P107.4"
+      "P107.4",
+      "P100.2"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -2137,7 +2157,8 @@
       "P75.4-j5h",
       "P75.5-j5h",
       "P109.9",
-      "P102.10"
+      "P102.10",
+      "P100.3-zxo"
     ],
     "plugins/audit/scripts/_refs.py": [
       "P23.1",
@@ -2155,7 +2176,8 @@
       "P77.3-6u9",
       "P85.4",
       "P109.9",
-      "P102.8"
+      "P102.8",
+      "P103.8"
     ],
     "plugins/audit/scripts/_ui_theme.py": [
       "P20.5",
@@ -2248,7 +2270,8 @@
       "P87.2",
       "P100.2",
       "P102.10",
-      "P107.1"
+      "P107.1",
+      "P100.3-zxo"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -3673,7 +3696,8 @@
       "P84.2",
       "P80.5",
       "P80.10",
-      "P102.10"
+      "P102.10",
+      "P100.3-zxo"
     ],
     "plugins/audit/tests/test__panel_composition.py": [
       "P18.7",
@@ -4047,7 +4071,8 @@
       "P92.3",
       "P94.4",
       "P100.2",
-      "P107.1"
+      "P107.1",
+      "P100.3-zxo"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
       "P28.2",
@@ -4126,7 +4151,8 @@
       "P72.1",
       "P72.2-ttl",
       "P108.2",
-      "P103.2"
+      "P103.2",
+      "P103.15-xi3"
     ],
     "plugins/audit/tests/test_guard_capabilities.py": [
       "P72.1"
@@ -4186,7 +4212,8 @@
       "P110.3",
       "P108.2",
       "P108.4",
-      "P103.2"
+      "P103.2",
+      "P103.15-xi3"
     ],
     "plugins/audit/tests/test_harvest_worktree.py": [
       "P43.3"
@@ -4480,7 +4507,8 @@
       "P59.2",
       "P84.3",
       "P84.5-791",
-      "P84.7-791"
+      "P84.7-791",
+      "P103.13-xi3"
     ],
     "tools/check-example-ledgers.py: a committed row whose status is not a schema enum member is a finding, and so is a passed verdict carrying a mutated tree": [
       "P32.10"
@@ -4578,7 +4606,8 @@
       "P109.9",
       "P102.8",
       "P102.10",
-      "P107.4"
+      "P107.4",
+      "P100.3-zxo"
     ],
     "tools/redfirst.sh": [
       "P55.13"
@@ -4588,7 +4617,8 @@
       "P56.2",
       "P92.5",
       "P92.6-a1x",
-      "P109.9"
+      "P109.9",
+      "P100.3-zxo"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -4690,7 +4720,8 @@
       "P94.4",
       "P98.1",
       "P98.2-yie",
-      "P99.1"
+      "P99.1",
+      "P100.3-zxo"
     ],
     ".claude/hooks/arm-release-bypass.py": [
       "P80.11",
@@ -4726,7 +4757,8 @@
       "P92.5",
       "P92.6-a1x",
       "P109.3",
-      "P103.6"
+      "P103.6",
+      "P100.3-zxo"
     ],
     "plugins/audit/scripts/status/_claude_home.py": [
       "P77.2",
@@ -4755,7 +4787,8 @@
       "P74.5-qq5",
       "P74.6-qq5",
       "P81.10",
-      "P100.2"
+      "P100.2",
+      "P100.4-zxo"
     ],
     "plugins/audit/tests/test__verdict_binding.py": [
       "P74.3-qq5",
@@ -5002,7 +5035,8 @@
       "P109.9"
     ],
     "tools/_suite.py": [
-      "P109.9"
+      "P109.9",
+      "P100.3-zxo"
     ],
     "docs/research/guard-refusals-by-owner.md": [
       "P110.1"
@@ -5082,7 +5116,8 @@
       "P103.11"
     ],
     ".github/pull_request_template.md": [
-      "P103.11"
+      "P103.11",
+      "P103.14-xi3"
     ],
     "plugins/audit/tests/test_gen_demo_usage.py": [
       "P104.1"

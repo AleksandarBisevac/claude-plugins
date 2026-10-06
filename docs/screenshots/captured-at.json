@@ -151,5 +151,12 @@
       "surface": "panel",
       "uiDigest": "2bae064692ff87ba5d5a3dbaaf457b8b8ce0ea09c0795a5da7c100ba4525adad"
     }
+  },
+  "gifs": {
+    "demo-gate.gif": {
+      "sha256": "2d766aa5c2bd8f44edde24924b2872e0adb1e01e020a376af9c50d71ae3f4cf0",
+      "textDigest": "d09b836b0c4dbb87cf3678b9e475f387731cd0c6a05f39184747f09610cf834f",
+      "writtenBy": "tools/capture-demo-gif.py"
+    }
   }
 }

@@ -26,21 +26,34 @@ same? `content_digest()` is that question, and it exists because the fields abov
 were asked to carry a decision they cannot support - a verdict repeated instead
 of re-measured. `DIRTY_LIMIT` below is why: a digest over which paths were dirty
 says nothing about what is in them. So the content identity is built from a
-different pair of git questions, it reads file bytes rather than status words,
-and it is kept apart from the stamp rather than folded into it - a stamp is a
-cheap discriminator carried in prose, and this is an expensive one nobody pastes
-into a commit message.
+different pair of git questions, and it reads file bytes rather than status words.
+
+IT IS ALSO THE STAMP'S FOURTH FIELD, `content`. It was once kept out of the stamp
+on the premise that it was expensive, and the premise did not survive being
+measured: on 2026-10-06, twice a few minutes apart, `content_digest` took about
+what the three older fields took together, on this repository with a handful of
+dirty paths and on a clone with several hundred, so folding it in roughly doubles
+a `take` that already costs a fraction of a second. `CONTENT_READ_LIMIT` bounds
+the worst case with a refusal rather than a slow answer. What the field buys is
+the case a shared tree produces all day: a sibling executor rewriting a file this
+task does not declare, which the three older fields cannot see. The gate row
+keeps its three fields - `tested_state` is unchanged - and the content field
+lives in the stamp alone.
 
 AND A STALE ANSWER NAMES THE FIELD THAT MOVED. "Stale" on its own sends a reader
 back to re-run everything; HEAD having moved, the declared work having changed,
-and some path's dirty status having changed are three different repairs, and the
-comparison already knows which of them happened.
+some path's dirty status having changed and some undeclared file's bytes having
+changed are different repairs, and the comparison already knows which of them
+happened - down to the path, for the last one, while the dirty set is small
+enough for the stamp to list.
 
 WHAT A STAMP DOES NOT ESTABLISH IS PRINTED BESIDE IT, in `FIELD_LIMIT` below.
-`DIRTY_LIMIT` is the sharpest of the three and it is inherited rather than
-softened: the dirty digest records WHICH paths were dirty, never their contents,
-so a rewrite of an already-dirty file outside the declared scope moves nothing
-here. A stamp whose output implied otherwise would be worse than no stamp.
+`DIRTY_LIMIT` is inherited rather than softened: the dirty digest records WHICH
+paths were dirty, never their contents, so a rewrite of an already-dirty file
+outside the declared scope moves nothing in THAT field. The `content` field is
+what moves, and a bounded per-path list beside it lets the comparison name the
+path; `CONTENT_LIMIT` says what that field does not reach. A version-1 stamp has
+no content field, and its comparison says so rather than reading as complete.
 
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__tree_stamp.py`.
@@ -397,23 +410,15 @@ def _outside(excluded):
     return _drop
 
 
-def content_digest(project, excluded=None):
-    """`(digest, basis)` - one digest over every byte git reports, or None and why.
+def _content_reading(project, excluded):
+    """`(reading, problem)` - the entries `content_digest` hashes, read ONCE.
 
-    `excluded` is the paths the CALLER writes and must not be judged by, as
-    project-relative prefixes; they travel INSIDE the digest, so two identities
-    taken over different subjects cannot come out equal and read as agreement.
-
-    WHAT IT ESTABLISHES AND WHAT IT DOES NOT is `CONTENT_LIMIT`, which is the
-    sentence a caller prints rather than a docstring nobody renders.
-
-    IT DISCRIMINATES MORE FINELY THAN CONTENT IN ONE PLACE, and that is worth
-    knowing rather than discovering: the same bytes staged and unstaged are two
-    entries of different shapes here - git's blob id on one side, this file's own
-    file digest on the other - so `git add` alone moves the answer. A caller
-    reads that as "not the same tree" and measures again, which costs time and
-    can never cost a wrong verdict; the reverse error is the one that cannot be
-    afforded, so this is the side to be wrong on.
+    `reading` is `{tracked, current, left_out}`; `problem` is the sentence when
+    git would not answer or the differing set is over `CONTENT_READ_LIMIT`, and
+    then `reading` is None. Split out so the stamp can keep a per-path list AND
+    the digest off one reading of the tree: two readings could describe two
+    moments, and a second hashing of the same files would be a second content
+    identity.
     """
     drop = _outside(excluded)
     index = _git_fields(project, ("ls-files", "-s", "-z"))
@@ -446,12 +451,45 @@ def content_digest(project, excluded=None):
                for p in paths]
     left_out = sorted(set(p for p in (excluded or [])
                           if isinstance(p, str) and p.strip()))
+    return {"tracked": sorted(tracked), "current": current,
+            "left_out": left_out}, None
+
+
+def _content_answer(reading):
+    """`(digest, basis)` for one `_content_reading` - the one content arithmetic."""
     basis = ("git listed %d tracked path(s) and read %d path(s) that differ "
-             "from the index or are untracked" % (len(tracked), len(current)))
-    if left_out:
+             "from the index or are untracked"
+             % (len(reading["tracked"]), len(reading["current"])))
+    if reading["left_out"]:
         basis = ("%s; %d path(s) the caller writes itself were left out: %s"
-                 % (basis, len(left_out), _output.some_of(left_out)))
-    return _digest([sorted(tracked), current, left_out]), basis
+                 % (basis, len(reading["left_out"]),
+                    _output.some_of(reading["left_out"])))
+    return (_digest([reading["tracked"], reading["current"],
+                     reading["left_out"]]), basis)
+
+
+def content_digest(project, excluded=None):
+    """`(digest, basis)` - one digest over every byte git reports, or None and why.
+
+    `excluded` is the paths the CALLER writes and must not be judged by, as
+    project-relative prefixes; they travel INSIDE the digest, so two identities
+    taken over different subjects cannot come out equal and read as agreement.
+
+    WHAT IT ESTABLISHES AND WHAT IT DOES NOT is `CONTENT_LIMIT`, which is the
+    sentence a caller prints rather than a docstring nobody renders.
+
+    IT DISCRIMINATES MORE FINELY THAN CONTENT IN ONE PLACE, and that is worth
+    knowing rather than discovering: the same bytes staged and unstaged are two
+    entries of different shapes here - git's blob id on one side, this file's own
+    file digest on the other - so `git add` alone moves the answer. A caller
+    reads that as "not the same tree" and measures again, which costs time and
+    can never cost a wrong verdict; the reverse error is the one that cannot be
+    afforded, so this is the side to be wrong on.
+    """
+    reading, problem = _content_reading(project, excluded)
+    if reading is None:
+        return None, problem
+    return _content_answer(reading)
 
 
 def identity_of(parts):
@@ -467,7 +505,9 @@ def identity_of(parts):
 
 
 # --- the stamp a verification carries ------------------------------------------
-# A STAMP IS THE THREE IDENTITY FIELDS PLUS THE SCOPE THAT PRODUCED ONE OF THEM.
+# A STAMP IS THE IDENTITY FIELDS PLUS THE SCOPE THAT PRODUCED ONE OF THEM, and
+# from version 2 the per-path dirty list and the manifest the recorder's excluded
+# paths are derived from.
 # The scope travels INSIDE the token rather than being re-typed at comparison
 # time, and that is the difference between a check and a ceremony: a comparison
 # handed a different file list silently answers about a different question, which
@@ -475,10 +515,14 @@ def identity_of(parts):
 # that this whole file is for.
 STAMP_TOKEN = "audit-stamp:"
 
-# One version, refused rather than guessed at when it is not this one. A token
-# from a future spelling is a thing this code cannot read, and reading it
-# optimistically is how "unestablished" quietly becomes "current".
-STAMP_VERSION = 1
+# The version this code WRITES, and every version it READS. A token from a
+# spelling not in `READABLE_VERSIONS` is refused rather than guessed at: reading
+# it optimistically is how "unestablished" quietly becomes "current". Version 1
+# stays readable because a stamp already pasted into a commit message or a report
+# cannot be re-taken after the fact; it is graded over the fields it carries, and
+# the comparison says which field it could not grade.
+STAMP_VERSION = 2
+READABLE_VERSIONS = (1, 2)
 
 # The verdicts, and the reason there are three of them rather than two.
 CURRENT = "current"
@@ -497,11 +541,38 @@ NOT_DECLARED = "not-declared"
 # comparison or in the output is exactly the silence this file is against - and
 # the basis key is in it rather than derived by concatenation, which is what
 # produced a `basis: None` on two of the three fields the first time this ran.
+#
+# `content` is `content_digest` over the same tree, with the recorder's own paths
+# left out - the field `DIRTY_LIMIT` says the other three are not. Its basis is
+# filed by `take` and not by `tested_state`: a gate row records the three older
+# fields and no content field, and that row's shape is not this table's to move.
 FIELD_LIMIT = (("head", "headBasis", HEAD_BASIS),
                ("scopeDigest", "scopeBasis", SCOPE_LIMIT),
-               ("dirtyDigest", "dirtyBasis", DIRTY_LIMIT))
+               ("dirtyDigest", "dirtyBasis", DIRTY_LIMIT),
+               ("content", "contentBasis", CONTENT_LIMIT))
 
 IDENTITY_FIELDS = tuple(name for name, _key, _limit in FIELD_LIMIT)
+
+# Which fields each readable version carries. A version-1 stamp has no content
+# field, and grading one as if `content` were null would read as `unanswerable`
+# on every v1 token - true, but it would make every one of them `unestablished`,
+# which unreads a stamp the version list above promises to read.
+FIELDS_OF_VERSION = {1: ("head", "scopeDigest", "dirtyDigest"),
+                     2: IDENTITY_FIELDS}
+
+# How many dirty paths a stamp names, each beside a prefix of the file digest
+# `content_digest` already read for it. THE STAMP IS ONE LINE OF PROSE, so the
+# list is bounded and the bound is a REFUSAL, not a truncation: over it the stamp
+# keeps no list at all and its basis says so, because a list cut at the bound
+# would name some moved paths and silently not others. The content digest still
+# answers either way; only the naming is lost.
+DIRTY_PATHS_LIMIT = 24
+
+# How much of each per-path file digest the list keeps. A prefix of the digest
+# `content_digest` computed, not a second hash: the list only has to tell one
+# moment of a file from another, and the full content digest beside it is what
+# decides the verdict.
+PATH_DIGEST_CHARS = 16
 
 VERDICT_HELP = {
     CURRENT: "every field git could answer still agrees with the stamp",
@@ -526,19 +597,54 @@ def declared_scope(owns):
                       and _vocab._strip_line_suffix(f).strip()))
 
 
-def take(project, owns):
+def _dirty_paths(reading):
+    """`(paths, basis)` - the bounded per-path list off one content reading.
+
+    `paths` is `{path: digest prefix or null}` for every path the reading found
+    differing from the index or untracked, or None over `DIRTY_PATHS_LIMIT`; a
+    null value is a path git lists whose bytes are not there to read, which is
+    itself a moment of that path."""
+    current = reading["current"]
+    if len(current) > DIRTY_PATHS_LIMIT:
+        return None, ("%d dirty path(s), over the bound of %d this stamp names, "
+                      "so no per-path list is kept and a moved path cannot be "
+                      "named" % (len(current), DIRTY_PATHS_LIMIT))
+    paths = dict((path, None if digest is None
+                  else digest.split(":", 1)[-1][:PATH_DIGEST_CHARS])
+                 for path, digest in current)
+    return paths, "%d dirty path(s) named in the stamp" % (len(paths),)
+
+
+def take(project, owns, excluded=None, manifest=None):
     """`(stamp, state)` for `project` right now - the token, and the full basis.
 
     The stamp is the machine half, small enough for a commit message; `state` is
-    `tested_state`'s dict, which carries the basis sentence for every field and is
-    what the human rendering prints. Both come out of ONE reading of the tree, so
-    the line a reader is shown and the token they paste cannot describe different
-    moments."""
+    `tested_state`'s dict plus the content field's basis, which together carry
+    the basis sentence for every field and are what the human rendering prints.
+
+    `excluded` is the paths the caller's recorder writes, left out of the content
+    field (`content_digest`'s argument of the same name). `manifest` is stored in
+    the stamp as given - the plan those paths were derived from - so a caller of
+    `compare` can derive the same set again; the paths themselves are not stored,
+    because a sharded plan carries one per phase and the stamp is one line.
+
+    The content field and its path list come from ONE reading of the tree, so the
+    digest that decides the verdict and the list that names the moved path cannot
+    describe different moments."""
     before = porcelain(project)
-    state = tested_state(project, owns, before)
+    state = dict(tested_state(project, owns, before))
+    reading, problem = _content_reading(project, excluded)
+    if reading is None:
+        content, cbasis, paths = None, problem, None
+    else:
+        content, cbasis = _content_answer(reading)
+        paths, pbasis = _dirty_paths(reading)
+        cbasis = "%s; %s" % (cbasis, pbasis)
+    state["contentBasis"] = cbasis
     stamp = {"v": STAMP_VERSION, "scope": declared_scope(owns),
              "head": state["head"], "scopeDigest": state["scopeDigest"],
-             "dirtyDigest": state["dirtyDigest"]}
+             "dirtyDigest": state["dirtyDigest"], "content": content,
+             "dirtyPaths": paths, "manifest": manifest}
     return stamp, state
 
 
@@ -580,22 +686,47 @@ def parse_stamp(text):
     if not isinstance(stamp, dict):
         return None, ("the text after %r is %s, not an object"
                       % (STAMP_TOKEN, type(stamp).__name__))
-    if stamp.get("v") != STAMP_VERSION:
-        return None, ("this stamp is version %r and this code reads version %d; "
-                      "re-take the verification rather than grading it against a "
-                      "spelling nothing here can read"
-                      % (stamp.get("v"), STAMP_VERSION))
+    version = stamp.get("v")
+    if isinstance(version, bool) or version not in READABLE_VERSIONS:
+        return None, ("this stamp is version %r and this code reads version(s) "
+                      "%s; re-take the verification rather than grading it "
+                      "against a spelling nothing here can read"
+                      % (version, ", ".join(str(v) for v in READABLE_VERSIONS)))
     scope = stamp.get("scope")
     if not isinstance(scope, list) or any(not isinstance(f, str) for f in scope):
         return None, ("the stamp's `scope` is not a list of paths, so the scope "
                       "digest cannot be re-derived and no comparison would mean "
                       "anything")
-    for name in IDENTITY_FIELDS:
+    for name in FIELDS_OF_VERSION[version]:
         value = stamp.get(name)
         if value is not None and not isinstance(value, str):
             return None, ("the stamp's %r is %s; an identity field is a string or "
                           "null and nothing else" % (name, type(value).__name__))
+    if version >= 2:
+        problem = _v2_problem(stamp)
+        if problem is not None:
+            return None, problem
     return stamp, None
+
+
+def _v2_problem(stamp):
+    """The sentence refusing a version-2 stamp's extra keys, or None.
+
+    `dirtyPaths` is `{path: digest prefix or null}` or null, and `manifest` is a
+    path or null; anything else is a token this code would have to guess about."""
+    paths = stamp.get("dirtyPaths")
+    if paths is not None and (
+            not isinstance(paths, dict)
+            or any(not isinstance(k, str) for k in paths)
+            or any(v is not None and not isinstance(v, str)
+                   for v in paths.values())):
+        return ("the stamp's `dirtyPaths` is not a map of path to digest, so no "
+                "moved path could be named from it")
+    manifest = stamp.get("manifest")
+    if manifest is not None and not isinstance(manifest, str):
+        return ("the stamp's `manifest` is %s; it is a path or null"
+                % (type(manifest).__name__,))
+    return None
 
 
 def field_state(name, was, now, declared):
@@ -619,25 +750,62 @@ def field_state(name, was, now, declared):
     return AGREES if was == now else MOVED
 
 
-def compare(stamp, project):
-    """Is `project` still the tree `stamp` names? `{verdict, fields, now, state}`.
+def moved_paths(was, now):
+    """`(paths, why)` - which dirty paths differ between two per-path lists.
+
+    `paths` is the sorted list of every path present on one side only or with a
+    different digest on each; None, with `why`, when either side kept no list. An
+    EMPTY list is an answer: the content moved and no dirty path did, so what
+    moved is the index or the set of paths the recorder left out."""
+    if not isinstance(was, dict) or not isinstance(now, dict):
+        return None, ("one side of this comparison kept no per-path list (over "
+                      "the bound of %d dirty paths, or a tree git would not "
+                      "list), so the moved path cannot be named"
+                      % (DIRTY_PATHS_LIMIT,))
+    absent = object()
+    return sorted(p for p in set(was) | set(now)
+                  if was.get(p, absent) != now.get(p, absent)), None
+
+
+def compare(stamp, project, excluded=None):
+    """Is `project` still the tree `stamp` names?
+    `{verdict, version, fields, now, state}`.
 
     THE SCOPE COMES OUT OF THE STAMP and never from the caller, so the comparison
     is over the same file set the stamp was taken over by construction.
+    `excluded` is the caller's re-derivation of the recorder's paths from the
+    stamp's own `manifest`; it travels inside the content digest, so a set that
+    differs from the one the stamp was taken with moves that field rather than
+    agreeing by accident.
+
+    A VERSION-1 STAMP IS GRADED OVER THE FIELDS IT CARRIES, and `version` in the
+    result is what lets the render say the content field was never compared.
 
     MOVED OUTRANKS UNANSWERABLE. A tree with one field moved and another
     unreadable HAS moved - that much is established - and reporting it as
     ungradeable would hide a fact already in hand. The reverse ordering is the one
     with a hole in it, which is the same asymmetry `running_plugin_verdict` draws
     when it lets drift outrank a matching stamp."""
-    now, state = take(project, stamp.get("scope") or [])
+    version = stamp.get("v", STAMP_VERSION)
+    carried = FIELDS_OF_VERSION.get(version, IDENTITY_FIELDS)
+    now, state = take(project, stamp.get("scope") or [], excluded=excluded,
+                      manifest=stamp.get("manifest"))
     declared = bool(stamp.get("scope"))
     fields = []
     for name, basis_key, limit in FIELD_LIMIT:
-        fields.append({"field": name, "was": stamp.get(name), "now": now.get(name),
-                       "state": field_state(name, stamp.get(name), now.get(name),
-                                            declared),
-                       "basis": state.get(basis_key), "limit": limit})
+        if name not in carried:
+            continue
+        word = field_state(name, stamp.get(name), now.get(name), declared)
+        # `paths` is None on every field but a moved `content`, where it is the
+        # list of moved dirty paths - possibly empty, which is an answer - or
+        # None with `pathsWhy` saying why no list could be compared.
+        paths, why = (moved_paths(stamp.get("dirtyPaths"),
+                                  now.get("dirtyPaths"))
+                      if name == "content" and word == MOVED else (None, None))
+        fields.append({"field": name, "was": stamp.get(name),
+                       "now": now.get(name), "state": word,
+                       "basis": state.get(basis_key), "limit": limit,
+                       "paths": paths, "pathsWhy": why})
     words = [f["state"] for f in fields]
     if MOVED in words:
         verdict = STALE
@@ -645,7 +813,8 @@ def compare(stamp, project):
         verdict = UNESTABLISHED
     else:
         verdict = CURRENT
-    return {"verdict": verdict, "fields": fields, "now": now, "state": state}
+    return {"verdict": verdict, "version": version, "fields": fields,
+            "now": now, "state": state}
 
 
 # --- rendering -----------------------------------------------------------------
@@ -688,7 +857,20 @@ def render_comparison(result):
         if entry["state"] == MOVED:
             lines.append("      was:   %s" % (entry["was"],))
             lines.append("      now:   %s" % (entry["now"],))
+        if entry.get("paths"):
+            lines.append("      moved: %s" % (", ".join(entry["paths"]),))
+        elif entry.get("paths") == []:
+            lines.append("      moved: no dirty path's bytes - the index, or the "
+                         "set of paths the recorder leaves out, is what changed")
+        elif entry.get("pathsWhy"):
+            lines.append("      moved: %s" % (entry["pathsWhy"],))
         lines.append("      says:  %s" % (entry["limit"],))
+    if result.get("version") == 1:
+        lines.append("  This is a version-1 stamp: it carries no content field, "
+                     "so a rewrite of an")
+        lines.append("  already-dirty file outside the declared scope was not "
+                     "compared. Re-take it to")
+        lines.append("  have that compared.")
     lines.append("")
     if verdict == STALE:
         lines.append("The claim this stamp was taken with is about a tree that no "

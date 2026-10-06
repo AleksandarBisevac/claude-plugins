@@ -24,10 +24,10 @@ Git writes its loose objects READ-ONLY. On POSIX that is invisible, because
 unlinking a file needs a writable DIRECTORY and not a writable file; on windows the
 attribute is read off the file itself, `os.unlink` raises, and `shutil.rmtree` leaves
 `.git/objects/**` behind - SILENTLY, because every caller in this tree spells the call
-`ignore_errors=True`. `_harness.remove_tree()` is the answer, `tools/sweep-selftests.py`
-keeps the one deliberate copy of it (a runner may not import a file it is one of the
-runners OF, and `removal_helper_drift()` compares the two statement for statement), and
-a tool that needs the same answer gets it from here rather than becoming a third home.
+`ignore_errors=True`. `_output.remove_tree()` in the scripts anchor is the answer and
+its one home; `_harness.remove_tree` is bound to it, `tools/sweep-selftests.py` keeps a
+copy that `removal_helper_drift()` compares with the home statement for statement, and
+a tool that needs the same answer gets it from here rather than becoming another copy.
 
 WHY THE IMPORT IS DEFERRED, WHICH IS THE OBJECTION THIS FILE ANSWERS. `tools/` is
 outside the plugin, and importing `_harness` puts `scripts/`, `hooks/` and every
@@ -84,7 +84,7 @@ run = _harness.run
 attempt = _harness.attempt
 
 # THE SAME BINDING FOR THE SAME REASON, and the reason is sharper here: this fact has
-# two homes already and a check that compares them, so a third spelling is not a style
+# one home and a copy a check compares with it, so another spelling is not a style
 # question but a rule broken. Bound, never wrapped - `s11` pins the identity, and
 # `unsafe_removal_violations()` below quotes this name out of the object rather than
 # out of a literal, so the rule cannot come to name a helper the bridge does not hand
@@ -390,12 +390,14 @@ def _cases(check):
           (runner_problem("def _selftest(:\n") or "").startswith("does not parse"))
 
     # --- the removal, and the rule that keeps it reachable from here -----
-    check("s11 `remove_tree` IS `_harness.remove_tree`, the same function object "
-          "the suites under tests/ call - not a copy. This fact is allowed exactly "
-          "two homes, `tests/_harness.py` and the deliberate copy in the sweep "
-          "runner, and `removal_helper_drift()` compares those two. A binding here "
-          "is how a tool gets the answer without becoming a third",
-          remove_tree is _harness.remove_tree)
+    check("s11 `remove_tree` IS `_harness.remove_tree` IS `_output.remove_tree`, "
+          "the same function object the suites under tests/ call - not a copy. "
+          "This fact has one home, `scripts/_output.py`, and one deliberate copy, "
+          "in the sweep runner, which `removal_helper_drift()` compares with it. "
+          "A binding here is how a tool gets the answer without becoming another "
+          "copy",
+          remove_tree is _harness.remove_tree
+          and remove_tree is _output.remove_tree)
 
     # The fixture is BOTH directions of the helper exclusion in one body: a removal
     # inside `def remove_tree` (which is what the helper is BUILT of) and a removal

@@ -1,6 +1,6 @@
 ---
 description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — promote one to running, close one that landed, move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `start` promotes a task to in_progress so the plan gate resolves its files, without spawning anything; `done` closes it against the commit its work landed in, writing status, completedAt, commit, outcome and verifiedBy in one write — or, with `--no-change --reason`, closes a task whose answer was that nothing needed to change; `reopen` puts a done task back to pending with the reason recorded; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `block` sets a task blocked with the reason beside the status; `note` appends a dated note, the one addition a started task takes; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
-argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] | start <taskId> | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id], or --test <path> --caught <runId> | uncouple --test <path> | mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId> | unmute --test <path> | cancel <id> --reason "<why>"'
+argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] | start <taskId> | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] [--override-verdict TEXT] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id], or --test <path> --caught <runId> | uncouple --test <path> | mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId> | unmute --test <path> | cancel <id> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -557,6 +557,20 @@ non-SHA `--commit` (with no `--no-change`); a SHA git can be asked about and doe
 down, so the close would lay a terminal state over a hole, which is also the shape
 `/audit:doctor` grades as positive evidence of an edit outside the pipeline. Run
 `/audit:task start <taskId>` first.
+
+**A close never vouches for a verdict that no longer holds.** Before any write, `done` — with
+`--commit` or with `--no-change` — asks the task's newest recorded gate verdict
+(`_verdict_binding.close_refusal`) and refuses, naming the run, on every arm listed in
+`_verdict_binding.CLOSE_REFUSING_ARMS` — a red above all, and a green whose declared files
+changed since it measured them. A no-change close asks it too: its claim is that the code as it
+stands needed nothing, and such a verdict is a measurement of that code saying otherwise. No
+recorded run at all, or an `empty-gate` answer, does not refuse: there is no measurement to vouch
+for, and the close's `gate:` line says so. The two ways out are a green run recorded on the work,
+or `--override-verdict "<why>"` — the flag `commit-task-work.py` takes for the same act — which
+closes anyway and is **journaled** as an `audit.verdict.close-overridden` row naming the task,
+the run and the reason; with `journal.enabled` false the close is refused, and a row that will
+not write rolls the close back. Given with nothing to go over, the flag closes, says it was not
+needed, and journals nothing.
 
 **A SHA git could not be asked about is written, not refused**, and the report says so:
 with no git on PATH, or in a **shallow** clone where the object is past the cut, a failed

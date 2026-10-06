@@ -58,6 +58,7 @@ import functools
 import hashlib
 import json
 import os
+import shutil
 import sys
 
 # --- the anchors ----------------------------------------------------------------
@@ -140,6 +141,60 @@ def safe_stdio():
                 stream.reconfigure(errors="replace")
             except Exception:
                 pass
+
+
+# --- removing a scratch tree ----------------------------------------------------
+def remove_tree(path):
+    """Remove the directory tree at `path`, read-only entries included; True when
+    nothing is left there afterwards, an already-absent path among them.
+
+    THE ONE HOME OF THIS FACT. `tests/_harness.py` binds its `remove_tree` to
+    this function and `tools/_suite.py` re-exports that binding; the sweep runner
+    and a repository hook keep copies because they may not import what they
+    run, and each compares its copy against this body statement for statement.
+
+    WHY NOT A PLAIN RMTREE. Git writes its loose objects READ-ONLY - measurably,
+    in every `git init` plus commit a fixture builds. POSIX unlinks a file
+    through its DIRECTORY's write bit, so a plain `shutil.rmtree` removes the
+    repository and nobody ever noticed. Windows checks the read-only ATTRIBUTE
+    on the file itself and `os.unlink` raises, so the same call leaves
+    `.git/objects/**` behind - and with `ignore_errors=True`, the usual
+    spelling, leaves it behind SILENTLY. That surfaced once
+    `tools/sweep-selftests.py` began asserting the scratch directory is empty
+    afterwards, confirmed by emulating the one rule that differs (unlink refuses
+    a file with no owner-write bit).
+
+    THE ORDINARY REMOVAL RUNS FIRST AND THE CHMOD PASS IS THE FALLBACK, so
+    nothing is relaxed on the platform where nothing needed relaxing. Chmod'ing
+    the tree up front would also remove it, and would quietly paper over a
+    genuine permission failure on both platforms.
+
+    THE FALLBACK NEVER GOES THROUGH A LINK. `os.chmod` on a symbolic link
+    changes its TARGET, which may be any file on the machine, and `os.walk`
+    over a path that is itself a link walks the tree it points at; so a link at
+    `path` is left alone (it answers False, still there) and a link inside the
+    tree is skipped by the chmod pass and removed as the link it is.
+
+    NEITHER `onerror` NOR `onexc`: the first is deprecated and the second does
+    not exist on the 3.8 floor. Asking whether the path survived needs neither.
+    """
+    shutil.rmtree(path, ignore_errors=True)
+    if not os.path.lexists(path):
+        return True
+    if os.path.islink(path):
+        return False
+    # Top-down and lazy: a directory is made writable before it is descended
+    # into.
+    for base, dirs, names in os.walk(path):
+        for entry in [base] + [os.path.join(base, name) for name in dirs + names]:
+            if os.path.islink(entry):
+                continue
+            try:
+                os.chmod(entry, 0o700)
+            except OSError:
+                pass
+    shutil.rmtree(path, ignore_errors=True)
+    return not os.path.lexists(path)
 
 
 # --- naming a bounded set without hiding the rest -------------------------------
