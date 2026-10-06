@@ -113,17 +113,19 @@ RWP_CASES = (("gitstatus", "git status --porcelain", True),
 # the fix, the deny cases prove it did not become "anything starting with cd is fine".
 # A table of allow cases alone would pass equally against a guard that returned True
 # unconditionally.
-# KNOWN OPEN, named in SECURITY.md's `_command_is_read_only` paragraph: "'reads
-# as unable to write' is not 'provably unable to write' ... Each of these is
-# absorbed". Each row names today's verdict as a decision, not an oversight -
+# KNOWN OPEN, named in SECURITY.md's paragraph that opens "It absorbs a command
+# it reads as unable to write; it never proves one guilty." Each row names
+# today's verdict as a decision, not an oversight -
 # `want=True` means absorbed (read as read-only) though the command writes
 # through the listed program's own arguments or script. Each sits beside its
 # watched twin below (`rm -rf build`, `sed -i ...`) so the gap is what a fix
 # would move, not an inert table.
 KNOWN_OPEN_CASES = (("gitcheckout", "git -C /x checkout -- f.py", True),
+                     ("gitreset", "git -C /x reset --hard", True),
                      ("envrm", "env rm -rf build", True),
                      ("awkprint", 'awk \'{print > "out.py"}\' in.txt', True),
                      ("sedw", "sed -n 's/a/b/w out.py' in.txt", True),
+                     ("sorto", "sort -o out.py in.txt", True),
                      # the watched twins: the same two destructive operations,
                      # spelled without the absorbing wrapper
                      ("rmtwin", "rm -rf build", False),

@@ -438,8 +438,8 @@ def _cases(check):
           "SECURITY.md's 'the Grep tool over a directory with no glob that "
           "names a secret'", "allow", grep(pattern="TOKEN", path="./"))
     _expect("sr25 KNOWN OPEN: `diff .env.development .env.production` names "
-          "the verb instead of the file against a verb list the guard does "
-          "not read - SECURITY.md's 'diff of two env files'", "allow",
+          "the secret beside `diff`, a verb the guard's list lacks - "
+          "SECURITY.md's 'diff of two env files'", "allow",
           bash("diff .env.development .env.production"))
     _expect("sr26 KNOWN OPEN: a `for` loop over `.env.*` reading the loop "
           "variable never names a secret path in the call the guard parses - "
@@ -450,6 +450,28 @@ def _cases(check):
           "to `cat` on stdin rather than as a named argument - SECURITY.md's "
           "'xargs cat handed the names on stdin'", "allow",
           bash("ls .env.production | xargs cat"))
+    _expect("sr28 KNOWN OPEN: `comm .env.development .env.production` names "
+          "the secret beside `comm`, a verb the guard's list lacks - "
+          "SECURITY.md's 'comm'", "allow",
+          bash("comm .env.development .env.production"))
+    _expect("sr29 KNOWN OPEN: `cut -d= -f2 .env.production` names the secret "
+          "beside `cut`, a verb the guard's list lacks - SECURITY.md's "
+          "'cut'", "allow",
+          bash("cut -d= -f2 .env.production"))
+    _expect("sr30 KNOWN OPEN: `sort .env.production` names the secret beside "
+          "`sort`, a verb the guard's list lacks - SECURITY.md's 'sort'",
+          "allow", bash("sort .env.production"))
+    _expect("sr31 KNOWN OPEN: `jq . .env.production` names the secret beside "
+          "`jq`, a verb the guard's list lacks - SECURITY.md's 'jq'",
+          "allow", bash("jq . .env.production"))
+    _expect("sr32 KNOWN OPEN: `vim .env.production` names the secret beside "
+          "an editor, a verb the guard's list lacks - SECURITY.md's 'an "
+          "editor'", "allow", bash("vim .env.production"))
+    _expect("sr33 KNOWN OPEN: `find . -name .env.production -exec cat {} +` "
+          "spells the secret path before the `-exec` verb, so no single call "
+          "the guard's readings parse names it as a read - SECURITY.md's "
+          "'find ... -exec cat, where the path is spelled before the verb'",
+          "allow", bash("find . -name .env.production -exec cat {} +"))
 
     # (sr16+) THE PROJECT'S OWN PATTERNS, WHICH REACHED EVERY MATCHER BUT THE
     # SHELL. The arm that was supposed to carry them required the BUILT-IN matcher

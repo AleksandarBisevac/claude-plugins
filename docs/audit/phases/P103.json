@@ -783,7 +783,7 @@
     {
       "id": "P103.14-xi3",
       "title": "the documents agree on the secret guard, the gate's tiers and the first-run order",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P103-R1 to P103-R5 and P103-R8 to P103-R11, which share files. (1) Every secret-read claim (plugins/audit/README.md's guard rows and invariant row, README.md) says a call naming a secret file beside a read verb the guard lists is refused, and names both open classes - a read that never names the file, and an unlisted verb naming it - linking SECURITY.md; the invariant row is graded as name-based refusal. (2) Wherever a document states when the plan gate enforces (README.md's first screen and later section, plugins/audit/README.md, QUICKSTART.md) it states the three tiers in the same words - observe with no plan, warn with a plan and nothing running, deny while a phase runs - or points at /audit:doctor, which prints the active tier. (3) QUICKSTART runs the read-only /audit:doctor check before the free backfill, so README's sentence that doctor checks the install before anything is written holds; README's own backfill block becomes a pointer to QUICKSTART. (4) The backfill is described as running no agent and no analysis, costing one ordinary turn, and leaving only the self-ignoring ledger in the working tree. (5) CONTRIBUTING.md's Decision record entry on documentation by audience is amended with the reason QUICKSTART now carries the free first look at spend, and its line about how the file opens names 'Your first change'; 'Your first change' adds npm ci and npx playwright install chromium after the clone, and the PR template's verify.sh line says the same. (6) An ordinal pointer in SECURITY.md and two counts in CONTRIBUTING.md's prose are replaced by names. (7) plugins/audit/README.md's command enumeration becomes a pointer to the command table. (8) commands/usage.md's brief no longer tells the agent both to fence and not to fence the output.",
       "files": [
         "README.md",
@@ -817,18 +817,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "bdd4c158",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The documents now agree with the code and with each other. Secret reads: README.md (first screen, enforced line, table row) and plugins/audit/README.md (hook bullet, enforced-table row) say a call naming a secret file beside a read verb the guard lists is refused, name SECURITY.md's two open classes (a read that never names the file; an unlisted verb naming it) with a link, and the invariant row is graded name-based refusal instead of enforced. Plan gate: one sentence, read off _config.plan_gate_mode - it observes with no plan, warns with a plan and nothing running, and denies while a phase runs, and /audit:doctor prints the active tier - replaces the differing statements in README.md, QUICKSTART.md and plugins/audit/README.md. QUICKSTART runs /audit:doctor before the backfill (steps swapped and renumbered after checking nothing links to a step by number or anchor), so README's sentence that doctor checks the install before anything is written holds, and README's own backfill block is now a pointer. The backfill is described as running no agent and no analysis, costing one ordinary turn, and leaving only the self-ignoring ledger in the working tree. CONTRIBUTING.md's Decision record entry on documentation by audience is amended with why QUICKSTART now carries the look at past spend and why it follows doctor, and names Your first change as the top of the file; Your first change runs npm ci and npx playwright install chromium after the clone, and the PR template says the same. An ordinal pointer in SECURITY.md and two counts in CONTRIBUTING.md are replaced by names; plugins/audit/README.md's per-command bullets become a pointer to the command table; commands/usage.md's fence rule is stated once by format. test__refs 304/304; doc drift, link, pin, handbook and prose-number lints clean.",
+        "descriptive": "The README, the quick-start, the plugin README, the contributor guide and the security document now say the same thing about what the secret guard catches, when the plan gate blocks, and the order of the first commands."
       },
       "startedAt": "2026-10-06T20:07:10Z",
-      "completedAt": null,
+      "completedAt": "2026-10-06T20:33:23Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-06T20:26:41Z.85c772",
         "status": "passed",
         "at": "2026-10-06T20:26:41Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "bdd4c158",
+        "at": "2026-10-06T20:33:23Z",
+        "basis": "orchestrator check of the diff against phase review findings P103-R1 to R5 and R8 to R11: each addressed in the file named; the tier sentence matches plan_gate_mode; doc lints and test__refs green"
       }
     },
     {
