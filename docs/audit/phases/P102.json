@@ -29,7 +29,7 @@
     {
       "id": "P102.1",
       "title": "red names no line as decisive when no runner reader matched",
-      "status": "in_progress",
+      "status": "done",
       "description": "`_decisive_line` falls back to the last non-blank line when neither a tally key nor an Error line matched. So a basis named npm's update banner, printed after the run, as the cause of a run it could not read. When no reader matched, the basis says so and quotes nothing as decisive. A first or last line may be shown only when labelled as unread output, never as a cause chosen by position. The fixture must be text that no reader matches, so the case keeps holding after the jest and vitest readers land.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -57,24 +57,34 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4137f0c2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "When no tally or error reader matches a run's output, the red-first basis now says so and quotes no line of it: stamp-verification.py's _decisive_line used to fall back to the last non-blank line (npm's update notice, for one) or \"(no output)\", and now returns NO_READER (\"no tally or error reader matched its output, so no line of it is quoted as decisive\") when there is output and NO_OUTPUT when there is none; the tally and Error-line branches and all callers' formatting are unchanged. Cases sr195 (an npm run no reader matches, ending in its notice, quotes none of its lines), sr196 (a real pytest capture still ends the basis on its tally line) and sr197 (a traceback followed by a notice quotes the ModuleNotFoundError line). Red: sr195 failed on the unfixed code (177/178, exit 1); the helper answered could-not-prove because HEAD's own suite is red inside its throwaway tree (sr23/sr24, the SIGTERM/SIGKILL throwaway-removal cases), recorded as its own finding; an always-NO_READER mutation turned sr196 and sr197 red.",
+        "descriptive": "When the red-first check cannot read a test run's output, it now says so instead of quoting whatever line came last, such as npm's update banner, as if it were the cause."
       },
       "startedAt": "2026-10-06T21:26:47Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T21:52:37Z",
+      "verifiedBy": [
+        "sr195",
+        "sr196",
+        "sr197"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T21:52:26Z.73fc75",
         "status": "passed",
         "at": "2026-10-06T21:52:26Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "4137f0c2",
+        "at": "2026-10-06T21:52:37Z",
+        "basis": "orchestrator check: the fallback is replaced as the description asks; the new case failed before the fix and the allow twins catch an over-firing fix"
       }
     },
     {
       "id": "P102.2",
       "title": "design note: how red reads, credits, baselines and provisions a jest or vitest run",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Before any code, write the design as a section of stamp-verification.py's module docstring; every implementation task below depends on it. It settles four things. (1) One runner-output module at layer 1, scripts/governance/_runner_output.py. It holds run-test-gate's summary and failure readers, moved and not copied, and red reads through it. It carries a per-case assertion flag that tells an expect failure apart from 'Test suite failed to run'. (2) Per-runner case identity and credit for jest and vitest: the FAIL <path> header plus the title chain. HEAD's case is the same chain with an identical body in HEAD's copy. Because ast is Python-only, choose between a text-level reading and a small stdlib tokenizer. (3) A per-runner baseline in which a new test file is absent rather than an empty stub. Settle it by first driving jest with and without --passWithNoTests on an empty suite, and vitest on an empty file (vitest was never driven), and record the results as dated history. (4) --deps-from <dir>, defaulting to --project, which links ignored dependency directories (node_modules at any depth, .venv) into the throwaway. Name the leaks a link opens: a workspace link into the shared tree, which is refused by name, and runner caches written back through the link. Also say how the project's .npmrc reaches the fresh HOME, or that it is named as dropped.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py"
@@ -95,16 +105,21 @@
         "P100"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T21:52:37Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T22:18:57Z.e1338d",
+        "status": "passed",
+        "at": "2026-10-06T22:18:57Z"
+      }
     },
     {
       "id": "P102.3",

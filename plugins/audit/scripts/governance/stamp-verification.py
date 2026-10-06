@@ -77,6 +77,178 @@ git is only read. `red` never writes the working tree it is pointed at; it write
 temp directory and the worktree registration for it, and removes both on every
 path but SIGKILL, which no process can catch - the `red` section says what is
 reported instead.
+
+RED UNDER JEST AND VITEST - THE DESIGN, NOT YET BUILT. Everything in this section
+describes code that does not exist at the time it was written: `red` reads only
+the house harness, pytest and unittest, and a jest or vitest run comes back
+`could-not-prove`. It is written here, before the code, so that the tasks that
+build it share one answer to each question below rather than each settling its
+own; a case of the implementing work is what makes each paragraph true, and
+until one exists the paragraph is a plan. Nothing enforces that order; whoever
+builds a part rewrites its paragraph into the present tense in the same change.
+
+(1) ONE READER OF RUNNER OUTPUT, AT LAYER 1. `scripts/governance/_runner_output.py`
+will own every reading of what a test runner printed, imported by both entry
+points and by nothing below them; it reaches nothing but `_output`, which is
+what puts it at layer 1. MOVED, NOT COPIED, from `run-test-gate.py`:
+`_SUMMARY_READERS`, `_SUMMARY_PAIR`, `_NO_TESTS`, `summary_reader`,
+`summary_readers`, `summary_count`, `_FAILURE_READERS`, `_ANSI`,
+`_JEST_SUITE_HEADER`, `JEST_EXEC_ERROR`, `jest_failures` and `_VITEST_FAIL_LINE`;
+and from here the tally and case readers (`TALLY_READERS`, `CASE_READERS` and
+their regexes). `failing_suites` and its path filters stay in `run-test-gate`,
+because they read `_evidence_io`'s limits and that module sits above layer 1.
+The two pytest summary patterns become one: the gate's accepts a duration in
+`ms` and this file's did not, and the union is taken, since a line spelled
+either way is the same runner's summary. Moving a reader changes no verdict
+of the gate; its existing cases are what show that.
+
+THE PER-CASE ASSERTION FLAG. Each case the module reads carries `assertion`,
+true only where the runner says an assertion failed, for jest and vitest
+exactly as `failing_cases` already does for the other runners. Read off this
+output, observed on 2026-10-06 (the versions are in the history below):
+  jest   - a bullet `● outer › inner › adds` under a `FAIL <path>` header. The
+           first non-blank line under it is the matcher hint
+           (`expect(received).toBe(expected)`) for an `expect` failure, an
+           `AssertionError` line for `node:assert`, and the exception
+           (`TypeError: boom`) for a body that threw. Only the first two set
+           the flag. `● Test suite failed to run` never sets it: the suite
+           did not load, and its cause is the line under the heading.
+  vitest - a `FAIL  <path> > outer > inner > adds` line under `Failed Tests`,
+           followed by the error line: `AssertionError: ...` for an `expect`
+           failure (chai's class) and for `node:assert`, the exception for a
+           throw. Only `AssertionError` sets the flag. A
+           `FAIL  <path> [ <path> ]` line under `Failed Suites` is a suite that
+           never ran a test and never sets it.
+The tally reads jest's `Tests:` line and vitest's `Tests` line through the
+moved summary readers, and counts each suite that failed to run as a failure
+with no case, so a run whose only failure is a crashed suite is
+`collection-error`, never `red`. `command_runner` learns `jest` and `vitest` as
+program basenames; a wrapper (`npm test`, `npx vitest`) names no runner and
+the output decides, as it already does.
+
+(2) WHICH CASE IS THE TASK'S: THE HEADER PATH AND THE TITLE CHAIN. A jest or
+vitest case is identified by the suite path its `FAIL` header or line names
+and its title chain - the `describe` titles and the test's own, split on
+jest's ` › ` or vitest's ` > `. The path locates it in a declared test file
+the way `case_site` locates a pytest node: relative to the throwaway's root,
+or, where a config moved the root (a monorepo package), by a suffix that
+matches exactly one declared test file; none or several locate nothing.
+
+CREDIT IS REFUSED where any test file in HEAD's tree, with a jest or vitest
+test extension, holds the same title chain whose test body is identical -
+the equivalent of the ast-identical def `credit_problem` looks for. `ast`
+reads only Python, so a reading of JS/TS source is owed, and the choice is a
+SMALL STDLIB TOKENIZER over a text-level reading. A regex cannot find which
+`test(` call sits inside which `describe(` callback, because brackets inside
+strings, template literals, comments and regex literals throw the nesting
+off; a tokenizer that knows those token kinds can. It splits a file into
+tokens, tracks bracket depth, records each `describe` / `test` / `it` call
+whose first argument is a plain string literal, with its chain, and keeps the
+test's argument tokens - comments and whitespace dropped - as the body two
+copies are compared by. It fails CLOSED: a HEAD file it cannot tokenize with
+balanced brackets refuses credit for every case it might hold, never grants
+it, because a misread HEAD copy would otherwise look like no HEAD copy at
+all. A title built at run time - `test.each`, a template literal with
+`${}`, a variable - has no chain in the source; such a case is refused credit
+by name. JSX text and a regex literal right after `)` are the tokenizer's
+known blind spots, and both fall on the fail-closed side.
+
+(3) THE BASELINE: A NEW FILE IS ABSENT, NOT AN EMPTY STUB. HEAD's own run
+lays each declared test file new at HEAD over as an empty file, and under
+pytest that is what keeps a command naming the file runnable. Both JS runners
+were driven on 2026-10-06, in a scratch directory outside this repository:
+  jest 30.4.2, an installed copy in another local project, used read-only
+  through `node <copy>/bin/jest.js --ci`, node v22.22.3:
+    an empty test file                   -> `● Test suite failed to run` /
+                                            `Your test suite must contain at
+                                            least one test.`, exit 1
+    the same, with --passWithNoTests     -> the same failure, exit 1
+    no test file at all                  -> `No tests found, exiting with
+                                            code 1`, exit 1
+    no test file, with --passWithNoTests -> `No tests found, exiting with
+                                            code 0`, exit 0
+    a named path with no file behind it  -> `No tests found, exiting with
+                                            code 1`, exit 1
+  vitest 4.1.10, this repository's own `node_modules`, `vitest run`:
+    an empty test file                   -> `FAIL  empty.test.js` /
+                                            `Error: No test suite found in
+                                            file ...`, exit 1
+    the same, with --passWithNoTests     -> `Test Files  1 passed`,
+                                            `Tests  no tests`, exit 0
+    no test file at all                  -> `No test files found, exiting
+                                            with code 1`, exit 1
+    no test file, with --passWithNoTests -> `No test files found, exiting
+                                            with code 0`, exit 0
+    a named path with no file behind it  -> `No test files found, exiting
+                                            with code 1`, exit 1
+So an empty stub is RED under jest whatever the flag, and red under vitest
+unless the command passes `--passWithNoTests`: HEAD's baseline would never be
+green and every proof would be `could-not-prove`. For jest and vitest a new
+test file is therefore left ABSENT in HEAD's run - the reset already removes
+it - and the stub stays the rule for the Python runners. The baseline is then
+green on exit 0, or on the runner's own no-tests sentence quoted above with no
+tally counting a failure: the JS counterpart of pytest's exit 5, and read off
+the same sentence for the same reason - the exit code alone is the one a
+crash gives too. Measured once per runner and version, on one machine.
+
+(4) DEPENDENCIES: `--deps-from <dir>`, DEFAULTING TO `--project`. The
+throwaway holds tracked files only, so a suite that imports from
+`node_modules` or runs from an in-repo `.venv` cannot load there. `red` will
+ask git, in `--deps-from`, for its ignored directories
+(`ls-files --others --ignored --exclude-standard --directory`) and take each
+named `node_modules` or `.venv`, at any depth, whose parent directory exists
+at HEAD. A dependency directory is reproduced in the throwaway as a real
+directory of per-entry symlinks into the source, rebuilt after each reset,
+and never as one link to the whole directory: the cache directories a runner
+writes (`.cache`, and `.vite`, where vitest 4.1.10 was seen on 2026-10-06 to
+write `vitest/<hash>/results.json` after every run) are left out of the links
+and created empty in the throwaway, so those writes stay there. The basis names every
+directory linked and every one skipped, with the reason.
+
+THE LEAKS A LINK OPENS, each named and none left implicit:
+  - a WORKSPACE LINK - an entry whose real path lands inside `--deps-from` or
+    the project but outside every dependency directory (an npm or pnpm
+    workspace package, a `pip install -e` path in a `.pth` file or an
+    editable finder) - would load the SHARED tree's implementation into a
+    run that is meant to see HEAD's. It is refused by name, and the run is
+    `could-not-prove`. It is not re-pointed at the throwaway's own copy of the
+    package, because that copy lacks the package's own ignored build output,
+    and the run would then fail for a reason that is not the test's.
+  - CACHES WRITTEN BACK THROUGH A LINK. The cache directories above stay in
+    the throwaway; jest's `cacheDirectory` follows `TMPDIR` (its
+    `--showConfig` said so on 2026-10-06), which is the per-run directory
+    `_isolated_env` already makes; bytecode under a linked `.venv`
+    is not written, because every run already carries
+    `PYTHONDONTWRITEBYTECODE`. Anything else a runner writes into a linked
+    package lands in the shared tree, and the basis says that this is not
+    watched.
+  - REMOVAL MUST NOT FOLLOW A LINK. The reset's `git clean -ffdx` and the
+    final `shutil.rmtree` both have to unlink a symlink rather than descend
+    through it, or a cleanup deletes the shared tree's dependencies; a case
+    with a sentinel file behind a link is what is owed before this ships.
+
+`.npmrc`. The jest and vitest binaries read none; npm, npx and pnpm, wrapping
+them, do. A TRACKED project `.npmrc` arrives with HEAD. An untracked one, and
+the user's own, do NOT reach the fresh home: the user's file carries registry
+credentials and this helper does not read or copy a credential file. Each is
+named as dropped in the basis when it exists - an existence check, never a
+read - and `NPM_CONFIG_USERCONFIG`, in either case, is dropped from the run's
+environment so that sentence stays true. A wrapper that then needs the
+registry fails, and the result is `could-not-prove`.
+
+WHAT THIS DESIGN ADDRESSES, from what was observed on 2026-10-06:
+  - vitest's red being `could-not-prove` for want of `node_modules` in the
+    throwaway: (4), with (1) to (3) to read the run once it can start.
+  - an inline suite under `tools/`, whose test file is its implementation
+    file, so no HEAD-versus-fix split exists: NOT addressed; left to a later
+    task.
+  - the removal cases that kill a run (SIGTERM, SIGKILL) failing inside the
+    helper's own throwaway, so HEAD reads red there: NOT addressed, and its
+    cause is not diagnosed here; left to a later task.
+  - a stamp compare going stale because the evidence ledger the first
+    `--record` creates is left out of `content` but still moves the dirty
+    digest: NOT addressed - it is a `_tree_stamp` question, not a `red` one;
+    left to a later task.
 """
 import argparse
 import ast
