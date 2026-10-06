@@ -35,7 +35,7 @@
     {
       "id": "P104.1",
       "title": "the demo fixtures price their ledgers with the table they declare",
-      "status": "in_progress",
+      "status": "done",
       "description": "gen-demo-usage.py:181 prices each row with ul.price(counts, model) and no table, so the committed acme ledger, the example report and its twin, docs/index.html and docs/demo-large.html all move whenever DEFAULT_PRICING does, which contradicts the product's own rule that a row is priced once, when written, with the project's table. Price generated rows with the fixture's declared table (usage.pricing from its config, the table meter-usage would have used) and have gen-demo-manifest.py's write_config declare one matching its pricingAsOf; the acme config already declares one. Acceptance: no committed artifact changes in this task (verify.sh's derived-ledger diff and tools/check-rendered-artifacts.py stay green), and both stay green with DEFAULT_PRICING's sonnet row mutated. This must land before the price table changes.",
       "files": [
         "plugins/audit/scripts/demo/gen-demo-usage.py",
@@ -67,18 +67,29 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "268f9bbf",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "gen-demo-usage.py reads the fixture's .claude/audit.config.json usage.pricing (resolved through hooks/_config.usage_cfg via _loader) in main() and prices every generated row with it, so generate() stays pure and no row is priced from the shipped DEFAULT_PRICING. gen-demo-manifest.py writes a frozen CONFIG_PRICING literal (equal to the shipped rows on 2026-10-06) and the manifest's pricingAsOf into the generated config, reading pricingAsOf trimmed like every other reader of that key. The report re-priced from DEFAULT_PRICING in two places, which made the committed renders move with the shipped table: report/_usage_load.py now resolves routing and cache pricing from the manifest's meta.usage.pricing when it is set (unchanged precedence) and otherwise from the project's own config table, and usage/_usage_spend.cache_profile takes that table. Verified in scratch copies: with DEFAULT_PRICING's sonnet row mutated, the regenerated acme ledger stays byte-identical and tools/check-rendered-artifacts.py --before-commit exits 0, as in the unmutated control; no committed artifact changes. Cases in test_gen_demo_usage, test_gen_demo_manifest, test__usage_load (ur1-ur4, including that a manifest table still wins) and test__usage_spend. The cache_profile cases could not be proved red at HEAD because the new argument does not exist there (the call raises before any assertion); recorded as could-not-prove. Left for later: audit-usage.py's CLI routing still reads only the manifest table, and the panel does not apply the manifest-wins precedence.",
+        "descriptive": "The demo fixtures, the example report and its renders no longer move when the shipped price table changes: every row and every re-priced figure uses the table the project declares."
       },
       "startedAt": "2026-10-06T14:46:28Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T15:43:39Z",
+      "verifiedBy": [
+        "ur1",
+        "ur2",
+        "ur3",
+        "ur4"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T15:40:06Z.bf6cd0",
         "status": "passed",
         "at": "2026-10-06T15:40:06Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "268f9bbf",
+        "at": "2026-10-06T15:43:39Z",
+        "basis": "audit-reviewer re-review: acceptance verified independently in control and mutated scratch copies (ledger byte-identical, render check exit 0 in both); manifest-wins precedence unchanged; first review's high finding closed"
       }
     },
     {

@@ -80,12 +80,34 @@ def _percentile(values, p):
     return s[idx]
 
 
+def _done_task_coverage(tasks, rows):
+    """How many of the plan's done tasks the ledger attributed any tokens to.
+
+    `completed` and a band `sample` count only done tasks that carry rows, so a
+    per-task figure read alone looks as if it covered every done task. This is
+    the denominator beside it: `done` is every done task in the plan, `priced`
+    those whose own rows sum to more than zero tokens - a row with no tokens
+    attributes no work. `None` when the plan has no done task, because a
+    zero-of-zero would read as complete coverage of nothing."""
+    done_ids = set(tid for tid, t in tasks.items() if t.get("status") == "done")
+    if not done_ids:
+        return None
+    tokens = {}
+    for row in rows:
+        tid = row.get("taskId")
+        if tid in done_ids:
+            tokens[tid] = tokens.get(tid, 0) + _core._tokens(row)
+    return {"done": len(done_ids),
+            "priced": sum(1 for n in tokens.values() if n > 0)}
+
+
 def unit_economics(manifest, rows):
     """Cost per completed task, and what the remaining work would cost at that rate.
 
     The projection is SUPPRESSED below `MIN_TASKS_FOR_PROJECTION` completed tasks and
     is always a p25-p75 RANGE rather than a point estimate. A confident forecast off
-    three samples is worse than no forecast."""
+    three samples is worse than no forecast. `doneTaskCoverage` is `_done_task_coverage`'s
+    reading: how much of the plan's finished work `costPerTask` actually rests on."""
     tasks = task_index(manifest)
     cost_by_task = {}
     for row in rows:
@@ -100,6 +122,7 @@ def unit_economics(manifest, rows):
         "completed": len(done), "remaining": remaining,
         "gate": MIN_TASKS_FOR_PROJECTION, "sufficient": len(done) >= MIN_TASKS_FOR_PROJECTION,
         "costPerTask": round(sum(done) / len(done), 4) if done else None,
+        "doneTaskCoverage": _done_task_coverage(tasks, rows),
         "p25": None, "p75": None, "projection": None,
         "mostExpensive": sorted(
             ((tid, round(c, 4), (tasks.get(tid) or {}).get("attempts"))
@@ -165,6 +188,7 @@ def cost_bands(manifest, rows, cfg=None):
 
     out = {"basis": None, "high": None, "outlier": None, "byTask": {},
            "counts": {b: 0 for b in BAND_ORDER}, "sample": 0,
+           "doneTaskCoverage": _done_task_coverage(tasks, rows),
            "gate": COST_BAND_PARAMS["gate"], "sufficient": False}
 
     hi, out_ = band_cfg.get("highUSD"), band_cfg.get("outlierUSD")

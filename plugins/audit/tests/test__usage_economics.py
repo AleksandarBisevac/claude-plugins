@@ -72,6 +72,60 @@ def _cases(check):
     check("unit: most-expensive list carries attempts for context",
           ue["mostExpensive"] and len(ue["mostExpensive"][0]) == 3)
 
+    # doneTaskCoverage: how many of the plan's done tasks the per-task figures priced.
+    # Four done tasks, two of them with ledger rows - so a reading that counts
+    # only tasks carrying rows says two of two, and the plan says two of four.
+    _cov_man = {"phases": [{"id": "P1", "tasks": [
+        {"id": "P1.%d" % i, "status": "done"} for i in range(1, 5)]
+        + [{"id": "P1.5", "status": "pending"}]}]}
+    _cov_rows = [mkrow(1, "claude-opus-5", "a@x", "P1.1", "P1", "task", 10.0),
+                 mkrow(2, "claude-opus-5", "a@x", "P1.2", "P1", "task", 30.0),
+                 mkrow(3, "claude-opus-5", "a@x", "P1.5", "P1", "task", 99.0)]
+    ue_cov = M.unit_economics(_cov_man, _cov_rows)
+    check("doneTaskCoverage: unit_economics reports two priced of FOUR done tasks in "
+          "the plan, not two of two, and costPerTask averages only the two "
+          "priced ones: %r" % (ue_cov.get("doneTaskCoverage"), ),
+          ue_cov.get("doneTaskCoverage") == {"done": 4, "priced": 2}
+          and ue_cov["costPerTask"] == 20.0)
+    # The allow twin: a plan whose every done task carries tokens reads n of n,
+    # so a coverage that always under-reports is caught too.
+    ue_full = M.unit_economics(
+        {"phases": [{"id": "P1", "tasks": [{"id": "P1.1", "status": "done"},
+                                           {"id": "P1.2", "status": "done"}]}]},
+        _cov_rows[:2])
+    check("doneTaskCoverage: every done task priced reads two of two: %r"
+          % (ue_full.get("doneTaskCoverage"), ),
+          ue_full.get("doneTaskCoverage") == {"done": 2, "priced": 2})
+    ue_none = M.unit_economics(
+        {"phases": [{"id": "P1", "tasks": [{"id": "P1.1", "status": "pending"}]}]},
+        [mkrow(1, "claude-opus-5", "a@x", "P1.1", "P1", "task", 10.0)])
+    check("doneTaskCoverage: with no done task the coverage is ABSENT (None), never a "
+          "zero-of-zero that reads as complete: %r" % (ue_none, ),
+          "doneTaskCoverage" in ue_none and ue_none["doneTaskCoverage"] is None)
+    _zero = dict(mkrow(4, "claude-opus-5", "a@x", "P1.3", "P1", "task", 0.0,
+                       out_tok=0, cr=0, cw=0, fin=0))
+    ue_zero = M.unit_economics(_cov_man, _cov_rows + [_zero])
+    check("doneTaskCoverage: a done task whose rows carry zero tokens is not counted "
+          "as priced: %r" % (ue_zero.get("doneTaskCoverage"), ),
+          ue_zero.get("doneTaskCoverage") == {"done": 4, "priced": 2})
+    cb_cov = M.cost_bands(_cov_man, _cov_rows)
+    check("doneTaskCoverage: cost_bands carries the same done-task denominator beside "
+          "its sample, from the same computation unit_economics reads: %r"
+          % (cb_cov.get("doneTaskCoverage"), ),
+          cb_cov.get("doneTaskCoverage") == {"done": 4, "priced": 2}
+          and cb_cov.get("doneTaskCoverage") == ue_cov.get("doneTaskCoverage")
+          and cb_cov["sample"] == 2)
+    # The report payload already binds a top-level `coverage` key to a different
+    # metric (spend attribution), so the done-task reading must not wear that name.
+    check("doneTaskCoverage: neither return carries a bare `coverage` key that "
+          "would collide with the report payload's spend-attribution one",
+          "coverage" not in ue_cov and "coverage" not in cb_cov)
+    cb_cov_abs = M.cost_bands(_cov_man, _cov_rows,
+                              {"bands": {"highUSD": 5, "outlierUSD": 20}})
+    check("doneTaskCoverage: the absolute basis carries the denominator too: %r"
+          % (cb_cov_abs.get("doneTaskCoverage"), ),
+          cb_cov_abs.get("doneTaskCoverage") == {"done": 4, "priced": 2})
+
     # cost_bands: the same sample gate, and a name that does not collide
     cb = M.cost_bands(man, ar)
     check("bands: 5 completed tasks clears the gate on the relative basis",
