@@ -1,7 +1,7 @@
 {
   "id": "P103",
   "title": "what the plugin says about itself is true",
-  "status": "in_progress",
+  "status": "done",
   "description": "Tasks: (1) SECURITY.md names the five open secret-read shapes listed as Known open in 2.3.0 at class level, and corrects the post-detection sentence about commands 'provably unable to write'; the documented-gap rows become a characterization test in the repo. (2) Fix false claims: usage --backfill 'writes nothing', status.md's nonexistent /audit:run-gate, examples/README 'never dirties the tree', tests/_harness.py 'macos in CI', the fsync docstring in _manifest_io. (3) QUICKSTART is the only quick-start; other docs link to it; the README's first screen states who it is for and who does not need it. (4) Re-record the demo GIF and give it a text digest in captured-at.json so its words cannot rot unseen. (5) CONTRIBUTING gets a one-page 'Your first change'; add issue and PR templates. (6) Decision record: optional modules (panel, usage views, ADO, demo, theme editor) get fixes only, no new features, until a user asks; no new UI shape pins; no new prose lints.",
   "desiredOutcome": "every documented claim a reader acts on matches the code: SECURITY.md names the known open read shapes, the README, QUICKSTART, examples and comments make no false claim, there is one quick-start, the demo shows today's text, and a newcomer and a contributor each have a one-page start",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "80a7eed2f52726a06ca43309b66a08a04fda1ab4",
   "branch": "audit/p103-what-the-plugin-says-about-its",
-  "mergedAt": null,
+  "mergedAt": "2026-10-06T21:23:56Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -924,5 +924,6 @@
     "runId": "2026-10-06T21:19:52Z.c07db0",
     "status": "passed",
     "at": "2026-10-06T21:19:52Z"
-  }
+  },
+  "mergedHead": "3a7c8281f6926666eebae888779e4b323f996bd3"
 }
