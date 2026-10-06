@@ -814,6 +814,32 @@ function applyCardOrder(view){
   if(k&&want.indexOf(k)<0)host.append(n);});}
 
 /**
+ * The one fact every empty-state branch in the panel has to agree on: is there
+ * a plan to show, and if not, why not. A manifest that EXISTS and fails to
+ * parse is not the same absence as no file at all — the first is a file to fix
+ * or restore from git, the second is a file `/audit:init` has not written yet
+ * — and a rollup alone cannot tell them apart, since both leave it null.
+ * @param {boolean} manifestExists - the server's own stat of the path, not a
+ *   guess from whether the rollup came back
+ * @param {*} rollup - STATE.rollup; truthy only once the manifest parses and
+ *   validates
+ * @returns {'none'|'unreadable'|'ready'}
+ */
+function planState(manifestExists,rollup){
+ if(rollup)return 'ready';
+ return manifestExists?'unreadable':'none';}
+
+/**
+ * The one sentence every unreadable-manifest branch shows below its
+ * `manifestFindingsBox` — never `/audit:init`, which is advice for a path with
+ * nothing written to it yet, not for a file that is already there and broken.
+ * @param {?string} manifestPath
+ * @returns {string}
+ */
+function planUnreadableNote(manifestPath){
+ return 'fix '+(manifestPath||'the manifest')+', or restore it from git.';}
+
+/**
  * Draw the whole Overview tab: the phase rollup, the plan gate, what is ready
  * now, and the bugs.
  *
@@ -821,8 +847,10 @@ function applyCardOrder(view){
  * shapes it: it may run at any moment under the reader's hands, so the caret is
  * saved and restored, the filter lives in OVF rather than in this closure, and
  * nothing here fetches. It reads STATE, RUNSTATUS and THEME and rebuilds.
- * @returns {void} returns early after one message when there is no manifest —
- *   a plan that does not exist is said out loud, not drawn as an empty table
+ * @returns {void} returns early after one message for either of two absences:
+ *   no manifest at all - a plan that does not exist is said out loud, not
+ *   drawn as an empty table - or one that exists and will not parse, where the
+ *   message is the server's own findings rather than "no plan yet"
  */
 function renderOver(){const c=$('#over');const r=STATE.rollup;
  // The poll repaints this view under the reader's hands. Put the caret back where
@@ -842,7 +870,16 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
  // `manifestPath` is a Settings field, so choosing it afterwards means moving a
  // file. Same shape as usage-view.js on purpose; a second empty-state dialect
  // would be the inconsistency this replaces.
- if(!r){card.append(
+ const ps=planState(STATE.manifestExists,r);
+ if(ps==='unreadable'){
+  // The file exists and the server could not parse it — not the same absence
+  // as "no plan yet", and telling the reader to run `/audit:init` over a file
+  // that is already there is the wrong advice for it.
+  const mf=STATE.manifestFindings||[];
+  card.append(manifestFindingsBox(mf.length,mf),
+   el('div',{class:'mut',style:'margin-top:var(--sp-0)'},planUnreadableNote(STATE.manifestPath)));
+  c.append(card);restoreCaret(keepQ?$('#ovq'):null,caret,keepBack);return;}
+ if(ps==='none'){card.append(
    el('div',{class:'mut'},'No plan yet. "/audit:init" interviews you about scope, '
      +'reads the codebase with read-only explorers, and proposes phases for your '
      +'approval before it writes anything.'),

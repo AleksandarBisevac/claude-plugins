@@ -56,6 +56,42 @@ import _report_html as _rhtml                      # noqa: E402  (TEV_LABELS: th
 import _panel_page as M                            # noqa: E402
 
 
+# Every spelling a view could use to read STATE's rollup field: dot (the one a
+# bare `.rollup` substring scan used to catch alone), bracket, and a
+# destructured binding off STATE - `ps1` below needs all three, or a view
+# switching spelling is how the raw "no plan" test it replaced would come back.
+_ROLLUP_RE = re.compile(
+    r"\.rollup\b"
+    r"|STATE\s*\[\s*['\"]rollup['\"]\s*\]"
+    r"|\{[^{}]*\brollup\b[^{}]*\}\s*=\s*STATE\b"
+)
+
+
+def _rollup_unaccounted(html, ov_start, ov_end):
+    """Every line of `html` that reads STATE's rollup field, in any spelling
+    `_ROLLUP_RE` knows, minus the handful of callers allowed to: a
+    `planState(` call site, that function's own JSDoc, the ONE alias Overview
+    takes before handing it to `planState` - scoped to Overview's OWN part by
+    byte position (`ov_start`..`ov_end`), not by matching the literal text
+    anywhere in the page, so a second file carrying byte-identical text is NOT
+    waved through - and the unrelated `evidenceBoundary` field. What is left
+    over is exactly a raw test reading the field for itself."""
+    unaccounted = []
+    offset = 0
+    for line in html.split("\n"):
+        if _ROLLUP_RE.search(line):
+            accounted = (
+                "planState(" in line
+                or "@param {*} rollup" in line
+                or "evidenceBoundary" in line
+                or ("const r=STATE.rollup;" in line and ov_start <= offset < ov_end)
+            )
+            if not accounted:
+                unaccounted.append(line)
+        offset += len(line) + 1
+    return unaccounted
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     # --- build order ----------------------------------------------------------
@@ -1139,7 +1175,11 @@ def _cases(check):
           # off within five seconds. A view that stopped restoring anything still
           # drops one from each, which is what asserting both is for.
           and M.UI_HTML.count("focusBack(") == 6
-          and M.UI_HTML.count("restoreCaret(") == 6   # one def, four tails, one early return
+          # one def, four tails, two early returns in Overview - the original
+          # no-plan-yet state and the new one for a manifest that exists and will
+          # not parse, each its own early return and each handing the search box's
+          # caret back the same way.
+          and M.UI_HTML.count("restoreCaret(") == 7
           and "focusKeep('#policy')" in M.UI_HTML
           and "focusKeep('#usage')" in M.UI_HTML
           and "focusKeep('#over')" in M.UI_HTML
@@ -4974,6 +5014,63 @@ def _cases(check):
           "phaseSignoffNote(ph)?el('span',{class:'count whynote'}" in M.UI_HTML
           and "tasks.every(t=>t.status==='done')" not in M.UI_HTML
           and "awaiting sign-off (/audit:review)" not in M.UI_HTML)
+
+    # --- ps: one helper tells "no plan" apart from "unreadable plan" -------------
+    # Overview, Plan & models, Proposals and the Policy area-rules line each used
+    # to test `!STATE.rollup` (or a local alias of it) for itself, so a manifest
+    # that EXISTS and failed to parse read the same as no manifest at all - the
+    # wrong advice ("/audit:init writes one") for a file already on disk.
+    #
+    # A PROPERTY OF THE SOURCE: every line that reads STATE's rollup field, in
+    # ANY spelling, must be accounted for by a short, named list of legitimate
+    # callers - so a NEW view reintroducing the raw test is what is left over,
+    # rather than this trusting that nothing else appears. A bare `.rollup`
+    # substring scan missed two spellings a view could still use to bypass it
+    # (`STATE['rollup']`, and a destructured `const {rollup}=STATE`), and an
+    # exemption that matched Overview's own alias as a literal ANYWHERE in the
+    # page let a second view copy that exact text and pass too - both fixed
+    # below: a regex over three spellings, and the alias exemption scoped to
+    # Overview's own part by BYTE POSITION rather than by matching the text.
+    _ov_src = _theme.read_asset("panel/overview.js")
+    _ov_start = M.UI_HTML.index(_ov_src)
+    _ov_end = _ov_start + len(_ov_src)
+    _unaccounted = _rollup_unaccounted(M.UI_HTML, _ov_start, _ov_end)
+    check("ps1 planState() is the only place a view may ask whether the plan "
+          "rollup is missing, in any spelling (dot, bracket or destructured) - "
+          "every other mention is accounted for (a planState() call, its own "
+          "doc comment, Overview's own alias at Overview's own position, or "
+          "the unrelated evidenceBoundary field), so what is left is a raw "
+          "test sneaking back in: %r" % (_unaccounted,),
+          not _unaccounted
+          # one definition, four call sites - Overview, Composition, Proposals,
+          # Policy - so a FIFTH view this count does not expect is also caught.
+          and M.UI_HTML.count("planState(") == 5)
+
+    # ps2 DENY/ALLOW twin: the tightened scan is proved to actually FIRE, not
+    # merely to still pass on the unmutated page. A scratch view is appended to
+    # a COPY of the real page (never written to disk, never touching M.UI_HTML
+    # or ps1's own verdict) carrying the two spellings ps1 used to miss, plus a
+    # BYTE-IDENTICAL copy of Overview's own alias sitting outside Overview's
+    # part - the position check must catch a copy of the exact text the same
+    # way it catches a differently-worded raw test.
+    _bogus = ("\nfunction renderBogusBracket(){if(!STATE['rollup'])return;}\n"
+              "function renderBogusDestructure(){const {rollup}=STATE;"
+              "if(!rollup)return;}\n"
+              "function renderBogusCopy(){const r=STATE.rollup;if(!r)return;}\n")
+    _mutated = M.UI_HTML + _bogus
+    _planted = _rollup_unaccounted(_mutated, _ov_start, _ov_end)
+    check("ps2 DENY: a bracket read, a destructured read, and a byte-identical "
+          "copy of Overview's own alias sitting OUTSIDE Overview's part are "
+          "all three caught the moment they are planted - %d found, expected "
+          "3: %r" % (len(_planted), _planted),
+          len(_planted) == 3
+          and any("renderBogusBracket" in l for l in _planted)
+          and any("renderBogusDestructure" in l for l in _planted)
+          and any("renderBogusCopy" in l for l in _planted))
+    check("ps3 ALLOW: the real page, unmutated, stays clean under the same "
+          "scan - the twin that shows the ps2 DENY case above is about the "
+          "planted lines, not about the scan being generally trigger-happy",
+          not _rollup_unaccounted(M.UI_HTML, _ov_start, _ov_end))
 
 def _selftest():
     return _harness.run(_cases)

@@ -97,7 +97,25 @@
         "plugins/audit/scripts/ui/panel/proposals-view.js",
         "plugins/audit/scripts/ui/panel/policy-view.js",
         "tools/ui-tests/plan-unreadable.test.mjs",
-        "plugins/audit/tests/test__panel_page.py"
+        "plugins/audit/tests/test__panel_page.py",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
       ],
       "tests": {
         "mode": "tdd",
@@ -131,9 +149,9 @@
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-10-06T16:23:45Z.ae4351",
+        "runId": "2026-10-06T17:01:56Z.c267a6",
         "status": "passed",
-        "at": "2026-10-06T16:23:45Z"
+        "at": "2026-10-06T17:01:56Z"
       }
     },
     {
@@ -215,7 +233,7 @@
     {
       "id": "P105.4",
       "title": "Save only the config keys the form changed",
-      "status": "in_progress",
+      "status": "done",
       "description": "Settings Save sends the whole config the form holds, so the server rewrites keys nobody changed. Adding one entry to a list key that was unset (exemptGlobs) writes the whole shipped default list into the file without saying so. Send a patch instead: one entry per changed key, addressed by key segments rather than a dotted string, because a pricing key can contain a dot. Apply it in _panel_write through write_config(mutate=...) against the config read under the write lock; COMPATIBILITY.md puts the panel's HTTP endpoints outside the version contract, so the payload may change shape. The confirm dialog marks a list row whose key was unset and has a shipped default as pinning that default, so later plugin defaults stop reaching the project. Its note also says the file is rewritten in canonical JSON layout, because the stdlib keeps no formatting. Besides the gates listed, run `npx vitest run`.",
       "files": [
         "plugins/audit/scripts/ui/panel/settings.js",
@@ -250,18 +268,30 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d662eae3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Settings Save sends a patch instead of the whole config. _panel_write gains apply_config_patch and write_config_patch: each entry addresses a key by a list of segments (a dotted string is refused, because a pricing key can hold a dot) and either sets a value or removes the key; every entry is validated before any read or lock; the patch is applied through write_config(mutate=...) to the config read under the write lock, so keys nobody changed keep the values read from disk and another writer's change to a different key survives; removals run before writes and delete containers they empty; write_config's own validation still runs on the result. panel-server routes PUT /api/config to it. In the page, cfDiff decides by presence: a key absent from the draft is a removal and a key present is written even when it equals the shipped default, so an explicit value stays pinned as COMPATIBILITY.md promises; the list editor no longer writes a drawn-in default into the draft until an entry actually changes. The confirm dialog marks a row that pins a non-empty shipped default list, and its note says the file is rewritten in canonical JSON layout. Python cases cp1-cp5 and a vitest file that includes a case sending the page's patch through Python's apply_config_patch; the pin note's placement is checked by rendering the dialog.",
+        "descriptive": "Saving Settings in the panel now writes only the keys the user changed, on top of the file as it is on disk, and a value set equal to today's default stays written as an explicit choice."
       },
       "startedAt": "2026-10-06T15:29:18Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T16:24:10Z",
+      "verifiedBy": [
+        "cp1",
+        "cp2",
+        "cp3",
+        "cp4",
+        "cp5"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T16:17:33Z.8eba46",
         "status": "passed",
         "at": "2026-10-06T16:17:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d662eae3",
+        "at": "2026-10-06T16:24:10Z",
+        "basis": "audit-reviewer (task mode, opus): matches; three findings fixed as proposed (presence decides removal, pin only for a non-empty default, dialog placement case), each guarded by a mutation"
       }
     },
     {
@@ -318,7 +348,7 @@
     {
       "id": "P105.6",
       "title": "Require the session token on GET / and write the pidfile 0600",
-      "status": "pending",
+      "status": "in_progress",
       "description": "GET / hands the page, with the session token substituted into it, to any local request that passes the Host check. The pidfile holding the same token is written with whatever mode the umask gives. Route / through the token guard the API already uses. The printed URL and the pidfile's url already carry ?t=, and a relaunch opens that url, so the browser and the screenshot tool keep working. Write the pidfile owner-only, tighten an existing one, and update the safety line in commands/panel.md to say the page itself needs the token. This phase's description also names a SECURITY.md sentence on the panel's trust boundary; that file belongs to the phase that owns SECURITY.md and is not edited here.",
       "files": [
         "plugins/audit/scripts/panel/panel-server.py",
@@ -347,14 +377,14 @@
       "dependsOn": [
         "P105.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T16:24:44Z",
       "completedAt": null,
       "verifiedBy": []
     },

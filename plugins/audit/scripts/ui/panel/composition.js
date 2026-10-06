@@ -940,13 +940,22 @@ function renderComp(){closeCombo();
  // server never sent, printed a question mark and an empty string as its worked
  // example. Say it instead, in the shape Overview and Usage use. Settings stays
  // reachable and stays useful: `manifestPath` decides where the plan lands.
- if(!STATE.rollup){
+ const ps=planState(STATE.manifestExists,STATE.rollup);
+ if(ps!=='ready'){
   const none=el('div',{class:'card'});
-  none.append(el('div',{class:'mut'},'Nothing to set here yet — these are all keys '
-    +'of the plan, and there is no plan. "/audit:init" writes one.'),
-   el('div',{class:'mut',style:'margin-top:var(--sp-0)'},
-     'it would be written to: '+(STATE.manifestPath||'-'),' · ',
-     settingsLink('change where it goes','manifestPath')));
+  if(ps==='unreadable'){
+   // The file exists and the server could not parse it — fix it or restore it,
+   // never "write one": that advice is for a path with nothing at it yet.
+   const mf=STATE.manifestFindings||[];
+   none.append(manifestFindingsBox(mf.length,mf),
+    el('div',{class:'mut',style:'margin-top:var(--sp-0)'},planUnreadableNote(STATE.manifestPath)));
+  } else {
+   none.append(el('div',{class:'mut'},'Nothing to set here yet — these are all keys '
+     +'of the plan, and there is no plan. "/audit:init" writes one.'),
+    el('div',{class:'mut',style:'margin-top:var(--sp-0)'},
+      'it would be written to: '+(STATE.manifestPath||'-'),' · ',
+      settingsLink('change where it goes','manifestPath')));
+  }
   c.append(none);focusBack(keepBack);return;}
  MITEMS=null;   // STATE may have moved under us (save re-render, disk refresh)
  // `meta` is keyed by the three field names below it; the other two are keyed

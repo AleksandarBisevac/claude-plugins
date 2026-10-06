@@ -247,15 +247,22 @@ function renderPolicy(){closeCombo();
    'Area rules apply only while that area has work in progress. Live now: '
    +(live.join(', ')||'none')
    +(dormant.length?(' · dormant: '+dormant.join(', ')):'')));
- // BOTH LISTS COME FROM THE PLAN, so with no plan they are empty and the line
- // above did not render at all - and its absence reads as "no area rules here"
- // rather than "this cannot be answered yet". The rest of this view is honest
- // without a plan (the policy lives in the config and the guard enforces it
- // either way); this one half does not, so it says which half.
- else if(!STATE.rollup)head.append(el('div',{class:'mut','data-pnoplan':'1'},
+ else{
+  // BOTH LISTS COME FROM THE PLAN, so with no plan they are empty and the line
+  // above did not render at all - and its absence reads as "no area rules here"
+  // rather than "this cannot be answered yet". The rest of this view is honest
+  // without a plan (the policy lives in the config and the guard enforces it
+  // either way); this one half does not, so it says which half.
+  const ps=planState(STATE.manifestExists,STATE.rollup);
+  if(ps==='unreadable'){
+   const mf=STATE.manifestFindings||[];
+   head.append(manifestFindingsBox(mf.length,mf),
+    el('div',{class:'mut',style:'margin-top:var(--sp-0)'},planUnreadableNote(STATE.manifestPath)));
+  }else if(ps==='none')head.append(el('div',{class:'mut','data-pnoplan':'1'},
    'Area rules are read from the plan, and there is none yet — so whether any '
    +'area rule is live cannot be answered here. Everything else on this page is '
    +'config, and the guard applies it with or without a plan.'));
+ }
  head.append(pHonesty());
  c.append(head);
 
