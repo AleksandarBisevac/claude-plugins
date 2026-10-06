@@ -698,6 +698,12 @@
       "title": "the plugin owns only the guard rules only it can know",
       "status": "pending",
       "shard": "phases/P110.json"
+    },
+    {
+      "id": "P111",
+      "title": "sentences that changed when the phases landed are true on main",
+      "status": "pending",
+      "shard": "phases/P111.json"
     }
   ],
   "fileIndex": {
