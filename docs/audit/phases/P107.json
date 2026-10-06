@@ -78,7 +78,7 @@
     {
       "id": "P107.2",
       "title": "a stale journal lock is broken by exactly one waiter",
-      "status": "in_progress",
+      "status": "done",
       "description": "_acquire unlinks a lock older than LOCK_STALE_SECONDS. Waiters that both read the stale mtime can both unlink it, and the second removes the lock the first just took. Both then append with the same prev, and verify reports a tamper that never happened. That lands in a committed trail, which cannot be repaired without breaking every clone's chain. Claim the stale lock by renaming it to a name unique to the waiter, or by checking its identity before removing it, so exactly one waiter breaks it. _journal_io is on the hooks' per-call path, so `python3 tools/bench-hooks.py --gate` must stay green. The deterministic case carries the red-first; the stress case is bounded for sweep time.",
       "files": [
         "plugins/audit/scripts/governance/_journal_io.py",
@@ -105,18 +105,34 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b253b153",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_journal_io._acquire no longer unlinks a stale lock directly. A waiter that judges the lock stale takes a breaker (<lock>.break) with the same O_EXCL create the lock uses, re-checks the lock's age while holding it, and removes the lock only if it is still stale, releasing the breaker in a finally; a waiter that cannot take the breaker keeps waiting. A stale breaker (its owner died or stopped inside its own stat and unlink) is cleared the same careful way: renamed to a claim name unique to this waiter, its age re-checked, then removed, or, if it turns out fresh, put back with an O_EXCL create of the breaker name; EEXIST means another waiter holds the name, and any other refusal raises so the append declines instead of deleting a live breaker. The claim is released on every path, including a BaseException. The comment states what remains: a put-back window in which a third waiter can take the empty name or an owner can finish first, leaving a breaker nobody holds until it ages out (declined appends, never a forked chain), and a process stopped longer than LOCK_STALE_SECONDS, which no time-based lock can tell from a dead one. Cases sl0-sl8: deterministic interleavings for the overtaken lock breaker and the overtaken breaker clearer, allow twins, a refused put-back, an interrupt with the claim on disk, and a bounded stress port of the maintainer's stale-lock race (the race writer waits long enough that only a chain fork can turn it red). Mutations of each mechanism turned their cases red; bench-hooks --gate stayed green.",
+        "descriptive": "When several writers find the same stale journal lock, exactly one breaks it, so the committed trail no longer records a chain break nobody caused; the one window a time-based lock cannot close is written down where the code is."
       },
       "startedAt": "2026-10-06T14:44:46Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T15:36:06Z",
+      "verifiedBy": [
+        "sl0",
+        "sl1",
+        "sl2",
+        "sl3",
+        "sl4",
+        "sl5",
+        "sl6",
+        "sl7",
+        "sl8"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T15:31:01Z.b9ad25",
         "status": "passed",
         "at": "2026-10-06T15:31:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b253b153",
+        "at": "2026-10-06T15:36:06Z",
+        "basis": "audit-reviewer (task mode, two rounds): matches; low findings fixed (breaker cleanup asserted, stress wait raised, careful breaker clearing, put-back without hard links, claim released on every path)"
       }
     },
     {
