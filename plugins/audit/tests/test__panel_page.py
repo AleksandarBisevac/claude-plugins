@@ -1000,7 +1000,8 @@ def _cases(check):
           # One constant, shared with the report rather than spelled again.
           and "const DAY_MS = 86400000;" in M.UI_HTML)
     check("composition's filter state is hoisted too, so it survives a re-render",
-          "const COMPF={q:'',status:'',needs:false,open:{},apply:null};" in M.UI_HTML
+          "const COMPF={q:'',status:'',needs:false,open:{},adoOpen:false,"
+          "apply:null};" in M.UI_HTML
           and "const open=COMPF.open;" in M.UI_HTML
           and "COMPF.apply=()=>{q.value=COMPF.q;syncFilters();refresh();};" in M.UI_HTML)
     # --- c6: confirm before write, and who is writing --------------------------
@@ -1642,6 +1643,54 @@ def _cases(check):
     # source, and this is the only place they exist.
     check("pri10b the fifth heading names BOTH of the things its column holds",
           "flabel('skills · priority',MDESC.taskSkills,{comp:'taskSkills',"
+          in M.UI_HTML)
+    # --- av: ADO shows only where the plan uses it ------------------------------
+    # A project that never set meta.ado and carries no link or declaration
+    # anywhere used to get the parent column, the "on the board" lever and the
+    # whole connector card regardless, with checked boxes under a "Not
+    # configured" banner - a form describing a sync that does not exist. This
+    # is a SOURCE property: that the sixth heading, the legend's third lever and
+    # the per-row cells are each built behind the one `showAdo` gate, computed
+    # once from `adoVisible(comp)` rather than re-asked per control.
+    check("av1 the composition table reads showAdo=adoVisible(comp) ONCE, and "
+          "the sixth heading and the legend's third lever are both built only "
+          "under it - a project nothing has ever synced gets neither",
+          "const showAdo=adoVisible(comp);" in M.UI_HTML
+          and M.UI_HTML.count("const showAdo=adoVisible(comp);") == 1
+          and "showAdo?flabel('on the board',MDESC.phaseAdoTracked," in M.UI_HTML
+          and "...(showAdo?[{label:flabel('ADO parent',MDESC.phaseAdoParent,"
+          in M.UI_HTML)
+    check("av2 the phase row's sixth cell and the task row's empty sixth cell "
+          "are each built only under showAdo - the column does not exist with "
+          "every cell left blank, it is not in the row at all",
+          "showAdo?el('td',{class:'phparent'},at,atLine,ap,apId,apBoard,apNote)"
+          ":null" in M.UI_HTML
+          and "showAdo?el('td',{class:'phparent'}):null" in M.UI_HTML)
+    # av3 is the one check that can actually fail if the collapse is deleted.
+    # Reverting the ternary to `const body=card` or dropping adoCollapsedSummary()
+    # from the <summary> leaves av1/av2 green and every vitest case green too -
+    # those read composition.js alone and the pure function alone, neither of
+    # which names the choice the CARD makes between the two. Counted, not merely
+    # found: a second copy of either literal would mean a second place deciding
+    # the same thing, free to disagree with this one.
+    check("av3 the connector card itself chooses `card` under adoVisible(comp) "
+          "and builds its <summary> from adoCollapsedSummary() - each exactly "
+          "once, so neither half of the collapse can be quietly deleted while "
+          "av1/av2 and the pure-function cases stay green",
+          M.UI_HTML.count("const body=adoVisible(comp)?card") == 1
+          and M.UI_HTML.count("el('summary',{},adoCollapsedSummary())") == 1,
+          repr((M.UI_HTML.count("const body=adoVisible(comp)?card"),
+                M.UI_HTML.count("el('summary',{},adoCollapsedSummary())"))))
+    check("av4 the collapsed card remembers it was opened: COMPF carries the "
+          "state (the same shape COMPF.open already keeps per phase row), one "
+          "listener writes it from the details element's own toggle, and the "
+          "build reads it back rather than always starting closed",
+          "adoOpen:false" in M.UI_HTML
+          and M.UI_HTML.count("adoOpen:false") == 1
+          and "function adoCardToggled(isOpen){COMPF.adoOpen=!!isOpen;}"
+          in M.UI_HTML
+          and "open:COMPF.adoOpen?true:null" in M.UI_HTML
+          and "body.addEventListener('toggle',()=>adoCardToggled(body.open));"
           in M.UI_HTML)
     # The reading order and the freeze both hang off ONE classifier. Pinning the
     # reuse is the point: a second done/cancelled list inside the composition tab

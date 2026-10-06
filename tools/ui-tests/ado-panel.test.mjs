@@ -20,12 +20,14 @@ import { loadPanel, reach } from './sandbox.mjs';
 const { apUseFallback, apIsFallback, apChoiceOf, apPatchValue, apOptions,
   apFallbackWords, apCandidateLabel, adoFieldValue, adoFieldSet, adoFieldDrop,
   typedNumber, atAnswer, atWords, atChoiceOf, atOptions, atPatchValue,
-  AT_DEFAULT_SENTENCE, PHCELL_OPTION_CHARS, optionText } =
+  AT_DEFAULT_SENTENCE, PHCELL_OPTION_CHARS, optionText,
+  adoVisible, adoCollapsedSummary, adoCardToggled, COMPF } =
   reach(loadPanel().ctx, ['apUseFallback', 'apIsFallback', 'apChoiceOf',
     'apPatchValue', 'apOptions', 'apFallbackWords', 'apCandidateLabel',
     'adoFieldValue', 'adoFieldSet', 'adoFieldDrop', 'typedNumber',
     'atAnswer', 'atWords', 'atChoiceOf', 'atOptions', 'atPatchValue',
-    'AT_DEFAULT_SENTENCE', 'PHCELL_OPTION_CHARS', 'optionText']);
+    'AT_DEFAULT_SENTENCE', 'PHCELL_OPTION_CHARS', 'optionText',
+    'adoVisible', 'adoCollapsedSummary', 'adoCardToggled', 'COMPF']);
 
 // `state` is on the first candidate on purpose. `_candidate_row` has always
 // returned it and the label used to drop it, so a fixture without one cannot
@@ -482,5 +484,107 @@ describe('the patch value a choice stands for', () => {
     expect(out.write).toBe(false);
     expect(out.value).toBe(undefined);
     expect(out.why).toContain('neither true nor false');
+  });
+});
+
+// --- adoVisible: whether ADO belongs on screen at all -----------------------
+// The gate the parent column, the "on the board" lever and the connector card
+// all read. A project that never set meta.ado must not be shown checked boxes
+// under a "Not configured" banner, and a project that carries real evidence —
+// a counted link, or a phase's own declaration — must never have that
+// evidence hidden just because meta.ado itself is gone.
+describe('whether anything on screen says this plan uses ADO', () => {
+  const NOTHING = { adoStatus: { configured: false,
+    linked: { tasks: 0, bugs: 0, phases: 0 } }, phases: [] };
+
+  it('answers false for a plan with no meta.ado and no phase or task '
+     + 'carrying an ADO link or declaration', () => {
+    expect(adoVisible(NOTHING)).toBe(false);
+    // A phase with nothing declared (the fallback marker) and no board link -
+    // the ordinary case for a project that has never touched ADO - agrees.
+    expect(adoVisible({ ...NOTHING,
+      phases: [{ id: 'P1', adoParent: apUseFallback(), adoTracked: null }] }))
+      .toBe(false);
+  });
+
+  it('answers true when meta.ado is configured, even with nothing synced yet',
+    () => {
+      expect(adoVisible({ adoStatus: { configured: true,
+        linked: { tasks: 0, bugs: 0, phases: 0 } }, phases: [] })).toBe(true);
+    });
+
+  it('answers true from a COUNTED LINK alone - meta.ado can be gone and the '
+     + 'links a sync already wrote must still not be hidden', () => {
+    expect(adoVisible({ adoStatus: { configured: false,
+      linked: { tasks: 1, bugs: 0, phases: 0 } }, phases: [] })).toBe(true);
+    expect(adoVisible({ adoStatus: { configured: false,
+      linked: { tasks: 0, bugs: 0, phases: 1 } }, phases: [] })).toBe(true);
+    // A bug link alone is not a phase or a task, so it does not count here -
+    // the spec names phases and tasks, not bugs.
+    expect(adoVisible({ adoStatus: { configured: false,
+      linked: { tasks: 0, bugs: 1, phases: 0 } }, phases: [] })).toBe(false);
+  });
+
+  it('answers true from a PHASE DECLARATION alone - an explicit adoParent or '
+     + 'adoTracked is a record even when nothing ever synced', () => {
+    expect(adoVisible({ ...NOTHING,
+      phases: [{ id: 'P1', adoParent: { id: 101, source: 'declared' },
+        adoTracked: null }] })).toBe(true);
+    // Explicit null ("hangs under nothing, on purpose") is a declaration too,
+    // not an absence - apIsFallback(null) is false for exactly this reason.
+    expect(adoVisible({ ...NOTHING,
+      phases: [{ id: 'P1', adoParent: null, adoTracked: null }] })).toBe(true);
+    expect(adoVisible({ ...NOTHING,
+      phases: [{ id: 'P1', adoParent: apUseFallback(), adoTracked: true }] }))
+      .toBe(true);
+  });
+
+  it('answers true from a TASK declaration ALONE - no phase and no counted '
+     + 'link, just one task with its own adoParent set, because a task has '
+     + 'no adoTracked field at all (the schema declares it on a phase only)',
+    () => {
+      expect(adoVisible({ ...NOTHING,
+        tasks: [{ id: 'P1.1', adoParent: { id: 77, source: 'declared' } }] }))
+        .toBe(true);
+      // Explicit null is a declaration here too, same as on a phase.
+      expect(adoVisible({ ...NOTHING,
+        tasks: [{ id: 'P1.1', adoParent: null }] })).toBe(true);
+      // The ordinary case - nothing declared - stays invisible.
+      expect(adoVisible({ ...NOTHING,
+        tasks: [{ id: 'P1.1', adoParent: apUseFallback() }] })).toBe(false);
+    });
+});
+
+describe('the collapsed connector card', () => {
+  it('names the command that sets ADO up', () => {
+    expect(adoCollapsedSummary()).toContain('/audit:sync connect');
+  });
+
+  it('says expanding it reaches the real form, not a dead end', () => {
+    expect(adoCollapsedSummary().toLowerCase()).toContain('expand');
+  });
+});
+
+describe('the collapsed card remembers it was opened', () => {
+  // renderAdoCard builds a fresh <details> on every renderComp - Save,
+  // Discard, this card's own Discard, and overview.js's clean-view refresh
+  // all trigger one - so without this, opening the card to read it would be
+  // undone by the next write anyone makes, the same loss COMPF.open was
+  // added to stop for phase rows.
+  it('writes COMPF.adoOpen from the details element\'s own `open`, true or '
+     + 'false', () => {
+    adoCardToggled(true);
+    expect(COMPF.adoOpen).toBe(true);
+    adoCardToggled(false);
+    expect(COMPF.adoOpen).toBe(false);
+  });
+
+  it('coerces a non-boolean `open` rather than storing it verbatim - the '
+     + 'next build reads COMPF.adoOpen straight into the `open` attribute, '
+     + 'and that attribute must only ever be true or absent', () => {
+    adoCardToggled(1);
+    expect(COMPF.adoOpen).toBe(true);
+    adoCardToggled(undefined);
+    expect(COMPF.adoOpen).toBe(false);
   });
 });

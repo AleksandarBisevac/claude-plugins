@@ -89,7 +89,7 @@
     {
       "id": "P105.2",
       "title": "Show an unreadable manifest as unreadable in every panel view",
-      "status": "in_progress",
+      "status": "done",
       "description": "Overview, Plan & models, Proposals and the Policy area-rules line each branch on a missing rollup and tell the reader there is no plan and to run /audit:init. That is the wrong advice for a plan file that exists and does not parse. Add one planState() helper (none / unreadable / ready) that all four views read; the unreadable branch renders the existing manifestFindingsBox with the server's findings, says to fix the file or restore it from git, and never names /audit:init. A pin over the assembled page keeps any view from testing the rollup directly. Read plugins/audit/scripts/ui/panel/README.md and print the pins with `python3 tools/count-ui-pins.py` before editing; besides the gates listed, run `npx vitest run` (vitest is not a buildCommands key).",
       "files": [
         "plugins/audit/scripts/ui/panel/overview.js",
@@ -140,18 +140,29 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a571a5d6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "overview.js gains planState(manifestExists, rollup), answering none, unreadable or ready, and planUnreadableNote(manifestPath), which tells the reader to fix the file or restore it from git and never names /audit:init. Overview, Plan & models, Proposals and the Policy area-rules line all route through planState: an unreadable plan shows the server's findings box and that note, a missing plan keeps today's /audit:init sentence. test__panel_page.py ps1 fails the build when any view reads the rollup outside planState, recognising the dotted, bracket and destructuring spellings, with Overview's single alias read exempted only inside Overview's own part; ps2 plants each bypass spelling in memory and asserts ps1 reports it, ps3 is its clean twin. A vitest suite asserts rendered text for the three views. The panel screenshots were re-captured because the panel sources moved, and this task carries them.",
+        "descriptive": "When the plan file exists but cannot be read, every panel view now says so and shows why, instead of telling the reader there is no plan and to run /audit:init."
       },
       "startedAt": "2026-10-06T15:29:17Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T19:04:17Z",
+      "verifiedBy": [
+        "ps1",
+        "ps2",
+        "ps3",
+        "plan-unreadable.test.mjs"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T17:01:56Z.c267a6",
         "status": "passed",
         "at": "2026-10-06T17:01:56Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "a571a5d6",
+        "at": "2026-10-06T19:04:17Z",
+        "basis": "audit-reviewer (task mode): matches; one medium finding (ps1 missed bracket, destructuring and copied-alias spellings) and one low (docstring) fixed, the tightened check proved by planted bypasses"
       }
     },
     {
@@ -353,7 +364,8 @@
       "files": [
         "plugins/audit/scripts/panel/panel-server.py",
         "plugins/audit/tests/test_panel_server.py",
-        "plugins/audit/commands/panel.md"
+        "plugins/audit/commands/panel.md",
+        "CONTRIBUTING.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -386,18 +398,43 @@
       },
       "startedAt": "2026-10-06T16:24:44Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T19:55:17Z.882b8c",
+        "status": "passed",
+        "at": "2026-10-06T19:55:17Z"
+      }
     },
     {
       "id": "P105.7",
       "title": "Show the Azure DevOps column and card only where the plan uses ADO",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Plan & models draws the ADO parent column, the 'on the board' lever and the whole connector card for every project, including those that never set meta.ado, with checked boxes under a 'Not configured' banner. Add one adoVisible(comp) predicate. It is true when adoStatus.configured is true or when any phase or task carries an ADO link or declaration, so nothing already recorded is hidden. The column and its levers render only under it; otherwise the card collapses to one line pointing at /audit:sync connect, which unfolds to today's form. The committed example and the demo manifest both set meta.ado, so their screenshots should not move. Print the pins with `python3 tools/count-ui-pins.py` first; besides the gates listed, run `npx vitest run`.",
       "files": [
         "plugins/audit/scripts/ui/panel/composition.js",
         "plugins/audit/scripts/ui/panel/ado-connector.js",
         "tools/ui-tests/ado-panel.test.mjs",
-        "plugins/audit/tests/test__panel_page.py"
+        "plugins/audit/tests/test__panel_page.py",
+        "plugins/audit/scripts/panel/_panel_composition.py",
+        "plugins/audit/tests/test__panel_composition.py",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
       ],
       "tests": {
         "mode": "tdd",
@@ -420,16 +457,21 @@
       "dependsOn": [
         "P105.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T19:04:32Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T19:49:05Z.47fcad",
+        "status": "passed",
+        "at": "2026-10-06T19:49:05Z"
+      }
     }
   ],
   "startedAt": "2026-10-06T14:44:44Z"

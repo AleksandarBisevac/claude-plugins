@@ -142,6 +142,36 @@ function adoSharedWords(shared){
  */
 let ADRAFT=null;
 /**
+ * The collapsed card's one line, named rather than inlined so it is reachable
+ * from a test without rendering the whole card.
+ *
+ * NAMES THE COMMAND AND THE WAY OUT, and nothing else: a reader who has never
+ * used this connector gets exactly one thing to do next (run the command) and
+ * one thing to know (expanding shows the real form), rather than a summary of
+ * a feature they have not turned on yet.
+ *
+ * @returns {string} the <summary> text
+ */
+function adoCollapsedSummary(){
+ return 'Azure DevOps: not set up for this plan. Run /audit:sync connect, '
+  +'or expand to configure it here.';}
+/**
+ * Record whether the collapsed connector card is open, so the NEXT build of
+ * it can put it back.
+ *
+ * A NAMED FUNCTION RATHER THAN AN INLINE LISTENER, so this is the one thing a
+ * test can call without rendering the card at all - `renderAdoCard` builds a
+ * fresh `<details>` on every renderComp (Save, Discard, the ADO card's own
+ * Discard, and the clean-view disk-stamp refresh in overview.js all trigger
+ * one), and none of those are the reader's own act of opening it, so none of
+ * them may close it back up.
+ *
+ * @param {boolean} isOpen - the details element's own `open` property at the
+ *   moment its `toggle` event fired
+ * @returns {void}
+ */
+function adoCardToggled(isOpen){COMPF.adoOpen=!!isOpen;}
+/**
  * Build the Azure DevOps connector card and append it to the Composition view.
  *
  * The banner at the top reports manifest EVIDENCE — the links a sync actually
@@ -171,7 +201,31 @@ function renderAdoCard(c){
    linked:{tasks:0,bugs:0,phases:0},lastSyncedAt:null,shared:null};
  ADRAFT=saved===null?null:JSON.parse(JSON.stringify(saved));
  const card=el('div',{class:'card',id:'adocard'});
- card.append(h2h('Azure DevOps connector (meta.ado)',MDESC.adoConnector,
+ // adoVisible gates the whole card, not just the board column: a project that
+ // never set meta.ado and carries no link or declaration anywhere gets ONE
+ // line naming the command that sets it up, under a native <details> so
+ // the DISCLOSURE ITSELF is free (no JS, no re-render) and reveals the exact
+ // form a configured project sees. A project adoVisible already counts gets
+ // the form directly, unwrapped, which is why `body` is `card` itself in that
+ // case — the DOM below is byte-for-byte what it was before this gate
+ // existed, and the committed screenshots stay the screenshots of a
+ // configured example.
+ //
+ // THE ELEMENT ITSELF IS NOT FREE ACROSS A RE-RENDER. `renderAdoCard` builds
+ // a fresh `<details>` every time renderComp runs — Save, Discard, this
+ // card's own Discard, and the clean-view disk-stamp refresh in overview.js
+ // all call it — so a reader who opened it to read the form would have it
+ // snap shut under them the next time anyone wrote the manifest, if nothing
+ // here remembered. `COMPF.adoOpen` is that memory, read back in on build and
+ // written by the ONE listener below, the same shape `COMPF.open` already
+ // keeps for which phase rows are expanded.
+ const body=adoVisible(comp)?card
+   :el('details',{'data-adocollapsed':'1',open:COMPF.adoOpen?true:null},
+     el('summary',{},adoCollapsedSummary()));
+ if(body!==card){
+  card.append(body);
+  body.addEventListener('toggle',()=>adoCardToggled(body.open));}
+ body.append(h2h('Azure DevOps connector (meta.ado)',MDESC.adoConnector,
    {comp:'adoConnector',label:'ADO connector'}));
  // The honesty banner: manifest EVIDENCE (links /audit:sync wrote), never a
  // network probe and never the form — the policy tab's data-pstate rule,
@@ -203,7 +257,7 @@ function renderAdoCard(c){
  if(banner[0]==='linked'||banner[0]==='off'){
   banner[2]+=' · '+adoSharedWords(st.shared);
   if((st.shared||{}).state==='shared')banner[1]='warn';}
- card.append(el('div',{class:'findings '+banner[1],'data-adostate':banner[0],
+ body.append(el('div',{class:'findings '+banner[1],'data-adostate':banner[0],
    'data-adoshared':(st.shared||{}).state||'uncounted'},banner[2]));
  // --- draft plumbing. Deleting a key is how "use the default" is written
  // (delPath's rule); an emptied draft reads as null — connector removed.
@@ -230,11 +284,11 @@ function renderAdoCard(c){
    else A()[key]=false;pruneTop();};
   return el('span',{class:'f cbf','data-adosetting':key.split('.')[0]},
     cb,flabel(lbl,help,null,'ado-'+key));};
- card.append(el('div',{class:'row'},
+ body.append(el('div',{class:'row'},
    onoff('enabled','Connector enabled',MDESC.adoEnabled),
    onoff('echo','Echo on task/phase transitions',MDESC.adoEcho),
    onoff('phaseWorkItems','PBI per phase',MDESC.adoPhaseWorkItems)));
- card.append(el('div',{class:'row'},
+ body.append(el('div',{class:'row'},
    txt('organization','<org> or https://dev.azure.com/<org>','Organization'),
    txt('project','project name','Project'),
    txt('areaPath','optional','Area path'),
@@ -259,7 +313,7 @@ function renderAdoCard(c){
    if(v)A().tag=v;else if(ADRAFT)delete ADRAFT.tag;}
   pruneTop();};
  tagIn.oninput=tagApply;tagNone.onchange=tagApply;
- card.append(el('div',{class:'row'},
+ body.append(el('div',{class:'row'},
    txt('types.bug','Bug','Bug type'),
    txt('types.task','Task','Task type'),
    txt('types.pbi','auto-detect at first phase push','Phase (PBI) type',
@@ -322,7 +376,7 @@ function renderAdoCard(c){
     el('table',{class:'regtbl adosm'},
       tableHead(['manifest status','ADO state','never move'].map(h=>
         ({attrs:{scope:'col'},label:el('span',{class:'vh'},h)}))),tb));};
- card.append(el('div',{class:'row'},smTbl('phase'),smTbl('task'),smTbl('bug')));
+ body.append(el('div',{class:'row'},smTbl('phase'),smTbl('task'),smTbl('bug')));
  // --- the done move: Remaining Work + generated comments
  const rwCur=getPath(ADRAFT||{},'onComplete.remainingWork');
  const rw=el('input',{type:'number',min:'0',step:'any',id:'ado-rw',
@@ -345,7 +399,7 @@ function renderAdoCard(c){
    else if(ADRAFT)delPath(ADRAFT,'comments.'+key);pruneTop();};
   return el('span',{class:'f cbf','data-adosetting':'comments'},
     cb,flabel(lbl,MDESC.adoComments,null,cid));};
- card.append(el('div',{class:'row'},
+ body.append(el('div',{class:'row'},
    el('span',{class:'f','data-adosetting':'onComplete'},
      flabel('Remaining Work on done',MDESC.adoRemainingWork,null,'ado-rw'),
      el('span',{class:'inl'},rw,el('label',{class:'inl',for:'ado-rw-never'},rwNever,
@@ -371,7 +425,7 @@ function renderAdoCard(c){
    a=>{if(a.length)setPath(A(),'pull.tags',a);
     else if(ADRAFT)delPath(ADRAFT,'pull.tags');pruneTop();},'tag…',null,
    'Pull tags: add a tag');
- card.append(el('div',{class:'row'},
+ body.append(el('div',{class:'row'},
    el('span',{class:'f','data-adosetting':'sprint'},
      flabel('Sprint team (current iteration)',MDESC.adoSprint,null,
        'ado-sprint.team'),team),
@@ -403,7 +457,7 @@ function renderAdoCard(c){
  reqP.checked=!!getPath(ADRAFT||{},'conventions.requireParent');
  reqP.onchange=()=>{if(reqP.checked)setPath(A(),'conventions.requireParent',true);
   else if(ADRAFT)delPath(ADRAFT,'conventions.requireParent');pruneTop();};
- card.append(el('div',{class:'row'},
+ body.append(el('div',{class:'row'},
    el('span',{class:'f','data-adosetting':'parentWorkItem'},
      flabel('Parent work item',MDESC.adoParentWorkItem,null,
        'ado-parentWorkItem'),pw),
@@ -444,7 +498,7 @@ function renderAdoCard(c){
   tvWrap.append(el('div',{class:'row'},pi,vi,
     el('button',{class:'btn small',type:'button',onclick:add},'add')));};
  tvDraw();
- card.append(el('div',{class:'f','data-adosetting':'conventions'},
+ body.append(el('div',{class:'f','data-adosetting':'conventions'},
    flabel('Tag vocabulary',MDESC.adoTagVocabulary),tvWrap));
  // --- identityMap: a pair editor, edited directly — NEVER through delPath,
  // whose dotted paths would split the ledger keys (emails carry dots).
@@ -477,7 +531,7 @@ function renderAdoCard(c){
        if(!k||!v)return;const o=A();o.identityMap=o.identityMap||{};
        o.identityMap[k]=v;ki.value='';vi.value='';imDraw();}},'add')));};
  imDraw();
- card.append(el('div',{class:'f','data-adosetting':'identityMap'},
+ body.append(el('div',{class:'f','data-adosetting':'identityMap'},
    flabel('Identity map (ledger → ADO)',MDESC.adoIdentityMap),imWrap));
  // --- fields: the per-type template, edited DIRECTLY for identityMap's reason
  // and a sharper version of it — an ADO reference name IS dotted, so a dotted
@@ -529,7 +583,7 @@ function renderAdoCard(c){
     +'read-only is refused when the manifest is validated, and the save names '
     +'which.'));};
  fdDraw();
- card.append(el('div',{class:'f','data-adosetting':'fields'},
+ body.append(el('div',{class:'f','data-adosetting':'fields'},
    flabel('Field template (work item type → field → value)',
      MDESC.adoFields),fdWrap));
  // --- save / discard. EDITS.ado feeds beforeunload and the disk-refresh
@@ -557,7 +611,7 @@ function renderAdoCard(c){
  ['input','change','click'].forEach(e=>
   card.addEventListener(e,()=>requestAnimationFrame(upd)));
  upd();
- card.append(el('div',{class:'row',style:'margin-top:.9rem'},save,discard),
+ body.append(el('div',{class:'row',style:'margin-top:.9rem'},save,discard),
    el('div',{class:'findings-slot'}));
  c.append(card);}
 // --- grouped manifest findings ---------------------------------------------------

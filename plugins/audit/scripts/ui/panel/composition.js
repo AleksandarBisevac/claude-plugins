@@ -97,6 +97,14 @@
  * @property {string|null} commit
  * @property {string|null} startedAt
  * @property {string|null} completedAt
+ * @property {object|null} adoParent - this task's OWN declaration, in the same
+ *   one-value-three-shapes spelling as a phase's: the use-fallback marker for
+ *   an absent key, `null` for "hangs under nothing on purpose", or a
+ *   declared object. No control in this tab edits it (a task's parent cell is
+ *   always empty - under `phaseWorkItems` it hangs under its phase's own work
+ *   item, and with that off it is a manifest edit this table does not
+ *   offer), so it rides the payload for `adoVisible` alone: a plan whose only
+ *   ADO record is a task-level declaration must still count as using ADO
  */
 
 // ---------- model suggestions (mc) ----------
@@ -530,6 +538,44 @@ function atPatchValue(choice){
  return{write:false,value:undefined,
   why:'this phase declares something that is neither true nor false — pick one '
    +'of the three; nothing is saved for this phase until you do'};}
+// ---------- whether ADO belongs on screen at all (av) ----------
+// A PROJECT THAT NEVER SET meta.ado still got the parent column, the "on the
+// board" lever and the whole connector card, every one of them showing checked
+// boxes under a "Not configured" banner — which is not neutral, it is a form
+// describing a sync that does not exist. This is the one gate both the table
+// and the card read, so a plan that is plainly not using ADO shows none of it.
+//
+// A CONFIGURED CONNECTOR IS NOT THE ONLY WAY IN. A key removed from meta.ado
+// after a sync already ran leaves every link and declaration it wrote behind,
+// and a panel that hid them because the key is gone now would be the exact
+// shape this repo's own rule exists against — nothing already recorded may be
+// hidden by a later edit nobody made to the records themselves. So this reads
+// the two kinds of evidence a plan can carry without `meta.ado` at all:
+// `adoStatus.linked`, which is counted off real work-item links `_drift
+// .link_inventory` found on phases and tasks, and EITHER NODE'S OWN
+// declaration — a phase's `adoParent`/`adoTracked`, or a task's own
+// `adoParent` (the same one-value-three-shapes field one level down, carried
+// by `CompTask.adoParent` even though no control in this tab edits it). A
+// task has no control for the OTHER reason `adoTracked` does not apply to it
+// at all — the schema declares that key on a phase only.
+/**
+ * Does anything on screen say this plan uses Azure DevOps?
+ *
+ * @param {{adoStatus: ?object, phases: ?CompPhase[], tasks: ?CompTask[]}} comp -
+ *   the composition payload
+ * @returns {boolean} true when the connector is configured, a link was
+ *   counted on a phase or a task, or some phase or task carries an
+ *   adoParent/adoTracked declaration of its own
+ */
+function adoVisible(comp){
+ const c=comp||{};
+ const st=c.adoStatus||{};
+ if(st.configured)return true;
+ const linked=st.linked||{};
+ if((linked.tasks||0)>0||(linked.phases||0)>0)return true;
+ if((c.phases||[]).some(ph=>
+   !apIsFallback(ph.adoParent)||(ph.adoTracked!=null)))return true;
+ return (c.tasks||[]).some(t=>!apIsFallback(t.adoParent));}
 
 function modelItems(){
  if(MITEMS)return MITEMS;
@@ -800,10 +846,17 @@ function skillChips(getArr,setArr,ariaName){
  * away whatever is half-typed in the composition form, which is the same mistake
  * the run-status poll was fixed for. It is null until renderComp has run once.
  *
+ * `adoOpen` is the same fix one card over: the ADO connector's collapsed
+ * `<details>` is rebuilt from scratch on every renderComp (Save, Discard, the
+ * ADO card's own Discard, and the clean-view disk-stamp refresh in
+ * overview.js all call it), and a fresh `<details>` with no `open` recorded
+ * is closed - so without this, opening it to read it is undone by the next
+ * write anyone makes. `adoCardToggled` is the one writer.
+ *
  * @type {{q: string, status: string, needs: boolean,
- *   open: Object<string, boolean>, apply: (() => void)|null}}
+ *   open: Object<string, boolean>, adoOpen: boolean, apply: (() => void)|null}}
  */
-const COMPF={q:'',status:'',needs:false,open:{},apply:null};
+const COMPF={q:'',status:'',needs:false,open:{},adoOpen:false,apply:null};
 /**
  * Open the Composition tab scoped to one phase.
  *
@@ -1041,6 +1094,10 @@ function renderComp(){closeCombo();
  // at the row's right-hand end. Same rule as the head: the ⓘ explains the lever
  // ONCE for every row that has one. There is no second list of these names - the
  // drawer still opens on `comp` refs, so the help wiring is unchanged.
+ // adoVisible(comp) is read once, here, and reused by the table head and every
+ // phase row below rather than re-asked per row — a plan's ADO visibility does
+ // not change between one phase and the next.
+ const showAdo=adoVisible(comp);
  tcard.append(el('div',{class:'phlegend'},
    el('span',{class:'phlegend-t'},'per phase:'),
    flabel('review model',MDESC.phaseReviewModel,
@@ -1051,8 +1108,10 @@ function renderComp(){closeCombo();
    // are rather than for a new one: a <th> carries one ⓘ, and the sixth column
    // now holds two phase levers. The heading explains the parent; this explains
    // the lever above it, which is the question the parent only matters after.
-   flabel('on the board',MDESC.phaseAdoTracked,
-     {comp:'phaseAdoTracked',label:'Phase ADO tracked'})));
+   // Under showAdo===false there is no sixth column at all, so this lever has
+   // nowhere to render either — a reference for a control nobody can reach.
+   showAdo?flabel('on the board',MDESC.phaseAdoTracked,
+     {comp:'phaseAdoTracked',label:'Phase ADO tracked'}):null));
  // The sixth column holds PHASE levers and no task one, so its ⓘ names one of
  // them rather than a task lever - which is why that heading carries its own
  // reference instead of joining the legend above the table. It names the parent;
@@ -1069,18 +1128,26 @@ function renderComp(){closeCombo();
    // model are both models. The fifth heading names BOTH of the things its column
    // holds, because they are different levers that can never appear in the same
    // row, and "skills" alone described half the table.
+   //
+   // The sixth entry is SPREAD rather than pushed conditionally from outside
+   // the array: the column it names is ONLY ADDED under showAdo — a project
+   // that never set meta.ado and has no link or declaration recorded anywhere
+   // gets a five-column table, not a six-column one with the last cell always
+   // empty, which is the same answer the per-row cells below give for the
+   // same reason.
    tableHead(['id','title','status',
      {label:flabel('model',MDESC.taskModel,{comp:'taskModel',label:'Task model'})},
      {label:flabel('skills · priority',MDESC.taskSkills,{comp:'taskSkills',
        label:'Task skills'})},
-     {label:flabel('ADO parent',MDESC.phaseAdoParent,{comp:'phaseAdoParent',
-       label:'Phase ADO parent'})}]),tbody)));
+     ...(showAdo?[{label:flabel('ADO parent',MDESC.phaseAdoParent,
+       {comp:'phaseAdoParent',label:'Phase ADO parent'})}]:[])]),tbody)));
  // WHICH OF THE THREE CACHE STATES THIS IS, once, under the table's own
  // reference line. Once and not per row for the reason the legend exists: fifty
  // copies of one sentence is what the phase levers were moved out of the rows to
  // stop. The sentence itself is the SERVER'S - `_panel_composition` builds it,
  // so the panel and anything else that reports the cache say the same thing.
- tcard.append(el('div',{class:'mut small apcache','data-apcache':(comp.adoParents||{}).cache||'absent'},
+ // Under a table with no ADO column there is no cache line to explain either.
+ if(showAdo)tcard.append(el('div',{class:'mut small apcache','data-apcache':(comp.adoParents||{}).cache||'absent'},
    (comp.adoParents||{}).basis||''));
 
  const open=COMPF.open;
@@ -1146,6 +1213,16 @@ function renderComp(){closeCombo();
   // Same STOP as the review combo: the phase row toggles on click, and choosing
   // a tier must not also collapse the phase under the menu.
   prio.onclick=e=>e.stopPropagation();
+  // The whole ap/at block below builds the sixth column's two controls, and
+  // none of it runs when the column itself is not showing — there is no cell
+  // for these to render into, and the manifest this plan carries never asked
+  // the question either. The six controls are declared here, outside the
+  // guard, rather than with their usual `const`: the td that reads them below
+  // is written inside `pr.append(...)` (where the row-cell-count pin expects
+  // it), which is textually AFTER this whole block, so `const`'s block scope
+  // would take them out of reach the moment showAdo is true.
+  let at,atLine,ap,apId,apBoard,apNote;
+  if(showAdo){
   // ap: where THIS phase hangs on the board. One <select> over the three answers
   // plus whatever was cached, and a number box for the fourth case the cache can
   // never cover - an id created since the fetch, or a board nobody has fetched
@@ -1156,7 +1233,7 @@ function renderComp(){closeCombo();
   const apChoice=apChoiceOf(ph.adoParent,apc.candidates);
   const apDecl=(ph.adoParent&&typeof ph.adoParent==='object'
     &&!apIsFallback(ph.adoParent))?ph.adoParent:null;
-  const apNote=el('span',{class:'mut small apnote'});
+  apNote=el('span',{class:'mut small apnote'});
   // WHAT THE BOARD SAYS, beside what the manifest declares - and where nothing
   // has been asked, that is what it says (F101). Written once at render and
   // never touched by `apApply`: the declaration is what an edit changes, and
@@ -1164,10 +1241,10 @@ function renderComp(){closeCombo();
   // unfinished-edit note because it is the same kind of line under the same
   // control; the STATE is on a `data-` hook of its own, which is what a browser
   // gate reads rather than the prose.
-  const apBoard=el('span',{class:'mut small apnote',
+  apBoard=el('span',{class:'mut small apnote',
     'data-apboard':apBoardState(ph.adoParentBoard),
     title:(ph.adoParentBoard||{}).basis||null},apBoardWords(ph.adoParentBoard));
-  const apId=el('input',{type:'number',min:'1',step:'1',
+  apId=el('input',{type:'number',min:'1',step:'1',
     'data-adoparentid':ph.id||'',placeholder:'work item id',
     'aria-label':'ADO parent work item id for phase '+(ph.id||''),
     value:(apDecl&&apDecl.id!=null)?String(apDecl.id):''});
@@ -1179,7 +1256,7 @@ function renderComp(){closeCombo();
   // work item's TITLE, so nothing here can promise it is short; the id and the
   // type are what the hierarchy check grades on, they lead the label, and the
   // whole sentence stays on the option's `title`.
-  const ap=fillOptions(el('select',{'data-adoparent':ph.id||'',
+  ap=fillOptions(el('select',{'data-adoparent':ph.id||'',
     'aria-label':'ADO parent for phase '+(ph.id||''),
     title:(ph.adoParentResolved||{}).basis||null}),apOptions(apc),apChoice,
     PHCELL_OPTION_CHARS);
@@ -1215,7 +1292,7 @@ function renderComp(){closeCombo();
   // stale-reads-as-current defect one control lower down. It never RECOMPUTES
   // the answer: the resolution is the server's, and a browser deriving it would
   // be the second implementation of the one rule this key exists to have one of.
-  const atLine=el('span',{class:'mut small apnote',
+  atLine=el('span',{class:'mut small apnote',
     'data-atstate':atAnswer(ph.adoTrackedResolved),
     title:(ph.adoTrackedResolved||{}).basis||null},atSaved);
   // Through the SAME bound as the parent picker, though every label here is
@@ -1223,7 +1300,7 @@ function renderComp(){closeCombo();
   // be the one place a future long label could be added without anything saying
   // so — and the vitest case bounding these labels would then be checking a
   // promise nothing kept.
-  const at=fillOptions(el('select',{'data-adotracked':ph.id||'',
+  at=fillOptions(el('select',{'data-adotracked':ph.id||'',
     'aria-label':'on the ADO board for phase '+(ph.id||''),
     title:(ph.adoTrackedResolved||{}).basis||null}),
     atOptions(ph.adoTracked),atChoice,PHCELL_OPTION_CHARS);
@@ -1239,6 +1316,7 @@ function renderComp(){closeCombo();
    if(Object.keys(pp).length)patch.phases[ph.id]=pp;};
   at.onchange=atApply;
   at.onclick=e=>e.stopPropagation();
+  }
   const revCombo=comboWrap(rev,modelItems,(name,close)=>{
     rev.value=name;setRev(name);close();});
   // The STOP moved from the input to its combo WRAPPER: the phase row toggles
@@ -1260,7 +1338,12 @@ function renderComp(){closeCombo();
   // count and the sign-off note. They wrap inside that cell (`.phsum`), which is
   // capped at the same width as a task title, so none of them can widen the
   // table.
-  pr.append(el('td',{class:'phid'},el('span',{class:'mono'},ph.id||'')),
+  // The sixth cell is built only under showAdo, and is null otherwise.
+  // `pr.append` is the native DOM method rather than `el`'s own
+  // child-flattening wrapper, so a null here would land as the literal text
+  // "null" instead of being skipped; filtering keeps the row at five cells
+  // when the column is not showing.
+  pr.append(...[el('td',{class:'phid'},el('span',{class:'mono'},ph.id||'')),
     el('td',{class:'ttitle'},el('div',{class:'phsum'},
       // The triangle and the title are ONE item of the wrapping line, because a
       // disclosure control belongs to the thing it discloses. As two items the
@@ -1284,7 +1367,8 @@ function renderComp(){closeCombo();
     // the accessible name never depended on the words removed.
     el('td',{class:'tmodel'},revCombo),
     el('td',{class:'phprio'},prio),
-    el('td',{class:'phparent'},at,atLine,ap,apId,apBoard,apNote));
+    showAdo?el('td',{class:'phparent'},at,atLine,ap,apId,apBoard,apNote):null]
+    .filter(Boolean));
   // The row still TOGGLES when it is frozen — a closed phase is the one you most
   // often open to read. Only its controls go out of service.
   pr.onclick=()=>{open[ph.id]=!open[ph.id];refresh();};
@@ -1312,15 +1396,17 @@ function renderComp(){closeCombo();
    // ellipsis had cut off, and the cell wraps now, so the words are all on
    // screen. Kept, it would be a hover tooltip repeating what is already
    // readable underneath it.
-   tr.append(el('td',{class:'tid'},t.id||''),el('td',{class:'ttitle'},t.title||''),
+   tr.append(...[el('td',{class:'tid'},t.id||''),el('td',{class:'ttitle'},t.title||''),
      el('td',{},el('span',{class:'st','data-status':t.status||''},label(t.status))),
      el('td',{class:'tmodel'},modelCombo),el('td',{class:'tskills'},chips),
-     // ONE CELL PER HEADING, in both builders. A task has no parent lever of its
-     // own — under `phaseWorkItems` its parent IS the work item of its phase,
-     // and with that off it is a manifest edit this table does not offer — so
-     // the cell is empty rather than absent: a row with five cells under a six
-     // column head shifts every cell after it into the wrong column.
-     el('td',{class:'phparent'}));
+     // ONE CELL PER HEADING, in both builders, UNDER showAdo. A task has no
+     // parent lever of its own — under `phaseWorkItems` its parent IS the work
+     // item of its phase, and with that off it is a manifest edit this table
+     // does not offer — so while the column is showing the cell is empty
+     // rather than absent: a row with five cells under a six column head
+     // shifts every cell after it into the wrong column. Once the column is
+     // gone there is no sixth heading for an empty cell to align under either.
+     showAdo?el('td',{class:'phparent'}):null].filter(Boolean));
    // EITHER closes a task row. The phase, because an unfinished task inside a
    // cancelled phase is never going to run; and the task's own status, because a
    // done task has already run and the model and skills on it are the record of
