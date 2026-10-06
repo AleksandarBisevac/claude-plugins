@@ -273,7 +273,7 @@
     {
       "id": "P104.5",
       "title": "/audit:usage prints attribution coverage beside its per-task figures",
-      "status": "in_progress",
+      "status": "done",
       "description": "The CLI calibrates its bands from 'this project's completed tasks' and lists per-task costs without saying how many done tasks those figures cover or that main-loop spend is never attributed to a task. Print the coverage from unit economics beside band_note's line and under the --by task table, in both ascii and md formats, and carry it in the --json payload. Acceptance: on the acme example the dashboard states priced versus done tasks next to the band thresholds.",
       "files": [
         "plugins/audit/scripts/usage/audit-usage.py",
@@ -300,18 +300,36 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "dbe693f8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "/audit:usage prints the shared coverage sentence (_usage_economics._coverage_sentence over cost_bands' doneTaskCoverage) under the band note in TOP TASKS and under the --by task table, in the ascii and md formats, gated on show_cost and silent when the plan has no done task; --json carries bands.doneTaskCoverage. Cases ac1-ac11 use a fixture with three priced of four done tasks and cover both formats, --no-cost and the no-done-task silence for the dashboard and --by task, and the exact json payload.",
+        "descriptive": "/audit:usage now says how many of the plan's done tasks its per-task cost figures cover, in every output format, and stays silent when costs are hidden."
       },
       "startedAt": "2026-10-06T15:43:58Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T19:03:57Z",
+      "verifiedBy": [
+        "ac1",
+        "ac2",
+        "ac3",
+        "ac4",
+        "ac5",
+        "ac6",
+        "ac7",
+        "ac8",
+        "ac9",
+        "ac10",
+        "ac11"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T16:47:44Z.6c1a9c",
         "status": "passed",
         "at": "2026-10-06T16:47:44Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "dbe693f8",
+        "at": "2026-10-06T19:03:57Z",
+        "basis": "audit-reviewer (task mode): clean; one low finding (no md-format case) fixed; wording moved to the shared sentence; red-first re-proved at HEAD 53540f42 (ac1, ac4, ac9, ac10)"
       }
     },
     {

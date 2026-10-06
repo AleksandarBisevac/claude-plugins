@@ -273,6 +273,9 @@ function renderUsage(){closeCombo();const c=$('#usage');
     // enough to carry. Dropping the row instead would also shorten the card and
     // pull the tile grid out of line.
     : el('div',{class:'utrend',title:o.why||'no daily series for this metric'},'—'));
+  // Under the box, not inside .utrend: the coverage line is a second fact about
+  // the same number, not a substitute for the trend slot.
+  if(o.sub)box.append(el('div',{class:'mut small'},o.sub));
   return box;};
  const tiles=[tile('tokens',uTok(tot[0]),
    {key:'tokens',delta:dl&&dl.tokens,series:sp.series.tokens})];
@@ -280,8 +283,15 @@ function renderUsage(){closeCombo();const c=$('#usage');
    {key:'cost',delta:dl&&dl.cost,series:sp.series.cost}));
  tiles.push(tile('messages',tot[2].toLocaleString(),
    {key:'msgs',delta:dl&&dl.msgs,series:sp.series.msgs}));
+ // `tcov` (done-task coverage) is null over an empty ledger (no done task in
+ // the plan at all) - the same silence `unit.perTask` already keeps for the
+ // tile itself, so the sub-line inherits it rather than re-deriving a second
+ // empty check. Named apart from `cov` (uCoverage(), attribution by tokens)
+ // two lines up - same card, two different questions.
+ const tcov=unit.doneTaskCoverage;
  if(unit.perTask!=null)tiles.push(tile('cost per task',uCost(unit.perTask),
-   {why:'no daily trend: a task’s cost accrues over every day it ran and is only '
+   {sub:USAGE.showCost?uCoverageLine(tcov):null,
+    why:'no daily trend: a task’s cost accrues over every day it ran and is only '
      +'complete when the task is, so there is no per-day cost-per-task to plot'}));
  tiles.push(tile('attributed',uPct(cov.attributed),
    {key:'attributed',delta:dl&&dl.attributed,pp:true,pol:1,
@@ -356,6 +366,12 @@ function renderUsage(){closeCombo();const c=$('#usage');
   el('div',{class:'mut small'},'Compared inside a band on purpose: hard work is '+
    'routed to the stronger model deliberately, so a raw spend-per-task comparison '+
    'across bands would flag that working system as a fault.'));
+  // Same coverage reading as the cost-per-task tile above, printed once for the
+  // whole table rather than per cell: a `cost/task` column computed from a
+  // narrower slice of done tasks than the plan has would look exactly like one
+  // computed from all of them.
+  if(USAGE.showCost&&uCoverageLine(tcov))card.append(el('div',{class:'mut small'},
+   uCoverageLine(tcov)));
   const tbl=el('table',{class:'utbl'},
     tableHead(['risk','model','tasks','cost/task','mean attempts']));
   const tb=el('tbody',{});let last='';

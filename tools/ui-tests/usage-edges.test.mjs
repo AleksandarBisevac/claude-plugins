@@ -156,3 +156,119 @@ describe('the filters that are on, once the controls fold away', () => {
   // real browser, and test__panel_page.py's uf3 pins that the state has exactly
   // one home.
 });
+
+describe('attribution coverage beside cost per task', () => {
+  // uUnit/uRouting/uCoverageLine are pure (no DOM), so they are exercised
+  // directly rather than through renderUsage — which, per the note just above,
+  // dies in the chart on any non-empty ledger in this sandbox. That also means
+  // this is the same route that would prove the cost-per-task tile's sub-line
+  // and the routing table's caption, since both call uCoverageLine with the
+  // same uUnit(facts).doneTaskCoverage rather than each computing their own.
+  function panel() {
+    const { ctx } = loadPanel();
+    return { ctx, run: (src) => vm.runInContext(src, ctx) };
+  }
+
+  function withTaskMeta(ctx, taskMeta) {
+    vm.runInContext('USAGE = { taskMeta: ' + JSON.stringify(taskMeta) + ' };', ctx);
+  }
+
+  function fact(F, task, tokens, attr) {
+    const row = [];
+    row[F.ts] = '2026-01-01T00:00:00Z';
+    row[F.phase] = 'P1';
+    row[F.task] = task;
+    row[F.model] = 'sonnet';
+    row[F.author] = 'me';
+    row[F.agent] = 'ag';
+    row[F.attr] = attr || 'task';
+    row[F.tokens] = tokens;
+    row[F.cost] = tokens * 0.001;
+    row[F.msgs] = 1;
+    return row;
+  }
+
+  // Three done tasks in the plan, one with risk 'high' and no row at all below,
+  // plus a pending task that must never enter either count.
+  const TASK_META = {
+    T1: { status: 'done', risk: 'high' },
+    T2: { status: 'done', risk: 'low' },
+    T3: { status: 'done', risk: 'high' },
+    T4: { status: 'pending', risk: 'high' },
+  };
+
+  it('counts the done-task denominator from the WHOLE plan, not the rows', () => {
+    const { ctx, run } = panel();
+    withTaskMeta(ctx, TASK_META);
+    const { uUnit, F } = reach(ctx, ['uUnit', 'F']);
+    // Only T1 ever appears in the rows handed to uUnit.
+    const facts = [fact(F, 'T1', 10)];
+    expect(uUnit(facts).doneTaskCoverage).toEqual({ done: 3, priced: 1 });
+  });
+
+  it('filtering the rows narrows the numerator only', () => {
+    const { ctx } = panel();
+    withTaskMeta(ctx, TASK_META);
+    const { uUnit, F } = reach(ctx, ['uUnit', 'F']);
+    const all = [fact(F, 'T1', 10), fact(F, 'T2', 20)];
+    expect(uUnit(all).doneTaskCoverage).toEqual({ done: 3, priced: 2 });
+    // Narrowed to T1's own row: the denominator (every done task in the plan)
+    // must not shrink along with the view.
+    const narrowed = all.filter((f) => f[F.task] === 'T1');
+    expect(uUnit(narrowed).doneTaskCoverage).toEqual({ done: 3, priced: 1 });
+  });
+
+  it('never attributes main-loop spend (task id "--") to a done task', () => {
+    const { ctx } = panel();
+    withTaskMeta(ctx, TASK_META);
+    const { uUnit, F } = reach(ctx, ['uUnit', 'F']);
+    const facts = [fact(F, 'T1', 10), fact(F, '--', 999999)];
+    // The huge main-loop row changes neither side of the count.
+    expect(uUnit(facts).doneTaskCoverage).toEqual({ done: 3, priced: 1 });
+  });
+
+  it('is null with no done task in the plan at all [empty-ledger silence]', () => {
+    const { ctx } = panel();
+    withTaskMeta(ctx, { T4: { status: 'pending', risk: 'high' } });
+    const { uUnit, uCoverageLine, F } = reach(ctx, ['uUnit', 'uCoverageLine', 'F']);
+    expect(uUnit([fact(F, 'T4', 10)]).doneTaskCoverage).toBe(null);
+    expect(uCoverageLine(null)).toBe(null);
+  });
+
+  it('pins the sentence for full coverage, exactly as coverage_sentence() words it', () => {
+    const { ctx } = panel();
+    const { uCoverageLine } = reach(ctx, ['uCoverageLine']);
+    expect(uCoverageLine({ done: 2, priced: 2 })).toBe(
+      'Of the plan\'s 2 done task(s), 2 are priced; main-loop spend is not '
+      + 'attributed to a task.');
+  });
+
+  it('pins the same sentence, unconditionally, for partial coverage too '
+    + '[was: a shortfall clause only the panel printed]', () => {
+    const { ctx } = panel();
+    const { uCoverageLine } = reach(ctx, ['uCoverageLine']);
+    // The wording is fixed now (it mirrors coverage_sentence() byte for byte),
+    // so there is no second clause to fire conditionally - this is the case
+    // that would catch one being added back.
+    expect(uCoverageLine({ done: 3, priced: 2 })).toBe(
+      'Of the plan\'s 3 done task(s), 2 are priced; main-loop spend is not '
+      + 'attributed to a task.');
+  });
+
+  it('the routing table cannot show a done task its own rows never mention, '
+    + 'which is exactly what the coverage line beside it states', () => {
+    const { ctx } = panel();
+    withTaskMeta(ctx, TASK_META);
+    const { uUnit, uRouting, uCoverageLine, F } = reach(
+      ctx, ['uUnit', 'uRouting', 'uCoverageLine', 'F']);
+    const facts = [fact(F, 'T1', 10), fact(F, 'T2', 20)];
+    const rows = uRouting(facts);
+    const tasksShown = rows.reduce((a, r) => a + r.tasks, 0);
+    expect(tasksShown).toBe(2); // T1 and T2 - T3 has no row at all
+    const cov = uUnit(facts).doneTaskCoverage;
+    expect(cov).toEqual({ done: 3, priced: 2 });
+    expect(uCoverageLine(cov)).toBe(
+      'Of the plan\'s 3 done task(s), 2 are priced; main-loop spend is not '
+      + 'attributed to a task.');
+  });
+});

@@ -53,103 +53,103 @@
       "sha256": "7223da970444292da23d3cfddece2f33876d549e28a775474c7975f6ac2d7e72",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "2bae064692ff87ba5d5a3dbaaf457b8b8ce0ea09c0795a5da7c100ba4525adad"
+      "uiDigest": "f2c49844f0b5f7dd2e65c0ce60aad49bd94896e6b9136e7e32f1143b373af037"
     },
     "panel-blocks.png": {
       "sha256": "be1556ce9fa3122115451c049f6543dc24048508544adb39d8deb9f1bf914229",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "2bae064692ff87ba5d5a3dbaaf457b8b8ce0ea09c0795a5da7c100ba4525adad"
+      "uiDigest": "f2c49844f0b5f7dd2e65c0ce60aad49bd94896e6b9136e7e32f1143b373af037"
     },
     "panel-composition-expanded.png": {
       "sha256": "947c54f4ca4a106698a5c61e39fc295f3046b748071d7cf3a9aaa042a92df0fe",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "2bae064692ff87ba5d5a3dbaaf457b8b8ce0ea09c0795a5da7c100ba4525adad"
+      "uiDigest": "f2c49844f0b5f7dd2e65c0ce60aad49bd94896e6b9136e7e32f1143b373af037"
     },
     "panel-composition.png": {
       "sha256": "fa7724c7efa4aade8353c98e213060e07e7be83c24e6687a4c1c88c9f4304f73",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "2bae064692ff87ba5d5a3dbaaf457b8b8ce0ea09c0795a5da7c100ba4525adad"
+      "uiDigest": "f2c49844f0b5f7dd2e65c0ce60aad49bd94896e6b9136e7e32f1143b373af037"
     },
     "panel-confirm.png": {
       "sha256": "7e3e31119b10fa54987fd7723e01c4d902ef5579027b2aa4e824fc5afd103adc",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "2bae064692ff87ba5d5a3dbaaf457b8b8ce0ea09c0795a5da7c100ba4525adad"
+      "uiDigest": "f2c49844f0b5f7dd2e65c0ce60aad49bd94896e6b9136e7e32f1143b373af037"
     },
     "panel-dark.png": {
-      "sha256": "b6d6810d0e4e6aac3e811e6d74d622573a247868656d2fc4ccab739d75b3fab0",
+      "sha256": "6fd55aaa5c2da4efc29908927a2fe7ac4e2e067724f5631ca5b31e698400bc99",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "2bae064692ff87ba5d5a3dbaaf457b8b8ce0ea09c0795a5da7c100ba4525adad"
+      "uiDigest": "f2c49844f0b5f7dd2e65c0ce60aad49bd94896e6b9136e7e32f1143b373af037"
     },
     "panel-gate.png": {
       "sha256": "660e067ef56ccefeecac9834607d6de42e2fa3d17a8ee6f33c5e1e48b46c5c51",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "2bae064692ff87ba5d5a3dbaaf457b8b8ce0ea09c0795a5da7c100ba4525adad"
+      "uiDigest": "f2c49844f0b5f7dd2e65c0ce60aad49bd94896e6b9136e7e32f1143b373af037"
     },
     "panel-guards.png": {
       "sha256": "5af9d882eeea9b0489939f77fbd7c9f2d290ac5484bd0d8bb1c67032a13f7bde",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "2bae064692ff87ba5d5a3dbaaf457b8b8ce0ea09c0795a5da7c100ba4525adad"
+      "uiDigest": "f2c49844f0b5f7dd2e65c0ce60aad49bd94896e6b9136e7e32f1143b373af037"
     },
     "panel-help.png": {
       "sha256": "08178dff95b23012dc806cc0fb7202ab38d8206ddbd9dd90f17e291f4e472d9f",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "2bae064692ff87ba5d5a3dbaaf457b8b8ce0ea09c0795a5da7c100ba4525adad"
+      "uiDigest": "f2c49844f0b5f7dd2e65c0ce60aad49bd94896e6b9136e7e32f1143b373af037"
     },
     "panel-mobile.png": {
       "sha256": "8f28900e9621ba0e16cf4398802eeb7f63b31198f2944db79600e5eb6d625138",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "2bae064692ff87ba5d5a3dbaaf457b8b8ce0ea09c0795a5da7c100ba4525adad"
+      "uiDigest": "f2c49844f0b5f7dd2e65c0ce60aad49bd94896e6b9136e7e32f1143b373af037"
     },
     "panel-monthly.png": {
-      "sha256": "38c5cdd85b90f9faec528e6d01d24f6964646ead5d695d1d06bf990f1634ca50",
+      "sha256": "7ec426ae9bf70ad80d3ff603a2aa073ba11bcb107cede4ce9da4818deda901eb",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "2bae064692ff87ba5d5a3dbaaf457b8b8ce0ea09c0795a5da7c100ba4525adad"
+      "uiDigest": "f2c49844f0b5f7dd2e65c0ce60aad49bd94896e6b9136e7e32f1143b373af037"
     },
     "panel-overview.png": {
       "sha256": "543e699299c39d71c9f7980d7756c1e319a960fea29eed2bcb361aee419eec65",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "2bae064692ff87ba5d5a3dbaaf457b8b8ce0ea09c0795a5da7c100ba4525adad"
+      "uiDigest": "f2c49844f0b5f7dd2e65c0ce60aad49bd94896e6b9136e7e32f1143b373af037"
     },
     "panel-person.png": {
-      "sha256": "e1c417d577438b632d9a527bbb64187f558c4be3bdb7e581f2677304e483ea3d",
+      "sha256": "6a2b8e88e6bc9180e26e7e9678a6d01f9c216a5c2359fe979e6cc8bad9ac6b28",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "2bae064692ff87ba5d5a3dbaaf457b8b8ce0ea09c0795a5da7c100ba4525adad"
+      "uiDigest": "f2c49844f0b5f7dd2e65c0ce60aad49bd94896e6b9136e7e32f1143b373af037"
     },
     "panel-policy-expanded.png": {
       "sha256": "2b69d36dee9b433ee6722ab39d36fc2ca182154b7acffe30727fe7004964208f",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "2bae064692ff87ba5d5a3dbaaf457b8b8ce0ea09c0795a5da7c100ba4525adad"
+      "uiDigest": "f2c49844f0b5f7dd2e65c0ce60aad49bd94896e6b9136e7e32f1143b373af037"
     },
     "panel-policy.png": {
       "sha256": "09c8b017c8ee7c36173d59c41b481c8d807858a550acdb769d899b011c8af0ac",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "2bae064692ff87ba5d5a3dbaaf457b8b8ce0ea09c0795a5da7c100ba4525adad"
+      "uiDigest": "f2c49844f0b5f7dd2e65c0ce60aad49bd94896e6b9136e7e32f1143b373af037"
     },
     "panel-proposals.png": {
       "sha256": "4b549fce6734cbedba1d3d2e85015d407a6ab7b595fd636349b29157aca991c3",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "2bae064692ff87ba5d5a3dbaaf457b8b8ce0ea09c0795a5da7c100ba4525adad"
+      "uiDigest": "f2c49844f0b5f7dd2e65c0ce60aad49bd94896e6b9136e7e32f1143b373af037"
     },
     "panel-usage.png": {
-      "sha256": "6ab7d26588be8e8e489130896b9ef0801c4b164d54f6a3820ed213827b01683f",
+      "sha256": "229c8a106df5227d2e05e8df91b12b1cb565f531ecc5f5f788262ef286c777a2",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "2bae064692ff87ba5d5a3dbaaf457b8b8ce0ea09c0795a5da7c100ba4525adad"
+      "uiDigest": "f2c49844f0b5f7dd2e65c0ce60aad49bd94896e6b9136e7e32f1143b373af037"
     }
   }
 }

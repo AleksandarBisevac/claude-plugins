@@ -97,15 +97,58 @@ function uCoverage(facts){const by={},tot=facts.reduce((a,f)=>a+f[F.tokens],0);
  const un=by['unattributed']||0;
  return {attributed:uShare(tot-un,tot),task:uShare(by['task']||0,tot),by,tot};}
 /**
+ * How many of the plan's done tasks the selection's rows attribute any tokens
+ * to. Mirrors `_done_task_coverage()` on the Python side.
+ *
+ * `done` is every done task in the WHOLE plan (`USAGE.taskMeta`), never
+ * narrowed by the filter bar - narrowing the view must not shrink how much
+ * finished work there is to cover. `priced` counts only those done tasks whose
+ * OWN rows, from the `facts` handed in, sum to more than zero tokens - so
+ * filtering the rows narrows the numerator alone. A row with no task id (the
+ * main-loop sentinel `'--'`) cannot match a real task id, so that spend is
+ * never attributed to either side of the count.
+ * @param {UsageFact[]} facts Rows the filter bar has already narrowed.
+ * @returns {{done: number, priced: number}|null} `null` when the plan has no
+ *   done task, because a zero-of-zero would read as complete coverage of
+ *   nothing.
+ */
+function uDoneCoverage(facts){const M=USAGE.taskMeta||{};
+ const doneIds=Object.keys(M).filter(t=>(M[t]||{}).status==='done');
+ if(!doneIds.length)return null;
+ const doneSet=new Set(doneIds),tokens={};
+ for(const f of facts){const t=f[F.task];
+  if(doneSet.has(t))tokens[t]=(tokens[t]||0)+f[F.tokens];}
+ return {done:doneIds.length,
+   priced:Object.values(tokens).filter(n=>n>0).length};}
+/**
+ * The attribution-coverage sentence printed beside a cost/task figure, shared
+ * between the cost-per-task tile and the routing table's caption so the two
+ * cannot read differently about the same selection.
+ *
+ * The wording MIRRORS `coverage_sentence()` in `_usage_economics.py` and MUST
+ * change with it - the panel cannot import that module, so the counts are
+ * this file's own (`uDoneCoverage`) but the sentence they are poured into is
+ * typed to match, not phrased independently.
+ * @param {{done: number, priced: number}|null} cov `uDoneCoverage()`'s reading.
+ * @returns {string|null} `null` when there is no done task in the plan to cover.
+ */
+function uCoverageLine(cov){
+ if(!cov)return null;
+ return 'Of the plan\'s '+cov.done+' done task(s), '+cov.priced
+   +' are priced; main-loop spend is not attributed to a task.';}
+/**
  * Cost per completed task, and what the tasks still open would cost at that
  * rate.
  *
  * `remaining` is counted over the WHOLE plan rather than over the filtered rows:
  * a task that has not run yet has no rows to be filtered, so narrowing the view
- * must not make the work left to do shrink with it.
+ * must not make the work left to do shrink with it. `doneTaskCoverage` is
+ * `uDoneCoverage()`'s reading: how much of the plan's finished work `perTask`
+ * actually rests on.
  * @param {UsageFact[]} facts Rows the filter bar has already narrowed.
  * @returns {{completed: number, remaining: number, gate: number,
- *   perTask: number|null, proj: {low: number, high: number}|null}} `perTask` is
+ *   perTask: number|null, proj: {low: number, high: number}|null,
+ *   doneTaskCoverage: {done: number, priced: number}|null}} `perTask` is
  *   null with no completed task to average, and `proj` is null below `gate`
  *   samples - the caller prints the gate and the sample size rather than a
  *   forecast nobody should act on.
@@ -115,7 +158,8 @@ function uUnit(facts){const M=USAGE.taskMeta||{},cost={};
  const done=Object.keys(cost).filter(t=>(M[t]||{}).status==='done').map(t=>cost[t]);
  const remaining=Object.keys(M).filter(t=>['pending','in_progress','blocked']
    .includes((M[t]||{}).status)).length;
- const out={completed:done.length,remaining,gate:5,perTask:null,proj:null};
+ const out={completed:done.length,remaining,gate:5,perTask:null,proj:null,
+   doneTaskCoverage:uDoneCoverage(facts)};
  if(done.length)out.perTask=done.reduce((a,b)=>a+b,0)/done.length;
  // Same gate as the report: a forecast off too few samples is noise, so it is
  // suppressed rather than shown with false confidence. Branching on out.gate and
