@@ -25,5 +25,447 @@
     "findings": []
   },
   "summary": null,
-  "tasks": []
+  "tasks": [
+    {
+      "id": "P103.1",
+      "title": "SECURITY.md names the open secret-read shapes and what shell-write detection misses",
+      "status": "pending",
+      "description": "SECURITY.md disclaims the class (text inspection is bypassable) but never names the read shapes the 2.3.0 Known open entry listed, and all of them still pass guard-secrets-read: a recursive grep over a directory, the Grep tool over a directory with no glob, diff of two env files, a for-loop over .env.*, and xargs cat. Name them at class level (a read that reaches the file without the call naming it in a form the guard reads, plus a read verb the list lacks) in the open-residuals list under 'Fail modes' and in item 6 of 'Known bypass classes', and rewrite the post-detection bullet that says a command 'provably unable to write is absorbed': _command_is_read_only absorbs git -C <dir> checkout --, env rm -rf, awk's print > file and sed's w flag, so say which class of write it can mistake for a read. Opus because each sentence must match what the predicates actually return, read from hooks/guard-secrets-read.py and hooks/guard-bash-writes.py; keep every existing heading (help topics cite them) and the fail-mode table rows (prove-gates anchors). gate-only: documentation of current behaviour, pinned by the next task; selftests is the narrowest gate that reads documents (prose-number, link and fail-mode lints run in the sweep).",
+      "files": [
+        "SECURITY.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P103.2",
+      "title": "the open secret-read and shell-write shapes are pinned as characterization cases",
+      "status": "pending",
+      "description": "The documented gaps live only in a private corpus, so nothing in this repository goes red when one is closed or when the document stops naming it. Add each documented-gap shape as a characterization case in the existing guard suites, asserting today's verdict and following the existing 'KNOWN LIMIT' pattern (named as a decision, pointing at SECURITY.md). Tests only: this task changes no guard code. The boundary case where a string literal merely mentions a secret path is left to P108's verdict table. If a safeguard refuses the work, report could-not-run rather than rewording around it.",
+      "files": [
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "plugins/audit/tests/test_guard_history_rewrite.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: each open read shape (grep -r <word> ./, the Grep tool over a directory with no glob, diff .env.development .env.production, for f in .env.*; do cat $f; done, ls .env.production | xargs cat) is ALLOWED today, as a KNOWN OPEN case whose message points at the SECURITY.md paragraph naming it, each beside a twin the guard denies (cat .env.production), so the allow is the gap and not an inert guard, and closing the gap turns the case red and forces the document to change with it",
+          "plugins/audit/tests/test_guard_bash_writes.py: _command_is_read_only returns True (absorbed) for git -C /x checkout -- f.py, env rm -rf build, awk '{print > \"out.py\"}' in.txt and sed -n 's/a/b/w out.py' in.txt, as KNOWN OPEN rows beside the existing DNP/EXP tables, each paired with a watched twin (rm -rf build, sed -i ...) that returns False",
+          "plugins/audit/tests/test_guard_history_rewrite.py: in a fixture holding a recorded task commit, where a plain git push --force is denied, a python3 -c program that starts git push --force from its own subprocess call is allowed, as the KNOWN OPEN interpreter residual SECURITY.md already names"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P103.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P103.3",
+      "title": "SECURITY.md states the panel's trust boundary as the code holds it",
+      "status": "pending",
+      "description": "SECURITY.md says holding the panel's token is holding the panel but never says who can obtain it, and commands/panel.md's 'requires a per-launch token on every API call' reads as access control. Add one boundary statement: the panel trusts every local process that can read its token, and holding it grants config and composition writes, including the gate command the next gate run executes (journalled). Write the boundary the code holds when this lands, naming its mechanisms so it can be checked: panel-server.py serves GET / without asking for the token and embeds it in the page, and _write_pidfile's file mode decides who else can read it; today that is any local account, and once P105's token-on-GET and 0600 pidfile land it narrows to the same user, which is the sentence P105 names. gate-only: one documentation sentence; selftests runs the lints that read SECURITY.md.",
+      "files": [
+        "SECURITY.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P103.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P103.4",
+      "title": "README and plugin README claim no more about secret reads than SECURITY.md",
+      "status": "pending",
+      "description": "Three sentences promise what SECURITY.md disclaims: README.md:69 'Secret file contents - never read, directly or indirectly', plugins/audit/README.md:287-288 'blocks reading secret files ... directly or indirectly' and the enforced-table row at :377 'Secret contents are never read'. Restate each as what is refused (a call that names a secret file, through the channels the row lists) and link the open shapes in SECURITY.md, keeping the table shape and the README's script-path reference (test__refs c3). Acceptance: grep over README.md, QUICKSTART.md, plugins/audit/README.md and docs/handbook.html finds no unqualified 'never read' or 'directly or indirectly' claim about secrets. gate-only: text; selftests runs the doc lints.",
+      "files": [
+        "README.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P103.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P103.5",
+      "title": "false claims about backfill, a missing verb and the example panel are corrected",
+      "status": "pending",
+      "description": "Four claims a reader acts on are false on main: README.md:120 says /audit:usage --backfill 'writes nothing' and plugins/audit/README.md:996-997 says 'nothing is generated', while commands/usage.md:30-31 says it rewrites the monthly ledger; commands/status.md:215 names /audit:run-gate, which does not exist (the recorder is scripts/governance/run-test-gate.py --record); examples/README.md:64-68 says running the panel 'never dirties the tree', while a first launch leaves .claude/state/panel-openstate.json untracked and not ignored. Say what each actually does: backfill spends no tokens and writes a local, self-ignoring ledger under .claude/usage/ (confirm in a scratch git repo that git status stays clean); the status sentence names the recorder; the example sentence states what is ignored and what is not until P105's ignore rule lands (re-run examples/panel.sh start/stop in a git archive export and read git status --porcelain). Acceptance: grep for 'writes nothing' and 'nothing is generated' beside backfill, '/audit:run-gate' and 'never dirties' across README.md, QUICKSTART.md, plugins/audit/, examples/ and docs/handbook.html finds nothing untrue.",
+      "files": [
+        "README.md",
+        "plugins/audit/README.md",
+        "plugins/audit/commands/status.md",
+        "examples/README.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P103.4"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P103.6",
+      "title": "comments state what CI and the manifest writer actually do",
+      "status": "pending",
+      "description": "_harness.py:72-73 says CI runs the suites 'on ubuntu, macos and windows', but .github/workflows/ci.yml's matrix is ubuntu-latest and windows-latest and macOS is covered only by a maintainer's local sweep; point at the matrix instead of listing platforms, so the sentence cannot rot. _manifest_io.atomic_write_json's docstring (:1061-1062) says the temp file is 'fsync'd via close', but no writer under scripts/ or hooks/ calls os.fsync; say it is written, closed and replaced atomically, with no durability promise across a power loss. gate-only: docstring and comment text, no behaviour; selftests runs the prose lints over .py docstrings and lint keeps ruff/vermin green.",
+      "files": [
+        "plugins/audit/tests/_harness.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P103.7",
+      "title": "QUICKSTART is the only quick-start; the plugin README and handbook link to it",
+      "status": "pending",
+      "description": "The first-run path still exists in three shapes that disagree: QUICKSTART.md, the plugin README's TL;DR (:28-43), its Install command list (:514-524) and its Quick start (:654-715), plus the handbook's install section. Replace the plugin README's TL;DR, the Install list and the Quick start with one link to QUICKSTART.md, keeping the '## Install' heading (prove-gates s15 anchors on it) and moving the hand-copy starter-manifest curl lines into the reference section beside the schema curl, so the README still carries current-tag pins (raw_url_pin_drift, prove-gates p1); the handbook's #install section keeps its anchor and content and gains a pointer to QUICKSTART for a first session (an absolute GitHub link, since the page is served from Pages). This completes the documentation split by audience in CONTRIBUTING's Decision record rather than reopening it. Acceptance: a reader goes from README.md to the first /audit:doctor through exactly one page, and no document other than QUICKSTART.md lists a first-command sequence.",
+      "files": [
+        "plugins/audit/README.md",
+        "docs/handbook.html"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P103.5"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P103.8",
+      "title": "the demo GIF shows today's gate text and --check fails when that text moves",
+      "status": "pending",
+      "description": "demo-gate.gif was recorded at 0.24 and shows a bypass line that does not say only the human can arm it, while README.md says every line is the plugin's real output; --check asserts behaviour, never text, so nothing went red. Give the GIF a record in captured-at.json under its own top-level key (capture-screenshots.mjs today rewrites the file as note+images only, so it must preserve keys it does not own), make --check compare a fresh capture's text digest and the committed bytes against that record, then re-record with Pillow; derive the final hold from the refusal's length rather than the fixed 3600 ms, since today's refusal is roughly twice as long. Update the CI step's comment, which says nothing can tell the GIF is stale. Run --check twice with a gap and on a git archive export before calling the digest stable, and run npx vitest run and python3 tools/capture-demo-gif.py --check (neither is a build-command key).",
+      "files": [
+        "tools/capture-demo-gif.py",
+        "tools/capture-screenshots.mjs",
+        "tools/ui-tests/capture-provenance.test.mjs",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/demo-gate.gif",
+        ".github/workflows/ci.yml"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/capture-demo-gif.py: --check compares a digest of the text the GIF shows (the status render and both gate answers, with the fixture's temp path normalised) to the one recorded in captured-at.json and fails naming demo-gate.gif when they differ, and also fails when the committed GIF's sha256 differs from the recorded one",
+          "tools/capture-demo-gif.py: a recording writes its own key in captured-at.json (sha256 and text digest) and leaves the images entries byte-identical; a sidecar with no demo entry is a finding, never a pass",
+          "tools/ui-tests/capture-provenance.test.mjs: the sidecar merge capture-screenshots.mjs uses (exported as a pure function) keeps a top-level key it does not own, so a screenshot re-capture cannot drop the GIF's record"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "shots"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P103.9",
+      "title": "README first screen says who it is for and who does not need it",
+      "status": "pending",
+      "description": "Rewrite the README's first screen from the deep-analysis DOCS draft: a one-sentence position (keep Claude Code inside the plan you approved, with test evidence on record that git can check, for multi-day work on an existing codebase), what is enforced by hooks versus followed from instructions, the GIF, see-it-first links, install then QUICKSTART.md, and an explicit 'who does not need it' (short solo greenfield sessions, repositories without tests, anyone wanting containment rather than guardrails). Correct the third bullet, which says the secret guard never matches a string, against SECURITY.md; the GIF caption either drops the re-record instruction (a contributor detail) or names its Pillow requirement. Keep the '- [QUICKSTART](QUICKSTART.md)' and '- [CHANGELOG](CHANGELOG.md)' list items (prove-gates dl1) and at least one script path (test__refs c3). Acceptance line: reading only the first screen, a visitor can say what the plugin enforces and what it only asks the model to follow, who should install it and who should not, and reaches the first /audit:doctor through at most one page.",
+      "files": [
+        "README.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P103.5",
+        "P103.8"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P103.10",
+      "title": "CONTRIBUTING opens with a one-page Your first change",
+      "status": "pending",
+      "description": "A first external PR today means reading CLAUDE.md, CONTRIBUTING and the UI skills before the first line, and nothing says which of them a given change needs. Add a 'Your first change' section at the top of CONTRIBUTING.md, at most one page, folding in Dev setup rather than repeating it: what to read for a doc fix, a Python fix and a UI fix (the skill table in CLAUDE.md), that PLUGIN-BUILD-GUIDE.md is needed only for a new .py, the one command to iterate with (tools/verify.sh --fast) and the one before a PR (tools/verify.sh), what CI checks, and the optional tools (Node for vitest and the browser gates, Pillow for the demo GIF). No duration or count unless it carries the command that re-derives it. Acceptance line: from that page alone, a first-time contributor can tell what to read for their kind of change, which single command to run before a PR and what CI will check, without opening PLUGIN-BUILD-GUIDE.md unless they add a .py file.",
+      "files": [
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P103.11",
+      "title": "issue and PR templates point a contributor at the one page",
+      "status": "pending",
+      "description": ".github holds only workflows, so an issue arrives without the version or the doctor output needed to act on it, and a PR without the checks the repo requires. Add a bug template asking for /audit:version, /audit:doctor output, the command run and what happened; a feature template asking which module and what it blocks, which is where the freeze decision's revisit trigger is observed; a config.yml that routes exploitable weaknesses to SECURITY.md's private address instead of a public issue; and a PR template linking 'Your first change' with tools/verify.sh green and a red-first proof for any new check. gate-only: new Markdown and YAML; selftests runs the prose-number lint, which reads every committed .md.",
+      "files": [
+        ".github/ISSUE_TEMPLATE/bug_report.md",
+        ".github/ISSUE_TEMPLATE/feature_request.md",
+        ".github/ISSUE_TEMPLATE/config.yml",
+        ".github/pull_request_template.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P103.10"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P103.12",
+      "title": "decision record: optional modules take fixes only, no new UI shape pins, no new prose lints",
+      "status": "pending",
+      "description": "The surface to maintain grows through discretionary work, so add one Decision record entry with three parts. (a) The panel, the usage views, the ADO connector, the demo and the theme editor take fixes only, no new features, until a user asks; exceptions named up front: the cost-truth work in the usage views (P104), the panel's state-truth fixes (P105) and an ADO feature a real user requests. (b) No new UI shape pins: when a UI part changes, its pins move to vitest or browser behaviour checks, with tools/count-ui-pins.py as the budget. (c) No new lints over prose or repository numbers, stating the consequence: a false documentation claim keeps no mechanical guard and is caught by review at release. Phrase each revisit trigger as an observable property of the system, as the entry on reversed decisions asks (for example, a user report that an optional module blocks their work), never as a count.",
+      "files": [
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P103.10"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
 }
