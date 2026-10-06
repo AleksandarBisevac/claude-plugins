@@ -1,0 +1,147 @@
+{
+  "id": "P110",
+  "title": "the plugin owns only the guard rules only it can know",
+  "status": "pending",
+  "description": "Human-written (guard-reading code). Tasks: (1) Measure which share of 3.0.x guard refusals hit generic destructive operations the host would block anyway. (2) Design: keep plan scope, journal/manifest integrity and recorded-SHA protection; ship a recommended permissions.deny fragment for the rest. (3) One release reports instead of blocking the moved rules, then remove them. Risk: users without auto mode get only spelling-based permission rules; SECURITY.md must say so.",
+  "desiredOutcome": "the plugin's command-reading guards keep the verdicts that depend on the plan and its own state, and generic destructive-command blocking is left to Claude Code's own layers through a recommended permissions fragment, with SECURITY.md saying which layer holds which guarantee",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P110.1",
+      "title": "which share of 3.0.x guard refusals the host would have stopped anyway is measured",
+      "status": "pending",
+      "description": "docs/research/guard-refusals-by-owner.md classifies every audit-plugin guard refusal in the private redacted miner corpus (quality-gates-internal: reports/2026-10-05-deep-analysis/experiments/classifier-events.redacted.jsonl). It counts the rows with source plugin-hook and an audit-plugin: subsource, dated from the v3.0.0 tag on 2026-09-18; the repo's own .claude/hooks are excluded. Each refusal is classified by what the verdict depended on: plan scope, journal or manifest integrity, a SHA the manifest records, a secret read, or a generic destructive operation. For each generic row it states whether Claude Code's own layers would have stopped it, and on what basis: a documented auto-mode block category, or a permissions.deny rule that matches the command as written. A row with no basis is counted as undetermined and never folded into either side. Command text is redacted, so classification reads the rows' shape and tags fields. The table carries the inline python3 command that re-derives it, with no new .py and no machine path, and the document says that a public reader cannot re-run it against the private corpus. Its answer, the share of refusals that only the plugin could have made, is the input to the design task.",
+      "files": [
+        "docs/research/guard-refusals-by-owner.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P110.2",
+      "title": "a design splits guard rules into those only the plugin can know and a recommended permissions.deny fragment",
+      "status": "pending",
+      "description": "docs/research/guard-ownership-design.md goes through each rule in guard-secrets-read.py and guard-history-rewrite.py, and the _config readers they use. For each, it states whether the plugin keeps it (plan scope, journal and manifest integrity, protection of SHAs the manifest records) or hands it to Claude Code's own layers, using the refusal measurement as its basis. It gives the exact recommended permissions.deny fragment as JSON. For each moved rule it names the fragment entry that covers it and what that entry misses, because permission rules match a command's spelling, not its operation. It fixes the transition: one release in which the moved rules report instead of blocking, then removal. It names who loses coverage: users without auto mode get spelling-based rules only. It drafts the SECURITY.md paragraph saying which layer holds which guarantee. It checks whether any config key a moved rule reads would stop being read, which COMPATIBILITY.md makes a major release.",
+      "files": [
+        "docs/research/guard-ownership-design.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P110.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P110.3",
+      "title": "generic destructive-command rules are retired from the guards: one release reports, the next removes",
+      "status": "pending",
+      "description": "Implements the design. For one release, the moved rules answer with a recorded report instead of a deny. The fragment ships as plugins/audit/templates/permissions-deny.example.json, with a pointer from QUICKSTART.md. The code is deleted only after that release has shipped, as a follow-up task added at that point, because one task cannot span two releases. The kept rules (plan scope, journal and manifest integrity, recorded-SHA protection) keep their deny cases, each proven red-first. This is guard-reading code. An executor attempts it first, because the maintainer wants code written by agents. The model's safeguard may stop that attempt. If it does, the refusal is recorded verbatim with /audit:task note, the task is blocked and handed to the human maintainer, and nobody rewords the work to get past the stop. Blocked by P108, because P108's verdict table (operation class by tier, asserted over the hook corpus) holds the rows this change moves. The design's SECURITY.md paragraph lands with the release. If P109 has already moved the suite, the test paths are under its new root.",
+      "files": [
+        "plugins/audit/hooks/guard-history-rewrite.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test_guard_history_rewrite.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/templates/permissions-deny.example.json",
+        "QUICKSTART.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_history_rewrite.py: a rule the design moves reports instead of denying (a force-push to a ref holding no SHA the manifest records), while rewriting a commit the manifest records is still denied",
+          "plugins/audit/tests/test_guard_secrets_read.py: each read shape the design moves reports and names the fragment entry that covers it, and every shape the design keeps is still denied"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [
+        "P108"
+      ],
+      "dependsOn": [
+        "P110.1",
+        "P110.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
