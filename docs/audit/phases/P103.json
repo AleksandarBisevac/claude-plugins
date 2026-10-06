@@ -63,7 +63,12 @@
       },
       "startedAt": "2026-10-06T14:46:28Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T15:00:30Z.3bb86c",
+        "status": "passed",
+        "at": "2026-10-06T15:00:30Z"
+      }
     },
     {
       "id": "P103.2",
@@ -219,7 +224,7 @@
     {
       "id": "P103.6",
       "title": "comments state what CI and the manifest writer actually do",
-      "status": "in_progress",
+      "status": "done",
       "description": "_harness.py:72-73 says CI runs the suites 'on ubuntu, macos and windows', but .github/workflows/ci.yml's matrix is ubuntu-latest and windows-latest and macOS is covered only by a maintainer's local sweep; point at the matrix instead of listing platforms, so the sentence cannot rot. _manifest_io.atomic_write_json's docstring (:1061-1062) says the temp file is 'fsync'd via close', but no writer under scripts/ or hooks/ calls os.fsync; say it is written, closed and replaced atomically, with no durability promise across a power loss. gate-only: docstring and comment text, no behaviour; selftests runs the prose lints over .py docstrings and lint keeps ruff/vermin green.",
       "files": [
         "plugins/audit/tests/_harness.py",
@@ -242,18 +247,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "76b1d956",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_harness.py now points at the selftest matrix in .github/workflows/ci.yml instead of listing platforms, and says a maintainer's machine covers the rest locally. atomic_write_json's docstring says the temp file is written, closed and replaced atomically, that no os.fsync is called, and that it promises no durability across a power loss, only that a reader never sees a partial file. grep finds no fsync call under scripts/ or hooks/.",
+        "descriptive": "Two comments that claimed more than the code does are corrected: the test harness no longer says CI runs on macOS, and the manifest writer's docstring no longer promises an fsync it never makes."
       },
       "startedAt": "2026-10-06T14:46:28Z",
-      "completedAt": null,
+      "completedAt": "2026-10-06T14:59:26Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-06T14:58:17Z.37fb43",
         "status": "passed",
         "at": "2026-10-06T14:58:17Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "76b1d956",
+        "at": "2026-10-06T14:59:26Z",
+        "basis": "audit-reviewer (task mode): both sentences verified against ci.yml's matrix and the writer's body; no findings"
       }
     },
     {
