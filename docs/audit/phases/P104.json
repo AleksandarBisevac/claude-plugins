@@ -95,7 +95,7 @@
     {
       "id": "P104.2",
       "title": "the shipped price table carries today's official rates with their date and source",
-      "status": "in_progress",
+      "status": "done",
       "description": "The table has no claude-opus-5-5 row (it prices at Opus 5's rate), holds Sonnet 5 at 3/15 and lets claude-fable-5-1 resolve to Fable 5's cache read; on the dogfood ledger the shown spend was overstated by about a sixth. Re-read https://platform.claude.com/docs/en/about-claude/pricing at implementation time (the research read Opus 5.5 at 4/20 with read 0.20, Sonnet 5 at 2/10 and Fable 5.1 read 0.25 on 2026-10-05; verify every rate rather than copying these), add the rows, set usage.pricingAsOf to that date in DEFAULTS and the template, and record the source URL beside both mirrors with pricing_divergences or a sibling check holding them equal. Correct the prose that the change falsifies: the read-0.1x multiplier sentence (comments and the schema description) if any official row departs from it, the table-size numbers in pricing_divergences' docstring and the pp comments (delete them), the pp2 fixture literal, and hooks/_config.py's pointer to usage_ledger.py. Acceptance: pp8 green, and the derived example ledger and rendered artifacts unchanged, which the previous task makes true.",
       "files": [
         "plugins/audit/scripts/usage/_usage_core.py",
@@ -133,18 +133,40 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6c4c573f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The shipped price table matches the official pricing page as read on 2026-10-06: new rows claude-opus-5-5, claude-fable-5-1 and claude-mythos-5-1 (added so longest-prefix lookup does not give Mythos 5.1 Mythos 5's cache read) and the corrected claude-sonnet-5 row, identical in _usage_core.DEFAULT_PRICING and hooks/_config.py DEFAULTS; the page gives display names only, so the id mapping is this task's. pricingAsOf is 2026-10-06 in DEFAULTS and the template; PRICING_AS_OF, PRICING_SOURCE_URL and pricing_provenance_divergences() hold the date and source equal across the mirrors (the hooks copy is a module constant, not a config key, so the compatibility contract is unchanged), re-exported through usage_ledger. Prose that called cache reads 0.1x is corrected and table-size numbers are gone. New cases: the new rows, Sonnet 5.5 resolving to an equal row, the template's listed rows and date held equal to the shipped table, the provenance mirror, and a re-export pin derived by AST rather than a literal count. The demo dates its frozen table to its own date, so no committed render moved. The build guide's _usage_core section and the module-map fence are updated; the fence also carries the sibling tasks' new imports, which is why this task commits last.",
+        "descriptive": "The prices the plugin ships now match the official page as of 2026-10-06, with the date and source recorded beside them and checked across every copy, so a cost the plugin shows is no longer overstated for the newest models."
       },
       "startedAt": "2026-10-06T15:46:06Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T19:03:59Z",
+      "verifiedBy": [
+        "pr1",
+        "pr2",
+        "pr3",
+        "pr4",
+        "pr5",
+        "pr6",
+        "pv1",
+        "pv2",
+        "pv3",
+        "pv4",
+        "pv5",
+        "pv6",
+        "tp1",
+        "tp2",
+        "tp3"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T16:55:42Z.8963ea",
         "status": "passed",
         "at": "2026-10-06T16:55:42Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6c4c573f",
+        "at": "2026-10-06T19:03:59Z",
+        "basis": "audit-reviewer (task mode, opus): matches, every rate checked cell by cell against the page transcript; one medium and two low findings fixed (guide text, Sonnet 5.5 pin, template held equal)"
       }
     },
     {
@@ -405,7 +427,7 @@
     {
       "id": "P104.7",
       "title": "pilot: compare Claude Code's own cost with the ledger's on the same work",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Decide whether Claude Code's own cost can replace the plugin's price table. On the pinned CLI version, first verify which sources exist and at what grain (verifying-external-behavior): a headless run's total_cost_usd and modelUsage costUSD, the OTel claude_code.cost.usage metric with its agent.name attribute, and any per-message cost in the transcript meter-usage already tails; per-task attribution needs per-subagent cost, which a session total cannot give. Run one short headless session that spawns one subagent, capped with --max-budget-usd, with OTel exported to the console, and compare native cost per session and per agent with the ledger rows meter-usage wrote for it at the corrected table. Record the result as an evaluated entry in CONTRIBUTING.md's Decision record (the measurement as dated history with the command that re-derives it, and a revisit trigger). gate-only: a measurement and a written decision, no product code.",
       "files": [
         "CONTRIBUTING.md"
@@ -426,16 +448,21 @@
       "dependsOn": [
         "P104.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T21:25:09Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T22:07:26Z.be3fe7",
+        "status": "passed",
+        "at": "2026-10-06T22:07:26Z"
+      }
     },
     {
       "id": "P104.8",
@@ -482,6 +509,56 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P104.9-tog",
+      "title": "the ledger counts a message at its final entry, not its streaming partial",
+      "status": "in_progress",
+      "description": "The usage ledger undercounts output tokens. A transcript can write one assistant message twice under the same message id: first a streaming partial (stop_reason null, a small output_tokens count), then the final entry with the real count. usage_ledger's dedup keeps the first entry it sees for an id, so it counts the partial. Measured on one headless run with a subagent (2026-10-06, CLI 2.1.291): the ledger counted 4 output tokens for the subagent against 289 in its final entries; that shortfall was the whole gap between Claude Code's own total_cost_usd and the ledger's sum, while input and cache tokens matched exactly. The ledger must count each message id once at its final entry. That includes the incremental tail, where a scan can read the partial before the final entry is written: a partial must never be counted in a way a later final entry for the same id cannot correct, and the seen-id memory the cursor keeps must not freeze the partial's count. Decide the mechanism (count the final entry only, or replace a counted partial when its final arrives) from how the tail and the cursor work today, and say which and why.",
+      "files": [
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/tests/test_usage_ledger.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_usage_ledger.py: a transcript holding a streaming partial and then the final entry for one message id is counted once, at the final entry's output tokens",
+          "plugins/audit/tests/test_usage_ledger.py: a scan that ends after the partial and a later scan that reads the final entry together count the message once, at the final entry's tokens"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-06T21:30:00Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "bugId": "BUG-18-tog",
+      "testEvidence": {
+        "runId": "2026-10-06T22:14:08Z.7e3e5f",
+        "status": "passed",
+        "at": "2026-10-06T22:14:08Z"
+      }
     }
   ],
   "startedAt": "2026-10-06T14:46:28Z"

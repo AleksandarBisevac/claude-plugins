@@ -1084,3 +1084,68 @@ the reversals above are about.
 their first hour is answered in none of the reading order's stops, or is answered in
 two of them differently. Both are observable the next time someone new lands here,
 which is what makes this able to fire at all.
+
+### Claude Code's own cost instead of the price table (evaluated 2026-10-06, CLI 2.1.291): keep the table
+
+The question was whether the cost Claude Code reports itself could replace the price
+table in `hooks/_config.py`, so the plugin would stop carrying rates that go stale.
+The answer is no, for one reason that is about grain rather than accuracy: **every
+native source found is per session and per model, and per-task attribution needs cost
+per subagent.** A session total cannot be split across the tasks its subagents ran.
+
+What each source turned out to be, on the CLI version above:
+
+- **`claude -p --output-format json`** prints `total_cost_usd` and a `modelUsage` map
+  whose entries carry `costUSD` and a `costBasis`. Both are keyed by model, never by
+  agent: the run below spawned one subagent on the same model as the main agent, and
+  `modelUsage` held a single entry covering both. The same object carries
+  `subagent_stats`, which counts subagents by type and carries no cost.
+- **The transcript** gains one `cost-state` row at session end, with `totalCostUSD`
+  and the same per-model `modelUsage`. No `assistant` entry carries a cost field, in
+  the main transcript or in a subagent's, so the file `meter-usage.py` tails has no
+  per-message cost to read.
+- **OpenTelemetry.** Neither `claude --help` nor `claude -p --help` names
+  `CLAUDE_CODE_ENABLE_TELEMETRY`, `OTEL_METRICS_EXPORTER` or the
+  `claude_code.cost.usage` metric; the strings occur only inside the binary. With the
+  console exporter enabled, the run below printed nothing on stderr and nothing on
+  stdout beyond the result JSON, so **the metric and its `agent.name` attribute were
+  not observed** on this run. That is a gap in the measurement, not evidence that the
+  attribute is absent.
+
+**The measurement**, taken once on 2026-10-06 against a scratch repository holding one
+text file, with a `summarizer` subagent (tools: `Read`, model: haiku) defined through
+`--agents`, a settings file allowing only `Read`, `Task` and `Agent` and setting the
+three telemetry variables above, and no permission bypass. The session was
+`claude -p "<ask the summarizer to summarise notes.txt>" --model haiku
+--max-budget-usd 0.50 --max-turns 8 --output-format json --settings <file> --agents
+'<the summarizer>'`; the ledger side was this tree's `meter-usage.py` fed a hook
+payload naming that session's `transcript_path`, `session_id` and `cwd` on stdin, with
+`CLAUDE_PROJECT_DIR` set to the scratch repository and `usage.ledgerDir` pointed at an
+empty directory. This is a measurement to repeat by hand, not a gate, which is why it
+is written as prose rather than as a block to run.
+
+That day the native `total_cost_usd` read 0.042306 USD and the ledger rows summed to
+0.040881 USD, with the subagent on a row of its own (`agentType: summarizer`) that
+no native source could have produced. **The prices agreed:** input, cache-read and
+one-hour cache-write tokens matched exactly between `modelUsage` and the ledger, and
+the table's haiku rates applied to `modelUsage`'s token counts reproduce the native
+figure to the microdollar. **The whole difference was output tokens the ledger did
+not count.** A subagent transcript writes each message twice under one message id —
+first a streaming partial with a near-zero `output_tokens` and no `stop_reason`, then
+the final entry — and the ledger keeps the first entry it sees per id
+(`scripts/usage/usage_ledger.py`, the `mid in seen` check in `scan_transcripts`).
+The main transcript's duplicate entries carried equal counts, so only the subagent
+row lost tokens. That miscount is a ledger defect to be fixed in its own change, not
+a reason to adopt native cost: it was found *by* comparing against the native total.
+
+**Decided:** keep the price table and the ledger's own arithmetic as the source of
+per-task cost. The native session total is a reconciliation check — the ledger's sum
+for a session should match it, and a mismatch is either a stale rate or a counting
+defect, as above.
+
+**Revisit trigger:** a native source that reports cost per subagent — an agent-keyed
+cost in the `-p` result JSON or the transcript's `cost-state` row, or
+`claude_code.cost.usage` observed carrying `agent.name` in a run you can read back.
+Any of those would let per-task attribution ride on Claude Code's own figure, and
+the table could shrink to a fallback. Re-check on the next CLI version that changes
+the shape of `modelUsage` or `cost-state`.
