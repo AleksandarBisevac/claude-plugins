@@ -382,7 +382,7 @@
     {
       "id": "P103.8",
       "title": "the demo GIF shows today's gate text and --check fails when that text moves",
-      "status": "in_progress",
+      "status": "done",
       "description": "demo-gate.gif was recorded at 0.24 and shows a bypass line that does not say only the human can arm it, while README.md says every line is the plugin's real output; --check asserts behaviour, never text, so nothing went red. Give the GIF a record in captured-at.json under its own top-level key (capture-screenshots.mjs today rewrites the file as note+images only, so it must preserve keys it does not own), make --check compare a fresh capture's text digest and the committed bytes against that record, then re-record with Pillow; derive the final hold from the refusal's length rather than the fixed 3600 ms, since today's refusal is roughly twice as long. Update the CI step's comment, which says nothing can tell the GIF is stale. Run --check twice with a gap and on a git archive export before calling the digest stable, and run npx vitest run and python3 tools/capture-demo-gif.py --check (neither is a build-command key).",
       "files": [
         ".github/workflows/ci.yml",
@@ -416,24 +416,36 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d42d4969",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/capture-demo-gif.py --check now verifies the committed GIF against a record in docs/screenshots/captured-at.json under a `gifs` key: a text digest over every step build_script lays out at the recorded width (comments, typed commands, captions, the refusal and the status render, with the fixture path scrubbed in both its mkdtemp and realpath spellings) recomputed from a fresh capture, and the sha256 of the committed GIF; it fails naming the file when either differs or the record, the sidecar or the GIF is missing. A recording merges its own entry into the sidecar and keeps every other key byte-identical, and refuses to replace a sidecar that will not parse; tools/capture-screenshots.mjs gains an exported pure mergeCaptureRecord so a screenshot re-capture keeps the `gifs` record. The final frame hold is max(3600, words*150) ms, clamped at a 45 s ceiling. Found along the way and fixed: the status render ran from the caller's cwd and carried the operator's live phase locks (pid and host name) into the GIF; it now runs with cwd and CLAUDE_PROJECT_DIR set to the fixture. The CI step's comment, PLUGIN-BUILD-GUIDE.md and _refs.screenshot_capture_drift's docstring now say how the GIF's record is graded. The GIF was re-recorded by the orchestrator (`python3 tools/capture-demo-gif.py`, exit 0: 83 frames, final hold 24450 ms) and its frames inspected: the status render shows only the demo plan. `--check` exited 0 in the worktree at 21:31:47 and from a `git archive HEAD` export with the changed files overlaid at 21:31:59, and again after a gap before the gate. Cases: 22 Python cases in the tool (33/33) and 3 vitest cases in tools/ui-tests/capture-provenance.test.mjs (13/13 in that file). Red-first could not be proved by the helper (the tool's suite is inline, and the throwaway tree has no node_modules); assertion reds were taken in scratch copies: the answers-only digest against the caption case went 29/30, and mutations of the digest, the ceiling and the hold each reddened their named cases.",
+        "descriptive": "The demo GIF in the README is re-recorded from today's text, and a check now fails as soon as the words it shows drift from what the plugin prints; the recording also no longer captures the maintainer's machine details."
       },
       "startedAt": "2026-10-06T19:15:02Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T19:38:56Z",
+      "verifiedBy": [
+        "t3",
+        "t4",
+        "h2",
+        "h3",
+        "capture-provenance.test.mjs"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T19:38:45Z.e6d7c3",
         "status": "passed",
         "at": "2026-10-06T19:38:45Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d42d4969",
+        "at": "2026-10-06T19:38:56Z",
+        "basis": "audit-reviewer (task mode): code half matches; the medium finding (GIF not re-recorded) was the orchestrator's step and is done, with --check green twice and from an archive export; three low findings (captions outside the digest, no hold ceiling, a stale exclusion reason) fixed with scratch-copy reds"
       }
     },
     {
       "id": "P103.9",
       "title": "README first screen says who it is for and who does not need it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Rewrite the README's first screen from the deep-analysis DOCS draft: a one-sentence position (keep Claude Code inside the plan you approved, with test evidence on record that git can check, for multi-day work on an existing codebase), what is enforced by hooks versus followed from instructions, the GIF, see-it-first links, install then QUICKSTART.md, and an explicit 'who does not need it' (short solo greenfield sessions, repositories without tests, anyone wanting containment rather than guardrails). Correct the third bullet, which says the secret guard never matches a string, against SECURITY.md; the GIF caption either drops the re-record instruction (a contributor detail) or names its Pillow requirement. Keep the '- [QUICKSTART](QUICKSTART.md)' and '- [CHANGELOG](CHANGELOG.md)' list items (prove-gates dl1) and at least one script path (test__refs c3). Acceptance line: reading only the first screen, a visitor can say what the plugin enforces and what it only asks the model to follow, who should install it and who should not, and reaches the first /audit:doctor through at most one page.",
       "files": [
         "README.md"
@@ -455,16 +467,21 @@
         "P103.5",
         "P103.8"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T19:39:02Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T19:57:04Z.a597ef",
+        "status": "passed",
+        "at": "2026-10-06T19:57:04Z"
+      }
     },
     {
       "id": "P103.10",

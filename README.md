@@ -9,27 +9,47 @@ A [Claude Code](https://code.claude.com) plugin marketplace with one theme:
 secret guards. The guards are deterministic hooks; the pipeline they govern is an
 orchestrator prompt — [which is which, row by row](#what-is-enforced-and-what-is-followed).
 
-A coding agent already reads your code, drafts a plan and edits files across a
-session — this is what a plan file and a hook add on top of that:
+**It keeps Claude Code inside the plan you approved**, with test-gate evidence
+committed beside that plan so `git` — not the chat transcript — is what you check
+when someone claims a step passed. It is built for multi-day work against an
+existing codebase that already has tests, picked back up across sessions; a plan
+is the thing you approve once and the model is held to afterward.
 
 - **A plan a tool refuses to let you leave.** Once a phase is running, an edit
   outside its tasks is denied before the write lands, not merely flagged after.
 - **An evidence record that survives the session.** Every gate run is written to
   a ledger committed beside the plan, so "the tests passed" outlives the chat
   that made the claim.
-- **A guard that fires on an operation, not a spelling.** A secret-file read or a
-  write no task covers is caught by what the tool call does, never by matching a
-  string inside it.
+- **Guards that see intent, not I/O.** Once a phase is running, a write no task
+  covers is refused by the resolved path it writes to. A secret-file read is
+  caught the same way every guard here works, at every tier — by matching the
+  tool call's *text*, never the bytes that move — so pair it with Claude Code's
+  own sandbox
+  ([what that leaves open →](SECURITY.md#secrets-friction-and-evidence-not-containment)).
+
+**Enforced by hooks:** out-of-plan edits (only while a phase runs — before that it
+only observes), secret-file reads, token dumps. **Followed from instructions, not
+guaranteed:** branch per phase, red-first bug fixes, sign-off order.
+[Which is which, row by row →](#what-is-enforced-and-what-is-followed)
 
 It governs **one repository at a time, deliberately** —
 [COMPATIBILITY.md](COMPATIBILITY.md) names what that boundary leaves out.
+
+**Who does not need this:** a short, solo session on a greenfield project with
+nothing yet to protect; a repository with no test suite for a gate to run
+against; anyone who wants *containment* of the model rather than *guardrails*
+it agreed to stay inside — that is Claude Code's own sandboxing, not this
+([SECURITY.md](SECURITY.md)).
+
+**[Install](#install)**, then follow **[QUICKSTART.md](QUICKSTART.md)** — one
+page, whose early, read-only `/audit:doctor` step checks the install before
+anything is written.
 
 ### ▶ The gate, refusing
 
 The plan gate denying an edit no task covers, while a phase is running. Every line is
 this plugin's real output — `audit-status.py` renders the plan, `require-plan.py` is fed
 the same `PreToolUse` payload Claude Code sends it, and its refusal is what you see.
-Re-record with `python3 tools/capture-demo-gif.py`.
 
 ![The plan gate: an edit inside the plan passes silently, an edit outside it is refused with the file named and a way out](docs/screenshots/demo-gate.gif)
 
