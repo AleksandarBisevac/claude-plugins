@@ -1,7 +1,7 @@
 {
   "id": "P100",
   "title": "a stamp or a close never vouches for a gate verdict that no longer holds",
-  "status": "in_progress",
+  "status": "done",
   "description": "A field report on 3.1.0 (TypeScript/jest) found two false clean sheets around the test evidence, the plugin's main value. (1) The stamp's dirtyDigest hashes which paths are dirty, never their contents, so compare answers current (exit 0) after a sibling rewrites an undeclared dirty file a test imports - the documented parallel-executor setup. (2) Only commit-task-work and signoff ask _verdict_binding; audit-task done and close-phase close over a red newest verdict silently (a hand commit or a chained check-then-write reaches them). Both are false clean sheets, the direction the design refuses, and both are small. Driven against b090fbd5 by the maintainer's probe.",
   "desiredOutcome": "stamp-verification compare answers stale and names the path when an undeclared dirty file's content changed after the stamp, and audit-task done and close-phase refuse to close over a newest gate verdict that is red unless an explicit, journaled override is given",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "4ff8b10b237a54922ae4eff68d00157e8d0e71ed",
   "branch": "audit/p100-a-stamp-or-a-close-never-vouch",
-  "mergedAt": null,
+  "mergedAt": "2026-10-06T21:21:33Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -361,5 +361,6 @@
     "status": "passed",
     "at": "2026-10-06T20:40:10Z"
   },
-  "priority": 1
+  "priority": 1,
+  "mergedHead": "f96699d3a88bdbbbcc5edae389c1c1eed2441507"
 }
