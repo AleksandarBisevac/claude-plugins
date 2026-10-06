@@ -35,10 +35,39 @@ the repository exactly as it was found. After the merge the parent SHA is re-rea
 the ancestry re-asked: two computations rather than one, because comparing the
 merge's own output against itself would be a check that cannot go red.
 
+A PHASE DOES NOT LAND OVER A VERDICT THAT NO LONGER HOLDS. Once the plan is made,
+the phase's newest recorded gate verdict is asked at the head it would merge
+(`gate_answer`: `_verdict_binding.phase_binding` over the gate and the tasks'
+files of the phase - or, for a phase signed off in a group, of the carrier whose
+run grades it, over every member's files). The ledger is read as committed at the
+branch tip and, unioned with it, as it stands in the worktree holding the branch;
+the digest over that worktree or the tip's own files - whichever tree
+`--project` names (`branch_texts`, `tip_scope`). Neither readable is unreadable,
+never no run. A sign-off recorded with `--no-evidence-reason` is honoured: a
+green it chose not to stand on does not refuse, a red recorded after it does. A red recorded after the
+run the sign-off was bound to is newer evidence about the work about to land, and
+`_verdict_binding.close_refusal` refuses on it and on every other arm in
+`CLOSE_REFUSING_ARMS`, naming the run. It refuses only while the landing is
+still to happen: a branch the parent already contains has landed, so a re-run
+that stamps or cleans up prints the gate line and is never refused.
+`--override-verdict` lands it anyway and journals the exception
+(`_verdict_binding.ACTION_CLOSE_OVERRIDDEN`) before the merge - once, by the run
+that merges; with the journal off, or a row that will not write, it refuses
+instead. No run at all, or an `empty-gate` answer, does not refuse - there is
+no measurement to vouch for, and the sign-off recorded why.
+
+ACCEPTED: A PENDING HAND-OVER JOURNALS EACH TIME. With `meta.merge.auto` false
+and the branch not yet landed, a run given `--override-verdict` writes its row
+and hands the merge command over; run again before anyone merges, it writes
+another. Each run is a separate hand-over of a merge over the same refusal, and
+the alternative - writing none until something lands - would leave a hand merge
+over a refused verdict with no row at all, because the run after it finds the
+branch landed and asks nothing.
+
 Usage:
   close-phase.py <manifest> <phaseId> [--project DIR] [--parent BRANCH]
                  [--branch NAME] [--remove-worktree] [--delete-branch]
-                 [--no-ff] [--dry-run] [--json]
+                 [--no-ff] [--dry-run] [--json] [--override-verdict TEXT]
 
   --parent / --branch override what `_branch` resolves, for a phase whose branch was
   renamed by hand. Both are reported with basis "argument" rather than
@@ -58,7 +87,10 @@ Exit codes:
   1  it could not: git refused a write, a precondition failed, or a cleanup was
      blocked. The refusal names the path or ref that has to change - a branch that
      is its own parent, or a phase that records no branch whose composed name is
-     not one, included: git answered, and it is the command that has to change
+     not one, included: git answered, and it is the command that has to change.
+     Or the phase's newest gate verdict no longer holds: the refusal names the
+     run, and the two ways out are a green run recorded on the work
+     (`run-test-gate.py --record`) or `--override-verdict "<why>"`, journaled
   2  usage error -- the manifest will not load, or there is no such phase, or the
      parent is checked out in no worktree while the manifest given is the phase
      worktree's own copy: the landing would have no surviving copy to stamp
@@ -76,7 +108,9 @@ import datetime
 import json
 import os
 import shutil
+import subprocess
 import sys
+import tempfile
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -101,11 +135,13 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _branch                                                       # noqa: E402
-import _journal_io                                                   # noqa: E402
+import _evidence_io  # noqa: E402  (where the ledger lives, and its one strict decode)
+import _journal_io                                                 # noqa: E402
 import _manifest_io as _mio                                          # noqa: E402
 import _manifest_rules as _rules  # noqa: E402  (revalidate what the stamp writes)
 import _panel_write  # noqa: E402  (the index lock the stub mirror is written under)
 import _proposals  # noqa: E402  (parked_on_branch: the work this branch deferred)
+import _verdict_binding as _vb  # noqa: E402  (the one rule for whether a verdict refuses a close)
 import _worktrees as _wt                                             # noqa: E402
 
 E_OK, E_FAIL, E_USAGE, E_NOT_FF, E_NO_BASIS = 0, 1, 2, 3, 4
@@ -1179,6 +1215,255 @@ def _parked_after_merge(manifest_path, branch):
         return []
 
 
+# --- the verdict at the head it would merge ---------------------------------------
+# WHICH TREE `--project` NAMES IS NOT THE QUESTION. A landing is often run from the
+# parent's tree, which holds none of the phase's ledger rows and none of its
+# declared files as the branch has them, so a verdict read there would read as no
+# run at all and land the branch unasked. The rows are read as committed at the
+# branch tip (git objects, never a checkout) and, when a worktree holds the branch,
+# as they stand in that tree too - the union by row identity, so a red recorded
+# there after the sign-off and not yet committed still counts. The digest is taken
+# over that worktree, or, with none, over the tip's own declared files written
+# into a scratch repository.
+
+def _git_bytes(git_root, args, env=None):
+    """`(code, stdout bytes)` of one git call - bytes, because a ledger is decoded
+    by its own strict rule, never by git's replacement of a bad byte."""
+    try:
+        done = subprocess.run(["git", "-C", git_root] + list(args),
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                              env=env)
+    except Exception:
+        return None, b""
+    return done.returncode, done.stdout
+
+
+def _tip_paths(git_root, branch, rel):
+    """The files git lists under `rel` (root-relative) at `branch`'s tip, or
+    None when git would not answer."""
+    code, out = _git_bytes(git_root, ["ls-tree", "-r", "--name-only", "-z",
+                                      "refs/heads/%s" % (branch,), "--", rel])
+    if code != 0:
+        return None
+    return [p for p in out.decode("utf-8", "replace").split("\0") if p]
+
+
+def tip_texts(git_root, branch, directory):
+    """`(texts, why)` - the `.jsonl` files directly in `directory` as committed at
+    `branch`'s tip, in `_verdict_binding.ledger_texts`' shape, or `(None, why)`
+    when git could not be asked."""
+    rel = os.path.relpath(directory, git_root).replace(os.sep, "/")
+    if rel.startswith(".."):
+        return None, "%s is outside the repository" % (directory,)
+    paths = _tip_paths(git_root, branch, rel)
+    if paths is None:
+        return None, "git would not list %s at %s" % (rel, branch)
+    texts = []
+    for path in sorted(p for p in paths if p.endswith(".jsonl")
+                       and os.path.dirname(p) == rel.rstrip("/")):
+        code, raw = _git_bytes(git_root, ["cat-file", "blob",
+                                          "refs/heads/%s:%s" % (branch, path)])
+        try:
+            text = _evidence_io.ledger_decode(raw) if code == 0 else None
+        except Exception:
+            text = None
+        texts.append(("%s:%s" % (branch, path), text))
+    return texts, ""
+
+
+def branch_texts(git_root, project, branch, phase_tree, directory):
+    """`(texts, notes)` - one record directory as the landing judges it: at the
+    branch tip, unioned with the worktree holding the branch when there is one.
+
+    NEITHER READABLE IS ITS OWN ANSWER: a single entry that could not be read,
+    which `_verdict_binding` refuses as unreadable rather than reading no rows
+    as no run.
+    """
+    tip, why = tip_texts(git_root, branch, directory)
+    tree = _phase_project(git_root, project, phase_tree)
+    rel = os.path.relpath(directory, project)
+    local = (_vb.ledger_texts(tree, directory=os.path.join(tree, rel))
+             if tree else None)
+    # AN EMPTY LOCAL READING IS NOT A READING when the tip is lost too: a
+    # directory missing or unlistable in the worktree lists nothing, and nothing
+    # read is not the same answer as no run recorded.
+    if tip is None and not local:
+        return [("%s:%s" % (branch, rel.replace(os.sep, "/")), None)], []
+    notes = ["the branch tip could not be read (%s), so only %s was" % (why, tree)
+             ] if tip is None else []
+    return (tip or []) + (local or []), notes
+
+
+def _phase_project(git_root, project, phase_tree):
+    """The project directory inside the worktree that holds the branch, or None."""
+    if not phase_tree or phase_tree.get("prunable") or not phase_tree.get("path"):
+        return None
+    tree = os.path.join(phase_tree["path"], os.path.relpath(project, git_root))
+    return os.path.normpath(tree) if os.path.isdir(tree) else None
+
+
+# The scratch repository's git reads none of the operator's config: a global
+# `core.excludesFile` would leave a declared file matching it out of `add`, and
+# the digest would then read a file the tip carries as absent.
+_SCRATCH_GIT = ["-c", "core.excludesFile=", "-c", "core.hooksPath="]
+
+
+def _scratch_env():
+    """The environment the scratch repository's git runs under: no global and no
+    system config."""
+    env = dict(os.environ)
+    env["GIT_CONFIG_GLOBAL"] = os.devnull
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    return env
+
+
+def tip_scope(git_root, project, branch, files):
+    """A scratch git repository holding `files` (project-relative, a directory
+    expanded) as committed at `branch`'s tip, or None when the tip's declared
+    work could not be written out. The caller removes it. A repository rather
+    than a plain directory, because the digest expands a declared directory by
+    asking git what it holds.
+
+    EVERY FAILURE REMOVES THE SCRATCH AND ANSWERS None, a write that raised
+    included: a half-written copy is not the tip, and a directory left behind is
+    a leak into the operator's temp."""
+    prefix = os.path.relpath(project, git_root).replace(os.sep, "/")
+    prefix = "" if prefix == "." else prefix + "/"
+    scratch = tempfile.mkdtemp(prefix="close-phase-tip-")
+    try:
+        if _write_tip(git_root, branch, prefix, files, scratch):
+            return scratch
+    except Exception:
+        pass
+    shutil.rmtree(scratch, ignore_errors=True)
+    return None
+
+
+def _write_tip(git_root, branch, prefix, files, scratch):
+    """True once `files` at `branch`'s tip are written into `scratch` and added
+    to a repository there; False when any of it could not be."""
+    for rel in files:
+        paths = _tip_paths(git_root, branch, prefix + rel.rstrip("/"))
+        if paths is None:
+            return False
+        for path in paths:
+            code, raw = _git_bytes(git_root, ["cat-file", "blob", "refs/heads/%s:%s"
+                                              % (branch, path)])
+            if code != 0:
+                # Listed and then unreadable: the declared work at the tip is
+                # not established, which the digest must not read as absent.
+                return False
+            target = os.path.join(scratch, path[len(prefix):])
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with open(target, "wb") as fh:
+                fh.write(raw)
+    env = _scratch_env()
+    for args in (["init", "-q"], ["add", "-A", "--force"]):
+        if _git_bytes(scratch, _SCRATCH_GIT + args, env=env)[0] != 0:
+            return False
+    return True
+
+
+def gate_answer(project, manifest_path, manifest, phase, git_root=None,
+                branch=None, phase_tree=None):
+    """`(answer, signed_without_run, notes)` - `_verdict_binding.phase_binding`
+    for the phase about to land, in this command's words, and what its sign-off
+    recorded about standing on no run.
+
+    THE RUN THAT GRADES THE PHASE: its own, or for a member of a group signed off
+    together, the carrier's over every member's files (`_verdict_binding.group_of`,
+    the question group sign-off asked). A member's own ledger holds no row, so
+    asking it alone would read as no verdict and land the whole branch over the
+    carrier's red.
+
+    ...AND THE MEMBER'S OWN ROWS TOO. A red recorded on a member alone after the
+    group's run is newer evidence about the branch every member lands, so it
+    refuses (`_verdict_binding.member_red`).
+
+    READ AT THE HEAD IT WOULD MERGE when `branch` is given: the ledger and the
+    journal through `branch_texts`, and the digest over the tip's own declared
+    files (`tip_scope`) - never a worktree's working files, whose uncommitted
+    bytes are not what lands. A tip that cannot be written out answers
+    unanswerable. Without a branch, the ledger and the files under `project`.
+
+    A SIGN-OFF RECORDED WITH `--no-evidence-reason` is handed on as
+    `{"at": <its phase.verdict journal row's ts, or None>}` for
+    `_verdict_binding.close_refusal` to honour.
+    """
+    carrier, members = _vb.group_of(manifest, phase or {})
+    cid = str(carrier.get("id"))
+    others = [str(m.get("id")) for m in members[1:]]
+    record = ("run `run-test-gate.py %s %s%s --record` on the work, then land it"
+              % (_output.posix_rel(manifest_path, project), cid,
+                 "".join(" --also %s" % (o,) for o in others)))
+    files = _vb.phase_files(members)
+    config = _journal_io.load_config(project)
+    texts, digest_root, scratch, notes = None, None, None, []
+    journal = None
+    tip_lost = False
+    if branch and git_root:
+        texts, notes = branch_texts(git_root, project, branch, phase_tree,
+                                    _evidence_io.evidence_dir(project, config))
+        journal, journal_notes = branch_texts(
+            git_root, project, branch, phase_tree,
+            _journal_io.journal_dir(project, config))
+        notes = notes + ["journal: %s" % (n,) for n in journal_notes]
+        if files:
+            scratch = tip_scope(git_root, project, branch, files)
+            tip_lost = scratch is None
+            # NO SCRATCH IS NOT THE PARENT'S FILES: a digest over `project`
+            # would grade bytes that do not land, so a root holding nothing
+            # is handed on and the answer is rewritten below as unanswerable.
+            digest_root = scratch or os.path.join(project, ".close-phase-no-tip")
+    review = (phase or {}).get("review") or {}
+    signed = None
+    if isinstance(review, dict) and str(review.get("noEvidenceReason") or "").strip():
+        if journal is None:
+            journal = _vb.ledger_texts(project, config,
+                                       directory=_journal_io.journal_dir(project,
+                                                                         config))
+        signed = {"at": _vb.signoff_moment(journal, (phase or {}).get("id"))}
+    try:
+        answer = _vb.phase_binding(
+            project, manifest_path, manifest, carrier, files, record,
+            "phase %s declares no gate, so its landing rests on its sign-off alone"
+            % (cid,), config=config, texts=texts, digest_root=digest_root)
+    finally:
+        if scratch:
+            shutil.rmtree(scratch, ignore_errors=True)
+    if tip_lost and (answer.get("state") == "bound"
+                     or answer.get("arm") in (_vb.ARM_DIGEST_MOVED,
+                                              _vb.ARM_DIGEST_UNANSWERABLE)):
+        answer = dict(answer, state="refused", arm=_vb.ARM_DIGEST_UNANSWERABLE,
+                      sentence=(
+                          "%s's declared files could not be read as committed at "
+                          "%s's tip, so whether its newest verdict measured the "
+                          "work that would land is not established - %s"
+                          % (cid, branch, record)))
+    if str((phase or {}).get("id")) != cid and _vb.close_refusal(answer) is None:
+        own = _vb.member_red(
+            texts if texts is not None else _vb.ledger_texts(project, config),
+            (phase or {}).get("id"), answer, record)
+        if own is not None:
+            answer = own
+    return answer, signed, notes
+
+
+def override_row(project, phase_id, answer, reason, config=None):
+    """The row a landing over its verdict's refusal writes BEFORE the merge, or
+    None when the trail did not take it. Worded as what was asked, because the
+    merge after it can still refuse."""
+    config = _journal_io.load_config(project) if config is None else config
+    ids = {"phaseId": str(phase_id)}
+    return _journal_io.append_from_cli(project, {
+        "action": _vb.ACTION_CLOSE_OVERRIDDEN,
+        "actor": {"via": "close-phase"},
+        "target": str(phase_id),
+        "summary": _vb.override_summary(ids, answer, reason),
+        "details": _vb.override_details(ids, answer, reason),
+    }, config=config)
+
+
 def record_row(project, phase_id, branch, parent, config=None):
     """Anchor the merge in the trail. FAIL-SOFT, `_journal_io.append`'s contract: a
     merge that HAPPENED must not be reported as not having happened because the trail
@@ -1222,12 +1507,48 @@ def _render_backfill(answer, out=print):
         out("  %s NOT recorded: %s" % (MERGED_HEAD_FIELD, answer["mergedHeadWhy"]))
 
 
+def gate_lines(gate):
+    """The lines the verdict a landing stood on owes - none when it was not asked.
+
+    FOUR ANSWERS, worded apart: landed over a refusal with the override (and
+    whether the trail took it), already landed so a refusal is said but not
+    applied, the verdict as it bound or did not, and an override given with
+    nothing to go over."""
+    gate = gate or {}
+    if not gate:
+        return []
+    if gate.get("overridden"):
+        how = (("journaled as %s" % (_vb.ACTION_CLOSE_OVERRIDDEN,))
+               if gate.get("journaled")
+               else "NOT journaled: %s" % (gate.get("journalWhy"),))
+        return ["  gate: OVER ITS VERDICT'S REFUSAL - %s" % (gate.get("refusal"),),
+                "  %s: %s (%s)" % (_vb.OVERRIDE_FLAG, gate.get("overrideReason"),
+                                   how)]
+    if gate.get("refusal") and not gate.get("landingDue"):
+        return ["  gate: the branch has already landed, so its verdict refuses "
+                "nothing here - %s" % (gate.get("refusal"),)]
+    notes = ["  gate note: %s" % (n,) for n in (gate.get("notes") or [])]
+    if gate.get("honoured"):
+        return notes + [
+            "  gate: the sign-off recorded --no-evidence-reason (at %s), so a "
+            "verdict it chose not to stand on refuses nothing here - %s"
+            % (gate.get("signedAt") or "a moment its journal does not name",
+               gate.get("sentence"))]
+    lines = notes + ["  gate: %s" % (_vb.close_line(gate),)]
+    if gate.get("overrideUnneeded"):
+        lines.append("  %s was given and not needed: the verdict refuses nothing "
+                     "here, so no exception was journaled" % (_vb.OVERRIDE_FLAG,))
+    return lines
+
+
 def render(answer, out=print):
     """One block a human reads top to bottom: what was decided, what ran, what did
     not, and why. Refusals carry their remedy on the next line, because a refusal
     nobody can act on is one they route around."""
     out("[close-phase] %s -> %s (%s)"
         % (answer["branch"], answer["parent"], answer["mode"]))
+    for line in gate_lines(answer.get("gate")):
+        out(line)
     if answer.get("pending"):
         out("  NOT MERGED: meta.merge.auto is false, so this stopped before the "
             "merge. Nothing was written.")
@@ -1315,6 +1636,8 @@ def build_parser():
     p.add_argument("--no-ff", action="store_true")
     p.add_argument("--dry-run", dest="dry_run", action="store_true")
     p.add_argument("--json", dest="as_json", action="store_true")
+    p.add_argument("--override-verdict", dest="override_verdict", default=None,
+                   metavar="TEXT")
     return p
 
 
@@ -1403,6 +1726,12 @@ def main(argv, out=print):
             "written. Pass --branch <name>: the branch that carries this phase's "
             "work" % (args.phase, names["branch"], names["branchBasis"]))
         return E_FAIL
+    if args.override_verdict is not None and not args.override_verdict.strip():
+        sys.stderr.write("ERROR: %s needs the reason - it is what the journal "
+                         "records for a landing over a gate verdict that "
+                         "refuses it\n" % (_vb.OVERRIDE_FLAG,))
+        return E_USAGE
+    override = (args.override_verdict or "").strip() or None
     observation = observe(git_root, names["branch"], names["parent"])
     if observation["why"]:
         out("[close-phase] %s" % (observation["why"],))
@@ -1425,6 +1754,60 @@ def main(argv, out=print):
     if refusal:
         out("[close-phase] REFUSED: %s. Nothing was merged or written." % (refusal,))
         return E_USAGE
+    # THE VERDICT IS ASKED ONLY OF A LANDING STILL TO HAPPEN. A branch the parent
+    # already contains has landed - by an earlier run kept with --keep-branch, a
+    # group member before this one, or a hand merge - and a re-run that stamps or
+    # cleans up must finish; it says the verdict and refuses nothing.
+    gate, signed_without_run, gate_notes = gate_answer(
+        project, args.manifest, manifest, phase, git_root=git_root,
+        branch=names["branch"], phase_tree=observation.get("phaseTree"))
+    refused = _vb.close_refusal(gate, signed_without_run=signed_without_run)
+    landing_due = observation["contained"]["answer"] != _wt.CONTAINED
+    gate_view = {"state": gate.get("state"), "arm": gate.get("arm"),
+                 "sentence": gate.get("sentence"),
+                 "runId": (gate.get("row") or {}).get("runId"),
+                 "refusal": refused, "landingDue": landing_due,
+                 "overridden": bool(refused and landing_due),
+                 "overrideReason": override if refused and landing_due else None,
+                 "journaled": False, "journalWhy": "",
+                 "overrideUnneeded": override is not None and not refused,
+                 # A refusal the sign-off's `--no-evidence-reason` answered, said
+                 # rather than passed in silence.
+                 "honoured": bool(signed_without_run is not None and not refused
+                                  and gate.get("arm") in _vb.CLOSE_REFUSING_ARMS
+                                  and gate.get("state") == "refused"),
+                 "signedAt": (signed_without_run or {}).get("at"),
+                 "notes": gate_notes}
+    if refused and landing_due and override is None:
+        out("[close-phase] REFUSED: phase %s does not land over its newest gate "
+            "verdict - %s. Nothing was merged or written." % (args.phase, refused))
+        out("           or pass %s \"<why this lands over it>\", which is "
+            "journaled as %s" % (_vb.OVERRIDE_FLAG, _vb.ACTION_CLOSE_OVERRIDDEN))
+        return E_FAIL
+    if refused and landing_due \
+            and not _journal_io.enabled(_journal_io.load_config(project)):
+        out("[close-phase] REFUSED: %s was given and journal.enabled is false, so "
+            "the landing over its verdict would be recorded nowhere. The verdict: "
+            "%s. Nothing was merged or written." % (_vb.OVERRIDE_FLAG, refused))
+        return E_FAIL
+    # THE EXCEPTION IS JOURNALED BEFORE THE WRITE IT EXCUSES, by the run that
+    # lands the branch or hands its merge over, and by no other: a merge that has
+    # happened cannot be taken back when the row then fails, so the row comes
+    # first and its failure refuses the merge. A preview writes none.
+    if gate_view["overridden"]:
+        if args.dry_run:
+            gate_view["journalWhy"] = ("a dry run writes nothing; the run that "
+                                       "lands it journals it as %s first"
+                                       % (_vb.ACTION_CLOSE_OVERRIDDEN,))
+        elif the_plan["merge"]["mode"] == "refuse":
+            gate_view["journalWhy"] = "the merge itself is refused below"
+        elif not override_row(project, args.phase, gate, override):
+            out("[close-phase] REFUSED: the journal row recording the landing "
+                "over its verdict could NOT be written, so nothing was merged or "
+                "written. The verdict: %s" % (refused,))
+            return E_FAIL
+        else:
+            gate_view["journaled"] = True
     def _stamp():
         """Persist `phase.mergedAt`, and report what happened in answer fields.
 
@@ -1496,6 +1879,7 @@ def main(argv, out=print):
                 after_the_fact=False, dry_run=True))
     answer["branchBasis"] = names["branchBasis"]
     answer["parentBasis"] = names["parentBasis"]
+    answer["gate"] = gate_view
 
     # The stamp used to be written HERE, after `close()` had already done the
     # cleanup. It now runs inside it, before the deletions — see `close()`'s

@@ -158,7 +158,7 @@ claude-plugins/                           # this repo (personal, public)
           full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, then a coupling and a bug per named selection miss of a red run (the red still blocks), or the sentence and exit 0 when no meta.fullGate is declared; --learn-from <runId> runs nothing and learns from an imported row through the same function
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs; the one POSIX sh (and its PATH) every plan command runs under, or a refusal - never cmd.exe
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
-          _verdict_binding.py             # the ONE rule for whether a recorded gate verdict binds the declared work now - a task commit's and a sign-off's
+          _verdict_binding.py             # the ONE rule for whether a recorded gate verdict binds the declared work now - a task commit's, a sign-off's, and whether `done` or close-phase may close over the newest verdict (one that no longer holds refuses)
           stamp-verification.py           # the CLI over it: take a stamp, or grade one - current / stale (naming the field) / unestablished; `red` proves a red-first in a throwaway tree
           derive-phase-gate.py            # observes a phase's version answer, its two importer listings, changed/red-suite paths and the plan gate's exempt verdict, hands them to _gate_derive.derive, and records phase.testGateDerived (+ testGate in enforce mode) under the index lock
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
@@ -342,7 +342,7 @@ L3:
   _panel_settings -> _config_rules, _output
   _usage_bench -> _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
   _usage_viz -> _fmt, _output, _report_html
-  _verdict_binding -> _evidence_io, _journal_io, _output, _tree_stamp
+  _verdict_binding -> _evidence_io, _journal_io, _manifest_io, _output, _tree_stamp
   usage_ledger -> _manifest_io, _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
 
 L4:
@@ -385,7 +385,7 @@ L7:
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
-  close-phase -> _branch, _journal_io, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _worktrees
+  close-phase -> _branch, _evidence_io, _journal_io, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _verdict_binding, _worktrees
   commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
   commit-manifest-index -> _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
   commit-task-work -> _evidence_io, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
@@ -3897,10 +3897,11 @@ shape that table exists to keep rare, which is why the shared half came down to 
 new command reaching up.
 
 ### `plugins/audit/scripts/governance/_verdict_binding.py`
-Whether a recorded gate verdict binds the declared work as it stands now - one answer for the two
-writers that stand on one. `commit-task-work.py` commits a task's work only under a green run of
+Whether a recorded gate verdict binds the declared work as it stands now - one answer for every
+writer that stands on one. `commit-task-work.py` commits a task's work only under a green run of
 the gate that measures it; `audit-task.py signoff` records a `passed` sign-off only under a green
-run of the phase's gate (a group's carrier, over every member's files). A second implementation
+run of the phase's gate (a group's carrier, over every member's files); `audit-task.py done` and
+`close-phase.py` close a task or land a phase only while its newest verdict still holds. A second implementation
 of the rule in the sign-off verb had fewer arms than the task commit's: it graded a repeated
 verdict by the repeat's own empty stamp and refused it on an unchanged tree, compared a digest the
 recorder took with its own writes left out against one taken with them in, and accepted an
@@ -3911,7 +3912,24 @@ source, its declared files and the caller's own sentences, and answers `bound`, 
 `refused` with a sentence naming the run: the newest row for the subject, never the plan's
 pointer; a repeat graded through `reusedFrom`; a gate changed after the run; a red nothing
 retired; an unparseable line that could be the subject's; the digest with the recorder's paths
-left out on both sides. Its cases are `plugins/audit/tests/test__verdict_binding.py`.
+left out on both sides. Every refusal carries the `arm` that produced it, and a close reads the
+arm rather than the sentence: `close_refusal()` refuses a close on every arm in
+`CLOSE_REFUSING_ARMS`, whose comments give each arm's reason - every refusing arm except no run
+recorded and an `empty-gate` answer, where there is no measurement to vouch for and the sign-off
+recorded why. `group_of()` answers which run grades a phase signed off in a group: the carrier's,
+over every member's files; `member_red()` refuses a member whose own rows hold a red newer than
+that run. `binding()` takes the ledger as `ledger_texts()`-shaped sources and the
+tree to digest, so a landing reads the head it would merge rather than whatever tree `--project`
+names - `rows_of()` is the union of two copies of one ledger by row identity, and an unreadable
+source is unreadable, never no run. A sign-off recorded with `--no-evidence-reason` is honoured
+by `close_refusal()`: the `STALE_GREEN_ARMS` do not refuse, and a red refuses only when recorded
+after the sign-off's `phase.verdict` journal row (`signoff_moment()`), or always when that row
+cannot be found. The way past a refusal is `--override-verdict`, journaled as
+`audit.verdict.close-overridden` naming the run and the reason, and refused when the journal is
+off or the row will not write. The digest reads
+the declared files' content and nothing wider: a gate row records no content digest of undeclared
+paths, which is the stamp's `content` field alone. Its cases are
+`plugins/audit/tests/test__verdict_binding.py`.
 
 ### `plugins/audit/scripts/governance/_tree_stamp.py`
 Which tree was this, and is it still that one.

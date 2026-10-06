@@ -102,7 +102,7 @@
     {
       "id": "P100.2",
       "title": "done and close-phase refuse to close over a red newest gate verdict",
-      "status": "pending",
+      "status": "in_progress",
       "description": "audit-task done --commit and close-phase become the third and fourth callers of _verdict_binding, with its existing arms: refused -> the verb refuses and names the row; no-gate -> passes with its sentence; an explicit override (--over-red-reason) is journaled the way signoff --no-evidence-reason is. Decide whether done --no-change skips the question (no work landed). close-phase asks for the phase's newest verdict at the head it would merge; a red recorded after the run sign-off was bound to is newer evidence. Also decide, with the measurement from P100.1, whether the binding reads content (the same undeclared-file blind spot at commit time). Measure whether done/close-phase print validator findings the plan already carried before deciding on a warning. Red-first: both probe sequences (red then done; green sign-off, later red, then close) exit 0 at HEAD and refuse after.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -111,7 +111,12 @@
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/tests/test_close_phase.py",
         "plugins/audit/tests/test__verdict_binding.py",
-        "plugins/audit/reference/orchestrator.md"
+        "plugins/audit/reference/orchestrator.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/README.md",
+        "plugins/audit/reference/phase-signoff.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -139,16 +144,21 @@
       "dependsOn": [
         "P100.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T14:39:02Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T19:21:53Z.a67db6",
+        "status": "passed",
+        "at": "2026-10-06T19:21:53Z"
+      }
     }
   ],
   "startedAt": "2026-10-06T14:06:10Z",
