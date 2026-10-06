@@ -2,8 +2,8 @@
 """
 Does a recorded gate verdict bind the declared work as it stands now - ONE answer.
 
-WHY THIS IS A MODULE AND NOT A FUNCTION IN EACH CALLER. Four writers stand on a
-recorded verdict: `commit-task-work.py` commits a task's work only under a green
+WHY THIS IS A MODULE AND NOT A FUNCTION IN EACH CALLER. Every writer below
+stands on a recorded verdict: `commit-task-work.py` commits a task's work only under a green
 run of the gate that measures it, `audit-task.py signoff` records a `passed`
 sign-off only under a green run of the phase's gate, and `audit-task.py done` and
 `close-phase.py` close a task or land a phase only while its newest recorded

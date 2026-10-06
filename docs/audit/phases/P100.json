@@ -220,7 +220,7 @@
     {
       "id": "P100.3-zxo",
       "title": "close-phase reads the tip's declared files the way the recorder read them",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P100-R1 to P100-R4. (1) _write_tip writes each declared file in its checked-out form, applying the repository's eol, text and smudge rules (git cat-file --filters, or a checkout into the scratch work tree), so a branch under core.autocrlf, a .gitattributes eol rule or a clean/smudge filter is digested the way the recorder digested the working tree. (2) tip_scope normalises the declared entries through _tree_stamp.declared_scope before listing the tip, so an entry carrying a line-range suffix or a backslash path is read the same way the digest reads it. (3) The scratch repo is removed through a production remove-tree helper in the scripts anchor module (plain rmtree, then make read-only entries writable and remove again if the directory is still there), at both sites, so Windows' read-only git objects do not leave close-phase-tip-* directories in the operator's temp; the test harness's remove_tree documents the hazard. (4) The module docstring and the section comment say what the code does: the ledger is read from the tip and the worktree holding the branch, and the digest is always taken over the tip's committed declared files. Other scripts that rmtree a scratch tree are left for a separate task.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -261,18 +261,35 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f48dfb80",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "close-phase.py now reads the branch tip's declared files the way the recorder read them. _write_tip no longer writes raw blobs: _check_out loads the tip into a private index (GIT_INDEX_FILE under a close-phase-tip- staging directory) with read-tree and writes the listed paths into a private work tree with checkout-index, so the tip's .gitattributes, core.autocrlf and clean/smudge filters apply as in a real checkout, and the operator's .git, index and hooks are untouched (no hook runs; checked with linked worktrees and sparse checkout). A declared symbolic link is read through to its in-repository target, as _journal_io.file_hash reads it; a target outside the repository or absent makes the tip unanswerable rather than moved, and a required filter whose program is missing refuses the landing. tip_scope normalises the declared entries through _tree_stamp.declared_scope, so a line-range suffix or a backslash path is read as the digest reads it. The scratch trees are removed through a new _output.remove_tree (plain rmtree, then, only if the tree is still there, a top-down pass that makes entries writable - never through a symbolic link - and removes again, answering whether the path is gone), so Windows' read-only git objects no longer leave close-phase-tip-* directories behind. _output.remove_tree is now the one home of that fact: tests/_harness binds to it, and the sweep runner's and .claude/hooks/guard-release.py's copies are compared to it statement for statement (removal_helper_drift and gr48 each go red when either side changes one statement), with tools/_suite.py's s11 and the prove-gates row pointed at the new home. The module docstring and section comment say the digest is always taken over the tip's committed declared files. Cases: cr24-cr29 in test_close_phase.py (eol=crlf, a line-range entry, a symlink, each with a refusing twin), rt0-rt3 in test__output.py. Reds: the helper proved cr24/cr26 (144/146) and rt1/rt2 (179/181) at HEAD; cr28 and rt3 were red before their fixes (147/148, 181/182); the prove-gates row was proved red and its allow side quiet in a throwaway clone, because redfirst.sh refuses to mutate the uncommitted home in the shared tree.",
+        "descriptive": "Landing a phase no longer refuses falsely in repositories that convert line endings or use filters, for declared files with a line range, or for declared symbolic links, and it no longer leaves temporary git copies behind on Windows."
       },
       "startedAt": "2026-10-06T19:29:54Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T20:17:47Z",
+      "verifiedBy": [
+        "cr24",
+        "cr25",
+        "cr26",
+        "cr27",
+        "cr28",
+        "cr29",
+        "rt0",
+        "rt1",
+        "rt2",
+        "rt3"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T20:10:52Z.72a339",
         "status": "passed",
         "at": "2026-10-06T20:10:52Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "f48dfb80",
+        "at": "2026-10-06T20:17:47Z",
+        "basis": "audit-reviewer (phase mode) re-review over two rounds: R1-R4 closed; the follow-up findings (a third copy of the removal helper, symlink bytes, chmod through links) fixed with reds; the reviewer probed the operator's repository untouched under hooks, linked worktrees and sparse checkout"
       }
     },
     {

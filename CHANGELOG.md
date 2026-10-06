@@ -20,6 +20,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   field. Gate rows are unchanged: `dirtyDigest` and the row shape `tested_state` writes do not
   move. `reference/execute-task.md` lists the new field and its limits.
 
+### Changed
+- **`audit-task.py done` and `close-phase.py` refuse to close over a verdict that no longer
+  holds** — except where there is no measurement to vouch for in the first place: no run is
+  recorded under the gate, the newest row answers `empty-gate`, the phase's branch has already
+  landed, or the newest green is stale behind a sign-off's `--no-evidence-reason`; none of those
+  refuse. Both used to exit 0 over a newest gate verdict that had gone red, or that no longer
+  covered the declared files' current content; `done` now exits 2 and `close-phase` exits 1,
+  naming the refusal `_verdict_binding.close_refusal` found. Both take
+  `--override-verdict "<why>"` to close anyway, which journals the override as
+  `audit.verdict.close-overridden` rather than closing silently — unless the override itself
+  cannot be recorded: with `journal.enabled` false, `done` still exits 2 and `close-phase` still
+  exits 1, refusing rather than closing with nothing to show for the exception; if the journal
+  row fails to write, `done` rolls back every write and exits 1 instead of 2, and `close-phase`
+  exits 1 having merged or written nothing. A sign-off given no `--no-evidence-reason` now drops
+  an earlier `review.noEvidenceReason` instead of letting it outlive the sign-off that recorded
+  it and excuse a later landing over a verdict that one no longer backs.
+
 ## [3.1.0] - 2026-10-05
 
 ### Added
