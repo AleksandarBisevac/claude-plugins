@@ -35,7 +35,7 @@
     {
       "id": "P110.1",
       "title": "which share of 3.0.x guard refusals the host would have stopped anyway is measured",
-      "status": "in_progress",
+      "status": "done",
       "description": "docs/research/guard-refusals-by-owner.md classifies every audit-plugin guard refusal in the private redacted miner corpus (quality-gates-internal: reports/2026-10-05-deep-analysis/experiments/classifier-events.redacted.jsonl). It counts the rows with source plugin-hook and an audit-plugin: subsource, dated from the v3.0.0 tag on 2026-09-18; the repo's own .claude/hooks are excluded. Each refusal is classified by what the verdict depended on: plan scope, journal or manifest integrity, a SHA the manifest records, a secret read, or a generic destructive operation. For each generic row it states whether Claude Code's own layers would have stopped it, and on what basis: a documented auto-mode block category, or a permissions.deny rule that matches the command as written. A row with no basis is counted as undetermined and never folded into either side. Command text is redacted, so classification reads the rows' shape and tags fields. The table carries the inline python3 command that re-derives it, with no new .py and no machine path, and the document says that a public reader cannot re-run it against the private corpus. Its answer, the share of refusals that only the plugin could have made, is the input to the design task.",
       "files": [
         "docs/research/guard-refusals-by-owner.md"
@@ -56,24 +56,30 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "138595be",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "docs/research/guard-refusals-by-owner.md classifies the audit-plugin guard refusals in the private redacted miner corpus since the v3.0.0 tag by tracing each refusal label to the hook branch that returns it: plan scope, journal or manifest integrity, a recorded SHA, a secret read, or a generic destructive operation. The generic class is empty in this corpus and era, because every deny arm in the two guards is gated on plan, manifest, SHA or secret state, so the host-basis column has nothing to assess, and the document says so with that basis. It carries an inline command that re-derives the table from a CORPUS path the reader supplies, names no machine path or task id, states that a public reader cannot re-run it, attributes the manifest-path label to both hooks that emit it, and states plainly that the guard misreads a literal stash marker in the command as a command (a false positive), which is why that marker is split.",
+        "descriptive": "The guard refusals of the 3.0.x era are classified by what each verdict depended on. None of them was a generic destructive-command block that Claude Code's own layers would have made anyway: every one depended on the plan, the manifest, a recorded commit or a secret pattern."
       },
       "startedAt": "2026-10-06T14:44:48Z",
-      "completedAt": null,
+      "completedAt": "2026-10-06T15:17:31Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-06T15:16:20Z.64bd06",
         "status": "passed",
         "at": "2026-10-06T15:16:20Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "138595be",
+        "at": "2026-10-06T15:17:31Z",
+        "basis": "audit-reviewer (task mode): classification supported by the cited hook lines; one medium (task id in prose) and two low findings fixed as proposed; counts re-derived unchanged"
       }
     },
     {
       "id": "P110.2",
       "title": "a design splits guard rules into those only the plugin can know and a recommended permissions.deny fragment",
-      "status": "pending",
+      "status": "in_progress",
       "description": "docs/research/guard-ownership-design.md goes through each rule in guard-secrets-read.py and guard-history-rewrite.py, and the _config readers they use. For each, it states whether the plugin keeps it (plan scope, journal and manifest integrity, protection of SHAs the manifest records) or hands it to Claude Code's own layers, using the refusal measurement as its basis. It gives the exact recommended permissions.deny fragment as JSON. For each moved rule it names the fragment entry that covers it and what that entry misses, because permission rules match a command's spelling, not its operation. It fixes the transition: one release in which the moved rules report instead of blocking, then removal. It names who loses coverage: users without auto mode get spelling-based rules only. It drafts the SECURITY.md paragraph saying which layer holds which guarantee. It checks whether any config key a moved rule reads would stop being read, which COMPATIBILITY.md makes a major release.",
       "files": [
         "docs/research/guard-ownership-design.md"
@@ -94,16 +100,21 @@
       "dependsOn": [
         "P110.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T19:04:33Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T19:23:58Z.c81854",
+        "status": "passed",
+        "at": "2026-10-06T19:23:58Z"
+      }
     },
     {
       "id": "P110.3",
