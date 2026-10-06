@@ -39,7 +39,7 @@ Usage:
                 [manifest] [--descriptive TEXT|-] [--technical TEXT|-]
                 [--verified-by t1,t2]
                 [--intent matches|diverges|cannot-tell|not-asked]
-                [--intent-basis TEXT|-]
+                [--intent-basis TEXT|-] [--override-verdict TEXT|-]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py move <taskId> --to <phaseId> [manifest]
                 [--project-dir DIR] [--takeover] [--json]
@@ -806,10 +806,14 @@ def _marked_excerpt(excerpt, rel_start, rel_end):
 # join for `--issue`'s reason: a report quotes code and output more than it
 # quotes anything else, and a clause a shell ate out of one is a repro that
 # reads whole and does not reproduce.
+#
+# `--override-verdict` joins for `--no-evidence-reason`'s reason: it is the
+# operator's why for a close over a gate verdict that refuses it, journaled
+# verbatim.
 PROSE_FLAGS = ("description", "reason", "outcome", "rename", "descriptive",
                "technical", "summary", "review_outcome", "no_evidence_reason",
                "intent_basis", "text", "issue", "resolution", "repro",
-               "expected", "actual")
+               "expected", "actual", "override_verdict")
 
 # THE ONE PLACE `--help` SAYS ANYTHING ABOUT THE STDIN ESCAPE. Before this, none
 # of the flags in PROSE_FLAGS carried a `help=` at all -- `--help` printed the
@@ -3882,6 +3886,56 @@ def _journal_done(project, config, mpath, task_id, phase_id, was, task):
 
 
 
+def _close_gate(project, mpath, manifest, phase, task):
+    """`_verdict_binding.task_binding` in a close's words.
+
+    A NO-CHANGE CLOSE ASKS IT TOO. Its claim is that the code as it stands
+    needed nothing, and a recorded verdict that no longer holds - a red above
+    all - is a measurement of that code saying otherwise; one left by an attempt
+    since abandoned is answered by a green run, or by the override with its
+    reason.
+
+    ACCEPTED: A COMMIT OVERRIDDEN IS ASKED AGAIN HERE. A task committed with
+    `commit-task-work.py --override-verdict` over a verdict that does not hold
+    is refused again at this close and needs its own `--override-verdict`, so
+    one decision leaves two rows. They are two acts - committing work, and
+    recording it finished - and the trail says each was done over the verdict;
+    a close that trusted the commit's override would let one reason given for
+    one act stand for the other."""
+    tid, pid = str(task.get("id")), str(phase.get("id"))
+    record = ("run `%s` on the work, then close it"
+              % (_plugin_cmd("governance/run-test-gate.py",
+                             _output.posix_rel(mpath, project), pid, "--task",
+                             tid, "--record"),))
+    return _vb.task_binding(
+        project, mpath, manifest, phase, task, record,
+        "%s declares no gate, nor does its phase, so its close rests on its "
+        "commit alone" % (tid,))
+
+
+def _gate_lines(gate, refusal, override):
+    """The lines a close owes about the verdict it stood on, the override and an
+    override given with nothing to go over included."""
+    if refusal:
+        return ["  gate: CLOSED OVER ITS VERDICT'S REFUSAL - %s" % (refusal,),
+                "  %s: %s (journaled as %s)"
+                % (_vb.OVERRIDE_FLAG, override, _vb.ACTION_CLOSE_OVERRIDDEN)]
+    lines = ["  gate: %s" % (_vb.close_line(gate),)]
+    if override is not None:
+        lines.append("  %s was given and not needed: the verdict refuses nothing "
+                     "here, so no exception was journaled" % (_vb.OVERRIDE_FLAG,))
+    return lines
+
+
+def _gate_key(gate, refusal, override):
+    """The `--json` shape of `_gate_lines`."""
+    return {"state": gate.get("state"), "arm": gate.get("arm"),
+            "sentence": gate.get("sentence"),
+            "runId": (gate.get("row") or {}).get("runId"),
+            "overridden": bool(refusal),
+            "overrideReason": override if refusal else None}
+
+
 def _still_open(phase):
     """The ids in `phase` that are not finished -- `_mio.TERMINAL` is the word.
 
@@ -4009,6 +4063,24 @@ def _locked_done(args, project, config, mpath, tid, out):
         if refusal:
             out(refusal)
             return E_USAGE
+    gate = _close_gate(project, mpath, assembled, phase, node)
+    override = (args.override_verdict or "").strip() or None
+    refused = _vb.close_refusal(gate)
+    if refused and override is None:
+        out("[audit-task] REFUSED: %s cannot close over its newest gate verdict - "
+            "%s. Nothing written." % (tid, refused))
+        out("    or pass %s \"<why this closes over it>\", which is journaled as %s"
+            % (_vb.OVERRIDE_FLAG, _vb.ACTION_CLOSE_OVERRIDDEN))
+        return E_USAGE
+    # THE PROJECT'S OWN CONFIG, where `journal.enabled` lives. `_journal_cfg`
+    # answers where a row is written and hands back None for a project that has
+    # a config, which reads as enabled whatever the config says.
+    if refused and not _journal_io.enabled(config or {}):
+        out("[audit-task] REFUSED: %s was given and journal.enabled is false, so "
+            "the close over its verdict would be recorded nowhere - an exception "
+            "nobody can find afterwards is a gate quietly removed. The verdict: "
+            "%s. Nothing written." % (_vb.OVERRIDE_FLAG, refused))
+        return E_USAGE
 
     now = _utc_now()
     verified = None if args.verified_by is None else _split_csv(args.verified_by)
@@ -4042,6 +4114,20 @@ def _locked_done(args, project, config, mpath, tid, out):
         for line in findings:
             out("FINDING: " + line)
         return E_INVALID
+    if refused:
+        # AFTER THE WRITE STANDS AND BEFORE ANYTHING ELSE IS SAID: a close over
+        # its verdict that the trail did not take is rolled back, so no `done`
+        # stands over a refusal with nothing saying why.
+        ids = {"taskId": tid, "phaseId": phase_id}
+        taken = _journal_row(project, config, mpath, _vb.ACTION_CLOSE_OVERRIDDEN,
+                             _vb.override_summary(ids, gate, override),
+                             _vb.override_details(ids, gate, override))
+        if not taken.get("journaled"):
+            _restore(snap)
+            out("[audit-task] REFUSED: the journal row recording the close over "
+                "its verdict could NOT be written, so every written file was "
+                "rolled back and nothing kept. The verdict: %s" % (refused,))
+            return E_INVALID
 
     jres = _journal_done(project, config, mpath, tid, phase_id, was, node)
     index_note = _index_dirty_note(written, mpath, project, phase_id)
@@ -4070,6 +4156,7 @@ def _locked_done(args, project, config, mpath, tid, out):
                   "phaseOpenTasks": open_left,
                   "phaseComplete": not open_left,
                   "phaseStatus": _mio.effective_phase_status(phase),
+                  "gate": _gate_key(gate, refused, override),
                   "stored": settled,
                   "written": written,
                   "warnings": _wg.collapse_machine(warnings, written_manifest)}
@@ -4082,6 +4169,8 @@ def _locked_done(args, project, config, mpath, tid, out):
         return 0
     out("[audit-task] %s done in %s -- was %s" % (tid, phase_id, was["status"]))
     out("  completedAt %s" % (node.get("completedAt"),))
+    for line in _gate_lines(gate, refused, override):
+        out(line)
     if no_change is not None:
         out("  commit none -- closed with NO CHANGE: %s" % (no_change["reason"],))
         out("  examinedAt: %s" % (no_change["examinedAt"] or
@@ -6266,6 +6355,10 @@ def _done_flags_refusal(args):
                 "carrying none is what /audit:doctor reports. Commit first, then "
                 "pass `git rev-parse HEAD`. A task whose answer was that nothing "
                 "needed to change closes with --no-change --reason instead.")
+    if args.override_verdict is not None and not args.override_verdict.strip():
+        return ("[audit-task] --override-verdict needs the reason - it is what "
+                "the journal records for a close over a gate verdict that "
+                "refuses it")
     if args.intent_basis is not None and args.intent is None:
         return ("[audit-task] --intent-basis is the basis of an --intent answer, "
                 "and none was passed -- pass --intent %s beside it"
@@ -6374,27 +6467,18 @@ def _signoff_refusal(phase, pid):
 # with no run behind it. Whether a recorded run binds the work is
 # `_verdict_binding.binding`'s answer - the SAME rule a task commit is bound by, so
 # a repeated verdict, the recorder's own writes and a gate changed after the run
-# are graded here exactly as they are there.
-def phase_files(phases):
-    """The union of the task files `phases` declare, in plan order."""
-    files = []
-    for ph in phases:
-        for task in (ph.get("tasks") or []):
-            if isinstance(task, dict):
-                files.extend(f for f in (task.get("files") or []) if f not in files)
-    return files
+# are graded here exactly as they are there. The union of a phase's files is
+# that module's too, because `close-phase.py` asks the same phase the same
+# question at the merge.
+phase_files = _vb.phase_files
 
 
 def phase_binding(project, mpath, manifest, phase, files, record):
-    """`_verdict_binding.binding` for `phase`'s own gate over `files` - its task
-    files, or a group's union when `phase` carries a group's one run."""
-    entries, source = _mio.gate_entries(phase, None)
-    build = ((manifest or {}).get("meta") or {}).get("buildCommands")
+    """`_verdict_binding.phase_binding` in sign-off's words."""
     pid = str(phase.get("id"))
-    return _vb.binding(
-        project, {"phaseId": pid}, entries, source, files, mpath, record,
-        "phase %s declares no gate, so its sign-off rests on review alone" % (pid,),
-        build=build)
+    return _vb.phase_binding(
+        project, mpath, manifest, phase, files, record,
+        "phase %s declares no gate, so its sign-off rests on review alone" % (pid,))
 
 
 def _locked_signoff(args, project, config, mpath, pid, summary, out):
@@ -6434,8 +6518,13 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
     if args.review_outcome:
         review["outcome"] = outcome_with_tally(args.review_outcome.strip(),
                                                review.get("findings"))
+    # THE REASON BELONGS TO THE SIGN-OFF THAT GAVE IT. The review is carried
+    # forward whole, so a reason an earlier sign-off recorded would otherwise
+    # outlive it and excuse, at the landing, a green this sign-off did stand on.
     if reason:
         review["noEvidenceReason"] = reason
+    else:
+        review.pop("noEvidenceReason", None)
     phase["review"] = review
     phase["summary"] = summary
     phase.pop("claim", None)
@@ -7644,8 +7733,11 @@ def _locked_group(args, project, config, mpath, ids, summary, out):
         if args.review_outcome:
             review["outcome"] = outcome_with_tally(args.review_outcome.strip(),
                                                    review.get("findings"))
+        # The reason belongs to this sign-off, as on the single-phase path.
         if reason:
             review["noEvidenceReason"] = reason
+        else:
+            review.pop("noEvidenceReason", None)
         if plan["accepted"]:
             review["acceptedCommits"] = [{"commit": sha, "reason": args.reason.strip()}
                                          for sha in plan["accepted"]]
@@ -9055,7 +9147,7 @@ VERB_FLAGS = {
     # without it, which is a different check from this one: this table says which
     # flags the verb READS, and the door says which of them it requires.
     "done": ("commit", "descriptive", "technical", "verified_by", "intent",
-             "intent_basis", "no_change", "reason"),
+             "intent_basis", "no_change", "reason", "override_verdict"),
     "scope": ("files", "tests_mode", "tests_add", "gate", "gate_clear",
               "description", "risk", "blocked_by", "depends_on"),
     "retarget": ("gate", "gate_clear", "gate_drop", "gate_set", "area",
@@ -9268,6 +9360,11 @@ def build_parser():
     # commit, and `--reason` says why.
     p.add_argument("--no-change", dest="no_change", action="store_true",
                    default=False)
+    # `done` only. Why this close stands over a newest gate verdict that refuses
+    # it - `commit-task-work.py`'s flag for the same act; the close is journaled
+    # with it, and refused without it.
+    p.add_argument("--override-verdict", dest="override_verdict", default=None,
+                   metavar="TEXT", help=_PROSE_HELP)
     # `move` only. The phase the task moves into - `--phase` stays `add`'s, where
     # it names the phase a new task is born in.
     p.add_argument("--to", default=None, metavar="PHASE")

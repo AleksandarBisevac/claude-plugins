@@ -438,7 +438,8 @@ LAYERS = (
      # `_verdict_binding` is the one rule for whether a recorded gate verdict
      # binds the declared work now. It reads `_evidence_io` (the ledger) and
      # `_tree_stamp` (the digest), peers at L2, so L3 is the first layer that
-     # holds both; `commit-task-work` and `audit-task` at L7 call it.
+     # holds both; `commit-task-work`, `audit-task` (sign-off and `done`) and
+     # `close-phase` at L7 call it.
      "_verdict_binding",
      # `_gate_derive` is the gate helpers' one home (`is_shared_key`,
      # `path_scoped_sibling`, `repointed` -- moved out of `audit-task.py`) plus

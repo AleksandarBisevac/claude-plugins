@@ -784,16 +784,16 @@ TABLE = (
   '    import tempfile as _leak\n    _leak.mkdtemp(prefix="probe-leak-")\n',
   "tools/sweep-selftests.py", "x4"),
 
- # --- One fact with two homes, and the rule that compares them ----------------
- # THE MUTATED FILE IS THE HOME, not the guard: `_harness.remove_tree()` is where
- # the read-only-object fact lives, and the sweep runner keeps a copy because a
- # runner may not import a file it is one of the runners OF. The thing this rule
- # guards is the two staying identical, so the mutation edits ONE of them and
- # changes nothing else - a permission constant, which is exactly the shape a
- # forgotten carry-across arrives in. `rm1` is the case that reads both files.
- ("removal_helper_drift", "plugins/audit/tests/_harness.py", "replace",
-  "                os.chmod(os.path.join(base, name), 0o700)",
-  "                os.chmod(os.path.join(base, name), 0o755)",
+ # --- One fact, its home and the runner's copy, and the rule comparing them ----
+ # THE MUTATED FILE IS THE HOME, not the guard: `_output.remove_tree()` in the
+ # scripts anchor is where the read-only-object fact lives, and the sweep runner
+ # keeps a copy of it. The thing this rule guards is the two staying identical,
+ # so the mutation edits ONE of them and changes nothing else - a permission
+ # constant, which is exactly the shape a forgotten carry-across arrives in.
+ # `rm1` is the case that reads both files.
+ ("removal_helper_drift", "plugins/audit/scripts/_output.py", "replace",
+  "                os.chmod(entry, 0o700)",
+  "                os.chmod(entry, 0o755)",
   "tools/sweep-selftests.py", "rm1"),
  # --- The callers, and the rule that stops the next one -----------------------
  # THE MUTATED FILE IS A CALLER, not the guard: the drift row above watches the two

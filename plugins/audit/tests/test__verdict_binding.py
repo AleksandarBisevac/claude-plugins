@@ -211,6 +211,133 @@ def _cases(check):
               % ((got["measured"] or {}).get("ts"), got["sentence"]),
               got["state"] == "bound"
               and (got["measured"] or {}).get("ts") == "2026-09-06T00:00:00Z")
+
+        # A CLOSE NEVER VOUCHES FOR A VERDICT THAT NO LONGER HOLDS: it refuses on
+        # every refusing arm but the two with no measurement to vouch for - no
+        # run recorded, and an `empty-gate` answer under a gate with entries.
+        _project(base, [row, red])
+        got = _bind(base, mpath)
+        check("vb19 RED-FIRST: a close over a red newest verdict is refused, "
+              "the sentence naming the run: %r" % (got,),
+              got["state"] == "refused" and got.get("arm") == M.ARM_RED
+              and "R4" in (M.close_refusal(got) or ""))
+        _project(base, [row, red, _measured(base, "R6", "2026-09-06T00:00:00Z")],
+                 files="a = 3\n")
+        got = _bind(base, mpath)
+        check("vb20 RED-FIRST: a green newest verdict over declared files that "
+              "changed since refuses a close as it refuses a commit - the close "
+              "would vouch for a measurement of other bytes: %r"
+              % (got["sentence"],),
+              got.get("arm") == M.ARM_DIGEST_MOVED
+              and M.close_refusal(got) == got["sentence"])
+        _project(base, [])
+        got = _bind(base, mpath)
+        check("vb21 SECOND DIRECTION: a gate with no run recorded at all is "
+              "refused for a commit and NOT for a close - there is no "
+              "measurement to vouch for: %r" % (got["sentence"],),
+              got["state"] == "refused" and got.get("arm") == M.ARM_NO_VERDICT
+              and M.close_refusal(got) is None)
+        _project(base, [empty])
+        got = _bind(base, mpath)
+        check("vb21b SECOND DIRECTION: ...and so is an `empty-gate` answer under "
+              "a gate that has entries now: %r" % (got["sentence"],),
+              got.get("arm") == M.ARM_EMPTY_GATE and M.close_refusal(got) is None)
+        _project(base, [_measured(base, "R7", "2026-09-07T00:00:00Z",
+                                  steps=("lint",))])
+        got = _bind(base, mpath)
+        check("vb21c RED-FIRST: a green measured under another gate refuses a "
+              "close: %r" % (got["sentence"],),
+              got.get("arm") == M.ARM_GATE_CHANGED
+              and M.close_refusal(got) == got["sentence"])
+        _project(base, [reused])
+        got = _bind(base, mpath)
+        check("vb21d RED-FIRST: a repeat whose source is gone refuses a close: %r"
+              % (got["sentence"],),
+              got.get("arm") == M.ARM_REPEAT_GONE
+              and M.close_refusal(got) == got["sentence"])
+        check("vb21e the arms a close refuses are every refusing arm but the two "
+              "with no measurement: %r" % (M.CLOSE_REFUSING_ARMS,),
+              sorted(M.CLOSE_REFUSING_ARMS) == sorted([
+                  M.ARM_UNREADABLE, M.ARM_UNDATED, M.ARM_RED_AFTER_GREEN,
+                  M.ARM_RED, M.ARM_REPEAT_GONE, M.ARM_GATE_CHANGED,
+                  M.ARM_DIGEST_MOVED, M.ARM_DIGEST_UNANSWERABLE])
+              and M.ARM_NO_VERDICT not in M.CLOSE_REFUSING_ARMS
+              and M.ARM_EMPTY_GATE not in M.CLOSE_REFUSING_ARMS)
+        _project(base, [row, '{"phaseId": "P1", "torn'])
+        got = _bind(base, mpath)
+        check("vb22 a line that will not parse and could be the newest verdict "
+              "refuses a close too - it may be the red: %r" % (got["sentence"],),
+              M.close_refusal(got) == got["sentence"])
+        _project(base, [row, red])
+        got = _bind(base, mpath, entries=())
+        check("vb23 a red after the last green under a gate emptied since "
+              "refuses a close, as it refuses a commit: %r" % (got["sentence"],),
+              "R4" in (M.close_refusal(got) or ""))
+        _project(base, [])
+        got = _bind(base, mpath, entries=())
+        check("vb24 ALLOW: the no-gate arm closes, its sentence said: %r"
+              % (got["sentence"],),
+              got["state"] == "no-gate" and M.close_refusal(got) is None)
+
+        # A group signed off together: the carrier holds the run, every other
+        # member points at it with `testEvidence.gradedBy`.
+        plan = {"phases": [
+            {"id": "P1", "tasks": [{"id": "P1.1", "files": ["a.py"]}]},
+            {"id": "P2", "testEvidence": {"runId": "R", "gradedBy": "P1"},
+             "tasks": [{"id": "P2.1", "files": ["b.py"]}]},
+            {"id": "P3", "tasks": [{"id": "P3.1", "files": ["c.py"]}]}]}
+        carrier, members = M.group_of(plan, plan["phases"][1])
+        check("vb25 RED-FIRST: a group member's verdict is its carrier's run, "
+              "over every member's files: %r"
+              % ((carrier.get("id"), [m.get("id") for m in members]),),
+              carrier.get("id") == "P1"
+              and [m.get("id") for m in members] == ["P1", "P2"]
+              and M.phase_files(members) == ["a.py", "b.py"])
+        carrier, members = M.group_of(plan, plan["phases"][0])
+        check("vb26 ...and the carrier asked itself finds the same group",
+              [m.get("id") for m in members] == ["P1", "P2"])
+        carrier, members = M.group_of(plan, plan["phases"][2])
+        check("vb27 SECOND DIRECTION: a phase graded alone is its own carrier "
+              "and its only member",
+              carrier.get("id") == "P3" and [m.get("id") for m in members]
+              == ["P3"])
+
+        # TWO COPIES OF ONE LEDGER, read as one: a branch tip's and a worktree's.
+        line_a = json.dumps({"runId": "A", "ts": "2026-09-01T00:00:00Z"})
+        line_b = json.dumps({"runId": "B", "ts": "2026-09-02T00:00:00Z"})
+        union = M.rows_of([("tip", line_a + "\n"),
+                           ("tree", line_a + "\n" + line_b + "\n"),
+                           ("lost", None)])
+        check("vb28 RED-FIRST: the union of two copies holds each row once - the "
+              "row both carry once, the row only the worktree carries still "
+              "read: %r" % ([r.get("runId") for r in union],),
+              sorted(r.get("runId") for r in union) == ["A", "B"])
+        stale = {"state": "refused", "arm": M.ARM_DIGEST_MOVED, "sentence": "s",
+                 "row": {"ts": "2026-09-01T00:00:00Z"}}
+        late_red = {"state": "refused", "arm": M.ARM_RED, "sentence": "r",
+                    "row": {"ts": "2026-09-01T06:00:00Z"}}
+        early_red = dict(late_red, row={"ts": "2026-09-01T01:00:00Z"})
+        signed = {"at": "2026-09-01T05:00:00Z"}
+        check("vb29 RED-FIRST: a sign-off recorded with --no-evidence-reason "
+              "answers a stale green: %r / %r"
+              % (M.close_refusal(stale), M.close_refusal(stale, signed)),
+              M.close_refusal(stale) == "s"
+              and M.close_refusal(stale, signed) is None)
+        check("vb30 SECOND DIRECTION: ...but not a red recorded after it, and a "
+              "sign-off with no moment answers no red at all",
+              M.close_refusal(late_red, signed) == "r"
+              and M.close_refusal(early_red, signed) is None
+              and M.close_refusal(early_red, {"at": None}) == "r")
+        journal = [("j", json.dumps({"action": "phase.verdict",
+                                     "ts": "2026-09-01T05:00:00Z",
+                                     "details": {"phaseId": "P1"}}) + "\n"
+                    + json.dumps({"action": "phase.verdict",
+                                  "ts": "2026-09-01T07:00:00Z",
+                                  "details": {"phaseId": "P2"}}) + "\n")]
+        check("vb31 the sign-off moment is the newest phase.verdict row for THAT "
+              "phase: %r" % (M.signoff_moment(journal, "P1"),),
+              M.signoff_moment(journal, "P1") == "2026-09-01T05:00:00Z"
+              and M.signoff_moment(journal, "P9") is None)
     finally:
         _harness.remove_tree(root)
 

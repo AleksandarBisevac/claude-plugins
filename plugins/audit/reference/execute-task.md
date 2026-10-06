@@ -234,7 +234,18 @@ not need to.
      **not** "unchanged", and must not be read as one: a comparison that could not be made is
      the one answer that lets a wrong claim go on being cited. `head` moved means the branch
      moved under the work; `scopeDigest` moved means the declared files changed; `dirtyDigest`
-     moved means some path's dirty status changed somewhere in the tree. **Nothing enforces that
+     moved means some path's dirty status changed somewhere in the tree; `content` moved means
+     the bytes git reports changed, which includes the case none of the other three fields can
+     see: a rewrite of an already-dirty file the task does not declare, which in a shared tree
+     is a sibling's in-flight edit. A moved `content` names the path(s) that moved on a
+     `moved:` line when both stamps kept their per-path list. That list is bounded
+     (`_tree_stamp.DIRTY_PATHS_LIMIT`), and over the bound the line says the path cannot be
+     named rather than naming some. The paths this plugin's own recorder writes
+     (`_evidence_io.recorded_paths`, derived again from the manifest the stamp stores) are left
+     out of `content`, so your manifest and journal writes between take and compare do not stale
+     a stamp. A version-1 stamp carries no `content` field: it is graded on the other three and
+     the comparison says that a rewrite of an undeclared dirty file was not compared. Every field
+     prints its own limit (`says:`) beside it. **Nothing enforces that
      a return carries a stamp at all.** `return_shape_drift()` in
      `plugins/audit/scripts/_refs.py` holds only that this document asks for every field
      `agents/audit-executor.md` declares — it cannot see whether an executor filled one in, and

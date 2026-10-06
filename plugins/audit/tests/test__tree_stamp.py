@@ -17,20 +17,22 @@ here is what the MOVE and the new question added.
   change one thing at a time and assert both halves — the field that moved AND
   the fields that held — because asserting only the mover passes against a
   comparison that reports everything as moved.
-- **The inherited limit is pinned, not described.** `DIRTY_LIMIT` says the digest
-  records which paths were dirty and never their contents, and `tsl2` is the case
-  that rewrites an already-dirty file outside the declared scope and watches
-  nothing move. A limit that is only written down is a limit nobody has checked.
+- **The inherited limit is pinned, not described, and the field that closes it
+  is pinned beside it.** `DIRTY_LIMIT` says the digest records which paths were
+  dirty and never their contents, and `tsl3` rewrites an already-dirty file
+  outside the declared scope: the three older fields agree, the stamp's `content`
+  field moves, and the comparison names exactly that path. `tsv1` is the other
+  direction — a version-1 token, which has no content field, still compares and
+  says what it did not compare. `tsb1`/`tsb2` hold the bound on the per-path list.
 - **Moved outranks unanswerable.** A tree with one field moved and another
   unreadable HAS moved, and reporting that as ungradeable would hide a fact
   already in hand.
 - **The content identity is graded against the stamp, in one fixture.** `tsc2`
-  makes the same edit twice and asks both questions: the stamp says `current`
-  and the content digest moves. A caller skipping work on the stamp's word
-  would skip it after a real change, which is what this function was added to
-  stop — and asserting only the half that moves would pass against a digest
-  that moves on everything, so `tsc1` is the quiet tree that has to agree with
-  itself and `tsc3` is the commit that has to change nothing.
+  makes the same edit twice and asks both questions, and both move: the stamp
+  carries the content digest as a field. Asserting only the half that moves
+  would pass against a digest that moves on everything, so `tsc1` is the quiet
+  tree that has to agree with itself and `tsc3` is the commit that has to change
+  nothing.
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
@@ -167,13 +169,17 @@ def _field_cases(check):
           M.field_state("scopeDigest", None, None, False) == M.NOT_DECLARED
           and M.field_state("scopeDigest", None, None, True) == M.UNANSWERABLE)
 
-    state = M.tested_state(os.getcwd(), [], None)
+    _stamp, state = M.take(os.getcwd(), [])
     missing = [key for _f, key, _limit in M.FIELD_LIMIT if key not in state]
-    check("tsf4 every field's BASIS KEY names a key `tested_state` really files, "
-          "read off the table rather than built by concatenation. The first run "
-          "of this module printed `basis: None` under two of the three fields "
-          "for exactly that reason: %r" % (missing,),
-          missing == [] and set(M.IDENTITY_FIELDS) <= set(state))
+    row = M.tested_state(os.getcwd(), [], None)
+    check("tsf4 every field's BASIS KEY names a key `take` really files, read "
+          "off the table rather than built by concatenation - the first run of "
+          "this module printed `basis: None` under two fields for exactly that "
+          "reason. And the content basis is `take`'s alone: `tested_state` is "
+          "what a gate row records, and its shape does not grow with the "
+          "stamp: %r / %r" % (missing, sorted(row)),
+          missing == [] and "contentBasis" not in row
+          and set(f for f in M.IDENTITY_FIELDS if f != "content") <= set(row))
 
     check("tsf5 the limit `dirty_digest` inherited is stated in the same words "
           "it was written in, because the stamp PRINTS it and a softened "
@@ -190,7 +196,6 @@ def _field_cases(check):
 def _tree_cases(check):
     repo = _seeded_repo("tree-stamp-selftest-")
     mine = os.path.join(repo, "src", "mine.py")
-    theirs = os.path.join(repo, "src", "theirs.py")
     owns = ["src/mine.py"]
 
     stamp, state = M.take(repo, owns)
@@ -234,24 +239,6 @@ def _tree_cases(check):
           strayed["verdict"] == M.STALE
           and _states(strayed)["dirtyDigest"] == M.MOVED
           and _states(strayed)["scopeDigest"] == M.AGREES)
-
-    # THE INHERITED LIMIT, EXERCISED RATHER THAN DESCRIBED. `theirs.py` is
-    # already dirty and outside the declared scope, so rewriting it changes no
-    # porcelain LINE and no declared byte. This case exists so nobody can read
-    # the stamp as a snapshot of the repository.
-    _write(theirs, "w = 2\n")
-    stamp3, _state3 = M.take(repo, owns)
-    _write(theirs, "w = 3\n")
-    limited = M.compare(stamp3, repo)
-    check("tsl2 A REWRITE OF AN ALREADY-DIRTY FILE OUTSIDE THE DECLARED SCOPE "
-          "MOVES NOTHING, which is `DIRTY_LIMIT` in the flesh: porcelain reports "
-          "STATUS and never bytes. The stamp is a retry discriminator, not a "
-          "reproducible snapshot, and this is the case that stops the docstring "
-          "being the only thing saying so: %r / %r"
-          % (limited["verdict"], _states(limited)),
-          limited["verdict"] == M.CURRENT
-          and _states(limited)["dirtyDigest"] == M.AGREES
-          and _states(limited)["scopeDigest"] == M.AGREES)
 
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "second")
@@ -314,6 +301,112 @@ def _unknowable_cases(check):
           and _states(ranked)["scopeDigest"] == M.MOVED)
 
 
+# --- the stamp's content field: the bytes the three fields above cannot see ---
+def _content_entry(result):
+    """The `content` field's entry off a `compare()` result, or `{}`."""
+    return dict((e["field"], e) for e in result["fields"]).get("content") or {}
+
+
+def _content_stamp_cases(check):
+    repo = _seeded_repo("tree-stamp-content-stamp-")
+    mine = os.path.join(repo, "src", "mine.py")
+    theirs = os.path.join(repo, "src", "theirs.py")
+    owns = ["src/mine.py"]
+
+    # The shape a shared tree has while siblings work: BOTH files already dirty,
+    # one declared and one a sibling's in-flight edit. Rewriting the sibling's
+    # file changes no porcelain line and no declared byte, so the three older
+    # fields agree whatever happens to it - the content field is the only one
+    # that can see this edit.
+    _write(mine, "v = 2\n")
+    _write(theirs, "w = 2\n")
+    stamp, _state = M.take(repo, owns)
+    quiet = M.compare(stamp, repo)
+    _write(theirs, "w = 3\n")
+    moved = M.compare(stamp, repo)
+    entry = _content_entry(moved)
+    text = "\n".join(M.render_comparison(moved))
+    check("tsl3 A REWRITE OF AN ALREADY-DIRTY FILE OUTSIDE THE DECLARED SCOPE "
+          "IS STALE, and the comparison NAMES that path - exactly that one, "
+          "counted rather than found, so a comparison naming every dirty path "
+          "fails here. The quiet compare first is the allow half: a dirty "
+          "undeclared file that nobody touched still grades `current`: "
+          "quiet=%r moved=%r states=%r paths=%r"
+          % (quiet["verdict"], moved["verdict"], _states(moved),
+             entry.get("paths")),
+          quiet["verdict"] == M.CURRENT
+          and moved["verdict"] == M.STALE
+          and _states(moved).get("content") == M.MOVED
+          and _states(moved).get("dirtyDigest") == M.AGREES
+          and _states(moved).get("scopeDigest") == M.AGREES
+          and entry.get("paths") == ["src/theirs.py"]
+          and text.count("src/theirs.py") == 1)
+
+    repo1 = _seeded_repo("tree-stamp-v1-")
+    mine1 = os.path.join(repo1, "src", "mine.py")
+    whole, _s1 = M.take(repo1, owns)
+    v1 = {"v": 1, "scope": whole.get("scope"), "head": whole.get("head"),
+          "scopeDigest": whole.get("scopeDigest"),
+          "dirtyDigest": whole.get("dirtyDigest")}
+    back, problem = M.parse_stamp("signed off.\n%s\n" % (M.format_stamp(v1),))
+    graded = M.compare(back, repo1) if back is not None else {"verdict": None,
+                                                               "fields": []}
+    v1_text = ("\n".join(M.render_comparison(graded))
+               if back is not None else "")
+    _write(mine1, "v = 5\n")
+    edited = M.compare(back, repo1) if back is not None else {"verdict": None,
+                                                               "fields": []}
+    check("tsv1 A VERSION-1 TOKEN STILL COMPARES - a stamp already pasted into "
+          "a commit message is not made unreadable by a new spelling. The quiet "
+          "tree is `current` over the three fields v1 carries, the result says "
+          "it is a v1 comparison and the render says the content field was not "
+          "compared; and rewriting the DECLARED file is still `stale` by its "
+          "scope digest: problem=%r quiet=%r version=%r fields=%r edited=%r"
+          % (problem, graded["verdict"], graded.get("version"),
+             [e["field"] for e in graded["fields"]], edited["verdict"]),
+          problem is None
+          and graded["verdict"] == M.CURRENT
+          and graded.get("version") == 1
+          and [e["field"] for e in graded["fields"]]
+          == ["head", "scopeDigest", "dirtyDigest"]
+          and "carries no content field" in v1_text
+          and edited["verdict"] == M.STALE
+          and _states(edited).get("scopeDigest") == M.MOVED)
+
+
+def _bound_cases(check):
+    repo = _seeded_repo("tree-stamp-bound-")
+    owns = ["src/mine.py"]
+    many = [os.path.join(repo, "src", "extra%03d.py" % (n,))
+            for n in range(M.DIRTY_PATHS_LIMIT + 1)]
+    for path in many:
+        _write(path, "x = 1\n")
+    stamp, state = M.take(repo, owns)
+    _write(many[0], "x = 2\n")
+    over = M.compare(stamp, repo)
+    entry = _content_entry(over)
+    check("tsb1 OVER THE BOUND THE STAMP KEEPS NO PATH LIST, and the comparison "
+          "still answers `stale` by the content digest while saying it cannot "
+          "name the path - rather than naming none and reading as 'nothing in "
+          "particular moved': paths=%r why=%r basis=%r"
+          % (entry.get("paths"), entry.get("pathsWhy"),
+             state.get("contentBasis")),
+          stamp.get("dirtyPaths") is None
+          and over["verdict"] == M.STALE
+          and entry.get("state") == M.MOVED
+          and entry.get("paths") is None
+          and "bound" in (entry.get("pathsWhy") or "")
+          and "bound" in (state.get("contentBasis") or ""))
+
+    for path in many[1:]:
+        os.remove(path)
+    under, _ustate = M.take(repo, owns)
+    check("tsb2 ...and AT the bound it keeps one - the second direction, so a "
+          "list that was never kept at all fails here: %r"
+          % (sorted((under.get("dirtyPaths") or {}).keys()),),
+          sorted((under.get("dirtyPaths") or {}).keys()) == ["src/extra000.py"])
+
+
 # --- the content identity: every byte git reports -----------------------------
 def _content_cases(check):
     repo = _seeded_repo("tree-stamp-content-")
@@ -329,10 +422,10 @@ def _content_cases(check):
           first is not None and first == again
           and "tracked path(s)" in (basis or ""))
 
-    # THE CASE THE THREE STAMP FIELDS CANNOT PASS, asserted as a PAIR in one
-    # fixture: the same edit, graded by both questions, answering differently.
-    # `tsl2` above is the stamp half and this is the content half, and the two
-    # sitting apart is what stops a reader taking either for the other.
+    # THE STAMP AND THE CONTENT DIGEST, asserted as a PAIR in one fixture: the
+    # same edit, graded by both questions, now answering alike - the stamp
+    # carries this digest as its `content` field, so a stamp that still said
+    # `current` here would be the two content questions disagreeing.
     _write(theirs, "w = 2\n")
     dirty_once, _once = M.content_digest(repo)
     stamp, _state = M.take(repo, ["src/mine.py"])
@@ -340,14 +433,16 @@ def _content_cases(check):
     dirty_twice, _twice = M.content_digest(repo)
     graded = M.compare(stamp, repo)
     check("tsc2 A REWRITE OF AN ALREADY-DIRTY FILE OUTSIDE THE DECLARED SCOPE "
-          "MOVES THIS, while the stamp over the same edit still says `current`. "
-          "That gap is the whole reason this function exists: a caller skipping "
-          "work on the stamp's word would skip it after a real change to any "
-          "file the work does not declare: content moved=%r stamp=%r"
-          % (dirty_once != dirty_twice, graded["verdict"]),
+          "MOVES THIS, and the stamp over the same edit is `stale` by its "
+          "content field - the three older fields still agree, which is "
+          "`DIRTY_LIMIT`, and the content field is what a caller skipping work "
+          "on the stamp's word now reads: content moved=%r stamp=%r states=%r"
+          % (dirty_once != dirty_twice, graded["verdict"], _states(graded)),
           dirty_once is not None and dirty_twice is not None
           and dirty_once != dirty_twice
-          and graded["verdict"] == M.CURRENT)
+          and graded["verdict"] == M.STALE
+          and _states(graded).get("content") == M.MOVED
+          and _states(graded).get("dirtyDigest") == M.AGREES)
 
     _git(repo, "add", "-A")
     staged, _sb = M.content_digest(repo)
@@ -554,6 +649,8 @@ def _cases(check):
     _harness.stage(check, "tsf", _field_cases)
     _harness.stage(check, "tst", _tree_cases)
     _harness.stage(check, "tsu", _unknowable_cases)
+    _harness.stage(check, "tsv", _content_stamp_cases)
+    _harness.stage(check, "tsb", _bound_cases)
     _harness.stage(check, "tsc", _content_cases)
     _harness.stage(check, "tsc-excluded", _excluded_cases)
     _harness.stage(check, "tsc-identity", _identity_cases)

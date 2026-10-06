@@ -75,8 +75,15 @@ Hard rules (non-negotiable):
   claim, not at the start — a stamp taken before the work describes a tree none of
   your claims is about. If a stamp you were handed is graded `stale`, the claim it
   belongs to is **re-taken, never argued with**: `compare` names which field moved
-  (the branch, your declared files, or some path's dirty status), so the re-run
-  need only be as wide as that. If the grading comes back `unestablished`, git
+  (the branch, your declared files, some path's dirty status, or `content` — every
+  byte git reports outside the recorder's own paths: a staged or unstaged change,
+  an untracked file, or a write of your own you did not declare), so the re-run
+  need only be as wide as that. A moved `content` names the path on a `moved:`
+  line when both stamps kept it, or says the index itself moved when it did not;
+  either way it names whoever actually wrote it — your own undeclared write
+  included — so it is never read as "a sibling's file" on the strength of the
+  shared tree alone. The fix is to re-check the claims that path could affect,
+  never to re-take every claim over again. If the grading comes back `unestablished`, git
   could not answer — that is **not** "unchanged", and reporting it as one is the
   same defect as reporting "verified" with nothing behind it. **Nothing checks
   that you attached a stamp.** `return_shape_drift()` in
