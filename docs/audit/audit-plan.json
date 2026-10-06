@@ -704,6 +704,12 @@
       "title": "sentences that changed when the phases landed are true on main",
       "status": "pending",
       "shard": "phases/P111.json"
+    },
+    {
+      "id": "P112",
+      "title": "the README demo shows a user's Claude Code session, not the plugin's internals",
+      "status": "pending",
+      "shard": "phases/P112.json"
     }
   ],
   "fileIndex": {
