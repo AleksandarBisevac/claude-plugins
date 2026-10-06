@@ -249,6 +249,72 @@ def _cases(check):
         check("scan: completed line is picked up on the next pass",
               M.totals(r_p2)["out"] == 5)
 
+        # --- scanning: a streaming partial, then the final entry -----------
+        # The shape a real subagent transcript wrote: one message id twice, first
+        # with stop_reason null and the output count of the first streamed
+        # tokens, then with the stop reason and the real count. Input and cache
+        # fields are the same on both entries, so a fix that counted both would
+        # show up as a doubled `in`.
+        def streamed(mid, out_tokens, stop):
+            return json.dumps({
+                "type": "assistant", "timestamp": "2026-08-06T07:30:00Z",
+                "gitBranch": "audit/p3",
+                "message": {"id": mid, "model": "claude-haiku-4-5",
+                            "stop_reason": stop, "usage": {
+                                "input_tokens": 2306, "output_tokens": out_tokens,
+                                "cache_creation_input_tokens": 0,
+                                "cache_read_input_tokens": 0}}})
+
+        one_scan = os.path.join(proj, "sess-stream.jsonl")
+        with open(one_scan, "w", encoding="utf-8") as fh:
+            fh.write(streamed("msg-S", 3, None) + "\n")
+            fh.write(streamed("msg-S", 164, "tool_use") + "\n")
+        r_s, _ = M.scan_transcripts(one_scan, "sess-1", {}, manifest, opts)
+        t_s = M.totals(r_s)
+        check("sf1 a streaming partial followed by its final entry is counted "
+              "once, at the final entry's output tokens (164, not the partial's 3)",
+              (t_s["out"], t_s["in"], t_s["msgs"]) == (164, 2306, 1),
+              (t_s["out"], t_s["in"], t_s["msgs"]))
+
+        two_scans = os.path.join(proj, "sess-stream-split.jsonl")
+        with open(two_scans, "w", encoding="utf-8") as fh:
+            fh.write(streamed("msg-T", 1, None) + "\n")
+        r_t1, c_t1 = M.scan_transcripts(two_scans, "sess-1", {}, manifest, opts)
+        with open(two_scans, "a", encoding="utf-8") as fh:
+            fh.write(streamed("msg-T", 125, "end_turn") + "\n")
+        r_t2, c_t2 = M.scan_transcripts(two_scans, "sess-1", c_t1, manifest, opts)
+        t_t = M.totals(r_t1 + r_t2)
+        check("sf2 a scan that ends after the partial and a later scan that reads "
+              "the final entry together count the message once, at the final "
+              "entry's tokens (125 out, 2306 in, one message)",
+              (t_t["out"], t_t["in"], t_t["msgs"]) == (125, 2306, 1),
+              (t_t["out"], t_t["in"], t_t["msgs"]))
+        r_t3, _ = M.scan_transcripts(two_scans, "sess-1", c_t2, manifest, opts)
+        with open(two_scans, "a", encoding="utf-8") as fh:
+            fh.write(streamed("msg-T", 125, "end_turn") + "\n")
+        r_t4, _ = M.scan_transcripts(two_scans, "sess-1", c_t2, manifest, opts)
+        check("sf3 ...and once the final is counted, a re-scan and a repeat of the "
+              "final entry add nothing",
+              r_t3 == [] and M.totals(r_t4)["tokens"] == 0,
+              (r_t3, M.totals(r_t4)))
+        pend = (c_t2.get("files") or {}).get(two_scans, {}).get("pending")
+        check("sf4 ...and the cursor stops carrying a message as provisional once "
+              "its final entry is counted",
+              not pend, pend)
+
+        # Allow twin, for the mutation that counts final entries only: a message
+        # whose stream was cut off never gets a final entry, and its partial is
+        # the only record that tokens were spent at all.
+        cut_off = os.path.join(proj, "sess-stream-cut.jsonl")
+        with open(cut_off, "w", encoding="utf-8") as fh:
+            fh.write(streamed("msg-U", 7, None) + "\n")
+        r_u, _ = M.scan_transcripts(cut_off, "sess-1", {}, manifest, opts)
+        t_u = M.totals(r_u)
+        check("sf5 a partial that never gets a final entry is still counted, "
+              "rather than dropped",
+              (t_u["out"], t_u["in"], t_u["msgs"]) == (7, 2306, 1),
+              (t_u["out"], t_u["in"], t_u["msgs"]))
+
         # --- scanning: subagents + parallel attribution --------------------
         sub = os.path.join(proj, "sess-1", "subagents")
         os.makedirs(sub)

@@ -20,6 +20,15 @@ transcript entry that shares its `message.id` (measured: 1543 assistant entries 
 ~2.4x. Everything here dedups by `message.id` — within a scan, and across scans via
 a bounded ring carried in the cursor. `_selftest` pins this.
 
+The repeats are not always identical. A message can be written first as a streaming
+partial (`stop_reason` null, the output count of the first few streamed tokens) and
+then again as the final entry carrying the real count; keeping the first entry for an
+id counted the partial and lost nearly all of that message's output. So a message
+counted while every entry seen for it was a partial stays PROVISIONAL: its counted
+figures ride in the cursor beside the ring, and a later entry for the same id adds
+only what it exceeds them by. See `_scan_file` for why that, and not "count only the
+final entry".
+
 Attribution, highest precision first (nothing is ever dropped):
 
   1. task          - the subagent's `.meta.json` description starts with a task id.
@@ -450,15 +459,42 @@ def _context_of(counts):
             + int(counts.get(REREAD_KEY) or 0))
 
 
+def _pending_of(raw):
+    """The cursor's provisional counts, keyed by message id, read defensively: a
+    cursor written before this field existed has none, and an id it does not hold is
+    treated as finally counted, exactly as the ring alone treated it."""
+    if not isinstance(raw, dict):
+        return {}
+    out = {}
+    for mid, counts in raw.items():
+        if not isinstance(counts, dict):
+            continue
+        try:
+            out[mid] = dict((k, max(0, int(counts.get(k) or 0))) for k in TOKEN_KEYS)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def _scan_file(path, file_cursor, attributor, agent_meta, opts):
     """Tail one transcript file from its cursor offset.
 
     Returns (groups, new_file_cursor). `groups` maps a row key to accumulated counts.
     Only COMPLETE lines are consumed — a trailing partial line stays unread so the
-    next scan picks it up whole."""
+    next scan picks it up whole.
+
+    A streaming partial is counted when it is read, and its counts are kept in the
+    cursor's `pending` map until an entry for the same id arrives with a stop
+    reason; that entry contributes only its excess over what was already counted,
+    field by field, and adds no second message. Counting final entries only was
+    the other way to do it, and it loses a message whose stream was cut off before
+    any final entry was written, along with every token that partial records. The
+    ledger is append-only and a scan can end between the partial and the final, so
+    a correction has to be an addition: a row already written cannot be edited."""
     groups = {}
     prev = file_cursor if isinstance(file_cursor, dict) else {}
     recent = list(prev.get("recent") or [])
+    pending = _pending_of(prev.get("pending"))
     # The task the last message to this agent named, carried between scans for the
     # reason the ring is: a scan reads only the new bytes, so the message that
     # moved attribution is usually in a chunk already consumed. Forgetting it
@@ -471,6 +507,7 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
     offset = int(prev.get("offset") or 0)
     if size < int(prev.get("size") or 0):
         offset, recent, handoff = 0, [], None   # truncated or rotated -> start over
+        pending = {}
     if offset == 0 and not prev:
         # First sight. Historic backfill is bounded so the 10s hook timeout is safe;
         # the unbounded pass is `audit-usage.py --backfill`, which has no timeout.
@@ -479,7 +516,7 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
             offset = size
     if offset >= size:
         return groups, {"offset": size, "size": size, "recent": recent,
-                        "handoff": handoff}
+                        "pending": pending, "handoff": handoff}
 
     try:
         with open(path, "rb") as fh:
@@ -490,7 +527,7 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
     cut = chunk.rfind(b"\n")
     if cut < 0:
         return groups, {"offset": offset, "size": size, "recent": recent,
-                        "handoff": handoff}
+                        "pending": pending, "handoff": handoff}
     consumed = cut + 1
     seen = set(recent)
 
@@ -519,10 +556,14 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
             continue
         usage = message.get("usage")
         mid = message.get("id")
-        if not isinstance(usage, dict) or not mid or mid in seen:
+        if not isinstance(usage, dict) or not mid:
+            continue
+        provisional = pending.get(mid)
+        if mid in seen and provisional is None:
             continue                     # <- THE dedup. See module docstring.
-        seen.add(mid)
-        recent.append(mid)
+        if provisional is None:
+            seen.add(mid)
+            recent.append(mid)
         model = message.get("model") or ""
         if model.startswith("<"):
             continue                     # `<synthetic>` API-error placeholders
@@ -530,6 +571,20 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
         bucket = hour_bucket(ts)
         if bucket is None:
             continue
+        counts = _usage_counts(usage)
+        if provisional is None:
+            added = counts
+        else:
+            # Only the excess over what the partial already put in the ledger,
+            # never a negative: an earlier row cannot be taken back.
+            added = dict((k, max(0, counts[k] - provisional[k])) for k in TOKEN_KEYS)
+        if message.get("stop_reason") is None:
+            pending[mid] = dict((k, max(counts[k], (provisional or counts)[k]))
+                                for k in TOKEN_KEYS)
+        else:
+            pending.pop(mid, None)
+        if provisional is not None and not any(added.values()):
+            continue                     # a repeat that adds nothing writes no row
         phase_id, task_id, attr = attributor.attribute(agent_meta, parse_ts(ts),
                                                        handoff=handoff)
         key = (bucket, agent_meta.get("_agentId"), agent_meta.get("agentType"),
@@ -539,16 +594,20 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
             slot = groups[key] = {k: 0 for k in TOKEN_KEYS}
             slot["msgs"] = 0
             slot["maxContext"] = 0
-        counts = _usage_counts(usage)
-        for k, v in counts.items():
+        for k, v in added.items():
             slot[k] += v
-        slot["msgs"] += 1
+        if provisional is None:
+            slot["msgs"] += 1
         slot["maxContext"] = max(slot["maxContext"], _context_of(counts))
 
     if len(recent) > RECENT_IDS_CAP:
         recent = recent[-RECENT_IDS_CAP:]
+    # A provisional id that has left the ring can no longer be told apart from a
+    # new message, so carrying its counts would only grow the cursor.
+    kept = set(recent)
+    pending = dict((mid, c) for mid, c in pending.items() if mid in kept)
     return groups, {"offset": offset + consumed, "size": size, "recent": recent,
-                    "handoff": handoff}
+                    "pending": pending, "handoff": handoff}
 
 
 def scan_transcripts(transcript_path, session_id, cursor, manifest, opts):

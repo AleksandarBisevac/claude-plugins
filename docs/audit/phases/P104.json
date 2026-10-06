@@ -427,7 +427,7 @@
     {
       "id": "P104.7",
       "title": "pilot: compare Claude Code's own cost with the ledger's on the same work",
-      "status": "in_progress",
+      "status": "done",
       "description": "Decide whether Claude Code's own cost can replace the plugin's price table. On the pinned CLI version, first verify which sources exist and at what grain (verifying-external-behavior): a headless run's total_cost_usd and modelUsage costUSD, the OTel claude_code.cost.usage metric with its agent.name attribute, and any per-message cost in the transcript meter-usage already tails; per-task attribution needs per-subagent cost, which a session total cannot give. Run one short headless session that spawns one subagent, capped with --max-budget-usd, with OTel exported to the console, and compare native cost per session and per agent with the ledger rows meter-usage wrote for it at the corrected table. Record the result as an evaluated entry in CONTRIBUTING.md's Decision record (the measurement as dated history with the command that re-derives it, and a revisit trigger). gate-only: a measurement and a written decision, no product code.",
       "files": [
         "CONTRIBUTING.md"
@@ -450,18 +450,24 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0fbc0ed3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Pilot taken once on 2026-10-06, CLI 2.1.291. Free survey first: neither `claude --help` nor `claude -p --help` names total_cost_usd, the OTel variables or the cost metric; they exist only as strings in the binary, and in this repository's transcripts a cost-state row carries totalCostUSD and per-model modelUsage.costUSD while no assistant entry carries a cost. One paid headless run in a scratch fixture (its own --settings, no permission bypass, --model haiku, --max-budget-usd 0.50, --max-turns 8, one custom subagent) exited 0 with total_cost_usd 0.042306; modelUsage held one entry covering the main agent and the subagent together, so native cost has no per-agent split, and the OTel console output and its agent.name attribute were not observed (recorded as a gap). Metering the same transcript with this branch's meter-usage and corrected price table gave 0.040881, with input, cache-read and cache-write tokens equal to modelUsage; the whole gap is output tokens the ledger undercounts (a dedup keeping a streaming partial per message id), filed as a bug with its own fix task. Decision record entry in CONTRIBUTING.md: keep the price table, because every native source is per session and per model, never per subagent; use the native session total as a reconciliation check; revisit when a native per-subagent cost or the OTel metric with agent.name is observed. Spend: 0.042306 USD of the 0.50 cap.",
+        "descriptive": "A single capped paid run showed that Claude Code's own cost figure matches the plugin's corrected prices but only per session and model, never per task or subagent, so the plugin keeps its price table and uses the native total as a cross-check; the run also exposed an undercount in the ledger, now filed and being fixed."
       },
       "startedAt": "2026-10-06T21:25:09Z",
-      "completedAt": null,
+      "completedAt": "2026-10-06T22:14:22Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-06T22:07:26Z.be3fe7",
         "status": "passed",
         "at": "2026-10-06T22:07:26Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "0fbc0ed3",
+        "at": "2026-10-06T22:14:22Z",
+        "basis": "orchestrator check: the description's survey, one capped run and recorded decision are all present; the measurement is dated history beside the commands that re-derive it; spend 0.042306 USD"
       }
     },
     {
