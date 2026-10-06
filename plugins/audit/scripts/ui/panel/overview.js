@@ -64,8 +64,9 @@ async function refreshFromDisk(fpBack){
   // rather than swallowing it.
   if(interacting()){FP=fpBack;return;}
   // BEFORE the state swap, and that is this line's position rather than
-  // dirtyViews' business: the registered closures compare each form against
-  // STATE, so a swapped STATE would misjudge every open form. What counts as
+  // dirtyViews' business: Composition's closure still compares its form against
+  // STATE, so a swapped STATE would misjudge it. Settings and Policy compare
+  // against the base each was drawn from, which the swap does not touch. What counts as
   // dirty - and why an unreadable surface counts - belongs to dirtyViews.
   // It is read after the fetches for the same reason as the re-check above: a
   // form the reader dirtied while they were in flight is dirty NOW.
@@ -98,7 +99,7 @@ async function refreshFromDisk(fpBack){
  if(!dirty.guards)reRender('guards',renderSettings);else staleNote('guards');
   if(!dirty.comp)reRender('comp',renderComp);else staleNote('comp');
   if(pol){POLICY=pol;
-   if(!dirty.policy){PDRAFT=pClone(POLICY&&POLICY.stored);
+   if(!dirty.policy){pTake(POLICY&&POLICY.stored);
     reRender('policy',renderPolicy);}
    else staleNote('policy');}
   renderOver();

@@ -416,6 +416,55 @@ def _cases(check):
               "how the form writes 'use the default': %r" % (_cp_raw(),),
               _r.get("ok") is True
               and json.loads(_cp_raw()) == {"trivialLineThreshold": 40})
+
+        # The Policy tab's Save is a patch too, and the reason is this case: the
+        # reader's draft knew only `skills`, and another writer added an `agents`
+        # rule after the draft was taken. The patch names `policy.skills.deny`
+        # alone, so the block the server read under its lock keeps the other rule.
+        _cp_seed('{"policy": {"skills": {"deny": ["old-*"]}}}\n')
+
+        def _policy_writer(*args, **kwargs):
+            _cp_seed('{"policy": {"skills": {"deny": ["old-*"]},'
+                     ' "agents": {"deny": ["doc-writer"]}}}\n')
+            return _real_lock(*args, **kwargs)
+
+        M._acquire_write_lock = _policy_writer
+        try:
+            _r = M.write_config_patch(_cp, {"patch": [
+                {"path": ["policy", "skills", "deny"], "value": ["shell-runner"]}]})
+        finally:
+            M._acquire_write_lock = _real_lock
+        check("cp6 a policy patch keeps a key it does not name: another writer's "
+              "agents rule, landed after the draft, survives the reader's skills "
+              "edit: %r" % (_cp_raw(),),
+              _r.get("ok") is True
+              and json.loads(_cp_raw()) == {"policy": {
+                  "skills": {"deny": ["shell-runner"]},
+                  "agents": {"deny": ["doc-writer"]}}})
+        # The refusal twin: the patch door judges the policy with the same rules
+        # the old wholesale door did, so moving the Save here cannot widen what a
+        # policy may say.
+        _before = _cp_raw()
+        _r = M.write_config_patch(_cp, {"patch": [
+            {"path": ["policy", "skills", "default"], "value": "denied"}]})
+        check("cp7 ...and a malformed policy value sent as a patch is refused, "
+              "naming the policy key, with nothing written: %r" % (_r,),
+              _r.get("ok") is False
+              and any("policy.skills.default" in f for f in _r.get("findings") or [])
+              and _cp_raw() == _before)
+
+        # A cleared block reaches the server as one removal per leaf it held, and
+        # the pruning leaves the key ABSENT, not `{}`. Pinned because the two are
+        # not the same everywhere: the hooks' config merge lets a literal `{}`
+        # replace a shipped table, while absence keeps it.
+        _cp_seed('{"trivialLineThreshold": 40,'
+                 ' "policy": {"skills": {"deny": ["shell-runner"]}}}\n')
+        _r = M.write_config_patch(_cp, {"patch": [
+            {"path": ["policy", "skills", "deny"], "remove": True}]})
+        check("cp8 a policy block cleared by removals lands ABSENT on disk, not as "
+              "an empty block: %r" % (_cp_raw(),),
+              _r.get("ok") is True
+              and json.loads(_cp_raw()) == {"trivialLineThreshold": 40})
     finally:
         M._acquire_write_lock = _real_lock
         _shutil.rmtree(_cp_tmp, ignore_errors=True)

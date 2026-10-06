@@ -182,8 +182,11 @@ function settingsLink(text,path){
  *
  * One draft and one Save for all of it, because the cards are one FILE.
  * Every control edits a deep clone of the served config; Save diffs that clone
- * against what the server last sent and sends only that diff, as a patch the
- * server applies to the file it reads under its write lock. The same diff is
+ * against a second clone taken at the same moment — the config this form was
+ * drawn from — and sends only that diff, as a patch the server applies to the
+ * file it reads under its write lock. Never against `STATE.config` at Save time:
+ * the disk refresh replaces it while the form is dirty (it defers the re-render,
+ * not the read), and that diff names another writer's change as this reader's. The same diff is
  * what lets the confirm dialog list the change as rows and lets Discard say how
  * much it is about to throw away.
  *
@@ -207,11 +210,15 @@ function renderSettings(){closeCombo();
  const keepBack=focusKeep('#guards');
  const c=$('#guards');c.textContent='';
  const cfg=JSON.parse(JSON.stringify(STATE.config||{})),d=STATE.defaults;
+ // Reassigned once, after a save the server accepted: from then on the file holds
+ // the draft's values for every key the patch named.
+ let base=JSON.parse(JSON.stringify(STATE.config||{}));
  const findings=el('div',{class:'findings-slot'});
- // What this form would change, against the config the server last served. Read by
- // Save (to list it), by Discard (to say what is being thrown away) and by
- // beforeunload (to decide whether it may interrupt at all).
- EDITS.guards=()=>configChanges(cfg);
+ // What this form would change, against the config it was drawn from. Read by
+ // Save (to list it and to build the patch), by Discard (to say what is being
+ // thrown away) and by beforeunload (to decide whether it may interrupt at all).
+ const pendingRows=()=>configChanges(cfg,base);
+ EDITS.guards=pendingRows;
  // One `cfg`, one Save: the four cards are one FILE, and one Save is one
  // confirm dialog listing everything about to change in it.
  // `data-save` is the hand-back's hook, the pair of `data-discard`: focusSel names
@@ -220,7 +227,7 @@ function renderSettings(){closeCombo();
  // across the re-render that followed. #policy and the theme card already had
  // data-psave and data-thsave; these three are the ones that did not.
  const save=el('button',{class:'btn primary','data-save':'guards',onclick:async()=>{
-   const rows=await confirmSave({rows:()=>configChanges(cfg),
+   const rows=await confirmSave({rows:pendingRows,
      title:'Save settings',scope:'guards',empty:'no settings changed',
      note:'writes .claude/audit.config.json, rewritten in canonical JSON layout '
        +'— its existing formatting is not kept'});
@@ -228,12 +235,16 @@ function renderSettings(){closeCombo();
    // Only what changed, applied by the server to the file as it reads it under
    // its write lock: the draft predates anything written since this page loaded.
    const res=await api('PUT','/api/config',
-     {patch:configPatch(STATE.config||{},cfg,STATE.defaults||{})});
+     {patch:configPatch(base,cfg,STATE.defaults||{})});
    findings.replaceChildren(findingsBox(res));
    saveOutcome(res,rows,'the config',findings);
-   if(res.ok){STATE.config=JSON.parse(JSON.stringify(cfg));syncGuardsDirty();}}},
+   // The base moves only on the server's yes, and to the draft: every key the
+   // patch named now holds the draft's value. A key another writer changed is
+   // still stale in both until the refresh this save triggers redraws the form.
+   if(res.ok){base=JSON.parse(JSON.stringify(cfg));
+    STATE.config=JSON.parse(JSON.stringify(cfg));syncGuardsDirty();}}},
    'Save settings');
- const discard=discardButton({key:'guards',rows:()=>configChanges(cfg),
+ const discard=discardButton({key:'guards',rows:pendingRows,
    title:'Discard unsaved settings',
    note:'nothing is written; the form goes back to the saved file',
    toast:'discarded — the form is back to the saved file',
@@ -244,10 +255,10 @@ function renderSettings(){closeCombo();
  // Both the count and the per-field marks come from ONE read of the form, and
  // the save path needs the same read: `onViewEdit` fires on the Save CLICK, which
  // is before the PUT resolves, so the last thing it ever computes is the state
- // just before the write. Without a second call after `STATE.config` moves, the
+ // just before the write. Without a second call after the base moves, the
  // savebar keeps offering to discard a change that is already on disk.
  const syncGuardsDirty=()=>{
-   const rows=configChanges(cfg);
+   const rows=pendingRows();
    refreshDiscard(discard,rows.length);
    markPending('guards',rows,fieldId);};
  onViewEdit('guards',syncGuardsDirty);

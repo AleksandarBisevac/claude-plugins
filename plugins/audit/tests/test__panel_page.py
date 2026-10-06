@@ -419,8 +419,17 @@ def _cases(check):
           and "return TABS[0];}" in M.UI_HTML
           and "if(!TABS.includes(t))t=TABS[0];" in M.UI_HTML,
           repr({"TABS": _tab_ids, "strip": _strip_ids}))
-    check("one Save for four cards, and it is reachable from all of them",
-          M.UI_HTML.count("'/api/config'") == 1 and ".savebar{position:sticky" in M.UI_HTML)
+    # Two config writes, and both are PATCHES built against the base their form
+    # was drawn from: Settings' one Save for its four cards, and the Policy tab's
+    # Save for its one key. A third, or either sending a whole document, is a
+    # write that can carry another writer's change back at an older value.
+    check("one Save for four cards, and it is reachable from all of them - and the "
+          "only other config write is the policy tab's patch",
+          M.UI_HTML.count("'/api/config'") == 2
+          and "api('PUT','/api/config',\n     {patch:configPatch(base,cfg,STATE.defaults||{})})"
+          in M.UI_HTML
+          and "api('PUT','/api/config',{patch:policyPatch()})" in M.UI_HTML
+          and ".savebar{position:sticky" in M.UI_HTML)
     # --- the three facts the form has to state out loud ------------------------
     check("tokenVars: an empty box means the three defaults are ACTIVE, and says so "
           "rather than looking like nothing is protected",
@@ -1035,7 +1044,7 @@ def _cases(check):
           "cannot protect",
           "const EDITS={};" in M.UI_HTML
           and "EDITS.comp=()=>compChanges(patch);" in M.UI_HTML
-          and "EDITS.guards=()=>configChanges(cfg);" in M.UI_HTML
+          and "EDITS.guards=pendingRows;" in M.UI_HTML
           and "EDITS.policy=()=>policyChanges();" in M.UI_HTML
           and "EDITS.ado=()=>adoRows(saved,ADRAFT);" in M.UI_HTML
           # The theme card: registered last of the five, because its draft lives
@@ -1248,7 +1257,7 @@ def _cases(check):
           "const cfRow=(target,field,from,to)=>({target,field,"
           "from:cfNorm(from),to:cfNorm(to)});" in M.UI_HTML
           and "function compChanges(patch)" in M.UI_HTML
-          and "function configChanges(cfg)" in M.UI_HTML)
+          and "function configChanges(cfg,base)" in M.UI_HTML)
     check("what came back is compared with what was shown, not merely trusted",
           "function appliedDiff(rows,res)" in M.UI_HTML
           and "res.applied.map(key)" in M.UI_HTML
@@ -2428,15 +2437,22 @@ def _cases(check):
           "verdicts are re-read from the server after a save",
           "moved?el('span',{class:'badge pend'" in M.UI_HTML
           and "POLICY=await api('GET','/api/policy')" in M.UI_HTML)
-    # EVERY assignment, not one of them. The first version of this pin asked
-    # whether the string appeared at all — and it appears four times (boot, save,
-    # discard, and v0.34's refreshFromDisk), so a mutation that pointed one of
-    # them at the merged block left it green. A wholesale PUT built from defaults
-    # would write every default into the file the first time anyone pressed Save.
-    _pdraft = re.findall(r"PDRAFT=pClone\(([^)]*)\)", M.UI_HTML)
+    # EVERY reset, not one of them. The first version of this pin asked whether
+    # the string appeared at all, so a mutation that pointed one reset at the
+    # merged block left it green; a patch built from defaults would write every
+    # default into the file the first time anyone pressed Save. Resets now go
+    # through `pTake`, which sets the draft and its base together - so the pin
+    # reads every call of it AND that nothing else assigns either variable
+    # beyond its declaration and pBlock's first-write `{}`.
+    _ptake = sorted(re.findall(r"(?<!function )pTake\(([^)]*)\)", M.UI_HTML))
+    _passign = sorted(re.findall(r"\bP(DRAFT|BASE)=(?!=)([^;]*);", M.UI_HTML))
     check("the draft is the block AS WRITTEN, not the merged one - and that is "
-          "true of every place the draft is set, not merely somewhere",
-          _pdraft == ["POLICY&&POLICY.stored"] * 4
+          "true of every place the draft and its base are set, not merely "
+          "somewhere: %r" % ((_ptake, _passign),),
+          _ptake == ["POLICY&&POLICY.stored"] * 3 + ["back?back.stored:PDRAFT"]
+          and _passign == [("BASE", "null"), ("BASE", "pClone(stored)"),
+                           ("DRAFT", "null"), ("DRAFT", "pClone(stored)"),
+                           ("DRAFT", "{}")]
           and "pRuleOf(POLICY.stored,kind,r.name,tag)" in M.UI_HTML)
     # THE PIN THAT USED TO BE HERE ASSERTED A SPELLING, AND THE SPELLING DID NOT
     # DELIVER ITS OWN CLAIM. It read
@@ -2572,16 +2588,18 @@ def _cases(check):
           "function pPrune(" in M.UI_HTML
           and "if(Array.isArray(k[l])&&!k[l].length)delete k[l];" in M.UI_HTML
           and "if(!Object.keys(k.areas).length)delete k.areas;" in M.UI_HTML)
-    check("a save goes through the one confirm flow, writes through the one policy "
-          "endpoint, and describes itself in the vocabulary the server echoes "
-          "(four call sites: boot, PUT, the post-save re-read, refreshFromDisk)",
+    check("a save goes through the one confirm flow, writes through the config "
+          "patch, and describes itself in the vocabulary the server echoes - the "
+          "policy endpoint is READ at boot, after a save and by refreshFromDisk, "
+          "and written by nothing on this page",
           # Through `confirmSave` now, which is where the confirm flow lives for
           # all four writable surfaces - the title is what identifies this one.
           "confirmSave({rows:policyChanges,\n     title:'Save capability policy'"
           in M.UI_HTML
-          and M.UI_HTML.count("'/api/policy'") == 4
+          and M.UI_HTML.count("'/api/policy'") == 3
+          and "'PUT','/api/policy'" not in M.UI_HTML
           and "function policyChanges(){" in M.UI_HTML
-          and "return configChanges(cfg);}" in M.UI_HTML)
+          and "return configChanges(pAsConfig(PDRAFT),pAsConfig(PBASE));}" in M.UI_HTML)
     check("the box saying what a save did survives the redraw that follows it, "
           "instead of being wiped by the re-read it triggers",
           "PNOTE=[...findings.childNodes];" in M.UI_HTML

@@ -519,8 +519,13 @@ def release_index_lock(lock, out=None):
 def write_policy(project, body):
     """`PUT /api/policy` — replace the `policy` block wholesale.
 
-    Wholesale for the same reason the registry is: a policy is a set of rules, and
-    removing one is as ordinary an edit as adding one.
+    The panel's Policy tab does NOT save through here. Its Save sends a config
+    patch to `PUT /api/config` (`write_config_patch`), built against the block its
+    draft was taken from, because a wholesale replace overwrites every rule
+    another writer added or changed while the draft was open — and the patch,
+    applied to the config read under the write lock, leaves a key it does not name
+    as it is on disk. This door stays for a caller that means to state the whole
+    block, and it is that caller's job to have read it first.
 
     Checked HERE before anything is written, so the caller gets
     `policy.skills.default: must be 'allow' or 'deny'` rather than the same fact
@@ -1606,7 +1611,12 @@ def apply_config_patch(config, patch):
 
 
 def write_config_patch(project, body):
-    """`PUT /api/config` - apply the Settings form's patch: `{"patch": [...]}`.
+    """`PUT /api/config` - apply a form's patch: `{"patch": [...]}`.
+
+    Two forms send one: Settings, and the Policy tab, whose every path starts at
+    `policy`. A policy patch is judged by the same whole-config validation as any
+    other, which hands the block to `_policy.validate_policy`, so a malformed rule
+    is refused here with nothing written, in the policy's own words.
 
     The form used to send its whole copy of the config, which rewrote keys nobody
     changed: the copy predated anything written after the page loaded and had lost

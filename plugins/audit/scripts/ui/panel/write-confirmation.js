@@ -333,7 +333,21 @@ function cfAt(o,segs){let cur=o;
  * default stops reaching the project, and the dialog has to say so. An empty
  * shipped default copies nothing, so there is nothing to pin.
  *
- * @param {*} before - the config the server last served
+ * An EMPTY object is a leaf on one side only while the other side has keys
+ * beneath it, and then it is not an entry of its own. Writing `{}` over an
+ * object, or removing an empty one before writing into it, would replace the
+ * whole branch on the server — taking every key another writer put in it since
+ * the form was drawn. The entries for the keys beneath already say what changed,
+ * and the server prunes a container its removals empty.
+ *
+ * So a branch the draft CLEARS is written as ABSENCE, never as `{}`: its leaves
+ * are removed and the container goes with them. For the policy block the two
+ * read the same, but not everywhere — `_deep_merge` in hooks/_config.py treats a
+ * literal `{}` at depth two (`usage.pricing: {}`) as replacing the shipped
+ * table, and absence as keeping it. A form that means the literal `{}` has to
+ * send that entry itself; this diff will not produce it.
+ *
+ * @param {*} before - the config the form was drawn from
  * @param {*} after - the form's draft
  * @param {*} defaults - the shipped defaults
  * @returns {Array<{path: string[], from: *, to: *, remove: boolean, pin: boolean}>}
@@ -343,11 +357,16 @@ function cfDiff(before,after,defaults){
  const a=new Map(cfLeaves(before).map(([p,v])=>[JSON.stringify(p),v]));
  const b=new Map(cfLeaves(after).map(([p,v])=>[JSON.stringify(p),v]));
  const out=[];
+ const emptyObj=v=>!!v&&typeof v==='object'&&!Array.isArray(v)&&!Object.keys(v).length;
+ const holdsUnder=(m,path)=>[...m.keys()].some(k=>{const p=JSON.parse(k);
+  return p.length>path.length&&path.every((seg,i)=>p[i]===seg);});
  [...new Set([...a.keys(),...b.keys()])].forEach(k=>{
   const path=JSON.parse(k),ina=a.has(k),inb=b.has(k),from=a.get(k),to=b.get(k);
   // Presence as well as value: deleting a key is how "use the default" is
   // written, and a key whose value was already null would otherwise vanish.
   if(ina===inb&&cfSame(from,to))return;
+  if(!inb&&emptyObj(from)&&holdsUnder(b,path))return;
+  if(!ina&&emptyObj(to)&&holdsUnder(a,path))return;
   if(!inb){out.push({path,from,to:undefined,remove:true,pin:false});return;}
   const def=cfAt(defaults,path);
   out.push({path,from,to,remove:false,pin:!ina&&Array.isArray(to)&&def.has
@@ -362,8 +381,10 @@ function cfDiff(before,after,defaults){
  * loaded — so sending it back rewrote keys nobody changed. The server applies
  * these entries to the config it reads under its write lock.
  *
- * @param {*} before - the config the server last served
- * @param {*} after - the form's draft
+ * @param {*} before - the config the form was drawn from. Not `STATE.config`
+ *   read at Save time: the disk refresh replaces that while a form is dirty, and
+ *   a diff against it sends another writer's change back at the form's old value
+  * @param {*} after - the form's draft
  * @param {*} defaults - the shipped defaults
  * @returns {Array<{path: string[], value: *, pin: (boolean|undefined)}|{path: string[], remove: true}>}
  *   empty when nothing changed
@@ -375,12 +396,18 @@ function configPatch(before,after,defaults){
  * What saving this config would change, path by path — the patch, read for a
  * person.
  *
- * @param {Object<string, *>} cfg - the config document the Guards form would write
+ * The base is an ARGUMENT and has no fallback, for the reason `configPatch`
+ * gives: the rows and the patch must be the same diff, and a default of
+ * `STATE.config` is exactly the diff that lists another writer's change as the
+ * reader's own.
+ *
+ * @param {Object<string, *>} cfg - the config document the form would write
+ * @param {Object<string, *>} base - the config the form diffs against
  * @returns {Array<{target: 'config', field: string, from: *, to: *, pin: (boolean|undefined)}>}
  *   one row per patch entry, sorted by path; empty when nothing changed
  */
-function configChanges(cfg){
- return cfDiff(STATE.config||{},cfg||{},STATE.defaults||{}).map(e=>
+function configChanges(cfg,base){
+ return cfDiff(base||{},cfg||{},STATE.defaults||{}).map(e=>
    Object.assign(cfRow('config',e.path.join('.'),e.from,e.to),e.pin?{pin:true}:{}));}
 
 // --- handing the caret back -----------------------------------------------------
@@ -1017,7 +1044,7 @@ function saveOutcome(res,rows,what,slot,hint){
  */
 async function boot(){STATE=await api('GET','/api/state');REG=await api('GET','/api/registry');
  USAGE=await api('GET','/api/usage').catch(()=>null);BANDS=null;MITEMS=null;
- POLICY=await api('GET','/api/policy').catch(()=>null);PDRAFT=pClone(POLICY&&POLICY.stored);
+ POLICY=await api('GET','/api/policy').catch(()=>null);pTake(POLICY&&POLICY.stored);
  // The usage filters are restored BEFORE the first Usage render: the hash first
  // (a share link is an instruction somebody sent), this repo's stored filters
  // second, defaults last.

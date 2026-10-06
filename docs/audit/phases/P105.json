@@ -614,7 +614,7 @@
     {
       "id": "P105.9-m32",
       "title": "a tokenless panel page names the way back, and the pidfile's temp is ignored and swept",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P105-R2 and P105-R3. A GET / without the token answers a plain-text 403 that says where the real URL is (/audit:panel status, the pidfile .claude/audit-panel.json, or a relaunch) and echoes no token; commands/panel.md says the URL --status prints is redacted and will not open the page, and that the browser was opened with the full one; CHANGELOG [Unreleased] records that a panel URL without its token now answers 403. The pidfile's temp file is covered by the panel's self-ignore rows and stale audit-panel.json.tmp-* files are swept on launch and stop; the owner-only claim in the docstring is limited to POSIX; an existing pidfile is tightened to owner-only when status or the already-running branch reads it.",
       "files": [
         "plugins/audit/scripts/panel/panel-server.py",
@@ -653,18 +653,43 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "5034979b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "A tokenless request for the panel page now answers a text/plain 403 (_TOKENLESS_PAGE_TEXT) that names .claude/audit-panel.json, /audit:panel status (whose printed URL is redacted) and a relaunch, and echoes nothing from the request; a bad host and the /api/* refusals stay JSON, because the page's own script reads those. The pidfile's temp file is named by _PIDFILE_TMP_PREFIX and covered by a new audit-panel.json.tmp-* row in the panel's self-ignore table; stale temp files are swept on launch (after the already-running check) and on stop, with any that cannot be removed reported on stderr; an existing pidfile is tightened to owner-only on POSIX when status or the already-running branch reads it, and the owner-only docstring claim is limited to POSIX. Every reader of the ignore table follows: the doctor's hygiene check keeps its own copy of the rows (layer rules forbid importing the server), learns glob rows (fnmatch for basenames, a :(glob) pathspec for git ls-files) and names a tracked temp file with a git rm --cached repair; the example's committed .claude/.gitignore carries the new row so a first launch leaves its tree clean. examples/panel.sh --detach no longer offers the redacted URL as one that opens: it says the browser was opened at the full URL and names the pidfile, and under --no-open, where nobody else opens the page, it prints the full URL with the same token note the server prints; examples/README.md, commands/panel.md (whose launch step now only checks the panel came up) and the CHANGELOG [Unreleased] entries say the same. Cases: tp1, tp1b, tp1c, tp2, tp2b, tp3, tp3b, tp4, tm1, ps1, ps1b and eg1 in test_panel_server.py (i4 and i6 rewritten), dh32, dh33, dh33b and dh33c in test__doctor_hygiene.py. Reds via the helper: test_panel_server 90/99 at HEAD and test__doctor_hygiene 36/37 (dh33); eg1 was red after the server change and before the .gitignore edit; the over-fire mutation that made /api answer text turned tp1c red.\nAfter re-review: the sweep skips any temp file younger than a named grace period by mtime, so it never removes another launch's in-flight write, and treats a file that vanished meanwhile as fine (tp5: a fresh temp survives, an hour-old one is removed; red against the un-aged sweep before the fix). examples/panel.sh reads the pidfile's url once before choosing what to say: with none recorded, both modes say the launch did not come up instead of claiming a browser was opened (ps1c, red before the fix). The comment above do_GET's / route says it runs the same Host and token checks as the API, with only the refusal's shape differing.",
+        "descriptive": "Opening the panel without its token now gives a readable message saying where the real address is, a launch interrupted mid-write no longer leaves a token-bearing file that git would pick up, and the example launcher no longer offers an address that will not open."
       },
       "startedAt": "2026-10-06T20:02:34Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T21:22:17Z",
+      "verifiedBy": [
+        "tp1",
+        "tp1b",
+        "tp1c",
+        "tp2",
+        "tp2b",
+        "tp3",
+        "tp3b",
+        "tp4",
+        "tp5",
+        "tm1",
+        "ps1",
+        "ps1b",
+        "ps1c",
+        "eg1",
+        "dh32",
+        "dh33",
+        "dh33b",
+        "dh33c"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T21:06:23Z.a11d59",
         "status": "passed",
         "at": "2026-10-06T21:06:23Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "5034979b",
+        "at": "2026-10-06T21:22:17Z",
+        "basis": "audit-reviewer (phase mode) re-review: R2 and R3 fixed as a class (every reader of the ignore table follows); the follow-ups it flagged (an unaged sweep racing a live launch, a launcher claiming a browser opened after a failed launch, a stale comment) fixed with reds"
       }
     },
     {
