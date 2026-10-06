@@ -66,7 +66,7 @@ checks at all is policy, and that is what the right column is.
 
 | Enforced by a hook (before) or a script (after) | Followed from `orchestrator.md` |
 |---|---|
-| Secret file **contents** — never read, directly or indirectly | Human confirmation before a `reset` / `rebase` / `clean` |
+| A call naming a secret file is refused, through the channels the guard reads ([open shapes](SECURITY.md#known-bypass-classes-accepted-documented)) | Human confirmation before a `reset` / `rebase` / `clean` |
 | Env values and token variables — never dumped | `risk: "high"` waits for a human before committing |
 | Shell writes into source files no task covers | Revalidate the manifest after **every** write |
 | Commits the manifest records — never orphaned | `attempts >= maxAttempts` sets `blocked` |

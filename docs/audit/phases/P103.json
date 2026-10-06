@@ -79,7 +79,7 @@
     {
       "id": "P103.2",
       "title": "the open secret-read and shell-write shapes are pinned as characterization cases",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The documented gaps live only in a private corpus, so nothing in this repository goes red when one is closed or when the document stops naming it. Add each documented-gap shape as a characterization case in the existing guard suites, asserting today's verdict and following the existing 'KNOWN LIMIT' pattern (named as a decision, pointing at SECURITY.md). Tests only: this task changes no guard code. The boundary case where a string literal merely mentions a secret path is left to P108's verdict table. If a safeguard refuses the work, report could-not-run rather than rewording around it.",
       "files": [
         "plugins/audit/tests/test_guard_secrets_read.py",
@@ -107,21 +107,26 @@
       "dependsOn": [
         "P103.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T15:58:49Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T16:32:49Z.5ff754",
+        "status": "passed",
+        "at": "2026-10-06T16:32:49Z"
+      }
     },
     {
       "id": "P103.3",
       "title": "SECURITY.md states the panel's trust boundary as the code holds it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "SECURITY.md says holding the panel's token is holding the panel but never says who can obtain it, and commands/panel.md's 'requires a per-launch token on every API call' reads as access control. Add one boundary statement: the panel trusts every local process that can read its token, and holding it grants config and composition writes, including the gate command the next gate run executes (journalled). Write the boundary the code holds when this lands, naming its mechanisms so it can be checked: panel-server.py serves GET / without asking for the token and embeds it in the page, and _write_pidfile's file mode decides who else can read it; today that is any local account, and once P105's token-on-GET and 0600 pidfile land it narrows to the same user, which is the sentence P105 names. gate-only: one documentation sentence; selftests runs the lints that read SECURITY.md.",
       "files": [
         "SECURITY.md"
@@ -142,21 +147,26 @@
       "dependsOn": [
         "P103.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T15:58:50Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T16:29:23Z.bab9b3",
+        "status": "passed",
+        "at": "2026-10-06T16:29:23Z"
+      }
     },
     {
       "id": "P103.4",
       "title": "README and plugin README claim no more about secret reads than SECURITY.md",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Three sentences promise what SECURITY.md disclaims: README.md:69 'Secret file contents - never read, directly or indirectly', plugins/audit/README.md:287-288 'blocks reading secret files ... directly or indirectly' and the enforced-table row at :377 'Secret contents are never read'. Restate each as what is refused (a call that names a secret file, through the channels the row lists) and link the open shapes in SECURITY.md, keeping the table shape and the README's script-path reference (test__refs c3). Acceptance: grep over README.md, QUICKSTART.md, plugins/audit/README.md and docs/handbook.html finds no unqualified 'never read' or 'directly or indirectly' claim about secrets. gate-only: text; selftests runs the doc lints.",
       "files": [
         "README.md",
@@ -178,16 +188,21 @@
       "dependsOn": [
         "P103.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T15:58:50Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T16:25:49Z.e00733",
+        "status": "passed",
+        "at": "2026-10-06T16:25:49Z"
+      }
     },
     {
       "id": "P103.5",
@@ -392,7 +407,7 @@
     {
       "id": "P103.10",
       "title": "CONTRIBUTING opens with a one-page Your first change",
-      "status": "in_progress",
+      "status": "done",
       "description": "A first external PR today means reading CLAUDE.md, CONTRIBUTING and the UI skills before the first line, and nothing says which of them a given change needs. Add a 'Your first change' section at the top of CONTRIBUTING.md, at most one page, folding in Dev setup rather than repeating it: what to read for a doc fix, a Python fix and a UI fix (the skill table in CLAUDE.md), that PLUGIN-BUILD-GUIDE.md is needed only for a new .py, the one command to iterate with (tools/verify.sh --fast) and the one before a PR (tools/verify.sh), what CI checks, and the optional tools (Node for vitest and the browser gates, Pillow for the demo GIF). No duration or count unless it carries the command that re-derives it. Acceptance line: from that page alone, a first-time contributor can tell what to read for their kind of change, which single command to run before a PR and what CI will check, without opening PLUGIN-BUILD-GUIDE.md unless they add a .py file.",
       "files": [
         "CONTRIBUTING.md"
@@ -413,24 +428,30 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b17c54fa",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CONTRIBUTING.md opens with a one-page 'Your first change' section that folds in the old Dev setup (clone, local marketplace, the guard-edits dev-mode note) instead of repeating it: what to read for a doc fix, a Python fix and a UI fix (pointing at the skill rows in CLAUDE.md), that PLUGIN-BUILD-GUIDE.md is needed only for a new .py file, tools/verify.sh --fast to iterate and tools/verify.sh before a PR, and what CI checks. The tools paragraph names what the plain verify.sh run needs beyond the stdlib-only plugin - Node (vitest, ajv-cli, the browser gates), ruff and vermin (pip, pinned in CI) and the Claude Code CLI (claude plugin validate) - and says Pillow is needed only for a manual demo-GIF regeneration, because the --check path never imports it. The old reading-order list stays as 'Reading order beyond this page'. No count or duration without its command; doc_prose_numbers and doc_link_drift are clean.",
+        "descriptive": "CONTRIBUTING.md now opens with one page that tells a first-time contributor what to read for their kind of change, the one command to run before a PR, what CI checks and which tools it needs."
       },
       "startedAt": "2026-10-06T14:46:28Z",
-      "completedAt": null,
+      "completedAt": "2026-10-06T15:57:58Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-06T15:57:24Z.44eeb0",
         "status": "passed",
         "at": "2026-10-06T15:57:24Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b17c54fa",
+        "at": "2026-10-06T15:57:58Z",
+        "basis": "audit-reviewer (task mode, two rounds): one medium finding (a false claim that Node and Pillow were the only non-stdlib tools) fixed and re-reviewed clean against verify.sh, ci.yml and capture-demo-gif.py"
       }
     },
     {
       "id": "P103.11",
       "title": "issue and PR templates point a contributor at the one page",
-      "status": "pending",
+      "status": "in_progress",
       "description": ".github holds only workflows, so an issue arrives without the version or the doctor output needed to act on it, and a PR without the checks the repo requires. Add a bug template asking for /audit:version, /audit:doctor output, the command run and what happened; a feature template asking which module and what it blocks, which is where the freeze decision's revisit trigger is observed; a config.yml that routes exploitable weaknesses to SECURITY.md's private address instead of a public issue; and a PR template linking 'Your first change' with tools/verify.sh green and a red-first proof for any new check. gate-only: new Markdown and YAML; selftests runs the prose-number lint, which reads every committed .md.",
       "files": [
         ".github/ISSUE_TEMPLATE/bug_report.md",
@@ -454,21 +475,26 @@
       "dependsOn": [
         "P103.10"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T15:58:51Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T16:31:10Z.30e833",
+        "status": "passed",
+        "at": "2026-10-06T16:31:10Z"
+      }
     },
     {
       "id": "P103.12",
       "title": "decision record: optional modules take fixes only, no new UI shape pins, no new prose lints",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The surface to maintain grows through discretionary work, so add one Decision record entry with three parts. (a) The panel, the usage views, the ADO connector, the demo and the theme editor take fixes only, no new features, until a user asks; exceptions named up front: the cost-truth work in the usage views (P104), the panel's state-truth fixes (P105) and an ADO feature a real user requests. (b) No new UI shape pins: when a UI part changes, its pins move to vitest or browser behaviour checks, with tools/count-ui-pins.py as the budget. (c) No new lints over prose or repository numbers, stating the consequence: a false documentation claim keeps no mechanical guard and is caught by review at release. Phrase each revisit trigger as an observable property of the system, as the entry on reversed decisions asks (for example, a user report that an optional module blocks their work), never as a count.",
       "files": [
         "CONTRIBUTING.md"
@@ -489,16 +515,21 @@
       "dependsOn": [
         "P103.10"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T15:58:51Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T16:27:30Z.1089d1",
+        "status": "passed",
+        "at": "2026-10-06T16:27:30Z"
+      }
     },
     {
       "id": "P103.13-xi3",

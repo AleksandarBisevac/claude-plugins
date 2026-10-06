@@ -284,9 +284,10 @@ page behind it, read against the form rather than instead of it. All of it is
     see only human prompts, which is what makes the keyword the human's and not an
     agent's); also warns once per session when
     `.claude/audit.config.json` is malformed (your custom rules would silently not apply).
-  - `guard-secrets-read.py` (PreToolUse: Read/Grep/Bash) — blocks reading secret files
-    (`.env`, credentials, signing material) directly or indirectly (`git show`, `source`,
-    `cp`/`mv`), dumping env/token values, and shell writes into source files
+  - `guard-secrets-read.py` (PreToolUse: Read/Grep/Bash) — refuses a call that names a
+    secret file (`.env`, credentials, signing material), through the direct tool call or
+    through `git show`, `source`, `cp`/`mv` ([open shapes](../../SECURITY.md#known-bypass-classes-accepted-documented)
+    — this is name-based, not containment), dumping env/token values, and shell writes into source files
     (`sed -i`, `tee`, `>` redirects) that bypass the plan gate. Multi-clause commands are
     judged per clause (a redirect in one clause plus an eval in another is not an
     eval-write), and its verdicts land in the same gate events feed the panel reads.
@@ -374,7 +375,7 @@ are the table in [SECURITY.md](../../SECURITY.md#fail-modes-by-design).
 
 | Rule | Mechanism | What happens when it is broken |
 |---|---|---|
-| Secret **contents** are never read — directly, or through `git show`, `git cat-file`, `source`, a copy-verb, an inline `python3 -c`, a heredoc fed to an interpreter, or an MCP server's own file tool | `guard-secrets-read.py` — PreToolUse `Read\|Grep\|Bash\|mcp__.*` | **deny**, at every tier, manifest or not. Reading file *names* is never blocked. An MCP call is judged on the paths its payload names, at any depth, never on the server it was installed under — so a secret file is refused there whatever the operation, creating it included |
+| A call that names a secret file is refused — directly, or through `git show`, `git cat-file`, `source`, a copy-verb, an inline `python3 -c`, a heredoc fed to an interpreter, or an MCP server's own file tool ([open shapes](../../SECURITY.md#known-bypass-classes-accepted-documented) — a read that reaches the file without naming it is not caught) | `guard-secrets-read.py` — PreToolUse `Read\|Grep\|Bash\|mcp__.*` | **deny**, at every tier, manifest or not. Reading file *names* is never blocked. An MCP call is judged on the paths its payload names, at any depth, never on the server it was installed under — so a secret file is refused there whatever the operation, creating it included |
 | Env values are never dumped (`printenv`, `env`) and token-like variables never echoed | `guard-secrets-read.py` | **deny**, ungraded |
 | A **shell** write into a source file that no `in_progress` task covers — `sed -i`, `tee`, `>`/`>>`, heredoc redirects, inline-eval writes | `guard-secrets-read.py` | the plan gate's tier for that file: observe / warn / **ask** / **deny** — the same tier `Edit` would get, so the two channels agree on one file |
 | No commit the manifest records is orphaned: force-push (`--force-with-lease` included), `--orphan`, `filter-branch`/`filter-repo`, `rebase`, an `--amend` of a recorded HEAD, `reset --hard <ref>` past a recorded SHA | `guard-history-rewrite.py` — PreToolUse `Bash` | **deny** while any `task.commit` is set; **inert** with none recorded, and `reset --hard` with no ref is always allowed |
