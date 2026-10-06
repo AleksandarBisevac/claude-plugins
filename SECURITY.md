@@ -666,6 +666,22 @@ straight answer:
   transcript — and block nothing. Under `usage.showCost: false` the first states a
   multiple and the second omits the figure, so the setting is not defeated by
   either message.
+- **The panel's trust boundary is the token, and the token is as private as the
+  pidfile that carries it.** `/audit:panel` trusts every local process that can
+  read that token, not merely one that already runs inside this session: holding
+  it grants every write the panel's API exposes, including the composition levers
+  (`meta.reviewSkill` / `meta.buildCommands`, `phase.review.model`, `task.model` /
+  `task.skills`) and the Sweep route above — the gate command the token-holder
+  sets is the one the next `/audit:phase`/`/audit:review` run actually executes,
+  and that write is journalled like any other. `panel-server.py`'s `do_GET` serves
+  `GET /` with no token check and embeds the token in the page it returns, so
+  reaching the port at all is reaching the token; `_write_pidfile` writes the
+  pidfile carrying that same token through a plain `open(path, "w")`, with no
+  `os.chmod` narrowing its mode, so today any local account that can read the
+  pidfile — not only the one that launched the panel — can read the token too.
+  That is wider than `commands/panel.md`'s "requires a per-launch token on every
+  API call" reads on its own: a token on every call is not the same claim as who
+  can obtain the token in the first place.
 - `/audit:panel`'s **Export report** button writes only to the report location
   derived from the project's own `manifestPath`, re-checked against the project
   root; there is no path parameter on the route to traverse with. The rendered
