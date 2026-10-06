@@ -1011,15 +1011,119 @@ def _acquire(path, record="journal"):
         except OSError as exc:
             if exc.errno not in (errno.EEXIST,):
                 raise
-        try:
-            if time.time() - os.path.getmtime(lock) > LOCK_STALE_SECONDS:
-                os.unlink(lock)         # its writer is gone; do not wait forever
-                continue
-        except OSError:
-            pass
+        if _is_stale(lock) and _break_stale(lock):
+            continue                    # its writer is gone; do not wait forever
         if time.time() >= deadline:
             raise IOError("%s is locked by another writer: %s" % (record, lock))
         time.sleep(0.02)
+
+
+def _is_stale(path):
+    """True when `path` exists and is older than LOCK_STALE_SECONDS. A path that
+    vanished is not stale: whoever removed it is the one acting on it."""
+    try:
+        return time.time() - os.stat(path).st_mtime > LOCK_STALE_SECONDS
+    except OSError:
+        return False
+
+
+# BREAKING A STALE LOCK IS ITSELF A CRITICAL SECTION. The judgement that a lock is
+# stale is a stat taken before the removal, and a waiter preempted between the two
+# can wake to a lock another waiter has already broken and replaced with its own:
+# removing the name then removes a LIVE lock, two writers append with one `prev`,
+# and `verify` reports a tamper nobody committed. So a waiter breaks only while
+# holding `<lock>.break`, taken with the same O_EXCL as the lock, and it judges the
+# lock AGAIN under it: a lock replaced in between reads as fresh and is left alone.
+# Under the breaker only a lock's own writer can still remove the name.
+#
+# A STALE BREAKER IS CLEARED THE SAME CAREFUL WAY. A breaker is held for one stat
+# and one unlink, so one older than LOCK_STALE_SECONDS belongs to a process that
+# died or was stopped inside those calls. Waiters clearing it can be overtaken
+# exactly as waiters breaking a lock can, so `_clear_stale_breaker` renames it to a
+# name only this waiter uses (one rename wins per file), judges the renamed file
+# again, and unlinks it only if it is still stale. If the re-judgement shows a
+# fresh breaker, the rename took a live one another waiter had just created; this
+# waiter puts a breaker back under the name and backs off. It is put back with the
+# same O_EXCL create the lock uses, not a hard link: a breaker has no content and
+# its owner releases it by NAME, so a new file under that name excludes exactly as
+# well, and it needs nothing from the filesystem that the lock itself does not.
+# A put-back the filesystem refuses for any reason other than "the name is taken"
+# raises, so the append declines rather than proceeding with exclusion it knows is
+# lost; the claim is released on every path, an exception included.
+#
+# WHAT REMAINS, stated here rather than implied away. Every case below starts from a
+# breaker that was ALREADY STALE - a waiter that died or was stopped inside its own
+# stat and unlink - and a waiter that judged it stale just before another cleared it
+# and took a fresh one. Between this waiter's rename and its put-back the name is
+# empty, and two things can follow:
+# - a third waiter takes the empty name. The put-back is refused, and the fresh
+#   breaker's owner, which still believes it holds the name, later releases it by
+#   name - removing the third waiter's breaker while that waiter is still breaking,
+#   and letting a fourth in. Two waiters then hold a breaker for one stale lock at
+#   once, and the double break this protocol exists to prevent is possible again.
+# - the owner finishes inside that window (its release finds no file) and the
+#   put-back lands after it: a breaker comes back that nobody holds. No stale lock
+#   beside it can be broken until it ages past LOCK_STALE_SECONDS, and writers that
+#   find the lock stale meanwhile give up after LOCK_WAIT_SECONDS. This needs one
+#   other waiter, not two; its cost is appends declined, never a forked chain.
+# And one window no breaker can close: a process STOPPED (a debugger, a suspended
+# laptop, SIGSTOP) for longer than LOCK_STALE_SECONDS while holding the lock or the
+# breaker is indistinguishable from a dead one; when it resumes it acts on the
+# judgement it made before it stopped - appends with its old `prev`, or unlinks the
+# lock it judged stale. A time bound cannot tell stopped from dead; only a kernel
+# lock released when its process exits can, and this module takes none.
+def _break_stale(lock):
+    """Remove `lock` if it is still stale once this waiter holds the breaker.
+    True when this waiter removed it; False when another waiter is breaking it or
+    the lock it now sees is not the stale one it judged."""
+    breaker = lock + ".break"
+    try:
+        fd = os.open(breaker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        os.close(fd)
+    except OSError as exc:
+        if exc.errno != errno.EEXIST:
+            raise
+        if _is_stale(breaker):
+            _clear_stale_breaker(breaker)
+        return False
+    try:
+        if not _is_stale(lock):
+            return False
+        os.unlink(lock)
+        return True
+    except OSError:
+        return False
+    finally:
+        _release(breaker)
+
+
+def _clear_stale_breaker(breaker):
+    """Remove `breaker` only if the file this waiter's rename took is stale; for a
+    fresh one, a breaker is put back under its name. Raises only when that
+    put-back is refused for a reason other than the name being taken."""
+    claim = "%s.%d.%s" % (breaker, os.getpid(), os.urandom(4).hex())
+    try:
+        os.rename(breaker, claim)
+    except OSError:
+        return                          # gone already: another waiter cleared it
+    try:
+        if not _is_stale(claim):
+            _restore(breaker)
+    finally:
+        _release(claim)
+
+
+def _restore(name):
+    """Create `name` again with O_EXCL. A name already taken means another waiter
+    holds the breaker now, which is the expected refusal; any other refusal means
+    exclusion this waiter took from its owner cannot be given back, and is raised."""
+    try:
+        fd = os.open(name, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        os.close(fd)
+    except OSError as exc:
+        if exc.errno != errno.EEXIST:
+            raise IOError("a live breaker could not be put back: %s (%s)"
+                          % (name, exc))
 
 
 def _release(lock):

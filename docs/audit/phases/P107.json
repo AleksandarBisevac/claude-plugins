@@ -1,7 +1,7 @@
 {
   "id": "P107",
   "title": "state writes never lose each other",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Tasks: (1) close-phase stamp_merged and record_merged_head under the index lock close-phase already takes for the stub mirror, rollback through atomic_write_json. (2) The stale journal lock is claimed by rename so only one waiter breaks it (no false tamper verdict). (3) Backfill re-reads the month file's tail after its replace, with no lock on the Stop hook's hot path. (4) A _deps rule: os.replace on plan or ledger paths only through sanctioned writers; reduce or justify the existing sites. Mechanisms reproduced by fixtures; not observed in 100 dogfood phases, hence after the higher-value phases.",
   "desiredOutcome": "two plugin writers running at once never silently drop each other's write: close-phase stamps under the index lock with an atomic rollback, a stale journal lock is broken by exactly one waiter, usage backfill keeps rows appended during its window, and the import-layer lint refuses a state write outside the sanctioned writers",
   "testGate": [
@@ -15,9 +15,15 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "6d0ef731b5ac60e6bef3c015cf9967583e3625f8",
+  "branch": "audit/p107-state-writes-never-lose-each-o",
   "mergedAt": null,
+  "claim": {
+    "sessionId": "6c881c24-c1fd-461f-8c48-abb0170e0a5a",
+    "host": "MacBook-Pro-2",
+    "branch": "audit/p107-state-writes-never-lose-each-o",
+    "at": "2026-10-06T14:44:46Z"
+  },
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -72,7 +78,7 @@
     {
       "id": "P107.2",
       "title": "a stale journal lock is broken by exactly one waiter",
-      "status": "pending",
+      "status": "in_progress",
       "description": "_acquire unlinks a lock older than LOCK_STALE_SECONDS. Waiters that both read the stale mtime can both unlink it, and the second removes the lock the first just took. Both then append with the same prev, and verify reports a tamper that never happened. That lands in a committed trail, which cannot be repaired without breaking every clone's chain. Claim the stale lock by renaming it to a name unique to the waiter, or by checking its identity before removing it, so exactly one waiter breaks it. _journal_io is on the hooks' per-call path, so `python3 tools/bench-hooks.py --gate` must stay green. The deterministic case carries the red-first; the stress case is bounded for sweep time.",
       "files": [
         "plugins/audit/scripts/governance/_journal_io.py",
@@ -97,21 +103,26 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T14:44:46Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T15:31:01Z.b9ad25",
+        "status": "passed",
+        "at": "2026-10-06T15:31:01Z"
+      }
     },
     {
       "id": "P107.3",
       "title": "usage backfill keeps the rows appended to a month file during its window",
-      "status": "pending",
+      "status": "in_progress",
       "description": "backfill reads the ledger, then rewrite_month replaces each month file, while the metering hook appends without a lock. So a row appended between the read and the replace was dropped. After its replace, backfill reads the old file's tail past the size it read, through a descriptor held across the replace, and appends the rows of sessions it did not re-read. No lock goes on the Stop hook's path, which runs every turn. Also decide the fixture's inset mode, where an in-set session's later save_cursor can win over backfill's: either close it, or state it in commands/usage.md as the remaining limit. usage.md's 'takes the shared usage lock' must also say that this lock excludes only another backfill.",
       "files": [
         "plugins/audit/scripts/usage/audit-usage.py",
@@ -138,16 +149,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T14:44:46Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T15:33:01Z.eeb7cc",
+        "status": "passed",
+        "at": "2026-10-06T15:33:01Z"
+      }
     },
     {
       "id": "P107.4",
@@ -197,5 +213,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-10-06T14:44:46Z"
 }

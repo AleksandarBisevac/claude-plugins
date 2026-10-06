@@ -22,11 +22,13 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import ast
+import errno
 import hashlib
 import json
 import os
 import platform
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -2741,6 +2743,372 @@ def _gone_cases(check):
 
     _worktree_writer_cases(check)
     _details_key_cases(check)
+    _stale_lock_cases(check)
+
+
+# --- sl: a stale lock is broken by exactly one waiter ---------------------------
+# Every waiter that finds the lock taken judges it by its age, and the judgement is
+# a stat taken BEFORE the removal. A waiter preempted between the two can wake to a
+# lock another waiter has already broken and replaced with its own; removing the
+# name then removes a live lock, two writers append with one `prev`, and `verify`
+# reports a tamper nobody committed. sl1 stages that interleaving exactly: the
+# waiter's own stat of the lock is the moment the other waiter acts.
+_STALE_AGE = 60     # comfortably past LOCK_STALE_SECONDS, read off the module below
+
+
+def _plant_lock(lock, age):
+    with open(lock, "w"):
+        pass
+    then = time.time() - age
+    os.utime(lock, (then, then))
+    return os.stat(lock)
+
+
+def _identity(st):
+    return (st.st_ino, st.st_mtime_ns)
+
+
+def _acquire_outcome(path):
+    """('took', lock) or ('declined', message) - which way one `_acquire` went."""
+    try:
+        return ("took", M._acquire(path))
+    except IOError as exc:
+        return ("declined", str(exc))
+
+
+def _with_wait(seconds, body):
+    saved = M.LOCK_WAIT_SECONDS
+    M.LOCK_WAIT_SECONDS = seconds
+    try:
+        return body()
+    finally:
+        M.LOCK_WAIT_SECONDS = saved
+
+
+def _overtaken_waiter(tmp):
+    """The waiter reads the planted lock as stale; inside that very stat another
+    waiter breaks it and takes its own. What the first waiter does next is the
+    question. Returns (outcome, fresh identity, identity left at the lock name)."""
+    path = os.path.join(tmp, "overtaken.jsonl")
+    lock = path + ".lock"
+    _plant_lock(lock, _STALE_AGE)
+    real_stat = os.stat
+    staged = {}
+
+    def stat(target, *args, **kwargs):
+        st = real_stat(target, *args, **kwargs)
+        if os.fspath(target) == lock and "fresh" not in staged:
+            os.unlink(lock)                    # the other waiter breaks it...
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            os.close(fd)                       # ...and takes its own
+            staged["fresh"] = _identity(real_stat(lock))
+        return st
+
+    os.stat = stat
+    try:
+        outcome = _with_wait(0.3, lambda: _acquire_outcome(path))
+    finally:
+        os.stat = real_stat
+    left = _identity(os.stat(lock)) if os.path.exists(lock) else None
+    return outcome, staged.get("fresh"), left
+
+
+def _young_lock_waiter(tmp):
+    path = os.path.join(tmp, "young.jsonl")
+    lock = path + ".lock"
+    planted = _identity(_plant_lock(lock, max(1, M.LOCK_STALE_SECONDS // 3)))
+    outcome = _with_wait(0.3, lambda: _acquire_outcome(path))
+    left = _identity(os.stat(lock)) if os.path.exists(lock) else None
+    return outcome, planted, left
+
+
+def _breakers_left(lock):
+    """Every file a break left beside `lock`: the breaker itself and any name a
+    waiter renamed one to. Listed, so a case can count them."""
+    stem = os.path.basename(lock) + ".break"
+    return sorted(n for n in os.listdir(os.path.dirname(lock))
+                  if n.startswith(stem))
+
+
+def _lone_stale_waiter(tmp, stale_breaker=False):
+    """A stale lock and no other waiter - with, when asked, a stale breaker beside
+    it, which is what a waiter that died or stopped mid-break leaves. Returns
+    (outcome, planted identity, identity left at the lock name, breakers left)."""
+    name = "lone-breaker" if stale_breaker else "lone"
+    path = os.path.join(tmp, name + ".jsonl")
+    lock = path + ".lock"
+    planted = _identity(_plant_lock(lock, _STALE_AGE))
+    if stale_breaker:
+        _plant_lock(lock + ".break", _STALE_AGE)
+    outcome = _with_wait(0.3, lambda: _acquire_outcome(path))
+    left = _identity(os.stat(lock)) if os.path.exists(lock) else None
+    breakers = _breakers_left(lock)
+    if outcome[0] == "took":
+        M._release(outcome[1])
+    return outcome, planted, left, breakers
+
+
+def _overtaken_breaker_clear(tmp, name="breaker", putback_errno=None,
+                             interrupt=False):
+    """A stale lock, and beside it a stale breaker. The waiter reads the breaker as
+    stale; inside that very stat another waiter clears it and takes a fresh
+    breaker of its own, and is about to judge the lock under it. Returns
+    (outcome, the other waiter's breaker identity, identity left at the breaker
+    name, identity left at the lock name, planted lock identity, breakers left).
+
+    `putback_errno` makes the filesystem refuse to create the breaker name while
+    it is empty, with that errno - a mount that cannot do what the put-back asks.
+    `interrupt` raises KeyboardInterrupt from the waiter's re-judgement of the file
+    its rename took, which is the moment a claim is on disk under its own name."""
+    path = os.path.join(tmp, name + ".jsonl")
+    lock = path + ".lock"
+    breaker = lock + ".break"
+    planted = _identity(_plant_lock(lock, _STALE_AGE))
+    _plant_lock(breaker, _STALE_AGE)
+    real_stat = os.stat
+    staged = {}
+
+    def stat(target, *args, **kwargs):
+        st = real_stat(target, *args, **kwargs)
+        if os.fspath(target) == breaker and "fresh" not in staged:
+            os.unlink(breaker)                 # the other waiter clears it...
+            fd = os.open(breaker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            os.close(fd)                       # ...and takes its own
+            staged["fresh"] = _identity(real_stat(breaker))
+        return st
+
+    real_open = os.open
+    # Read only when asked for, so a module without the helper still runs every
+    # case and fails each on its assertion rather than all of them on one lookup.
+    real_is_stale = getattr(M, "_is_stale", None)
+
+    def refusing_open(target, flags, *args, **kwargs):
+        if (os.fspath(target) == breaker and "fresh" in staged
+                and not os.path.exists(breaker)):
+            raise OSError(putback_errno, os.strerror(putback_errno), breaker)
+        return real_open(target, flags, *args, **kwargs)
+
+    def interrupted_is_stale(target):
+        if os.fspath(target).startswith(breaker + "."):
+            raise KeyboardInterrupt("staged")
+        return real_is_stale(target)
+
+    os.stat = stat
+    if putback_errno is not None:
+        os.open = refusing_open
+    if interrupt:
+        M._is_stale = interrupted_is_stale
+    try:
+        outcome = _with_wait(0.3, lambda: _acquire_outcome(path))
+    except KeyboardInterrupt as exc:
+        outcome = ("interrupted", str(exc))
+    finally:
+        os.stat = real_stat
+        os.open = real_open
+        if interrupt:
+            M._is_stale = real_is_stale
+    at_breaker = (_identity(os.stat(breaker)) if os.path.exists(breaker)
+                  else None)
+    at_lock = _identity(os.stat(lock)) if os.path.exists(lock) else None
+    return (outcome, staged.get("fresh"), at_breaker, at_lock, planted,
+            _breakers_left(lock))
+
+
+# The stress writer. Two windows are widened with a random sliver of sleep, each
+# standing for a scheduler preempting the writer there, so a short run reaches
+# what a long one reaches by luck: every stat of a lock sleeps AFTER reading it
+# (between judging the lock and acting on the judgement), and the tail read sleeps
+# before the row is written (so two writers that both believe they hold the lock
+# overlap, rather than happening to take turns). A lock that holds makes both
+# sleeps harmless; a lock lost to a second breaker forks the chain.
+#
+# The writer's wait is raised far past the queue the sleeps build up, so a slow
+# machine cannot turn a writer that merely waited too long into a red trial. A
+# longer wait never hides a lost lock: a double break still forks the chain, which
+# `verify` and the row count both see.
+_RACE_WRITER = r"""
+import os, random, sys, time
+sys.dont_write_bytecode = True
+scripts, project, ready, go, out, k = sys.argv[1:7]
+sys.path.insert(0, scripts)
+import _output
+_output.install_path()
+import _journal_io as M
+M.LOCK_WAIT_SECONDS = 60
+real_stat = os.stat
+def stat(target, *args, **kwargs):
+    st = real_stat(target, *args, **kwargs)
+    if os.fspath(target).endswith(".lock"):
+        time.sleep(random.uniform(0, 0.015))
+    return st
+os.stat = stat
+real_read = M.read_file
+def read_file(path):
+    got = real_read(path)
+    time.sleep(random.uniform(0, 0.01))
+    return got
+M.read_file = read_file
+open(ready, "w").close()
+while not os.path.exists(go):
+    time.sleep(0.0005)
+try:
+    M._append(project, {"action": "probe.race", "summary": "writer %s" % k,
+                        "actor": {"sessionId": "S-RACE", "via": "fixture"}})
+    said = "ok"
+except Exception as exc:
+    said = "refused: %s" % exc
+with open(out, "w") as fh:
+    fh.write(said)
+"""
+
+_RACE_TRIALS = 4
+_RACE_WRITERS = 8
+
+
+def _race_env():
+    return dict((k, v) for k, v in os.environ.items()
+                if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+
+
+def _wait_for(paths, seconds):
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if all(os.path.exists(p) for p in paths):
+            return True
+        time.sleep(0.005)
+    return False
+
+
+def _race_trial(tmp, n):
+    """One trial: a seed row, a stale lock planted on its file, then every writer
+    released at once. Returns what was observed, never a verdict."""
+    root = _anchor_project(tmp, "race-%d" % n)
+    seed_path = M.append(root, {"action": "probe.seed", "summary": "seed",
+                                "actor": {"sessionId": "S-RACE", "via": "fixture"}})
+    if not seed_path:
+        return {"seeded": False}
+    _plant_lock(seed_path + ".lock", _STALE_AGE)
+    gate = os.path.join(tmp, "race-%d-go" % n)
+    ready = [os.path.join(tmp, "race-%d-ready-%d" % (n, k))
+             for k in range(_RACE_WRITERS)]
+    outs = [os.path.join(tmp, "race-%d-out-%d" % (n, k))
+            for k in range(_RACE_WRITERS)]
+    procs = [subprocess.Popen([sys.executable, "-c", _RACE_WRITER,
+                               _output.SCRIPTS_DIR, root, ready[k], gate,
+                               outs[k], str(k)], env=_race_env())
+             for k in range(_RACE_WRITERS)]
+    all_ready = _wait_for(ready, 60)
+    open(gate, "w").close()
+    for proc in procs:
+        try:
+            proc.wait(60)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+    said = []
+    for out in outs:
+        try:
+            with open(out, encoding="utf-8") as fh:
+                said.append(fh.read())
+        except OSError:
+            said.append("no answer")
+    rows, _torn = M.read_file(seed_path)
+    verdict = M.verify(root)
+    return {"seeded": True, "allReady": all_ready, "said": said,
+            "rows": len([r for r in rows if not r.get("_unparseable")]),
+            "verifyOk": bool(verdict.get("ok")),
+            "findings": verdict.get("findings"),
+            "lockLeft": os.path.exists(seed_path + ".lock"),
+            "breakersLeft": _breakers_left(seed_path + ".lock")}
+
+
+def _race_landed(trial):
+    return (trial.get("seeded") and trial.get("allReady")
+            and trial.get("said") == ["ok"] * _RACE_WRITERS
+            and trial.get("rows") == _RACE_WRITERS + 1
+            and trial.get("verifyOk") and not trial.get("lockLeft")
+            and trial.get("breakersLeft") == [])
+
+
+def _stale_lock_cases(check):
+    tmp = tempfile.mkdtemp(prefix="journal-stale-lock-")
+    try:
+        _stale_age_ok = _STALE_AGE > M.LOCK_STALE_SECONDS
+        check("sl0 the planted age is past the module's stale bound, so every "
+              "stale case below plants what the module calls stale: %r"
+              % ((_STALE_AGE, M.LOCK_STALE_SECONDS),), _stale_age_ok)
+
+        _out, _fresh, _left = _overtaken_waiter(tmp)
+        check("sl1 a waiter that read the lock as stale after another waiter had "
+              "broken it and taken its own leaves that new lock in place and "
+              "waits for it: %r" % ((_out, _fresh, _left),),
+              _fresh is not None and _left == _fresh and _out[0] == "declined")
+
+        # The allow twin of sl1, for the mutation that stops breaking anything:
+        # a lock nobody holds any more is still broken, and the waiter takes it.
+        _lone, _planted, _lone_left, _lone_brk = _lone_stale_waiter(tmp)
+        check("sl2 ...and a stale lock no other waiter touched is still broken, "
+              "the lone waiter taking the lock in its place and leaving no "
+              "breaker behind: %r" % ((_lone, _planted, _lone_left, _lone_brk),),
+              _lone[0] == "took" and _lone_left is not None
+              and _lone_left != _planted and _lone_brk == [])
+
+        _young, _y_planted, _y_left = _young_lock_waiter(tmp)
+        check("sl3 a lock younger than LOCK_STALE_SECONDS is waited for and never "
+              "broken: the waiter declines and the planted lock is the one left: "
+              "%r" % ((_young, _y_planted, _y_left),),
+              _young[0] == "declined" and _y_left == _y_planted)
+
+        _trials = [_race_trial(tmp, n) for n in range(_RACE_TRIALS)]
+        _bad = [t for t in _trials if not _race_landed(t)]
+        check("sl4 with a stale lock planted and every writer released together, "
+              "over repeated trials, every write lands and verify finds no chain "
+              "break, and no breaker is left; each trial that went wrong, as "
+              "(answers, rows, verifyOk, lockLeft, breakersLeft): %r"
+              % ([(t.get("said"), t.get("rows"), t.get("verifyOk"),
+                   t.get("lockLeft"), t.get("breakersLeft")) for t in _bad],),
+              len(_trials) == _RACE_TRIALS and not _bad)
+
+        _b = _overtaken_breaker_clear(tmp)
+        _b_out, _b_fresh, _b_at, _b_lock, _b_planted, _b_left = _b
+        check("sl5 a waiter that read a breaker as stale after another waiter had "
+              "cleared it and taken its own leaves that breaker in place, exactly "
+              "one of it, and breaks nothing while it is held: %r" % (_b,),
+              _b_fresh is not None and _b_at is not None
+              and _b_at[1] >= _b_fresh[1]
+              and _b_left == ["breaker.jsonl.lock.break"]
+              and _b_out[0] == "declined" and _b_lock == _b_planted)
+
+        # The allow twin of sl5: a stale breaker nobody else touched is cleared,
+        # and the stale lock behind it is broken and taken.
+        _lb = _lone_stale_waiter(tmp, stale_breaker=True)
+        check("sl6 ...and a stale breaker no other waiter touched is cleared, the "
+              "stale lock behind it broken and taken, and no breaker left: %r"
+              % (_lb,),
+              _lb[0][0] == "took" and _lb[2] is not None
+              and _lb[2] != _lb[1] and _lb[3] == [])
+
+        # A mount without what the put-back needs: it is refused with an errno
+        # other than "the name is taken". The waiter must not go on as if the
+        # breaker it took were given back - it declines, says why, and leaves
+        # neither its claim nor the planted lock touched.
+        _rf = _overtaken_breaker_clear(tmp, name="refused",
+                                       putback_errno=errno.EPERM)
+        check("sl7 a put-back refused for a reason other than a taken name is "
+              "raised, not swallowed: the append declines naming the breaker it "
+              "could not give back, no claim is left, and the lock is untouched: "
+              "%r" % (_rf,),
+              _rf[0][0] == "declined" and "could not be put back" in _rf[0][1]
+              and _rf[5] == [] and _rf[3] == _rf[4])
+
+        _ki = _overtaken_breaker_clear(tmp, name="interrupted", interrupt=True)
+        check("sl8 an interrupt landing while a claim is on disk under the "
+              "waiter's own name still releases the claim: the interrupt "
+              "propagates and no claim file is left beside the lock: %r" % (_ki,),
+              _ki[0][0] == "interrupted"
+              and not [n for n in _ki[5] if n != "interrupted.jsonl.lock.break"])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _worktree_writer_cases(check):
