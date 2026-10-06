@@ -1,7 +1,7 @@
 {
   "id": "P102",
   "title": "red-first proves a red outside Python",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Tasks: (1) When no runner-output reader matches, say so and quote nothing as decisive (the npm update banner was quoted as the cause). (2) Design first, then build: a shared runner-output module (jest/vitest tallies and case identity), a per-runner baseline that tolerates a new empty suite, and dependency provision for the throwaway tree (node_modules) with its two leaks named. (3) Every entry point's usage error names its own version and, through one shared hook, the newer installed copy for this project; orchestrator docs resolve the plugin root per spawn and re-resolve after an update.",
   "desiredOutcome": "stamp-verification red proves a red in a jest or vitest project as it does under pytest, and an older cached copy that is asked for a newer verb names the newer installed copy",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "cd6933ada1f214a0af05fdb63330bdc94aeafa55",
+  "branch": "audit/p102-red-first-proves-a-red-outside",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,7 +29,7 @@
     {
       "id": "P102.1",
       "title": "red names no line as decisive when no runner reader matched",
-      "status": "pending",
+      "status": "in_progress",
       "description": "`_decisive_line` falls back to the last non-blank line when neither a tally key nor an Error line matched. So a basis named npm's update banner, printed after the run, as the cause of a run it could not read. When no reader matched, the basis says so and quotes nothing as decisive. A first or last line may be shown only when labelled as unread output, never as a cause chosen by position. The fixture must be text that no reader matches, so the case keeps holding after the jest and vitest readers land.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -55,14 +55,14 @@
         "P100"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T21:26:47Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -490,7 +490,7 @@
     {
       "id": "P102.11",
       "title": "the orchestrator resolves the plugin root per spawn and again after an update",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A brief resolved under an older copy was reused after the plugin updated, so its executors ran the old helper. Change execute-task.md's 'Resolve ${CLAUDE_PLUGIN_ROOT} yourself' line and orchestrator.md to say: resolve the root per spawn from the copy this session runs, and after a plugin update mid-run, re-resolve and say so in the run's output. Name /audit:doctor's running-copy check as where a session still on the old copy shows up. CLAUDE_PLUGIN_ROOT is unset in the Bash tool, so the literal variable is never what a subagent should receive.",
       "files": [
         "plugins/audit/reference/execute-task.md",
@@ -512,16 +512,22 @@
         "P100"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T21:26:47Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T21:39:49Z.63f025",
+        "status": "passed",
+        "at": "2026-10-06T21:39:49Z"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-10-06T21:26:47Z"
 }

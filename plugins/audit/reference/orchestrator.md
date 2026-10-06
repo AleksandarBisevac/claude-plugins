@@ -204,6 +204,16 @@ never hardcode branch names, package ids, skills, or build tools here:
   when `journal.enabled` is false or the row will not write. The two scripts are the
   enforcement; a hand edit of `status` goes around them, and the validator does not ask this
   question.
+- **Resolve `${CLAUDE_PLUGIN_ROOT}` yourself, per spawn, from the copy this session is running —
+  never reuse a root a brief resolved before a plugin update landed.** `CLAUDE_PLUGIN_ROOT` is
+  unset in the Bash tool, so the literal variable is never what a subagent should receive; you
+  substitute it into every spawn prompt and every helper command string you compose, and you do
+  it again at the next spawn rather than caching the value across the run. If the plugin updates
+  while a run is in progress, re-resolve the root for every spawn after that point and say so in
+  the run's output, naming which commands moved — a brief resolved under an older copy and reused
+  after an update runs the old helper silently otherwise. `/audit:doctor`'s "running plugin" check
+  (the "copy in force, not the copy on disk" row) is where a session still spawning from the old
+  copy shows up.
 - **Never read secrets** and **never log tokens** — enforced by the plugin's guard hooks; do not work around them.
 - If `meta.nodePreamble` is set, run it (un-piped) before any build/lint/test command **you type
   yourself**. You do not need to for `run-test-gate.py`: it applies the preamble to every gate

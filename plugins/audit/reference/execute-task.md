@@ -185,8 +185,12 @@ not need to.
          --project <gitRoot> --manifest <manifestPath> --task <taskId>
      ```
 
-     Resolve `${CLAUDE_PLUGIN_ROOT}` yourself and put the finished command in the spawn prompt —
-     a subagent's prompt is not a hook command string, so the variable may reach it unsubstituted.
+     Resolve `${CLAUDE_PLUGIN_ROOT}` yourself, per spawn, from the copy THIS SESSION is running —
+     a subagent's prompt is not a hook command string, so the variable may reach it unsubstituted —
+     and put the finished command in the spawn prompt. Re-resolve it if the plugin updates mid-run
+     rather than reusing a root a brief resolved before the update, and say in the run's output that
+     you re-resolved and why; `reference/orchestrator.md`'s non-negotiable guardrails say where a
+     session still spawning from the old copy would show up.
    - **It must run whichever reading of `executor.runsGate` you handed it** — the whole of
      `task.tests.gate` on `full` (through `run-test-gate.py`, which applies `meta.nodePreamble`
      itself), only its own added test(s) on `own-tests`, or nothing on `never` — and return **the
