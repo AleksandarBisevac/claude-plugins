@@ -28,7 +28,51 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P105-R1",
+        "severity": "high",
+        "file": "plugins/audit/scripts/ui/panel/settings.js:209-233",
+        "issue": "The config patch is diffed against the wrong base: the draft is cloned from STATE.config when the form renders, but Save computes configPatch(STATE.config, cfg) against whatever STATE.config holds at Save time, and the disk refresh replaces STATE wholesale even while the form is dirty (it only skips the re-render). A user edits key a, another writer changes key b, the poll refreshes, and Save sends b back at its old value - reverting the other writer's change, while the confirm dialog lists b as the user's change.",
+        "resolution": "Snapshot the base when the form renders and diff every config editor's draft against its own base (configChanges, the edit tracker, discard rows and configPatch), resetting the base from the server's result after a save; a vitest case renders, dirties a, swaps STATE.config with b changed, saves, and asserts the patch names only a."
+      },
+      {
+        "id": "P105-R2",
+        "severity": "med",
+        "file": "plugins/audit/commands/panel.md:27-33; plugins/audit/scripts/panel/panel-server.py:312-330",
+        "issue": "Now that GET / needs the token, the URL commands/panel.md tells the agent to relay from --status (printed with ?t=<hidden>) and any bare or bookmarked panel address answer a raw JSON 403 that says nothing about where the real URL is; CHANGELOG [Unreleased] has no entry for the change.",
+        "resolution": "Answer a tokenless GET / with a plain-text 403 that names the way back (/audit:panel status, the pidfile, or relaunch) without echoing a token; say in panel.md that the printed URL is redacted and will not open the page; add an [Unreleased] entry."
+      },
+      {
+        "id": "P105-R3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/panel/panel-server.py:714-772",
+        "issue": "The pidfile's temp (.claude/audit-panel.json.tmp-<hex>) holds the live token but is not in _PANEL_PRIVATE_FILES and is never swept, so a launch killed between open and replace leaves a token-bearing untracked file; the docstring's owner-only-from-the-instant claim is POSIX-only; a pidfile written 0644 by a pre-upgrade server keeps that mode until stop or relaunch.",
+        "resolution": "Ignore and sweep stale audit-panel.json.tmp-* files, limit the docstring claim to POSIX, and tighten an existing pidfile on status or the already-running branch."
+      },
+      {
+        "id": "P105-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/ui/panel/composition.js:231-239",
+        "issue": "adoVisible counts linked tasks and phases but not linked bugs, so a plan whose only ADO record is a bug link gets the collapsed 'not set up for this plan' card and its banner is hidden.",
+        "resolution": "Count linked.bugs too, with a vitest row holding only a bug link."
+      },
+      {
+        "id": "P105-R5",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md:4776-4777; plugins/audit/scripts/ui/panel/README.md",
+        "issue": "The guide still says the token is required on every /api/* call (leaving out /) and says nothing of the owner-only pidfile; the panel parts README still describes run-status.js as the poll and its badges, though it now owns the liveness state confirmSave reads, and does not name overview.js's planState as a cross-view helper.",
+        "resolution": "Extend the guide sentence to / and the owner-only pidfile; update the two README rows."
+      },
+      {
+        "id": "P105-R6",
+        "severity": "low",
+        "file": "SECURITY.md:660-676",
+        "issue": "SECURITY.md's panel trust-boundary account is now incomplete: it does not say the page itself is token-guarded, that the token rests in .claude/audit-panel.json written owner-only (POSIX), or that a pre-upgrade server keeps the old exposure until restarted. SECURITY.md is owned by another phase.",
+        "resolution": "Reconcile in the phase that owns SECURITY.md when the branches meet: add a short panel trust-boundary paragraph covering the three points."
+      }
+    ],
+    "outcome": "[findings: 6 - 1 high, 1 med, 4 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -359,7 +403,7 @@
     {
       "id": "P105.6",
       "title": "Require the session token on GET / and write the pidfile 0600",
-      "status": "in_progress",
+      "status": "done",
       "description": "GET / hands the page, with the session token substituted into it, to any local request that passes the Host check. The pidfile holding the same token is written with whatever mode the umask gives. Route / through the token guard the API already uses. The printed URL and the pidfile's url already carry ?t=, and a relaunch opens that url, so the browser and the screenshot tool keep working. Write the pidfile owner-only, tighten an existing one, and update the safety line in commands/panel.md to say the page itself needs the token. This phase's description also names a SECURITY.md sentence on the panel's trust boundary; that file belongs to the phase that owns SECURITY.md and is not edited here.",
       "files": [
         "plugins/audit/scripts/panel/panel-server.py",
@@ -391,18 +435,24 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "16a7d2bf",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "panel-server.py's GET / now goes through the same guard every /api/* route uses (host check and token), so the page, which carries the session token, is no longer handed to any local request that passes the Host check; /favicon.ico still answers without a token. The printed URL and the pidfile's url already carry ?t=, so the browser, a relaunch and the screenshot tool keep working (tools/capture-screenshots.mjs navigates to the pidfile's url). The pidfile is written owner-only from the start: a temp file in the same directory opened with O_WRONLY|O_CREAT|O_EXCL at 0o600, a defensive fchmod on the descriptor where available (a failure is reported on stderr, not swallowed), then os.replace onto the real path, so there is no create-then-chmod window and an existing wider file is replaced; a failed write removes its temp file. commands/panel.md's safety line says the page itself needs the token, and CONTRIBUTING.md's module-graph passage no longer says / hands the token to any loopback client, keeping the old measurement as history. Cases in test_panel_server.py: GET / without the token is 403 with the token absent from the body, with it 200; /favicon.ico needs none; a fresh pidfile is 0600, an existing 0644 one is tightened, and under umask 0o022 with os.chmod made a no-op the pidfile is still 0600 with no temp file left. SECURITY.md's panel trust-boundary sentence belongs to the phase that owns SECURITY.md and is not edited here.",
+        "descriptive": "The panel's page now asks for the same per-launch token as its API, so another local process can no longer read the token off the page, and the file that stores it is private to the user from the moment it is written."
       },
       "startedAt": "2026-10-06T16:24:44Z",
-      "completedAt": null,
+      "completedAt": "2026-10-06T19:55:28Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-06T19:55:17Z.882b8c",
         "status": "passed",
         "at": "2026-10-06T19:55:17Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "16a7d2bf",
+        "at": "2026-10-06T19:55:28Z",
+        "basis": "audit-reviewer (task mode), two rounds: matches; the medium finding (a create-then-chmod window on the pidfile) fixed with an O_EXCL owner-only temp and replace, proven under a no-op chmod; the low (a stale CONTRIBUTING sentence) fixed"
       }
     },
     {
@@ -484,6 +534,187 @@
         "commit": "7d4c5275",
         "at": "2026-10-06T19:55:27Z",
         "basis": "audit-reviewer (task mode): one medium (the collapse had no failing test), one low (the card snapped shut on refresh) and the intent divergence (task-level declarations were not read) fixed; the payload now carries the task's declaration and every fix has a proven red"
+      }
+    },
+    {
+      "id": "P105.8-m32",
+      "title": "every config editor diffs its draft against the config it rendered from",
+      "status": "in_progress",
+      "description": "Fixes review finding P105-R1. Every config editor in the panel diffs its draft against a base snapshotted when its form rendered, never against whatever STATE.config holds at the moment of Save: the disk refresh replaces STATE while a form is dirty, so diffing against it sends another writer's change back at its old value and lists it in the confirm dialog as the user's own. configChanges, the edit tracker, discard rows and configPatch all take that base; after a successful save the base is reset from the server's answer. Find every caller of configChanges and configPatch (settings and the policy view at least) and fix the class, not one form.",
+      "files": [
+        "plugins/audit/scripts/ui/panel/settings.js",
+        "plugins/audit/scripts/ui/panel/write-confirmation.js",
+        "plugins/audit/scripts/ui/panel/policy-state.js",
+        "tools/ui-tests/config-patch.test.mjs",
+        "plugins/audit/tests/test__panel_page.py",
+        "plugins/audit/scripts/ui/panel/policy-view.js",
+        "plugins/audit/scripts/ui/panel/overview.js",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "plugins/audit/scripts/panel/panel-server.py",
+        "tools/ui-tests/policy-shape.test.mjs",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ui-tests/config-patch.test.mjs: a form rendered, key a dirtied, STATE.config replaced with key b changed by another writer, then Save: the patch and the confirm rows name only a"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-06T20:02:33Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T21:12:55Z.d7ef84",
+        "status": "passed",
+        "at": "2026-10-06T21:12:55Z"
+      }
+    },
+    {
+      "id": "P105.9-m32",
+      "title": "a tokenless panel page names the way back, and the pidfile's temp is ignored and swept",
+      "status": "in_progress",
+      "description": "Fixes review findings P105-R2 and P105-R3. A GET / without the token answers a plain-text 403 that says where the real URL is (/audit:panel status, the pidfile .claude/audit-panel.json, or a relaunch) and echoes no token; commands/panel.md says the URL --status prints is redacted and will not open the page, and that the browser was opened with the full one; CHANGELOG [Unreleased] records that a panel URL without its token now answers 403. The pidfile's temp file is covered by the panel's self-ignore rows and stale audit-panel.json.tmp-* files are swept on launch and stop; the owner-only claim in the docstring is limited to POSIX; an existing pidfile is tightened to owner-only when status or the already-running branch reads it.",
+      "files": [
+        "plugins/audit/scripts/panel/panel-server.py",
+        "plugins/audit/tests/test_panel_server.py",
+        "plugins/audit/commands/panel.md",
+        "CHANGELOG.md",
+        "examples/panel.sh",
+        "examples/README.md",
+        "plugins/audit/scripts/status/_doctor_hygiene.py",
+        "plugins/audit/tests/test__doctor_hygiene.py",
+        "examples/acme-store/.claude/.gitignore"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_panel_server.py: GET / without the token answers a text/plain 403 naming /audit:panel status and the pidfile, with no token in the body",
+          "plugins/audit/tests/test_panel_server.py: a stale audit-panel.json.tmp-* left by a killed launch is ignored by the panel's self-ignore rows and removed on the next launch"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-06T20:02:34Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T21:06:23Z.a11d59",
+        "status": "passed",
+        "at": "2026-10-06T21:06:23Z"
+      }
+    },
+    {
+      "id": "P105.10-m32",
+      "title": "a bug link keeps the ADO card open, and the panel docs name what moved",
+      "status": "in_progress",
+      "description": "Fixes review findings P105-R4 and P105-R5. adoVisible also counts linked bugs, so a plan whose only ADO record is a bug link keeps its connector card open. PLUGIN-BUILD-GUIDE.md's panel token sentence covers the page itself as well as /api/*, and names the owner-only pidfile written through a temp file and a replace; the panel parts README says run-status.js owns the page's liveness state that write confirmation reads, and that overview.js's planState is a helper other views call.",
+      "files": [
+        "plugins/audit/scripts/ui/panel/composition.js",
+        "tools/ui-tests/ado-panel.test.mjs",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/ui/panel/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ui-tests/ado-panel.test.mjs: adoVisible is true for a plan whose only ADO record is a linked bug"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-06T20:02:34Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T20:59:46Z.918cb5",
+        "status": "passed",
+        "at": "2026-10-06T20:59:46Z"
       }
     }
   ],

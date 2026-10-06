@@ -519,10 +519,12 @@ describe('whether anything on screen says this plan uses ADO', () => {
       linked: { tasks: 1, bugs: 0, phases: 0 } }, phases: [] })).toBe(true);
     expect(adoVisible({ adoStatus: { configured: false,
       linked: { tasks: 0, bugs: 0, phases: 1 } }, phases: [] })).toBe(true);
-    // A bug link alone is not a phase or a task, so it does not count here -
-    // the spec names phases and tasks, not bugs.
+    // A bug link is counted here too (P105-R4): a bug lives under a phase but
+    // is not one of `phases`/`tasks` itself, so a plan whose only ADO record
+    // is a linked bug must still show its connector as in use rather than
+    // reading as a plan that has never touched ADO.
     expect(adoVisible({ adoStatus: { configured: false,
-      linked: { tasks: 0, bugs: 1, phases: 0 } }, phases: [] })).toBe(false);
+      linked: { tasks: 0, bugs: 1, phases: 0 } }, phases: [] })).toBe(true);
   });
 
   it('answers true from a PHASE DECLARATION alone - an explicit adoParent or '

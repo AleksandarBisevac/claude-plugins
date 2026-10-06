@@ -564,7 +564,7 @@ function atPatchValue(choice){
  * @param {{adoStatus: ?object, phases: ?CompPhase[], tasks: ?CompTask[]}} comp -
  *   the composition payload
  * @returns {boolean} true when the connector is configured, a link was
- *   counted on a phase or a task, or some phase or task carries an
+ *   counted on a phase, a task or a bug, or some phase or task carries an
  *   adoParent/adoTracked declaration of its own
  */
 function adoVisible(comp){
@@ -572,7 +572,7 @@ function adoVisible(comp){
  const st=c.adoStatus||{};
  if(st.configured)return true;
  const linked=st.linked||{};
- if((linked.tasks||0)>0||(linked.phases||0)>0)return true;
+ if((linked.tasks||0)>0||(linked.phases||0)>0||(linked.bugs||0)>0)return true;
  if((c.phases||[]).some(ph=>
    !apIsFallback(ph.adoParent)||(ph.adoTracked!=null)))return true;
  return (c.tasks||[]).some(t=>!apIsFallback(t.adoParent));}
