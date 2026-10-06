@@ -195,37 +195,12 @@ page behind it, read against the form rather than instead of it. All of it is
 
 ## What you get
 
-- **Execution commands** — `/audit:status` (report), `/audit:next` (next ready task),
-  `/audit:run <id>` (one task), `/audit:phase <id>` (whole phase + sign-off),
-  `/audit:review <id>` (re-run sign-off), `/audit:resume` (continue an interrupted run) —
-  orchestrate phases → tasks from a JSON manifest. Per-task model + skills subagents,
-  TDD/regression/gate-only test discipline, branch-per-phase git flow, gated phase sign-off
-  (optional review skill + test gates + optional runtime boot). All share
-  `reference/orchestrator.md`.
-- **`/audit:init`** — multi-agent codebase audit that GENERATES the manifest: interview →
-  recon → parallel read-only explorers → synthesized phases presented for **approval before
-  anything is written** — approve to materialize, or park them as proposals.
-- **`/audit:propose`** — the parked-phase lifecycle: `list` what init parked,
-  `materialize` a proposal into a live phase (a move, not a re-synthesis), `drop` one
-  with a recorded reason.
-- **`/audit:task`** — add a tracked task: every answer is a flag the caller may pass, and
-  the command asks only for what is missing (including a skills step fed by
-  `audit-status --json --discovery`, with the explicit `null — none applies` choice)
-  before `scripts/manifest/audit-task.py` does the write itself.
-- **`/audit:bug`** — report/list/close bugs; `fix` materializes a bug into a **red-first TDD
-  task** (the repro test must fail before the fix) executed by `/audit:run`.
-- **`/audit:sync`** — set the connector up on a board for the first time (`connect`), mirror
-  bugs/tasks into **Azure DevOps work items** (`push`), import
-  assigned ADO bugs (`pull`), cache the board's backlog levels and parent candidates
-  (`parents`), or diff link state (`status`). Explicit, idempotent, one
-  direction per invocation; `az boards` CLI contract with the azure-devops MCP tools as an
-  optional fast-path.
-- **`/audit:report`** — self-contained, **interactive** HTML + Markdown report (collapsible
-  phases, text + status filters, **Save as PDF**, optional AI summary) — publishable as a CI
-  artifact, or to a link with `--share`. See [Reports](#reports).
-- **`/audit:panel`** — a local **control panel** (browser UI) to visually manage the config +
-  composition with live validation and skill/agent **discovery**. See [Control panel](#control-panel).
-- **`/audit:doctor`** — answers "is this working?" before you find out the hard way: the interpreter the hooks will resolve, whether `gitRoot` is a repo, config and manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, **whether the skills the plan names would resolve from a clone or only here**, whether the hooks have ever fired here **and which copy of the plugin ran them**, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never actually enforced. Read-only and safe mid-phase; exits 1 on findings so CI can run it too.
+- **Commands** — one `/audit:<verb>` per action: running phases and tasks from a JSON
+  manifest (per-task model + skills subagents, TDD/regression/gate-only test discipline,
+  branch-per-phase git flow, gated phase sign-off), generating that manifest, tracking
+  tasks and bugs, the report, the control panel, token usage and the setup diagnosis.
+  [Commands](#commands) is the one list — every verb, its arguments and what it does —
+  so it is not repeated here.
 - **CI without Claude** — `scripts/status/audit-status.py --json | --gate` turns the manifest into
   a pipeline gate (fails on validator findings, open high-severity bugs, blocked tasks —
   tunable via `--fail-on`, which also carries the test-evidence conditions
@@ -245,10 +220,11 @@ page behind it, read against the form rather than instead of it. All of it is
   not beside the launcher; every hook has a 10 s timeout):
   - `require-plan.py` (PreToolUse + PostToolUse: Edit/Write/MultiEdit/NotebookEdit) —
     non-trivial edits must be planned in the manifest or opted out via a single-use keyword,
-    **once there is a plan to check against**: with no manifest it observes and reports once
-    per session, with a manifest but nothing running it warns, and it denies only while a
-    phase has work in flight — an `in_progress` task, or an `in_progress` phase with work
-    left; one that only awaits sign-off does not hold it (`planGate` pins any single tier — including `ask`, which holds
+    **once there is a plan to check against**: it observes with no plan (one report per
+    session), warns with a plan and nothing running, and denies while a phase runs —
+    `/audit:doctor` prints the active tier. A phase runs while it has work in flight — an
+    `in_progress` task, or an `in_progress` phase with work left; one that only awaits
+    sign-off does not hold it (`planGate` pins any single tier — including `ask`, which holds
     each out-of-plan edit for your approval; legacy `enforce: true` = `planGate: "deny"`).
     Every Bash WRITE form
     in `guard-secrets-read.py` grades identically, so `sed -i`, a `>` redirect and
@@ -267,10 +243,12 @@ page behind it, read against the form rather than instead of it. All of it is
     see only human prompts, which is what makes the keyword the human's and not an
     agent's); also warns once per session when
     `.claude/audit.config.json` is malformed (your custom rules would silently not apply).
-  - `guard-secrets-read.py` (PreToolUse: Read/Grep/Bash) — refuses a call that names a
-    secret file (`.env`, credentials, signing material), through the direct tool call or
-    through `git show`, `source`, `cp`/`mv` ([open shapes](../../SECURITY.md#known-bypass-classes-accepted-documented)
-    — this is name-based, not containment), dumping env/token values, and shell writes into source files
+  - `guard-secrets-read.py` (PreToolUse: Read/Grep/Bash) — refuses a call naming a
+    secret file (`.env`, credentials, signing material) beside a read verb the guard
+    lists — the direct tool call, a listed shell read verb, `git show`, `source`,
+    `cp`/`mv` — and leaves two classes open: a read that never names the file, and an
+    unlisted verb naming it ([SECURITY.md](../../SECURITY.md#known-bypass-classes-accepted-documented)
+    — this is name-based, not containment). It also refuses dumping env/token values, and shell writes into source files
     (`sed -i`, `tee`, `>` redirects) that bypass the plan gate. Multi-clause commands are
     judged per clause (a redirect in one clause plus an eval in another is not an
     eval-write), and its verdicts land in the same gate events feed the panel reads.
@@ -358,7 +336,7 @@ are the table in [SECURITY.md](../../SECURITY.md#fail-modes-by-design).
 
 | Rule | Mechanism | What happens when it is broken |
 |---|---|---|
-| A call that names a secret file is refused — directly, or through `git show`, `git cat-file`, `source`, a copy-verb, an inline `python3 -c`, a heredoc fed to an interpreter, or an MCP server's own file tool ([open shapes](../../SECURITY.md#known-bypass-classes-accepted-documented) — a read that reaches the file without naming it is not caught) | `guard-secrets-read.py` — PreToolUse `Read\|Grep\|Bash\|mcp__.*` | **deny**, at every tier, manifest or not. Reading file *names* is never blocked. An MCP call is judged on the paths its payload names, at any depth, never on the server it was installed under — so a secret file is refused there whatever the operation, creating it included |
+| A call naming a secret file beside a read verb the guard lists is refused — the `Read`/`Grep` tools, a listed shell read verb, `git show`, `git cat-file`, `source`, a copy-verb, an inline `python3 -c`, a heredoc fed to an interpreter, or an MCP server's own file tool. Two classes stay open: a read that never names the file, and an unlisted verb naming it ([SECURITY.md](../../SECURITY.md#known-bypass-classes-accepted-documented)) | `guard-secrets-read.py` — PreToolUse `Read\|Grep\|Bash\|mcp__.*` | **deny**, at every tier, manifest or not. Reading file *names* is never blocked. An MCP call is judged on the paths its payload names, at any depth, never on the server it was installed under — so a secret file is refused there whatever the operation, creating it included |
 | Env values are never dumped (`printenv`, `env`) and token-like variables never echoed | `guard-secrets-read.py` | **deny**, ungraded |
 | A **shell** write into a source file that no `in_progress` task covers — `sed -i`, `tee`, `>`/`>>`, heredoc redirects, inline-eval writes | `guard-secrets-read.py` | the plan gate's tier for that file: observe / warn / **ask** / **deny** — the same tier `Edit` would get, so the two channels agree on one file |
 | No commit the manifest records is orphaned: force-push (`--force-with-lease` included), `--orphan`, `filter-branch`/`filter-repo`, `rebase`, an `--amend` of a recorded HEAD, `reset --hard <ref>` past a recorded SHA | `guard-history-rewrite.py` — PreToolUse `Bash` | **deny** while any `task.commit` is set; **inert** with none recorded, and `reset --hard` with no ref is always allowed |
@@ -368,7 +346,7 @@ are the table in [SECURITY.md](../../SECURITY.md#fail-modes-by-design).
 | The model does not edit the installed plugin's own files | `guard-edits.py` — PreToolUse edits **and `mcp__.*`** | **deny**, with a dev-mode exception when the plugin is checked out *inside* the repo. An MCP call naming a path in there is refused **whatever the operation**, as a secret path is one guard over: that directory sits outside the consuming repo, so nothing ordinary reads or writes it |
 | The plan-first bypass cannot be armed by an agent | `guard-edits.py` refuses a forged `<stateDir>/plan-bypass-*.json` — through an edit tool, or through an MCP call whose payload carries a write basis; `detect-plan-skip.py` — UserPromptSubmit — arms it only from a submitted prompt | **deny** for the forgery. Hooks see human prompts only, which is what makes the keyword the human's |
 | The audit trail is append-only — no hand edits | `guard-edits.py` | **deny**. Nothing legitimate writes those files with an edit tool, or with an MCP write tool — both are refused. A *read* of a journal file is not: the trail is committed and meant to be read |
-| A non-trivial edit is covered by an `in_progress` task, or by a live single-use bypass | `require-plan.py` — PreToolUse edits **and `mcp__.*`**, an MCP call decided on the path `_mcp_plan_target` resolves | graded on evidence: no manifest → observe, a manifest with nothing running → warn, a phase `in_progress` → **deny**. `planGate` pins one tier by hand |
+| A non-trivial edit is covered by an `in_progress` task, or by a live single-use bypass | `require-plan.py` — PreToolUse edits **and `mcp__.*`**, an MCP call decided on the path `_mcp_plan_target` resolves | graded on evidence: it observes with no plan, warns with a plan and nothing running, and **denies** while a phase runs (`/audit:doctor` prints the active tier). `planGate` pins one tier by hand |
 | A manifest or shard write while another **live** session holds the governing lock | `require-plan.py`, reading the lock `scripts/governance/audit-lock.py` wrote | **deny**, naming the holder. An abandoned lock allows, with a notice — [the full verdict table](../../SECURITY.md#the-one-denial-that-is-not-about-the-plan-0270) |
 | Every write to the manifest or the config leaves a hash-chained row — including the derived `task.complete`, `task.commit` and `phase.signoff` rows — **whichever tool made it**, a shell command inside a `Bash` call and an MCP server's write tool included | `journal-writes.py` — PreToolUse and PostToolUse on edits, `Bash` and `mcp__.*` | records; never blocks. It is the **only** writer of those actions, which is why the orchestrator must not append them. The Post pass refreshes the pre-image it just recorded, so the baseline is the manifest as of the last row rather than as of the last edit |
 | Token spend is attributed to a phase and a task | `meter-usage.py` — Stop / SubagentStop / SessionEnd | records; never blocks. Ledger rows carry `phaseId`, `taskId` and `model` |
@@ -412,7 +390,7 @@ what this table exists to stop presenting as a guarantee.
 | The executor is spawned with a `description` starting with the task id, so metering is per-task | § Execute the task, 3 | **post-hoc**: ledger rows fall back to phase level when the id is absent, so the gap shows in `/audit:usage` |
 | Skills are invoked before coding — the area's first, then `task.skills` | § Execute the task, 3 | **nothing** |
 | Completion rows are hook-emitted and never appended by hand | § Execute the task, 4c | **enforced**: a hand edit of the journal is denied (first table) |
-| Never read secrets, never log tokens, and do not work around the guards | § Non-negotiable guardrails | **enforced** — the one invariant whose whole content is a pointer to the first table |
+| Never read secrets, never log tokens, and do not work around the guards | § Non-negotiable guardrails | **name-based refusal** — the first table's rows: a call naming a secret file beside a read verb the guard lists is refused, while a read that never names the file, and an unlisted verb naming it, stay open ([SECURITY.md](../../SECURITY.md#known-bypass-classes-accepted-documented)); token logging is refused by pattern |
 
 **How a row moves left.** The `post-hoc` rows are the ones worth building for: their
 evidence already exists in git, the shard, the journal and the ledger, and what is
@@ -568,9 +546,10 @@ but it surprises teams who expect a prompt first.
 ## Installing arms global hooks
 
 The guard hooks activate in **every** project and session. That is the point — a guard you
-have to remember to switch on is not a guard. But the plan gate is **enforced, once you
-have a plan; observing before that**, so installing it does not start denying edits in
-repos that never opted in.
+have to remember to switch on is not a guard. But the plan gate observes with no plan,
+warns with a plan and nothing running, and denies while a phase runs (`/audit:doctor`
+prints the active tier), so installing it does not start denying edits in repos that
+never opted in.
 
 **The plan gate grades itself on what it actually knows:**
 
@@ -636,8 +615,8 @@ Scope or turn it off:
 
 ## Quick start
 
-[QUICKSTART.md](../../QUICKSTART.md) is the one page: the free `/audit:usage --backfill`
-look at past spend, `/audit:doctor`, generating the manifest with `/audit:init`, running
+[QUICKSTART.md](../../QUICKSTART.md) is the one page: the read-only `/audit:doctor`
+check, the `/audit:usage --backfill` look at past spend, generating the manifest with `/audit:init`, running
 one task and reading the report. Copying the starter manifest by hand instead of running
 `/audit:init` is covered in [the manifest in one minute](#the-manifest-in-one-minute).
 
@@ -921,13 +900,14 @@ The most common question testers ask is "what did that cost?" — so the plugin 
 
 **You can answer it before installing anything else.** `--backfill` reads the Claude Code
 transcripts already in `~/.claude/projects/`, so it works in a repo with no manifest, no
-config and no prior runs — it spends no tokens and calls no agent; the only thing it writes
-is a local, self-ignoring ledger under `.claude/usage/` (`ensure_ledger_dir` in
+config and no prior runs. It runs no agent and no analysis — a script reads the files and
+prints a table, so it costs one ordinary turn — and the only thing it leaves in the working
+tree is a self-ignoring ledger under `.claude/usage/` (`ensure_ledger_dir` in
 `scripts/usage/usage_ledger.py` drops a `.gitignore` marker inside on creation, so `git
 status` stays clean):
 
 ```bash
-/audit:usage --backfill               # free: past spend, from transcripts already on disk
+/audit:usage --backfill               # no agent: past spend, from transcripts already on disk
 ```
 
 Expect every row to read **Uncategorized**. Native tooling can price a *session* or a

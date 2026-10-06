@@ -365,8 +365,9 @@ base refused:
   Grep tool over a directory with no `glob` naming a secret, a `for` loop over
   `.env.*` whose body reads the loop variable, and `xargs cat` handed the names on
   stdin — or **a read verb the list lacks**, with the secret named in plain sight:
-  `diff` of two env files, `comm`, `cut`, `sort`, `jq`. Item 6 of *Known bypass
-  classes* below is the same boundary seen from the name side.
+  `diff` of two env files, `comm`, `cut`, `sort`, `jq`. The *Secret-read guard is
+  name-based* entry of *Known bypass classes* below is the same boundary seen from the
+  name side.
 
 **The plan a git command answers to is the one of the tree it runs in.** `git -C
 <dir>`, a `cd` before it, or the payload's own directory names each invocation's

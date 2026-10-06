@@ -7,8 +7,9 @@ contributor needs before opening a PR here.
 
 ## Checks
 
-- [ ] `tools/verify.sh` is green on this branch (paste the command and its
-      exit code, or the narrower invocation `--affected` chose and why).
+- [ ] `tools/verify.sh` is green on this branch, run after `npm ci` and
+      `npx playwright install chromium` (paste the command and its exit code,
+      or the narrower invocation `--affected` chose and why).
 - [ ] Any new check (lint, guard, hook, selftest case) was proved red-first:
       the mutation that breaks it, the red output, and the restore — see
       `no-silent-pass` / `before-you-claim` in this repo's skills.

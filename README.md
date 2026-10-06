@@ -22,14 +22,19 @@ is the thing you approve once and the model is held to afterward.
   that made the claim.
 - **Guards that see intent, not I/O.** Once a phase is running, a write no task
   covers is refused by the resolved path it writes to. A secret-file read is
-  caught the same way every guard here works, at every tier — by matching the
-  tool call's *text*, never the bytes that move — so pair it with Claude Code's
-  own sandbox
+  judged the way every guard here works, at every tier — by matching the tool
+  call's *text*, never the bytes that move: a call naming a secret file beside a
+  read verb the guard lists is refused, and two classes stay open — a read that
+  never names the file, and an unlisted verb naming it. So pair it with Claude
+  Code's own sandbox
   ([what that leaves open →](SECURITY.md#secrets-friction-and-evidence-not-containment)).
 
-**Enforced by hooks:** out-of-plan edits (only while a phase runs — before that it
-only observes), secret-file reads, token dumps. **Followed from instructions, not
-guaranteed:** branch per phase, red-first bug fixes, sign-off order.
+**Enforced by hooks:** out-of-plan edits — the plan gate observes with no plan,
+warns with a plan and nothing running, and denies while a phase runs
+(`/audit:doctor` prints the active tier); secret-file reads, by name
+([open classes](SECURITY.md#known-bypass-classes-accepted-documented)); token
+dumps. **Followed from instructions, not guaranteed:** branch per phase, red-first
+bug fixes, sign-off order.
 [Which is which, row by row →](#what-is-enforced-and-what-is-followed)
 
 It governs **one repository at a time, deliberately** —
@@ -86,7 +91,7 @@ checks at all is policy, and that is what the right column is.
 
 | Enforced by a hook (before) or a script (after) | Followed from `orchestrator.md` |
 |---|---|
-| A call naming a secret file is refused, through the channels the guard reads ([open shapes](SECURITY.md#known-bypass-classes-accepted-documented)) | Human confirmation before a `reset` / `rebase` / `clean` |
+| A call naming a secret file beside a read verb the guard lists is refused; a read that never names the file, and an unlisted verb naming it, stay open ([SECURITY.md](SECURITY.md#known-bypass-classes-accepted-documented)) | Human confirmation before a `reset` / `rebase` / `clean` |
 | Env values and token variables — never dumped | `risk: "high"` waits for a human before committing |
 | Shell writes into source files no task covers | Revalidate the manifest after **every** write |
 | Commits the manifest records — never orphaned | `attempts >= maxAttempts` sets `blocked` |
@@ -128,8 +133,9 @@ a breach. [SECURITY.md](SECURITY.md) has the fail modes and the accepted bypass 
 /plugin install audit@quality-gates
 ```
 
-> The guard hooks activate in **all** your projects, by design — but the plan gate is
-> **enforced once you have a plan, observing before that**, so installing it does not
+> The guard hooks activate in **all** your projects, by design — but the plan gate
+> observes with no plan, warns with a plan and nothing running, and denies while a
+> phase runs (`/audit:doctor` prints the active tier), so installing it does not
 > start denying edits in repos that never opted in. See
 > [installing arms global hooks](plugins/audit/README.md#installing-arms-global-hooks).
 > Requirements: Python 3.8+ reachable as `python3`, `python` or `py` (CI verifies on 3.12)
@@ -137,22 +143,12 @@ a breach. [SECURITY.md](SECURITY.md) has the fail modes and the accepted bypass 
 
 ## Try it with no setup
 
-**Start here — it spends no tokens and writes only a local, self-ignoring ledger:**
-
-```
-/audit:usage --backfill    # reads transcripts already on disk → your own past spend
-```
-
-No manifest, no agents, no tokens spent: it scans the Claude Code transcripts already
-in `~/.claude/projects/` and prints what this repo has cost you so far, broken down by
-model, author and agent. Everything will read as **Uncategorized** — that is the
-point. Attributing spend to *phases and tasks* is what the rest of this does, and it
-is the comparison a plan-driven pipeline can make that a date-range dashboard cannot.
-
-Then, in a git repo you want to audit, **[QUICKSTART.md](QUICKSTART.md) is the whole
-path** — install to a rendered report, one page, in order, and it stops there. It is
-deliberately not repeated here: this page is the pitch, and a command list in two
-places is one list and one lie.
+**[QUICKSTART.md](QUICKSTART.md) is the whole path** — install, the read-only
+`/audit:doctor` check, a first look at what this repo has already cost you
+(`/audit:usage --backfill`: no agent, no analysis, one ordinary turn), and on to a
+rendered report: one page, in order, and it stops there. It is deliberately not
+repeated here: this page is the pitch, and a command list in two places is one list
+and one lie.
 Want to try the two UIs before installing anything? The example ships a script
 for each — `examples/panel.sh` opens the control panel on it, `examples/report.sh
 --open` re-renders and opens the report. No install, no session, no dependencies.

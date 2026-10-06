@@ -28,7 +28,107 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P103-R1",
+        "severity": "med",
+        "file": "plugins/audit/README.md:361 (also :270-273, README.md:88)",
+        "issue": "The secret-read rows say a call that names a secret file is refused and name only one gap (a read that never names the file). SECURITY.md names a second class: a read verb the guard's list lacks, with the secret named in plain sight. decide() allows cut, sort, jq, comm, vim and find -exec cat naming .env.production and blocks only listed verbs such as cat and less.",
+        "resolution": "Say a call naming a secret file beside a read verb the guard lists is refused, and name both open classes, linking SECURITY.md, in all three places."
+      },
+      {
+        "id": "P103-R2",
+        "severity": "med",
+        "file": "README.md:30-31",
+        "issue": "The first screen says out-of-plan edits are enforced only while a phase runs and observed before that; the code has three tiers (no manifest observes, a manifest with nothing running warns, a running phase denies), and README.md:132, plugins/audit/README.md:572 and QUICKSTART.md:85 each state the gate's timing differently, none naming the warn tier.",
+        "resolution": "State the three tiers once in the same words wherever the timing is stated, or point each at /audit:doctor, which prints the active tier."
+      },
+      {
+        "id": "P103-R3",
+        "severity": "med",
+        "file": "README.md:46-48",
+        "issue": "README says QUICKSTART's read-only /audit:doctor step checks the install before anything is written, but QUICKSTART now runs /audit:usage --backfill (which writes the .claude/usage ledger) before doctor.",
+        "resolution": "Put doctor before the backfill in QUICKSTART, or reword the README sentence."
+      },
+      {
+        "id": "P103-R4",
+        "severity": "med",
+        "file": "CONTRIBUTING.md:1072-1074, :1079",
+        "issue": "The Decision record's 'Documentation split by audience' entry limits QUICKSTART to install, one audited task and one report, nothing else; the backfill step was added without amending the record, and line 1079 still says the file opens with the reading order although 'Your first change' now opens it. README.md:138-157 still carries its own backfill 'Start here' block beside the rule that a command list in two places is one list and one lie.",
+        "resolution": "Amend the decision record entry with the reason QUICKSTART now carries the free first look, update :1079, and reduce README's backfill block to a pointer."
+      },
+      {
+        "id": "P103-R5",
+        "severity": "med",
+        "file": "CONTRIBUTING.md:39-60",
+        "issue": "'Your first change' sends a fresh clone straight to tools/verify.sh, which needs the npm devDependencies (vitest, playwright) and a Playwright Chromium that CI installs with npm ci and npx playwright install; the page names neither, so its one command fails on a fresh clone, and the PR template's verify.sh checkbox inherits the gap.",
+        "resolution": "Add npm ci and npx playwright install chromium to the page after the clone."
+      },
+      {
+        "id": "P103-R6",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_guard_secrets_read.py:420-452; plugins/audit/tests/test_guard_bash_writes.py:123-130",
+        "issue": "Not every shape SECURITY.md names has a characterization case: comm, cut, sort, jq, an editor and find -exec cat (secret reads) and sort -o and git -C reset --hard (shell writes) have none, and sr25's label is garbled.",
+        "resolution": "Add known-open rows for those shapes beside watched twins, and reword sr25."
+      },
+      {
+        "id": "P103-R7",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_guard_bash_writes.py:116",
+        "issue": "The comment points at SECURITY.md's _command_is_read_only paragraph, but SECURITY.md never names that function.",
+        "resolution": "Point at the paragraph by its lead sentence."
+      },
+      {
+        "id": "P103-R8",
+        "severity": "low",
+        "file": "SECURITY.md:369; CONTRIBUTING.md:1131,1136",
+        "issue": "An ordinal pointer ('Item 6 of Known bypass classes') and two 'the N <noun>' counts in prose, which the author must police.",
+        "resolution": "Refer to the item by its title and drop both counts."
+      },
+      {
+        "id": "P103-R9",
+        "severity": "low",
+        "file": "plugins/audit/README.md:627-631",
+        "issue": "The rewritten command enumeration leaves out shipped commands, /audit:usage among them, which QUICKSTART sends the reader to.",
+        "resolution": "Point at the command table instead of enumerating."
+      },
+      {
+        "id": "P103-R10",
+        "severity": "low",
+        "file": "plugins/audit/README.md:415",
+        "issue": "The invariant row 'Never read secrets, never log tokens' is graded enforced, contradicting SECURITY.md's name-based secret guard and the open shapes this phase documented.",
+        "resolution": "Grade it as name-based refusal with the open shapes linked."
+      },
+      {
+        "id": "P103-R11",
+        "severity": "low",
+        "file": "README.md:140,146; QUICKSTART.md:31; plugins/audit/README.md:924",
+        "issue": "The backfill is said to spend no tokens and to write only the .claude/usage ledger; /audit:usage is a model-invoked command that costs an ordinary turn to relay, and in a git repo it also takes and releases a lock under the git common dir.",
+        "resolution": "Say it runs no agent and no analysis, costs one ordinary turn, and leaves only the self-ignoring ledger in the working tree."
+      },
+      {
+        "id": "P103-R12",
+        "severity": "med",
+        "file": "docs/screenshots/captured-at.json",
+        "issue": "This phase adds a top-level gifs record to the sidecar; branches that re-captured screenshots with the old writer rewrite the file as note and images only, so a merge can conflict or drop the record and turn capture-demo-gif.py --check red; any merged change to the refusal text or the status render also moves the text digest.",
+        "resolution": "Merge-time reconciliation: after each phase that re-captured screenshots merges, confirm the gifs entry survives and run capture-demo-gif.py --check, re-recording only if the digest moved."
+      },
+      {
+        "id": "P103-R13",
+        "severity": "med",
+        "file": "SECURITY.md:669-684",
+        "issue": "The panel trust-boundary text describes this branch's base (GET / unguarded, pidfile written with plain open and no chmod, reaching the port is reaching the token); the panel phase requires the token on GET / and writes the pidfile owner-only without touching SECURITY.md, so the merge is clean and the paragraph silently stale.",
+        "resolution": "Merge-time reconciliation with the panel phase: rewrite the paragraph to the token-guarded page and the owner-only pidfile and requote commands/panel.md."
+      },
+      {
+        "id": "P103-R14",
+        "severity": "low",
+        "file": "SECURITY.md:1103-1133",
+        "issue": "The rewritten end of Known bypass classes item 6 sits next to another phase's edit of item 7 and its fail-mode rows, so a merge may conflict though no sentence becomes false.",
+        "resolution": "Resolve at merge keeping both edits."
+      }
+    ],
+    "outcome": "[findings: 14 - 0 high, 7 med, 7 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -445,7 +545,7 @@
     {
       "id": "P103.9",
       "title": "README first screen says who it is for and who does not need it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Rewrite the README's first screen from the deep-analysis DOCS draft: a one-sentence position (keep Claude Code inside the plan you approved, with test evidence on record that git can check, for multi-day work on an existing codebase), what is enforced by hooks versus followed from instructions, the GIF, see-it-first links, install then QUICKSTART.md, and an explicit 'who does not need it' (short solo greenfield sessions, repositories without tests, anyone wanting containment rather than guardrails). Correct the third bullet, which says the secret guard never matches a string, against SECURITY.md; the GIF caption either drops the re-record instruction (a contributor detail) or names its Pillow requirement. Keep the '- [QUICKSTART](QUICKSTART.md)' and '- [CHANGELOG](CHANGELOG.md)' list items (prove-gates dl1) and at least one script path (test__refs c3). Acceptance line: reading only the first screen, a visitor can say what the plugin enforces and what it only asks the model to follow, who should install it and who should not, and reaches the first /audit:doctor through at most one page.",
       "files": [
         "README.md"
@@ -469,18 +569,24 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "dc1c0cea",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "README.md's first screen (the title through the two screenshot blocks) is rewritten from the analysis draft, each claim checked against the code and SECURITY.md: a position statement (it keeps Claude Code inside the plan you approved, with test-gate evidence committed beside the plan, for multi-day work on an existing codebase that has tests); the guards bullet corrected from \"caught by what the tool call does, never by matching a string\" to what SECURITY.md says - a write no task covers is refused, once a phase is running, by the resolved path it writes to, and a secret-file read is caught at every tier by matching the tool call's text, so pair it with Claude Code's sandbox; a one-line enforced-by-hooks versus followed-from-instructions summary linking to the full table; an explicit \"Who does not need this\" paragraph (short solo greenfield sessions, repositories with no tests, anyone who wants containment rather than guardrails); and an Install-then-QUICKSTART pointer that links to the existing Install section instead of repeating its commands. The GIF caption's re-record instruction is dropped; CONTRIBUTING.md carries it with its Pillow caveat. The QUICKSTART and CHANGELOG list items and a script path stay. test__refs 304/304; raw_url_pin_drift, doc_link_drift and doc_prose_numbers clean.",
+        "descriptive": "A visitor reading only the top of the README now learns what the plugin enforces and what it only asks the model to follow, who should install it and who should not, and reaches the first check of the install through one page."
       },
       "startedAt": "2026-10-06T19:39:02Z",
-      "completedAt": null,
+      "completedAt": "2026-10-06T19:57:22Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-06T19:57:04Z.a597ef",
         "status": "passed",
         "at": "2026-10-06T19:57:04Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "dc1c0cea",
+        "at": "2026-10-06T19:57:22Z",
+        "basis": "audit-reviewer (task mode): matches; one medium finding (the write-refusal sentence lacked 'once a phase is running') fixed and checked by the orchestrator against require-plan.py's tiers and SECURITY.md's every-tier secret rule"
       }
     },
     {
@@ -672,6 +778,107 @@
         "commit": "29035b8d",
         "at": "2026-10-06T15:57:55Z",
         "basis": "audit-reviewer (task mode): clean; the parsed sentence matches the recorder byte for byte and el30 guards it; the plain check passes over every committed ledger"
+      }
+    },
+    {
+      "id": "P103.14-xi3",
+      "title": "the documents agree on the secret guard, the gate's tiers and the first-run order",
+      "status": "in_progress",
+      "description": "Fixes review findings P103-R1 to P103-R5 and P103-R8 to P103-R11, which share files. (1) Every secret-read claim (plugins/audit/README.md's guard rows and invariant row, README.md) says a call naming a secret file beside a read verb the guard lists is refused, and names both open classes - a read that never names the file, and an unlisted verb naming it - linking SECURITY.md; the invariant row is graded as name-based refusal. (2) Wherever a document states when the plan gate enforces (README.md's first screen and later section, plugins/audit/README.md, QUICKSTART.md) it states the three tiers in the same words - observe with no plan, warn with a plan and nothing running, deny while a phase runs - or points at /audit:doctor, which prints the active tier. (3) QUICKSTART runs the read-only /audit:doctor check before the free backfill, so README's sentence that doctor checks the install before anything is written holds; README's own backfill block becomes a pointer to QUICKSTART. (4) The backfill is described as running no agent and no analysis, costing one ordinary turn, and leaving only the self-ignoring ledger in the working tree. (5) CONTRIBUTING.md's Decision record entry on documentation by audience is amended with the reason QUICKSTART now carries the free first look at spend, and its line about how the file opens names 'Your first change'; 'Your first change' adds npm ci and npx playwright install chromium after the clone, and the PR template's verify.sh line says the same. (6) An ordinal pointer in SECURITY.md and two counts in CONTRIBUTING.md's prose are replaced by names. (7) plugins/audit/README.md's command enumeration becomes a pointer to the command table. (8) commands/usage.md's brief no longer tells the agent both to fence and not to fence the output.",
+      "files": [
+        "README.md",
+        "QUICKSTART.md",
+        "plugins/audit/README.md",
+        "CONTRIBUTING.md",
+        "SECURITY.md",
+        ".github/pull_request_template.md",
+        "plugins/audit/commands/usage.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-06T20:07:10Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T20:26:41Z.85c772",
+        "status": "passed",
+        "at": "2026-10-06T20:26:41Z"
+      }
+    },
+    {
+      "id": "P103.15-xi3",
+      "title": "every open shape SECURITY.md names has a characterization case",
+      "status": "in_progress",
+      "description": "Fixes review findings P103-R6 and P103-R7. The characterization suites carry a known-open row, each beside a watched twin, for every shape SECURITY.md names that has none today: secret reads through comm, cut, sort, jq, an editor and find -exec cat naming the file, and shell writes through sort -o and a git -C reset --hard. sr25's label says what its command does (the secret named beside diff, a verb the guard's list lacks). test_guard_bash_writes.py's pointer names the SECURITY.md paragraph by its lead sentence, and guard-bash-writes.py's comment beside the absorb branch says the command reads as read-only rather than that it is provably read-only (a comment change only; no guard logic changes).",
+      "files": [
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "plugins/audit/hooks/guard-bash-writes.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: comm, cut, sort, jq, an editor and find -exec cat naming a secret file are known-open rows beside watched twins",
+          "plugins/audit/tests/test_guard_bash_writes.py: sort -o and git -C reset --hard are known-open rows beside watched twins"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-06T20:07:11Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T20:33:18Z.b9f810",
+        "status": "passed",
+        "at": "2026-10-06T20:33:18Z"
       }
     }
   ],

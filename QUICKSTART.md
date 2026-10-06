@@ -18,22 +18,11 @@ In a Claude Code session:
 ```
 
 The guard hooks are now active in **all** your projects, by design — but the plan
-gate only *observes* until a repository has a plan, so installing this does not start
+gate observes with no plan, warns with a plan and nothing running, and denies while a
+phase runs (`/audit:doctor` prints the active tier), so installing this does not start
 refusing edits in repos that never opted in.
 
-## 2. See what it already cost you (free)
-
-```
-/audit:usage --backfill
-```
-
-It reads the Claude Code transcripts already in `~/.claude/projects/`, so it works
-before any plan exists: it spends no tokens and calls no agent, and the only thing
-it writes is a local, self-ignoring ledger under `.claude/usage/`. Every row will
-say **Uncategorized** until a plan exists to attribute spend to — see
-[Token usage](plugins/audit/README.md#token-usage) in the plugin README for the rest.
-
-## 3. Check the install actually works
+## 2. Check the install actually works
 
 ```
 /audit:doctor
@@ -67,6 +56,19 @@ are opt-in and neither is on by default:
 If you keep real secrets in this repository, set those before you set anything here —
 [SECURITY.md](SECURITY.md) says exactly what the guards do and do not guarantee.
 
+## 3. See what it already cost you
+
+```
+/audit:usage --backfill
+```
+
+It reads the Claude Code transcripts already in `~/.claude/projects/`, so it works
+before any plan exists. It runs no agent and no analysis — a script reads the files
+and prints a table, so it costs one ordinary turn — and the only thing it leaves in
+your working tree is a self-ignoring ledger under `.claude/usage/`. Every row will
+say **Uncategorized** until a plan exists to attribute spend to — see
+[Token usage](plugins/audit/README.md#token-usage) in the plugin README for the rest.
+
 ## 4. Generate the plan
 
 In a git repository you want audited:
@@ -81,8 +83,9 @@ writes the manifest — a schema-validated JSON file, by default at
 `docs/audit/audit-plan.json`. Decline part of it and those phases are parked as
 proposals rather than lost.
 
-This is the step that spends real tokens. It is also the step that makes the plan
-gate start enforcing, because from here on there is a plan to be outside of.
+This is the step that spends real tokens. It is also the step that moves the plan
+gate off observing: with a plan and nothing running it warns, and it denies while a
+phase runs, because from then on there is a plan to be outside of.
 
 Nothing to audit yet, or just want the guards live before you decide what goes in
 the plan? `/audit:init` offers a cheaper first step: the smallest manifest that

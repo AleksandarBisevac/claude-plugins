@@ -10,6 +10,8 @@ session):
 ```bash
 git clone https://github.com/AleksandarBisevac/claude-plugins
 cd claude-plugins
+npm ci                               # vitest, playwright and the other JS gate tools
+npx playwright install chromium      # the browser the report and panel gates drive
 ```
 
 ```
@@ -1070,13 +1072,14 @@ you.
 
 - `README.md` — the pitch. What is enforced versus what is merely followed, the demo,
   install, and one link per audience. No procedure.
-- `QUICKSTART.md` — a new user's first session: install, one audited task, one report.
-  Nothing else, ever.
+- `QUICKSTART.md` — a new user's first session: install, the read-only `/audit:doctor`
+  check, a first look at past spend, one audited task, one report. Nothing else, ever.
 - `COMPATIBILITY.md` — what a version number promises about the manifest and the
   config file the user owns, and where the promise stops.
 - `plugins/audit/README.md` — the deep product reference, for a reader who is already
   running it. It now says so in its first screen.
-- This file — the contributor's first stop, with the reading order at the top.
+- This file — the contributor's first stop, opening on *Your first change*, which
+  carries the reading order.
 - `PLUGIN-BUILD-GUIDE.md` — the architecture, reached from that reading order.
 
 **A lead section inside `README.md` was rejected, and not on effort.** A landing page's
@@ -1086,6 +1089,16 @@ appends a line and nothing says it should not, which is exactly how the list the
 past first success into a tour. A separate page can be held to *install, one task, one
 report* because that is its entire scope, and the failure mode is legible on the page
 itself rather than buried in a section of a longer one.
+
+**The first look at past spend was added to `QUICKSTART.md` later, and it amends the
+page's scope rather than breaking it.** `/audit:usage --backfill` runs no agent and no
+analysis, costs one ordinary turn, and leaves only a self-ignoring ledger in the working
+tree, and it answers the question a first-time user asks before they will spend anything
+on a plan: what has this repository already cost me? That answer needs no manifest, so
+it belongs before `/audit:init` rather than behind it, and it sits after `/audit:doctor`
+so the read-only check still runs before anything is written. The root `README.md`
+points at that step instead of carrying its own copy, because a first-run step in two
+places is the duplication this entry exists to remove.
 
 **A reading order alone was rejected for the user and adopted for the contributor**,
 because the two readers want different things from the wall. A reading order tells you
@@ -1129,14 +1142,15 @@ which is what makes this able to fire at all.
 ### Optional modules take fixes only (decided 2026-10-06): no new UI shape pins, no new prose lints
 
 The surface that must be maintained grows through discretionary work — a feature nobody
-asked for still has to keep passing every gate forever. Three parts to the decision.
+asked for still has to keep passing every gate forever. The decision is (a), (b) and (c) below.
 
 **(a) Fixes only, until a user asks.** The panel, the usage views, the ADO connector, the
 demo and the theme editor take bug fixes but no new features by default. Exceptions named
 up front rather than discovered later: the cost-truth work in the usage views, the
 panel's state-truth fixes, and an ADO feature a real user requests. "A real user
-requests it" is the bar for every other optional module too — the three exceptions are
-already past that bar, not a license to add more without it.
+requests it" is the bar for every other optional module too — the cost-truth work, the
+state-truth fixes and the requested ADO feature are already past that bar, not a license
+to add more without it.
 
 **(b) No new UI shape pins.** `plugins/audit/tests/` already carries byte-level substring
 pins against the assembled report and panel (counted by `tools/count-ui-pins.py`); that
