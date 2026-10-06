@@ -138,7 +138,7 @@
     {
       "id": "P107.3",
       "title": "usage backfill keeps the rows appended to a month file during its window",
-      "status": "in_progress",
+      "status": "done",
       "description": "backfill reads the ledger, then rewrite_month replaces each month file, while the metering hook appends without a lock. So a row appended between the read and the replace was dropped. After its replace, backfill reads the old file's tail past the size it read, through a descriptor held across the replace, and appends the rows of sessions it did not re-read. No lock goes on the Stop hook's path, which runs every turn. Also decide the fixture's inset mode, where an in-set session's later save_cursor can win over backfill's: either close it, or state it in commands/usage.md as the remaining limit. usage.md's 'takes the shared usage lock' must also say that this lock excludes only another backfill.",
       "files": [
         "plugins/audit/scripts/usage/audit-usage.py",
@@ -167,18 +167,36 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "006341e4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "usage_ledger.open_month reads a month file through a descriptor it keeps open and returns the rows to keep plus that tail. rewrite_month builds one list (kept rows, added rows and the rows appended since the read) and makes one write-and-replace call through _replace_rows, the only place that writes the temp file and calls os.replace; after the replace it keeps reading the old file through the held descriptor until a wait passes in which no byte arrived and no half-written line is pending, and appends the rows of sessions the backfill did not re-read. On a platform that refuses to replace an open file it closes the descriptor, adds a final read and repeats the same call. append_rows on the Stop hook's path stays lock-free. audit-usage.py backfill opens each month just before rewriting it, and when a rewrite fails it names the month, saves no cursor for sessions with rows in it, leaves no temp file and exits 1 instead of reporting OK. commands/usage.md says the usage lock excludes only another backfill and states the remaining limits: inset mode (another session ending a turn during a backfill can come out short or doubled, repaired by re-running), the bounded settle, and the platform case. Cases bw1-bw11, including a bounded port of the maintainer's foreign-appender race that lost rows at HEAD, the dropped-session-then-foreign-row settle case, and the failed-rewrite case with its allow twin; mutations of each rule turned their cases red.",
+        "descriptive": "Usage backfill no longer drops rows other sessions append while it rebuilds a month file, decides the old file is quiet from bytes rather than filtered rows, and makes a failed month rewrite visible instead of reporting OK; the metering hook still takes no lock."
       },
       "startedAt": "2026-10-06T14:44:46Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T15:36:07Z",
+      "verifiedBy": [
+        "bw1",
+        "bw2",
+        "bw3",
+        "bw4",
+        "bw5",
+        "bw6",
+        "bw7",
+        "bw8",
+        "bw9",
+        "bw10",
+        "bw11"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T15:33:01Z.eeb7cc",
         "status": "passed",
         "at": "2026-10-06T15:33:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "006341e4",
+        "at": "2026-10-06T15:36:07Z",
+        "basis": "audit-reviewer (task mode): matches; three low findings and one adjacent gap fixed as proposed, each guarded by a mutation-proven case"
       }
     },
     {
