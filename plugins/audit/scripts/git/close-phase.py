@@ -40,10 +40,11 @@ the phase's newest recorded gate verdict is asked at the head it would merge
 (`gate_answer`: `_verdict_binding.phase_binding` over the gate and the tasks'
 files of the phase - or, for a phase signed off in a group, of the carrier whose
 run grades it, over every member's files). The ledger is read as committed at the
-branch tip and, unioned with it, as it stands in the worktree holding the branch;
-the digest over that worktree or the tip's own files - whichever tree
-`--project` names (`branch_texts`, `tip_scope`). Neither readable is unreadable,
-never no run. A sign-off recorded with `--no-evidence-reason` is honoured: a
+branch tip and, unioned with it, as it stands in the worktree holding the branch
+(`branch_texts`); the digest is always taken over the tip's committed declared
+files, checked out as a checkout of the branch writes them (`tip_scope`) - never
+over a worktree, whatever tree `--project` names. Neither readable is
+unreadable, never no run. A sign-off recorded with `--no-evidence-reason` is honoured: a
 green it chose not to stand on does not refuse, a red recorded after it does. A red recorded after the
 run the sign-off was bound to is newer evidence about the work about to land, and
 `_verdict_binding.close_refusal` refuses on it and on every other arm in
@@ -107,6 +108,7 @@ import argparse
 import datetime
 import json
 import os
+import posixpath
 import shutil
 import subprocess
 import sys
@@ -141,6 +143,7 @@ import _manifest_io as _mio                                          # noqa: E40
 import _manifest_rules as _rules  # noqa: E402  (revalidate what the stamp writes)
 import _panel_write  # noqa: E402  (the index lock the stub mirror is written under)
 import _proposals  # noqa: E402  (parked_on_branch: the work this branch deferred)
+import _tree_stamp  # noqa: E402  (declared_scope: the one reading of a declared entry)
 import _verdict_binding as _vb  # noqa: E402  (the one rule for whether a verdict refuses a close)
 import _worktrees as _wt                                             # noqa: E402
 
@@ -1222,9 +1225,10 @@ def _parked_after_merge(manifest_path, branch):
 # run at all and land the branch unasked. The rows are read as committed at the
 # branch tip (git objects, never a checkout) and, when a worktree holds the branch,
 # as they stand in that tree too - the union by row identity, so a red recorded
-# there after the sign-off and not yet committed still counts. The digest is taken
-# over that worktree, or, with none, over the tip's own declared files written
-# into a scratch repository.
+# there after the sign-off and not yet committed still counts. The digest is
+# always taken over the tip's own committed declared files, checked out into a
+# scratch repository - never over that worktree, whose uncommitted bytes do not
+# land.
 
 def _git_bytes(git_root, args, env=None):
     """`(code, stdout bytes)` of one git call - bytes, because a ledger is decoded
@@ -1319,10 +1323,15 @@ def _scratch_env():
 
 def tip_scope(git_root, project, branch, files):
     """A scratch git repository holding `files` (project-relative, a directory
-    expanded) as committed at `branch`'s tip, or None when the tip's declared
-    work could not be written out. The caller removes it. A repository rather
-    than a plain directory, because the digest expands a declared directory by
-    asking git what it holds.
+    expanded) as a checkout of `branch`'s tip would write them, or None when
+    the tip's declared work could not be written out. The caller removes it. A
+    repository rather than a plain directory, because the digest expands a
+    declared directory by asking git what it holds.
+
+    THE ENTRIES ARE READ AS THE DIGEST READS THEM, through
+    `_tree_stamp.declared_scope`: a `:line-range` suffix or a backslash left on
+    would list nothing at the tip, and the digest would read a file the branch
+    carries as missing.
 
     EVERY FAILURE REMOVES THE SCRATCH AND ANSWERS None, a write that raised
     included: a half-written copy is not the tip, and a directory left behind is
@@ -1331,37 +1340,140 @@ def tip_scope(git_root, project, branch, files):
     prefix = "" if prefix == "." else prefix + "/"
     scratch = tempfile.mkdtemp(prefix="close-phase-tip-")
     try:
-        if _write_tip(git_root, branch, prefix, files, scratch):
+        if _write_tip(git_root, branch, prefix, _tree_stamp.declared_scope(files),
+                      scratch):
             return scratch
     except Exception:
         pass
-    shutil.rmtree(scratch, ignore_errors=True)
+    _output.remove_tree(scratch)
     return None
 
 
-def _write_tip(git_root, branch, prefix, files, scratch):
-    """True once `files` at `branch`'s tip are written into `scratch` and added
-    to a repository there; False when any of it could not be."""
-    for rel in files:
-        paths = _tip_paths(git_root, branch, prefix + rel.rstrip("/"))
-        if paths is None:
+def _write_tip(git_root, branch, prefix, declared, scratch):
+    """True once the `declared` files at `branch`'s tip are written into
+    `scratch` as a checkout writes them and added to a repository there; False
+    when any of it could not be.
+
+    CHECKED OUT, NOT CAT-FILED. The recorder hashed the working tree, whose
+    bytes are the blob after the repository's eol, text and smudge rules - a
+    branch under `core.autocrlf`, an `eol=crlf` attribute or a clean/smudge
+    filter holds different bytes in its blobs than in its checkout, and a
+    digest over the blobs would refuse every green it ever recorded. So the
+    tip is checked out for real, into a work tree of its own (`_check_out`),
+    and the scratch repository is written from that."""
+    paths = []
+    for rel in declared:
+        listed = _tip_paths(git_root, branch, prefix + rel.rstrip("/"))
+        if listed is None:
+            return False
+        paths.extend(listed)
+    paths = sorted(set(paths))
+    staging = tempfile.mkdtemp(prefix="close-phase-tip-")
+    try:
+        work_tree = _check_out(git_root, branch, paths, staging)
+        if work_tree is None:
             return False
         for path in paths:
-            code, raw = _git_bytes(git_root, ["cat-file", "blob", "refs/heads/%s:%s"
-                                              % (branch, path)])
-            if code != 0:
-                # Listed and then unreadable: the declared work at the tip is
-                # not established, which the digest must not read as absent.
+            raw = _checked_out_bytes(os.path.join(work_tree, path))
+            if raw is None:
+                # Listed and then not written out: the declared work at the
+                # tip is not established, which the digest must not read as
+                # absent.
                 return False
             target = os.path.join(scratch, path[len(prefix):])
             os.makedirs(os.path.dirname(target), exist_ok=True)
             with open(target, "wb") as fh:
                 fh.write(raw)
+    finally:
+        _output.remove_tree(staging)
     env = _scratch_env()
     for args in (["init", "-q"], ["add", "-A", "--force"]):
         if _git_bytes(scratch, _SCRATCH_GIT + args, env=env)[0] != 0:
             return False
     return True
+
+
+def _check_out(git_root, branch, paths, staging):
+    """The work tree under `staging` holding `paths` (root-relative) checked
+    out from `branch`'s tip, every in-repository target of a symbolic link
+    among them checked out too, or None when git would not write them or a
+    link leads outside the tip.
+
+    THE REPOSITORY'S OWN GIT, with the operator's config, under an index of its
+    own: `read-tree` loads the tip into that index, so the attributes a checkout
+    consults are the tip's `.gitattributes`, and `checkout-index` applies the
+    same conversion and filters a checkout of the branch would. The
+    repository's real index and work tree are never touched.
+
+    A LINK IS FOLLOWED THE WAY THE RECORDER'S FILE HASH FOLLOWS IT: the digest
+    hashes the bytes reading the link yields, so the file it leads to has to be
+    at the tip and in this work tree as well. A target outside the tip - an
+    absolute path, or one climbing out of the repository - is not something the
+    tip can vouch for, and answers None rather than bytes the digest would read
+    as moved."""
+    code, out = _git_bytes(git_root, ["rev-parse", "--absolute-git-dir"])
+    git_dir = out.decode("utf-8", "replace").strip() if code == 0 else ""
+    if not git_dir:
+        return None
+    work_tree = os.path.join(staging, "tree")
+    os.makedirs(work_tree)
+    env = dict(os.environ, GIT_INDEX_FILE=os.path.join(staging, "index"))
+    base = ["git", "--git-dir=%s" % (git_dir,), "--work-tree=%s" % (work_tree,)]
+    if not _git_ok(base + ["read-tree", "refs/heads/%s" % (branch,)], work_tree,
+                   env, b""):
+        return None
+    wanted, written = set(paths), set()
+    # Each round checks out what the last round's links lead to; a target
+    # already written ends a chain, so a cycle of links ends too.
+    while wanted - written:
+        batch = sorted(wanted - written)
+        if not _git_ok(base + ["checkout-index", "-f", "-z", "--stdin"],
+                       work_tree, env,
+                       b"".join(p.encode("utf-8") + b"\0" for p in batch)):
+            return None
+        written.update(batch)
+        for path in batch:
+            target = _link_target(work_tree, path)
+            if target is False:
+                return None
+            if target:
+                wanted.add(target)
+    return work_tree
+
+
+def _git_ok(argv, cwd, env, given):
+    """True when one git call fed `given` on stdin exits 0."""
+    try:
+        return subprocess.run(argv, cwd=cwd, env=env, input=given,
+                              stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL).returncode == 0
+    except Exception:
+        return False
+
+
+def _link_target(work_tree, path):
+    """The root-relative path the link checked out at `path` leads to; None
+    when `path` is not a link, False when it leads outside the tip."""
+    full = os.path.join(work_tree, path)
+    if not os.path.islink(full):
+        return None
+    text = os.readlink(full).replace("\\", "/")
+    if os.path.isabs(text) or text.startswith("/"):
+        return False
+    target = posixpath.normpath(posixpath.join(posixpath.dirname(path), text))
+    if target in (".", "..") or target.startswith("../"):
+        return False
+    return target
+
+
+def _checked_out_bytes(path):
+    """The bytes reading `path` in the checked-out tree yields - through a
+    link, its target's, which is what the recorder's file hash reads - or None
+    when there is no file to read there."""
+    if not os.path.isfile(path):
+        return None
+    with open(path, "rb") as fh:
+        return fh.read()
 
 
 def gate_answer(project, manifest_path, manifest, phase, git_root=None,
@@ -1430,7 +1542,7 @@ def gate_answer(project, manifest_path, manifest, phase, git_root=None,
             % (cid,), config=config, texts=texts, digest_root=digest_root)
     finally:
         if scratch:
-            shutil.rmtree(scratch, ignore_errors=True)
+            _output.remove_tree(scratch)
     if tip_lost and (answer.get("state") == "bound"
                      or answer.get("arm") in (_vb.ARM_DIGEST_MOVED,
                                               _vb.ARM_DIGEST_UNANSWERABLE)):

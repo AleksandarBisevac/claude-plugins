@@ -1339,6 +1339,195 @@ def _scratch_cases(check):
             _harness.remove_tree(root)
 
 
+def _checked_out_fixture(name, attributes, declared, change_after=False):
+    """`(root, mpath, git, working)` - P1 on `audit/p1-demo` declaring `declared`,
+    whose green was recorded over `src.txt` AS CHECKED OUT: the file is removed
+    and checked out again under the branch's `.gitattributes` (`attributes`, or
+    none) before the digest is taken, so the bytes the recorder hashed are the
+    checkout's, not the blob's. `working` is those bytes. `change_after` commits
+    a different `src.txt` after the green, so it no longer binds."""
+    import _evidence_io as E
+    import _tree_stamp as T
+    root = _harness.fixture_root(name)
+    git = _fixture_git(root)
+    _init_fixture_repo(git)
+    phase = _signed_phase("P1", "audit/p1-demo")
+    phase["testGate"] = ["test"]
+    phase["tasks"][0]["files"] = list(declared)
+    mpath = _write_plan(root, {"developmentBranch": "main"}, [phase])
+    git("add", "-A")
+    git("commit", "-q", "-m", "base")
+    git("checkout", "-q", "-b", "audit/p1-demo")
+    if attributes:
+        with open(os.path.join(root, ".gitattributes"), "w") as fh:
+            fh.write(attributes)
+    src = os.path.join(root, "src.txt")
+    with open(src, "wb") as fh:
+        fh.write(b"line one\nline two\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "work")
+    os.remove(src)
+    git("checkout", "--", "src.txt")
+    with open(src, "rb") as fh:
+        working = fh.read()
+    digest = T.scope_digest(root, list(declared))[0]
+    ev = E.evidence_dir(root)
+    os.makedirs(ev, exist_ok=True)
+    with open(os.path.join(ev, "2026-09.cr.jsonl"), "w") as fh:
+        fh.write(json.dumps({
+            "runId": "cr-0", "ts": "2026-09-01T00:00:00Z", "scope": "phase",
+            "phaseId": "P1", "status": "passed", "gateSource": "phase",
+            "steps": [{"name": "test"}],
+            "testedState": {"scopeDigest": digest}}) + "\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "gate")
+    if change_after:
+        with open(src, "wb") as fh:
+            fh.write(b"line one\nchanged after the gate measured it\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "more work")
+    return root, mpath, git, working
+
+
+def _checked_out_cases(check):
+    """THE TIP IS DIGESTED AS A CHECKOUT WRITES IT, and a declared entry as the
+    recorder's digest reads it. Each allow case has a twin whose declared file
+    changed after the green, so a reading that made every digest agree - both
+    sides missing, say - goes red there instead of passing here."""
+    def run(name, attributes, declared, change_after):
+        root = None
+        try:
+            root, mpath, git, working = _checked_out_fixture(
+                name, attributes, declared, change_after)
+            git("checkout", "-q", "main")
+            code, text = _close(mpath, root, "--keep-branch")
+            return code, text, _landed(git), working
+        finally:
+            if root:
+                _harness.remove_tree(root)
+
+    crlf = "* text eol=crlf\n"
+    code, text, landed, working = run("closephase-crlf", crlf, ["src.txt"], False)
+    check("cr24 RED-FIRST: a branch whose .gitattributes says eol=crlf over LF "
+          "blobs, with its green recorded over the checked-out (CRLF) file, "
+          "lands BOUND - the tip is digested as a checkout writes it, not as "
+          "the blob holds it: working %r, exit %r, landed %r, %r"
+          % (working, code, landed, text[:400]),
+          working == b"line one\r\nline two\r\n" and code == 0 and landed
+          and "gate: bound to run cr-0" in text)
+    code, text, landed, _w = run("closephase-crlf-moved", crlf, ["src.txt"], True)
+    check("cr25 SECOND DIRECTION: the same eol=crlf branch whose declared file "
+          "changed after the green still refuses as moved: exit %r, landed %r, "
+          "%r" % (code, landed, text[:300]),
+          code == 1 and not landed
+          and "have changed since it was measured" in text)
+
+    code, text, landed, _w = run("closephase-suffix", None, ["src.txt:1-2"],
+                                 False)
+    check("cr26 RED-FIRST: a phase declaring 'src.txt:1-2' whose file did not "
+          "change lands BOUND - the line-range suffix is stripped before the "
+          "tip is listed, as the recorder's digest strips it: exit %r, landed "
+          "%r, %r" % (code, landed, text[:400]),
+          code == 0 and landed and "gate: bound to run cr-0" in text)
+    code, text, landed, _w = run("closephase-suffix-moved", None,
+                                 ["src.txt:1-2"], True)
+    check("cr27 SECOND DIRECTION: the same suffixed declaration whose file "
+          "changed after the green refuses as moved - the suffix is not read "
+          "as a file missing on both sides: exit %r, landed %r, %r"
+          % (code, landed, text[:300]),
+          code == 1 and not landed
+          and "have changed since it was measured" in text)
+
+
+def _symlink_refusal():
+    """Why `os.symlink` cannot make a link here, or None when it can."""
+    import tempfile
+    probe = tempfile.mkdtemp(prefix="closephase-symlink-probe-")
+    try:
+        os.symlink("target", os.path.join(probe, "link"))
+        return None
+    except (OSError, NotImplementedError, AttributeError) as exc:
+        return "%s: %s" % (type(exc).__name__, exc)
+    finally:
+        _harness.remove_tree(probe)
+
+
+def _symlink_fixture(name, change_after):
+    """`(root, mpath, git)` - P1 declaring `link`, a committed symbolic link to
+    `t.txt`, with its green recorded over the working tree: the recorder's
+    digest follows the link and hashes `t.txt`'s bytes. `change_after` commits
+    a different `t.txt` after the green."""
+    import _evidence_io as E
+    import _tree_stamp as T
+    root = _harness.fixture_root(name)
+    git = _fixture_git(root)
+    _init_fixture_repo(git)
+    phase = _signed_phase("P1", "audit/p1-demo")
+    phase["testGate"] = ["test"]
+    phase["tasks"][0]["files"] = ["link"]
+    mpath = _write_plan(root, {"developmentBranch": "main"}, [phase])
+    git("add", "-A")
+    git("commit", "-q", "-m", "base")
+    git("checkout", "-q", "-b", "audit/p1-demo")
+    with open(os.path.join(root, "t.txt"), "wb") as fh:
+        fh.write(b"the bytes the link leads to\n")
+    os.symlink("t.txt", os.path.join(root, "link"))
+    git("add", "-A")
+    git("commit", "-q", "-m", "work")
+    digest = T.scope_digest(root, ["link"])[0]
+    ev = E.evidence_dir(root)
+    os.makedirs(ev, exist_ok=True)
+    with open(os.path.join(ev, "2026-09.cr.jsonl"), "w") as fh:
+        fh.write(json.dumps({
+            "runId": "cr-0", "ts": "2026-09-01T00:00:00Z", "scope": "phase",
+            "phaseId": "P1", "status": "passed", "gateSource": "phase",
+            "steps": [{"name": "test"}],
+            "testedState": {"scopeDigest": digest}}) + "\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "gate")
+    if change_after:
+        with open(os.path.join(root, "t.txt"), "wb") as fh:
+            fh.write(b"changed after the gate measured it\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "more work")
+    return root, mpath, git
+
+
+def _symlink_cases(check):
+    """A DECLARED LINK IS DIGESTED THROUGH IT, as the recorder's file hash
+    follows it: the tip must hand the digest the target's bytes, not the
+    link's target text."""
+    refused = _symlink_refusal()
+    if refused is not None:
+        for label in ("cr28", "cr29"):
+            _harness.skip(check, label, "os.symlink is refused here (%s)"
+                          % (refused,), True)
+        return
+
+    def run(name, change_after):
+        root = None
+        try:
+            root, mpath, git = _symlink_fixture(name, change_after)
+            git("checkout", "-q", "main")
+            code, text = _close(mpath, root, "--keep-branch")
+            return code, text, _landed(git)
+        finally:
+            if root:
+                _harness.remove_tree(root)
+
+    code, text, landed = run("closephase-symlink", False)
+    check("cr28 RED-FIRST: a declared symbolic link to a file that did not "
+          "change lands BOUND - the tip hands the digest the bytes following "
+          "the link reads: exit %r, landed %r, %r" % (code, landed, text[:400]),
+          code == 0 and landed and "gate: bound to run cr-0" in text)
+    code, text, landed = run("closephase-symlink-moved", True)
+    check("cr29 SECOND DIRECTION: the same link whose TARGET changed after the "
+          "green refuses as moved: exit %r, landed %r, %r"
+          % (code, landed, text[:300]),
+          code == 1 and not landed
+          and "have changed since it was measured" in text)
+
+
 def _override_rows(project):
     """The rows a close over its verdict left, whole - their details are the
     claim."""
@@ -2442,6 +2631,8 @@ def _selftest():
         _main_tree_cases(check)
         _override_cases(check)
         _landing_cases(check)
+        _checked_out_cases(check)
+        _symlink_cases(check)
         _composed_cases(check)
         _same_dir_cases(check)
         _surviving_copy_cases(check)

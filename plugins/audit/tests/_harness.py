@@ -122,45 +122,13 @@ SCRIPT_DIRS = _output.install_path()
 
 
 # --- fixture roots that do not outlive the suite ------------------------------
-def remove_tree(path):
-    """`shutil.rmtree` that also works on a fixture containing a git repository.
-
-    WHY A WRAPPER AT ALL. Git writes its loose objects READ-ONLY - measurably, in
-    every `git init` plus commit this tree builds. On POSIX that is irrelevant,
-    because unlinking a file needs a writable DIRECTORY and not a writable file, so
-    `shutil.rmtree` removes the repository and nobody ever noticed. On windows the
-    read-only ATTRIBUTE is checked on the file itself and `os.unlink` raises, so the
-    same call leaves `.git/objects/**` behind - and with `ignore_errors=True`, which
-    is how every caller here spells it, leaves it behind SILENTLY.
-
-    That was invisible until `tools/sweep-selftests.py` started asserting the
-    scratch directory is empty afterwards: the windows leg of CI would have gone red
-    on the suites that build a repository, and the finding would have read as a
-    problem with the new check rather than as the removal that had never worked.
-    Confirmed by emulating the one rule that differs - unlink refuses a file with no
-    owner-write bit - which named the exposed suites rather than guessing at them.
-
-    THE ORDINARY REMOVAL RUNS FIRST AND THE CHMOD PASS IS THE FALLBACK, so nothing
-    is relaxed on the platform where nothing needed relaxing: on POSIX the second
-    half never executes. Doing it the other way round - chmod the tree, then remove
-    - would also pass, and would silently paper over a genuine permission failure on
-    both platforms rather than only over the one that is a git artifact.
-
-    NEITHER `onerror` NOR `onexc`. The first is deprecated and the second arrived in
-    3.12, and this tree holds a 3.8 floor; a helper that had to pick between them by
-    version would be a version test in a fixture. Asking whether the directory is
-    still there afterwards needs neither.
-    """
-    shutil.rmtree(path, ignore_errors=True)
-    if not os.path.exists(path):
-        return
-    for base, dirs, names in os.walk(path):
-        for name in dirs + names:
-            try:
-                os.chmod(os.path.join(base, name), 0o700)
-            except OSError:
-                pass
-    shutil.rmtree(path, ignore_errors=True)
+# `remove_tree`: `shutil.rmtree` that also works on a fixture containing a git
+# repository, whose loose objects git writes read-only. BOUND, NOT COPIED: the
+# fact has its home in the anchor, `_output.remove_tree`, whose docstring carries
+# the measurement, and `fr3`/`fr4` below still prove both of its directions
+# through this name. A body here would be one more copy for the drift checks to
+# miss.
+remove_tree = _output.remove_tree
 
 
 def fixture_root(prefix):
