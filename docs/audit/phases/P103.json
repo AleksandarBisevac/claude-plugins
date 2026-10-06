@@ -18,93 +18,109 @@
   "baseRef": "80a7eed2f52726a06ca43309b66a08a04fda1ab4",
   "branch": "audit/p103-what-the-plugin-says-about-its",
   "mergedAt": null,
-  "claim": {
-    "sessionId": "6c881c24-c1fd-461f-8c48-abb0170e0a5a",
-    "host": "MacBook-Pro-2",
-    "branch": "audit/p103-what-the-plugin-says-about-its",
-    "at": "2026-10-06T14:46:28Z"
-  },
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P103-R1",
         "severity": "med",
         "file": "plugins/audit/README.md:361 (also :270-273, README.md:88)",
         "issue": "The secret-read rows say a call that names a secret file is refused and name only one gap (a read that never names the file). SECURITY.md names a second class: a read verb the guard's list lacks, with the secret named in plain sight. decide() allows cut, sort, jq, comm, vim and find -exec cat naming .env.production and blocks only listed verbs such as cat and less.",
-        "resolution": "Say a call naming a secret file beside a read verb the guard lists is refused, and name both open classes, linking SECURITY.md, in all three places."
+        "resolution": "fixed in P103.14-xi3 (bdd4c158): Say a call naming a secret file beside a read verb the guard lists is refused, and name both open classes, linking SECURITY.md, in all three places.",
+        "fixTask": "P103.14-xi3",
+        "commit": "bdd4c158"
       },
       {
         "id": "P103-R2",
         "severity": "med",
         "file": "README.md:30-31",
         "issue": "The first screen says out-of-plan edits are enforced only while a phase runs and observed before that; the code has three tiers (no manifest observes, a manifest with nothing running warns, a running phase denies), and README.md:132, plugins/audit/README.md:572 and QUICKSTART.md:85 each state the gate's timing differently, none naming the warn tier.",
-        "resolution": "State the three tiers once in the same words wherever the timing is stated, or point each at /audit:doctor, which prints the active tier."
+        "resolution": "fixed in P103.14-xi3 (bdd4c158): State the three tiers once in the same words wherever the timing is stated, or point each at /audit:doctor, which prints the active tier.",
+        "fixTask": "P103.14-xi3",
+        "commit": "bdd4c158"
       },
       {
         "id": "P103-R3",
         "severity": "med",
         "file": "README.md:46-48",
         "issue": "README says QUICKSTART's read-only /audit:doctor step checks the install before anything is written, but QUICKSTART now runs /audit:usage --backfill (which writes the .claude/usage ledger) before doctor.",
-        "resolution": "Put doctor before the backfill in QUICKSTART, or reword the README sentence."
+        "resolution": "fixed in P103.14-xi3 (bdd4c158): Put doctor before the backfill in QUICKSTART, or reword the README sentence.",
+        "fixTask": "P103.14-xi3",
+        "commit": "bdd4c158"
       },
       {
         "id": "P103-R4",
         "severity": "med",
         "file": "CONTRIBUTING.md:1072-1074, :1079",
         "issue": "The Decision record's 'Documentation split by audience' entry limits QUICKSTART to install, one audited task and one report, nothing else; the backfill step was added without amending the record, and line 1079 still says the file opens with the reading order although 'Your first change' now opens it. README.md:138-157 still carries its own backfill 'Start here' block beside the rule that a command list in two places is one list and one lie.",
-        "resolution": "Amend the decision record entry with the reason QUICKSTART now carries the free first look, update :1079, and reduce README's backfill block to a pointer."
+        "resolution": "fixed in P103.14-xi3 (bdd4c158): Amend the decision record entry with the reason QUICKSTART now carries the free first look, update :1079, and reduce README's backfill block to a pointer.",
+        "fixTask": "P103.14-xi3",
+        "commit": "bdd4c158"
       },
       {
         "id": "P103-R5",
         "severity": "med",
         "file": "CONTRIBUTING.md:39-60",
         "issue": "'Your first change' sends a fresh clone straight to tools/verify.sh, which needs the npm devDependencies (vitest, playwright) and a Playwright Chromium that CI installs with npm ci and npx playwright install; the page names neither, so its one command fails on a fresh clone, and the PR template's verify.sh checkbox inherits the gap.",
-        "resolution": "Add npm ci and npx playwright install chromium to the page after the clone."
+        "resolution": "fixed in P103.14-xi3 (bdd4c158): Add npm ci and npx playwright install chromium to the page after the clone.",
+        "fixTask": "P103.14-xi3",
+        "commit": "bdd4c158"
       },
       {
         "id": "P103-R6",
         "severity": "low",
         "file": "plugins/audit/tests/test_guard_secrets_read.py:420-452; plugins/audit/tests/test_guard_bash_writes.py:123-130",
         "issue": "Not every shape SECURITY.md names has a characterization case: comm, cut, sort, jq, an editor and find -exec cat (secret reads) and sort -o and git -C reset --hard (shell writes) have none, and sr25's label is garbled.",
-        "resolution": "Add known-open rows for those shapes beside watched twins, and reword sr25."
+        "resolution": "fixed in P103.15-xi3 (a2cdfd4c): Add known-open rows for those shapes beside watched twins, and reword sr25.",
+        "fixTask": "P103.15-xi3",
+        "commit": "a2cdfd4c"
       },
       {
         "id": "P103-R7",
         "severity": "low",
         "file": "plugins/audit/tests/test_guard_bash_writes.py:116",
         "issue": "The comment points at SECURITY.md's _command_is_read_only paragraph, but SECURITY.md never names that function.",
-        "resolution": "Point at the paragraph by its lead sentence."
+        "resolution": "fixed in P103.15-xi3 (a2cdfd4c): Point at the paragraph by its lead sentence.",
+        "fixTask": "P103.15-xi3",
+        "commit": "a2cdfd4c"
       },
       {
         "id": "P103-R8",
         "severity": "low",
         "file": "SECURITY.md:369; CONTRIBUTING.md:1131,1136",
         "issue": "An ordinal pointer ('Item 6 of Known bypass classes') and two 'the N <noun>' counts in prose, which the author must police.",
-        "resolution": "Refer to the item by its title and drop both counts."
+        "resolution": "fixed in P103.14-xi3 (bdd4c158): Refer to the item by its title and drop both counts.",
+        "fixTask": "P103.14-xi3",
+        "commit": "bdd4c158"
       },
       {
         "id": "P103-R9",
         "severity": "low",
         "file": "plugins/audit/README.md:627-631",
         "issue": "The rewritten command enumeration leaves out shipped commands, /audit:usage among them, which QUICKSTART sends the reader to.",
-        "resolution": "Point at the command table instead of enumerating."
+        "resolution": "fixed in P103.14-xi3 (bdd4c158): Point at the command table instead of enumerating.",
+        "fixTask": "P103.14-xi3",
+        "commit": "bdd4c158"
       },
       {
         "id": "P103-R10",
         "severity": "low",
         "file": "plugins/audit/README.md:415",
         "issue": "The invariant row 'Never read secrets, never log tokens' is graded enforced, contradicting SECURITY.md's name-based secret guard and the open shapes this phase documented.",
-        "resolution": "Grade it as name-based refusal with the open shapes linked."
+        "resolution": "fixed in P103.14-xi3 (bdd4c158): Grade it as name-based refusal with the open shapes linked.",
+        "fixTask": "P103.14-xi3",
+        "commit": "bdd4c158"
       },
       {
         "id": "P103-R11",
         "severity": "low",
         "file": "README.md:140,146; QUICKSTART.md:31; plugins/audit/README.md:924",
         "issue": "The backfill is said to spend no tokens and to write only the .claude/usage ledger; /audit:usage is a model-invoked command that costs an ordinary turn to relay, and in a git repo it also takes and releases a lock under the git common dir.",
-        "resolution": "Say it runs no agent and no analysis, costs one ordinary turn, and leaves only the self-ignoring ledger in the working tree."
+        "resolution": "fixed in P103.14-xi3 (bdd4c158): Say it runs no agent and no analysis, costs one ordinary turn, and leaves only the self-ignoring ledger in the working tree.",
+        "fixTask": "P103.14-xi3",
+        "commit": "bdd4c158"
       },
       {
         "id": "P103-R12",
@@ -128,9 +144,9 @@
         "resolution": "Resolve at merge keeping both edits."
       }
     ],
-    "outcome": "[findings: 14 - 0 high, 7 med, 7 low; 0 with a recorded fix commit]"
+    "outcome": "phase review (audit-reviewer, phase mode, no project skill): findings fixed by two fix tasks; the three merge-time findings are triaged to reconciliation when the panel and hook phases land, because the sentences they name are true on this branch and change only with another branch's code [findings: 14 - 0 high, 7 med, 7 low; 11 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "What the plugin says about itself now matches what it does. SECURITY.md names the open secret-read and shell-write shapes, and each is pinned by a characterization case beside a twin the guard denies, so closing a gap forces the document to change. The README, the plugin README, QUICKSTART, the handbook, CONTRIBUTING and the examples agree on what the secret guard catches, the plan gate's three tiers, the backfill's real cost and the first-run order, with QUICKSTART as the one first-run page (doctor first, then the look at past spend). The demo GIF was re-recorded from today's text and --check fails when its words or bytes drift; the recording no longer captures the operator's live locks. Newcomers get a one-page Your first change that runs on a fresh clone, issue and PR templates point at it, and the decision record settles that optional modules take fixes only. The desired outcome is met for this branch; sentences that change when the panel and hook phases land (the panel trust boundary, the screenshot sidecar's gifs record, adjacent SECURITY.md items) are carried as merge-time reconciliation.",
   "tasks": [
     {
       "id": "P103.1",
@@ -840,7 +856,7 @@
     {
       "id": "P103.15-xi3",
       "title": "every open shape SECURITY.md names has a characterization case",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P103-R6 and P103-R7. The characterization suites carry a known-open row, each beside a watched twin, for every shape SECURITY.md names that has none today: secret reads through comm, cut, sort, jq, an editor and find -exec cat naming the file, and shell writes through sort -o and a git -C reset --hard. sr25's label says what its command does (the secret named beside diff, a verb the guard's list lacks). test_guard_bash_writes.py's pointer names the SECURITY.md paragraph by its lead sentence, and guard-bash-writes.py's comment beside the absorb branch says the command reads as read-only rather than that it is provably read-only (a comment change only; no guard logic changes).",
       "files": [
         "plugins/audit/tests/test_guard_secrets_read.py",
@@ -873,20 +889,40 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a2cdfd4c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Every open shape SECURITY.md names now has a known-open characterization row beside a twin the guard denies. test_guard_secrets_read.py gains sr28-sr33 - comm, cut, sort, jq, vim and find -exec cat naming .env.production - each pinned allow beside sr22 (cat .env.production, denied), and sr25's label now says the secret is named beside diff, a verb the guard's list lacks. test_guard_bash_writes.py's KNOWN_OPEN_CASES gains git -C /x reset --hard and sort -o out.py in.txt, both read as read-only today, and its pointer names the SECURITY.md paragraph by its lead sentence. guard-bash-writes.py's comment beside the absorb branch says the command reads as read-only rather than that it is provably read-only; the hunk is comment lines only, no logic. These rows pass today by design, so each was shown able to fail by flipping one expected verdict in a scratch copy of the test file: sr30 (394/395) and ko1-sorto (204/205), exit 1 each. Suites 395/395 and 205/205.",
+        "descriptive": "Every secret-read and shell-write shape the security document admits the guards miss is now pinned by a test, so closing one of those gaps forces the document to change with it."
       },
       "startedAt": "2026-10-06T20:07:11Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T20:33:24Z",
+      "verifiedBy": [
+        "sr28",
+        "sr29",
+        "sr30",
+        "sr31",
+        "sr32",
+        "sr33",
+        "ko1-gitreset",
+        "ko1-sorto"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T20:33:18Z.b9f810",
         "status": "passed",
         "at": "2026-10-06T20:33:18Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "a2cdfd4c",
+        "at": "2026-10-06T20:33:24Z",
+        "basis": "orchestrator check against findings P103-R6 and R7: rows added beside denied twins, each shown able to fail by a flipped verdict in a scratch copy; the guard file's hunk verified comment-only"
       }
     }
   ],
-  "startedAt": "2026-10-06T14:46:28Z"
+  "startedAt": "2026-10-06T14:46:28Z",
+  "testEvidence": {
+    "runId": "2026-10-06T21:19:52Z.c07db0",
+    "status": "passed",
+    "at": "2026-10-06T21:19:52Z"
+  }
 }
