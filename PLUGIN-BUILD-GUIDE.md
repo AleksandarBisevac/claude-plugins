@@ -250,6 +250,7 @@ claude-plugins/                           # this repo (personal, public)
       templates/
         audit.config.example.json         # per-repo hook config template
         audit-plan.starter.json           # minimal manifest skeleton with $schema
+        permissions-deny.example.json     # optional Claude Code permissions.deny fragment
       README.md                           # end-user install/config/extend docs
 ```
 
@@ -5044,6 +5045,19 @@ No client identifiers.
 ### `plugins/audit/templates/audit-plan.starter.json`
 Minimal manifest with `$schema`, a `meta` showing all new fields, one phase + one task. **TODO:**
 set the `$schema` URL to your published raw path and fill `repo`/`createdISO`.
+
+### `plugins/audit/templates/permissions-deny.example.json`
+Byte-for-byte the JSON block `docs/research/guard-ownership-design.md` derives. An optional
+`.claude/settings.json` fragment for users who also want Claude Code's own sandbox and
+`permissions.deny` layer to refuse secret reads — it sits alongside this plugin's guards and
+replaces no rule in them. `plugins/audit/tests/test_guard_secrets_read.py` parses `SECRET_PATH`'s
+own compiled alternation rather than reading it by line, so a grouped extension or two
+alternatives written on one source line are not merged or dropped; it pins that the template
+parses and is byte-identical to the design doc's block, that every top-level alternative is
+matched against an anchored shape for one of its known families (an unmatched alternative is
+reported as drift unless named, with a reason, in the suite's own `_OMITTED_ALTS`), and that
+EVERY member of every matched family — not only the first — carries its own `Read(...)` entry
+in the template, individually.
 
 ### `plugins/audit/README.md`
 End-user docs: install, run, the config table, the three-layer extensibility model, and a

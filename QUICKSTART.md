@@ -130,6 +130,25 @@ monorepo where git lives in a subdirectory.
 - **Trust it** — [what is enforced and what is merely
   followed](plugins/audit/README.md#what-is-enforced-and-what-is-followed), and
   [SECURITY.md](SECURITY.md) for what the guards do *not* guarantee.
+- **Harden it further (optional)** — this plugin's guards already refuse a secret read
+  (`Read`, `Grep`, `Bash`, an MCP call) whether or not a plan is running, by matching the
+  *text* of the tool call. Claude Code's own `permissions.deny` rules match text too — a
+  Bash rule is spelling, not a security boundary, and a `Read` deny does not by itself
+  reach a subprocess that opens the file indirectly. Only its **sandbox** turns a `Read`
+  deny into an OS-level block that every subprocess hits; without the sandbox on, the
+  fragment's deny entries catch the same recognised commands this plugin's own guards
+  already catch, no further.
+  [`plugins/audit/templates/permissions-deny.example.json`](plugins/audit/templates/permissions-deny.example.json)
+  is that fragment — merge it into your own `.claude/settings.json` if you want the host
+  layer (and, with the sandbox on, the OS) to hold it too; it replaces no guard rule, it
+  only adds one.
+  If "Check the install actually works" already left you with a `permissions.deny` list in
+  that same file, merge this fragment's entries into it rather than writing a second list,
+  and **replace** that step's `Read(.env*)` and `Grep(.env*)` entries with this fragment's —
+  do not keep both. A `Read(!...)` carve-out only reaches rules that come *before* it in the
+  same file, so an old `Read(.env*)` left appended *after* this fragment's `Read(!...)`
+  entries would not be carved out of by them, and `.env.example` would go back to being
+  denied. [SECURITY.md](SECURITY.md) says which layer holds which guarantee.
 - **Depend on it** — [COMPATIBILITY.md](COMPATIBILITY.md): what an upgrade promises
   about the manifest and the config files you own.
 - **See it without installing** — the [worked example](examples/) ships a script for

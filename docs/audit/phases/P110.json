@@ -79,7 +79,7 @@
     {
       "id": "P110.2",
       "title": "a design splits guard rules into those only the plugin can know and a recommended permissions.deny fragment",
-      "status": "in_progress",
+      "status": "done",
       "description": "docs/research/guard-ownership-design.md goes through each rule in guard-secrets-read.py and guard-history-rewrite.py, and the _config readers they use. For each, it states whether the plugin keeps it (plan scope, journal and manifest integrity, protection of SHAs the manifest records) or hands it to Claude Code's own layers, using the refusal measurement as its basis. It gives the exact recommended permissions.deny fragment as JSON. For each moved rule it names the fragment entry that covers it and what that entry misses, because permission rules match a command's spelling, not its operation. It fixes the transition: one release in which the moved rules report instead of blocking, then removal. It names who loses coverage: users without auto mode get spelling-based rules only. It drafts the SECURITY.md paragraph saying which layer holds which guarantee. It checks whether any config key a moved rule reads would stop being read, which COMPATIBILITY.md makes a major release.",
       "files": [
         "docs/research/guard-ownership-design.md"
@@ -102,24 +102,30 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "abcb9201",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "docs/research/guard-ownership-design.md goes rule by rule through guard-history-rewrite.py and guard-secrets-read.py and the _config readers they call, and decides that no rule moves to Claude Code's own layers. The history arms all depend on plan, manifest or recorded-SHA state that only the plugin holds. The secret-read rules hold no plugin state, but they are kept for coverage: the host's permission rules are opt-in, and auto mode's defaults allow an agent to read its own credentials. The document corrects the refusal measurement's reason for placing secret reads (pattern-only, not plugin-only), gives a recommended permissions.deny fragment that errs toward refusing, names who loses coverage, fixes the transition and compatibility rules for any later move (the config keys both guards read, stateDir included), and drafts a SECURITY.md paragraph. The doctor sentences are narrowed to what _doctor_setup._is_env_read_deny actually reads. The host-layer half rests on one reading (docs fetched and `claude auto-mode defaults` read on 2026-10-06, CLI 2.1.291); the reviewer's independent re-check was refused by the auto-mode classifier and is left to the maintainer. Checks run on the file: _deps.doc_prose_numbers over it reported 0, and the fragment block parses as JSON.",
+        "descriptive": "A design document decides, rule by rule, which guard rules only the plugin can enforce and which Claude Code's own layers could hold, and concludes that none should move yet."
       },
       "startedAt": "2026-10-06T19:04:33Z",
-      "completedAt": null,
+      "completedAt": "2026-10-06T19:24:20Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-06T19:23:58Z.c81854",
         "status": "passed",
         "at": "2026-10-06T19:23:58Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "abcb9201",
+        "at": "2026-10-06T19:24:20Z",
+        "basis": "audit-reviewer (task mode): plugin-state half verified against the guards' code; one medium (doctor claims overstated) and four low findings fixed and spot-checked; the host-layer half rests on one reading because the reviewer's re-check was refused by the auto-mode classifier, which the document states"
       }
     },
     {
       "id": "P110.3",
       "title": "generic destructive-command rules are retired from the guards: one release reports, the next removes",
-      "status": "pending",
+      "status": "cancelled",
       "description": "Implements the design. For one release, the moved rules answer with a recorded report instead of a deny. The fragment ships as plugins/audit/templates/permissions-deny.example.json, with a pointer from QUICKSTART.md. The code is deleted only after that release has shipped, as a follow-up task added at that point, because one task cannot span two releases. The kept rules (plan scope, journal and manifest integrity, recorded-SHA protection) keep their deny cases, each proven red-first. This is guard-reading code. An executor attempts it first, because the maintainer wants code written by agents. The model's safeguard may stop that attempt. If it does, the refusal is recorded verbatim with /audit:task note, the task is blocked and handed to the human maintainer, and nobody rewords the work to get past the stop. Blocked by P108, because P108's verdict table (operation class by tier, asserted over the hook corpus) holds the rows this change moves. The design's SECURITY.md paragraph lands with the release. If P109 has already moved the suite, the test paths are under its new root.",
       "files": [
         "plugins/audit/hooks/guard-history-rewrite.py",
@@ -159,11 +165,65 @@
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: The ownership design (docs/research/guard-ownership-design.md) found no rule to retire: every history arm depends on plan, manifest or recorded-SHA state only the plugin holds, and the secret-read rules are kept for coverage because Claude Code's permission rules are opt-in and auto mode's defaults allow an agent to read its own credentials. The part of the phase outcome that still applies - the recommended fragment and the SECURITY.md paragraph - moves to its own task with no guard code."
       },
       "startedAt": null,
-      "completedAt": null,
+      "completedAt": "2026-10-06T19:25:20Z",
       "verifiedBy": []
+    },
+    {
+      "id": "P110.4-exo",
+      "title": "the recommended permissions.deny fragment ships beside the guards, and SECURITY.md says which layer holds which guarantee",
+      "status": "in_progress",
+      "description": "Ship the fragment from docs/research/guard-ownership-design.md as plugins/audit/templates/permissions-deny.example.json, byte-for-byte the design's JSON block, and point to it from QUICKSTART.md as an optional step for users who want Claude Code's own layer to refuse secret reads too (no guard rule is replaced: the plugin's guards stay as they are). Land the design's draft SECURITY.md paragraph saying which layer holds which guarantee, adjusted to what this release actually ships. Add a case to the secrets guard's suite that the shipped template parses, equals the design's JSON block, and has a Read() entry for every secret-path family the guard's SECRET_PATH and _CRED_EXT name (or names the omission deliberately), so the template cannot drift from the guard silently. The doctor comparison against the fragment is out of scope.",
+      "files": [
+        "plugins/audit/templates/permissions-deny.example.json",
+        "QUICKSTART.md",
+        "SECURITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "docs/research/guard-ownership-design.md",
+        "plugins/audit/tests/test_guard_secrets_read.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: the shipped permissions-deny template parses, equals the design's JSON block, and covers every secret-path family the secrets guard names (or names the omission)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P110.2"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-06T19:25:39Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T20:04:04Z.bcef18",
+        "status": "passed",
+        "at": "2026-10-06T20:04:04Z"
+      }
     }
   ],
   "startedAt": "2026-10-06T14:44:48Z"
