@@ -18,51 +18,55 @@
   "baseRef": "6d0ef731b5ac60e6bef3c015cf9967583e3625f8",
   "branch": "audit/p105-the-panel-tells-the-truth-abou",
   "mergedAt": null,
-  "claim": {
-    "sessionId": "6c881c24-c1fd-461f-8c48-abb0170e0a5a",
-    "host": "MacBook-Pro-2",
-    "branch": "audit/p105-the-panel-tells-the-truth-abou",
-    "at": "2026-10-06T14:44:44Z"
-  },
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P105-R1",
         "severity": "high",
         "file": "plugins/audit/scripts/ui/panel/settings.js:209-233",
         "issue": "The config patch is diffed against the wrong base: the draft is cloned from STATE.config when the form renders, but Save computes configPatch(STATE.config, cfg) against whatever STATE.config holds at Save time, and the disk refresh replaces STATE wholesale even while the form is dirty (it only skips the re-render). A user edits key a, another writer changes key b, the poll refreshes, and Save sends b back at its old value - reverting the other writer's change, while the confirm dialog lists b as the user's change.",
-        "resolution": "Snapshot the base when the form renders and diff every config editor's draft against its own base (configChanges, the edit tracker, discard rows and configPatch), resetting the base from the server's result after a save; a vitest case renders, dirties a, swaps STATE.config with b changed, saves, and asserts the patch names only a."
+        "resolution": "fixed in P105.8-m32 (caf2fdbc): Snapshot the base when the form renders and diff every config editor's draft against its own base (configChanges, the edit tracker, discard rows and configPatch), resetting the base from the server's result after a save; a vitest case renders, dirties a, swaps STATE.config with b changed, saves, and asserts the patch names only a.",
+        "fixTask": "P105.8-m32",
+        "commit": "caf2fdbc"
       },
       {
         "id": "P105-R2",
         "severity": "med",
         "file": "plugins/audit/commands/panel.md:27-33; plugins/audit/scripts/panel/panel-server.py:312-330",
         "issue": "Now that GET / needs the token, the URL commands/panel.md tells the agent to relay from --status (printed with ?t=<hidden>) and any bare or bookmarked panel address answer a raw JSON 403 that says nothing about where the real URL is; CHANGELOG [Unreleased] has no entry for the change.",
-        "resolution": "Answer a tokenless GET / with a plain-text 403 that names the way back (/audit:panel status, the pidfile, or relaunch) without echoing a token; say in panel.md that the printed URL is redacted and will not open the page; add an [Unreleased] entry."
+        "resolution": "fixed in P105.9-m32 (5034979b): Answer a tokenless GET / with a plain-text 403 that names the way back (/audit:panel status, the pidfile, or relaunch) without echoing a token; say in panel.md that the printed URL is redacted and will not open the page; add an [Unreleased] entry.",
+        "fixTask": "P105.9-m32",
+        "commit": "5034979b"
       },
       {
         "id": "P105-R3",
         "severity": "low",
         "file": "plugins/audit/scripts/panel/panel-server.py:714-772",
         "issue": "The pidfile's temp (.claude/audit-panel.json.tmp-<hex>) holds the live token but is not in _PANEL_PRIVATE_FILES and is never swept, so a launch killed between open and replace leaves a token-bearing untracked file; the docstring's owner-only-from-the-instant claim is POSIX-only; a pidfile written 0644 by a pre-upgrade server keeps that mode until stop or relaunch.",
-        "resolution": "Ignore and sweep stale audit-panel.json.tmp-* files, limit the docstring claim to POSIX, and tighten an existing pidfile on status or the already-running branch."
+        "resolution": "fixed in P105.9-m32 (5034979b): Ignore and sweep stale audit-panel.json.tmp-* files, limit the docstring claim to POSIX, and tighten an existing pidfile on status or the already-running branch.",
+        "fixTask": "P105.9-m32",
+        "commit": "5034979b"
       },
       {
         "id": "P105-R4",
         "severity": "low",
         "file": "plugins/audit/scripts/ui/panel/composition.js:231-239",
         "issue": "adoVisible counts linked tasks and phases but not linked bugs, so a plan whose only ADO record is a bug link gets the collapsed 'not set up for this plan' card and its banner is hidden.",
-        "resolution": "Count linked.bugs too, with a vitest row holding only a bug link."
+        "resolution": "fixed in P105.10-m32 (17fd2c49): Count linked.bugs too, with a vitest row holding only a bug link.",
+        "fixTask": "P105.10-m32",
+        "commit": "17fd2c49"
       },
       {
         "id": "P105-R5",
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md:4776-4777; plugins/audit/scripts/ui/panel/README.md",
         "issue": "The guide still says the token is required on every /api/* call (leaving out /) and says nothing of the owner-only pidfile; the panel parts README still describes run-status.js as the poll and its badges, though it now owns the liveness state confirmSave reads, and does not name overview.js's planState as a cross-view helper.",
-        "resolution": "Extend the guide sentence to / and the owner-only pidfile; update the two README rows."
+        "resolution": "fixed in P105.10-m32 (17fd2c49): Extend the guide sentence to / and the owner-only pidfile; update the two README rows.",
+        "fixTask": "P105.10-m32",
+        "commit": "17fd2c49"
       },
       {
         "id": "P105-R6",
@@ -72,9 +76,9 @@
         "resolution": "Reconcile in the phase that owns SECURITY.md when the branches meet: add a short panel trust-boundary paragraph covering the three points."
       }
     ],
-    "outcome": "[findings: 6 - 1 high, 1 med, 4 low; 0 with a recorded fix commit]"
+    "outcome": "phase review (audit-reviewer, phase mode, no project skill): findings fixed by three fix tasks and confirmed in a re-review, whose small follow-ups were fixed before the phase gate; the SECURITY.md trust-boundary paragraph owned by another phase is reconciled when the branches meet [findings: 6 - 1 high, 1 med, 4 low; 5 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "The panel now tells the truth about its own state. An existing manifest that cannot be read is shown as unreadable, with the reason, in every view instead of inviting /audit:init. A stopped server shows as offline and refuses writes. Saving settings or policy sends a patch of only the reader's own edits, diffed against the config the form was drawn from, so another writer's change is neither reverted nor claimed. The panel's state directory and the pidfile's temp file ignore themselves, so the example leaves a clean tree, and the doctor recognises the temp file. The page itself needs the session token (a tokenless request gets a plain-text refusal naming where the real URL is), and the pidfile is owner-only from creation on POSIX. Azure DevOps controls appear only in a plan that uses ADO. The desired outcome is met.",
   "tasks": [
     {
       "id": "P105.1",
@@ -539,7 +543,7 @@
     {
       "id": "P105.8-m32",
       "title": "every config editor diffs its draft against the config it rendered from",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review finding P105-R1. Every config editor in the panel diffs its draft against a base snapshotted when its form rendered, never against whatever STATE.config holds at the moment of Save: the disk refresh replaces STATE while a form is dirty, so diffing against it sends another writer's change back at its old value and lists it in the confirm dialog as the user's own. configChanges, the edit tracker, discard rows and configPatch all take that base; after a successful save the base is reset from the server's answer. Find every caller of configChanges and configPatch (settings and the policy view at least) and fix the class, not one form.",
       "files": [
         "plugins/audit/scripts/ui/panel/settings.js",
@@ -597,18 +601,29 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "caf2fdbc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Every config editor in the panel now diffs its draft against the config it was drawn from, never against whatever STATE holds when Save is pressed. Settings snapshots a base beside its draft at render; the edit tracker, Save and Discard rows and the sent patch all diff against it (configChanges(cfg, base) with no fallback to STATE.config, configPatch(base, cfg, ...)), and the base moves only on the server's yes. The policy view now saves through the same single write path: PUT /api/config with a patch built by policyPatch() against PBASE, which pTake sets together with the draft at boot, at the clean-tab refresh, on Discard and after a save; the config patch writer already handles nested paths, lists and removals and validates the policy block through _policy.validate_policy, so a refused policy is refused with the same finding and nothing is written. PUT /api/policy remains for callers that mean to replace the block; the panel no longer writes through it. cfDiff no longer emits an empty-object leaf as an entry of its own when the other side holds keys under that path, which had let removing the reader's last rule write policy: {} and wipe another writer's new rule. Docstrings in policy-state.js, _panel_write.py and overview.js say what is now true. Cases: three settings and three policy vitest cases in config-patch.test.mjs (another writer's change survives and is not listed; a removal does not take another writer's rule; a clean save reads clean), cp6 and cp7 in test__panel_write.py (a policy patch keeps another writer's rule; a malformed policy patch is refused naming the field), and re-spelled pins in test__panel_page.py (both /api/config call sites send a patch; nothing but pTake assigns PDRAFT or PBASE; no PUT to /api/policy). Reds in a scratch copy with node_modules linked: at HEAD 5 failed of 23, the new cases among them; mutations removing the empty-object skip or the base move each reddened their named case. cp6/cp7 lock server behaviour that was already right.\nAfter re-review: cfDiff's doc states that a branch the draft clears is written as absence, never {} - its leaves are removed and the server prunes the container - and that hooks/_config._deep_merge treats a literal {} at depth two as a replacement, so a form meaning a literal {} must send it itself; one consequence is that clearing a Settings branch such as usage.pricing now restores the shipped table instead of replacing it with nothing. A vitest case and cp8 pin the cleared outcome (policy absent on disk); flipping each case's expected outcome, and deleting the clearing skip, turned them red. The panel screenshots were re-captured by the orchestrator because the panel sources moved, and this task carries them.",
+        "descriptive": "Saving settings or policy in the panel no longer reverts, or claims as yours, a change someone else made while your form was open; both now save as a patch of only your own edits."
       },
       "startedAt": "2026-10-06T20:02:33Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T21:22:17Z",
+      "verifiedBy": [
+        "config-patch.test.mjs",
+        "cp6",
+        "cp7",
+        "cp8"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T21:12:55Z.d7ef84",
         "status": "passed",
         "at": "2026-10-06T21:12:55Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "caf2fdbc",
+        "at": "2026-10-06T21:22:17Z",
+        "basis": "audit-reviewer (phase mode) re-review: R1 fixed as a class (Settings and Policy share one patch write path and a base taken at render); its question about a deliberately cleared branch answered by documenting and pinning absence"
       }
     },
     {
@@ -751,5 +766,10 @@
       }
     }
   ],
-  "startedAt": "2026-10-06T14:44:44Z"
+  "startedAt": "2026-10-06T14:44:44Z",
+  "testEvidence": {
+    "runId": "2026-10-06T21:29:10Z.a03a4f",
+    "status": "passed",
+    "at": "2026-10-06T21:29:10Z"
+  }
 }
