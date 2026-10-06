@@ -635,7 +635,7 @@
     {
       "id": "P100",
       "title": "a stamp or a close never vouches for a gate verdict that no longer holds",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P100.json",
       "priority": 1
     },
