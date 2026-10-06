@@ -70,7 +70,8 @@ reached; `skip()` is the other way a case can fail to run, and the one that has 
 out loud - see each for why.
 
 A SUITE RUNS ON MORE THAN ONE PLATFORM, WHICH IS WHERE BOTH OF THOSE COME FROM. CI runs
-these files on ubuntu, macos and windows, and a mechanism a case needs may exist on some
+these files on every OS named in .github/workflows/ci.yml's selftest matrix, plus whatever
+a maintainer's own machine covers locally, and a mechanism a case needs may exist on some
 of them and not others. `skip()` is how a case says which, and it is graded on evidence
 read the way the product reads it rather than on the platform's name.
 

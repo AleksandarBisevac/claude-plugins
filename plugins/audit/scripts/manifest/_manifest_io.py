@@ -1059,8 +1059,10 @@ def json_document(obj, indent=2):
 def atomic_write_json(path, obj, indent=2):
     """Write `obj` as JSON to `path` atomically: a unique temp file (mkstemp, in
     the SAME directory as `path` so os.replace stays on one filesystem) is
-    written and fsync'd via close, then swapped into place with os.replace. The
-    parent directory is created if missing. On any failure the temp file is
+    written and closed, then swapped into place with os.replace. No os.fsync
+    is called, so this makes no durability promise across a power loss -- only
+    that a reader never observes a partially-written file. The parent
+    directory is created if missing. On any failure the temp file is
     removed (never left behind) and the exception propagates.
 
     This is the ONE atomic-JSON-write implementation for the audit plugin, and it

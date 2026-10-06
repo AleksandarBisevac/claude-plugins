@@ -1,7 +1,7 @@
 {
   "id": "P103",
   "title": "what the plugin says about itself is true",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Tasks: (1) SECURITY.md names the five open secret-read shapes listed as Known open in 2.3.0 at class level, and corrects the post-detection sentence about commands 'provably unable to write'; the documented-gap rows become a characterization test in the repo. (2) Fix false claims: usage --backfill 'writes nothing', status.md's nonexistent /audit:run-gate, examples/README 'never dirties the tree', tests/_harness.py 'macos in CI', the fsync docstring in _manifest_io. (3) QUICKSTART is the only quick-start; other docs link to it; the README's first screen states who it is for and who does not need it. (4) Re-record the demo GIF and give it a text digest in captured-at.json so its words cannot rot unseen. (5) CONTRIBUTING gets a one-page 'Your first change'; add issue and PR templates. (6) Decision record: optional modules (panel, usage views, ADO, demo, theme editor) get fixes only, no new features, until a user asks; no new UI shape pins; no new prose lints.",
   "desiredOutcome": "every documented claim a reader acts on matches the code: SECURITY.md names the known open read shapes, the README, QUICKSTART, examples and comments make no false claim, there is one quick-start, the demo shows today's text, and a newcomer and a contributor each have a one-page start",
   "testGate": [
@@ -15,9 +15,15 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "80a7eed2f52726a06ca43309b66a08a04fda1ab4",
+  "branch": "audit/p103-what-the-plugin-says-about-its",
   "mergedAt": null,
+  "claim": {
+    "sessionId": "6c881c24-c1fd-461f-8c48-abb0170e0a5a",
+    "host": "MacBook-Pro-2",
+    "branch": "audit/p103-what-the-plugin-says-about-its",
+    "at": "2026-10-06T14:46:28Z"
+  },
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -29,7 +35,7 @@
     {
       "id": "P103.1",
       "title": "SECURITY.md names the open secret-read shapes and what shell-write detection misses",
-      "status": "pending",
+      "status": "in_progress",
       "description": "SECURITY.md disclaims the class (text inspection is bypassable) but never names the read shapes the 2.3.0 Known open entry listed, and all of them still pass guard-secrets-read: a recursive grep over a directory, the Grep tool over a directory with no glob, diff of two env files, a for-loop over .env.*, and xargs cat. Name them at class level (a read that reaches the file without the call naming it in a form the guard reads, plus a read verb the list lacks) in the open-residuals list under 'Fail modes' and in item 6 of 'Known bypass classes', and rewrite the post-detection bullet that says a command 'provably unable to write is absorbed': _command_is_read_only absorbs git -C <dir> checkout --, env rm -rf, awk's print > file and sed's w flag, so say which class of write it can mistake for a read. Opus because each sentence must match what the predicates actually return, read from hooks/guard-secrets-read.py and hooks/guard-bash-writes.py; keep every existing heading (help topics cite them) and the fail-mode table rows (prove-gates anchors). gate-only: documentation of current behaviour, pinned by the next task; selftests is the narrowest gate that reads documents (prose-number, link and fail-mode lints run in the sweep).",
       "files": [
         "SECURITY.md"
@@ -48,14 +54,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T14:46:28Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -213,7 +219,7 @@
     {
       "id": "P103.6",
       "title": "comments state what CI and the manifest writer actually do",
-      "status": "pending",
+      "status": "in_progress",
       "description": "_harness.py:72-73 says CI runs the suites 'on ubuntu, macos and windows', but .github/workflows/ci.yml's matrix is ubuntu-latest and windows-latest and macOS is covered only by a maintainer's local sweep; point at the matrix instead of listing platforms, so the sentence cannot rot. _manifest_io.atomic_write_json's docstring (:1061-1062) says the temp file is 'fsync'd via close', but no writer under scripts/ or hooks/ calls os.fsync; say it is written, closed and replaced atomically, with no durability promise across a power loss. gate-only: docstring and comment text, no behaviour; selftests runs the prose lints over .py docstrings and lint keeps ruff/vermin green.",
       "files": [
         "plugins/audit/tests/_harness.py",
@@ -234,16 +240,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T14:46:28Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T14:58:17Z.37fb43",
+        "status": "passed",
+        "at": "2026-10-06T14:58:17Z"
+      }
     },
     {
       "id": "P103.7",
@@ -364,7 +375,7 @@
     {
       "id": "P103.10",
       "title": "CONTRIBUTING opens with a one-page Your first change",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A first external PR today means reading CLAUDE.md, CONTRIBUTING and the UI skills before the first line, and nothing says which of them a given change needs. Add a 'Your first change' section at the top of CONTRIBUTING.md, at most one page, folding in Dev setup rather than repeating it: what to read for a doc fix, a Python fix and a UI fix (the skill table in CLAUDE.md), that PLUGIN-BUILD-GUIDE.md is needed only for a new .py, the one command to iterate with (tools/verify.sh --fast) and the one before a PR (tools/verify.sh), what CI checks, and the optional tools (Node for vitest and the browser gates, Pillow for the demo GIF). No duration or count unless it carries the command that re-derives it. Acceptance line: from that page alone, a first-time contributor can tell what to read for their kind of change, which single command to run before a PR and what CI will check, without opening PLUGIN-BUILD-GUIDE.md unless they add a .py file.",
       "files": [
         "CONTRIBUTING.md"
@@ -383,14 +394,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T14:46:28Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -467,5 +478,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-10-06T14:46:28Z"
 }
