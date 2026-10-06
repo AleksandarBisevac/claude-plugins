@@ -68,7 +68,7 @@
     {
       "id": "P101.2",
       "title": "a with/without benchmark design fixes arms, fixture, metrics and scenarios before any run",
-      "status": "in_progress",
+      "status": "done",
       "description": "docs/research/benchmark-design.md fixes the protocol before any session runs. The arms are plain Claude Code, Claude Code with the same skills and a short CLAUDE.md, and the plugin pipeline (/audit:run, /audit:resume). Each arm gets one feature-sized task in a brownfield fixture repo built fresh per run on the model of build_bench_repo.sh, and the acceptance tests are hidden from the session and applied only by the grader afterwards. Fixed across arms: model, effort, permission mode, the Claude Code CLI version (pinned, and a run on any other version refused) and the skill set (named by path and content digest, identical in the second and third arm). Every run is a fresh session, arms run in an order drawn from a recorded random seed, and cold and warm caches are reported apart. The metrics are: hidden acceptance tests passed; out-of-scope changed paths; false completion claims (claims in the final message that no tool call backs); human interventions beyond the scripted ones; wall clock; tokens by type with their list-price equivalent, naming the price source and date; and the share of the subscription window each run used, naming where that share is read and saying so when it cannot be read. The scenarios are a feature, a bugfix, an interrupted session plus resume (both sessions summed) and a step a guard must stop, with each refusal labelled by source (plugin hook, permission rule, auto-mode classifier, model refusal). Each arm runs n>=2 times in every scenario, stated as two observations rather than a variance estimate. The design also names the subscription time budget the run needs, the grading scripts it reuses, which scenarios become `claude plugin eval` cases under plugins/audit/evals/, and what the result cannot show.",
       "files": [
         "docs/research/benchmark-design.md"
@@ -89,18 +89,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "216f1f68",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "docs/research/benchmark-design.md: arm A plain, arm B skills plus a short CLAUDE.md, arm C is arm B plus the plugin; the fixture is built fresh per session with hidden acceptance tests and a reference solution the build refuses without; scenarios feature, bugfix, interrupted plus resume, and a guard step, with refusals labelled by source; fixed model, effort, permission mode (acceptEdits, prompts none, one allow list, a stated decision), a pinned CLI version a run refuses to differ from, and skills named by path and digest; seeded arm order, cold and warm reported apart, two observations per cell stated as such; subscription share read from the stream's rate_limit_event, dated and versioned as observed; the time budget is an open rule pending the pilot; guard and bugfix become plugin eval cases, feature and interrupted stay harness-only; prices from the official page. Every observed claim carries its date and CLI version.",
+        "descriptive": "The with/without benchmark now has a fixed protocol before any session runs: three arms, one fresh brownfield fixture per session with hidden acceptance tests, four scenarios, the variables held fixed, the metrics and where each is read, and what the result cannot show."
       },
       "startedAt": "2026-10-06T14:44:44Z",
-      "completedAt": null,
+      "completedAt": "2026-10-06T15:11:36Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-06T15:10:55Z.f31fc0",
         "status": "passed",
         "at": "2026-10-06T15:10:55Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "216f1f68",
+        "at": "2026-10-06T15:11:36Z",
+        "basis": "audit-reviewer (task mode): every element the description lists is in the document; one low finding (observed tags lacking date or version) fixed as proposed"
       }
     },
     {
