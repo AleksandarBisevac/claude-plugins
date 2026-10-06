@@ -24,7 +24,7 @@ import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
-from _output import safe_stdio                     # noqa: E402
+from _output import safe_stdio, REPO_ROOT          # noqa: E402
 import _doctor_setup as M                          # noqa: E402
 import _doctor_report as base                      # noqa: E402  (the collector)
 
@@ -225,6 +225,57 @@ def _cases(check):
               "deny": ["Edit(.env*)"]}})]) == []
           and M.env_deny_rules([("project", {"permissions": {
               "deny": ["Read(./.env)"]}})]) == ["Read(./.env)"])
+
+    # A `!` argument is a carve-out: it EXEMPTS a path from an earlier deny in the
+    # same list and refuses nothing by itself. The fixture is the shipped
+    # fragment's own carve-outs with the rule they carve from left out, so an
+    # implementation that only asks "does the argument mention .env" counts
+    # every one of them and grades a list that refuses nothing as OK. The
+    # sandbox is declared on so that the two answers are OK and WARNING rather
+    # than two warnings worded alike.
+    carve_only = ["Read(!.env.example)", "Read(!.env.sample)",
+                  "Read(!.env.template)"]
+    check("ds0h2 a deny list holding ONLY `Read(!...)` carve-outs refuses no "
+          "dotenv read, so none of them is counted: %r"
+          % (M.env_deny_rules([("project", {"permissions": {
+              "deny": carve_only}})]),),
+          M.env_deny_rules([("project", {"permissions": {
+              "deny": carve_only}})]) == [])
+    rep = sandbox_rep(proj={"sandbox": {"enabled": True},
+                            "permissions": {"deny": carve_only}})
+    check("ds0h3 ...and the `secret rules` row does not pass on them - it is the "
+          "same WARNING an empty list gets: %r" % (_detail(rep, "secret rules"),),
+          _levels(rep, "secret rules") == ["WARNING"]
+          and "no permission deny rule" in _detail(rep, "secret rules"))
+    # ALLOW TWIN for ds0h2/ds0h3: the mutation it is here for is a fix that
+    # rejects every argument mentioning `!` anywhere, or every rule once a
+    # carve-out is present. The refusing rule beside the carve-outs must still
+    # pass the row, and must be the ONLY rule named - counted, not found.
+    rep = sandbox_rep(proj={"sandbox": {"enabled": True},
+                            "permissions": {"deny": ["Read(.env.*)"]
+                                            + carve_only}})
+    check("ds0h4 ALLOW TWIN: the refusing rule beside those carve-outs passes "
+          "the row, and is the one rule it names: %r"
+          % (_detail(rep, "secret rules"),),
+          _levels(rep, "secret rules") == ["OK"]
+          and _detail(rep, "secret rules").count("Read(") == 1
+          and "Read(.env.*)" in _detail(rep, "secret rules"))
+
+    # The fix text is a recommendation, and the plugin ships exactly one: the
+    # fragment file. A fix naming a single hand-written rule recommends a
+    # second, smaller set that disagrees with it.
+    template_rel = "plugins/audit/templates/permissions-deny.example.json"
+    fixes = [r["fix"] or "" for r in sandbox_rep(
+        proj={"sandbox": {"enabled": True}}).rows
+        if r["check"] == "secret rules"]
+    check("ds0h5 the `secret rules` row's fix names the shipped fragment file, "
+          "and no single rule of its own: %r" % (fixes,),
+          len(fixes) == 1 and template_rel in fixes[0]
+          and "Read(.env" not in fixes[0])
+    shipped = os.path.join(REPO_ROOT, *template_rel.split("/"))
+    check("ds0h6 ...and that path is a file this checkout ships, so the fix "
+          "does not point at nothing: %s" % (shipped,),
+          os.path.isfile(shipped))
 
     rep = sandbox_rep(proj="{not json")
     check("ds0i an UNPARSEABLE settings file is reported as unreadable, not "
