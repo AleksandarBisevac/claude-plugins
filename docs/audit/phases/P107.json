@@ -35,7 +35,7 @@
     {
       "id": "P107.1",
       "title": "close-phase stamps the merge under the index lock with an atomic rollback",
-      "status": "in_progress",
+      "status": "done",
       "description": "stamp_merged and record_merged_head read, revalidate and write the phase file without the index lock that every other plan writer takes. So on the single-file layout, concurrent closes, or a close and a panel save, lost a write while both answered ok. _revalidated_write's rollback also rewrites the file in place with open(path, 'wb'). Take the lock that close-phase already takes for mirror_stub (_panel_write.acquire_index_lock), and re-read under it. Restore the prior bytes atomically through _panel_write.restore's temp-plus-replace; atomic_write_json would re-serialize the content rather than restore the bytes. When the lock cannot be taken after a merge has landed, the output is a sentence naming the re-run, never an unlocked write. The race cases run as subprocess children released together, with bounded trials. The deterministic held-lock and inode cases carry the red-first. Update close-phase's PLUGIN-BUILD-GUIDE.md section.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -66,18 +66,32 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6422e846",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "close-phase.py now writes mergedAt, mergedHead and the index stub only while holding the index lock: a new under_index_lock takes _panel_write.acquire_index_lock, runs the write inside it and releases in a finally; stamp_merged and record_merged_head resolve and read the phase file only after the lock is taken (their bodies moved into _stamp_locked and _head_locked, with a project argument defaulting to the manifest's own tree), and mirror_stub goes through the same helper. When the lock cannot be taken nothing is written and the sentence says the merge has landed and to run close-phase again once the lock is free; a stamp not written exits 1 with the cleanup held back, and a backfill not written prints that mergedHead was not recorded. _revalidated_write's rollback restores the prior bytes atomically through _panel_write.snapshot and restore (temp file and replace) instead of rewriting in place, refusing before the write when the snapshot read nothing. PLUGIN-BUILD-GUIDE.md's close-phase section says the same. Cases lk1-lk7 in test_close_phase.py: a live holder of the real lock leaves both writes undone and names the re-run (lk1, lk2) and its allow twin lands once released (lk3); a rejected write comes back byte-identical through a new inode (lk4) and an accepted one stands (lk5); two closers racing on one single-file plan (lk6) and a stamp held against a panel save (lk7) lose nothing. Red-first proved through the helper: 149/155 at HEAD (lk1, lk2, lk3, lk4, lk6, lk7); the suite passed 155/155 twice, 20 s apart.",
+        "descriptive": "Landing a phase no longer loses its merge record when another phase lands, or a panel save happens, at the same moment; when the plan is busy it writes nothing and says to run again."
       },
       "startedAt": "2026-10-06T21:25:50Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T22:05:38Z",
+      "verifiedBy": [
+        "lk1",
+        "lk2",
+        "lk3",
+        "lk4",
+        "lk5",
+        "lk6",
+        "lk7"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T22:05:33Z.716402",
         "status": "passed",
         "at": "2026-10-06T22:05:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6422e846",
+        "at": "2026-10-06T22:05:38Z",
+        "basis": "orchestrator check: every plan write in close-phase runs under the index lock, the rollback restores bytes atomically, the unlocked case names the re-run; the race and lock cases were red at HEAD"
       }
     },
     {
@@ -207,7 +221,7 @@
     {
       "id": "P107.4",
       "title": "a state file is replaced only through a sanctioned writer, and a _deps lint refuses any other site",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The races above are instances of one class: a state file replaced outside the sanctioned writers. A new state_write_violations() in _deps.py reports every os.replace and os.rename under scripts/ and hooks/ that sits outside a table of sanctioned sites. Each row carries a reason. The sanctioned sites are atomic_write_json, hooks/_config.atomic_write_text, _panel_write.restore, the lock and journal-lock primitives, the merge driver's write of git's file, and any other site that is justified rather than routed. List the sites with `grep -rnE 'os\\.(replace|rename)\\(' plugins/audit/scripts plugins/audit/hooks`. Reduce sites where a sanctioned writer fits. usage_ledger's save_cursor and rewrite_month use a fixed '.tmp' name that concurrent writers can share, so both go through a new atomic text writer in _manifest_io, which atomic_write_json then writes through, keeping one implementation. The lint gets a row in tools/prove-gates.py and a line in PLUGIN-BUILD-GUIDE.md's _deps section. P103's fsync-docstring fix also edits _manifest_io.py, so serialize with it.",
       "files": [
         "plugins/audit/scripts/_deps.py",
@@ -241,14 +255,14 @@
         "P107.2",
         "P107.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T22:06:25Z",
       "completedAt": null,
       "verifiedBy": []
     }
