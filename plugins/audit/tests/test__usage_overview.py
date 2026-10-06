@@ -145,6 +145,18 @@ def _cases(check):
           "footnote, never drawn as a 0% bar: an unbudgeted phase is not a "
           "phase at zero",
           "1 phase(s) have no" in out and out.count('class="nm"') == 1, out[-260:])
+    _budget_fixture = {"phases": [{"id": "P0", "title": "t", "budget": 40.0,
+                                   "pct": 130.0, "over": True, "spent": 52.0}]}
+    out_nc = M._budget_block(_u(showCost=False, budgets=_budget_fixture))
+    check("uo19b ...and the WHOLE block is DROPPED ENTIRELY with showCost "
+          "off, gated INSIDE this function because its caller "
+          "(_report_usage.py) calls it unconditionally: a budget bar IS a "
+          "spend-versus-budget comparison, so with no dollars to compare "
+          "there is no claim left to make, not a dollar-free reword",
+          out_nc == "", out_nc)
+    check("uo19c ...and with showCost on the SAME fixture the block still "
+          "draws - the twin that fails if the gate becomes unconditional",
+          M._budget_block(_u(budgets=_budget_fixture)) != "", "")
 
     # --- author chips ---
     check("uo20 one author renders no chips: a set of one has nothing to "
@@ -194,6 +206,24 @@ def _cases(check):
     check("uo27 ...and a real-but-tiny row is floored to a visible 0.8% "
           "track: a row at 0.08% of the peak paints an empty bar, which reads "
           "as 'no data' rather than 'a little'", "width:0.8%" in out, out[:400])
+
+    # --- the cost-per-task tile's coverage note ---
+    out = M._usage_tiles(_u(unit={"costPerTask": 0.5, "completed": 3,
+                                  "doneTaskCoverage": {"done": 5, "priced": 3}}))
+    check("uo30 the cost-per-task tile's sub-line names priced versus done "
+          "tasks, and says main-loop spend is never attributed to a task - "
+          "the basis for a figure that could otherwise be read as covering "
+          "every finished task",
+          "5 done task(s), 3 are priced" in out
+          and "main-loop spend is not attributed to a task" in out, out)
+    out_nc = M._usage_tiles(_u(showCost=False,
+                               unit={"costPerTask": 0.5, "completed": 3,
+                                     "doneTaskCoverage": {"done": 5,
+                                                          "priced": 3}}))
+    check("uo31 ...and with showCost off the tile AND its coverage basis are "
+          "both absent - a basis with no claim beside it is noise",
+          "cost per task" not in out_nc and "done task(s) priced" not in out_nc,
+          out_nc)
 
     # --- the aliases ---
     _names = ("_usage_context", "_usage_tiles", "_usage_notices",

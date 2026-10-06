@@ -58,6 +58,7 @@ import _fmt  # noqa: E402  (the one token/cost/share formatter)
 import _ui_theme as _theme  # noqa: E402  (the one place a machine value gets its words)
 
 import _usage_viz as _viz  # noqa: E402  (the section's number formatting and marks)
+from _usage_economics import _coverage_sentence  # noqa: E402  (the one coverage sentence)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `_report_usage.py` unchanged, and an alias keeps them reading the same names
@@ -145,9 +146,14 @@ def _usage_tiles(u):
         "cache hit", _fmt_pct(cache.get("hitPct", 0)),
         "input side bills at %s of fresh-token rates"
         % e(_fmt_pct(cache.get("inputCostVsFreshPct", 100)))))
-    if unit.get("costPerTask") is not None:
+    # Gated on showCost too, not merely on there being a cost to show: with no
+    # dollars on screen this tile would be the one dollar figure that slipped
+    # the gate, and its basis note would be a basis for a claim never made.
+    if u.get("showCost", True) and unit.get("costPerTask") is not None:
+        note = _coverage_sentence(unit.get("doneTaskCoverage"))
+        sub = note if note else "%d task(s) completed" % unit.get("completed", 0)
         tiles.append(_tile("cost per task", _fmt_cost(unit["costPerTask"]),
-                           "%d task(s) completed" % unit.get("completed", 0)))
+                           e(sub)))
     tiles.append(_tile("attributed", _fmt_pct(cov.get("attributedPct", 0)),
                        "%s down to a specific task"
                        % e(_fmt_pct(cov.get("taskLevelPct", 0)))))
@@ -276,7 +282,16 @@ def _budget_block(u):
     at 130%" is the kind of fact that should not need looking for.
 
     Phases with no budget are counted and named as a footnote, never rendered as a
-    0% bar — an unbudgeted phase is not a phase at zero."""
+    0% bar — an unbudgeted phase is not a phase at zero.
+
+    GATED ON `showCost` INSIDE THIS FUNCTION, not by its caller: `_report_usage.py`
+    calls this unconditionally, so a reader turning dollars off has no other place
+    it can be withheld. Nothing here survives the gate as a reworded, dollar-free
+    fact — a budget bar IS a spend-versus-budget comparison, so with no dollars to
+    compare there is no claim left to make, the same silence `_usage_context`
+    chooses over a basis with no claim beside it."""
+    if not u.get("showCost", True):
+        return ""
     pb = u.get("budgets") or {}
     rows_in = [p for p in (pb.get("phases") or []) if p.get("budget")]
     if not rows_in:

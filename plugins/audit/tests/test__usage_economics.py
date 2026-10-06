@@ -126,6 +126,21 @@ def _cases(check):
           % (cb_cov_abs.get("doneTaskCoverage"), ),
           cb_cov_abs.get("doneTaskCoverage") == {"done": 4, "priced": 2})
 
+    # _coverage_sentence: the one wording every caller that prints a per-task
+    # cost figure states beside it - None in (nothing yet to cover) gives None
+    # out, never an empty string, so a caller's own `if note:` guard reads the
+    # same whether the coverage is missing or absent.
+    check("_coverage_sentence: None in (no done task in the plan) gives None "
+          "out, not an empty string a caller's `if note:` guard would also "
+          "treat as absent but that a stricter `is None` check would not",
+          M._coverage_sentence(None) is None)
+    check("_coverage_sentence: a known coverage renders the exact sentence, "
+          "worded so 'of' never sits directly between the two numbers - the "
+          "shape `_output._ratio_claim` refuses in a committed render",
+          M._coverage_sentence({"done": 4, "priced": 2})
+          == "Of the plan's 4 done task(s), 2 are priced; main-loop spend is "
+             "not attributed to a task.")
+
     # cost_bands: the same sample gate, and a name that does not collide
     cb = M.cost_bands(man, ar)
     check("bands: 5 completed tasks clears the gate on the relative basis",

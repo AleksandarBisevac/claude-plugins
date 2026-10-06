@@ -95,14 +95,19 @@
     {
       "id": "P104.2",
       "title": "the shipped price table carries today's official rates with their date and source",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The table has no claude-opus-5-5 row (it prices at Opus 5's rate), holds Sonnet 5 at 3/15 and lets claude-fable-5-1 resolve to Fable 5's cache read; on the dogfood ledger the shown spend was overstated by about a sixth. Re-read https://platform.claude.com/docs/en/about-claude/pricing at implementation time (the research read Opus 5.5 at 4/20 with read 0.20, Sonnet 5 at 2/10 and Fable 5.1 read 0.25 on 2026-10-05; verify every rate rather than copying these), add the rows, set usage.pricingAsOf to that date in DEFAULTS and the template, and record the source URL beside both mirrors with pricing_divergences or a sibling check holding them equal. Correct the prose that the change falsifies: the read-0.1x multiplier sentence (comments and the schema description) if any official row departs from it, the table-size numbers in pricing_divergences' docstring and the pp comments (delete them), the pp2 fixture literal, and hooks/_config.py's pointer to usage_ledger.py. Acceptance: pp8 green, and the derived example ledger and rendered artifacts unchanged, which the previous task makes true.",
       "files": [
         "plugins/audit/scripts/usage/_usage_core.py",
         "plugins/audit/hooks/_config.py",
         "plugins/audit/templates/audit.config.example.json",
         "plugins/audit/schema/audit-config.schema.json",
-        "plugins/audit/tests/test__usage_core.py"
+        "plugins/audit/tests/test__usage_core.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/tests/test_usage_ledger.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -126,21 +131,26 @@
       "dependsOn": [
         "P104.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T15:46:06Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T16:55:42Z.8963ea",
+        "status": "passed",
+        "at": "2026-10-06T16:55:42Z"
+      }
     },
     {
       "id": "P104.3",
       "title": "unit economics and cost bands report how many done tasks they priced",
-      "status": "in_progress",
+      "status": "done",
       "description": "unit_economics' completed counts only done tasks that carry ledger rows, and cost_bands calibrates from the same set, so 'cost per task' reads as if it covered every done task; on this repository's ledger only about a third of done tasks were attributed and main-loop spend never is. Return the denominator beside the numerator in both (done tasks in the plan, and done tasks with any attributed tokens) as data, without changing costPerTask or the bands themselves, so every surface can print coverage from one computation. The renderers come in the following tasks.",
       "files": [
         "plugins/audit/scripts/usage/_usage_economics.py",
@@ -167,24 +177,30 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4fbf9fd3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_usage_economics gains a private _done_task_coverage(tasks, rows) returning {done, priced}: done tasks in the plan, and done tasks whose own ledger rows add up to more than zero tokens; None when the plan has no done task, so an empty plan never reads as complete coverage. unit_economics and cost_bands (both bases) carry it as doneTaskCoverage, named apart from the report payload's spend-attribution coverage key so the renderer tasks cannot merge the two. costPerTask, completed, the sample, the percentiles and the bands are unchanged. The helper is private because usage_ledger re-exports this module's public names and its suite pins that list. Edge stated: costPerTask still averages a done task whose rows carry zero tokens, so priced can be lower than completed. Cases: two priced of four done, every done priced, absent with no done task, zero-token rows not priced, the denominator on both cost_bands bases, and no bare coverage key on either return.",
+        "descriptive": "Cost per task and the cost bands now carry how many of the plan's done tasks they actually priced, as data the report, the CLI and the panel can print beside every per-task figure."
       },
       "startedAt": "2026-10-06T14:46:29Z",
-      "completedAt": null,
+      "completedAt": "2026-10-06T15:43:40Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-06T15:43:01Z.38936c",
         "status": "passed",
         "at": "2026-10-06T15:43:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "4fbf9fd3",
+        "at": "2026-10-06T15:43:40Z",
+        "basis": "audit-reviewer (task mode): matches; one low finding (field name colliding with the payload's coverage key) fixed by renaming to doneTaskCoverage, with a case guarding the collision"
       }
     },
     {
       "id": "P104.4",
       "title": "the report and its Markdown twin print attribution coverage beside cost per task",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Print the coverage from the previous task beside every cost-per-task figure the report renders: the HTML tile (_usage_overview.py:148), the Markdown fact (_usage_markdown.py:168) and the routing table in both (_usage_detail.py, _usage_markdown.py:190-205), following render-report's rule that a claim carries its basis and a basis with no claim is noise. Re-render the committed artifacts with the recipes tools/check-rendered-artifacts.py prints (docs/index.html is a byte copy of the example report). The committed acme Markdown twin is read by _deps.doc_prose_numbers(), so a rendered 'N of M <noun>' would fail the build: word the line so the lint's ratio shape does not form, or exempt the derived twin in _output.PROSE_SCAN_EXEMPT with the reason docs/audit/audit-report.md's row gives, and say which. Run tools/check-rendered-artifacts.py, which no build-command key runs.",
       "files": [
         "plugins/audit/scripts/report/_usage_overview.py",
@@ -196,7 +212,9 @@
         "examples/acme-store/acme-store-audit.html",
         "examples/acme-store/acme-store-audit.md",
         "docs/index.html",
-        "docs/demo-large.html"
+        "docs/demo-large.html",
+        "plugins/audit/scripts/usage/_usage_economics.py",
+        "plugins/audit/tests/test__usage_economics.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -222,21 +240,26 @@
       "dependsOn": [
         "P104.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T15:43:57Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T16:45:47Z.5bdb35",
+        "status": "passed",
+        "at": "2026-10-06T16:45:47Z"
+      }
     },
     {
       "id": "P104.5",
       "title": "/audit:usage prints attribution coverage beside its per-task figures",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The CLI calibrates its bands from 'this project's completed tasks' and lists per-task costs without saying how many done tasks those figures cover or that main-loop spend is never attributed to a task. Print the coverage from unit economics beside band_note's line and under the --by task table, in both ascii and md formats, and carry it in the --json payload. Acceptance: on the acme example the dashboard states priced versus done tasks next to the band thresholds.",
       "files": [
         "plugins/audit/scripts/usage/audit-usage.py",
@@ -261,21 +284,26 @@
       "dependsOn": [
         "P104.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T15:43:58Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T16:47:44Z.6c1a9c",
+        "status": "passed",
+        "at": "2026-10-06T16:47:44Z"
+      }
     },
     {
       "id": "P104.6",
       "title": "the panel's Usage tab prints attribution coverage beside cost per task",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The panel computes its own unit economics in usage-metrics.js (uUnit, :108-125) and renders 'cost per task' (usage-view.js:283) and the routing cost/task (:368) with no coverage. Mirror the Python definition and print the same coverage, under the same showCost and empty-ledger silences. Read the refactoring-the-assembled-ui and writing-javascript skills and print the pins first (python3 tools/count-ui-pins.py); add no new shape pin, since the assertion is a vitest behaviour case. Any change under scripts/ui/panel moves the panel surface digest, so re-capture every panel screenshot with node tools/capture-screenshots.mjs (screenshot_capture_drift goes red otherwise) and run npx vitest run, which no build-command key runs.",
       "files": [
         "plugins/audit/scripts/ui/panel/usage-metrics.js",
@@ -320,16 +348,21 @@
       "dependsOn": [
         "P104.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T15:43:59Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T16:53:54Z.61358a",
+        "status": "passed",
+        "at": "2026-10-06T16:53:54Z"
+      }
     },
     {
       "id": "P104.7",

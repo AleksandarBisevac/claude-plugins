@@ -49,6 +49,7 @@ _output.install_path()
 import _ui_theme as _theme  # noqa: E402  (the one place a machine value gets its words)
 
 import _usage_viz as _viz  # noqa: E402  (the section's number formatting and marks)
+from _usage_economics import _coverage_sentence  # noqa: E402  (the one coverage sentence)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `_report_usage.py` unchanged, and an alias keeps them reading the same names
@@ -165,18 +166,38 @@ def _usage_md(u):
         facts.append("- **Attribution:** %s of spend attributed (%s to a "
                      "specific task)." % (_fmt_pct(cov.get("attributedPct", 0)),
                                           _fmt_pct(cov.get("taskLevelPct", 0))))
-    if unit.get("costPerTask") is not None:
-        facts.append("- **Cost per completed task:** %s across %d task(s)."
-                     % (_fmt_cost(unit["costPerTask"]), unit.get("completed", 0)))
+    # Gated on show_cost too, not merely on there being a figure to show: this
+    # fact is a dollar figure derived from `costPerTask`, the same one the HTML
+    # tile withholds when showCost is off, and a basis note with no claim
+    # beside it would be noise.
+    if show_cost and unit.get("costPerTask") is not None:
+        fact = ("- **Cost per completed task:** %s across %d task(s)."
+               % (_fmt_cost(unit["costPerTask"]), unit.get("completed", 0)))
+        note = _coverage_sentence(unit.get("doneTaskCoverage"))
+        if note:
+            fact += " %s" % note
+        facts.append(fact)
+    # The dollar fact is gated on show_cost INSIDE its own branch, never by
+    # widening the `if`: widening it would send a SUFFICIENT sample into the
+    # `elif` below, printing "suppressed — needs 5, has 9" for a projection
+    # that is not suppressed by sample size at all, just by showCost — a
+    # false claim about why nothing rendered. Silence is the honest answer
+    # when showCost is what withheld it; the suppressed-sample notice stays
+    # only for the case it actually describes, and it carries no dollar.
     if unit.get("sufficient") and unit.get("projection"):
-        facts.append("- **Projection:** remaining %d task(s) at the p25-p75 rate = "
-                     "%s to %s." % (unit["remaining"],
-                                    _fmt_cost(unit["projection"]["low"]),
-                                    _fmt_cost(unit["projection"]["high"])))
+        if show_cost:
+            facts.append(
+                "- **Projection:** remaining %d task(s) at the p25-p75 rate = "
+                "%s to %s." % (unit["remaining"],
+                               _fmt_cost(unit["projection"]["low"]),
+                               _fmt_cost(unit["projection"]["high"])))
     elif unit.get("completed") is not None:
         facts.append("- **Projection:** suppressed — needs %d completed tasks, has "
                      "%d." % (unit.get("gate", 5), unit.get("completed", 0)))
-    if retry.get("totalCost"):
+    # Gated the same way: both facts are dollar-first, and the caveat that
+    # would otherwise follow them (retried spend is not wasted spend) has
+    # nothing to caveat with no dollar figure on the page.
+    if show_cost and retry.get("totalCost"):
         facts.append("- **Retried tasks:** %s across %d task(s) (%s of spend). "
                      "Not the same as wasted spend — the ledger buckets by hour, "
                      "not by attempt."
@@ -193,14 +214,24 @@ def _usage_md(u):
         lines += ["### Model cost within each risk band", "",
                   "Compared inside a band on purpose: hard work is routed to the "
                   "stronger model deliberately, so a raw spend-per-task comparison "
-                  "across bands would flag that working system as a fault.", "",
-                  "| risk | model | tasks | cost/task | mean attempts |",
-                  "|---|---|---:|---:|---:|"]
+                  "across bands would flag that working system as a fault.", ""]
+        # The cost/task COLUMN disappears with showCost off, header and cells
+        # together, the same pattern the monthly table already uses — a
+        # half-dropped column would misalign every row, and the coverage note
+        # is the basis for a cost cell that is not there to carry.
+        if show_cost:
+            note = _coverage_sentence(unit.get("doneTaskCoverage"))
+            if note:
+                lines += [note, ""]
+        lines += ["| risk | model | tasks | %smean attempts |"
+                  % ("cost/task | " if show_cost else ""),
+                  "|---|---|---:|%s---:|" % ("---:|" if show_cost else "")]
         for risk in rt["risks"]:
             for model, c in sorted(rt["byRisk"][risk].items()):
-                lines.append("| %s | %s | %d | %s | %.1f |" % (
+                cost_cell = ("%s | " % _fmt_cost(c["costPerTask"])) if show_cost else ""
+                lines.append("| %s | %s | %d | %s%.1f |" % (
                     _md(risk), _md(model), c["tasks"],
-                    _fmt_cost(c["costPerTask"]), c["meanAttempts"] or 0))
+                    cost_cell, c["meanAttempts"] or 0))
         lines.append("")
     return "\n".join(lines)
 

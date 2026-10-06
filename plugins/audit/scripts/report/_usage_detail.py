@@ -59,6 +59,7 @@ _output.install_path()
 import _ui_theme as _theme  # noqa: E402  (the one place a machine value gets its words)
 
 import _usage_viz as _viz  # noqa: E402  (the section's number formatting and marks)
+from _usage_economics import _coverage_sentence  # noqa: E402  (the one coverage sentence)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `_report_usage.py` unchanged, and an alias keeps them reading the same names
@@ -201,23 +202,44 @@ def _routing_table(u):
     rt = u.get("routing") or {}
     if not rt.get("risks"):
         return ""
+    show_cost = u.get("showCost", True)
     rows = []
     for risk in rt["risks"]:
         cells = rt["byRisk"][risk]
         for i, (model, c) in enumerate(sorted(cells.items())):
+            # The cost/task COLUMN disappears with showCost off, header and
+            # cells together — a half-dropped column would misalign every row,
+            # the same rule the monthly table and the Markdown twin follow for
+            # this exact figure.
+            cost_cell = ("<td class=mono>%s</td>" % e(_fmt_cost(c["costPerTask"]))
+                        if show_cost else "")
             rows.append(
                 "<tr><td>%s</td><td class=mono>%s</td><td>%d</td>"
-                "<td class=mono>%s</td><td class=mono>%.1f</td></tr>"
+                "%s<td class=mono>%.1f</td></tr>"
                 % (e(risk) if i == 0 else "", e(model), c["tasks"],
-                   e(_fmt_cost(c["costPerTask"])), c["meanAttempts"] or 0))
+                   cost_cell, c["meanAttempts"] or 0))
+    # Gated too: a basis note for a cost cell that is not on the page would be
+    # noise with no claim beside it.
+    note = (_coverage_sentence((u.get("unit") or {}).get("doneTaskCoverage"))
+           if show_cost else None)
+    note_html = ('<p class="muted small">%s</p>' % e(note)) if note else ""
+    cost_th = "<th>cost/task</th>" if show_cost else ""
+    # DROPPED ENTIRELY rather than reworded, the same call the cost/task column
+    # above makes: `savingPct` is stated beside the two dollar figures it is
+    # computed from ("cost X at <to> rates versus Y, Z less (V%)") and carries
+    # no OTHER stated basis — a claim carries its basis, so hiding the dollars
+    # and keeping the percent would leave the one number left with nothing
+    # beside it to show it is true.
+    advice_html = _routing_advice_block(rt) if show_cost else ""
     return ('<h4 class="sub">Model cost within each risk band</h4>'
             '<p class="muted small">Compared inside a band on purpose. Hard work is '
             "routed to the stronger model deliberately, so a raw spend-per-task "
             "comparison across bands would flag that working system as a fault.</p>"
+            "%s"
             '<div class="tablewrap"><table class="data"><thead><tr><th>risk</th>'
-            "<th>model</th><th>tasks</th><th>cost/task</th><th>mean attempts</th>"
+            "<th>model</th><th>tasks</th>%s<th>mean attempts</th>"
             "</tr></thead><tbody>%s</tbody></table></div>%s"
-            % ("".join(rows), _routing_advice_block(rt)))
+            % (note_html, cost_th, "".join(rows), advice_html))
 
 
 def _routing_advice_block(rt):
@@ -258,24 +280,39 @@ def _routing_advice_block(rt):
 
 def _economics_block(u):
     """Unit economics, retry exposure and blocked spend — each stated as what it
-    actually is."""
+    actually is.
+
+    Every dollar figure here is gated on `showCost` INSIDE this function, not by
+    its caller: `_report_usage.py` calls this unconditionally, so a reader
+    turning dollars off has no other place this can be withheld. The counts
+    that carry no dollar — the sample-size notice below the projection gate —
+    stay regardless, the same split the cost/task column and its coverage note
+    already make in `_routing_table`."""
     unit = u.get("unit") or {}
     retry = u.get("retry") or {}
     if not (unit or retry):
         return ""
+    show_cost = u.get("showCost", True)
     out = ['<h4 class="sub">Unit economics</h4>']
+    # The dollar fact is gated on show_cost INSIDE its own branch, never by
+    # widening the `if`: widening it would send a SUFFICIENT sample into the
+    # `elif` below, printing "needs 5, has 9" for a projection that is not
+    # suppressed by sample size at all, just by showCost — a false claim
+    # about why nothing rendered. The suppressed-sample notice stays only
+    # for the case it actually describes, and it carries no dollar.
     if unit.get("sufficient") and unit.get("projection"):
-        out.append(
-            '<p class="fact">Remaining %d task(s) project to '
-            "<strong>%s&ndash;%s</strong> at the p25&ndash;p75 per-task rate.</p>"
-            % (unit["remaining"], e(_fmt_cost(unit["projection"]["low"])),
-               e(_fmt_cost(unit["projection"]["high"]))))
+        if show_cost:
+            out.append(
+                '<p class="fact">Remaining %d task(s) project to '
+                "<strong>%s&ndash;%s</strong> at the p25&ndash;p75 per-task rate.</p>"
+                % (unit["remaining"], e(_fmt_cost(unit["projection"]["low"])),
+                   e(_fmt_cost(unit["projection"]["high"]))))
     elif unit.get("completed") is not None:
         out.append(
             '<p class="muted small">Projection needs %d completed tasks to mean '
             "anything; there are %d. A forecast off a smaller sample would be noise."
             "</p>" % (unit.get("gate", 5), unit.get("completed", 0)))
-    if retry.get("totalCost"):
+    if show_cost and retry.get("totalCost"):
         # Floored: the total spend this is a share OF is in the tiles far above,
         # not in this sentence, so "0% of spend" travels alone beside a dollar
         # figure that says the opposite.
@@ -293,7 +330,7 @@ def _economics_block(u):
             "figure is spend with no outcome%s.</p>"
             % (" (the same task is in both figures here)"
                if retry.get("overlaps") else ""))
-    if unit.get("mostExpensive"):
+    if show_cost and unit.get("mostExpensive"):
         bands = u.get("bands") or {}
         by_task = (bands.get("byTask") or {}) if bands.get("sufficient") else {}
         rows = "".join(

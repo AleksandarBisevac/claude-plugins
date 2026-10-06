@@ -1,6 +1,6 @@
 # ACME Store — security & correctness audit
 
-repo: acme-store · generated 2026-10-05 09:47 UTC
+repo: acme-store · generated 2026-10-06 16:20 UTC
 
 > Phase 0 (framework upgrade) was finished before this project started recording test runs, so nothing in it points at one — the test-gate column says 'Before recording' rather than 'No evidence', and the no-test-evidence gate excuses it instead of failing it. Phase 1 (auth hardening) is signed off and merged: passwords now use Argon2id and login is rate-limited. Phase 2 (input validation) is in progress with one task blocked on a shared template-escaping decision. Phase 3 (performance) is gated behind Phase 2, and Phase 4 writes down the invariants the audit relied on — documentation work, so it declares no test gate at all. Of five tracked bugs, the logout session leak (BUG-4) is fixed and the cart off-by-one (BUG-3) is being fixed red-first; no high-severity bugs remain unresolved. Phase 5 (sync worker resilience) is queued behind the storefront work, in a different part of the stack — a background Go service rather than the storefront's TypeScript — and its gate is a runner named for what it is: go test rather than npm test.
 
@@ -123,7 +123,7 @@ Plan columns count the whole project by event month (task completedAt, bug repor
 - **Cache:** 93% hit; the input side bills at 20% of fresh-token rates.
 - **Lowest cache phase:** P2 at 62%.
 - **Attribution:** 96% of spend attributed (87% to a specific task).
-- **Cost per completed task:** $11.41 across 6 task(s).
+- **Cost per completed task:** $11.41 across 6 task(s). Of the plan's 6 done task(s), 6 are priced; main-loop spend is not attributed to a task.
 - **Projection:** remaining 8 task(s) at the p25-p75 rate = $75.69 to $125.95.
 - **Retried tasks:** $5.36 across 1 task(s) (5% of spend). Not the same as wasted spend — the ledger buckets by hour, not by attempt.
 - **Blocked tasks:** $5.36 across 1 task(s) — spend with no outcome.
@@ -131,6 +131,8 @@ Plan columns count the whole project by event month (task completedAt, bug repor
 ### Model cost within each risk band
 
 Compared inside a band on purpose: hard work is routed to the stronger model deliberately, so a raw spend-per-task comparison across bands would flag that working system as a fault.
+
+Of the plan's 6 done task(s), 6 are priced; main-loop spend is not attributed to a task.
 
 | risk | model | tasks | cost/task | mean attempts |
 |---|---|---:|---:|---:|

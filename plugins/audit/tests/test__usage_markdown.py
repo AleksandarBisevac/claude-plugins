@@ -137,6 +137,27 @@ def _cases(check):
     check("um18 ...and a projection below the sample gate is reported as "
           "SUPPRESSED with both numbers, never omitted silently",
           "suppressed — needs 5 completed tasks, has 4" in out_e, "")
+    _proj_unit = {"costPerTask": 0.5, "completed": 9, "gate": 5,
+                 "sufficient": True, "remaining": 3,
+                 "projection": {"low": 1.0, "high": 3.0}}
+    _retry = {"totalCost": 1.0, "retriedCost": 0.4, "retriedTasks": 2,
+             "retriedPct": 40.0, "blockedCost": 0.1, "blockedTasks": 1}
+    out_dollar = M._usage_md(_u(unit=_proj_unit, retry=_retry))
+    check("um18b a projection past the sample gate and the retry/blocked "
+          "facts are all dollar figures, and all three render with showCost "
+          "on",
+          "Projection" in out_dollar and "$1.00" in out_dollar
+          and "Retried tasks" in out_dollar and "Blocked tasks" in out_dollar,
+          out_dollar)
+    out_nc = M._usage_md(_u(showCost=False, unit=_proj_unit, retry=_retry))
+    check("um18c ...and all three are DROPPED ENTIRELY with showCost off, "
+          "not reworded dollar-free and not misreported as sample-"
+          "suppressed (this fixture IS sufficient - a widened `if` would "
+          "have sent it into the sample-gate branch instead, claiming "
+          "'needs 5, has 9' for a reason that is not why it is hidden)",
+          "Projection" not in out_nc and "$1.00" not in out_nc
+          and "Retried tasks" not in out_nc and "Blocked tasks" not in out_nc,
+          out_nc)
     out_m = M._usage_md(_u(monthly={
         "months": ["2026-06", "2026-07"],
         "ledger": {"2026-06": {"tokens": 5, "costUSD": 0.1, "msgs": 1},
@@ -160,6 +181,59 @@ def _cases(check):
           "the stronger model deliberately",
           "### Model cost within each risk band" in out_r
           and "would flag that working system as a fault" in out_r, "")
+
+    # --- the coverage note beside every cost-per-task fact ---
+    out_cov = M._usage_md(_u(unit={"costPerTask": 0.5, "completed": 3,
+                                   "doneTaskCoverage": {"done": 5, "priced": 3}},
+                             routing={"risks": ["high"],
+                                      "byRisk": {"high": {
+                                          "opus": {"tasks": 3,
+                                                   "costPerTask": 0.5,
+                                                   "meanAttempts": 1.2}}}}))
+    check("um25 the 'Cost per completed task' fact carries the same coverage "
+          "the HTML tile states, so the twin's claim has the same basis",
+          "Cost per completed task" in out_cov
+          and "5 done task(s), 3 are priced" in out_cov
+          and "main-loop spend is not attributed to a task" in out_cov, out_cov)
+    check("um26 ...and the 'Model cost within each risk band' section states "
+          "it too, because its own cost/task column makes the same claim",
+          out_cov.count("main-loop spend is not attributed to a task") == 2,
+          out_cov)
+    out_nocov = M._usage_md(_u(unit={"costPerTask": 0.5, "completed": 3}))
+    check("um27 ...and with no done task in the plan at all, there is "
+          "nothing to cover yet, so the fact carries no coverage sentence",
+          "Cost per completed task" in out_nocov
+          and "main-loop spend" not in out_nocov, out_nocov)
+
+    # --- costPerTask dollar figures withheld with showCost off ---
+    out_nc_cov = M._usage_md(_u(showCost=False,
+                                unit={"costPerTask": 0.5, "completed": 3,
+                                      "doneTaskCoverage": {"done": 5,
+                                                           "priced": 3}},
+                                routing={"risks": ["high"],
+                                         "byRisk": {"high": {
+                                             "opus": {"tasks": 3,
+                                                      "costPerTask": 0.5,
+                                                      "meanAttempts": 1.2}}}}))
+    check("um28 the 'Cost per completed task' fact is a dollar figure derived "
+          "from costPerTask, so it is withheld with showCost off - the same "
+          "gate the HTML tile applies to the same figure",
+          "Cost per completed task" not in out_nc_cov, out_nc_cov)
+    check("um29 ...and its coverage note goes with it: a basis for a claim "
+          "that is not on the page would be noise",
+          "main-loop spend" not in out_nc_cov, out_nc_cov)
+    check("um30 ...and the 'Model cost within each risk band' table's "
+          "cost/task COLUMN disappears too, header and cells together, while "
+          "the table itself still states tasks and mean attempts",
+          "### Model cost within each risk band" in out_nc_cov
+          and "cost/task" not in out_nc_cov
+          and "| risk | model | tasks | mean attempts |" in out_nc_cov, out_nc_cov)
+    check("um31 ...and with showCost on the SAME fixture carries every one of "
+          "those costPerTask figures - the twin that fails if the gate "
+          "becomes unconditional",
+          "Cost per completed task" in out_cov
+          and "cost/task" in out_cov
+          and "main-loop spend" in out_cov, out_cov)
 
     # --- the aliases, and who reads this module ---
     check("um22 `_report_md` reads `_usage_md` from HERE, not through "

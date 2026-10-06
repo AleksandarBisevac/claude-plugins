@@ -101,6 +101,32 @@ def _done_task_coverage(tasks, rows):
             "priced": sum(1 for n in tokens.values() if n > 0)}
 
 
+def _coverage_sentence(cov):
+    """`_done_task_coverage`'s reading, as the one sentence every caller that
+    prints a per-task cost figure states beside it — the CLI, the report's HTML
+    tile, its Markdown twin and the routing table all make the same "cost per
+    task" claim, and each needs the same basis. `cov` is `_done_task_coverage`'s
+    `doneTaskCoverage` value; `None` in (no done task in the plan — nothing yet
+    to cover) gives `None` out, never an empty string, so a caller's own `if
+    note:` guard reads the same whether the value is missing or absent.
+
+    WORDED TO NOT FORM "N of M <noun>" ON PURPOSE. The natural phrasing — "N of
+    M done task(s) priced" — is exactly the ratio shape `_output._ratio_claim`
+    refuses in a committed document with no command beside it, and this
+    sentence IS committed: it renders into `examples/acme-store/acme-store-
+    audit.md`, a tracked file `_deps.doc_prose_numbers()` scans. "Of the plan's
+    N done task(s), M are priced" says the same thing with the two numbers in
+    the opposite order, which keeps a reader beside `of` with no numeral
+    immediately before it — confirmed empirically against `_output.
+    _prose_number_claim()`, not merely asserted, and `test__deps.py`'s own
+    fixtures are the reason this stays testable rather than a belief about the
+    pattern."""
+    if not cov:
+        return None
+    return ("Of the plan's %d done task(s), %d are priced; main-loop spend is "
+            "not attributed to a task." % (cov.get("done", 0), cov.get("priced", 0)))
+
+
 def unit_economics(manifest, rows):
     """Cost per completed task, and what the remaining work would cost at that rate.
 
