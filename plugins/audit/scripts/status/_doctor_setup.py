@@ -110,6 +110,9 @@ def check_interpreter(rep):
 # here, so "not declared" is reported as NOT ESTABLISHED and never as "off". That
 # distinction is the entire reason this check grades the way it does.
 SETTINGS_SCOPES = ("project local", "project", "user")
+# The one recommended set of permission rules, named by the path a user's
+# checkout of this repository shows it at; the doctor never reads the file.
+PERMISSIONS_TEMPLATE = "plugins/audit/templates/permissions-deny.example.json"
 
 
 def settings_sources(project, home=None):
@@ -166,12 +169,17 @@ def _is_env_read_deny(rule):
     """True for a deny rule that refuses to READ a dotenv file.
 
     `Edit(.env*)` is deliberately not enough: it stops a write, and the leak this
-    is about is a read."""
+    is about is a read. A `!`-prefixed argument is a carve-out: it exempts a path
+    from an earlier rule in the same list and refuses nothing itself, so it is
+    never counted as the rule this row is looking for."""
     text = str(rule).strip()
     head, sep, rest = text.partition("(")
     if not sep or not rest.endswith(")"):
         return False
-    return head.strip().lower() in ("read", "grep") and ".env" in rest[:-1]
+    arg = rest[:-1].strip()
+    if arg.startswith("!"):
+        return False
+    return head.strip().lower() in ("read", "grep") and ".env" in arg
 
 
 def env_deny_rules(sources):
@@ -261,9 +269,10 @@ def check_sandbox(rep, project, home=None):
     detail = ("no permission deny rule refuses reading a dotenv file "
               "(looked for Read(...)/Grep(...) naming .env across %s settings)"
               % ", ".join(SETTINGS_SCOPES))
-    fix = ("add \"Read(.env*)\" to permissions.deny in .claude/settings.json; "
-           "the plugin's own guard is a text matcher and cannot see a value "
-           "loaded indirectly (direnv, dotenv, a test harness)")
+    fix = ("merge %s into .claude/settings.json, keeping its deny entries in "
+           "their order (QUICKSTART.md names what it costs); the plugin's own "
+           "guard is a text matcher and cannot see a value loaded indirectly "
+           "(direnv, dotenv, a test harness)" % PERMISSIONS_TEMPLATE)
     if enabled is True:
         rep.warn("secret rules", detail, fix)
     elif enabled is False:

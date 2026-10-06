@@ -60,21 +60,30 @@ of this document, and the people who most need it are the ones who have not read
 
 **Which layer holds which guarantee.** This plugin's command-reading guards keep the
 verdicts only the plugin can give: whether a write is covered by the running plan,
-whether a write targets the manifest, its lock or a phase shard, whether a git command
-would orphan a commit `task.commit` records, and whether a stash would take uncommitted
-work out of a tree that holds an audit plan. Claude Code's own layers cannot hold these,
-because each depends on the plan's state. The secret-read rules are different: they read
-no plan state, and they stay because no host layer covers them by default. Auto mode
-allows dotenv reads, a `permissions.deny` rule matches spelling and not operation, and no
-permission rule can name a path inside an MCP payload. Claude Code's `Read(...)` deny
-rules plus its sandbox are the layer that actually *contains* a read.
+whether a write targets the manifest, its lock or a phase shard, whether a history
+rewrite runs in a repository whose manifest records a commit (`task.commit`) and, for
+`reset --hard`, whether a recorded commit would be orphaned, and whether a stash would
+take uncommitted work out of a tree that holds an audit plan. Claude Code's own layers
+cannot hold these, because each depends on the plan's state. The secret-read rules are
+different: they read no plan state, and they stay because no host layer covers them by
+default. Auto mode allows dotenv reads, a `permissions.deny` rule matches spelling and not
+operation, `Read(...)` deny rules plus the sandbox are the layer that actually *contains*
+a read, and no permission rule can name a path inside an MCP payload. Every statement
+in this paragraph about what Claude Code does — these, and the classifier's role below —
+rests on one reading: its
+permissions, sandboxing and permission-modes documentation and the output of
+`claude auto-mode defaults` on Claude Code 2.1.291, both read on 2026-10-06 and quoted in
+[`docs/research/guard-ownership-design.md`](docs/research/guard-ownership-design.md).
+Neither source is a contract, so re-read both before a release relies on them.
 `plugins/audit/templates/permissions-deny.example.json` is the recommended fragment —
 merge it into your own `.claude/settings.json`; it replaces no guard rule above, it only
-adds a layer beside them. `/audit:doctor`'s `sandbox` row reports whether the sandbox is
-declared in the settings files it reads. Its `secret rules` row reports only whether some
-`Read` or `Grep` deny rule naming `.env` is declared there; it does not check the rest of
-the fragment. This plugin does not refuse generic destructive git or shell commands in a
-repository with no plan, and it does not try to: that is the classifier's job in auto
+adds a layer beside them, and `QUICKSTART.md` names what it costs. `/audit:doctor`'s
+`sandbox` row reports whether the sandbox is declared in the settings files it reads. Its
+`secret rules` row reports only whether some `Read` or `Grep` deny rule naming `.env` is
+declared there — a `!` carve-out does not count, since it refuses nothing — and does not
+check the rest of the fragment; when no such rule is declared, its fix names the
+fragment's file. This plugin does not refuse generic destructive git or shell commands in
+a repository with no plan, and it does not try to: that is the classifier's job in auto
 mode, and a `permissions.ask` or `permissions.deny` rule's job outside it.
 
 ## The plugin's own files

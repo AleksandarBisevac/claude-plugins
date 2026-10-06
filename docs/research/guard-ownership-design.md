@@ -36,7 +36,8 @@ own state can answer. **It does not hold for secret reads.**
 verdict depends only on whether a path or a token matches a pattern. So the measurement places
 these rules correctly, outside the generic-destructive class, but the reason it gives is wrong.
 They are the one family of rules where "would Claude Code's own layers hold this?" is a real
-question, and the rule-by-rule section below answers it.
+question, and the rule-by-rule section below answers it. The measurement document now gives
+this reason itself.
 
 ## What a host layer can and cannot match
 
@@ -130,7 +131,7 @@ task declares this file".
 | Sandbox switched off on an environment-adjacent command (`_sandbox_disabled` + `ENV_ADJACENT`) | none | the whole rule. It is a verdict about the `dangerouslyDisableSandbox` field, which no permission rule reads |
 
 **These rules stay, and the reason is coverage, not ownership.** Each one reads no plugin state,
-so the phase's ownership test alone would hand them over. These facts outweigh that:
+so asking only "does this verdict depend on the plugin's own state?" would hand them over. These facts outweigh that:
 
 1. **The host layer that would replace them is off by default.** A user who has installed the
    plugin but not the fragment would go from refused to allowed on every row above. The
@@ -138,11 +139,13 @@ so the phase's ownership test alone would hand them over. These facts outweigh t
    whether a host rule was present when they did. Nothing measured here says how many machines carry it.
    `/audit:doctor`'s `secret rules` row does not answer that for the fragment either.
    `_doctor_setup._is_env_read_deny` accepts any single `Read(...)` or `Grep(...)` deny whose
-   argument contains `.env`, `Grep(.env*)` included. It never checks the `credentials`, `id_*`,
-   key-extension or env-dump entries, and it reads settings files only, which managed policy and
-   a `--settings` flag outrank. So the row says that *some* dotenv read-deny rule is declared in
-   the files it can read, no more. Comparing the declared rules against this fragment would be a
-   follow-up change to the doctor; this design does not make it.
+   argument contains `.env`, `Grep(.env*)` included, and rejects a `!` carve-out, which refuses
+   nothing by itself. It never checks the `credentials`, `id_*`, key-extension or env-dump
+   entries, and it reads settings files only, which managed policy and a `--settings` flag
+   outrank. So the row says that *some* dotenv read-deny rule is declared in the files it can
+   read, no more; when none is, its fix names this fragment's file. Comparing the declared rules
+   against the whole fragment would be a further change to the doctor; this design does not
+   make it.
 2. **Auto mode does not backfill them.** Reading a dotenv file is on auto mode's default
    *allow* list, so even a user in auto mode keeps only the spelling-matched part.
 3. **Some rows have no host equivalent at any setting short of the sandbox.** These are the
@@ -212,10 +215,17 @@ only.
 
 How the fragment was derived, and what it decides:
 
-- **The path entries are `SECRET_PATH` spelled as gitignore patterns.** They follow the
-  `credentials` extension set in `_CRED_EXT` and the template carve-outs in the regex's negative
-  look-ahead. A bare file name matches at any depth, per the docs ("`Read(.env)` and
-  `Read(**/.env)` are equivalent"). The `!` carve-outs must stay *after* `Read(.env.*)` in the
+- **The path entries are `SECRET_PATH` spelled as gitignore patterns, and the gitignore form is
+  broader in one place.** They follow the `credentials` extension set in `_CRED_EXT` and the
+  template carve-outs in the regex's negative look-ahead. A bare file name matches at any depth,
+  per the docs ("`Read(.env)` and `Read(**/.env)` are equivalent"). `SECRET_PATH` is anchored at
+  the end of the path, so it matches a *file* called `.env` or `credentials` and nothing inside
+  a directory of that name. A gitignore pattern with no slash matches a directory of that name
+  too, and with it everything beneath, so `Read(.env)` also denies a virtualenv created at
+  `.env` and `Read(credentials)` a folder called `credentials`. `Read(*.pem)` and
+  `SECRET_PATH`'s `\.pem$` agree with each other, and both cover public certificates and CA
+  bundles as well as private keys. `QUICKSTART.md` names these costs and the carve-outs a user
+  would add. The `!` carve-outs must stay *after* `Read(.env.*)` in the
   *same* file's list, because a carve-out reaches only rules from the same source.
   `credentials*.p8` and `credentials*.pem` are absent because `*.p8` and `*.pem` already cover
   them.
@@ -229,10 +239,11 @@ How the fragment was derived, and what it decides:
   unrecognised-verb gaps in the table above. Without it, the path entries are spelling rules over
   the recognised verbs.
 - **There is no `Grep(...)` entry.** The docs consult file permissions "against `Edit(path)` and
-  `Read(path)` rules only", and Read rules already reach Grep best-effort. `QUICKSTART.md`'s
-  current snippet carries `Grep(.env*)`, and the docs establish no effect for that entry. That is
-  a finding for whoever owns `QUICKSTART.md` and the doctor's `secret rules` row. This design does
-  not change either file.
+  `Read(path)` rules only", and Read rules already reach Grep best-effort. `QUICKSTART.md` once
+  recommended a `Grep(.env*)` entry of its own, for which the docs establish no effect; it now
+  points at this fragment instead. The doctor's `secret rules` row still counts a `Grep(...)`
+  rule naming `.env` as declared, which is the row reporting what it found rather than what the
+  docs show it does.
 - **There is no git entry, on purpose.** None of the history arms moves, and a spelling deny on
   force-push, rebase or `reset --hard` fires in every repository, including the plan-less ones
   where the plugin deliberately says nothing. That is the over-fire the history guard's own
@@ -261,8 +272,8 @@ later proposal cannot leave it implicit:
 
 ## The transition, fixed for any rule that does move
 
-The phase asked for one, and none is owed today. It is fixed here so that a later move has a
-procedure to follow and not one to invent:
+"What would moving a rule look like?" has an answer even though no rule moves today. It is
+fixed here so that a later move has a procedure to follow and not one to invent:
 
 1. **Release N: report, do not block.** The moved branch returns `allow` with a reason naming the
    fragment entry that now holds the guarantee, and must leave a record of each such allow, so
@@ -307,8 +318,9 @@ Under this design no key stops being read, so nothing here owes a major release.
 
 > **Which layer holds which guarantee.** This plugin's command-reading guards keep the verdicts
 > only the plugin can give: whether a write is covered by the running plan, whether a write
-> targets the manifest, its lock or a phase shard, whether a git command would orphan a commit
-> `task.commit` records, and whether a stash would take uncommitted work out of a tree that holds an
+> targets the manifest, its lock or a phase shard, whether a history rewrite runs in a repository
+> whose manifest records a commit (`task.commit`) and, for `reset --hard`, whether a recorded commit
+> would be orphaned, and whether a stash would take uncommitted work out of a tree that holds an
 > audit plan. Claude Code's own layers cannot hold these, because each depends on the plan's
 > state. The secret-read rules are different: they read no plan state, and they stay because no
 > host layer covers them by default. Auto mode allows dotenv reads, a `permissions.deny` rule
@@ -317,7 +329,9 @@ Under this design no key stops being read, so nothing here owes a major release.
 > *contains* a read. The fragment in `docs/research/guard-ownership-design.md` is the recommended
 > set. `/audit:doctor`'s `sandbox` row reports whether the sandbox is declared in the settings
 > files it reads. Its `secret rules` row reports only whether some `Read` or `Grep` deny rule
-> naming `.env` is declared there; it does not check the rest of the fragment. This
+> naming `.env` is declared there, a `!` carve-out not counting; it does not check the rest of the
+> fragment. `SECURITY.md` carries this paragraph with the basis of its statements about Claude
+> Code written inline. This
 > plugin does not refuse generic destructive git or shell commands in a repository with no plan,
 > and it does not try to: that is the classifier's job in auto mode, and a `permissions.ask` or
 > `permissions.deny` rule's job outside it.
@@ -338,4 +352,5 @@ in this file, because a Python string literal in the body quoted the name of the
 arm. The refusal read: "Reading the process environment is blocked (Rule #2): this prints
 environment values, not a file." The body is code fed to an interpreter, so the guard is right to
 read it. What it cannot tell apart is a string literal *naming* the object from an expression
-*reading* it. Both observations belong in the plan's fault register, not in this design's scope.
+*reading* it. Both are defects in the guard's matching, recorded for a fix of their own rather
+than made here.

@@ -31,8 +31,8 @@ these subsources (public source, no redaction involved) gives each label's depen
 | `` `git stash push`/`drop`/`pop` moves work between … `` | `guard-history-rewrite.py` stash arm (`guard-history-rewrite.py:1622-1624`) | plan/journal state — gated on `plan_present(r, cfg)`, **not** on a recorded SHA (`guard-history-rewrite.py:1615-1621` explains the ordering: a stash removes work that was never committed, so waiting for a recorded SHA "would make this arm silent on exactly the repo where the incident happened") |
 | `rebasing rewrites the SHAs recorded in …` / `force-push replaces history other clones already …` / `…--force-with-lease …` / `filter-branch filter-repo rewrites every SHA it …` | `guard-history-rewrite.py` SHA arm | a SHA the manifest records — `if not shas: return ("allow", "")` (`guard-history-rewrite.py:1636-1639`): with nothing recorded, every one of these commands is allowed |
 
-Two placements are not read off the label alone, and both are stated here as decisions rather
-than left implicit:
+These placements are not read off the label alone, and each is stated here as a decision
+rather than left implicit:
 
 - `docs audit …` rows are counted under **journal or manifest integrity**, not plan scope,
   because the branch is asking an identity question about the manifest/phase file itself
@@ -43,9 +43,11 @@ than left implicit:
   manifest records", because the code comment at the branch is explicit that it is the other
   question: "Everything above asks … a SHA … Stash … removes work which was never committed at
   all … nothing in the plan that says it happened" (`guard-history-rewrite.py:1154-1160`).
-- Env-dump and echoed-token rows are counted under **secret read**, not a sixth category: both
-  are Rule #2 of the same secrets guard, gated the same way (every tier, plan or no plan), and
-  the task names five categories, not six.
+- Env-dump and echoed-token rows are counted under **secret read**, not a category of their
+  own: both are Rule #2 of the same secrets guard, gated the same way (every tier, plan or no
+  plan), and the question this document asks — does a verdict depend on plan, manifest,
+  recorded-SHA or secret-pattern state, or on none of them? — gets the same answer for Rule #2
+  as for Rule #1.
 
 ## The re-derivation
 
@@ -125,8 +127,8 @@ executes — is itself denied by `guard-history-rewrite.py`'s heredoc-as-code re
 worktree carrying an audit plan: the guard misreads the literal string as a command it must
 grade, which is a false positive (the text is data, not something anything runs). That is why the
 command above builds the one marker string from a split literal instead of writing it out. The
-false positive is itself a data point for this task rather than something to route around
-quietly: the refusal still depended on a plan being present in the tree the command ran in
+false positive is itself a data point for the question this document asks rather than
+something to route around quietly: the refusal still depended on a plan being present in the tree the command ran in
 (`guard-history-rewrite.py:1622-1624`), so it is a `journal_or_manifest_integrity`-class
 instance, not a counter-example to the generic-row finding below.
 
@@ -137,7 +139,7 @@ instance, not a counter-example to the generic-row finding below.
 | Plan scope | 38 | n/a — plugin-only by construction (see below) |
 | Journal or manifest integrity | 10 | n/a — plugin-only by construction |
 | A SHA the manifest records | 9 | n/a — plugin-only by construction |
-| Secret read | 19 | n/a — plugin-only by construction |
+| Secret read | 19 | n/a — depends on the path or token matching a pattern, not on plugin state (see below) |
 | Generic destructive operation | 0 | none fell here in this run; see below |
 
 Summing the five rows in the table above reproduces the command's own "era rows" line, with
@@ -160,25 +162,27 @@ corpus is gated on plan, manifest, recorded-SHA or secret-pattern state:
   rather than a generic one: the dependency is on the pattern being secret-shaped, not on the
   plugin's own state.
 
-So the answer this task asked for — **the share of refusals that only the plugin could have
-made** — is the whole of the era slice the command counts: none of it is a row whose verdict was
-independent of plan, manifest, recorded-SHA or secret-pattern state, so there is no generic row
-left for which "would Claude Code's own layers have stopped it anyway" is a live question in this
-corpus. That is a statement about the **code as it is written today**: nothing in the three
-guard hooks currently denies a destructive git or shell operation unconditionally, so the
-follow-on design work is not retiring rows this measurement found generic — it is instead the
-work that should check, rule by rule in `guard-secrets-read.py` and `guard-history-rewrite.py`,
-whether any rule *could* be rewritten to fire independent of plan/manifest state (which would
-make it a candidate for a `permissions.deny` fragment even though no such row showed up by
-construction in this corpus), and whether CLAUDE.md's own description of guard scope still
-matches what the code denies.
+So the answer to **"what share of these refusals depended on something other than the command's
+own destructiveness?"** is the whole of the era slice the command counts: none of it is a row
+whose verdict was independent of plan, manifest, recorded-SHA or secret-pattern state. The
+narrower share that **only the plugin could have made** is the plan-scope, integrity and
+recorded-SHA rows. The secret-read rows are outside it: their verdict depends on a path or a
+token matching a pattern, which reads no plugin state, so for them "would Claude Code's own
+layers have stopped it?" stays a live question even though none of them is generic.
+`docs/research/guard-ownership-design.md` answers it rule by rule. That is a statement about the **code as it is written today**: nothing in the three
+guard hooks currently denies a destructive git or shell operation unconditionally. The
+questions it leaves are therefore not "which generic rows can be retired?" but, rule by rule in
+`guard-secrets-read.py` and `guard-history-rewrite.py`: could this rule fire independent of
+plan/manifest state (which would make it a candidate for a `permissions.deny` fragment even
+though no such row showed up by construction in this corpus)? And does CLAUDE.md's own
+description of guard scope still match what the code denies?
 
 ## What a differently-scoped corpus could show
 
 If a future month's corpus or a different repository produces a non-empty
-`generic_destructive_undetermined` list, the host-basis question this task also asks — a
-documented auto-mode block category, or a `permissions.deny` rule matching the command as
-written — stays unanswered here for the same reason the corpus stays private: the command text
+`generic_destructive_undetermined` list, the host-basis question — would a documented
+auto-mode block category, or a `permissions.deny` rule matching the command as written, have
+stopped it? — stays unanswered here for the same reason the corpus stays private: the command text
 needed to check either basis is redacted. That column in the result table is filled with "n/a"
 for this run because there is nothing in that bucket to assess, not because the question was
 skipped.

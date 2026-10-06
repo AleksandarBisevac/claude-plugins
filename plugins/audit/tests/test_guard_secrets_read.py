@@ -280,6 +280,18 @@ def _classify_secret_alts(pattern_text):
     return buckets
 
 
+def _misplaced_carve_outs(deny):
+    """Every `Read(!...)` entry that does not come after `Read(.env.*)`.
+
+    With no `Read(.env.*)` in the list every carve-out is misplaced, since there
+    is nothing before it for it to carve from."""
+    if not isinstance(deny, list):
+        return []
+    anchor = deny.index("Read(.env.*)") if "Read(.env.*)" in deny else len(deny)
+    return [d for i, d in enumerate(deny)
+            if isinstance(d, str) and d.startswith("Read(!") and i < anchor]
+
+
 def _template_cases(check):
     """The shipped `permissions.deny` fragment must not drift from the guard's
     own `SECRET_PATH`/`_CRED_EXT` silently - every family either guard reads
@@ -332,6 +344,24 @@ def _template_cases(check):
     deny = template.get("permissions", {}).get("deny", [])
     check("gs-tpl5 the fragment carries a deny list", isinstance(deny, list)
           and len(deny) > 0)
+
+    # ORDER is part of the fragment's meaning, so it is read off the parsed
+    # LIST before the set below throws order away: a `!` carve-out reaches only
+    # the rules before it in the same list, and one placed above the rule it
+    # carves from exempts nothing.
+    check("gs-tpl22 every `Read(!...)` carve-out comes AFTER `Read(.env.*)` in "
+          "the fragment's deny list: %r" % (_misplaced_carve_outs(deny),),
+          isinstance(deny, list) and not _misplaced_carve_outs(deny))
+    early = ["Read(!.env.example)", "Read(.env)", "Read(.env.*)",
+             "Read(!.env.sample)"]
+    check("gs-tpl22b ...and the reader names a carve-out placed before it, and "
+          "only that one: %r" % (_misplaced_carve_outs(early),),
+          _misplaced_carve_outs(early) == ["Read(!.env.example)"])
+    check("gs-tpl22c ...and a list with carve-outs but NO `Read(.env.*)` at all "
+          "is reported too, rather than read as nothing out of place: %r"
+          % (_misplaced_carve_outs(["Read(.env)", "Read(!.env.dist)"]),),
+          _misplaced_carve_outs(["Read(.env)", "Read(!.env.dist)"])
+          == ["Read(!.env.dist)"])
     deny = set(deny)
 
     # Read the families straight off the compiled pattern and the extension
