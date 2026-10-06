@@ -1,8 +1,73 @@
 # Contributing
 
-**Read in this order.** The reference documents here are long, and a second
-contributor who opens the wrong one first spends an hour learning the architecture
-before learning how to run the tests.
+## Your first change
+
+One page, so a first PR does not start by reading four documents cover to cover.
+
+**Clone it, then try your working copy in a throwaway repo** (a Claude Code
+session):
+
+```bash
+git clone https://github.com/AleksandarBisevac/claude-plugins
+cd claude-plugins
+```
+
+```
+/plugin marketplace add /abs/path/to/claude-plugins
+/plugin install audit@quality-gates
+/reload-plugins        # after edits to the plugin
+```
+
+`guard-edits` has a dev-mode exception — self-edit protection is off when the
+plugin checkout IS the working repo, so you can develop the plugin under its
+own hooks.
+
+**What to read depends on what you're touching:**
+
+- **A doc fix** (this file, `README.md`, `QUICKSTART.md`, a comment, a
+  docstring) — just the document itself and `CLAUDE.md`'s hard rules on
+  claims and numbers in prose.
+- **A Python fix** under `plugins/audit/{hooks,scripts}` — the `writing-python`
+  skill, and whichever other row of `CLAUDE.md`'s skill table matches the job
+  (`no-silent-pass` for a guard or lint, `before-you-claim` for anything
+  touching a recorded fault).
+- **A UI fix** under `plugins/audit/scripts/ui/` or `_ui_theme.py` — the
+  `refactoring-the-assembled-ui` skill first, then `writing-css` or
+  `writing-javascript` for the surface you're editing.
+- **`PLUGIN-BUILD-GUIDE.md`** is the architecture reference, file by file —
+  open it only when you're adding a new `.py` file and need to know where it
+  belongs and what its checklist owes; it is not an onboarding read.
+
+**One command while you iterate:**
+
+```bash
+tools/verify.sh --fast
+```
+
+**One command before a PR:**
+
+```bash
+tools/verify.sh
+```
+
+This is what CI checks — the same gate set, described gate by gate in *Tests*
+below, plus the selftest suite run again on Windows to prove the interpreter
+fallback. `tools/verify.sh` itself, run plain, needs more than the stdlib the
+plugin ships with: Node (`npx vitest`, `npx ajv-cli`, the browser gates), `ruff`
+and `vermin` (pip-installed; CI's lint job pins their versions), and the Claude
+Code CLI (`claude plugin validate`; CI installs it with `npm install -g`). None
+of these ship with the plugin's own stdlib-only hooks and scripts — they're
+tooling the gate set reaches for, not a product dependency. Pillow is not
+needed by `tools/verify.sh` or CI at all; it's only for manually regenerating
+the demo GIF itself with `tools/capture-demo-gif.py` (no `--check`), a release
+step the one pre-PR command above does not run.
+
+Writing a change a *user* will see? [COMPATIBILITY.md](COMPATIBILITY.md) is the
+contract over the manifest and the config file they own, and
+[QUICKSTART.md](QUICKSTART.md) is the one page a new user reads — a change that
+adds a step to first-run belongs there and nowhere else.
+
+## Reading order beyond this page
 
 1. **This file** — the rulebook. The gates you must run before a PR, the hard rules
    that are enforced by lints rather than by review, and the Decision record at the
@@ -14,30 +79,6 @@ before learning how to run the tests.
 4. **The skill for the language you are about to write** — the table is in
    `CLAUDE.md`. Each states the house dialect and the anti-patterns that have actually
    bitten here.
-
-Writing a change a *user* will see? [COMPATIBILITY.md](COMPATIBILITY.md) is the
-contract over the manifest and the config file they own, and
-[QUICKSTART.md](QUICKSTART.md) is the one page a new user reads — a change that adds
-a step to first-run belongs there and nowhere else.
-
-## Dev setup
-
-```bash
-git clone https://github.com/AleksandarBisevac/claude-plugins
-cd claude-plugins
-```
-
-Try your working copy in a throwaway repo (Claude Code session):
-
-```
-/plugin marketplace add /abs/path/to/claude-plugins
-/plugin install audit@quality-gates
-/reload-plugins        # after edits to the plugin
-```
-
-Note: `guard-edits` has a dev-mode exception — self-edit protection is off when
-the plugin checkout IS the working repo, so you can develop the plugin under
-its own hooks.
 
 ## Tests (run before every PR)
 
