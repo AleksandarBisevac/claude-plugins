@@ -635,7 +635,7 @@
     {
       "id": "P100",
       "title": "a stamp or a close never vouches for a gate verdict that no longer holds",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P100.json",
       "priority": 1
     }
@@ -827,7 +827,9 @@
       "P95.1",
       "P96.1",
       "P97.1",
-      "P99.1"
+      "P99.1",
+      "P100.1",
+      "P100.4-zxo"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -869,7 +871,8 @@
       "P79.11-5bh",
       "P80.22-rtb",
       "P87.2",
-      "P96.1"
+      "P96.1",
+      "P100.4-zxo"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -1007,7 +1010,10 @@
       "P82.14-fye",
       "P82.15-fye",
       "P94.3",
-      "P94.5-579"
+      "P94.5-579",
+      "P100.1",
+      "P100.2",
+      "P100.3-zxo"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1245,7 +1251,8 @@
       "P80.21-rtb",
       "P81.5",
       "P81.14-j7p",
-      "P81.18-j7p"
+      "P81.18-j7p",
+      "P100.2"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -1277,7 +1284,8 @@
       "P82.12-fye",
       "P82.13-fye",
       "P82.14-fye",
-      "P82.15-fye"
+      "P82.15-fye",
+      "P100.4-zxo"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -1505,7 +1513,8 @@
       "P76.3-6qa",
       "P76.4-6qa",
       "P79.10-5bh",
-      "P81.17-j7p"
+      "P81.17-j7p",
+      "P100.2"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -1866,7 +1875,8 @@
       "P84.1",
       "P84.4-791",
       "P84.6-791",
-      "P80.17-rtb"
+      "P80.17-rtb",
+      "P100.2"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
@@ -1958,7 +1968,8 @@
       "P74.3-qq5",
       "P86.4",
       "P80.21-rtb",
-      "P81.7"
+      "P81.7",
+      "P100.2"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -1979,7 +1990,8 @@
       "P50.5",
       "P50.9",
       "P75.4-j5h",
-      "P75.5-j5h"
+      "P75.5-j5h",
+      "P100.3-zxo"
     ],
     "plugins/audit/scripts/_refs.py": [
       "P23.1",
@@ -2081,7 +2093,8 @@
       "P80.17-rtb",
       "P80.22-rtb",
       "P87.2",
-      "P100.2"
+      "P100.2",
+      "P100.3-zxo"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -3452,7 +3465,8 @@
       "P79.3",
       "P84.2",
       "P80.5",
-      "P80.10"
+      "P80.10",
+      "P100.3-zxo"
     ],
     "plugins/audit/tests/test__panel_composition.py": [
       "P18.7",
@@ -3809,7 +3823,8 @@
       "P87.2",
       "P92.3",
       "P94.4",
-      "P100.2"
+      "P100.2",
+      "P100.3-zxo"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
       "P28.2",
@@ -4310,7 +4325,8 @@
       "P86.4",
       "P92.4",
       "P92.6-a1x",
-      "P93.2"
+      "P93.2",
+      "P100.3-zxo"
     ],
     "tools/redfirst.sh": [
       "P55.13"
@@ -4319,7 +4335,8 @@
       "P37.2",
       "P56.2",
       "P92.5",
-      "P92.6-a1x"
+      "P92.6-a1x",
+      "P100.3-zxo"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -4416,7 +4433,8 @@
       "P94.4",
       "P98.1",
       "P98.2-yie",
-      "P99.1"
+      "P99.1",
+      "P100.3-zxo"
     ],
     ".claude/hooks/arm-release-bypass.py": [
       "P80.11",
@@ -4450,7 +4468,8 @@
       "P72.1",
       "P92.1",
       "P92.5",
-      "P92.6-a1x"
+      "P92.6-a1x",
+      "P100.3-zxo"
     ],
     "plugins/audit/scripts/status/_claude_home.py": [
       "P77.2"
@@ -4475,7 +4494,8 @@
       "P74.5-qq5",
       "P74.6-qq5",
       "P81.10",
-      "P100.2"
+      "P100.2",
+      "P100.4-zxo"
     ],
     "plugins/audit/tests/test__verdict_binding.py": [
       "P74.3-qq5",
@@ -4654,6 +4674,9 @@
     ],
     "docs/audit/phases/P86.json": [
       "P91.1"
+    ],
+    "tools/_suite.py": [
+      "P100.3-zxo"
     ]
   },
   "bugs": [
