@@ -1,7 +1,7 @@
 {
   "id": "P105",
   "title": "the panel tells the truth about its own state",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Tasks: (1) Overview branches on manifestExists && !rollup and shows the existing findings box instead of 'No plan yet'. (2) A failed poll shows a persistent offline banner and disables Save; a failed save says nothing was written. (3) Save writes only changed keys, so a default list is not frozen into the config. (4) The example's .claude/state is ignored. (5) GET / requires the token the URL already carries, the pidfile is 0600, and SECURITY.md says the panel trusts every local process of the same user. (6) The Azure DevOps card and column appear only when meta.ado is configured.",
   "desiredOutcome": "the panel shows an unreadable manifest as unreadable, shows a stopped server as stopped with Save disabled, saves only the keys a user changed, leaves a clean tree in the example, and serves its token only to a request that already carries it",
   "testGate": [
@@ -15,21 +15,75 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "6d0ef731b5ac60e6bef3c015cf9967583e3625f8",
+  "branch": "audit/p105-the-panel-tells-the-truth-abou",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P105-R1",
+        "severity": "high",
+        "file": "plugins/audit/scripts/ui/panel/settings.js:209-233",
+        "issue": "The config patch is diffed against the wrong base: the draft is cloned from STATE.config when the form renders, but Save computes configPatch(STATE.config, cfg) against whatever STATE.config holds at Save time, and the disk refresh replaces STATE wholesale even while the form is dirty (it only skips the re-render). A user edits key a, another writer changes key b, the poll refreshes, and Save sends b back at its old value - reverting the other writer's change, while the confirm dialog lists b as the user's change.",
+        "resolution": "fixed in P105.8-m32 (caf2fdbc): Snapshot the base when the form renders and diff every config editor's draft against its own base (configChanges, the edit tracker, discard rows and configPatch), resetting the base from the server's result after a save; a vitest case renders, dirties a, swaps STATE.config with b changed, saves, and asserts the patch names only a.",
+        "fixTask": "P105.8-m32",
+        "commit": "caf2fdbc"
+      },
+      {
+        "id": "P105-R2",
+        "severity": "med",
+        "file": "plugins/audit/commands/panel.md:27-33; plugins/audit/scripts/panel/panel-server.py:312-330",
+        "issue": "Now that GET / needs the token, the URL commands/panel.md tells the agent to relay from --status (printed with ?t=<hidden>) and any bare or bookmarked panel address answer a raw JSON 403 that says nothing about where the real URL is; CHANGELOG [Unreleased] has no entry for the change.",
+        "resolution": "fixed in P105.9-m32 (5034979b): Answer a tokenless GET / with a plain-text 403 that names the way back (/audit:panel status, the pidfile, or relaunch) without echoing a token; say in panel.md that the printed URL is redacted and will not open the page; add an [Unreleased] entry.",
+        "fixTask": "P105.9-m32",
+        "commit": "5034979b"
+      },
+      {
+        "id": "P105-R3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/panel/panel-server.py:714-772",
+        "issue": "The pidfile's temp (.claude/audit-panel.json.tmp-<hex>) holds the live token but is not in _PANEL_PRIVATE_FILES and is never swept, so a launch killed between open and replace leaves a token-bearing untracked file; the docstring's owner-only-from-the-instant claim is POSIX-only; a pidfile written 0644 by a pre-upgrade server keeps that mode until stop or relaunch.",
+        "resolution": "fixed in P105.9-m32 (5034979b): Ignore and sweep stale audit-panel.json.tmp-* files, limit the docstring claim to POSIX, and tighten an existing pidfile on status or the already-running branch.",
+        "fixTask": "P105.9-m32",
+        "commit": "5034979b"
+      },
+      {
+        "id": "P105-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/ui/panel/composition.js:231-239",
+        "issue": "adoVisible counts linked tasks and phases but not linked bugs, so a plan whose only ADO record is a bug link gets the collapsed 'not set up for this plan' card and its banner is hidden.",
+        "resolution": "fixed in P105.10-m32 (17fd2c49): Count linked.bugs too, with a vitest row holding only a bug link.",
+        "fixTask": "P105.10-m32",
+        "commit": "17fd2c49"
+      },
+      {
+        "id": "P105-R5",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md:4776-4777; plugins/audit/scripts/ui/panel/README.md",
+        "issue": "The guide still says the token is required on every /api/* call (leaving out /) and says nothing of the owner-only pidfile; the panel parts README still describes run-status.js as the poll and its badges, though it now owns the liveness state confirmSave reads, and does not name overview.js's planState as a cross-view helper.",
+        "resolution": "fixed in P105.10-m32 (17fd2c49): Extend the guide sentence to / and the owner-only pidfile; update the two README rows.",
+        "fixTask": "P105.10-m32",
+        "commit": "17fd2c49"
+      },
+      {
+        "id": "P105-R6",
+        "severity": "low",
+        "file": "SECURITY.md:660-676",
+        "issue": "SECURITY.md's panel trust-boundary account is now incomplete: it does not say the page itself is token-guarded, that the token rests in .claude/audit-panel.json written owner-only (POSIX), or that a pre-upgrade server keeps the old exposure until restarted. SECURITY.md is owned by another phase.",
+        "resolution": "Reconcile in the phase that owns SECURITY.md when the branches meet: add a short panel trust-boundary paragraph covering the three points."
+      }
+    ],
+    "outcome": "phase review (audit-reviewer, phase mode, no project skill): findings fixed by three fix tasks and confirmed in a re-review, whose small follow-ups were fixed before the phase gate; the SECURITY.md trust-boundary paragraph owned by another phase is reconciled when the branches meet [findings: 6 - 1 high, 1 med, 4 low; 5 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "The panel now tells the truth about its own state. An existing manifest that cannot be read is shown as unreadable, with the reason, in every view instead of inviting /audit:init. A stopped server shows as offline and refuses writes. Saving settings or policy sends a patch of only the reader's own edits, diffed against the config the form was drawn from, so another writer's change is neither reverted nor claimed. The panel's state directory and the pidfile's temp file ignore themselves, so the example leaves a clean tree, and the doctor recognises the temp file. The page itself needs the session token (a tokenless request gets a plain-text refusal naming where the real URL is), and the pidfile is owner-only from creation on POSIX. Azure DevOps controls appear only in a plan that uses ADO. The desired outcome is met.",
   "tasks": [
     {
       "id": "P105.1",
       "title": "Name why an existing manifest could not be read in the state payload",
-      "status": "pending",
+      "status": "done",
       "description": "The panel's unreadable-plan branch can only print the reason the server sends, so build_state must always send one when the manifest file exists and no rollup was built. A file that is not valid JSON already yields a 'cannot parse manifest' finding. A file that parses to something other than an object (a list, a string) reaches the client today with manifestExists true, no rollup and an empty findings list, which is the silent case to close. Add that finding in _panel_state.build_state and pin both shapes.",
       "files": [
         "plugins/audit/scripts/panel/_panel_state.py",
@@ -53,21 +107,37 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c97e007d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_panel_state.build_state sets a parsed flag on a successful load and, when the parsed manifest is not a dict, sends one finding saying the manifest is not a JSON object and naming the parsed type; the dict path is untouched. Cases pin the invalid-JSON prefix, the list and string shapes by their text, and an ordinary manifest getting a rollup and never this finding.",
+        "descriptive": "The panel's state payload now always names why a manifest that exists could not be read, including a file that parses as JSON but is not an object, so the panel never shows an empty findings list beside a missing rollup."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T14:44:44Z",
+      "completedAt": "2026-10-06T15:29:06Z",
+      "verifiedBy": [
+        "pu1",
+        "pu2",
+        "pu2b",
+        "pu3"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T15:26:35Z.55a308",
+        "status": "passed",
+        "at": "2026-10-06T15:26:35Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c97e007d",
+        "at": "2026-10-06T15:29:06Z",
+        "basis": "audit-reviewer (task mode): matches; one medium finding (pu2 did not pin the text) fixed and a string-rooted case added"
+      }
     },
     {
       "id": "P105.2",
       "title": "Show an unreadable manifest as unreadable in every panel view",
-      "status": "pending",
+      "status": "done",
       "description": "Overview, Plan & models, Proposals and the Policy area-rules line each branch on a missing rollup and tell the reader there is no plan and to run /audit:init. That is the wrong advice for a plan file that exists and does not parse. Add one planState() helper (none / unreadable / ready) that all four views read; the unreadable branch renders the existing manifestFindingsBox with the server's findings, says to fix the file or restore it from git, and never names /audit:init. A pin over the assembled page keeps any view from testing the rollup directly. Read plugins/audit/scripts/ui/panel/README.md and print the pins with `python3 tools/count-ui-pins.py` before editing; besides the gates listed, run `npx vitest run` (vitest is not a buildCommands key).",
       "files": [
         "plugins/audit/scripts/ui/panel/overview.js",
@@ -75,7 +145,25 @@
         "plugins/audit/scripts/ui/panel/proposals-view.js",
         "plugins/audit/scripts/ui/panel/policy-view.js",
         "tools/ui-tests/plan-unreadable.test.mjs",
-        "plugins/audit/tests/test__panel_page.py"
+        "plugins/audit/tests/test__panel_page.py",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
       ],
       "tests": {
         "mode": "tdd",
@@ -98,21 +186,37 @@
       "dependsOn": [
         "P105.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a571a5d6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "overview.js gains planState(manifestExists, rollup), answering none, unreadable or ready, and planUnreadableNote(manifestPath), which tells the reader to fix the file or restore it from git and never names /audit:init. Overview, Plan & models, Proposals and the Policy area-rules line all route through planState: an unreadable plan shows the server's findings box and that note, a missing plan keeps today's /audit:init sentence. test__panel_page.py ps1 fails the build when any view reads the rollup outside planState, recognising the dotted, bracket and destructuring spellings, with Overview's single alias read exempted only inside Overview's own part; ps2 plants each bypass spelling in memory and asserts ps1 reports it, ps3 is its clean twin. A vitest suite asserts rendered text for the three views. The panel screenshots were re-captured because the panel sources moved, and this task carries them.",
+        "descriptive": "When the plan file exists but cannot be read, every panel view now says so and shows why, instead of telling the reader there is no plan and to run /audit:init."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T15:29:17Z",
+      "completedAt": "2026-10-06T19:04:17Z",
+      "verifiedBy": [
+        "ps1",
+        "ps2",
+        "ps3",
+        "plan-unreadable.test.mjs"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T17:01:56Z.c267a6",
+        "status": "passed",
+        "at": "2026-10-06T17:01:56Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "a571a5d6",
+        "at": "2026-10-06T19:04:17Z",
+        "basis": "audit-reviewer (task mode): matches; one medium finding (ps1 missed bracket, destructuring and copied-alias spellings) and one low (docstring) fixed, the tightened check proved by planted bypasses"
+      }
     },
     {
       "id": "P105.3",
       "title": "Show a stopped panel server as offline and refuse writes while it is",
-      "status": "pending",
+      "status": "done",
       "description": "When the server stops with a tab open, the page keeps looking live, Save still opens its dialog, and the PUT rejects into an uncaught TypeError with nothing on screen. The poll owns liveness. The first failed poll paints a persistent page-level offline banner, placed like the build-stale notice and wearing .findings warn, sharing that notice's placement rule in app-shell.css rather than adding a second. It also disables every write control, reached through data- attributes, and the next poll that answers clears both. In api(), a write whose fetch rejects resolves to a refusal-shaped answer, so every save path renders it through findingsBox and saveOutcome. Its words state what the page knows: the server did not answer, no write is confirmed, and the edits are still in the form. That is the honest form of 'nothing was written', because a rejected fetch cannot tell a refused connection from an answer lost after the write. Print the pins with `python3 tools/count-ui-pins.py` first; besides the gates listed, run `npx vitest run`.",
       "files": [
         "plugins/audit/scripts/ui/panel/core.js",
@@ -120,7 +224,25 @@
         "plugins/audit/scripts/ui/panel/write-confirmation.js",
         "plugins/audit/scripts/ui/panel-css/app-shell.css",
         "tools/ui-tests/server-offline.test.mjs",
-        "plugins/audit/tests/test__panel_page.py"
+        "plugins/audit/tests/test__panel_page.py",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png",
+        "docs/screenshots/captured-at.json"
       ],
       "tests": {
         "mode": "tdd",
@@ -142,21 +264,35 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "cb83c299",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "core.js api(): a write whose fetch rejects resolves to a refusal-shaped answer carrying a no-answer finding; a read whose fetch rejects still rejects, tagged no-answer. run-status.js: the poll owns liveness - a rejected poll sets an offline state that marks the root, adds one page-level notice and makes write controls (reached through data- hooks) unavailable, and the next poll that answers clears both, handing back only what it took. write-confirmation.js: confirmSave refuses while offline before any dialog; saveOutcome renders the no-answer case. app-shell.css shares one placement rule between the offline notice and the build-stale notice. The D9 pin is restated; a vitest suite covers the behaviour with allow twins. The panel screenshots were re-captured because the panel sources moved. Left for later: the report button has only an id and is not on the control list, and appearance-view.js chains a read after its theme writes.",
+        "descriptive": "When the panel server stops with a tab open, the page now shows that it is offline, marks its write controls unavailable and refuses Save, and a write that gets no answer says the server did not answer and the edits are still in the form, instead of failing silently."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T14:44:45Z",
+      "completedAt": "2026-10-06T15:29:05Z",
+      "verifiedBy": [
+        "D9",
+        "server-offline.test.mjs"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T15:24:52Z.1dc9a1",
+        "status": "passed",
+        "at": "2026-10-06T15:24:52Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "cb83c299",
+        "at": "2026-10-06T15:29:05Z",
+        "basis": "audit-reviewer (task mode): every write path receives the refusal answer; one shared placement rule; no findings; pre-existing appearance-view.js gap recorded"
+      }
     },
     {
       "id": "P105.4",
       "title": "Save only the config keys the form changed",
-      "status": "pending",
+      "status": "done",
       "description": "Settings Save sends the whole config the form holds, so the server rewrites keys nobody changed. Adding one entry to a list key that was unset (exemptGlobs) writes the whole shipped default list into the file without saying so. Send a patch instead: one entry per changed key, addressed by key segments rather than a dotted string, because a pricing key can contain a dot. Apply it in _panel_write through write_config(mutate=...) against the config read under the write lock; COMPATIBILITY.md puts the panel's HTTP endpoints outside the version contract, so the payload may change shape. The confirm dialog marks a list row whose key was unset and has a shipped default as pinning that default, so later plugin defaults stop reaching the project. Its note also says the file is rewritten in canonical JSON layout, because the stdlib keeps no formatting. Besides the gates listed, run `npx vitest run`.",
       "files": [
         "plugins/audit/scripts/ui/panel/settings.js",
@@ -189,21 +325,38 @@
       "dependsOn": [
         "P105.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d662eae3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Settings Save sends a patch instead of the whole config. _panel_write gains apply_config_patch and write_config_patch: each entry addresses a key by a list of segments (a dotted string is refused, because a pricing key can hold a dot) and either sets a value or removes the key; every entry is validated before any read or lock; the patch is applied through write_config(mutate=...) to the config read under the write lock, so keys nobody changed keep the values read from disk and another writer's change to a different key survives; removals run before writes and delete containers they empty; write_config's own validation still runs on the result. panel-server routes PUT /api/config to it. In the page, cfDiff decides by presence: a key absent from the draft is a removal and a key present is written even when it equals the shipped default, so an explicit value stays pinned as COMPATIBILITY.md promises; the list editor no longer writes a drawn-in default into the draft until an entry actually changes. The confirm dialog marks a row that pins a non-empty shipped default list, and its note says the file is rewritten in canonical JSON layout. Python cases cp1-cp5 and a vitest file that includes a case sending the page's patch through Python's apply_config_patch; the pin note's placement is checked by rendering the dialog.",
+        "descriptive": "Saving Settings in the panel now writes only the keys the user changed, on top of the file as it is on disk, and a value set equal to today's default stays written as an explicit choice."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T15:29:18Z",
+      "completedAt": "2026-10-06T16:24:10Z",
+      "verifiedBy": [
+        "cp1",
+        "cp2",
+        "cp3",
+        "cp4",
+        "cp5"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T16:17:33Z.8eba46",
+        "status": "passed",
+        "at": "2026-10-06T16:17:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d662eae3",
+        "at": "2026-10-06T16:24:10Z",
+        "basis": "audit-reviewer (task mode, opus): matches; three findings fixed as proposed (presence decides removal, pin only for a non-empty default, dialog placement case), each guarded by a mutation"
+      }
     },
     {
       "id": "P105.5",
       "title": "Make the panel's state directory ignore itself",
-      "status": "pending",
+      "status": "done",
       "description": "The first panel launch writes .claude/state/panel-openstate.json through a plain makedirs. In a project where no hook has run yet, the committed acme-store example included, the state directory then has no ignore rule and the launch leaves an untracked file, contrary to examples/README.md. Have _panel_runstate.record_opened create the directory through the hooks' own _config.ensure_local_dir (reached via _paths.hooks_config()), which drops the same self-ignoring .gitignore every other plugin-local directory gets, instead of adding an ignore line for the example only. Correct the first-launch sentence in examples/README.md. In the plugin README, name the state file beside the pidfile and the launch log, naming the files rather than counting them.",
       "files": [
         "plugins/audit/scripts/panel/_panel_runstate.py",
@@ -229,26 +382,38 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "27a7a46a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_panel_runstate.record_opened creates the state directory through the hooks' ensure_local_dir (reached via _paths.hooks_config()), which drops a self-ignoring .gitignore on first creation and never overwrites an existing one. Two cases in a real git fixture: a fresh project ends with the marker and a clean git status, and an existing marker is left byte-identical. examples/README.md's first-launch sentence and the plugin README's panel-files paragraph now say what the code does, naming the files rather than counting them.",
+        "descriptive": "A first panel launch in a fresh clone no longer leaves an untracked state file: the state directory now ignores itself the way every other plugin-local directory does."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T14:44:45Z",
+      "completedAt": "2026-10-06T15:29:06Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T15:28:35Z.6e815e",
+        "status": "passed",
+        "at": "2026-10-06T15:28:35Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "27a7a46a",
+        "at": "2026-10-06T15:29:06Z",
+        "basis": "audit-reviewer (task mode): matches, no findings; no other plain makedirs writes the state directory"
+      }
     },
     {
       "id": "P105.6",
       "title": "Require the session token on GET / and write the pidfile 0600",
-      "status": "pending",
+      "status": "done",
       "description": "GET / hands the page, with the session token substituted into it, to any local request that passes the Host check. The pidfile holding the same token is written with whatever mode the umask gives. Route / through the token guard the API already uses. The printed URL and the pidfile's url already carry ?t=, and a relaunch opens that url, so the browser and the screenshot tool keep working. Write the pidfile owner-only, tighten an existing one, and update the safety line in commands/panel.md to say the page itself needs the token. This phase's description also names a SECURITY.md sentence on the panel's trust boundary; that file belongs to the phase that owns SECURITY.md and is not edited here.",
       "files": [
         "plugins/audit/scripts/panel/panel-server.py",
         "plugins/audit/tests/test_panel_server.py",
-        "plugins/audit/commands/panel.md"
+        "plugins/audit/commands/panel.md",
+        "CONTRIBUTING.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -272,27 +437,58 @@
       "dependsOn": [
         "P105.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "16a7d2bf",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "panel-server.py's GET / now goes through the same guard every /api/* route uses (host check and token), so the page, which carries the session token, is no longer handed to any local request that passes the Host check; /favicon.ico still answers without a token. The printed URL and the pidfile's url already carry ?t=, so the browser, a relaunch and the screenshot tool keep working (tools/capture-screenshots.mjs navigates to the pidfile's url). The pidfile is written owner-only from the start: a temp file in the same directory opened with O_WRONLY|O_CREAT|O_EXCL at 0o600, a defensive fchmod on the descriptor where available (a failure is reported on stderr, not swallowed), then os.replace onto the real path, so there is no create-then-chmod window and an existing wider file is replaced; a failed write removes its temp file. commands/panel.md's safety line says the page itself needs the token, and CONTRIBUTING.md's module-graph passage no longer says / hands the token to any loopback client, keeping the old measurement as history. Cases in test_panel_server.py: GET / without the token is 403 with the token absent from the body, with it 200; /favicon.ico needs none; a fresh pidfile is 0600, an existing 0644 one is tightened, and under umask 0o022 with os.chmod made a no-op the pidfile is still 0600 with no temp file left. SECURITY.md's panel trust-boundary sentence belongs to the phase that owns SECURITY.md and is not edited here.",
+        "descriptive": "The panel's page now asks for the same per-launch token as its API, so another local process can no longer read the token off the page, and the file that stores it is private to the user from the moment it is written."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T16:24:44Z",
+      "completedAt": "2026-10-06T19:55:28Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T19:55:17Z.882b8c",
+        "status": "passed",
+        "at": "2026-10-06T19:55:17Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "16a7d2bf",
+        "at": "2026-10-06T19:55:28Z",
+        "basis": "audit-reviewer (task mode), two rounds: matches; the medium finding (a create-then-chmod window on the pidfile) fixed with an O_EXCL owner-only temp and replace, proven under a no-op chmod; the low (a stale CONTRIBUTING sentence) fixed"
+      }
     },
     {
       "id": "P105.7",
       "title": "Show the Azure DevOps column and card only where the plan uses ADO",
-      "status": "pending",
+      "status": "done",
       "description": "Plan & models draws the ADO parent column, the 'on the board' lever and the whole connector card for every project, including those that never set meta.ado, with checked boxes under a 'Not configured' banner. Add one adoVisible(comp) predicate. It is true when adoStatus.configured is true or when any phase or task carries an ADO link or declaration, so nothing already recorded is hidden. The column and its levers render only under it; otherwise the card collapses to one line pointing at /audit:sync connect, which unfolds to today's form. The committed example and the demo manifest both set meta.ado, so their screenshots should not move. Print the pins with `python3 tools/count-ui-pins.py` first; besides the gates listed, run `npx vitest run`.",
       "files": [
         "plugins/audit/scripts/ui/panel/composition.js",
         "plugins/audit/scripts/ui/panel/ado-connector.js",
         "tools/ui-tests/ado-panel.test.mjs",
-        "plugins/audit/tests/test__panel_page.py"
+        "plugins/audit/tests/test__panel_page.py",
+        "plugins/audit/scripts/panel/_panel_composition.py",
+        "plugins/audit/tests/test__panel_composition.py",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
       ],
       "tests": {
         "mode": "tdd",
@@ -315,16 +511,265 @@
       "dependsOn": [
         "P105.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7d4c5275",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "composition.js gains adoVisible(comp): true when the plan's ADO connector is configured, when adoStatus counts a link on a phase or a task, or when a phase declares adoParent or adoTracked. The composition table computes it once and builds the \"on the board\" legend lever, the sixth column heading, the phase row's ADO cell and the task row's empty sixth cell only when it holds. ado-connector.js renders the card unchanged when it holds and otherwise wraps the same form in a collapsed <details> whose one-line summary (adoCollapsedSummary) names /audit:sync connect. A task's ADO evidence is read from the counted adoStatus.linked.tasks, because the composition payload carries no per-task ADO field. Cases: vitest suites in tools/ui-tests/ado-panel.test.mjs for adoVisible in both directions and the summary words; test__panel_page.py av1/av2 pin the gating. Red-first proved for av1/av2 (481/483 at HEAD); the vitest half could not be proved in the throwaway tree, which holds no node_modules. Full vitest and test__panel_page.py were green after the edits.\nAfter review: the connector card's choice between the plain card and the collapsed <details>, and the <summary> built from adoCollapsedSummary(), are pinned on the assembled page (av3, red against the reverted ternary); the collapsed card keeps its open state across re-renders in COMPF.adoOpen, recorded from the details element's toggle event (av4 and a vitest case); and a task's own adoParent declaration now counts, carried by _panel_composition.py on each task row in the same three-shape spelling the phase rows use (apt1, red-first proved 106/107 at HEAD), with adoVisible reading it. The panel screenshots were re-captured by the orchestrator because the panel sources moved, and this task carries them.",
+        "descriptive": "A plan that never set up Azure DevOps no longer sees an ADO column, board lever and full connector form in the panel; the connector collapses to one line pointing at /audit:sync connect, and opens again the moment any phase or task carries an ADO link or declaration."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T19:04:32Z",
+      "completedAt": "2026-10-06T19:55:27Z",
+      "verifiedBy": [
+        "av1",
+        "av2",
+        "av3",
+        "av4",
+        "apt1",
+        "ado-panel.test.mjs"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T19:49:05Z.47fcad",
+        "status": "passed",
+        "at": "2026-10-06T19:49:05Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7d4c5275",
+        "at": "2026-10-06T19:55:27Z",
+        "basis": "audit-reviewer (task mode): one medium (the collapse had no failing test), one low (the card snapped shut on refresh) and the intent divergence (task-level declarations were not read) fixed; the payload now carries the task's declaration and every fix has a proven red"
+      }
+    },
+    {
+      "id": "P105.8-m32",
+      "title": "every config editor diffs its draft against the config it rendered from",
+      "status": "done",
+      "description": "Fixes review finding P105-R1. Every config editor in the panel diffs its draft against a base snapshotted when its form rendered, never against whatever STATE.config holds at the moment of Save: the disk refresh replaces STATE while a form is dirty, so diffing against it sends another writer's change back at its old value and lists it in the confirm dialog as the user's own. configChanges, the edit tracker, discard rows and configPatch all take that base; after a successful save the base is reset from the server's answer. Find every caller of configChanges and configPatch (settings and the policy view at least) and fix the class, not one form.",
+      "files": [
+        "plugins/audit/scripts/ui/panel/settings.js",
+        "plugins/audit/scripts/ui/panel/write-confirmation.js",
+        "plugins/audit/scripts/ui/panel/policy-state.js",
+        "tools/ui-tests/config-patch.test.mjs",
+        "plugins/audit/tests/test__panel_page.py",
+        "plugins/audit/scripts/ui/panel/policy-view.js",
+        "plugins/audit/scripts/ui/panel/overview.js",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "plugins/audit/scripts/panel/panel-server.py",
+        "tools/ui-tests/policy-shape.test.mjs",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ui-tests/config-patch.test.mjs: a form rendered, key a dirtied, STATE.config replaced with key b changed by another writer, then Save: the patch and the confirm rows name only a"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "caf2fdbc",
+      "outcome": {
+        "technical": "Every config editor in the panel now diffs its draft against the config it was drawn from, never against whatever STATE holds when Save is pressed. Settings snapshots a base beside its draft at render; the edit tracker, Save and Discard rows and the sent patch all diff against it (configChanges(cfg, base) with no fallback to STATE.config, configPatch(base, cfg, ...)), and the base moves only on the server's yes. The policy view now saves through the same single write path: PUT /api/config with a patch built by policyPatch() against PBASE, which pTake sets together with the draft at boot, at the clean-tab refresh, on Discard and after a save; the config patch writer already handles nested paths, lists and removals and validates the policy block through _policy.validate_policy, so a refused policy is refused with the same finding and nothing is written. PUT /api/policy remains for callers that mean to replace the block; the panel no longer writes through it. cfDiff no longer emits an empty-object leaf as an entry of its own when the other side holds keys under that path, which had let removing the reader's last rule write policy: {} and wipe another writer's new rule. Docstrings in policy-state.js, _panel_write.py and overview.js say what is now true. Cases: three settings and three policy vitest cases in config-patch.test.mjs (another writer's change survives and is not listed; a removal does not take another writer's rule; a clean save reads clean), cp6 and cp7 in test__panel_write.py (a policy patch keeps another writer's rule; a malformed policy patch is refused naming the field), and re-spelled pins in test__panel_page.py (both /api/config call sites send a patch; nothing but pTake assigns PDRAFT or PBASE; no PUT to /api/policy). Reds in a scratch copy with node_modules linked: at HEAD 5 failed of 23, the new cases among them; mutations removing the empty-object skip or the base move each reddened their named case. cp6/cp7 lock server behaviour that was already right.\nAfter re-review: cfDiff's doc states that a branch the draft clears is written as absence, never {} - its leaves are removed and the server prunes the container - and that hooks/_config._deep_merge treats a literal {} at depth two as a replacement, so a form meaning a literal {} must send it itself; one consequence is that clearing a Settings branch such as usage.pricing now restores the shipped table instead of replacing it with nothing. A vitest case and cp8 pin the cleared outcome (policy absent on disk); flipping each case's expected outcome, and deleting the clearing skip, turned them red. The panel screenshots were re-captured by the orchestrator because the panel sources moved, and this task carries them.",
+        "descriptive": "Saving settings or policy in the panel no longer reverts, or claims as yours, a change someone else made while your form was open; both now save as a patch of only your own edits."
+      },
+      "startedAt": "2026-10-06T20:02:33Z",
+      "completedAt": "2026-10-06T21:22:17Z",
+      "verifiedBy": [
+        "config-patch.test.mjs",
+        "cp6",
+        "cp7",
+        "cp8"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T21:12:55Z.d7ef84",
+        "status": "passed",
+        "at": "2026-10-06T21:12:55Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "caf2fdbc",
+        "at": "2026-10-06T21:22:17Z",
+        "basis": "audit-reviewer (phase mode) re-review: R1 fixed as a class (Settings and Policy share one patch write path and a base taken at render); its question about a deliberately cleared branch answered by documenting and pinning absence"
+      }
+    },
+    {
+      "id": "P105.9-m32",
+      "title": "a tokenless panel page names the way back, and the pidfile's temp is ignored and swept",
+      "status": "done",
+      "description": "Fixes review findings P105-R2 and P105-R3. A GET / without the token answers a plain-text 403 that says where the real URL is (/audit:panel status, the pidfile .claude/audit-panel.json, or a relaunch) and echoes no token; commands/panel.md says the URL --status prints is redacted and will not open the page, and that the browser was opened with the full one; CHANGELOG [Unreleased] records that a panel URL without its token now answers 403. The pidfile's temp file is covered by the panel's self-ignore rows and stale audit-panel.json.tmp-* files are swept on launch and stop; the owner-only claim in the docstring is limited to POSIX; an existing pidfile is tightened to owner-only when status or the already-running branch reads it.",
+      "files": [
+        "plugins/audit/scripts/panel/panel-server.py",
+        "plugins/audit/tests/test_panel_server.py",
+        "plugins/audit/commands/panel.md",
+        "CHANGELOG.md",
+        "examples/panel.sh",
+        "examples/README.md",
+        "plugins/audit/scripts/status/_doctor_hygiene.py",
+        "plugins/audit/tests/test__doctor_hygiene.py",
+        "examples/acme-store/.claude/.gitignore"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_panel_server.py: GET / without the token answers a text/plain 403 naming /audit:panel status and the pidfile, with no token in the body",
+          "plugins/audit/tests/test_panel_server.py: a stale audit-panel.json.tmp-* left by a killed launch is ignored by the panel's self-ignore rows and removed on the next launch"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "5034979b",
+      "outcome": {
+        "technical": "A tokenless request for the panel page now answers a text/plain 403 (_TOKENLESS_PAGE_TEXT) that names .claude/audit-panel.json, /audit:panel status (whose printed URL is redacted) and a relaunch, and echoes nothing from the request; a bad host and the /api/* refusals stay JSON, because the page's own script reads those. The pidfile's temp file is named by _PIDFILE_TMP_PREFIX and covered by a new audit-panel.json.tmp-* row in the panel's self-ignore table; stale temp files are swept on launch (after the already-running check) and on stop, with any that cannot be removed reported on stderr; an existing pidfile is tightened to owner-only on POSIX when status or the already-running branch reads it, and the owner-only docstring claim is limited to POSIX. Every reader of the ignore table follows: the doctor's hygiene check keeps its own copy of the rows (layer rules forbid importing the server), learns glob rows (fnmatch for basenames, a :(glob) pathspec for git ls-files) and names a tracked temp file with a git rm --cached repair; the example's committed .claude/.gitignore carries the new row so a first launch leaves its tree clean. examples/panel.sh --detach no longer offers the redacted URL as one that opens: it says the browser was opened at the full URL and names the pidfile, and under --no-open, where nobody else opens the page, it prints the full URL with the same token note the server prints; examples/README.md, commands/panel.md (whose launch step now only checks the panel came up) and the CHANGELOG [Unreleased] entries say the same. Cases: tp1, tp1b, tp1c, tp2, tp2b, tp3, tp3b, tp4, tm1, ps1, ps1b and eg1 in test_panel_server.py (i4 and i6 rewritten), dh32, dh33, dh33b and dh33c in test__doctor_hygiene.py. Reds via the helper: test_panel_server 90/99 at HEAD and test__doctor_hygiene 36/37 (dh33); eg1 was red after the server change and before the .gitignore edit; the over-fire mutation that made /api answer text turned tp1c red.\nAfter re-review: the sweep skips any temp file younger than a named grace period by mtime, so it never removes another launch's in-flight write, and treats a file that vanished meanwhile as fine (tp5: a fresh temp survives, an hour-old one is removed; red against the un-aged sweep before the fix). examples/panel.sh reads the pidfile's url once before choosing what to say: with none recorded, both modes say the launch did not come up instead of claiming a browser was opened (ps1c, red before the fix). The comment above do_GET's / route says it runs the same Host and token checks as the API, with only the refusal's shape differing.",
+        "descriptive": "Opening the panel without its token now gives a readable message saying where the real address is, a launch interrupted mid-write no longer leaves a token-bearing file that git would pick up, and the example launcher no longer offers an address that will not open."
+      },
+      "startedAt": "2026-10-06T20:02:34Z",
+      "completedAt": "2026-10-06T21:22:17Z",
+      "verifiedBy": [
+        "tp1",
+        "tp1b",
+        "tp1c",
+        "tp2",
+        "tp2b",
+        "tp3",
+        "tp3b",
+        "tp4",
+        "tp5",
+        "tm1",
+        "ps1",
+        "ps1b",
+        "ps1c",
+        "eg1",
+        "dh32",
+        "dh33",
+        "dh33b",
+        "dh33c"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T21:06:23Z.a11d59",
+        "status": "passed",
+        "at": "2026-10-06T21:06:23Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "5034979b",
+        "at": "2026-10-06T21:22:17Z",
+        "basis": "audit-reviewer (phase mode) re-review: R2 and R3 fixed as a class (every reader of the ignore table follows); the follow-ups it flagged (an unaged sweep racing a live launch, a launcher claiming a browser opened after a failed launch, a stale comment) fixed with reds"
+      }
+    },
+    {
+      "id": "P105.10-m32",
+      "title": "a bug link keeps the ADO card open, and the panel docs name what moved",
+      "status": "done",
+      "description": "Fixes review findings P105-R4 and P105-R5. adoVisible also counts linked bugs, so a plan whose only ADO record is a bug link keeps its connector card open. PLUGIN-BUILD-GUIDE.md's panel token sentence covers the page itself as well as /api/*, and names the owner-only pidfile written through a temp file and a replace; the panel parts README says run-status.js owns the page's liveness state that write confirmation reads, and that overview.js's planState is a helper other views call.",
+      "files": [
+        "plugins/audit/scripts/ui/panel/composition.js",
+        "tools/ui-tests/ado-panel.test.mjs",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/ui/panel/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ui-tests/ado-panel.test.mjs: adoVisible is true for a plan whose only ADO record is a linked bug"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "17fd2c49",
+      "outcome": {
+        "technical": "adoVisible in composition.js also counts linked bugs, so a plan whose only Azure DevOps record is a linked bug keeps its connector card open instead of reading as not set up; the existing counted-link case in tools/ui-tests/ado-panel.test.mjs now asserts that a bug link alone counts (red against HEAD's code in a scratch copy with node_modules linked: 1 failed, 51 passed; green with the fix, 52/52). PLUGIN-BUILD-GUIDE.md's panel paragraph says the page makes the same Host and token checks as the API inline, answering a person with a plain-text refusal and the script with JSON, and that on POSIX the pidfile is owner-only from creation through a temp file in the same directory and a replace (checked against panel-server.py's do_GET and _write_pidfile). The panel parts README says run-status.js owns the page's liveness state, which write confirmation reads before sending a save, and that overview.js's planState is a helper composition, policy and proposals views call (checked by grep).",
+        "descriptive": "A plan whose only Azure DevOps record is a linked bug keeps its connector card open, and the build guide and the panel parts README describe the token check and the parts as they now are."
+      },
+      "startedAt": "2026-10-06T20:02:34Z",
+      "completedAt": "2026-10-06T21:22:16Z",
+      "verifiedBy": [
+        "ado-panel.test.mjs"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T20:59:46Z.918cb5",
+        "status": "passed",
+        "at": "2026-10-06T20:59:46Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "17fd2c49",
+        "at": "2026-10-06T21:22:16Z",
+        "basis": "audit-reviewer (phase mode) re-review: R4 and R5 fixed; the guide wording it then flagged (same checks inline, owner-only on POSIX) fixed"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-10-06T14:44:44Z",
+  "testEvidence": {
+    "runId": "2026-10-06T21:29:10Z.a03a4f",
+    "status": "passed",
+    "at": "2026-10-06T21:29:10Z"
+  }
 }

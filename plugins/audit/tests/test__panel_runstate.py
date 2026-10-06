@@ -425,6 +425,39 @@ def _cases(check):
           "id, no host, no path, no page: %r" % (_or_disk,),
           set(_or_disk) == {"count"})
 
+    # record_opened must make the state directory ignore ITSELF, through the
+    # hooks' own ensure_local_dir, rather than relying on an ignore line an
+    # example project happens to commit for it. A plain `makedirs` left a
+    # fresh project's launch with no ignore rule at all and an untracked file.
+    _gi_proj = tempfile.mkdtemp(prefix="panel-runstate-git-")
+    try:
+        _sp.run(["git", "init", "-q", _gi_proj], check=True,
+                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        M.record_opened(_gi_proj)
+        _gi_dir = os.path.dirname(M._open_state_path(_gi_proj, None))
+        _gi_marker = os.path.join(_gi_dir, ".gitignore")
+        _gi_body1 = (open(_gi_marker, encoding="utf-8").read()
+                     if os.path.isfile(_gi_marker) else "")
+        _gi_status = _sp.run(["git", "-C", _gi_proj, "status", "--porcelain"],
+                             stdout=_sp.PIPE, stderr=_sp.DEVNULL, text=True)
+        check("record_opened in a fresh git project leaves the state "
+              "directory holding a .gitignore of '*', and git status "
+              "--porcelain lists nothing: body=%r status=%r"
+              % (_gi_body1, _gi_status.stdout),
+              _gi_body1.rstrip("\n").endswith("*")
+              and _gi_status.returncode == 0
+              and _gi_status.stdout.strip() == "")
+
+        M.record_opened(_gi_proj)
+        _gi_body2 = (open(_gi_marker, encoding="utf-8").read()
+                     if os.path.isfile(_gi_marker) else "")
+        check("an existing state/.gitignore is left byte-identical by "
+              "record_opened - ensure_local_dir never overwrites a marker "
+              "that is already there: %r" % ((_gi_body1, _gi_body2),),
+              _gi_body1 == _gi_body2 and _gi_body1 != "")
+    finally:
+        shutil.rmtree(_gi_proj, ignore_errors=True)
+
     shutil.rmtree(tmp, ignore_errors=True)
 
 

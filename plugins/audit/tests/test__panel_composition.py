@@ -338,6 +338,35 @@ def _cases(check):
           sorted(_ap_rows["P1"]["adoParentResolved"]) == ["basis", "id",
                                                           "source"],
           repr(sorted(_ap_rows["P1"]["adoParentResolved"])))
+    # --- ap-t: a TASK's own adoParent, the same marker one node type over -----
+    # The panel offers no control for this field (a task's parent cell is
+    # always empty - under phaseWorkItems its parent IS the work item of its
+    # phase, and with that off it is a manifest edit this table does not
+    # offer), so this is read by `adoVisible` alone: a plan whose only ADO
+    # record is a task-level declaration must not read as unused. Same three
+    # states, same reader (`_ado_parent_of`), one node type lower.
+    _apt_v = M._composition_view({
+        "meta": {}, "phases": [{"id": "P1", "title": "t", "status": "pending",
+                                "tasks": [
+                                    {"id": "P1.1", "title": "a", "status": "pending",
+                                     "adoParent": {"id": 77, "source": "declared"}},
+                                    {"id": "P1.2", "title": "b", "status": "pending",
+                                     "adoParent": None},
+                                    {"id": "P1.3", "title": "c", "status": "pending"},
+                                ]}]})
+    _apt_rows = dict((r["id"], r) for r in _apt_v["tasks"])
+    check("apt1 a task's own adoParent reaches ITS row in the same shape a "
+          "phase's does: declared verbatim, explicit null as null, and an "
+          "absent key as the use-fallback marker - so adoVisible can read a "
+          "task's declaration the same way it reads a phase's",
+          # .get throughout, as ap3 above is for a KeyError rather than a
+          # missing one - the field this case is FOR does not exist on a task
+          # row at all before the fix, and a bracket access would abort the
+          # whole suite instead of failing this one assertion.
+          _apt_rows["P1.1"].get("adoParent") == {"id": 77, "source": "declared"}
+          and _apt_rows["P1.2"].get("adoParent") is None
+          and _apt_rows["P1.3"].get("adoParent") == _adop.use_fallback(),
+          repr(dict((k, v.get("adoParent")) for k, v in _apt_rows.items())))
     _app = _apv["adoParents"]
     # THE INPUTS THAT TELL THE TWO IMPLEMENTATIONS APART. On a usable integer a
     # re-read of `parentWorkItem` gives the same answer `resolve` does, so a

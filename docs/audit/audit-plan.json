@@ -666,7 +666,7 @@
     {
       "id": "P105",
       "title": "the panel tells the truth about its own state",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P105.json"
     },
     {
@@ -894,7 +894,8 @@
       "P97.1",
       "P99.1",
       "P100.1",
-      "P100.4-zxo"
+      "P100.4-zxo",
+      "P105.9-m32"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -963,7 +964,8 @@
       "P103.10",
       "P103.12",
       "P104.7",
-      "P103.14-xi3"
+      "P103.14-xi3",
+      "P105.6"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -1100,7 +1102,8 @@
       "P100.1",
       "P100.2",
       "P100.3-zxo",
-      "P103.8"
+      "P103.8",
+      "P105.10-m32"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1231,7 +1234,11 @@
       "P84.7-791",
       "P80.15-rtb",
       "P103.8",
-      "P104.6"
+      "P104.6",
+      "P105.3",
+      "P105.2",
+      "P105.7",
+      "P105.8-m32"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
@@ -1513,7 +1520,8 @@
     ],
     "plugins/audit/commands/panel.md": [
       "P57.3",
-      "P105.6"
+      "P105.6",
+      "P105.9-m32"
     ],
     "plugins/audit/commands/phase.md": [
       "P7.1",
@@ -2903,7 +2911,8 @@
       "P74.6-qq5",
       "P80.14-rtb",
       "P80.15-rtb",
-      "P81.10"
+      "P81.10",
+      "P105.7"
     ],
     "plugins/audit/scripts/panel/_panel_discovery.py": [
       "P12.2",
@@ -2962,7 +2971,8 @@
       "P84.7-791",
       "P84.8-791",
       "P84.9-791",
-      "P105.4"
+      "P105.4",
+      "P105.8-m32"
     ],
     "plugins/audit/scripts/panel/panel-server.py": [
       "P10.2",
@@ -2982,7 +2992,9 @@
       "P80.8",
       "P102.10",
       "P105.4",
-      "P105.6"
+      "P105.6",
+      "P105.9-m32",
+      "P105.8-m32"
     ],
     "plugins/audit/scripts/report/_evidence_view.py": [
       "P32.7",
@@ -3071,7 +3083,8 @@
       "P47.2",
       "P49.3",
       "P54.2",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P105.9-m32"
     ],
     "plugins/audit/scripts/status/_doctor_policy.py": [
       "P18.6",
@@ -3231,7 +3244,8 @@
       "P74.3-qq5",
       "P74.4-qq5",
       "P105.2",
-      "P105.7"
+      "P105.7",
+      "P105.10-m32"
     ],
     "plugins/audit/scripts/ui/panel/overview.js": [
       "P20.4",
@@ -3242,12 +3256,14 @@
       "P74.5-qq5",
       "P74.6-qq5",
       "P80.15-rtb",
-      "P105.2"
+      "P105.2",
+      "P105.8-m32"
     ],
     "plugins/audit/scripts/ui/panel/write-confirmation.js": [
       "P18.7",
       "P105.3",
-      "P105.4"
+      "P105.4",
+      "P105.8-m32"
     ],
     "plugins/audit/scripts/ui/report": [
       "P55.7",
@@ -3400,7 +3416,8 @@
     "plugins/audit/tests/test__doctor_hygiene.py": [
       "P18.6",
       "P18.9",
-      "P75.2-j5h"
+      "P75.2-j5h",
+      "P105.9-m32"
     ],
     "plugins/audit/tests/test__doctor_policy.py": [
       "P18.6",
@@ -3711,7 +3728,8 @@
       "P74.6-qq5",
       "P80.14-rtb",
       "P80.15-rtb",
-      "P81.10"
+      "P81.10",
+      "P105.7"
     ],
     "plugins/audit/tests/test__panel_page.py": [
       "P18.7",
@@ -3724,7 +3742,8 @@
       "P80.15-rtb",
       "P105.2",
       "P105.3",
-      "P105.7"
+      "P105.7",
+      "P105.8-m32"
     ],
     "plugins/audit/tests/test__panel_policy.py": [
       "P59.10",
@@ -3754,7 +3773,8 @@
       "P84.7-791",
       "P84.8-791",
       "P84.9-791",
-      "P105.4"
+      "P105.4",
+      "P105.8-m32"
     ],
     "plugins/audit/tests/test__priority.py": [
       "P63.8"
@@ -4276,7 +4296,8 @@
       "P80.8",
       "P84.8-791",
       "P94.1",
-      "P105.6"
+      "P105.6",
+      "P105.9-m32"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6",
@@ -4854,103 +4875,171 @@
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
-      "P104.6"
+      "P104.6",
+      "P105.3",
+      "P105.2",
+      "P105.7",
+      "P105.8-m32"
     ],
     "docs/screenshots/panel-blocks.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
-      "P104.6"
+      "P104.6",
+      "P105.3",
+      "P105.2",
+      "P105.7",
+      "P105.8-m32"
     ],
     "docs/screenshots/panel-composition-expanded.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
-      "P104.6"
+      "P104.6",
+      "P105.3",
+      "P105.2",
+      "P105.7",
+      "P105.8-m32"
     ],
     "docs/screenshots/panel-composition.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
-      "P104.6"
+      "P104.6",
+      "P105.3",
+      "P105.2",
+      "P105.7",
+      "P105.8-m32"
     ],
     "docs/screenshots/panel-confirm.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
-      "P104.6"
+      "P104.6",
+      "P105.3",
+      "P105.2",
+      "P105.7",
+      "P105.8-m32"
     ],
     "docs/screenshots/panel-dark.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
-      "P104.6"
+      "P104.6",
+      "P105.3",
+      "P105.2",
+      "P105.7",
+      "P105.8-m32"
     ],
     "docs/screenshots/panel-gate.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
-      "P104.6"
+      "P104.6",
+      "P105.3",
+      "P105.2",
+      "P105.7",
+      "P105.8-m32"
     ],
     "docs/screenshots/panel-guards.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
-      "P104.6"
+      "P104.6",
+      "P105.3",
+      "P105.2",
+      "P105.7",
+      "P105.8-m32"
     ],
     "docs/screenshots/panel-help.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
-      "P104.6"
+      "P104.6",
+      "P105.3",
+      "P105.2",
+      "P105.7",
+      "P105.8-m32"
     ],
     "docs/screenshots/panel-mobile.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
-      "P104.6"
+      "P104.6",
+      "P105.3",
+      "P105.2",
+      "P105.7",
+      "P105.8-m32"
     ],
     "docs/screenshots/panel-monthly.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
-      "P104.6"
+      "P104.6",
+      "P105.3",
+      "P105.2",
+      "P105.7",
+      "P105.8-m32"
     ],
     "docs/screenshots/panel-overview.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
-      "P104.6"
+      "P104.6",
+      "P105.3",
+      "P105.2",
+      "P105.7",
+      "P105.8-m32"
     ],
     "docs/screenshots/panel-person.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
-      "P104.6"
+      "P104.6",
+      "P105.3",
+      "P105.2",
+      "P105.7",
+      "P105.8-m32"
     ],
     "docs/screenshots/panel-policy-expanded.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
-      "P104.6"
+      "P104.6",
+      "P105.3",
+      "P105.2",
+      "P105.7",
+      "P105.8-m32"
     ],
     "docs/screenshots/panel-policy.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
-      "P104.6"
+      "P104.6",
+      "P105.3",
+      "P105.2",
+      "P105.7",
+      "P105.8-m32"
     ],
     "docs/screenshots/panel-proposals.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
-      "P104.6"
+      "P104.6",
+      "P105.3",
+      "P105.2",
+      "P105.7",
+      "P105.8-m32"
     ],
     "docs/screenshots/panel-usage.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
-      "P104.6"
+      "P104.6",
+      "P105.3",
+      "P105.2",
+      "P105.7",
+      "P105.8-m32"
     ],
     "tools/ui-tests/evidence-read-error.test.mjs": [
       "P80.15-rtb"
@@ -5066,7 +5155,8 @@
       "P105.2"
     ],
     "plugins/audit/scripts/ui/panel/policy-view.js": [
-      "P105.2"
+      "P105.2",
+      "P105.8-m32"
     ],
     "tools/ui-tests/plan-unreadable.test.mjs": [
       "P105.2"
@@ -5084,20 +5174,24 @@
       "P105.3"
     ],
     "plugins/audit/scripts/ui/panel/settings.js": [
-      "P105.4"
+      "P105.4",
+      "P105.8-m32"
     ],
     "tools/ui-tests/config-patch.test.mjs": [
-      "P105.4"
+      "P105.4",
+      "P105.8-m32"
     ],
     "examples/README.md": [
       "P105.5",
-      "P103.5"
+      "P103.5",
+      "P105.9-m32"
     ],
     "plugins/audit/scripts/ui/panel/ado-connector.js": [
       "P105.7"
     ],
     "tools/ui-tests/ado-panel.test.mjs": [
-      "P105.7"
+      "P105.7",
+      "P105.10-m32"
     ],
     "plugins/audit/tests/test_hooks.py": [
       "P108.1",
@@ -5155,6 +5249,21 @@
     ],
     "tools/ui-tests/usage-edges.test.mjs": [
       "P104.6"
+    ],
+    "plugins/audit/scripts/ui/panel/policy-state.js": [
+      "P105.8-m32"
+    ],
+    "plugins/audit/scripts/ui/panel/README.md": [
+      "P105.10-m32"
+    ],
+    "examples/panel.sh": [
+      "P105.9-m32"
+    ],
+    "tools/ui-tests/policy-shape.test.mjs": [
+      "P105.8-m32"
+    ],
+    "examples/acme-store/.claude/.gitignore": [
+      "P105.9-m32"
     ]
   },
   "bugs": [

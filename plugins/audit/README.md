@@ -48,11 +48,14 @@ of its tasks matched, and nothing auto-expands. **Save as PDF** prints A4 in eit
 `/audit:panel` opens a local, **on-demand** browser UI (an ephemeral Python-stdlib server) to
 manage the plugin without hand-editing JSON. It's an **open / stop / status** trio backed by a
 per-project pidfile, so a running panel is always discoverable and stoppable — never a stray
-background process. It leaves two files beside your config, and writes a targeted ignore rule
-for each: `.claude/audit-panel.json`, the pidfile, which also records the plugin build that
-assembled the page; and `.claude/audit-panel.log`, the detached launch's stderr, emptied by
-the server once it is actually listening — so a launch that never got up leaves a reason
-`status` can print instead of looking exactly like one that was started and stopped:
+background process. Beside your config it leaves `.claude/audit-panel.json`, the pidfile, which
+also records the plugin build that assembled the page, and `.claude/audit-panel.log`, the
+detached launch's stderr, emptied by the server once it is actually listening — so a launch that
+never got up leaves a reason `status` can print instead of looking exactly like one that was
+started and stopped — the panel gitignores both with a targeted rule. It also leaves
+`.claude/state/panel-openstate.json`, a count of how many times this project's panel has ever
+been opened and read back by `/audit:doctor`, inside a directory that ignores itself rather than
+needing a rule of its own:
 
 - **`/audit:panel`** — open it (prints the `http://127.0.0.1:<port>/…` URL and opens your browser)
 - **`/audit:panel stop`** — stop it · **`/audit:panel status`** — check if it's running

@@ -4793,11 +4793,18 @@ server (the UI's HTML/CSS/JS lives as `scripts/ui/panel.html` plus the ordered p
 byte-identically — the served page is still one self-contained HTML file, the source just is not.
 It reuses the plugin's pure cores — `validate-manifest.py`, `validate-config.py`,
 `audit-status.py`, `hooks/_config.py` — via importlib). It binds `127.0.0.1`, checks the Host header, and requires a random per-launch token
-on every `/api/*` call (`X-Audit-Token`/`?t=`); it tracks **one panel per project** via a
-`.claude/audit-panel.json` pidfile (open/stop/status; stale pidfiles auto-cleaned), which
-carries a **build stamp** as well — written by `_write_pidfile` rather than by `serve()`, so
-every pidfile this plugin writes has it and `--status` always holds both halves of the
-comparison below.
+on every `/api/*` call AND on the page itself (`X-Audit-Token`/`?t=`) — `do_GET`'s `/` route
+makes the same Host and token checks inline, so reaching the Host check alone is not enough to
+read the token the served HTML carries, but it answers a refusal differently: a person in a
+browser tab reads plain text naming where the real URL lives, while `/api/*` stays JSON for the
+script calling it. It tracks **one panel per project** via a
+`.claude/audit-panel.json` pidfile (open/stop/status; stale pidfiles auto-cleaned), written
+owner-only from the instant it exists, on POSIX, through a temp file in the same directory and an
+`os.replace`, never through a plain write followed by a `chmod` — that order leaves a window,
+on every launch, during which another local user could hold a readable descriptor on a live
+credential. The pidfile carries a **build stamp** as well — written by `_write_pidfile` rather
+than by `serve()`, so every pidfile this plugin writes has it and `--status` always holds both
+halves of the comparison below.
 
 **The pidfile is no longer the panel's only per-project artifact.** A detached launch
 that discarded stderr left a launch that FAILED looking exactly like one that succeeded and
