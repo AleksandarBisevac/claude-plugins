@@ -35,7 +35,7 @@
     {
       "id": "P103.1",
       "title": "SECURITY.md names the open secret-read shapes and what shell-write detection misses",
-      "status": "in_progress",
+      "status": "done",
       "description": "SECURITY.md disclaims the class (text inspection is bypassable) but never names the read shapes the 2.3.0 Known open entry listed, and all of them still pass guard-secrets-read: a recursive grep over a directory, the Grep tool over a directory with no glob, diff of two env files, a for-loop over .env.*, and xargs cat. Name them at class level (a read that reaches the file without the call naming it in a form the guard reads, plus a read verb the list lacks) in the open-residuals list under 'Fail modes' and in item 6 of 'Known bypass classes', and rewrite the post-detection bullet that says a command 'provably unable to write is absorbed': _command_is_read_only absorbs git -C <dir> checkout --, env rm -rf, awk's print > file and sed's w flag, so say which class of write it can mistake for a read. Opus because each sentence must match what the predicates actually return, read from hooks/guard-secrets-read.py and hooks/guard-bash-writes.py; keep every existing heading (help topics cite them) and the fail-mode table rows (prove-gates anchors). gate-only: documentation of current behaviour, pinned by the next task; selftests is the narrowest gate that reads documents (prose-number, link and fail-mode lints run in the sweep).",
       "files": [
         "SECURITY.md"
@@ -56,18 +56,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "83ec5d9c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The open-residuals list under Fail modes gains a guard-secrets-read bullet naming two classes: a read that reaches the file without the call naming it in a form the guard reads (a recursive grep over a directory, the Grep tool over a directory with no glob, a loop over .env.* that reads the loop variable, xargs cat given the names on stdin), and a read verb the list lacks (diff, comm, cut, sort, jq). Known bypass classes item 6 is split into the same two classes, keeping the old shapes. Item 1's post-detection bullet now says what _command_is_read_only reads and names the class it absorbs: a write made through a listed program's arguments (git -C <dir> checkout -- and reset --hard or commit behind -C, env rm -rf, awk print > file, sed w, sort -o), never reported because seenDirty absorbs it. Each verdict was observed by driving the hooks; no heading or fail-mode table row changed.",
+        "descriptive": "SECURITY.md now names, as two classes, the secret reads the read guard lets through, and says which writes the shell-write detector mistakes for reads, instead of calling them provably unable to write."
       },
       "startedAt": "2026-10-06T14:46:28Z",
-      "completedAt": null,
+      "completedAt": "2026-10-06T15:03:19Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-06T15:00:30Z.3bb86c",
         "status": "passed",
         "at": "2026-10-06T15:00:30Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "83ec5d9c",
+        "at": "2026-10-06T15:03:19Z",
+        "basis": "audit-reviewer (task mode): every named shape re-driven against this worktree's hooks; headings and table rows untouched; no findings"
       }
     },
     {
@@ -414,7 +420,12 @@
       },
       "startedAt": "2026-10-06T14:46:28Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T15:57:24Z.44eeb0",
+        "status": "passed",
+        "at": "2026-10-06T15:57:24Z"
+      }
     },
     {
       "id": "P103.11",
@@ -488,6 +499,47 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "P103.13-xi3",
+      "title": "a passed gate row whose changed paths are all undeclared is not a ledger contradiction",
+      "status": "in_progress",
+      "description": "The gate recorder and the committed-ledger check disagree about one shape. run-test-gate records a task gate as passed when a path changed during the run that the work under test does not declare (TREE CHANGED OUTSIDE THIS WORK moves the exit code not at all, by design, because a sibling or the orchestrator may write in a shared tree), and it lists that path in observations.treeMutated with a basis saying none of the changed paths is declared. tools/check-example-ledgers.py el1 then reports that committed row as a contradiction (\"records 'passed' while its own observations.treeMutated names ...\"), so any branch whose committed evidence holds such a row stays red. Seen on this phase's branch on 2026-10-06: the orchestrator closed one task (a journal write) while a sibling task's recorded gate was running in the same worktree; the row was committed with that task and the next gate went red on it. Make the two agree on the recorder's documented rule: a passed row contradicts itself only when a changed path is one the work under test declares. Read the declared set from what the row records (its scope or the basis it carries), never from today's manifest, and if a row records no declared set, say so as its own finding rather than guessing. Decide with the basis in the outcome whether treeMutated is the right field for undeclared changes or whether the recorder should name them apart; a recorder change is out of this task's files, so record it as a follow-up if that is the answer. The committed rows already in the tree must pass the check after the fix.",
+      "files": [
+        "tools/check-example-ledgers.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-example-ledgers.py: a committed row recording passed whose treeMutated names only paths outside the work it declares is accepted, while a passed row naming a declared path is still reported as a contradiction",
+          "tools/check-example-ledgers.py: a row that records no declared set is its own finding, never silently accepted or rejected; and the committed ledgers in the tree pass"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-06T15:18:26Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T15:55:37Z.d1d62b",
+        "status": "passed",
+        "at": "2026-10-06T15:55:37Z"
+      }
     }
   ],
   "startedAt": "2026-10-06T14:46:28Z"

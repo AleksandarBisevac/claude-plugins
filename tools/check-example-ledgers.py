@@ -40,7 +40,10 @@ pins that the code and the schema agree, so reading both here would add a third
 copy without adding a check.
 
 THE CONTRADICTION RULE IS DELIBERATELY NARROW. Only `passed` beside a non-empty
-`treeMutated` is a finding. A run whose commands FAILED and which also rewrote the
+`treeMutated` that the row's own `treeBasis` says includes a path the work under
+test declares is a finding - the recorder's rule, which keeps `passed` when every
+changed path is somebody else's in a shared tree. A row whose basis records no
+declared set is reported as exactly that, never sorted by guessing. A run whose commands FAILED and which also rewrote the
 tree is honestly `failed` -- the failure dominates and no information is lost -- and
 the states that never finished (`timed-out`, `cancelled`) carry no tree observation
 at all. Widening this to "any status but `gate-mutated` beside a mutated tree" would
@@ -102,6 +105,7 @@ the exact shape of a green run that checked nothing.
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -135,6 +139,15 @@ LEDGER_DIR = "evidence"
 LEDGER_EXT = ".jsonl"
 
 PASSED = "passed"
+
+# The two endings `run-test-gate.classify_mutations` gives `treeBasis` when
+# anything moved. Spelled here because a tool may not import an entry point, and
+# pinned against the recorder's source by a selftest case so the two cannot drift.
+DECLARED_RE = re.compile(
+    r"(\d+) of (\d+) changed path\(s\) are declared by the work under test")
+NO_FILES_TEXT = "the work under test declares no files"
+NO_FILES = "no-files"
+RECORDER_REL = "plugins/audit/scripts/governance/run-test-gate.py"
 
 
 # --- asking the tree ----------------------------------------------------------
@@ -295,24 +308,85 @@ def _mutated_paths(row):
     return [p for p in top] if isinstance(top, list) else []
 
 
+def _tree_basis(row):
+    """The row's `treeBasis` sentence, nested first and top level second - the
+    same order `_mutated_paths` reads its list in, so the two halves of one
+    observation are never taken from two different places."""
+    obs = row.get("observations")
+    nested = obs.get("treeBasis") if isinstance(obs, dict) else None
+    if isinstance(nested, str):
+        return nested
+    top = row.get("treeBasis")
+    return top if isinstance(top, str) else ""
+
+
+def declared_changes(row):
+    """(count, total) of changed paths the work under test declares, as the row
+    records it; (None, None) when the row records no declared set at all.
+
+    Read off the sentence `run-test-gate.classify_mutations` appends to
+    `treeBasis` whenever anything moved, because that sentence is the ONLY place
+    a row keeps the split: `treeMutated` holds every path that moved, owned or
+    not, and `_evidence_io` declines a separate owned-paths key as a second copy
+    of this claim. Today's manifest is never consulted - a task's `files` may
+    have changed since the run, and the row is the record of the run.
+
+    A basis saying the work declares no files gets its own answer,
+    `(NO_FILES, None)`: the recorder attributes every changed path to the gate in
+    that case, so it is a declared set, recorded as empty - not a missing one.
+    """
+    text = _tree_basis(row)
+    if NO_FILES_TEXT in text:
+        return NO_FILES, None
+    match = DECLARED_RE.search(text)
+    if match is None:
+        return None, None
+    return int(match.group(1)), int(match.group(2))
+
+
 def contradiction_findings(rel, rows):
     """[(rel, lineno, why), ...] -- rows whose own observations deny their verdict.
 
-    One rule, for the reason the module docstring gives: `passed` beside a tree the
-    gate rewrote. The fix gave that run its own word, so a row still spelling it
-    `passed` is recording a verdict the runner can no longer reach.
+    One rule, for the reason the module docstring gives, and it is the recorder's
+    rule rather than a stricter one: `passed` beside a tree the gate rewrote IN
+    THE WORK IT DECLARES. A changed path the work does not declare leaves the
+    recorder's exit code and its word alone by design - in a shared tree a
+    sibling or the orchestrator writes during the run - so a row recording only
+    such paths is a verdict the runner does produce. A row whose basis records
+    no declared set cannot be sorted either way, and is reported as that.
     """
     out = []
     for lineno, row in rows:
         if str(row.get("status")) != PASSED:
             continue
         mutated = _mutated_paths(row)
-        if mutated:
+        if not mutated:
+            continue
+        named = ", ".join(str(m) for m in mutated[:3])
+        declared, total = declared_changes(row)
+        if declared is None:
             out.append((rel, lineno, (
-                "records %r while its own observations.treeMutated names %s - a "
-                "gate that rewrote the tree has had its own verdict since this was "
-                "fixed, so this row publishes a result no current run can produce"
-                % (PASSED, ", ".join(str(m) for m in mutated[:3])))))
+                "records %r beside observations.treeMutated naming %s, and its "
+                "treeBasis records no declared set (%r) - so whether the gate "
+                "rewrote the work it was grading cannot be read off this row; "
+                "this is not guessed in either direction"
+                % (PASSED, named, _tree_basis(row)))))
+            continue
+        if declared == NO_FILES:
+            out.append((rel, lineno, (
+                "records %r while its own observations.treeMutated names %s and "
+                "its basis says the work under test declares no files - the "
+                "runner attributes every changed path to the gate then, so this "
+                "row publishes a result no current run can produce"
+                % (PASSED, named))))
+            continue
+        if declared > 0:
+            out.append((rel, lineno, (
+                "records %r while its own basis says %d of %d changed path(s) are "
+                "declared by the work under test (observations.treeMutated names "
+                "%s) - a gate that rewrote its own subject has had its own verdict "
+                "since this was fixed, so this row publishes a result no current "
+                "run can produce" % (PASSED, declared, total, named))))
     return out
 
 
@@ -828,6 +902,76 @@ def _cases(check):
           % (_nested_only, _top_only, _neither),
           len(_nested_only) == 1 and len(_top_only) == 1
           and "b.txt" in _top_only[0][2] and _neither == [])
+
+    # el27-el29. THE RECORDER'S OWN RULE, read off the row. `run-test-gate` keeps
+    # `passed` when every path that moved during the run is one the work under
+    # test does not declare - a sibling or the orchestrator writing in a shared
+    # tree - and says how many were declared in the sentence `treeBasis` ends
+    # with. The fixture's journal path is the shape seen on a real branch.
+    _journal = "docs/audit/journal/2026-10.x.jsonl"
+    _foreign = contradiction_findings("x/evidence/a.jsonl", [
+        (3, {"status": "passed", "observations": {
+            "treeMutated": [_journal],
+            "treeBasis": "git described the tree before and after; 0 of 1 "
+                         "changed path(s) are declared by the work under test"}})])
+    check("el27 a `passed` row whose treeMutated names ONLY paths outside the "
+          "work it declares (its basis says 0 of them are declared) is accepted - "
+          "the recorder keeps `passed` for exactly that run: %r" % (_foreign,),
+          _foreign == [])
+
+    # ...and the deny twin: one declared path among the moved ones is still the
+    # contradiction, and the finding quotes the count the row itself carries.
+    _owned = contradiction_findings("x/evidence/a.jsonl", [
+        (5, {"status": "passed", "observations": {
+            "treeMutated": ["src/a_module", _journal],
+            "treeBasis": "git described the tree before and after; 1 of 2 "
+                         "changed path(s) are declared by the work under test"}})])
+    check("el28 ...while a `passed` row whose basis says a changed path IS "
+          "declared is still a contradiction, quoting the row's own count: %r"
+          % (_owned,),
+          len(_owned) == 1 and _owned[0][1] == 5 and "1 of 2" in _owned[0][2]
+          and "src/a_module" in _owned[0][2])
+
+    # el29. A row that records no declared set is its OWN finding, worded apart
+    # from the contradiction - neither accepted (that would be guessing every
+    # path foreign) nor convicted as a declared rewrite (guessing the other way).
+    _unsorted = contradiction_findings("x/evidence/a.jsonl", [
+        (7, {"status": "passed", "observations": {
+            "treeMutated": ["c.txt"],
+            "treeBasis": "git described the tree before and after"}})])
+    _none_declared = contradiction_findings("x/evidence/a.jsonl", [
+        (8, {"status": "passed", "observations": {
+            "treeMutated": ["d.txt"],
+            "treeBasis": "git described the tree before and after; the work "
+                         "under test declares no files, so a changed path can "
+                         "be attributed neither to it nor away from it"}})])
+    check("el29 a `passed` row recording NO declared set is a finding of its own "
+          "that says so and names the path, never silently accepted - and a row "
+          "whose basis says the work declares NO files is the contradiction, "
+          "because the recorder attributes every path to the gate then: %r / %r"
+          % (_unsorted, _none_declared),
+          len(_unsorted) == 1 and _unsorted[0][1] == 7
+          and "records no declared set" in _unsorted[0][2]
+          and "c.txt" in _unsorted[0][2]
+          and len(_none_declared) == 1
+          and "declares no files" in _none_declared[0][2]
+          and "records no declared set" not in _none_declared[0][2])
+
+    # el30. The two sentences this tool reads are spelled here and written by the
+    # recorder, so the recorder's source is read for both - a reworded basis
+    # would otherwise turn every passed row with a moved path into el29's finding.
+    with io.open(os.path.join(REPO, RECORDER_REL.replace("/", os.sep)),
+                 encoding="utf-8") as fh:
+        _recorder = fh.read()
+    _flat = re.sub(r'"\s*\n\s*"', "", _recorder)
+    _fmt = "%d of %d changed path(s) are declared by the work under test"
+    _m = DECLARED_RE.search(_fmt % (3, 7))
+    _read = (int(_m.group(1)), int(_m.group(2))) if _m else None
+    check("el30 the recorder still writes both treeBasis endings this tool parses "
+          "(%s): declared-count format present %s and read back as %r, no-files "
+          "present %s" % (RECORDER_REL, _fmt in _flat, _read,
+                          NO_FILES_TEXT in _flat),
+          _fmt in _flat and _read == (3, 7) and NO_FILES_TEXT in _flat)
 
     # el15. The pair that lets `findings()` tell "nothing disagreed" from "nothing
     # was compared" - a count of findings cannot, because both are zero.
