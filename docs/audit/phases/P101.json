@@ -1,0 +1,139 @@
+{
+  "id": "P101",
+  "title": "the plugin's value is measured, not asserted",
+  "status": "pending",
+  "description": "Tasks: (1) Pilot: one paid /audit:run end to end on the benchmark fixture, hard cap 4.50 USD (--max-budget-usd), recording what the orchestrator prose drives, cost per stage and where it stalls; this unblocks the decision on moving prose rules into scripts. (2) Design a subscription-based comparison: one feature-sized task in a brownfield fixture repo with hidden acceptance tests; arms = plain Claude Code, Claude Code with the same skills and a short CLAUDE.md, and the plugin's pipeline; same model, pinned CLI version, same skills, fresh session per run, randomized order; measure acceptance tests, out-of-scope changes, false completion claims, human interventions, wall clock, tokens and list-price equivalent, and share of the subscription window; scenarios: feature, bugfix, interrupted session plus resume, a step a guard must stop. (3) Run it within an agreed subscription time budget, n>=2 per arm, and publish the result with its limits.",
+  "desiredOutcome": "one end-to-end pipeline run on a fixture shows what a task costs and delivers through the plugin's own commands, and a reproducible with/without comparison on a feature-sized task reports outcome, cost, time and interventions per arm",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P101.1",
+      "title": "one paid /audit:run on the bench fixture shows cost per stage and where the pipeline stalls",
+      "status": "pending",
+      "description": "The orchestrator runs this, not an executor. The user allotted 5 USD for it on 2026-10-06, so no second paid run is made without asking again. It is one paid `claude -p \"/audit:run P1.1\"` on the bench fixture, with `--max-budget-usd 4.50` as the hard cap, run through the quality-gates-internal harness at reports/2026-10-05-deep-analysis/fixtures/bench/: build_bench_repo.sh's plugin arm with bench-manifest.json, export_plugin.sh re-pinned from b090fbd5 to the commit under test, run_bench.sh with prompt.txt replaced by the command and keeping the model and effort it already pins, and extract_metrics.py and quality_check.py unchanged. The adapted arm file allows exactly the plugin's own script calls and the git verbs the pipeline needs, and the report lists every allow rule that had to be added, because the probe's arm file allowed only the test command and read-only git. The report records what the orchestrator prose drove (which reference files were read, and their bytes), tokens and list-price cost per stage (main loop, executor, reviewer, gate, close), turns and wall clock per stage, permission denials, where the run stalled or stopped, and the quality_check verdict. Every figure sits beside the command that re-derives it from the run's stream, the document names no machine path, and its findings are the input P106 waits on before moving prose rules into scripts.",
+      "files": [
+        "docs/research/pipeline-pilot.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P101.2",
+      "title": "a with/without benchmark design fixes arms, fixture, metrics and scenarios before any run",
+      "status": "pending",
+      "description": "docs/research/benchmark-design.md fixes the protocol before any session runs. The arms are plain Claude Code, Claude Code with the same skills and a short CLAUDE.md, and the plugin pipeline (/audit:run, /audit:resume). Each arm gets one feature-sized task in a brownfield fixture repo built fresh per run on the model of build_bench_repo.sh, and the acceptance tests are hidden from the session and applied only by the grader afterwards. Fixed across arms: model, effort, permission mode, the Claude Code CLI version (pinned, and a run on any other version refused) and the skill set (named by path and content digest, identical in the second and third arm). Every run is a fresh session, arms run in an order drawn from a recorded random seed, and cold and warm caches are reported apart. The metrics are: hidden acceptance tests passed; out-of-scope changed paths; false completion claims (claims in the final message that no tool call backs); human interventions beyond the scripted ones; wall clock; tokens by type with their list-price equivalent, naming the price source and date; and the share of the subscription window each run used, naming where that share is read and saying so when it cannot be read. The scenarios are a feature, a bugfix, an interrupted session plus resume (both sessions summed) and a step a guard must stop, with each refusal labelled by source (plugin hook, permission rule, auto-mode classifier, model refusal). Each arm runs n>=2 times in every scenario, stated as two observations rather than a variance estimate. The design also names the subscription time budget the run needs, the grading scripts it reuses, which scenarios become `claude plugin eval` cases under plugins/audit/evals/, and what the result cannot show.",
+      "files": [
+        "docs/research/benchmark-design.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P101.3",
+      "title": "the with/without benchmark runs n>=2 per arm and publishes its result with its limits",
+      "status": "pending",
+      "description": "Runs the protocol the design fixes, at n>=2 per arm, within a subscription time budget agreed with the user before the first session. It publishes docs/research/benchmark-results.md with: the metrics the design names, per arm and scenario, each figure beside the command or grader output that re-derives it; the raw per-run records, kept in the internal repo; and a limits section (sample size, one fixture, one model, what the subscription meter could and could not show). The orchestrator runs any session that needs a human together with the user; an executor never does. If the design calls for eval cases, one case.yaml per scenario it names goes under plugins/audit/evals/. The interrupted-session scenario stays harness-only, because an eval case is one session. plugins/audit/evals/results/ is added to .gitignore, and the evals/ directory gets its line in PLUGIN-BUILD-GUIDE.md's tree. Eval paths the design does not call for are dropped from files before start. docs/README.md gains a row for the research documents.",
+      "files": [
+        "docs/research/benchmark-results.md",
+        "docs/README.md",
+        "plugins/audit/evals/feature/case.yaml",
+        "plugins/audit/evals/bugfix/case.yaml",
+        "plugins/audit/evals/guard-stop/case.yaml",
+        ".gitignore",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "plugin-validate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P101.2",
+        "P101.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
