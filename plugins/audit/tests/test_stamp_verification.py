@@ -2929,7 +2929,64 @@ def _holder_cases(check):
           and posix != os.path.join(local, "Temp"))
 
 
+# What `npm test` prints when its script reached no test runner at all, with
+# npm's update notice after it. No tally reader and no error reader matches
+# any of it, and none of it is a jest or vitest summary either, so the case
+# keeps holding when those runners get readers of their own.
+_UNREAD_NPM = (
+    "\n> app@1.0.0 test\n> ./scripts/run-suite.sh\n\n"
+    "the suite script stopped before it started a runner\n"
+    "npm notice\n"
+    "npm notice New major version of npm available! 10.8.2 -> 11.6.1\n"
+    "npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.6.1\n"
+    "npm notice To update run: npm install -g npm@11.6.1\n"
+    "npm notice\n")
+
+
+def _unread_basis(code, text, cmd):
+    """The basis `red_verdict` writes for a run made with no HEAD baseline."""
+    run = {"cmd": cmd, "code": code, "text": text, "problem": None,
+           "second": None, "head": None, "fix": None}
+    ctx = {"root": None, "implementation": [], "tests": ["tests/test_mine.py"],
+           "cases": [], "symbols": [], "dropped": [], "new": [],
+           "head_files": None, "head_defs": None, "head_modules": None,
+           "path": None}
+    return (M.red_verdict(run, ctx)[2] or {}).get("basis", "")
+
+
+def _decisive_cases(check):
+    verdict = M.classify_run(1, _UNREAD_NPM, ["npm", "test"])[0]
+    basis = _unread_basis(1, _UNREAD_NPM, ["npm", "test"])
+    quoted = [ln for ln in _UNREAD_NPM.splitlines() if ln.strip() and ln in basis]
+    check("sr195 a run no tally or error reader matches, ending in npm's update "
+          "notice, gets a basis that says no reader matched and quotes none of "
+          "its lines as the decisive one - position is not a cause: verdict %r, "
+          "quoted %r, basis %r" % (verdict, quoted, basis),
+          verdict == M.V_NO_TALLY and not quoted
+          and "no tally or error reader matched" in basis)
+    pytest_basis = _unread_basis(1, _PYTEST_FULL, [sys.executable, "-m", "pytest"])
+    tally_line = "========================= 2 failed, 1 passed in 0.01s " \
+                 "=========================="
+    check("sr196 THE ALLOW CASE for sr195: a run whose pytest tally is read still "
+          "quotes that tally line as decisive, and says nothing of an unread run: "
+          "%r" % (pytest_basis,),
+          pytest_basis.endswith(" - %s; run without nothing" % (tally_line,))
+          and "reader matched" not in pytest_basis)
+    traceback = ("Traceback (most recent call last):\n"
+                 "  File \"tests/test_mine.py\", line 1, in <module>\n"
+                 "ModuleNotFoundError: No module named 'mine'\n"
+                 "npm notice New major version of npm available! 10.8.2 -> 11.6.1\n")
+    error_basis = _unread_basis(1, traceback, ["npm", "test"])
+    check("sr197 THE ALLOW CASE for sr195: a run whose final Error line is read "
+          "still quotes that line as decisive, not the banner printed after it: "
+          "%r" % (error_basis,),
+          ": ModuleNotFoundError: No module named 'mine'; " in error_basis
+          and "npm notice" not in error_basis
+          and "reader matched" not in error_basis)
+
+
 def _cases(check):
+    _harness.stage(check, "sr-decisive", _decisive_cases)
     _harness.stage(check, "sr-crlf", _crlf_cases)
     _harness.stage(check, "sr-listing", _listing_cases)
     _harness.stage(check, "sr-holder", _holder_cases)

@@ -1473,10 +1473,17 @@ def _run_in(path, cmd, timeout, env):
 
 
 _TALLY_KEYS = {"house": "cases ", "pytest": " in ", "unittest": "Ran "}
+# Said in place of a decisive line when neither reader matched. A line chosen
+# by its position - the last one is often a package manager's update notice
+# printed after the run - would name an unrelated line as the run's cause.
+NO_READER = ("no tally or error reader matched its output, so no line of it is "
+             "quoted as decisive")
+NO_OUTPUT = "the run printed no output"
 
 
 def _decisive_line(text, tally):
-    """The line a reader checks the verdict against: the tally, else the error."""
+    """The line a reader checks the verdict against: the tally, else the error,
+    else a sentence saying no reader matched - never a line picked by position."""
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     if tally is not None and tally["runner"] in _TALLY_KEYS:
         hits = [ln for ln in lines if _TALLY_KEYS[tally["runner"]] in ln]
@@ -1485,7 +1492,7 @@ def _decisive_line(text, tally):
     errors = _ERROR_LINE.findall(text)
     if errors:
         return errors[-1].strip()
-    return lines[-1] if lines else "(no output)"
+    return NO_READER if lines else NO_OUTPUT
 
 
 def _ids(cases):

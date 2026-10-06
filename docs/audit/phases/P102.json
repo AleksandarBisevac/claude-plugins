@@ -64,7 +64,12 @@
       },
       "startedAt": "2026-10-06T21:26:47Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T21:52:26Z.73fc75",
+        "status": "passed",
+        "at": "2026-10-06T21:52:26Z"
+      }
     },
     {
       "id": "P102.2",
@@ -490,7 +495,7 @@
     {
       "id": "P102.11",
       "title": "the orchestrator resolves the plugin root per spawn and again after an update",
-      "status": "in_progress",
+      "status": "done",
       "description": "A brief resolved under an older copy was reused after the plugin updated, so its executors ran the old helper. Change execute-task.md's 'Resolve ${CLAUDE_PLUGIN_ROOT} yourself' line and orchestrator.md to say: resolve the root per spawn from the copy this session runs, and after a plugin update mid-run, re-resolve and say so in the run's output. Name /audit:doctor's running-copy check as where a session still on the old copy shows up. CLAUDE_PLUGIN_ROOT is unset in the Bash tool, so the literal variable is never what a subagent should receive.",
       "files": [
         "plugins/audit/reference/execute-task.md",
@@ -514,18 +519,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8386fb2e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "reference/execute-task.md and reference/orchestrator.md now tell the orchestrator and executor to resolve ${CLAUDE_PLUGIN_ROOT} per spawn from the copy the session is running, never to reuse a root resolved before a mid-run plugin update, to re-resolve and say which commands moved when the plugin updates during a run, and that /audit:doctor's running plugin row (_doctor_trail) is where a session still on the old copy shows. The orchestrator.md rule sits among the non-negotiable guardrails.",
+        "descriptive": "The orchestrator and executor instructions now say to look up the plugin's location fresh for each spawned agent and again after an update, so a long run never keeps calling an old copy of the plugin."
       },
       "startedAt": "2026-10-06T21:26:47Z",
-      "completedAt": null,
+      "completedAt": "2026-10-06T21:42:06Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-06T21:39:49Z.63f025",
         "status": "passed",
         "at": "2026-10-06T21:39:49Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8386fb2e",
+        "at": "2026-10-06T21:42:06Z",
+        "basis": "orchestrator check: both reference files carry the rule; the doctor row it points at exists in _doctor_trail.py"
       }
     }
   ],
