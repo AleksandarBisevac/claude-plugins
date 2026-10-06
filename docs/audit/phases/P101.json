@@ -1,7 +1,7 @@
 {
   "id": "P101",
   "title": "the plugin's value is measured, not asserted",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Tasks: (1) Pilot: one paid /audit:run end to end on the benchmark fixture, hard cap 4.50 USD (--max-budget-usd), recording what the orchestrator prose drives, cost per stage and where it stalls; this unblocks the decision on moving prose rules into scripts. (2) Design a subscription-based comparison: one feature-sized task in a brownfield fixture repo with hidden acceptance tests; arms = plain Claude Code, Claude Code with the same skills and a short CLAUDE.md, and the plugin's pipeline; same model, pinned CLI version, same skills, fresh session per run, randomized order; measure acceptance tests, out-of-scope changes, false completion claims, human interventions, wall clock, tokens and list-price equivalent, and share of the subscription window; scenarios: feature, bugfix, interrupted session plus resume, a step a guard must stop. (3) Run it within an agreed subscription time budget, n>=2 per arm, and publish the result with its limits.",
   "desiredOutcome": "one end-to-end pipeline run on a fixture shows what a task costs and delivers through the plugin's own commands, and a reproducible with/without comparison on a feature-sized task reports outcome, cost, time and interventions per arm",
   "testGate": [
@@ -15,9 +15,15 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "6d0ef731b5ac60e6bef3c015cf9967583e3625f8",
+  "branch": "audit/p101-the-plugin-s-value-is-measured",
   "mergedAt": null,
+  "claim": {
+    "sessionId": "6c881c24-c1fd-461f-8c48-abb0170e0a5a",
+    "host": "MacBook-Pro-2",
+    "branch": "audit/p101-the-plugin-s-value-is-measured",
+    "at": "2026-10-06T14:44:44Z"
+  },
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -62,7 +68,7 @@
     {
       "id": "P101.2",
       "title": "a with/without benchmark design fixes arms, fixture, metrics and scenarios before any run",
-      "status": "pending",
+      "status": "in_progress",
       "description": "docs/research/benchmark-design.md fixes the protocol before any session runs. The arms are plain Claude Code, Claude Code with the same skills and a short CLAUDE.md, and the plugin pipeline (/audit:run, /audit:resume). Each arm gets one feature-sized task in a brownfield fixture repo built fresh per run on the model of build_bench_repo.sh, and the acceptance tests are hidden from the session and applied only by the grader afterwards. Fixed across arms: model, effort, permission mode, the Claude Code CLI version (pinned, and a run on any other version refused) and the skill set (named by path and content digest, identical in the second and third arm). Every run is a fresh session, arms run in an order drawn from a recorded random seed, and cold and warm caches are reported apart. The metrics are: hidden acceptance tests passed; out-of-scope changed paths; false completion claims (claims in the final message that no tool call backs); human interventions beyond the scripted ones; wall clock; tokens by type with their list-price equivalent, naming the price source and date; and the share of the subscription window each run used, naming where that share is read and saying so when it cannot be read. The scenarios are a feature, a bugfix, an interrupted session plus resume (both sessions summed) and a step a guard must stop, with each refusal labelled by source (plugin hook, permission rule, auto-mode classifier, model refusal). Each arm runs n>=2 times in every scenario, stated as two observations rather than a variance estimate. The design also names the subscription time budget the run needs, the grading scripts it reuses, which scenarios become `claude plugin eval` cases under plugins/audit/evals/, and what the result cannot show.",
       "files": [
         "docs/research/benchmark-design.md"
@@ -81,16 +87,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T14:44:44Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T15:10:55Z.f31fc0",
+        "status": "passed",
+        "at": "2026-10-06T15:10:55Z"
+      }
     },
     {
       "id": "P101.3",
@@ -135,5 +146,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-10-06T14:44:44Z"
 }
