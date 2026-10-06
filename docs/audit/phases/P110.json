@@ -1,7 +1,7 @@
 {
   "id": "P110",
   "title": "the plugin owns only the guard rules only it can know",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Human-written (guard-reading code). Tasks: (1) Measure which share of 3.0.x guard refusals hit generic destructive operations the host would block anyway. (2) Design: keep plan scope, journal/manifest integrity and recorded-SHA protection; ship a recommended permissions.deny fragment for the rest. (3) One release reports instead of blocking the moved rules, then remove them. Risk: users without auto mode get only spelling-based permission rules; SECURITY.md must say so.",
   "desiredOutcome": "the plugin's command-reading guards keep the verdicts that depend on the plan and its own state, and generic destructive-command blocking is left to Claude Code's own layers through a recommended permissions fragment, with SECURITY.md saying which layer holds which guarantee",
   "testGate": [
@@ -15,9 +15,15 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "6d0ef731b5ac60e6bef3c015cf9967583e3625f8",
+  "branch": "audit/p110-the-plugin-owns-only-the-guard",
   "mergedAt": null,
+  "claim": {
+    "sessionId": "6c881c24-c1fd-461f-8c48-abb0170e0a5a",
+    "host": "MacBook-Pro-2",
+    "branch": "audit/p110-the-plugin-owns-only-the-guard",
+    "at": "2026-10-06T14:44:48Z"
+  },
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -29,7 +35,7 @@
     {
       "id": "P110.1",
       "title": "which share of 3.0.x guard refusals the host would have stopped anyway is measured",
-      "status": "pending",
+      "status": "in_progress",
       "description": "docs/research/guard-refusals-by-owner.md classifies every audit-plugin guard refusal in the private redacted miner corpus (quality-gates-internal: reports/2026-10-05-deep-analysis/experiments/classifier-events.redacted.jsonl). It counts the rows with source plugin-hook and an audit-plugin: subsource, dated from the v3.0.0 tag on 2026-09-18; the repo's own .claude/hooks are excluded. Each refusal is classified by what the verdict depended on: plan scope, journal or manifest integrity, a SHA the manifest records, a secret read, or a generic destructive operation. For each generic row it states whether Claude Code's own layers would have stopped it, and on what basis: a documented auto-mode block category, or a permissions.deny rule that matches the command as written. A row with no basis is counted as undetermined and never folded into either side. Command text is redacted, so classification reads the rows' shape and tags fields. The table carries the inline python3 command that re-derives it, with no new .py and no machine path, and the document says that a public reader cannot re-run it against the private corpus. Its answer, the share of refusals that only the plugin could have made, is the input to the design task.",
       "files": [
         "docs/research/guard-refusals-by-owner.md"
@@ -48,16 +54,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T14:44:48Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T15:16:20Z.64bd06",
+        "status": "passed",
+        "at": "2026-10-06T15:16:20Z"
+      }
     },
     {
       "id": "P110.2",
@@ -143,5 +154,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-10-06T14:44:48Z"
 }
