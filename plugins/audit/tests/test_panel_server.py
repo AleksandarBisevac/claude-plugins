@@ -963,10 +963,124 @@ def _full_run_cache_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _root_token_guard_cases(check):
+    """`GET /` is routed through the SAME guard `/api/*` already uses, so a
+    request that only passes the Host check cannot read the page - and the
+    session token substituted into it - without the per-launch token too.
+    Driven over a real socket, the same way `_full_run_cache_cases` is, so the
+    claim is about the handler the server actually runs rather than about the
+    route table read as text."""
+    import http.client
+    import http.server
+    import threading
+
+    tmp = tempfile.mkdtemp(prefix="panel-server-root-")
+    try:
+        project = os.path.join(tmp, "proj")
+        os.makedirs(project, exist_ok=True)
+        token = "root-guard-token-xyz"
+        handler_cls = M._make_handler(project, token)
+        srv = http.server.HTTPServer(("127.0.0.1", 0), handler_cls)
+        thread = threading.Thread(target=srv.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = srv.server_address[1]
+
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            conn.request("GET", "/")
+            resp = conn.getresponse()
+            body = resp.read().decode("utf-8", "replace")
+            conn.close()
+            check("GET / without the token is refused, and the refusal body "
+                  "carries no token: status %r" % (resp.status,),
+                  resp.status == 403 and token not in body)
+
+            conn2 = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            conn2.request("GET", "/?t=%s" % token)
+            resp2 = conn2.getresponse()
+            body2 = resp2.read().decode("utf-8", "replace")
+            conn2.close()
+            check("...and the allow twin: GET /?t=<token> answers the page, "
+                  "token and all",
+                  resp2.status == 200 and token in body2
+                  and "<html" in body2.lower())
+
+            conn3 = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            conn3.request("GET", "/favicon.ico")
+            resp3 = conn3.getresponse()
+            resp3.read()
+            conn3.close()
+            check("/favicon.ico still answers with no token needed - its own "
+                  "allow twin, since it carries nothing to protect",
+                  resp3.status == 204)
+        finally:
+            srv.shutdown()
+            thread.join(timeout=5)
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _pidfile_mode_cases(check):
+    """The pidfile carries the same live session token the URL does, so its
+    mode must be owner-only - never whatever the umask on the box happens to
+    leave it at, and tightened even when an older version already left a
+    wider-mode file sitting there."""
+    import stat
+
+    if os.name != "posix":
+        check("pidfile mode is owner-only (skipped: no POSIX file modes on "
+              "this platform - os.name is %r, so os.chmod cannot assert an "
+              "owner-only bit pattern here)" % (os.name,), True)
+        return
+
+    tmp = tempfile.mkdtemp(prefix="panel-server-pidfile-")
+    try:
+        proj = os.path.join(tmp, "proj")
+        M._write_pidfile(proj, {"pid": os.getpid(), "port": 1, "url": "http://x"})
+        mode = stat.S_IMODE(os.stat(M._pidfile(proj)).st_mode)
+        check("a freshly written pidfile is owner read/write only (0600): %o"
+              % (mode,), mode == 0o600)
+
+        # An existing, wider-mode file (as an older version would have left,
+        # given whatever the process umask was) must be TIGHTENED, not merely
+        # matched going forward.
+        os.chmod(M._pidfile(proj), 0o644)
+        M._write_pidfile(proj, {"pid": os.getpid(), "port": 2, "url": "http://y"})
+        mode2 = stat.S_IMODE(os.stat(M._pidfile(proj)).st_mode)
+        check("...and a 0644 file already there is tightened to 0600, not "
+              "left as it was: %o" % (mode2,), mode2 == 0o600)
+
+        # The window a plain `open(path, "w")` + a LATER `chmod` leaves: this
+        # asserts the write is never wider than owner-only even when chmod
+        # cannot be trusted to do that tightening - MUTATION: go back to
+        # `open()` + `os.chmod()` afterward -> red under umask 0o022, since a
+        # no-op chmod would leave the file at the umask's own mode (0644).
+        _prev_umask = os.umask(0o022)
+        _real_chmod = os.chmod
+        os.chmod = lambda *a, **kw: None
+        try:
+            M._write_pidfile(proj, {"pid": os.getpid(), "port": 3, "url": "http://z"})
+        finally:
+            os.umask(_prev_umask)
+            os.chmod = _real_chmod
+        mode3 = stat.S_IMODE(os.stat(M._pidfile(proj)).st_mode)
+        _leftover = [n for n in os.listdir(os.path.dirname(M._pidfile(proj)))
+                     if n.startswith(os.path.basename(M._pidfile(proj)) + ".tmp-")]
+        check("under umask 0o022 and a no-op os.chmod, the pidfile is STILL "
+              "0600 (the create call itself is owner-only, not a chmod "
+              "this write doesn't even make): %o" % (mode3,), mode3 == 0o600)
+        check("...and no temp file is left behind once the write lands: %r"
+              % (_leftover,), not _leftover)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _full_run_cache_cases(check)
+        _root_token_guard_cases(check)
+        _pidfile_mode_cases(check)
     return _harness.run(body)
 
 

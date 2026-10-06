@@ -984,9 +984,10 @@ that a probe which could only pass was not mistaken for evidence:
   fetch of `/ui/panel.js` answers 403 without the session token and 404 with it, and `/api/state`
   cannot double as a module because module scripts are strictly MIME-checked.
 - A **relative specifier inherits the path but never the `?t=` query**, so a token-guarded module
-  graph must either be open (host-check only — which is what `/` already is, and `/` already hands
-  the token to any loopback client) or chain the credential through `import.meta.url`. Both were
-  confirmed working.
+  graph must either be open (host-check only — now the only route that would leave unguarded,
+  since `/` is token-guarded the same way `/api/*` is) or chain the credential through
+  `import.meta.url`. Both were confirmed working at the time of this measurement, when `/` was
+  still host-check only.
 - The panel's script is still a **classic** `<script>`, not `type="module"` like the report's. It
   boots unchanged as a module — measured by rewriting only the response body through route
   interception, so no tracked file was touched and every `/api` call still went to the real

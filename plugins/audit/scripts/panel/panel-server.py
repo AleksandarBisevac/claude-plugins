@@ -15,7 +15,8 @@ Dependency-free (stdlib only). Reuses the plugin's own pure cores by importlib
 (validate-manifest.validate, audit-status.rollup) — no logic is duplicated.
 
 Safety: localhost bind + Host-header check + a random per-launch token required on
-every /api call; writes are refused if the resolved path escapes the project dir;
+every /api call AND on the page itself (`/` carries it the same way, per the URL's own
+`?t=`); writes are refused if the resolved path escapes the project dir;
 manifest writes are refused while <manifestPath>.lock is held; all writes are
 atomic (temp + os.replace).
 
@@ -320,8 +321,13 @@ def _make_handler(project, token):
             if path == "/favicon.ico":
                 self._send(204, b"", "image/x-icon"); return
             if path == "/":
-                if not self._host_ok():
-                    self._send(403, "forbidden", "text/plain"); return
+                # The page itself carries the session token substituted in (the
+                # launch URL and the pidfile's `url` already ride `?t=`, so a
+                # relaunch or the screenshot tool opening that URL keeps working),
+                # so it goes through the SAME guard as the API: a request that
+                # only passes the Host check is not enough to read the token.
+                if not self._guard():
+                    return
                 # th: the token block is swapped per REQUEST, not at
                 # import: a theme is a file on disk, and the reader who just
                 # saved one reloads to see it. The default costs one string
@@ -706,6 +712,21 @@ def version_state():
 
 
 def _write_pidfile(project, info):
+    """Write the pidfile, atomically, owner-only from the INSTANT it exists.
+
+    The file carries the same live session token the URL does, and `open(path,
+    "w")` creates at whatever the umask leaves (typically 0644) - a `chmod`
+    run only AFTER that write leaves a window, on every single launch (`serve()`
+    removes any stale pidfile first), during which another local user can hold
+    a readable descriptor on a live credential. A temp file in the SAME
+    directory, opened with `O_EXCL` at mode 0o600, is never wider than
+    owner-only for even one instruction - `os.open`'s mode argument is
+    narrowed by the umask, never widened past it, so this is correct even
+    under an umask of 0. `os.replace` onto the real path is what makes this
+    module's own docstring claim ("all writes are atomic (temp + os.replace)")
+    true of the pidfile too, and the temp file is removed rather than left
+    behind on any failure.
+    """
     path = _pidfile(project)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     _ensure_panel_files_ignored(project)
@@ -714,8 +735,40 @@ def _write_pidfile(project, info):
     # comparison. A copy, never a mutation of the caller's dict.
     record = dict(info)
     record.setdefault("version", ASSEMBLED_VERSION)
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(record, fh, indent=2)
+    data = json.dumps(record, indent=2)
+    tmp_path = "%s.tmp-%s" % (path, secrets.token_hex(8))
+    fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        if hasattr(os, "fchmod"):
+            # Belt-and-suspenders against an odd umask (or a platform whose
+            # `os.open` mode argument is not fully honoured): tighten the
+            # already-open descriptor too, rather than trusting the create
+            # call alone. Not every platform has POSIX modes at all (Windows'
+            # `os.fchmod` only ever touches the read-only bit), so a failure
+            # HERE is reported rather than swallowed - this file holds a live
+            # token and "it may be readable by other local users" is worth a
+            # line on stderr, not silence.
+            try:
+                os.fchmod(fd, 0o600)
+            except OSError as exc:
+                if os.name == "posix":
+                    sys.stderr.write(
+                        "WARNING: could not set the pidfile to owner-only "
+                        "(%s) - it may be readable by other local users\n"
+                        % (exc,))
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(data)
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass  # already closed by the `with` above, or never opened
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass  # nothing to clean up
+        raise
     return record
 
 

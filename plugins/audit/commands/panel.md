@@ -205,5 +205,6 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   asked for, when the ledger actually ends, and offers the all-time view; more generally, an
   empty result names the one filter emptying it rather than only offering to clear them all.
 
-Safety: binds `127.0.0.1` only, requires a per-launch token on every API call, and refuses
-any write whose path escapes the project directory. Ephemeral — it runs until you `stop` it.
+Safety: binds `127.0.0.1` only, requires a per-launch token on the page itself and on every
+API call, and refuses any write whose path escapes the project directory. Ephemeral — it runs
+until you `stop` it.

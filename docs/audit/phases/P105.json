@@ -408,7 +408,7 @@
     {
       "id": "P105.7",
       "title": "Show the Azure DevOps column and card only where the plan uses ADO",
-      "status": "in_progress",
+      "status": "done",
       "description": "Plan & models draws the ADO parent column, the 'on the board' lever and the whole connector card for every project, including those that never set meta.ado, with checked boxes under a 'Not configured' banner. Add one adoVisible(comp) predicate. It is true when adoStatus.configured is true or when any phase or task carries an ADO link or declaration, so nothing already recorded is hidden. The column and its levers render only under it; otherwise the card collapses to one line pointing at /audit:sync connect, which unfolds to today's form. The committed example and the demo manifest both set meta.ado, so their screenshots should not move. Print the pins with `python3 tools/count-ui-pins.py` first; besides the gates listed, run `npx vitest run`.",
       "files": [
         "plugins/audit/scripts/ui/panel/composition.js",
@@ -459,18 +459,31 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7d4c5275",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "composition.js gains adoVisible(comp): true when the plan's ADO connector is configured, when adoStatus counts a link on a phase or a task, or when a phase declares adoParent or adoTracked. The composition table computes it once and builds the \"on the board\" legend lever, the sixth column heading, the phase row's ADO cell and the task row's empty sixth cell only when it holds. ado-connector.js renders the card unchanged when it holds and otherwise wraps the same form in a collapsed <details> whose one-line summary (adoCollapsedSummary) names /audit:sync connect. A task's ADO evidence is read from the counted adoStatus.linked.tasks, because the composition payload carries no per-task ADO field. Cases: vitest suites in tools/ui-tests/ado-panel.test.mjs for adoVisible in both directions and the summary words; test__panel_page.py av1/av2 pin the gating. Red-first proved for av1/av2 (481/483 at HEAD); the vitest half could not be proved in the throwaway tree, which holds no node_modules. Full vitest and test__panel_page.py were green after the edits.\nAfter review: the connector card's choice between the plain card and the collapsed <details>, and the <summary> built from adoCollapsedSummary(), are pinned on the assembled page (av3, red against the reverted ternary); the collapsed card keeps its open state across re-renders in COMPF.adoOpen, recorded from the details element's toggle event (av4 and a vitest case); and a task's own adoParent declaration now counts, carried by _panel_composition.py on each task row in the same three-shape spelling the phase rows use (apt1, red-first proved 106/107 at HEAD), with adoVisible reading it. The panel screenshots were re-captured by the orchestrator because the panel sources moved, and this task carries them.",
+        "descriptive": "A plan that never set up Azure DevOps no longer sees an ADO column, board lever and full connector form in the panel; the connector collapses to one line pointing at /audit:sync connect, and opens again the moment any phase or task carries an ADO link or declaration."
       },
       "startedAt": "2026-10-06T19:04:32Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T19:55:27Z",
+      "verifiedBy": [
+        "av1",
+        "av2",
+        "av3",
+        "av4",
+        "apt1",
+        "ado-panel.test.mjs"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T19:49:05Z.47fcad",
         "status": "passed",
         "at": "2026-10-06T19:49:05Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7d4c5275",
+        "at": "2026-10-06T19:55:27Z",
+        "basis": "audit-reviewer (task mode): one medium (the collapse had no failing test), one low (the card snapped shut on refresh) and the intent divergence (task-level declarations were not read) fixed; the payload now carries the task's declaration and every fix has a proven red"
       }
     }
   ],
