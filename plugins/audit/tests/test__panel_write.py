@@ -333,6 +333,93 @@ def _cases(check):
     check("write invalid config rejected (not written)",
           not res["ok"] and M.read_config(proj).get("trivialLineThreshold") == 40)
 
+    # --- cp: Settings saves a PATCH, never the document it was drawn from -------
+    # The form's copy of the config passed through JSON in a browser, which keeps
+    # no float/int distinction and knows nothing written after the page loaded, so
+    # a save that sends that copy back rewrites keys nobody touched. Each case
+    # seeds the file as TEXT so the bytes a reader would diff are the evidence.
+    _cp_tmp = tempfile.mkdtemp(prefix="panel-config-patch-")
+    _real_lock = M._acquire_write_lock
+    try:
+        _cp = os.path.join(_cp_tmp, "proj")
+        os.makedirs(os.path.join(_cp, ".claude"))
+        _cp_path = M._config_path(_cp)
+
+        def _cp_seed(text):
+            with open(_cp_path, "w", encoding="utf-8") as fh:
+                fh.write(text)
+
+        def _cp_raw():
+            with open(_cp_path, "r", encoding="utf-8") as fh:
+                return fh.read()
+
+        _cp_seed('{"trivialLineThreshold": 40, "bypassKeyword": "#skip",\n'
+                 ' "usage": {"bands": {"highUSD": 5.0}}}\n')
+        _r = M.write_config_patch(_cp, {"patch": [
+            {"path": ["trivialLineThreshold"], "value": 41}]})
+        _disk = json.loads(_cp_raw())
+        check("cp1 a patch changing one key writes that key and leaves every other "
+              "key as read from disk, the float 5.0 still spelled 5.0: %r"
+              % ((_r.get("applied"), _cp_raw()),),
+              _r.get("ok") is True
+              and [a["field"] for a in _r.get("applied") or []]
+              == ["trivialLineThreshold"]
+              and _disk == {"trivialLineThreshold": 41, "bypassKeyword": "#skip",
+                            "usage": {"bands": {"highUSD": 5.0}}}
+              and '"highUSD": 5.0' in _cp_raw())
+
+        # Another writer lands its change AFTER the form loaded and after this
+        # request arrived, but before the lock is held: the only read that can see
+        # it is the one taken under the lock.
+        _cp_seed('{"trivialLineThreshold": 40, "bypassKeyword": "#skip"}\n')
+
+        def _other_writer(*args, **kwargs):
+            _cp_seed('{"trivialLineThreshold": 40, "bypassKeyword": "#theirs"}\n')
+            return _real_lock(*args, **kwargs)
+
+        M._acquire_write_lock = _other_writer
+        try:
+            _r = M.write_config_patch(_cp, {"patch": [
+                {"path": ["trivialLineThreshold"], "value": 42}]})
+        finally:
+            M._acquire_write_lock = _real_lock
+        check("cp2 the patch lands on the config read UNDER the write lock, so a "
+              "different key another writer changed after the form loaded "
+              "survives: %r" % (_cp_raw(),),
+              _r.get("ok") is True
+              and json.loads(_cp_raw()) == {"trivialLineThreshold": 42,
+                                            "bypassKeyword": "#theirs"})
+
+        _cp_seed('{"usage": {"pricing": {"claude-x": {"in": 1}}}}\n')
+        _r = M.write_config_patch(_cp, {"patch": [
+            {"path": ["usage", "pricing", "claude-3.5"], "value": {"in": 2.5}}]})
+        _pr = (json.loads(_cp_raw()).get("usage") or {}).get("pricing") or {}
+        check("cp3 a patch addresses keys by SEGMENT, so a pricing key holding a "
+              "dot is written as one key and not as a nested pair: %r" % (_pr,),
+              _r.get("ok") is True
+              and sorted(_pr) == ["claude-3.5", "claude-x"]
+              and _pr["claude-3.5"] == {"in": 2.5})
+        # The refusal twin of cp3: a dotted STRING is the addressing this replaces,
+        # and accepting it would bring the ambiguity back.
+        _before = _cp_raw()
+        _r = M.write_config_patch(_cp, {"patch": [
+            {"path": "usage.pricing.claude-4", "value": {"in": 3}}]})
+        check("cp4 ...and a path given as a dotted string is refused with nothing "
+              "written: %r" % (_r,),
+              _r.get("ok") is False and _r.get("findings")
+              and _cp_raw() == _before)
+
+        _cp_seed('{"trivialLineThreshold": 40, "usage": {"bands": {"highUSD": 5}}}\n')
+        _r = M.write_config_patch(_cp, {"patch": [
+            {"path": ["usage", "bands", "highUSD"], "remove": True}]})
+        check("cp5 a removal deletes the key and the container it emptied, which is "
+              "how the form writes 'use the default': %r" % (_cp_raw(),),
+              _r.get("ok") is True
+              and json.loads(_cp_raw()) == {"trivialLineThreshold": 40})
+    finally:
+        M._acquire_write_lock = _real_lock
+        _shutil.rmtree(_cp_tmp, ignore_errors=True)
+
     # manifest + composition patch
     mpath = M._manifest_path(proj, M.read_config(proj))
     os.makedirs(os.path.dirname(mpath), exist_ok=True)

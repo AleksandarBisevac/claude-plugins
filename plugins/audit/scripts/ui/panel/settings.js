@@ -180,11 +180,12 @@ function settingsLink(text,path){
  * is 'custom' names its own renderer in the local CUSTOM map; every other kind
  * goes through one of the two generic builders below.
  *
- * One draft and one Save for all of it, because the cards are one FILE and
- * saving a quarter of a document is not something the config endpoint can do.
+ * One draft and one Save for all of it, because the cards are one FILE.
  * Every control edits a deep clone of the served config; Save diffs that clone
- * against what the server last sent, which is what lets the confirm dialog list
- * the change as rows and lets Discard say how much it is about to throw away.
+ * against what the server last sent and sends only that diff, as a patch the
+ * server applies to the file it reads under its write lock. The same diff is
+ * what lets the confirm dialog list the change as rows and lets Discard say how
+ * much it is about to throw away.
  *
  * Calling this again is how the form is reset to disk — Discard does exactly
  * that. It replaces the whole view, so it is also what makes the caret hand-back
@@ -211,8 +212,8 @@ function renderSettings(){closeCombo();
  // Save (to list it), by Discard (to say what is being thrown away) and by
  // beforeunload (to decide whether it may interrupt at all).
  EDITS.guards=()=>configChanges(cfg);
- // One `cfg`, one Save: the four cards are one FILE, and saving a quarter of a
- // document is not a thing this API can do.
+ // One `cfg`, one Save: the four cards are one FILE, and one Save is one
+ // confirm dialog listing everything about to change in it.
  // `data-save` is the hand-back's hook, the pair of `data-discard`: focusSel names
  // an element by its id or by its data- attributes, and a savebar Save carried
  // NEITHER — so the caret that a confirm dialog gave back to it had no way home
@@ -221,9 +222,13 @@ function renderSettings(){closeCombo();
  const save=el('button',{class:'btn primary','data-save':'guards',onclick:async()=>{
    const rows=await confirmSave({rows:()=>configChanges(cfg),
      title:'Save settings',scope:'guards',empty:'no settings changed',
-     note:'writes .claude/audit.config.json'});
+     note:'writes .claude/audit.config.json, rewritten in canonical JSON layout '
+       +'— its existing formatting is not kept'});
    if(!rows)return;
-   const res=await api('PUT','/api/config',cfg);
+   // Only what changed, applied by the server to the file as it reads it under
+   // its write lock: the draft predates anything written since this page loaded.
+   const res=await api('PUT','/api/config',
+     {patch:configPatch(STATE.config||{},cfg,STATE.defaults||{})});
    findings.replaceChildren(findingsBox(res));
    saveOutcome(res,rows,'the config',findings);
    if(res.ok){STATE.config=JSON.parse(JSON.stringify(cfg));syncGuardsDirty();}}},
@@ -370,7 +375,13 @@ function scalarField(cfg,d,f,tip){
   // <button> becomes the label's first labelable descendant and the box's
   // `labels` drops 1 -> 0. A field that is labelled only while it is empty is not
   // labelled. The visible words are carried, so SC 2.5.3 holds with it.
-  const ed=listEditor(()=>getPath(cfg,f.path)??def??[],a=>setPath(cfg,f.path,a),
+  // The editor DRAWS the default while the key is unset, so it hands back a copy
+  // of it on every edit. While the key is unset in the file and the list still
+  // equals that default, nothing has changed and the key stays absent; the first
+  // real change writes the list — which the confirm dialog marks as pinning.
+  const wasSet=cur!==undefined;
+  const ed=listEditor(()=>getPath(cfg,f.path)??def??[],
+    a=>{if(!wasSet&&cfSame(a,def??[]))delPath(cfg,f.path);else setPath(cfg,f.path,a);},
     f.placeholder||'add…',null,f.label+': add');
   ed.id=fieldId(f.path);ed.tabIndex=-1;
   // No forId: the id is on the editor, which is a <div> and not labelable, so a
@@ -400,9 +411,9 @@ function scalarField(cfg,d,f,tip){
  * boolean `enforce`, where true meant the strictest tier. This control reads
  * planGate first and falls back to presetting 'deny' from that flag, and any
  * change writes planGate while deleting enforce — so a file that stated the tier
- * twice leaves this form stating it once. The write sends the whole object and
- * the server echoes both halves of that at save time, which is what keeps the
- * removal visible instead of incidental.
+ * twice leaves this form stating it once. The save's patch carries both halves
+ * — the planGate write and the enforce removal — and the server echoes both,
+ * which is what keeps the removal visible instead of incidental.
  *
  * The caption is the honest part: while both keys are still in the file it says
  * where the shown value came from and what saving will do about it, because

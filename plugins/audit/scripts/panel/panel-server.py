@@ -212,6 +212,7 @@ _composition_changes = _panel_write._composition_changes
 _fmt_change = _panel_write._fmt_change
 _journal = _panel_write._journal
 write_config = _panel_write.write_config
+write_config_patch = _panel_write.write_config_patch
 _reject_unknown = _panel_write._reject_unknown
 apply_composition_patch = _panel_write.apply_composition_patch
 _touched_phase_ids = _panel_write._touched_phase_ids
@@ -407,7 +408,7 @@ def _make_handler(project, token):
             except Exception as exc:
                 self._json(400, {"ok": False, "findings": ["bad JSON: %s" % exc]}); return
             if path == "/api/config":
-                self._json(200, write_config(project, body)); return
+                self._json(200, write_config_patch(project, body)); return
             if path == "/api/composition":
                 self._json(200, apply_composition(project, body)); return
             if path == "/api/areas":

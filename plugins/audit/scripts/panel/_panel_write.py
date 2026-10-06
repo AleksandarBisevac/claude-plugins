@@ -8,7 +8,8 @@ makes a write safe against a running /audit command (`_acquire_write_lock` /
 `_release_write_lock`), the change rows that let the panel say what a save WOULD
 change and then prove it changed exactly that (`_flat_paths`, `_config_changes`,
 `_composition_changes`, `_fmt_change`), the tamper-evident record of it
-(`_journal`), and the four writers themselves -- `write_config`,
+(`_journal`), and the four writers themselves -- `write_config` (and the
+Settings form's door to it, `write_config_patch` / `apply_config_patch`),
 `apply_composition` (with `_reject_unknown` / `apply_composition_patch` /
 `_touched_phase_ids` / `_write_back`), plus the two wholesale-replace endpoints
 `write_policy` and `write_areas` that go THROUGH them rather than beside them.
@@ -57,6 +58,7 @@ BOUNDARY DECISIONS -- names this module shares with the read side:
 
 Stdlib only, Python 3.8 compatible.
 """
+import copy
 import json
 import os
 import sys
@@ -1512,6 +1514,115 @@ def write_config(project, obj=None, mutate=None):
     out.update(_journal(project, current, "config.write", out["path"], applied))
     return out
 
+
+
+# The keys one config patch entry may carry. `pin` is the form's own marker for a
+# list that copies a shipped default into the file; it changes nothing written.
+_PATCH_ENTRY_KEYS = ("path", "value", "remove", "pin")
+
+
+def _config_patch_findings(patch):
+    """Why a config patch cannot be applied, judged before anything is read.
+
+    A path is a LIST of key segments, never a dotted string: a key may itself hold
+    a dot (a model id under `usage.pricing`), and a joined path cannot say where
+    such a key ends. An entry either sets a `value` or carries `remove: true`.
+    """
+    if not isinstance(patch, list):
+        return ["config patch must be a list of entries"]
+    findings = []
+    for i, e in enumerate(patch):
+        if not isinstance(e, dict):
+            findings.append("config patch entry %d must be an object" % i)
+            continue
+        extra = sorted(k for k in e if k not in _PATCH_ENTRY_KEYS)
+        if extra:
+            findings.append("config patch entry %d has unknown key(s) %s"
+                            % (i, ", ".join(extra)))
+        path = e.get("path")
+        if not (isinstance(path, list) and path
+                and all(isinstance(k, str) and k for k in path)):
+            findings.append("config patch entry %d: path must be a non-empty list "
+                            "of non-empty key segments" % i)
+        has_value, remove = "value" in e, e.get("remove", False)
+        if remove not in (True, False) or has_value == bool(remove):
+            findings.append("config patch entry %d must either set a value or "
+                            "carry remove: true, not both and not neither" % i)
+        if e.get("pin", False) not in (True, False):
+            findings.append("config patch entry %d: pin must be a boolean" % i)
+    return findings
+
+
+def _remove_path(cfg, path):
+    """Delete one path and every container that delete left empty, upward.
+
+    A path that is not there is a no-op, whichever step is missing or is not an
+    object. Mirrors `delPath` in `ui/panel/settings.js`, so a removal leaves the
+    file in the shape the form drew.
+    """
+    chain = [cfg]
+    for k in path[:-1]:
+        nxt = chain[-1].get(k)
+        if not isinstance(nxt, dict):
+            return
+        chain.append(nxt)
+    chain[-1].pop(path[-1], None)
+    for depth in range(len(path) - 1, 0, -1):
+        if chain[depth]:
+            return
+        chain[depth - 1].pop(path[depth - 1], None)
+
+
+def _set_path(cfg, path, value):
+    """Write one path, replacing any step that is not an object with a fresh one.
+
+    A path is a statement about shape, so writing `usage.bands.highUSD` says
+    `usage.bands` is an object. Mirrors `setPath` in `ui/panel/settings.js`.
+    """
+    cur = cfg
+    for k in path[:-1]:
+        if not isinstance(cur.get(k), dict):
+            cur[k] = {}
+        cur = cur[k]
+    cur[path[-1]] = value
+
+
+def apply_config_patch(config, patch):
+    """The config with a (valid) patch applied; `config` is not mutated.
+
+    Removals run before writes, so an entry replacing a branch with a leaf, or a
+    leaf with a branch, lands whichever way round the form listed them. Every key
+    no entry names keeps the value it was read with - a float such as 5.0 included,
+    which a copy that went through a browser's JSON comes back without.
+    """
+    out = copy.deepcopy(config if isinstance(config, dict) else {})
+    for e in patch:
+        if e.get("remove"):
+            _remove_path(out, e["path"])
+    for e in patch:
+        if not e.get("remove"):
+            _set_path(out, e["path"], copy.deepcopy(e["value"]))
+    return out
+
+
+def write_config_patch(project, body):
+    """`PUT /api/config` - apply the Settings form's patch: `{"patch": [...]}`.
+
+    The form used to send its whole copy of the config, which rewrote keys nobody
+    changed: the copy predated anything written after the page loaded and had lost
+    the float/int distinction on its way through the browser. A patch names only
+    what changed, and it is applied by `write_config(mutate=...)` to the config
+    read UNDER the write lock, so a key another writer changed in between keeps
+    their value. The file is still re-serialized whole: the stdlib's JSON keeps no
+    formatting, which the confirm dialog says before the save.
+    """
+    if not isinstance(body, dict):
+        return {"ok": False, "findings": ["config patch body must be a JSON object"]}
+    patch = body.get("patch")
+    findings = _config_patch_findings(patch)
+    if findings:
+        return {"ok": False, "findings": findings}
+    return write_config(project, mutate=lambda cfg: apply_config_patch(cfg, patch))
 
 def theme_state(project):
     """`GET /api/theme` — the theme in effect, the vocabulary to edit it with,

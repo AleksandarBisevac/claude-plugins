@@ -35,7 +35,7 @@
     {
       "id": "P105.1",
       "title": "Name why an existing manifest could not be read in the state payload",
-      "status": "in_progress",
+      "status": "done",
       "description": "The panel's unreadable-plan branch can only print the reason the server sends, so build_state must always send one when the manifest file exists and no rollup was built. A file that is not valid JSON already yields a 'cannot parse manifest' finding. A file that parses to something other than an object (a list, a string) reaches the client today with manifestExists true, no rollup and an empty findings list, which is the silent case to close. Add that finding in _panel_state.build_state and pin both shapes.",
       "files": [
         "plugins/audit/scripts/panel/_panel_state.py",
@@ -61,24 +61,35 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c97e007d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_panel_state.build_state sets a parsed flag on a successful load and, when the parsed manifest is not a dict, sends one finding saying the manifest is not a JSON object and naming the parsed type; the dict path is untouched. Cases pin the invalid-JSON prefix, the list and string shapes by their text, and an ordinary manifest getting a rollup and never this finding.",
+        "descriptive": "The panel's state payload now always names why a manifest that exists could not be read, including a file that parses as JSON but is not an object, so the panel never shows an empty findings list beside a missing rollup."
       },
       "startedAt": "2026-10-06T14:44:44Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T15:29:06Z",
+      "verifiedBy": [
+        "pu1",
+        "pu2",
+        "pu2b",
+        "pu3"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T15:26:35Z.55a308",
         "status": "passed",
         "at": "2026-10-06T15:26:35Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c97e007d",
+        "at": "2026-10-06T15:29:06Z",
+        "basis": "audit-reviewer (task mode): matches; one medium finding (pu2 did not pin the text) fixed and a string-rooted case added"
       }
     },
     {
       "id": "P105.2",
       "title": "Show an unreadable manifest as unreadable in every panel view",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Overview, Plan & models, Proposals and the Policy area-rules line each branch on a missing rollup and tell the reader there is no plan and to run /audit:init. That is the wrong advice for a plan file that exists and does not parse. Add one planState() helper (none / unreadable / ready) that all four views read; the unreadable branch renders the existing manifestFindingsBox with the server's findings, says to fix the file or restore it from git, and never names /audit:init. A pin over the assembled page keeps any view from testing the rollup directly. Read plugins/audit/scripts/ui/panel/README.md and print the pins with `python3 tools/count-ui-pins.py` before editing; besides the gates listed, run `npx vitest run` (vitest is not a buildCommands key).",
       "files": [
         "plugins/audit/scripts/ui/panel/overview.js",
@@ -109,21 +120,26 @@
       "dependsOn": [
         "P105.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T15:29:17Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T16:23:45Z.ae4351",
+        "status": "passed",
+        "at": "2026-10-06T16:23:45Z"
+      }
     },
     {
       "id": "P105.3",
       "title": "Show a stopped panel server as offline and refuse writes while it is",
-      "status": "in_progress",
+      "status": "done",
       "description": "When the server stops with a tab open, the page keeps looking live, Save still opens its dialog, and the PUT rejects into an uncaught TypeError with nothing on screen. The poll owns liveness. The first failed poll paints a persistent page-level offline banner, placed like the build-stale notice and wearing .findings warn, sharing that notice's placement rule in app-shell.css rather than adding a second. It also disables every write control, reached through data- attributes, and the next poll that answers clears both. In api(), a write whose fetch rejects resolves to a refusal-shaped answer, so every save path renders it through findingsBox and saveOutcome. Its words state what the page knows: the server did not answer, no write is confirmed, and the edits are still in the form. That is the honest form of 'nothing was written', because a rejected fetch cannot tell a refused connection from an answer lost after the write. Print the pins with `python3 tools/count-ui-pins.py` first; besides the gates listed, run `npx vitest run`.",
       "files": [
         "plugins/audit/scripts/ui/panel/core.js",
@@ -173,24 +189,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "cb83c299",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "core.js api(): a write whose fetch rejects resolves to a refusal-shaped answer carrying a no-answer finding; a read whose fetch rejects still rejects, tagged no-answer. run-status.js: the poll owns liveness - a rejected poll sets an offline state that marks the root, adds one page-level notice and makes write controls (reached through data- hooks) unavailable, and the next poll that answers clears both, handing back only what it took. write-confirmation.js: confirmSave refuses while offline before any dialog; saveOutcome renders the no-answer case. app-shell.css shares one placement rule between the offline notice and the build-stale notice. The D9 pin is restated; a vitest suite covers the behaviour with allow twins. The panel screenshots were re-captured because the panel sources moved. Left for later: the report button has only an id and is not on the control list, and appearance-view.js chains a read after its theme writes.",
+        "descriptive": "When the panel server stops with a tab open, the page now shows that it is offline, marks its write controls unavailable and refuses Save, and a write that gets no answer says the server did not answer and the edits are still in the form, instead of failing silently."
       },
       "startedAt": "2026-10-06T14:44:45Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T15:29:05Z",
+      "verifiedBy": [
+        "D9",
+        "server-offline.test.mjs"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T15:24:52Z.1dc9a1",
         "status": "passed",
         "at": "2026-10-06T15:24:52Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "cb83c299",
+        "at": "2026-10-06T15:29:05Z",
+        "basis": "audit-reviewer (task mode): every write path receives the refusal answer; one shared placement rule; no findings; pre-existing appearance-view.js gap recorded"
       }
     },
     {
       "id": "P105.4",
       "title": "Save only the config keys the form changed",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Settings Save sends the whole config the form holds, so the server rewrites keys nobody changed. Adding one entry to a list key that was unset (exemptGlobs) writes the whole shipped default list into the file without saying so. Send a patch instead: one entry per changed key, addressed by key segments rather than a dotted string, because a pricing key can contain a dot. Apply it in _panel_write through write_config(mutate=...) against the config read under the write lock; COMPATIBILITY.md puts the panel's HTTP endpoints outside the version contract, so the payload may change shape. The confirm dialog marks a list row whose key was unset and has a shipped default as pinning that default, so later plugin defaults stop reaching the project. Its note also says the file is rewritten in canonical JSON layout, because the stdlib keeps no formatting. Besides the gates listed, run `npx vitest run`.",
       "files": [
         "plugins/audit/scripts/ui/panel/settings.js",
@@ -223,21 +248,26 @@
       "dependsOn": [
         "P105.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T15:29:18Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T16:17:33Z.8eba46",
+        "status": "passed",
+        "at": "2026-10-06T16:17:33Z"
+      }
     },
     {
       "id": "P105.5",
       "title": "Make the panel's state directory ignore itself",
-      "status": "in_progress",
+      "status": "done",
       "description": "The first panel launch writes .claude/state/panel-openstate.json through a plain makedirs. In a project where no hook has run yet, the committed acme-store example included, the state directory then has no ignore rule and the launch leaves an untracked file, contrary to examples/README.md. Have _panel_runstate.record_opened create the directory through the hooks' own _config.ensure_local_dir (reached via _paths.hooks_config()), which drops the same self-ignoring .gitignore every other plugin-local directory gets, instead of adding an ignore line for the example only. Correct the first-launch sentence in examples/README.md. In the plugin README, name the state file beside the pidfile and the launch log, naming the files rather than counting them.",
       "files": [
         "plugins/audit/scripts/panel/_panel_runstate.py",
@@ -265,18 +295,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "27a7a46a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_panel_runstate.record_opened creates the state directory through the hooks' ensure_local_dir (reached via _paths.hooks_config()), which drops a self-ignoring .gitignore on first creation and never overwrites an existing one. Two cases in a real git fixture: a fresh project ends with the marker and a clean git status, and an existing marker is left byte-identical. examples/README.md's first-launch sentence and the plugin README's panel-files paragraph now say what the code does, naming the files rather than counting them.",
+        "descriptive": "A first panel launch in a fresh clone no longer leaves an untracked state file: the state directory now ignores itself the way every other plugin-local directory does."
       },
       "startedAt": "2026-10-06T14:44:45Z",
-      "completedAt": null,
+      "completedAt": "2026-10-06T15:29:06Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-06T15:28:35Z.6e815e",
         "status": "passed",
         "at": "2026-10-06T15:28:35Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "27a7a46a",
+        "at": "2026-10-06T15:29:06Z",
+        "basis": "audit-reviewer (task mode): matches, no findings; no other plain makedirs writes the state directory"
       }
     },
     {
