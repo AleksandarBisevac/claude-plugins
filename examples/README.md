@@ -65,7 +65,11 @@ It binds `127.0.0.1` only and requires a per-launch token. The pidfile holding
 that token (`acme-store/.claude/audit-panel.json`) is gitignored, so running the
 panel never dirties the tree. Since 0.35 the panel maintains that ignore rule
 itself — and this example ships `acme-store/.claude/.gitignore` committed, so
-the first launch finds the rule already in place and writes nothing.
+the first launch finds the rule already in place and writes nothing. The
+panel's state directory (`acme-store/.claude/state`, holding whether the panel
+has ever been opened here) needs no such line: it drops its own self-ignoring
+`.gitignore` the moment anything writes there, so the first launch leaves the
+tree clean without this example having to commit a rule for it too.
 
 ### `report.sh` — the report
 
