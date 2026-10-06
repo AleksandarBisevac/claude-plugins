@@ -233,7 +233,7 @@
     {
       "id": "P103.5",
       "title": "false claims about backfill, a missing verb and the example panel are corrected",
-      "status": "in_progress",
+      "status": "done",
       "description": "Four claims a reader acts on are false on main: README.md:120 says /audit:usage --backfill 'writes nothing' and plugins/audit/README.md:996-997 says 'nothing is generated', while commands/usage.md:30-31 says it rewrites the monthly ledger; commands/status.md:215 names /audit:run-gate, which does not exist (the recorder is scripts/governance/run-test-gate.py --record); examples/README.md:64-68 says running the panel 'never dirties the tree', while a first launch leaves .claude/state/panel-openstate.json untracked and not ignored. Say what each actually does: backfill spends no tokens and writes a local, self-ignoring ledger under .claude/usage/ (confirm in a scratch git repo that git status stays clean); the status sentence names the recorder; the example sentence states what is ignored and what is not until P105's ignore rule lands (re-run examples/panel.sh start/stop in a git archive export and read git status --porcelain). Acceptance: grep for 'writes nothing' and 'nothing is generated' beside backfill, '/audit:run-gate' and 'never dirties' across README.md, QUICKSTART.md, plugins/audit/, examples/ and docs/handbook.html finds nothing untrue.",
       "files": [
         "README.md",
@@ -259,13 +259,13 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b28b0b3b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "README.md's /audit:usage --backfill line says it spends no tokens and writes only a local, self-ignoring ledger, and the plugin README says no tokens are spent and no agent is called, naming the self-ignoring ledger under .claude/usage/ as the one thing written (checked by running --backfill in a scratch git repo with a synthetic transcript: git status stayed clean and a '*' .gitignore was dropped). commands/status.md names scripts/governance/run-test-gate.py --record instead of the non-existent /audit:run-gate. The example-panel claim is left to code, not reworded (note 1): the panel phase's self-ignoring state directory makes \"running the panel never dirties the tree\" true once both phases land, so this task's edit to examples/README.md was restored and examples/panel.sh is unchanged.",
+        "descriptive": "The READMEs now say what usage backfill really writes, and the status command names the gate recorder that exists; the example-panel claim becomes true when the panel's own fix lands."
       },
       "startedAt": "2026-10-06T19:04:33Z",
-      "completedAt": null,
+      "completedAt": "2026-10-06T19:14:06Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -277,6 +277,12 @@
         "runId": "2026-10-06T19:13:48Z.d4c4bd",
         "status": "passed",
         "at": "2026-10-06T19:13:48Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "b28b0b3b",
+        "at": "2026-10-06T19:14:06Z",
+        "basis": "audit-reviewer (task mode): clean; diverges from the description by recorded orchestrator decision (note 1) - the example-panel sentence is made true by the panel phase's self-ignoring state directory instead of being reworded, to avoid a sentence that turns false and conflicts on merge"
       }
     },
     {
@@ -328,11 +334,12 @@
     {
       "id": "P103.7",
       "title": "QUICKSTART is the only quick-start; the plugin README and handbook link to it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The first-run path still exists in three shapes that disagree: QUICKSTART.md, the plugin README's TL;DR (:28-43), its Install command list (:514-524) and its Quick start (:654-715), plus the handbook's install section. Replace the plugin README's TL;DR, the Install list and the Quick start with one link to QUICKSTART.md, keeping the '## Install' heading (prove-gates s15 anchors on it) and moving the hand-copy starter-manifest curl lines into the reference section beside the schema curl, so the README still carries current-tag pins (raw_url_pin_drift, prove-gates p1); the handbook's #install section keeps its anchor and content and gains a pointer to QUICKSTART for a first session (an absolute GitHub link, since the page is served from Pages). This completes the documentation split by audience in CONTRIBUTING's Decision record rather than reopening it. Acceptance: a reader goes from README.md to the first /audit:doctor through exactly one page, and no document other than QUICKSTART.md lists a first-command sequence.",
       "files": [
         "plugins/audit/README.md",
-        "docs/handbook.html"
+        "docs/handbook.html",
+        "QUICKSTART.md"
       ],
       "tests": {
         "mode": "gate-only",
@@ -350,21 +357,26 @@
       "dependsOn": [
         "P103.5"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T19:15:02Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T19:28:17Z.5fabd4",
+        "status": "passed",
+        "at": "2026-10-06T19:28:17Z"
+      }
     },
     {
       "id": "P103.8",
       "title": "the demo GIF shows today's gate text and --check fails when that text moves",
-      "status": "pending",
+      "status": "in_progress",
       "description": "demo-gate.gif was recorded at 0.24 and shows a bypass line that does not say only the human can arm it, while README.md says every line is the plugin's real output; --check asserts behaviour, never text, so nothing went red. Give the GIF a record in captured-at.json under its own top-level key (capture-screenshots.mjs today rewrites the file as note+images only, so it must preserve keys it does not own), make --check compare a fresh capture's text digest and the committed bytes against that record, then re-record with Pillow; derive the final hold from the refusal's length rather than the fixed 3600 ms, since today's refusal is roughly twice as long. Update the CI step's comment, which says nothing can tell the GIF is stale. Run --check twice with a gap and on a git archive export before calling the digest stable, and run npx vitest run and python3 tools/capture-demo-gif.py --check (neither is a build-command key).",
       "files": [
         "tools/capture-demo-gif.py",
@@ -394,14 +406,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T19:15:02Z",
       "completedAt": null,
       "verifiedBy": []
     },

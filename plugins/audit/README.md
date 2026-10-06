@@ -25,23 +25,6 @@ shipped without.
 It governs **one repository per manifest, deliberately** —
 [COMPATIBILITY.md](../../COMPATIBILITY.md) names what that leaves out.
 
-## TL;DR
-
-```
-/plugin marketplace add AleksandarBisevac/claude-plugins
-/plugin install audit@quality-gates          # then /reload-plugins
-/audit:usage --backfill                        # free: your past spend, from transcripts already on disk
-/audit:doctor                                  # is the setup healthy?
-/audit:init                                    # audit the codebase → writes the manifest
-/audit:status                                  # see phases/tasks/bugs + what's ready
-/audit:phase P0                                # run a whole phase (or /audit:run <id> for one task)
-```
-
-Every action is its own `/audit:<verb>` (`status` · `doctor` · `next` · `run` · `phase` · `review` · `resume` ·
-`report` · `panel` · `init` · `task` · `bug` · `sync`) — there is **no bare `/audit`**. Requirements: Python
-(`python3`/`python`/`py`; Windows = Git Bash). Add `--dry-run` to `next`/`run`/`phase` to preview
-without touching anything. Git-in-a-subdir? set `meta.gitRoot`.
-
 ## See it
 
 The **[live demo](https://aleksandarbisevac.github.io/claude-plugins/)** is a real report you can
@@ -514,15 +497,14 @@ the report, and `scripts/manifest/validate-manifest.py` runs the referential val
 
 ## Install
 
-```
-/plugin marketplace add AleksandarBisevac/claude-plugins   # or a local path during dev
-/plugin install audit@quality-gates
-```
-
-Commands appear as `/audit:status`, `/audit:doctor`, `/audit:next`, `/audit:run`, `/audit:phase`, `/audit:review`,
-`/audit:resume`, `/audit:report`, `/audit:panel`, `/audit:init`, `/audit:propose`, `/audit:task`, `/audit:bug`, `/audit:sync` — every
-action is its own `/audit:<verb>` (there is no bare `/audit`). If they don't show up immediately,
-run `/reload-plugins` (or restart the session).
+[QUICKSTART.md](../../QUICKSTART.md) has the install step, in order, with the one
+case worth knowing before you type it (installing arms the guard hooks in **all**
+your projects, not just this one). Come back here for everything after that —
+commands appear as `/audit:status`, `/audit:doctor`, `/audit:next`, `/audit:run`,
+`/audit:phase`, `/audit:review`, `/audit:resume`, `/audit:report`, `/audit:panel`,
+`/audit:init`, `/audit:propose`, `/audit:task`, `/audit:bug`, `/audit:sync` — every
+action is its own `/audit:<verb>` (there is no bare `/audit`). If they don't show up
+immediately, run `/reload-plugins` (or restart the session).
 
 ## Making it travel with the repo
 
@@ -654,66 +636,10 @@ Scope or turn it off:
 
 ## Quick start
 
-### First, the part that costs nothing
-
-```
-/audit:usage --backfill
-```
-
-No manifest, no agents, no tokens spent. It scans the Claude Code transcripts already
-sitting in `~/.claude/projects/` and prints what this repo has cost you — totals, cache
-economics, and a breakdown by model, author and **agent** (orchestrator vs. subagents),
-with a daily trend. Nothing is generated and nothing is called; the data was already on
-your disk, unread.
-
-Every row will say **Uncategorized**, and that is the useful part. Native tooling can
-tell you what a *session* or a *model* cost. Tying spend to a **phase and a task** needs
-a plan to tie it to — which is what everything below builds, and the comparison a
-date-range dashboard structurally cannot make.
-
-Then check the setup is sound before committing to a run:
-
-```
-/audit:doctor          # interpreter the hooks will use, git root, config, manifest, gates
-```
-
-### Then the manifest
-
-Generate it (recommended):
-
-```
-/audit:init            # interviews you, audits the codebase in parallel, proposes phases
-                       # — approve to write them, or park them for /audit:propose later
-```
-
-…or copy the starter and fill it in by hand (from your repo root, any terminal):
-
-```bash
-mkdir -p docs/audit .claude
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v3.1.0/plugins/audit/templates/audit-plan.starter.json -o docs/audit/audit-plan.json
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v3.1.0/plugins/audit/templates/audit.config.example.json -o .claude/audit.config.json   # optional
-```
-
-> The starter's `meta.buildCommands` are **npm examples** — replace them with your repo's
-> real lint/test/typecheck commands. Inside a Claude Code session the installed plugin's
-> files are also reachable at `${CLAUDE_PLUGIN_ROOT}` (that's how the commands invoke the
-> validator); `claude plugin list` shows what's installed. Not a Node project? The
-> [worked example](../../examples/) carries a second phase in a different ecosystem
-> (`workertest: "go test ./..."` beside the storefront's `test: "npm test"`) so the shape
-> of a `meta.buildCommands` entry and a `tests.gate` reference is not tied to npm's
-> spelling of either.
-
-Run it:
-
-```
-/audit:status          # report (phases, tasks, bugs, resumable phases), no changes
-/audit:next            # execute the next ready task
-/audit:phase P0        # run a whole phase, then sign it off
-/audit:review P0       # re-run a phase's sign-off
-/audit:resume          # continue an interrupted phase run
-/audit:report          # write audit-report.html + .md next to the manifest
-/audit:task add "..."  # add a tracked task (--phase <id> to target a phase)
-```
+[QUICKSTART.md](../../QUICKSTART.md) is the one page: the free `/audit:usage --backfill`
+look at past spend, `/audit:doctor`, generating the manifest with `/audit:init`, running
+one task and reading the report. Copying the starter manifest by hand instead of running
+`/audit:init` is covered in [the manifest in one minute](#the-manifest-in-one-minute).
 
 ## Bugs
 
@@ -2064,6 +1990,24 @@ or from a checkout of this repo (exit 0 = valid, 1 = findings, 2 = unreadable):
 ```bash
 python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json
 ```
+
+**No Claude session at all**, and you'd rather fill the manifest in by hand than run
+`/audit:init`: copy the starter (from your repo root, any terminal):
+
+```bash
+mkdir -p docs/audit .claude
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v3.1.0/plugins/audit/templates/audit-plan.starter.json -o docs/audit/audit-plan.json
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v3.1.0/plugins/audit/templates/audit.config.example.json -o .claude/audit.config.json   # optional
+```
+
+> The starter's `meta.buildCommands` are **npm examples** — replace them with your repo's
+> real lint/test/typecheck commands. Inside a Claude Code session the installed plugin's
+> files are also reachable at `${CLAUDE_PLUGIN_ROOT}` (that's how the commands invoke the
+> validator); `claude plugin list` shows what's installed. Not a Node project? The
+> [worked example](../../examples/) carries a second phase in a different ecosystem
+> (`workertest: "go test ./..."` beside the storefront's `test: "npm test"`) so the shape
+> of a `meta.buildCommands` entry and a `tests.gate` reference is not tied to npm's
+> spelling of either.
 
 **With no checkout and no plugin**, validate the *shape* against the published JSON Schema:
 
