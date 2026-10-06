@@ -1,0 +1,330 @@
+{
+  "id": "P105",
+  "title": "the panel tells the truth about its own state",
+  "status": "pending",
+  "description": "Tasks: (1) Overview branches on manifestExists && !rollup and shows the existing findings box instead of 'No plan yet'. (2) A failed poll shows a persistent offline banner and disables Save; a failed save says nothing was written. (3) Save writes only changed keys, so a default list is not frozen into the config. (4) The example's .claude/state is ignored. (5) GET / requires the token the URL already carries, the pidfile is 0600, and SECURITY.md says the panel trusts every local process of the same user. (6) The Azure DevOps card and column appear only when meta.ado is configured.",
+  "desiredOutcome": "the panel shows an unreadable manifest as unreadable, shows a stopped server as stopped with Save disabled, saves only the keys a user changed, leaves a clean tree in the example, and serves its token only to a request that already carries it",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P105.1",
+      "title": "Name why an existing manifest could not be read in the state payload",
+      "status": "pending",
+      "description": "The panel's unreadable-plan branch can only print the reason the server sends, so build_state must always send one when the manifest file exists and no rollup was built. A file that is not valid JSON already yields a 'cannot parse manifest' finding. A file that parses to something other than an object (a list, a string) reaches the client today with manifestExists true, no rollup and an empty findings list, which is the silent case to close. Add that finding in _panel_state.build_state and pin both shapes.",
+      "files": [
+        "plugins/audit/scripts/panel/_panel_state.py",
+        "plugins/audit/tests/test__panel_state.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__panel_state.py: a manifest file that is not valid JSON is served with manifestExists true, rollup null and a finding that starts 'cannot parse manifest:'",
+          "plugins/audit/tests/test__panel_state.py: a manifest that parses to something other than an object is served with a finding naming that, never with an empty findings list beside a null rollup"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P105.2",
+      "title": "Show an unreadable manifest as unreadable in every panel view",
+      "status": "pending",
+      "description": "Overview, Plan & models, Proposals and the Policy area-rules line each branch on a missing rollup and tell the reader there is no plan and to run /audit:init. That is the wrong advice for a plan file that exists and does not parse. Add one planState() helper (none / unreadable / ready) that all four views read; the unreadable branch renders the existing manifestFindingsBox with the server's findings, says to fix the file or restore it from git, and never names /audit:init. A pin over the assembled page keeps any view from testing the rollup directly. Read plugins/audit/scripts/ui/panel/README.md and print the pins with `python3 tools/count-ui-pins.py` before editing; besides the gates listed, run `npx vitest run` (vitest is not a buildCommands key).",
+      "files": [
+        "plugins/audit/scripts/ui/panel/overview.js",
+        "plugins/audit/scripts/ui/panel/composition.js",
+        "plugins/audit/scripts/ui/panel/proposals-view.js",
+        "plugins/audit/scripts/ui/panel/policy-view.js",
+        "tools/ui-tests/plan-unreadable.test.mjs",
+        "plugins/audit/tests/test__panel_page.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ui-tests/plan-unreadable.test.mjs: planState answers 'unreadable' for manifestExists true with no rollup, 'none' when no manifest file exists, and 'ready' with a rollup",
+          "tools/ui-tests/plan-unreadable.test.mjs: the unreadable notice carries the server's finding text and never contains '/audit:init', while the 'none' notice keeps today's /audit:init sentence",
+          "plugins/audit/tests/test__panel_page.py: no view in the assembled page branches on a missing rollup except through planState, so a new view cannot reintroduce 'no plan' for a file that exists"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "shots"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P105.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P105.3",
+      "title": "Show a stopped panel server as offline and refuse writes while it is",
+      "status": "pending",
+      "description": "When the server stops with a tab open, the page keeps looking live, Save still opens its dialog, and the PUT rejects into an uncaught TypeError with nothing on screen. The poll owns liveness. The first failed poll paints a persistent page-level offline banner, placed like the build-stale notice and wearing .findings warn, sharing that notice's placement rule in app-shell.css rather than adding a second. It also disables every write control, reached through data- attributes, and the next poll that answers clears both. In api(), a write whose fetch rejects resolves to a refusal-shaped answer, so every save path renders it through findingsBox and saveOutcome. Its words state what the page knows: the server did not answer, no write is confirmed, and the edits are still in the form. That is the honest form of 'nothing was written', because a rejected fetch cannot tell a refused connection from an answer lost after the write. Print the pins with `python3 tools/count-ui-pins.py` first; besides the gates listed, run `npx vitest run`.",
+      "files": [
+        "plugins/audit/scripts/ui/panel/core.js",
+        "plugins/audit/scripts/ui/panel/run-status.js",
+        "plugins/audit/scripts/ui/panel/write-confirmation.js",
+        "plugins/audit/scripts/ui/panel-css/app-shell.css",
+        "tools/ui-tests/server-offline.test.mjs",
+        "plugins/audit/tests/test__panel_page.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ui-tests/server-offline.test.mjs: a PUT whose fetch rejects resolves to ok false with a finding saying the server did not answer and the edits are still in the form, while a GET whose fetch rejects still rejects",
+          "tools/ui-tests/server-offline.test.mjs: a poll whose fetch rejects marks the page offline and the next poll that answers clears it; an answer that arrives with ok false never marks it offline",
+          "tools/ui-tests/server-offline.test.mjs: while offline, confirmSave refuses with the offline sentence and opens no dialog",
+          "plugins/audit/tests/test__panel_page.py: the existing failed-poll pin is restated so the poll's catch sets the offline state instead of swallowing the failure"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "shots"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P105.4",
+      "title": "Save only the config keys the form changed",
+      "status": "pending",
+      "description": "Settings Save sends the whole config the form holds, so the server rewrites keys nobody changed. Adding one entry to a list key that was unset (exemptGlobs) writes the whole shipped default list into the file without saying so. Send a patch instead: one entry per changed key, addressed by key segments rather than a dotted string, because a pricing key can contain a dot. Apply it in _panel_write through write_config(mutate=...) against the config read under the write lock; COMPATIBILITY.md puts the panel's HTTP endpoints outside the version contract, so the payload may change shape. The confirm dialog marks a list row whose key was unset and has a shipped default as pinning that default, so later plugin defaults stop reaching the project. Its note also says the file is rewritten in canonical JSON layout, because the stdlib keeps no formatting. Besides the gates listed, run `npx vitest run`.",
+      "files": [
+        "plugins/audit/scripts/ui/panel/settings.js",
+        "plugins/audit/scripts/ui/panel/write-confirmation.js",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/scripts/panel/panel-server.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "tools/ui-tests/config-patch.test.mjs"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__panel_write.py: a config patch changing one key writes that key and leaves every other key's value as read from disk, a float such as 5.0 included",
+          "plugins/audit/tests/test__panel_write.py: the patch is applied to the config read under the write lock, so a change another writer made to a different key after the form loaded survives",
+          "plugins/audit/tests/test__panel_write.py: a patch addresses keys by segment, so a pricing key containing a dot is written as one key",
+          "tools/ui-tests/config-patch.test.mjs: the patch built from the form carries only the changed paths, a removal for a key set back to its default, and a pin flag on a list key set from absent where a shipped default exists"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "shots"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P105.3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P105.5",
+      "title": "Make the panel's state directory ignore itself",
+      "status": "pending",
+      "description": "The first panel launch writes .claude/state/panel-openstate.json through a plain makedirs. In a project where no hook has run yet, the committed acme-store example included, the state directory then has no ignore rule and the launch leaves an untracked file, contrary to examples/README.md. Have _panel_runstate.record_opened create the directory through the hooks' own _config.ensure_local_dir (reached via _paths.hooks_config()), which drops the same self-ignoring .gitignore every other plugin-local directory gets, instead of adding an ignore line for the example only. Correct the first-launch sentence in examples/README.md. In the plugin README, name the state file beside the pidfile and the launch log, naming the files rather than counting them.",
+      "files": [
+        "plugins/audit/scripts/panel/_panel_runstate.py",
+        "plugins/audit/tests/test__panel_runstate.py",
+        "examples/README.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__panel_runstate.py: record_opened in a fresh git project leaves the state directory holding a .gitignore of '*', and git status --porcelain lists nothing",
+          "plugins/audit/tests/test__panel_runstate.py: an existing state/.gitignore is left byte-identical by record_opened"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P105.6",
+      "title": "Require the session token on GET / and write the pidfile 0600",
+      "status": "pending",
+      "description": "GET / hands the page, with the session token substituted into it, to any local request that passes the Host check. The pidfile holding the same token is written with whatever mode the umask gives. Route / through the token guard the API already uses. The printed URL and the pidfile's url already carry ?t=, and a relaunch opens that url, so the browser and the screenshot tool keep working. Write the pidfile owner-only, tighten an existing one, and update the safety line in commands/panel.md to say the page itself needs the token. This phase's description also names a SECURITY.md sentence on the panel's trust boundary; that file belongs to the phase that owns SECURITY.md and is not edited here.",
+      "files": [
+        "plugins/audit/scripts/panel/panel-server.py",
+        "plugins/audit/tests/test_panel_server.py",
+        "plugins/audit/commands/panel.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_panel_server.py: GET / without the token answers 403 and its body carries no token, while GET /?t=<token> answers 200 with the page",
+          "plugins/audit/tests/test_panel_server.py: the pidfile is written owner read/write only (0600), also when a 0644 file was already there; skipped by name, with the mechanism, on a platform without POSIX modes",
+          "plugins/audit/tests/test_panel_server.py: /favicon.ico still answers without the token"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "shots"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P105.4"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P105.7",
+      "title": "Show the Azure DevOps column and card only where the plan uses ADO",
+      "status": "pending",
+      "description": "Plan & models draws the ADO parent column, the 'on the board' lever and the whole connector card for every project, including those that never set meta.ado, with checked boxes under a 'Not configured' banner. Add one adoVisible(comp) predicate. It is true when adoStatus.configured is true or when any phase or task carries an ADO link or declaration, so nothing already recorded is hidden. The column and its levers render only under it; otherwise the card collapses to one line pointing at /audit:sync connect, which unfolds to today's form. The committed example and the demo manifest both set meta.ado, so their screenshots should not move. Print the pins with `python3 tools/count-ui-pins.py` first; besides the gates listed, run `npx vitest run`.",
+      "files": [
+        "plugins/audit/scripts/ui/panel/composition.js",
+        "plugins/audit/scripts/ui/panel/ado-connector.js",
+        "tools/ui-tests/ado-panel.test.mjs",
+        "plugins/audit/tests/test__panel_page.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ui-tests/ado-panel.test.mjs: adoVisible answers false for a plan with no meta.ado and no phase or task carrying an ADO link or declaration, and true when any one of them is present",
+          "tools/ui-tests/ado-panel.test.mjs: the collapsed connector line's words name /audit:sync connect",
+          "plugins/audit/tests/test__panel_page.py: the ADO parent column header and the 'on the board' lever are built only under adoVisible"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "shots"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P105.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
