@@ -105,12 +105,17 @@
       },
       "startedAt": "2026-10-06T21:26:46Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T21:54:33Z.89ba41",
+        "status": "passed",
+        "at": "2026-10-06T21:54:33Z"
+      }
     },
     {
       "id": "P108.3",
       "title": "Record a classifier no-verdict as could-not-run, not as a failed attempt",
-      "status": "in_progress",
+      "status": "done",
       "description": "When the auto-mode permission classifier cannot reach a verdict, Claude Code refuses the tool call with text containing 'auto mode cannot determine the safety' or 'gave no verdict' (the wording seen in 2.1.2xx transcripts). The pipeline reads that as a failed attempt. Add an arm beside the infrastructure arm in execute-task.md: that text means the step produced no verdict. The arm records could-not-run with the refusal verbatim in task.outcome.technical, reverts the attempts increment, leaves the task in_progress, and reports the classifier as unavailable rather than raising a human fix item. Add the matching progress line to orchestrator.md, and tell the executor in audit-executor.md to report such a refusal verbatim as could-not-run, never as fail. Pin the fragments and their routing in test__refs.py so the rule has a mechanism. Blocked by P100, which edits both reference files.",
       "files": [
         "plugins/audit/reference/execute-task.md",
@@ -139,18 +144,30 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b8080a5c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "A classifier no-verdict is now its own arm, beside the infrastructure-failure arm, in reference/execute-task.md's step 4: on a tool-call refusal that says auto mode cannot determine the safety of the action or gave no verdict, the orchestrator reverts the attempt it counted, records the refusal verbatim in task.outcome.technical, leaves the task in_progress, reports the classifier as unavailable, and raises no human action item. orchestrator.md's progress output gains a matching [NO-VERDICT] line (no retry spent), and agents/audit-executor.md tells the executor to report such a refusal as could-not-run, never as a failure, with the refusal verbatim. test__refs.py pins all three (cv1-cv5), with cv3 as the twin that keeps the infrastructure arm's own human action item; red-first proved 305/309 at HEAD (cv1, cv2, cv4, cv5).",
+        "descriptive": "When Claude Code's safety classifier cannot decide on a step, the run now records it as an unavailable check rather than a failed attempt, so an agent's retry budget is not spent on something the work did not cause."
       },
       "startedAt": "2026-10-06T21:26:46Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T21:42:07Z",
+      "verifiedBy": [
+        "cv1",
+        "cv2",
+        "cv3",
+        "cv4",
+        "cv5"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T21:41:41Z.5e2a00",
         "status": "passed",
         "at": "2026-10-06T21:41:41Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b8080a5c",
+        "at": "2026-10-06T21:42:07Z",
+        "basis": "orchestrator check: the arm, the progress line and the executor rule are present and pinned; red-first proved"
       }
     },
     {

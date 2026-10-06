@@ -233,6 +233,33 @@ def _cases(check):
     _expect("a2 same file again is silent", "silent",
           payload("Bash", sid=s), dirty=["src/shell.ts"])
 
+    # (ew) THE EDIT/WRITE STEER IS GONE FROM EVERY NOTICE TEMPLATE. The old
+    # wording told a model stopped by this guard to reach for the Edit/Write
+    # tools, which is the opposite of what auto mode tells the SAME model to do
+    # with a tool it was just steered away from - a refusal naming a tool a
+    # subagent has no authority to use anyway. Checked over all four templates
+    # at once because the bug was the SAME sentence copy-pasted into each.
+    _ew_templates = (M.WARN_TEMPLATE, M.NAMED_TEMPLATE, M.UNPROVEN_TEMPLATE,
+                     M.LOCKED_TEMPLATE)
+    check("ew1 no notice template names the Edit/Write tools as the remedy",
+          all("Edit/Write" not in t for t in _ew_templates),
+          repr([t for t in _ew_templates if "Edit/Write" in t]))
+    check("ew2 the plan-coverage templates each name putting the file on an "
+          "in_progress task instead",
+          all("in_progress task" in t
+              for t in (M.WARN_TEMPLATE, M.NAMED_TEMPLATE,
+                        M.UNPROVEN_TEMPLATE)),
+          repr((M.WARN_TEMPLATE, M.NAMED_TEMPLATE, M.UNPROVEN_TEMPLATE)))
+    s = "bw-ew"
+    seed(s)
+    _v_ew, _d_ew = M.decide(payload("Bash", sid=s), cfg=cfg, state_dir=sd,
+                            dirty=["src/ew.ts"])
+    check("ew3 the live WARN notice names /audit:task scope and asking the "
+          "operator, not the Edit/Write tools",
+          _v_ew == "warn" and "Edit/Write" not in _d_ew
+          and "/audit:task scope" in _d_ew and "ask the operator" in _d_ew,
+          _d_ew)
+
     # (b) tool-edited files never warn (they went through the gates)
     s = "bw-b"
     seed(s)
@@ -697,6 +724,8 @@ def _cases(check):
           ok_l, _detail_l)
     check("fl2 and the lock's own holder is not warned about its own write",
           ok_own, _detail_l)
+    check("fl3 the lock notice does not steer to the Edit/Write tools",
+          ok_l and "Edit/Write" not in detail, detail if ok_l else _detail_l)
 
     # (g) non-git directory → silent
     _expect("g1 non-git dir silent", "silent",
@@ -1226,6 +1255,12 @@ def _cases(check):
           _v_u == "warn" and "CANNOT say the command wrote them" in _d_u
           and "src/unnamed.ts" in _d_u and "background job(s)" in _d_u
           and "its own text names the write" not in _d_u, repr(_d_u))
+    check("bg14b both the NAMED and the UNPROVEN notices name "
+          "/audit:task scope and the operator, never the Edit/Write tools",
+          "Edit/Write" not in _d_n and "Edit/Write" not in _d_u
+          and "/audit:task scope" in _d_n and "/audit:task scope" in _d_u
+          and "ask the operator" in _d_n and "ask the operator" in _d_u,
+          repr((_d_n, _d_u)))
     # Both sentences in ONE verdict: a command that names one destination while
     # another path goes dirty beside it owes the right sentence about each, and a
     # repair that picked one template per pass would pass bg13 and bg14 and fail

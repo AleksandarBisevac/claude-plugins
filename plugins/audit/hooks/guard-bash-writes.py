@@ -181,9 +181,9 @@ TIMEOUT_TEMPLATE = (
 
 WARN_TEMPLATE = (
     "[bash-write-guard] That shell command modified source file(s) with no "
-    "plan coverage: %s. Plan-first applies to shell writes too — add the "
-    "file(s) to an in_progress task in the audit manifest, or use the "
-    "Edit/Write tools (which the plan gate reviews). This is a non-blocking "
+    "plan coverage: %s. Plan-first applies to shell writes too — put the "
+    "file(s) on an in_progress task (`/audit:task scope <taskId> --files "
+    "...`), or stop and ask the operator. This is a non-blocking "
     "notice; the change itself was NOT reverted."
 )
 
@@ -198,9 +198,9 @@ WARN_TEMPLATE = (
 NAMED_TEMPLATE = (
     "[bash-write-guard] That shell command modified source file(s) with no plan "
     "coverage, and its own text names the write: %s. So this is not a guess and "
-    "nothing else needs ruling out. Plan-first applies to shell writes too — add "
-    "the file(s) to an in_progress task in the audit manifest, or use the "
-    "Edit/Write tools (which the plan gate reviews). This is a non-blocking "
+    "nothing else needs ruling out. Plan-first applies to shell writes too — put "
+    "the file(s) on an in_progress task (`/audit:task scope <taskId> --files "
+    "...`), or stop and ask the operator. This is a non-blocking "
     "notice; the change itself was NOT reverted."
 )
 
@@ -235,13 +235,13 @@ JOURNAL_TEMPLATE = (
 # what to avoid — there is no avoiding it by the time this runs.
 LOCKED_TEMPLATE = (
     "[bash-write-guard] That shell command wrote to manifest file(s) held by "
-    "ANOTHER LIVE SESSION: %s. Through Edit/Write the plan gate would have "
-    "refused this; a shell write cannot be caught before it lands, so it has "
-    "already happened and was NOT reverted. The other session is still running "
-    "and holds no knowledge of this change — it will write its own version over "
-    "yours, or yours over its, with no conflict, because one working tree means "
-    "git never sees two versions. Stop, tell the human, and reconcile by hand: "
-    "`audit-lock.py status` shows who holds what."
+    "ANOTHER LIVE SESSION: %s. Through the Edit or Write tools the plan gate "
+    "would have refused this; a shell write cannot be caught before it lands, "
+    "so it has already happened and was NOT reverted. The other session is "
+    "still running and holds no knowledge of this change — it will write its "
+    "own version over yours, or yours over its, with no conflict, because one "
+    "working tree means git never sees two versions. Stop, tell the human, "
+    "and reconcile by hand: `audit-lock.py status` shows who holds what."
 )
 
 # The same finding as WARN_TEMPLATE with the authorship claim removed, because the
@@ -262,10 +262,10 @@ UNPROVEN_TEMPLATE = (
     "that shell command ran: %s. This guard CANNOT say the command wrote them: %s. "
     "What is established: the "
     "file(s) were clean at this session's previous look and are dirty now, and "
-    "no in_progress task covers them. If the change is yours, put the file(s) on "
-    "an in_progress task or use the Edit/Write tools (which the plan gate "
-    "reviews); if it is not, it belongs to whatever the clause above names. This "
-    "is a non-blocking notice; nothing was reverted."
+    "no in_progress task covers them. If the change is yours, put the file(s) "
+    "on an in_progress task (`/audit:task scope <taskId> --files ...`), or "
+    "stop and ask the operator; if it is not, it belongs to whatever the "
+    "clause above names. This is a non-blocking notice; nothing was reverted."
 )
 
 # A command that ran in a WORKING TREE this guard is not watching, said once per

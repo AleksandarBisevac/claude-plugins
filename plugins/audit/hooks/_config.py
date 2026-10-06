@@ -37,8 +37,12 @@ Config keys (all optional; defaults in DEFAULTS below):
                                   and the interpreter ones) and the PostToolUse
                                   report in guard-bash-writes all resolve their
                                   tier through plan_gate_mode below, so one
-                                  file gets one verdict whichever way it is
-                                  written. The secret guards are never graded and
+                                  file gets one TIER whichever way it is
+                                  written — see that function's own docstring
+                                  for the one allowance (trivialLineThreshold)
+                                  still read on the Edit/Write path alone, which
+                                  is tier agreement, not yet verdict agreement.
+                                  The secret guards are never graded and
                                   deny at every tier, because reading .env is
                                   wrong whether or not a plan exists.
   planGate                str   — pin the plan gate to one tier by hand:
@@ -2702,12 +2706,22 @@ def plan_gate_mode(cfg, state):
     WHAT ELSE READS THIS, because the reach is the promise and it used to be
     understated in every place it was written down. `require-plan.py` grades the
     Edit/Write path here; `guard-secrets-read.py` grades its shell-write branch
-    here, so `sed -i src/x.ts` and `Edit src/x.ts` cannot disagree; and
+    here, so `sed -i src/x.ts` and `Edit src/x.ts` resolve to the SAME TIER; and
     `guard-bash-writes.py` grades its plan-coverage class here — it did not,
     and an advisory that cried wolf in a repo which never opted in was how a
     stranger met this plugin. Only the plan-coverage claim is graded. A guard whose
     claim binds to evidence of its own — a secret path, a held lock, a journal file
-    — needs no tier to be right and reports at all of them."""
+    — needs no tier to be right and reports at all of them.
+
+    SAME TIER IS NOT YET SAME VERDICT. `trivialLineThreshold`'s first-free-
+    code-file allowance (`require-plan.py`'s own `allow.trivial`, read only on
+    its Edit/Write path) sits outside this function entirely:
+    `guard-secrets-read.py`'s shell-write branch calls this resolver and
+    nothing else, so a file small enough to clear the allowance for free
+    through `Edit` can still be denied here through `sed -i` on the same
+    file. Folding the allowance into this function, so one file gets one
+    VERDICT rather than one tier, is the open task; until it lands, say tier
+    agreement and not verdict agreement."""
     try:
         knob = plan_gate_knob(cfg)
         if knob:

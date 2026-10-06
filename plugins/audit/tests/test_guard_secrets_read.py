@@ -1648,12 +1648,27 @@ def _cases(check):
     _plan(True, [_covered])
     _we_msgs = [M.decide(bash(c), cfg=cfg)[1] for c in _forms(_uncovered)]
     check("we9 all three refusals name the PATH, the actual cause (the phase "
-          "that is running), the remedy and the exempt classes - the "
-          "interpreter arm printed a sentence with none of them in it",
+          "that is running), the remedy (widening the task with "
+          "/audit:task scope, or asking the operator) and the exempt classes - "
+          "the interpreter arm printed a sentence with none of them in it, "
+          "and NONE steers to the Edit/Write tools (a refusal told a model to "
+          "use a tool auto mode just steered it away from)",
           all(_uncovered in m and "Phase P30 is in_progress" in m
-              and "Use the Edit/Write tools" in m
+              and "/audit:task scope <taskId> --files ..." in m
+              and "ask the operator" in m
               and "Exempt paths (docs, tests, .claude/**)" in m
+              and "Edit/Write" not in m
               for m in _we_msgs), repr(_we_msgs))
+    # ...and the ASK tier (we5's verdict, now its TEXT): the same remedy, never
+    # the Edit/Write tools, because the old ask text repeated the deny text's
+    # steer word for word.
+    _we_ask_msgs = [M.decide(bash(c), cfg=cfg_ask44)[1]
+                    for c in _forms(_uncovered)]
+    check("we9b the ask-tier text names the same remedy and never the "
+          "Edit/Write tools",
+          all(_uncovered in m and "/audit:task scope <taskId> --files ..." in m
+              and "ask the operator" in m and "Edit/Write" not in m
+              for m in _we_ask_msgs), repr(_we_ask_msgs))
     check("we10 ...and each still names the spelling the operator typed, so the "
           "three messages are not one message with the command guessed at",
           "inline-eval one-liner" in _we_msgs[0]

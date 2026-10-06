@@ -63,15 +63,20 @@ it. SECURITY.md says the same thing in the same words; keep the two in step.
 Plan-first backstop for Bash WRITES (this is the only hook that sees Bash).
 GRADED, and the ONLY graded rule in this file: both forms below are judged on
 the plan gate's tier for the file (`_config.plan_gate_mode` — require-plan's own
-resolver), so one file gets one verdict whether it is written through `Edit`,
-through `sed -i`, or through `python3 -c`. `_plan_gate_write_verdict` is the one
-place a tier is read, and no Rule #1 or Rule #2 branch calls it.
+resolver), so one file gets one TIER whether it is written through `Edit`,
+through `sed -i`, or through `python3 -c`. That is tier, not verdict:
+`trivialLineThreshold`'s first-free-code-file allowance is read only by
+`require-plan.py`'s Edit/Write path (see `plan_gate_mode`'s own docstring), so a
+file small enough to pass there for free can still be denied here through
+`sed -i` — closing that gap is the verdict task this file waits on.
+`_plan_gate_write_verdict` is the one place a tier is read, and no Rule #1 or
+Rule #2 branch calls it.
   - the write CALLS inside an interpreter — `python -c`, `node -e`, and the
     heredoc spelling of either — naming a non-exempt source path;
   - the high-signal shell write forms into a non-exempt source file: `sed -i`,
     `tee <file>`, and `>`/`>>` redirects (which also catches
-    `cat > file <<EOF` heredocs). The block message steers to the Edit/Write
-    tools, which the plan gate governs.
+    `cat > file <<EOF` heredocs). The block message names the path and the
+    remedy: widen the running task's `files`, or stop and ask the operator.
   Both arms ask `_ungoverned_write_target` the same questions — can the
   destination be established at all, source extension, inside the repository
   or a linked worktree of it (judged against THAT tree's plan,
@@ -1626,16 +1631,17 @@ def _eval_write_hit(graded, root, cfg, cwd):
 
 
 _PLAN_WRITE_DENY = (
-    "%s bypasses the plan-first gate: %s\n%s Use the Edit/Write tools "
-    "(guard-edits + require-plan review the change), or cover the file with an "
-    "in_progress task. Exempt paths (docs, tests, .claude/**) are unaffected."
+    "%s bypasses the plan-first gate: %s\n%s This path is outside the running "
+    "task's `files` - widen it with `/audit:task scope <taskId> --files ...`, "
+    "or stop and ask the operator. Exempt paths (docs, tests, .claude/**) are "
+    "unaffected."
 )
 _PLAN_WRITE_ASK = (
     "%s outside the plan: %s\n"
     "planGate is set to \"ask\" in .claude/audit.config.json, so this write waits "
-    "for your approval - approving covers this one command. Prefer the Edit/Write "
-    "tools (guard-edits + require-plan review the change), or cover the file with "
-    "an in_progress task."
+    "for your approval - approving covers this one command. Widen the running "
+    "task's `files` with `/audit:task scope <taskId> --files ...`, or stop and "
+    "ask the operator."
 )
 
 
