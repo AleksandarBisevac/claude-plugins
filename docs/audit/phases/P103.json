@@ -166,7 +166,7 @@
     {
       "id": "P103.4",
       "title": "README and plugin README claim no more about secret reads than SECURITY.md",
-      "status": "in_progress",
+      "status": "done",
       "description": "Three sentences promise what SECURITY.md disclaims: README.md:69 'Secret file contents - never read, directly or indirectly', plugins/audit/README.md:287-288 'blocks reading secret files ... directly or indirectly' and the enforced-table row at :377 'Secret contents are never read'. Restate each as what is refused (a call that names a secret file, through the channels the row lists) and link the open shapes in SECURITY.md, keeping the table shape and the README's script-path reference (test__refs c3). Acceptance: grep over README.md, QUICKSTART.md, plugins/audit/README.md and docs/handbook.html finds no unqualified 'never read' or 'directly or indirectly' claim about secrets. gate-only: text; selftests runs the doc lints.",
       "files": [
         "README.md",
@@ -190,18 +190,24 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3b6fdf7c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "README.md's enforcement row and the plugin README's prose bullet and enforced-table row no longer say secrets are never read, directly or indirectly. Each now states what the guard refuses - a call that names a secret file, through the direct tool call or through git show, source, cp/mv - links SECURITY.md's Known bypass classes section for the open shapes, and says the guard is name-based, not containment. Table shapes and the README's script-path reference are unchanged; a grep over README.md, QUICKSTART.md, the plugin README and the handbook finds no remaining unqualified claim about secrets.",
+        "descriptive": "The two READMEs no longer promise that secrets are never read; they say what the guard refuses and link the shapes it does not catch."
       },
       "startedAt": "2026-10-06T15:58:50Z",
-      "completedAt": null,
+      "completedAt": "2026-10-06T19:02:18Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-06T16:25:49Z.e00733",
         "status": "passed",
         "at": "2026-10-06T16:25:49Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "3b6fdf7c",
+        "at": "2026-10-06T19:02:18Z",
+        "basis": "audit-reviewer (task mode): clean; anchors and relative links resolve; no other surface still makes the claim"
       }
     },
     {

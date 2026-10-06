@@ -1125,3 +1125,39 @@ the reversals above are about.
 their first hour is answered in none of the reading order's stops, or is answered in
 two of them differently. Both are observable the next time someone new lands here,
 which is what makes this able to fire at all.
+
+### Optional modules take fixes only (decided 2026-10-06): no new UI shape pins, no new prose lints
+
+The surface that must be maintained grows through discretionary work — a feature nobody
+asked for still has to keep passing every gate forever. Three parts to the decision.
+
+**(a) Fixes only, until a user asks.** The panel, the usage views, the ADO connector, the
+demo and the theme editor take bug fixes but no new features by default. Exceptions named
+up front rather than discovered later: the cost-truth work in the usage views, the
+panel's state-truth fixes, and an ADO feature a real user requests. "A real user
+requests it" is the bar for every other optional module too — the three exceptions are
+already past that bar, not a license to add more without it.
+
+**(b) No new UI shape pins.** `plugins/audit/tests/` already carries byte-level substring
+pins against the assembled report and panel (counted by `tools/count-ui-pins.py`); that
+count is the budget and it does not grow. When a UI part changes, the pin that used to
+guard it moves to a `vitest` unit test or a browser behaviour check instead of being
+joined by a new one — the shape-pin style stays frozen at today's inventory rather than
+being the default for new coverage.
+
+**(c) No new lints over prose or repository numbers.** `_output.prose_number_claims()` and
+`_deps.doc_prose_numbers()` stay as they are; a false claim in a README, a comment or a
+doc gets no new mechanical guard. The consequence, stated rather than hidden: such a claim
+is caught by review at release time, not by CI on every commit — the same tier the
+Decision record above already applies to `COMPATIBILITY.md`'s unlisted promises.
+
+**Revisit trigger for (a):** a user report that an optional module is blocking their work
+on it, observed in an issue or a support thread — never a count of how long a module has
+sat unchanged.
+
+**Revisit trigger for (b):** a UI defect that a behaviour check could not have caught but
+a new shape pin would have, found after the fact — not the pin count drifting from
+whatever it is today.
+
+**Revisit trigger for (c):** a false documentation claim that review missed and a user
+acted on, found after release — not the number of prose claims in the tree.
