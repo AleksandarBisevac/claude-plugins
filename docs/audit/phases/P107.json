@@ -1,0 +1,201 @@
+{
+  "id": "P107",
+  "title": "state writes never lose each other",
+  "status": "pending",
+  "description": "Tasks: (1) close-phase stamp_merged and record_merged_head under the index lock close-phase already takes for the stub mirror, rollback through atomic_write_json. (2) The stale journal lock is claimed by rename so only one waiter breaks it (no false tamper verdict). (3) Backfill re-reads the month file's tail after its replace, with no lock on the Stop hook's hot path. (4) A _deps rule: os.replace on plan or ledger paths only through sanctioned writers; reduce or justify the existing sites. Mechanisms reproduced by fixtures; not observed in 100 dogfood phases, hence after the higher-value phases.",
+  "desiredOutcome": "two plugin writers running at once never silently drop each other's write: close-phase stamps under the index lock with an atomic rollback, a stale journal lock is broken by exactly one waiter, usage backfill keeps rows appended during its window, and the import-layer lint refuses a state write outside the sanctioned writers",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P107.1",
+      "title": "close-phase stamps the merge under the index lock with an atomic rollback",
+      "status": "pending",
+      "description": "stamp_merged and record_merged_head read, revalidate and write the phase file without the index lock that every other plan writer takes. So on the single-file layout, concurrent closes, or a close and a panel save, lost a write while both answered ok. _revalidated_write's rollback also rewrites the file in place with open(path, 'wb'). Take the lock that close-phase already takes for mirror_stub (_panel_write.acquire_index_lock), and re-read under it. Restore the prior bytes atomically through _panel_write.restore's temp-plus-replace; atomic_write_json would re-serialize the content rather than restore the bytes. When the lock cannot be taken after a merge has landed, the output is a sentence naming the re-run, never an unlocked write. The race cases run as subprocess children released together, with bounded trials. The deterministic held-lock and inode cases carry the red-first. Update close-phase's PLUGIN-BUILD-GUIDE.md section.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_close_phase.py: while another holder has the index lock, stamp_merged and record_merged_head leave the plan's bytes unchanged and say the lock was not taken, naming the re-run that stamps it",
+          "plugins/audit/tests/test_close_phase.py: two processes stamping different phases of one single-file plan, released together over repeated trials, lose no mergedAt (ported from the maintainer's closephase_race.py, closers scenario)",
+          "plugins/audit/tests/test_close_phase.py: stamps racing _panel_write.apply_composition saves lose neither a stamp nor a save that answered ok (the fixture's locked scenario)",
+          "plugins/audit/tests/test_close_phase.py: a stamp whose write introduces a finding restores the prior bytes through an atomic replace: the bytes match and the inode changed, where the in-place rewrite kept it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P100"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P107.2",
+      "title": "a stale journal lock is broken by exactly one waiter",
+      "status": "pending",
+      "description": "_acquire unlinks a lock older than LOCK_STALE_SECONDS. Waiters that both read the stale mtime can both unlink it, and the second removes the lock the first just took. Both then append with the same prev, and verify reports a tamper that never happened. That lands in a committed trail, which cannot be repaired without breaking every clone's chain. Claim the stale lock by renaming it to a name unique to the waiter, or by checking its identity before removing it, so exactly one waiter breaks it. _journal_io is on the hooks' per-call path, so `python3 tools/bench-hooks.py --gate` must stay green. The deterministic case carries the red-first; the stress case is bounded for sweep time.",
+      "files": [
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__journal_io.py: a waiter that read a lock as stale after another waiter had already broken it and taken its own does not remove that new lock (deterministic interleaving)",
+          "plugins/audit/tests/test__journal_io.py: with a stale lock planted and many writers released together over repeated trials, every write lands and verify reports no chain break (ported from the maintainer's journal_lock_race.py --stale)",
+          "plugins/audit/tests/test__journal_io.py: a lock younger than LOCK_STALE_SECONDS is waited for and never broken (allow case)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P107.3",
+      "title": "usage backfill keeps the rows appended to a month file during its window",
+      "status": "pending",
+      "description": "backfill reads the ledger, then rewrite_month replaces each month file, while the metering hook appends without a lock. So a row appended between the read and the replace was dropped. After its replace, backfill reads the old file's tail past the size it read, through a descriptor held across the replace, and appends the rows of sessions it did not re-read. No lock goes on the Stop hook's path, which runs every turn. Also decide the fixture's inset mode, where an in-set session's later save_cursor can win over backfill's: either close it, or state it in commands/usage.md as the remaining limit. usage.md's 'takes the shared usage lock' must also say that this lock excludes only another backfill.",
+      "files": [
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/tests/test_audit_usage.py",
+        "plugins/audit/commands/usage.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_usage.py: a row another session appends to the month file between backfill's read and its replace is in the ledger after the backfill",
+          "plugins/audit/tests/test_audit_usage.py: appenders for a session outside the backfill set, running during a backfill over repeated trials, lose no row (ported from the maintainer's ledger_race.py --mode foreign)",
+          "plugins/audit/tests/test_audit_usage.py: a row of a session the backfill re-read is not counted twice, a second backfill is still a no-op, and append_rows still takes no lock (allow cases)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P107.4",
+      "title": "a state file is replaced only through a sanctioned writer, and a _deps lint refuses any other site",
+      "status": "pending",
+      "description": "The races above are instances of one class: a state file replaced outside the sanctioned writers. A new state_write_violations() in _deps.py reports every os.replace and os.rename under scripts/ and hooks/ that sits outside a table of sanctioned sites. Each row carries a reason. The sanctioned sites are atomic_write_json, hooks/_config.atomic_write_text, _panel_write.restore, the lock and journal-lock primitives, the merge driver's write of git's file, and any other site that is justified rather than routed. List the sites with `grep -rnE 'os\\.(replace|rename)\\(' plugins/audit/scripts plugins/audit/hooks`. Reduce sites where a sanctioned writer fits. usage_ledger's save_cursor and rewrite_month use a fixed '.tmp' name that concurrent writers can share, so both go through a new atomic text writer in _manifest_io, which atomic_write_json then writes through, keeping one implementation. The lint gets a row in tools/prove-gates.py and a line in PLUGIN-BUILD-GUIDE.md's _deps section. P103's fsync-docstring fix also edits _manifest_io.py, so serialize with it.",
+      "files": [
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/tests/test__deps.py",
+        "tools/prove-gates.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/tests/test_usage_ledger.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__deps.py: an os.replace or os.rename call in a scripts/ or hooks/ function the sanctioned table does not name is reported by file, function and line",
+          "plugins/audit/tests/test__deps.py: a sanctioned row with no reason, or naming a site that no longer exists, is reported, and the real tree has no violation (allow case)",
+          "plugins/audit/tests/test_usage_ledger.py: a foreign `<month>.jsonl.tmp` and a foreign cursor temp file planted beside the ledger are neither overwritten nor consumed by rewrite_month and save_cursor"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P107.1",
+        "P107.2",
+        "P107.3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
