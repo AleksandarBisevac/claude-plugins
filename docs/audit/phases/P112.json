@@ -1,0 +1,29 @@
+{
+  "id": "P112",
+  "title": "the README demo shows a user's Claude Code session, not the plugin's internals",
+  "status": "pending",
+  "description": "The current GIF is drawn from Python: audit-status.py and a hand-fed PreToolUse payload, with typed captions standing in for the user. No user runs those scripts; they use Claude Code and /audit commands. The recording must show that experience while keeping the property the old one had: a check that fails when the words shown stop being the words the gate prints.",
+  "desiredOutcome": "the demo GIF is a recording of a real Claude Code session in which the user types /audit commands and the plan gate refuses an edit the plan does not cover, with no personal data in any frame, and CI still fails when the refusal's words drift from what the gate prints",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": []
+}
