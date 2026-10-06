@@ -674,6 +674,46 @@ def _stale_stub(manifest_path, phase_id):
     return moved or None
 
 
+def under_index_lock(manifest_path, project, note, write):
+    """(True, `write()`'s answer) once `write` has run with the index lock held, or
+    (False, why) when the lock was not taken and `write` never ran.
+
+    THE LOCK EVERY OTHER PLAN WRITER TAKES, so a stamp and a panel save, or two
+    closes of one single-file plan, serialise instead of each writing the copy it
+    read and dropping the other's write while both answer ok. `write` does its own
+    reading: what it decides on is read with the lock held.
+
+    EVERY STEP UNDER A `try`, the lock's own included: the writers here run inside
+    `close()` after the merge has landed, so a raise from reading the config or
+    asking for the lock would report a merge that happened as one that failed.
+    `project` is where the lock is taken; None reads it off the manifest's own tree.
+    """
+    lines = []
+    project = project or _panel_write.project_of_manifest(manifest_path)
+    try:
+        lock = _panel_write.acquire_index_lock(
+            project, _panel_write.read_config(project), manifest_path, False,
+            lines.append, "[close-phase]", note)
+    except Exception as exc:
+        return False, "the index lock could not be asked for: %s" % (exc,)
+    if isinstance(lock, int):
+        return False, ("the index lock was not taken (%s)"
+                       % ("; ".join(line.strip() for line in lines)
+                          or "exit %d" % (lock,)))
+    try:
+        return True, write()
+    finally:
+        _panel_write.release_index_lock(lock, out=lines.append)
+
+
+def _not_locked(why, phase_id, field):
+    """The sentence a stamp the lock refused owes: nothing written, and the re-run
+    that writes it."""
+    return ("%s, so phase %s's %s was not written and the plan is as it was: the "
+            "merge has landed, so run close-phase again for %s once the lock is free "
+            "and the re-run writes it" % (why, phase_id, field, phase_id))
+
+
 def mirror_stub(manifest_path, phase_id, project):
     """(index path written, or "", why) -- re-mirror a phase's index stub from its
     shard, under the index lock.
@@ -687,19 +727,13 @@ def mirror_stub(manifest_path, phase_id, project):
     """
     if not _stale_stub(manifest_path, phase_id):
         return "", ""
-    lines = []
-    # EVERY STEP UNDER A `try`, the lock's own included: this runs inside `close()`
-    # after the merge has landed, so a raise from reading the config or asking for
-    # the lock would report a merge that happened as one that failed.
-    try:
-        lock = _panel_write.acquire_index_lock(
-            project, _panel_write.read_config(project), manifest_path, False,
-            lines.append, "[close-phase]", "close-phase stub mirror")
-    except Exception as exc:
-        return "", _unmirrored("the index lock could not be asked for: %s" % (exc,))
-    if isinstance(lock, int):
-        return "", _unmirrored("the index lock was not taken (%s)"
-                               % ("; ".join(lines) or "exit %d" % (lock,)))
+    taken, got = under_index_lock(manifest_path, project, "close-phase stub mirror",
+                                  lambda: _mirror_locked(manifest_path, phase_id))
+    return got if taken else ("", _unmirrored(got))
+
+
+def _mirror_locked(manifest_path, phase_id):
+    """`mirror_stub`'s write, run with the index lock held."""
     try:
         # RE-READ UNDER THE LOCK: what was stale a moment ago is decided again once
         # the lock is held, so a writer that got there first is not overwritten.
@@ -718,8 +752,6 @@ def mirror_stub(manifest_path, phase_id, project):
         return manifest_path, ""
     except Exception as exc:
         return "", _unmirrored("the index stub could not be written: %s" % (exc,))
-    finally:
-        _panel_write.release_index_lock(lock, out=lines.append)
 
 
 def _unmirrored(why):
@@ -741,15 +773,22 @@ def _revalidated_write(manifest_path, path, obj):
     """Write `obj` to `path`, then revalidate the plan at `manifest_path`: a finding
     the write introduced restores `path`'s prior bytes. Returns those new findings,
     sorted - [] when the write stands. A finding the plan already carried is not
-    this write's to refuse on, which is why the two sets are compared."""
-    with open(path, "rb") as fh:
-        before = fh.read()
+    this write's to refuse on, which is why the two sets are compared.
+
+    THE RESTORE IS AS ATOMIC AS THE WRITE: `_panel_write.restore` puts the bytes
+    back through a temp file and a replace, so a reader never meets a half-written
+    plan. The bytes, not `obj`'s predecessor re-serialised - `atomic_write_json`
+    would rewrite the content in this writer's formatting rather than restore it."""
+    snap = _panel_write.snapshot([path])
+    if snap[path] is None:
+        # A snapshot of nothing restores by DELETING, so a file this cannot read
+        # first is not written at all.
+        raise OSError("%s could not be read before the write" % (path,))
     pre = _findings_of(manifest_path)
     _mio.atomic_write_json(path, obj, indent=2)
     new = sorted(_findings_of(manifest_path) - pre)
     if new:
-        with open(path, "wb") as fh:
-            fh.write(before)
+        _panel_write.restore(snap)
     return new
 
 
@@ -931,9 +970,14 @@ def _phases_in(body, phase_id):
             if isinstance(ph, dict) and str(ph.get("id")) == str(phase_id)]
 
 
-def stamp_merged(manifest_path, phase_id, when=None, merged_head=_HEAD_NOT_ASKED):
+def stamp_merged(manifest_path, phase_id, when=None, merged_head=_HEAD_NOT_ASKED,
+                 project=None):
     """Write `phase.mergedAt` (and, in the SAME write, `phase.mergedHead`). Returns
     the path written, or "" with a reason.
+
+    UNDER THE INDEX LOCK (`under_index_lock`), the plan read with it held. A lock
+    that is not taken writes nothing - never an unlocked write - and the reason
+    names the re-run that stamps it, because the merge it records has landed.
 
     THE FIELD IS WRITTEN ONLY AFTER THE PARENT DEMONSTRABLY CONTAINS THE BRANCH, and
     never on the `auto: false` path -- a plan that says a phase merged at a moment it
@@ -949,6 +993,14 @@ def stamp_merged(manifest_path, phase_id, when=None, merged_head=_HEAD_NOT_ASKED
     both fields land in the one `_revalidated_write` call below, because a stamp
     split across two writes is exactly the bug this exists to close.
     """
+    taken, got = under_index_lock(
+        manifest_path, project, "close-phase stamp %s" % (phase_id,),
+        lambda: _stamp_locked(manifest_path, phase_id, when, merged_head))
+    return got if taken else ("", _not_locked(got, phase_id, MERGED_FIELD))
+
+
+def _stamp_locked(manifest_path, phase_id, when, merged_head):
+    """`stamp_merged`'s read and write, run with the index lock held."""
     path = _phase_file(manifest_path, phase_id)
     if not path:
         return "", ("no file holds phase %s - the index names no shard for it"
@@ -984,14 +1036,17 @@ def stamp_merged(manifest_path, phase_id, when=None, merged_head=_HEAD_NOT_ASKED
     return path, stamp
 
 
-def record_merged_head(manifest_path, phase_id, merged_head, merged_head_at=None):
+def record_merged_head(manifest_path, phase_id, merged_head, merged_head_at=None,
+                       project=None):
     """(path, head written or "", why) - add `phase.mergedHead` (and, for a head
     recorded after the fact, `phase.mergedHeadAt`) to a phase whose merge is
     ALREADY recorded without one, and touch nothing else.
 
     The counterpart of `stamp_merged` for a plan written before the field existed,
-    through the same `_revalidated_write`: one read, one write, restored on a new
-    finding. It refuses rather than writes when the phase records no merge (that
+    under the same index lock and through the same `_revalidated_write`: one read
+    with the lock held, one write, restored on a new finding; a lock not taken
+    writes nothing and names the re-run. It refuses rather than writes when the
+    phase records no merge (that
     is `stamp_merged`'s job, and a head with no merge is a claim with no event) and
     when a head is already recorded - A RECORDED HEAD IS NEVER REPLACED: it is the
     one every reader has been measuring against, and replacing it would move a
@@ -1001,6 +1056,14 @@ def record_merged_head(manifest_path, phase_id, merged_head, merged_head_at=None
     """
     if not merged_head:
         return "", "", "no head was supplied"
+    taken, got = under_index_lock(
+        manifest_path, project, "close-phase head %s" % (phase_id,),
+        lambda: _head_locked(manifest_path, phase_id, merged_head, merged_head_at))
+    return got if taken else ("", "", _not_locked(got, phase_id, MERGED_HEAD_FIELD))
+
+
+def _head_locked(manifest_path, phase_id, merged_head, merged_head_at):
+    """`record_merged_head`'s read and write, run with the index lock held."""
     path = _phase_file(manifest_path, phase_id)
     if not path:
         return "", "", ("no file holds phase %s - the index names no shard for it"
@@ -1069,7 +1132,7 @@ def backfill_merged_head(manifest_path, phase_id, parent, project, ask_head,
         return {"mergedHeadWould": head["sha"]}
     at = _utc_now() if after_the_fact else None
     path, written, why = record_merged_head(manifest_path, phase_id, head["sha"],
-                                            merged_head_at=at)
+                                            merged_head_at=at, project=project)
     if not written:
         return {"mergedHeadWhy": why}
     # ONLY ALLOW-LISTED DETAIL KEYS: `_journal_io` drops any other key in silence,
@@ -1960,7 +2023,8 @@ def main(argv, out=print):
                               _recorded_phase(target, args.phase))
         merged_head = head["sha"] or None
         merged_head_why = "" if merged_head else head["basis"]
-        path, stamp_at = stamp_merged(target, args.phase, merged_head=merged_head)
+        path, stamp_at = stamp_merged(target, args.phase, merged_head=merged_head,
+                                      project=project_for_row)
         if not path:
             return {"stamped": "", "stampWhy": stamp_at}
         record_row(project_for_row, args.phase, names["branch"], names["parent"])

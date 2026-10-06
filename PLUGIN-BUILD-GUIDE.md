@@ -990,9 +990,20 @@ Sign-off steps 5c–5e as one command. It merges the phase branch into its resol
 before the first write, and each result read back by asking a *different* question than the write
 answered. The merge is an input of the phase's derived status, so the stamp stores that status in
 the same write (`done`, for a signed-off phase with every task terminal) and `mirror_stub`
-re-mirrors the index stub from the shard under the index lock. Both writes are revalidated, and a
-finding the write introduced restores the prior bytes (`_revalidated_write`). Any failure of the
-mirror, the lock's own included, is a sentence naming `audit-task.py settle`, never a failed merge.
+re-mirrors the index stub from the shard. Each of the three plan writes here — the stamp, the
+`mergedHead` backfill (`record_merged_head`) and the mirror — reads the plan and writes it while
+holding the index lock every other plan writer takes (`under_index_lock`, through
+`_panel_write.acquire_index_lock`). On the single-file layout, two closes or a close and a panel
+save used to each write the copy they had read, and one write was lost while both answered ok.
+A stamp or a backfill whose lock is not taken writes nothing; it says why and names the re-run of
+close-phase that writes it. A stamp not written exits 1 with the cleanup held back. A backfill
+not written prints `mergedHead NOT recorded` with that sentence. Every write is
+revalidated, and a finding the write introduced restores the prior bytes through
+`_panel_write.restore`'s temp file and replace (`_revalidated_write`), so the rollback is as
+atomic as the write it undoes. Any failure of the mirror, the lock's own included, is a sentence
+naming `audit-task.py settle`, never a failed merge. `test_close_phase.py` covers this with a
+held lock and an inode check, plus two races between real processes: two closes released
+together, and a close against a panel save with each in turn caught mid-write.
 
 **It never runs `git switch`.** Not as a preference: `git switch <parent>` from inside the worktree
 a phase ran in fails with `fatal: '<parent>' is already used by worktree at '<the main tree>'`, so

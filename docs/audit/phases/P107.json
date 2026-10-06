@@ -35,7 +35,7 @@
     {
       "id": "P107.1",
       "title": "close-phase stamps the merge under the index lock with an atomic rollback",
-      "status": "pending",
+      "status": "in_progress",
       "description": "stamp_merged and record_merged_head read, revalidate and write the phase file without the index lock that every other plan writer takes. So on the single-file layout, concurrent closes, or a close and a panel save, lost a write while both answered ok. _revalidated_write's rollback also rewrites the file in place with open(path, 'wb'). Take the lock that close-phase already takes for mirror_stub (_panel_write.acquire_index_lock), and re-read under it. Restore the prior bytes atomically through _panel_write.restore's temp-plus-replace; atomic_write_json would re-serialize the content rather than restore the bytes. When the lock cannot be taken after a merge has landed, the output is a sentence naming the re-run, never an unlocked write. The race cases run as subprocess children released together, with bounded trials. The deterministic held-lock and inode cases carry the red-first. Update close-phase's PLUGIN-BUILD-GUIDE.md section.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -64,16 +64,21 @@
         "P100"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T21:25:50Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T22:05:33Z.716402",
+        "status": "passed",
+        "at": "2026-10-06T22:05:33Z"
+      }
     },
     {
       "id": "P107.2",
