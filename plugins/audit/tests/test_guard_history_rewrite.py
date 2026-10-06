@@ -217,6 +217,23 @@ def _cases(check):
         check("gh8 force-push is refused outright: there is no ancestry question "
               "to ask, it replaces what other clones already have",
               v == "deny" and "force-push" in why, repr((v, why)))
+        # KNOWN OPEN, named in SECURITY.md's "an interpreter program that starts
+        # git from inside its own code ... is read as code, not searched for
+        # git - the guard reads shell text, and a program's own calls are the
+        # general residual". This guard parses the shell COMMAND text, so a
+        # `git push --force` started from a `subprocess.run([...])` call inside
+        # a `python3 -c` program never appears as shell text at all - the
+        # refusal gh8 pins right above does not reach it. Pinned as a decision
+        # beside its plain twin, so a fix that closes the residual turns this
+        # row red rather than leaving it quietly disagreeing with the document.
+        v, why = _decide(repo, 'python3 -c "import subprocess; '
+                               "subprocess.run(['git', 'push', '--force', "
+                               "'origin', 'main'])\"")
+        check("gh8b KNOWN OPEN: a `python3 -c` program that starts `git push "
+              "--force` from its own `subprocess.run` call is allowed - the "
+              "interpreter residual SECURITY.md already names, beside gh8's "
+              "plain refusal of the same operation",
+              v == "allow", repr((v, why)))
         v, why = _decide(repo, "git checkout --orphan clean-start")
         check("gh9 an orphan branch is refused - it starts with no history, so "
               "every recorded commit is unreachable from it",

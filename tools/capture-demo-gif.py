@@ -22,8 +22,22 @@ fixture nobody can rebuild.
 in-plan edit is allowed, the out-of-plan edit is denied, the deny names the file and
 the way out) but writes no file. Run it in CI; run the capture when the gate's
 wording changes.
+
+WHAT TIES THE COMMITTED BYTES TO TODAY'S TEXT. Behaviour alone could not: the GIF
+went on showing a bypass line the gate no longer prints while every behavioural
+assertion stayed green. So a recording writes a record beside the screenshots', in
+`captured-at.json` under its own top-level key (`GIF_KEY`): the sha256 of the bytes
+it wrote and a digest of the text they show (`capture_text_digest()`). That digest
+is over every step `build_script()` lays out - the captured answers AND the comment
+lines, the typed commands, the captions and the wrap at the chosen width - so a
+change to any word a reader sees moves it, not only a change in the gate's output.
+--check recomputes both - the text from a fresh capture, the hash from the committed
+file - and fails naming the GIF when either differs, or when there is no record to
+compare. The pixels are never compared, for the reason the screenshots' are not: font
+rasterisation differs by host.
 """
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -150,10 +164,17 @@ def fire_gate(d, rel, new_body, session):
 
 
 def capture(d):
-    """Run the real commands and collect their real output."""
+    """Run the real commands and collect their real output.
+
+    The status render runs INSIDE the fixture. Run from wherever the caller stood,
+    it reported that checkout's own phase locks - process ids and the host's name -
+    as part of the demo plan, which is both a leak into a committed picture and a
+    text that changes with whatever else is running on the machine."""
     status = subprocess.run([PY, resolve_script("audit-status.py"),
                              os.path.join(d, "audit-plan.json")],
-                            capture_output=True, text=True).stdout.rstrip("\n")
+                            capture_output=True, text=True, cwd=d,
+                            env=dict(os.environ, CLAUDE_PROJECT_DIR=d)
+                            ).stdout.rstrip("\n")
     inplan = fire_gate(d, "src/checkout.ts",
                        "export function checkout(payload: unknown) {\n"
                        "  assertCheckoutPayload(payload);\n}", "demo-a")
@@ -161,6 +182,167 @@ def capture(d):
     outplan = fire_gate(d, "src/billing.ts",
                         "export function billing(c: Customer) {\n%s\n}" % big, "demo-b")
     return {"status": status, "inplan": inplan, "outplan": outplan}
+
+
+# --- the record that ties the committed GIF to the text it shows ---------------
+SIDECAR = "captured-at.json"
+GIF_KEY = "gifs"
+DEFAULT_COLS = 96
+GIF_NAME = "demo-gate.gif"
+_FIXTURE_TOKEN = "<demo-project>"
+
+
+def capture_text_digest(cap, fixture_dir, cols=DEFAULT_COLS):
+    """sha256 over every step the GIF shows, with the fixture's path taken out.
+
+    The steps are `build_script()`'s, so the captions, comments, typed commands and
+    the wrap at `cols` are covered along with the captured answers; the colour of
+    each step is in it too, because a reader sees that as well.
+
+    The fixture is a fresh temp directory every run, so a path that leaked into an
+    answer would make every capture differ; both the path mkdtemp returned and its
+    resolved form are replaced, because on macOS the two differ by a symlink. The
+    answers are scrubbed BEFORE they are wrapped, so the wrap cannot depend on how
+    long the temp path happened to be. An answer that is None (the gate said
+    nothing) stays None - it lays out as a caption, not as an empty line."""
+    roots = sorted(set([fixture_dir, os.path.realpath(fixture_dir)]),
+                   key=len, reverse=True)
+
+    def scrub(text):
+        if text is None:
+            return None
+        for root in roots:
+            text = text.replace(root, _FIXTURE_TOKEN)
+        return text
+
+    shown = dict((k, scrub(cap.get(k))) for k in ("status", "inplan", "outplan"))
+    steps = [list(step) for step in build_script(shown, cols)]
+    blob = json.dumps(steps, ensure_ascii=False)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def gif_record_entry(gif_bytes, text_digest):
+    """What a recording writes about the file it just wrote."""
+    return {"sha256": hashlib.sha256(gif_bytes).hexdigest(),
+            "textDigest": text_digest,
+            "writtenBy": "tools/capture-demo-gif.py"}
+
+
+def gif_record_problems(body, name, gif_bytes, text_digest):
+    """[problem, ...] - why the committed GIF does not match its record; [] when it does.
+
+    `body` None means the sidecar was absent or would not parse, and `gif_bytes` None
+    means the GIF is not on disk. Every missing basis is a finding naming the GIF:
+    a record nobody wrote cannot settle the claim the picture makes."""
+    if not isinstance(body, dict):
+        return ["%s: %s is missing or unreadable, so nothing records which text the "
+                "GIF shows - re-record it" % (name, SIDECAR)]
+    table = body.get(GIF_KEY)
+    entry = table.get(name) if isinstance(table, dict) else None
+    if not isinstance(entry, dict):
+        return ["%s: %s holds no record for it under %r, so whether it still shows "
+                "the gate's text is unknown rather than settled - re-record it"
+                % (name, SIDECAR, GIF_KEY)]
+    if gif_bytes is None:
+        return ["%s: recorded, but the file is not on disk" % (name,)]
+    out = []
+    if entry.get("sha256") != hashlib.sha256(gif_bytes).hexdigest():
+        out.append("%s: the committed bytes are not the ones recorded (sha256 "
+                   "differs) - re-record it rather than editing the record" % (name,))
+    if entry.get("textDigest") != text_digest:
+        out.append("%s: the gate's text has moved since it was recorded (text "
+                   "digest %s, now %s) - the GIF shows output the plugin no longer "
+                   "prints; re-record it"
+                   % (name, str(entry.get("textDigest"))[:12], text_digest[:12]))
+    return out
+
+
+def merged_sidecar(body, name, entry):
+    """A new sidecar body with this GIF's entry set; every other key as it was read.
+
+    The screenshots' half belongs to `capture-screenshots.mjs`, which carries this
+    key through its own merge the same way."""
+    out = dict(body)
+    table = dict(out.get(GIF_KEY) or {})
+    table[name] = entry
+    out[GIF_KEY] = dict((k, table[k]) for k in sorted(table))
+    return out
+
+
+def sidecar_text(body):
+    """The bytes `JSON.stringify(body, null, 2)` plus a newline would write, so the
+    two writers of one file never reformat each other's half."""
+    return json.dumps(body, indent=2, ensure_ascii=False) + "\n"
+
+
+def _read_bytes(path):
+    try:
+        with open(path, "rb") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def _read_sidecar(path):
+    """(body, error) - body None with error None means the file is absent."""
+    raw = _read_bytes(path)
+    if raw is None:
+        return None, None
+    try:
+        body = json.loads(raw.decode("utf-8"))
+    except ValueError as exc:
+        return None, "%s does not parse: %s" % (path, exc)
+    if not isinstance(body, dict):
+        return None, "%s is not a JSON object" % (path,)
+    return body, None
+
+
+def recorded_gif_problems(out_path, text_digest):
+    """--check's comparison, against the files beside `out_path`."""
+    body, _err = _read_sidecar(os.path.join(os.path.dirname(out_path), SIDECAR))
+    return gif_record_problems(body, os.path.basename(out_path),
+                               _read_bytes(out_path), text_digest)
+
+
+def record_gif(out_path, text_digest):
+    """Write this GIF's record into the sidecar beside it; None, or why it refused.
+
+    An absent sidecar is created holding only this record. One that will not parse
+    is REFUSED and left as it is: replacing it would drop every screenshot record it
+    held, and those are not this tool's to rebuild."""
+    side = os.path.join(os.path.dirname(out_path), SIDECAR)
+    body, err = _read_sidecar(side)
+    if err:
+        return err
+    gif = _read_bytes(out_path)
+    if gif is None:
+        return "%s was not written, so there is nothing to record" % (out_path,)
+    name = os.path.basename(out_path)
+    new = merged_sidecar(body or {}, name, gif_record_entry(gif, text_digest))
+    with open(side, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(sidecar_text(new))
+    return None
+
+
+# The hold on the final frame, read off the refusal rather than fixed. A fixed hold
+# was sized for a refusal half today's length, so the loop restarted while the
+# reader was still in it. The rate is a skimming pace; the floor is the old fixed
+# hold, kept for a refusal short enough to need less.
+#
+# The ceiling is for the viewer, not the format. A README GIF cannot be paused or
+# rewound by most readers, so a hold past the better part of a minute reads as a
+# frozen image rather than a pause, and a refusal that long is a refusal to shorten,
+# not to wait out. It also keeps the delay far inside the GIF frame-delay field,
+# which is a 16-bit count of centiseconds and wraps if a hold ever exceeded it.
+HOLD_FLOOR_MS = 3600
+HOLD_MS_PER_WORD = 150
+HOLD_CEILING_MS = 45000
+
+
+def final_hold_ms(refusal):
+    """How long the last frame stays up, in milliseconds: floor <= hold <= ceiling."""
+    words = len((refusal or "").split())
+    return min(HOLD_CEILING_MS, max(HOLD_FLOOR_MS, words * HOLD_MS_PER_WORD))
 
 
 def _wrap(text, width):
@@ -220,7 +402,7 @@ def build_script(cap, cols):
     return s
 
 
-def render(script, cols, rows, out_path):
+def render(script, cols, rows, out_path, hold_ms=HOLD_FLOOR_MS):
     from PIL import Image, ImageDraw
     font = _font(15)
     fw = font.getlength("M")
@@ -276,7 +458,7 @@ def render(script, cols, rows, out_path):
             frames.append(frame(lines, False)); durs.append(55)
     # Hold on the refusal. It is the point of the recording, and a loop that snaps
     # away from it the moment it lands shows everything except the thing it is for.
-    frames.append(frame(lines, False)); durs.append(3600)
+    frames.append(frame(lines, False)); durs.append(hold_ms)
 
     # disposal=1 (leave the previous frame in place) rather than 2 (repaint the
     # whole canvas): this recording only ever APPENDS lines, so every frame is the
@@ -292,7 +474,7 @@ def main(argv):
     ap.add_argument("--out", default=os.path.join(REPO, "docs", "screenshots", "demo-gate.gif"))
     ap.add_argument("--check", action="store_true",
                     help="capture and assert, write nothing")
-    ap.add_argument("--cols", type=int, default=96)
+    ap.add_argument("--cols", type=int, default=DEFAULT_COLS)
     args = ap.parse_args(argv)
 
     d = tempfile.mkdtemp(prefix="audit-demo-gif-")
@@ -320,7 +502,15 @@ def main(argv):
 
         print("  gate allowed the in-plan edit (silently)")
         print("  gate refused the out-of-plan edit, naming the file and the way out")
+        digest = capture_text_digest(cap, d, args.cols)
         if args.check:
+            stale = recorded_gif_problems(args.out, digest)
+            for p in stale:
+                sys.stderr.write("FAIL: %s\n" % p)
+            if stale:
+                return 1
+            print("  %s shows this text (digest %s) and is the recorded bytes"
+                  % (os.path.basename(args.out), digest[:12]))
             print("\nOK: demo preconditions hold")
             return 0
 
@@ -328,10 +518,18 @@ def main(argv):
         rows = sum(1 for k, _, _ in script if k != "type") + \
             sum(1 for k, _, _ in script if k == "type") + 1
         os.makedirs(os.path.dirname(args.out), exist_ok=True)
-        w, h, n = render(script, args.cols, rows, args.out)
-        print("  wrote %s (%dx%d, %d frames, %d KB)"
+        hold = final_hold_ms(cap["outplan"])
+        w, h, n = render(script, args.cols, rows, args.out, hold)
+        print("  wrote %s (%dx%d, %d frames, %d KB, final hold %d ms)"
               % (os.path.relpath(args.out, REPO), w, h, n,
-                 os.path.getsize(args.out) // 1024))
+                 os.path.getsize(args.out) // 1024, hold))
+        err = record_gif(args.out, digest)
+        if err:
+            sys.stderr.write("FAIL: the GIF was written but its record was not: %s\n"
+                             % err)
+            return 1
+        print("  recorded its sha256 and text digest in %s under %r"
+              % (SIDECAR, GIF_KEY))
         print("\nOK: demo GIF captured")
         return 0
     finally:
@@ -451,6 +649,173 @@ def _cases(check):
           "because the folders under the scripts tree are labels and not "
           "namespaces (got %s)" % (sep,),
           sep == "ValueError")
+
+    _record_cases(check)
+
+
+def _record_cases(check):
+    """What the sidecar record says about the GIF, and what --check makes of it.
+
+    The fixture directory is spelled two ways on purpose: macOS hands out a temp
+    path under a symlink, so the same tree can appear as the path mkdtemp returned
+    and as its resolved form, and a digest that kept either would change on every
+    run."""
+    fix = os.path.join(os.sep, "var", "folders", "x", "T", "audit-demo-gif-abc")
+    other = os.path.join(os.sep, "private", "tmp", "audit-demo-gif-zzz")
+    cap = {"status": "AUDIT plan\nREADY NOW  P2.1",
+           "inplan": None,
+           "outplan": "[require-plan] Outside the running plan: %s\n"
+                      "  2. the HUMAN types #no-plan in their own prompt"
+                      % os.path.join(fix, "src", "billing.ts")}
+    moved = dict(cap)
+    moved["outplan"] = cap["outplan"].replace(fix, other)
+    reworded = dict(cap)
+    reworded["outplan"] = cap["outplan"].replace("the HUMAN types", "type")
+
+    digest = capture_text_digest(cap, fix)
+    check("t0 the text digest does not see WHERE the fixture was built - the same "
+          "answers from a different temp directory digest the same, or every run "
+          "would read as a moved GIF",
+          capture_text_digest(moved, other) == digest)
+    check("t1 THE PAIR: a refusal whose wording moved digests differently - the "
+          "line that changed is the bypass line, the one the committed GIF got "
+          "wrong",
+          capture_text_digest(reworded, fix) != digest)
+    real_builder = globals()["build_script"]
+
+    def recaptioned(c, cols):
+        return [(k, t.replace("stays out of the way", "lets it through"), col)
+                for k, t, col in real_builder(c, cols)]
+
+    globals()["build_script"] = recaptioned
+    try:
+        recaptioned_digest = capture_text_digest(cap, fix)
+    finally:
+        globals()["build_script"] = real_builder
+    check("t3 a CAPTION the recording writes changed while every captured answer "
+          "stayed the same: the digest moves, because the reader sees the "
+          "caption - a digest over the answers alone stayed green here",
+          recaptioned_digest != digest)
+    check("t4 the wrap width is part of what the GIF shows: the same answers laid "
+          "out at another width digest differently",
+          capture_text_digest(cap, fix, 40) != digest)
+    nulled = dict(cap)
+    nulled["inplan"] = ""
+    check("t2 an allowed edit (no answer) and an empty answer are different "
+          "recordings, so they are different digests",
+          capture_text_digest(nulled, fix) != digest)
+
+    gif = b"GIF89a-the-committed-bytes"
+    entry = gif_record_entry(gif, digest)
+    body = {"note": "screenshots", "images": {"a.png": {"sha256": "aa"}},
+            GIF_KEY: {GIF_NAME: entry}}
+    check("c0 THE ALLOW TWIN: a record that matches both the bytes and the text "
+          "is no finding - without it every case below passes on a check that "
+          "always fails: %r" % (gif_record_problems(body, GIF_NAME, gif, digest),),
+          gif_record_problems(body, GIF_NAME, gif, digest) == [])
+    stale_text = gif_record_problems(body, GIF_NAME, gif,
+                                     capture_text_digest(reworded, fix))
+    check("c1 the gate's text moved while the GIF did not: a finding that NAMES "
+          "the GIF, so the repair is obvious from the line alone: %r"
+          % (stale_text,),
+          len(stale_text) == 1 and GIF_NAME in stale_text[0]
+          and "text" in stale_text[0])
+    stale_bytes = gif_record_problems(body, GIF_NAME, gif + b"!", digest)
+    check("c2 the committed bytes are not the ones recorded: a finding naming the "
+          "GIF and its hash: %r" % (stale_bytes,),
+          len(stale_bytes) == 1 and GIF_NAME in stale_bytes[0]
+          and "sha256" in stale_bytes[0])
+    for label, sidecar in (("no gif key", {"note": "n", "images": {}}),
+                           ("no entry", {"images": {}, GIF_KEY: {}}),
+                           ("absent or unreadable", None)):
+        got = gif_record_problems(sidecar, GIF_NAME, gif, digest)
+        check("c3 a sidecar with %s is a FINDING, never a pass: %r" % (label, got),
+              len(got) == 1 and GIF_NAME in got[0])
+    got = gif_record_problems(body, GIF_NAME, None, digest)
+    check("c4 a GIF that is not on disk is a finding rather than a skipped "
+          "comparison: %r" % (got,),
+          len(got) == 1 and GIF_NAME in got[0])
+
+    # The sidecar exactly as capture-screenshots.mjs writes it: two-space JSON, a
+    # trailing newline, keys in the order it chose. A recording may add its own key
+    # and must leave every byte of the screenshots' half where it was - and of any
+    # key neither tool owns today, which is what `elsewhere` is for.
+    shots = {"note": "Written by capture-screenshots - é",
+             "images": {"a.png": {"sha256": "aa", "version": "3.1.0"},
+                        "b.png": {"sha256": "bb", "version": "3.1.0"}},
+             "elsewhere": {"kept": True}}
+    shots_text = json.dumps(shots, indent=2, ensure_ascii=False) + "\n"
+    merged = merged_sidecar(json.loads(shots_text), GIF_NAME, entry)
+    rest = dict((k, v) for k, v in merged.items() if k != GIF_KEY)
+    check("m0 a recording writes its OWN key and leaves the screenshots' entries "
+          "byte-identical once serialised",
+          sidecar_text(rest) == shots_text
+          and merged.get(GIF_KEY) == {GIF_NAME: entry})
+    check("m1 the entry carries both halves of the claim - the bytes and the text "
+          "they show: %r" % (sorted(entry),),
+          entry.get("sha256") == hashlib.sha256(gif).hexdigest()
+          and entry.get("textDigest") == digest)
+    before = json.loads(shots_text)
+    merged_sidecar(before, GIF_NAME, entry)
+    check("m2 the merge returns a new body and leaves the one it was handed alone",
+          before == shots)
+
+    d = tempfile.mkdtemp(prefix="audit-demo-gif-selftest-")
+    try:
+        out = os.path.join(d, GIF_NAME)
+        side = os.path.join(d, SIDECAR)
+        with open(out, "wb") as fh:
+            fh.write(gif)
+        with open(side, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(shots_text)
+        err = record_gif(out, digest)
+        with open(side, encoding="utf-8") as fh:
+            written = json.loads(fh.read())
+        check("f0 a recording writes the record beside the GIF, and --check on "
+              "the same tree finds nothing (got %r, then %r)"
+              % (err, recorded_gif_problems(out, digest)),
+              err is None and recorded_gif_problems(out, digest) == []
+              and written.get("images") == shots["images"])
+        with open(out, "wb") as fh:
+            fh.write(gif + b"re-encoded")
+        got = recorded_gif_problems(out, digest)
+        check("f1 ...and the same check is red the moment the GIF's bytes move: %r"
+              % (got,), len(got) == 1 and GIF_NAME in got[0])
+        with open(side, "w", encoding="utf-8") as fh:
+            fh.write("{ not json")
+        err = record_gif(out, digest)
+        with open(side, encoding="utf-8") as fh:
+            kept = fh.read()
+        check("f2 a sidecar that will not parse is REFUSED rather than replaced - "
+              "rewriting it would drop every screenshot record it held: %r" % (err,),
+              err is not None and kept == "{ not json")
+    finally:
+        # Plain files only, no repository, so nothing read-only for the windows
+        # runner to refuse.
+        shutil.rmtree(d, ignore_errors=True)
+
+    def words(n):
+        return " ".join(["word"] * n)
+
+    short = final_hold_ms("[require-plan] no.")
+    longer = final_hold_ms(words(160))
+    check("h0 a short refusal still gets the floor hold: %r" % (short,),
+          short == HOLD_FLOOR_MS)
+    check("h1 THE PAIR: a refusal of today's length holds for longer than the "
+          "floor, and a longer one longer still - a fixed hold cut the current "
+          "refusal off mid-read (%r, %r)" % (longer, final_hold_ms(words(240))),
+          HOLD_FLOOR_MS < longer < final_hold_ms(words(240)))
+    at_cap = HOLD_CEILING_MS // HOLD_MS_PER_WORD
+    huge_hold = final_hold_ms(words(5000))
+    check("h2 a very long refusal is held at the ceiling and no longer - unbounded, "
+          "it would freeze the loop and eventually overflow the frame-delay field: "
+          "%r" % (huge_hold,),
+          huge_hold == HOLD_CEILING_MS)
+    check("h3 THE TWIN: just under the ceiling the hold still scales with the "
+          "refusal, so h2 is a clamp and not a constant (%r, %r)"
+          % (final_hold_ms(words(at_cap - 2)), final_hold_ms(words(at_cap - 1))),
+          final_hold_ms(words(at_cap - 2)) < final_hold_ms(words(at_cap - 1))
+          < HOLD_CEILING_MS)
 
 
 def _selftest():

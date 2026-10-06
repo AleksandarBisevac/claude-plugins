@@ -1,7 +1,7 @@
 {
   "id": "P103",
   "title": "what the plugin says about itself is true",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Tasks: (1) SECURITY.md names the five open secret-read shapes listed as Known open in 2.3.0 at class level, and corrects the post-detection sentence about commands 'provably unable to write'; the documented-gap rows become a characterization test in the repo. (2) Fix false claims: usage --backfill 'writes nothing', status.md's nonexistent /audit:run-gate, examples/README 'never dirties the tree', tests/_harness.py 'macos in CI', the fsync docstring in _manifest_io. (3) QUICKSTART is the only quick-start; other docs link to it; the README's first screen states who it is for and who does not need it. (4) Re-record the demo GIF and give it a text digest in captured-at.json so its words cannot rot unseen. (5) CONTRIBUTING gets a one-page 'Your first change'; add issue and PR templates. (6) Decision record: optional modules (panel, usage views, ADO, demo, theme editor) get fixes only, no new features, until a user asks; no new UI shape pins; no new prose lints.",
   "desiredOutcome": "every documented claim a reader acts on matches the code: SECURITY.md names the known open read shapes, the README, QUICKSTART, examples and comments make no false claim, there is one quick-start, the demo shows today's text, and a newcomer and a contributor each have a one-page start",
   "testGate": [
@@ -15,21 +15,143 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "80a7eed2f52726a06ca43309b66a08a04fda1ab4",
+  "branch": "audit/p103-what-the-plugin-says-about-its",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P103-R1",
+        "severity": "med",
+        "file": "plugins/audit/README.md:361 (also :270-273, README.md:88)",
+        "issue": "The secret-read rows say a call that names a secret file is refused and name only one gap (a read that never names the file). SECURITY.md names a second class: a read verb the guard's list lacks, with the secret named in plain sight. decide() allows cut, sort, jq, comm, vim and find -exec cat naming .env.production and blocks only listed verbs such as cat and less.",
+        "resolution": "fixed in P103.14-xi3 (bdd4c158): Say a call naming a secret file beside a read verb the guard lists is refused, and name both open classes, linking SECURITY.md, in all three places.",
+        "fixTask": "P103.14-xi3",
+        "commit": "bdd4c158"
+      },
+      {
+        "id": "P103-R2",
+        "severity": "med",
+        "file": "README.md:30-31",
+        "issue": "The first screen says out-of-plan edits are enforced only while a phase runs and observed before that; the code has three tiers (no manifest observes, a manifest with nothing running warns, a running phase denies), and README.md:132, plugins/audit/README.md:572 and QUICKSTART.md:85 each state the gate's timing differently, none naming the warn tier.",
+        "resolution": "fixed in P103.14-xi3 (bdd4c158): State the three tiers once in the same words wherever the timing is stated, or point each at /audit:doctor, which prints the active tier.",
+        "fixTask": "P103.14-xi3",
+        "commit": "bdd4c158"
+      },
+      {
+        "id": "P103-R3",
+        "severity": "med",
+        "file": "README.md:46-48",
+        "issue": "README says QUICKSTART's read-only /audit:doctor step checks the install before anything is written, but QUICKSTART now runs /audit:usage --backfill (which writes the .claude/usage ledger) before doctor.",
+        "resolution": "fixed in P103.14-xi3 (bdd4c158): Put doctor before the backfill in QUICKSTART, or reword the README sentence.",
+        "fixTask": "P103.14-xi3",
+        "commit": "bdd4c158"
+      },
+      {
+        "id": "P103-R4",
+        "severity": "med",
+        "file": "CONTRIBUTING.md:1072-1074, :1079",
+        "issue": "The Decision record's 'Documentation split by audience' entry limits QUICKSTART to install, one audited task and one report, nothing else; the backfill step was added without amending the record, and line 1079 still says the file opens with the reading order although 'Your first change' now opens it. README.md:138-157 still carries its own backfill 'Start here' block beside the rule that a command list in two places is one list and one lie.",
+        "resolution": "fixed in P103.14-xi3 (bdd4c158): Amend the decision record entry with the reason QUICKSTART now carries the free first look, update :1079, and reduce README's backfill block to a pointer.",
+        "fixTask": "P103.14-xi3",
+        "commit": "bdd4c158"
+      },
+      {
+        "id": "P103-R5",
+        "severity": "med",
+        "file": "CONTRIBUTING.md:39-60",
+        "issue": "'Your first change' sends a fresh clone straight to tools/verify.sh, which needs the npm devDependencies (vitest, playwright) and a Playwright Chromium that CI installs with npm ci and npx playwright install; the page names neither, so its one command fails on a fresh clone, and the PR template's verify.sh checkbox inherits the gap.",
+        "resolution": "fixed in P103.14-xi3 (bdd4c158): Add npm ci and npx playwright install chromium to the page after the clone.",
+        "fixTask": "P103.14-xi3",
+        "commit": "bdd4c158"
+      },
+      {
+        "id": "P103-R6",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_guard_secrets_read.py:420-452; plugins/audit/tests/test_guard_bash_writes.py:123-130",
+        "issue": "Not every shape SECURITY.md names has a characterization case: comm, cut, sort, jq, an editor and find -exec cat (secret reads) and sort -o and git -C reset --hard (shell writes) have none, and sr25's label is garbled.",
+        "resolution": "fixed in P103.15-xi3 (a2cdfd4c): Add known-open rows for those shapes beside watched twins, and reword sr25.",
+        "fixTask": "P103.15-xi3",
+        "commit": "a2cdfd4c"
+      },
+      {
+        "id": "P103-R7",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_guard_bash_writes.py:116",
+        "issue": "The comment points at SECURITY.md's _command_is_read_only paragraph, but SECURITY.md never names that function.",
+        "resolution": "fixed in P103.15-xi3 (a2cdfd4c): Point at the paragraph by its lead sentence.",
+        "fixTask": "P103.15-xi3",
+        "commit": "a2cdfd4c"
+      },
+      {
+        "id": "P103-R8",
+        "severity": "low",
+        "file": "SECURITY.md:369; CONTRIBUTING.md:1131,1136",
+        "issue": "An ordinal pointer ('Item 6 of Known bypass classes') and two 'the N <noun>' counts in prose, which the author must police.",
+        "resolution": "fixed in P103.14-xi3 (bdd4c158): Refer to the item by its title and drop both counts.",
+        "fixTask": "P103.14-xi3",
+        "commit": "bdd4c158"
+      },
+      {
+        "id": "P103-R9",
+        "severity": "low",
+        "file": "plugins/audit/README.md:627-631",
+        "issue": "The rewritten command enumeration leaves out shipped commands, /audit:usage among them, which QUICKSTART sends the reader to.",
+        "resolution": "fixed in P103.14-xi3 (bdd4c158): Point at the command table instead of enumerating.",
+        "fixTask": "P103.14-xi3",
+        "commit": "bdd4c158"
+      },
+      {
+        "id": "P103-R10",
+        "severity": "low",
+        "file": "plugins/audit/README.md:415",
+        "issue": "The invariant row 'Never read secrets, never log tokens' is graded enforced, contradicting SECURITY.md's name-based secret guard and the open shapes this phase documented.",
+        "resolution": "fixed in P103.14-xi3 (bdd4c158): Grade it as name-based refusal with the open shapes linked.",
+        "fixTask": "P103.14-xi3",
+        "commit": "bdd4c158"
+      },
+      {
+        "id": "P103-R11",
+        "severity": "low",
+        "file": "README.md:140,146; QUICKSTART.md:31; plugins/audit/README.md:924",
+        "issue": "The backfill is said to spend no tokens and to write only the .claude/usage ledger; /audit:usage is a model-invoked command that costs an ordinary turn to relay, and in a git repo it also takes and releases a lock under the git common dir.",
+        "resolution": "fixed in P103.14-xi3 (bdd4c158): Say it runs no agent and no analysis, costs one ordinary turn, and leaves only the self-ignoring ledger in the working tree.",
+        "fixTask": "P103.14-xi3",
+        "commit": "bdd4c158"
+      },
+      {
+        "id": "P103-R12",
+        "severity": "med",
+        "file": "docs/screenshots/captured-at.json",
+        "issue": "This phase adds a top-level gifs record to the sidecar; branches that re-captured screenshots with the old writer rewrite the file as note and images only, so a merge can conflict or drop the record and turn capture-demo-gif.py --check red; any merged change to the refusal text or the status render also moves the text digest.",
+        "resolution": "Merge-time reconciliation: after each phase that re-captured screenshots merges, confirm the gifs entry survives and run capture-demo-gif.py --check, re-recording only if the digest moved."
+      },
+      {
+        "id": "P103-R13",
+        "severity": "med",
+        "file": "SECURITY.md:669-684",
+        "issue": "The panel trust-boundary text describes this branch's base (GET / unguarded, pidfile written with plain open and no chmod, reaching the port is reaching the token); the panel phase requires the token on GET / and writes the pidfile owner-only without touching SECURITY.md, so the merge is clean and the paragraph silently stale.",
+        "resolution": "Merge-time reconciliation with the panel phase: rewrite the paragraph to the token-guarded page and the owner-only pidfile and requote commands/panel.md."
+      },
+      {
+        "id": "P103-R14",
+        "severity": "low",
+        "file": "SECURITY.md:1103-1133",
+        "issue": "The rewritten end of Known bypass classes item 6 sits next to another phase's edit of item 7 and its fail-mode rows, so a merge may conflict though no sentence becomes false.",
+        "resolution": "Resolve at merge keeping both edits."
+      }
+    ],
+    "outcome": "phase review (audit-reviewer, phase mode, no project skill): findings fixed by two fix tasks; the three merge-time findings are triaged to reconciliation when the panel and hook phases land, because the sentences they name are true on this branch and change only with another branch's code [findings: 14 - 0 high, 7 med, 7 low; 11 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "What the plugin says about itself now matches what it does. SECURITY.md names the open secret-read and shell-write shapes, and each is pinned by a characterization case beside a twin the guard denies, so closing a gap forces the document to change. The README, the plugin README, QUICKSTART, the handbook, CONTRIBUTING and the examples agree on what the secret guard catches, the plan gate's three tiers, the backfill's real cost and the first-run order, with QUICKSTART as the one first-run page (doctor first, then the look at past spend). The demo GIF was re-recorded from today's text and --check fails when its words or bytes drift; the recording no longer captures the operator's live locks. Newcomers get a one-page Your first change that runs on a fresh clone, issue and PR templates point at it, and the decision record settles that optional modules take fixes only. The desired outcome is met for this branch; sentences that change when the panel and hook phases land (the panel trust boundary, the screenshot sidecar's gifs record, adjacent SECURITY.md items) are carried as merge-time reconciliation.",
   "tasks": [
     {
       "id": "P103.1",
       "title": "SECURITY.md names the open secret-read shapes and what shell-write detection misses",
-      "status": "pending",
+      "status": "done",
       "description": "SECURITY.md disclaims the class (text inspection is bypassable) but never names the read shapes the 2.3.0 Known open entry listed, and all of them still pass guard-secrets-read: a recursive grep over a directory, the Grep tool over a directory with no glob, diff of two env files, a for-loop over .env.*, and xargs cat. Name them at class level (a read that reaches the file without the call naming it in a form the guard reads, plus a read verb the list lacks) in the open-residuals list under 'Fail modes' and in item 6 of 'Known bypass classes', and rewrite the post-detection bullet that says a command 'provably unable to write is absorbed': _command_is_read_only absorbs git -C <dir> checkout --, env rm -rf, awk's print > file and sed's w flag, so say which class of write it can mistake for a read. Opus because each sentence must match what the predicates actually return, read from hooks/guard-secrets-read.py and hooks/guard-bash-writes.py; keep every existing heading (help topics cite them) and the fail-mode table rows (prove-gates anchors). gate-only: documentation of current behaviour, pinned by the next task; selftests is the narrowest gate that reads documents (prose-number, link and fail-mode lints run in the sweep).",
       "files": [
         "SECURITY.md"
@@ -48,21 +170,32 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "83ec5d9c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The open-residuals list under Fail modes gains a guard-secrets-read bullet naming two classes: a read that reaches the file without the call naming it in a form the guard reads (a recursive grep over a directory, the Grep tool over a directory with no glob, a loop over .env.* that reads the loop variable, xargs cat given the names on stdin), and a read verb the list lacks (diff, comm, cut, sort, jq). Known bypass classes item 6 is split into the same two classes, keeping the old shapes. Item 1's post-detection bullet now says what _command_is_read_only reads and names the class it absorbs: a write made through a listed program's arguments (git -C <dir> checkout -- and reset --hard or commit behind -C, env rm -rf, awk print > file, sed w, sort -o), never reported because seenDirty absorbs it. Each verdict was observed by driving the hooks; no heading or fail-mode table row changed.",
+        "descriptive": "SECURITY.md now names, as two classes, the secret reads the read guard lets through, and says which writes the shell-write detector mistakes for reads, instead of calling them provably unable to write."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T14:46:28Z",
+      "completedAt": "2026-10-06T15:03:19Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T15:00:30Z.3bb86c",
+        "status": "passed",
+        "at": "2026-10-06T15:00:30Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "83ec5d9c",
+        "at": "2026-10-06T15:03:19Z",
+        "basis": "audit-reviewer (task mode): every named shape re-driven against this worktree's hooks; headings and table rows untouched; no findings"
+      }
     },
     {
       "id": "P103.2",
       "title": "the open secret-read and shell-write shapes are pinned as characterization cases",
-      "status": "pending",
+      "status": "done",
       "description": "The documented gaps live only in a private corpus, so nothing in this repository goes red when one is closed or when the document stops naming it. Add each documented-gap shape as a characterization case in the existing guard suites, asserting today's verdict and following the existing 'KNOWN LIMIT' pattern (named as a decision, pointing at SECURITY.md). Tests only: this task changes no guard code. The boundary case where a string literal merely mentions a secret path is left to P108's verdict table. If a safeguard refuses the work, report could-not-run rather than rewording around it.",
       "files": [
         "plugins/audit/tests/test_guard_secrets_read.py",
@@ -90,21 +223,40 @@
       "dependsOn": [
         "P103.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "71d73bb5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Tests only; no guard code changed. test_guard_secrets_read.py: sr22 pins the twin the guard denies (reading a named secret file through a listed verb), and sr23-sr27 pin each documented open read shape (recursive grep over a directory, the Grep tool over a directory with no glob, diff of two env files, a loop over the env files, xargs cat) as allowed today, each message pointing at the SECURITY.md paragraph that names it. test_guard_bash_writes.py: a KNOWN_OPEN_CASES table beside the existing tables pins the four absorbed write shapes (git -C <dir> checkout --, env rm -rf, awk print to a file, sed's w command) beside two watched twins, registered in the tag-uniqueness check. test_guard_history_rewrite.py: gh8b pins that an interpreter program starting a force push from its own subprocess call is allowed in the recorded-commit fixture where gh8's plain force push is denied. Closing any gap turns its case red and forces the document to change with it. Writing these guard-shaped strings as test data met no host or model refusal.",
+        "descriptive": "Every documented gap in the read and write guards now has a test asserting today's verdict beside a twin the guard denies, so closing a gap, or the document dropping it, goes red in this repository."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T15:58:49Z",
+      "completedAt": "2026-10-06T19:02:20Z",
+      "verifiedBy": [
+        "sr22",
+        "sr23",
+        "sr24",
+        "sr25",
+        "sr26",
+        "sr27",
+        "gh8b"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T16:32:49Z.5ff754",
+        "status": "passed",
+        "at": "2026-10-06T16:32:49Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "71d73bb5",
+        "at": "2026-10-06T19:02:20Z",
+        "basis": "audit-reviewer (task mode): clean; every allow case has its deny twin in the same fixture and each message matches its SECURITY.md paragraph"
+      }
     },
     {
       "id": "P103.3",
       "title": "SECURITY.md states the panel's trust boundary as the code holds it",
-      "status": "pending",
+      "status": "done",
       "description": "SECURITY.md says holding the panel's token is holding the panel but never says who can obtain it, and commands/panel.md's 'requires a per-launch token on every API call' reads as access control. Add one boundary statement: the panel trusts every local process that can read its token, and holding it grants config and composition writes, including the gate command the next gate run executes (journalled). Write the boundary the code holds when this lands, naming its mechanisms so it can be checked: panel-server.py serves GET / without asking for the token and embeds it in the page, and _write_pidfile's file mode decides who else can read it; today that is any local account, and once P105's token-on-GET and 0600 pidfile land it narrows to the same user, which is the sentence P105 names. gate-only: one documentation sentence; selftests runs the lints that read SECURITY.md.",
       "files": [
         "SECURITY.md"
@@ -125,21 +277,32 @@
       "dependsOn": [
         "P103.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c4eb5a30",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "SECURITY.md gains one bullet stating the panel's trust boundary as the code holds it: holding the per-launch token is holding the panel; panel-server.py serves GET / without asking for the token and embeds it in the page, and _write_pidfile writes the pidfile carrying the token with a plain open and no mode narrowing, so today any local account able to read the pidfile can read the token; holding it grants the composition-lever writes and the sweep, and the gate command a token holder sets is the one the next phase or review run executes, journalled. The bullet sits beside the existing panel-route bullets; splitting a dedicated panel section out of that list is left as a later structure change.",
+        "descriptive": "SECURITY.md now says who can obtain the panel's token today and what holding it allows, naming the code that decides it."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T15:58:50Z",
+      "completedAt": "2026-10-06T19:02:19Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T16:29:23Z.bab9b3",
+        "status": "passed",
+        "at": "2026-10-06T16:29:23Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c4eb5a30",
+        "at": "2026-10-06T19:02:19Z",
+        "basis": "audit-reviewer (task mode): clean; every claim checked against panel-server.py; placement follows the existing panel-route bullets"
+      }
     },
     {
       "id": "P103.4",
       "title": "README and plugin README claim no more about secret reads than SECURITY.md",
-      "status": "pending",
+      "status": "done",
       "description": "Three sentences promise what SECURITY.md disclaims: README.md:69 'Secret file contents - never read, directly or indirectly', plugins/audit/README.md:287-288 'blocks reading secret files ... directly or indirectly' and the enforced-table row at :377 'Secret contents are never read'. Restate each as what is refused (a call that names a secret file, through the channels the row lists) and link the open shapes in SECURITY.md, keeping the table shape and the README's script-path reference (test__refs c3). Acceptance: grep over README.md, QUICKSTART.md, plugins/audit/README.md and docs/handbook.html finds no unqualified 'never read' or 'directly or indirectly' claim about secrets. gate-only: text; selftests runs the doc lints.",
       "files": [
         "README.md",
@@ -161,21 +324,32 @@
       "dependsOn": [
         "P103.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3b6fdf7c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "README.md's enforcement row and the plugin README's prose bullet and enforced-table row no longer say secrets are never read, directly or indirectly. Each now states what the guard refuses - a call that names a secret file, through the direct tool call or through git show, source, cp/mv - links SECURITY.md's Known bypass classes section for the open shapes, and says the guard is name-based, not containment. Table shapes and the README's script-path reference are unchanged; a grep over README.md, QUICKSTART.md, the plugin README and the handbook finds no remaining unqualified claim about secrets.",
+        "descriptive": "The two READMEs no longer promise that secrets are never read; they say what the guard refuses and link the shapes it does not catch."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T15:58:50Z",
+      "completedAt": "2026-10-06T19:02:18Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T16:25:49Z.e00733",
+        "status": "passed",
+        "at": "2026-10-06T16:25:49Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "3b6fdf7c",
+        "at": "2026-10-06T19:02:18Z",
+        "basis": "audit-reviewer (task mode): clean; anchors and relative links resolve; no other surface still makes the claim"
+      }
     },
     {
       "id": "P103.5",
       "title": "false claims about backfill, a missing verb and the example panel are corrected",
-      "status": "pending",
+      "status": "done",
       "description": "Four claims a reader acts on are false on main: README.md:120 says /audit:usage --backfill 'writes nothing' and plugins/audit/README.md:996-997 says 'nothing is generated', while commands/usage.md:30-31 says it rewrites the monthly ledger; commands/status.md:215 names /audit:run-gate, which does not exist (the recorder is scripts/governance/run-test-gate.py --record); examples/README.md:64-68 says running the panel 'never dirties the tree', while a first launch leaves .claude/state/panel-openstate.json untracked and not ignored. Say what each actually does: backfill spends no tokens and writes a local, self-ignoring ledger under .claude/usage/ (confirm in a scratch git repo that git status stays clean); the status sentence names the recorder; the example sentence states what is ignored and what is not until P105's ignore rule lands (re-run examples/panel.sh start/stop in a git archive export and read git status --porcelain). Acceptance: grep for 'writes nothing' and 'nothing is generated' beside backfill, '/audit:run-gate' and 'never dirties' across README.md, QUICKSTART.md, plugins/audit/, examples/ and docs/handbook.html finds nothing untrue.",
       "files": [
         "README.md",
@@ -199,21 +373,38 @@
       "dependsOn": [
         "P103.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b28b0b3b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "README.md's /audit:usage --backfill line says it spends no tokens and writes only a local, self-ignoring ledger, and the plugin README says no tokens are spent and no agent is called, naming the self-ignoring ledger under .claude/usage/ as the one thing written (checked by running --backfill in a scratch git repo with a synthetic transcript: git status stayed clean and a '*' .gitignore was dropped). commands/status.md names scripts/governance/run-test-gate.py --record instead of the non-existent /audit:run-gate. The example-panel claim is left to code, not reworded (note 1): the panel phase's self-ignoring state directory makes \"running the panel never dirties the tree\" true once both phases land, so this task's edit to examples/README.md was restored and examples/panel.sh is unchanged.",
+        "descriptive": "The READMEs now say what usage backfill really writes, and the status command names the gate recorder that exists; the example-panel claim becomes true when the panel's own fix lands."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T19:04:33Z",
+      "completedAt": "2026-10-06T19:14:06Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-06T19:08:08Z",
+          "text": "Orchestrator decision, 2026-10-06: the example-panel claim (\"running the panel never dirties the tree\", in examples/README.md and the comment in examples/panel.sh) is made true by code rather than by rewording. The panel phase's task that makes the panel's state directory ignore itself is already done on its own branch; once both phases land, a first launch leaves nothing untracked and the original sentence is accurate again, while a reworded sentence saying the file stays untracked would become false and would conflict on the same lines. This task's edit to examples/README.md was therefore restored to the committed text, and examples/panel.sh is left as it is. This task keeps the backfill and missing-verb corrections."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T19:13:48Z.d4c4bd",
+        "status": "passed",
+        "at": "2026-10-06T19:13:48Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "b28b0b3b",
+        "at": "2026-10-06T19:14:06Z",
+        "basis": "audit-reviewer (task mode): clean; diverges from the description by recorded orchestrator decision (note 1) - the example-panel sentence is made true by the panel phase's self-ignoring state directory instead of being reworded, to avoid a sentence that turns false and conflicts on merge"
+      }
     },
     {
       "id": "P103.6",
       "title": "comments state what CI and the manifest writer actually do",
-      "status": "pending",
+      "status": "done",
       "description": "_harness.py:72-73 says CI runs the suites 'on ubuntu, macos and windows', but .github/workflows/ci.yml's matrix is ubuntu-latest and windows-latest and macOS is covered only by a maintainer's local sweep; point at the matrix instead of listing platforms, so the sentence cannot rot. _manifest_io.atomic_write_json's docstring (:1061-1062) says the temp file is 'fsync'd via close', but no writer under scripts/ or hooks/ calls os.fsync; say it is written, closed and replaced atomically, with no durability promise across a power loss. gate-only: docstring and comment text, no behaviour; selftests runs the prose lints over .py docstrings and lint keeps ruff/vermin green.",
       "files": [
         "plugins/audit/tests/_harness.py",
@@ -234,25 +425,37 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "76b1d956",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_harness.py now points at the selftest matrix in .github/workflows/ci.yml instead of listing platforms, and says a maintainer's machine covers the rest locally. atomic_write_json's docstring says the temp file is written, closed and replaced atomically, that no os.fsync is called, and that it promises no durability across a power loss, only that a reader never sees a partial file. grep finds no fsync call under scripts/ or hooks/.",
+        "descriptive": "Two comments that claimed more than the code does are corrected: the test harness no longer says CI runs on macOS, and the manifest writer's docstring no longer promises an fsync it never makes."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T14:46:28Z",
+      "completedAt": "2026-10-06T14:59:26Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T14:58:17Z.37fb43",
+        "status": "passed",
+        "at": "2026-10-06T14:58:17Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "76b1d956",
+        "at": "2026-10-06T14:59:26Z",
+        "basis": "audit-reviewer (task mode): both sentences verified against ci.yml's matrix and the writer's body; no findings"
+      }
     },
     {
       "id": "P103.7",
       "title": "QUICKSTART is the only quick-start; the plugin README and handbook link to it",
-      "status": "pending",
+      "status": "done",
       "description": "The first-run path still exists in three shapes that disagree: QUICKSTART.md, the plugin README's TL;DR (:28-43), its Install command list (:514-524) and its Quick start (:654-715), plus the handbook's install section. Replace the plugin README's TL;DR, the Install list and the Quick start with one link to QUICKSTART.md, keeping the '## Install' heading (prove-gates s15 anchors on it) and moving the hand-copy starter-manifest curl lines into the reference section beside the schema curl, so the README still carries current-tag pins (raw_url_pin_drift, prove-gates p1); the handbook's #install section keeps its anchor and content and gains a pointer to QUICKSTART for a first session (an absolute GitHub link, since the page is served from Pages). This completes the documentation split by audience in CONTRIBUTING's Decision record rather than reopening it. Acceptance: a reader goes from README.md to the first /audit:doctor through exactly one page, and no document other than QUICKSTART.md lists a first-command sequence.",
       "files": [
         "plugins/audit/README.md",
-        "docs/handbook.html"
+        "docs/handbook.html",
+        "QUICKSTART.md"
       ],
       "tests": {
         "mode": "gate-only",
@@ -270,29 +473,42 @@
       "dependsOn": [
         "P103.5"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "74c6700a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/README.md no longer carries a first-run sequence of its own: the TL;DR command block is deleted, ## Install keeps its heading, the sentence naming the installed command surface and the /reload-plugins note, with its install block replaced by a link to QUICKSTART.md, and ## Quick start becomes a link to QUICKSTART.md plus a pointer to the hand-copy path. The hand-copy starter-manifest curl block (still pinned to v3.1.0) and its buildCommands note move into ## The manifest in one minute, beside the schema curl. docs/handbook.html's #install section gains one paragraph pointing a first-time reader at QUICKSTART.md through an absolute GitHub link, because the page is served from GitHub Pages; its anchor and existing content are unchanged. Checked with _refs.sweep_doc_drift, raw_url_pin_drift, handbook_drift, doc_link_drift, _output.house_style_violations and _deps.doc_prose_numbers over the two files, all clean.\nAfter review, the free backfill step moved into QUICKSTART.md as step 2, before the install check, worded to agree with the README's Token usage section (no tokens spent, no agent called, the only thing written is the self-ignoring ledger under .claude/usage/), with a pointer there for the rest; the later steps were renumbered after checking that nothing links to a QUICKSTART step by number or anchor. The README's sentence that QUICKSTART.md is the one page now holds.",
+        "descriptive": "There is now one first-run page: the plugin README and the handbook point to QUICKSTART.md instead of keeping their own command sequences, and QUICKSTART gains the free look at past spend that only the README used to show."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T19:15:02Z",
+      "completedAt": "2026-10-06T19:28:46Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T19:28:17Z.5fabd4",
+        "status": "passed",
+        "at": "2026-10-06T19:28:17Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "74c6700a",
+        "at": "2026-10-06T19:28:46Z",
+        "basis": "audit-reviewer (task mode): matches; one medium finding (the README claimed QUICKSTART covered the backfill step) fixed by moving the step into QUICKSTART.md, spot-checked by the orchestrator"
+      }
     },
     {
       "id": "P103.8",
       "title": "the demo GIF shows today's gate text and --check fails when that text moves",
-      "status": "pending",
+      "status": "done",
       "description": "demo-gate.gif was recorded at 0.24 and shows a bypass line that does not say only the human can arm it, while README.md says every line is the plugin's real output; --check asserts behaviour, never text, so nothing went red. Give the GIF a record in captured-at.json under its own top-level key (capture-screenshots.mjs today rewrites the file as note+images only, so it must preserve keys it does not own), make --check compare a fresh capture's text digest and the committed bytes against that record, then re-record with Pillow; derive the final hold from the refusal's length rather than the fixed 3600 ms, since today's refusal is roughly twice as long. Update the CI step's comment, which says nothing can tell the GIF is stale. Run --check twice with a gap and on a git archive export before calling the digest stable, and run npx vitest run and python3 tools/capture-demo-gif.py --check (neither is a build-command key).",
       "files": [
+        ".github/workflows/ci.yml",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/demo-gate.gif",
         "tools/capture-demo-gif.py",
         "tools/capture-screenshots.mjs",
         "tools/ui-tests/capture-provenance.test.mjs",
-        "docs/screenshots/captured-at.json",
-        "docs/screenshots/demo-gate.gif",
-        ".github/workflows/ci.yml"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/_refs.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -314,21 +530,38 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d42d4969",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/capture-demo-gif.py --check now verifies the committed GIF against a record in docs/screenshots/captured-at.json under a `gifs` key: a text digest over every step build_script lays out at the recorded width (comments, typed commands, captions, the refusal and the status render, with the fixture path scrubbed in both its mkdtemp and realpath spellings) recomputed from a fresh capture, and the sha256 of the committed GIF; it fails naming the file when either differs or the record, the sidecar or the GIF is missing. A recording merges its own entry into the sidecar and keeps every other key byte-identical, and refuses to replace a sidecar that will not parse; tools/capture-screenshots.mjs gains an exported pure mergeCaptureRecord so a screenshot re-capture keeps the `gifs` record. The final frame hold is max(3600, words*150) ms, clamped at a 45 s ceiling. Found along the way and fixed: the status render ran from the caller's cwd and carried the operator's live phase locks (pid and host name) into the GIF; it now runs with cwd and CLAUDE_PROJECT_DIR set to the fixture. The CI step's comment, PLUGIN-BUILD-GUIDE.md and _refs.screenshot_capture_drift's docstring now say how the GIF's record is graded. The GIF was re-recorded by the orchestrator (`python3 tools/capture-demo-gif.py`, exit 0: 83 frames, final hold 24450 ms) and its frames inspected: the status render shows only the demo plan. `--check` exited 0 in the worktree at 21:31:47 and from a `git archive HEAD` export with the changed files overlaid at 21:31:59, and again after a gap before the gate. Cases: 22 Python cases in the tool (33/33) and 3 vitest cases in tools/ui-tests/capture-provenance.test.mjs (13/13 in that file). Red-first could not be proved by the helper (the tool's suite is inline, and the throwaway tree has no node_modules); assertion reds were taken in scratch copies: the answers-only digest against the caption case went 29/30, and mutations of the digest, the ceiling and the hold each reddened their named cases.",
+        "descriptive": "The demo GIF in the README is re-recorded from today's text, and a check now fails as soon as the words it shows drift from what the plugin prints; the recording also no longer captures the maintainer's machine details."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T19:15:02Z",
+      "completedAt": "2026-10-06T19:38:56Z",
+      "verifiedBy": [
+        "t3",
+        "t4",
+        "h2",
+        "h3",
+        "capture-provenance.test.mjs"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T19:38:45Z.e6d7c3",
+        "status": "passed",
+        "at": "2026-10-06T19:38:45Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d42d4969",
+        "at": "2026-10-06T19:38:56Z",
+        "basis": "audit-reviewer (task mode): code half matches; the medium finding (GIF not re-recorded) was the orchestrator's step and is done, with --check green twice and from an archive export; three low findings (captions outside the digest, no hold ceiling, a stale exclusion reason) fixed with scratch-copy reds"
+      }
     },
     {
       "id": "P103.9",
       "title": "README first screen says who it is for and who does not need it",
-      "status": "pending",
+      "status": "done",
       "description": "Rewrite the README's first screen from the deep-analysis DOCS draft: a one-sentence position (keep Claude Code inside the plan you approved, with test evidence on record that git can check, for multi-day work on an existing codebase), what is enforced by hooks versus followed from instructions, the GIF, see-it-first links, install then QUICKSTART.md, and an explicit 'who does not need it' (short solo greenfield sessions, repositories without tests, anyone wanting containment rather than guardrails). Correct the third bullet, which says the secret guard never matches a string, against SECURITY.md; the GIF caption either drops the re-record instruction (a contributor detail) or names its Pillow requirement. Keep the '- [QUICKSTART](QUICKSTART.md)' and '- [CHANGELOG](CHANGELOG.md)' list items (prove-gates dl1) and at least one script path (test__refs c3). Acceptance line: reading only the first screen, a visitor can say what the plugin enforces and what it only asks the model to follow, who should install it and who should not, and reaches the first /audit:doctor through at most one page.",
       "files": [
         "README.md"
@@ -350,21 +583,32 @@
         "P103.5",
         "P103.8"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "dc1c0cea",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "README.md's first screen (the title through the two screenshot blocks) is rewritten from the analysis draft, each claim checked against the code and SECURITY.md: a position statement (it keeps Claude Code inside the plan you approved, with test-gate evidence committed beside the plan, for multi-day work on an existing codebase that has tests); the guards bullet corrected from \"caught by what the tool call does, never by matching a string\" to what SECURITY.md says - a write no task covers is refused, once a phase is running, by the resolved path it writes to, and a secret-file read is caught at every tier by matching the tool call's text, so pair it with Claude Code's sandbox; a one-line enforced-by-hooks versus followed-from-instructions summary linking to the full table; an explicit \"Who does not need this\" paragraph (short solo greenfield sessions, repositories with no tests, anyone who wants containment rather than guardrails); and an Install-then-QUICKSTART pointer that links to the existing Install section instead of repeating its commands. The GIF caption's re-record instruction is dropped; CONTRIBUTING.md carries it with its Pillow caveat. The QUICKSTART and CHANGELOG list items and a script path stay. test__refs 304/304; raw_url_pin_drift, doc_link_drift and doc_prose_numbers clean.",
+        "descriptive": "A visitor reading only the top of the README now learns what the plugin enforces and what it only asks the model to follow, who should install it and who should not, and reaches the first check of the install through one page."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T19:39:02Z",
+      "completedAt": "2026-10-06T19:57:22Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T19:57:04Z.a597ef",
+        "status": "passed",
+        "at": "2026-10-06T19:57:04Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "dc1c0cea",
+        "at": "2026-10-06T19:57:22Z",
+        "basis": "audit-reviewer (task mode): matches; one medium finding (the write-refusal sentence lacked 'once a phase is running') fixed and checked by the orchestrator against require-plan.py's tiers and SECURITY.md's every-tier secret rule"
+      }
     },
     {
       "id": "P103.10",
       "title": "CONTRIBUTING opens with a one-page Your first change",
-      "status": "pending",
+      "status": "done",
       "description": "A first external PR today means reading CLAUDE.md, CONTRIBUTING and the UI skills before the first line, and nothing says which of them a given change needs. Add a 'Your first change' section at the top of CONTRIBUTING.md, at most one page, folding in Dev setup rather than repeating it: what to read for a doc fix, a Python fix and a UI fix (the skill table in CLAUDE.md), that PLUGIN-BUILD-GUIDE.md is needed only for a new .py, the one command to iterate with (tools/verify.sh --fast) and the one before a PR (tools/verify.sh), what CI checks, and the optional tools (Node for vitest and the browser gates, Pillow for the demo GIF). No duration or count unless it carries the command that re-derives it. Acceptance line: from that page alone, a first-time contributor can tell what to read for their kind of change, which single command to run before a PR and what CI will check, without opening PLUGIN-BUILD-GUIDE.md unless they add a .py file.",
       "files": [
         "CONTRIBUTING.md"
@@ -383,21 +627,32 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b17c54fa",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CONTRIBUTING.md opens with a one-page 'Your first change' section that folds in the old Dev setup (clone, local marketplace, the guard-edits dev-mode note) instead of repeating it: what to read for a doc fix, a Python fix and a UI fix (pointing at the skill rows in CLAUDE.md), that PLUGIN-BUILD-GUIDE.md is needed only for a new .py file, tools/verify.sh --fast to iterate and tools/verify.sh before a PR, and what CI checks. The tools paragraph names what the plain verify.sh run needs beyond the stdlib-only plugin - Node (vitest, ajv-cli, the browser gates), ruff and vermin (pip, pinned in CI) and the Claude Code CLI (claude plugin validate) - and says Pillow is needed only for a manual demo-GIF regeneration, because the --check path never imports it. The old reading-order list stays as 'Reading order beyond this page'. No count or duration without its command; doc_prose_numbers and doc_link_drift are clean.",
+        "descriptive": "CONTRIBUTING.md now opens with one page that tells a first-time contributor what to read for their kind of change, the one command to run before a PR, what CI checks and which tools it needs."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T14:46:28Z",
+      "completedAt": "2026-10-06T15:57:58Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T15:57:24Z.44eeb0",
+        "status": "passed",
+        "at": "2026-10-06T15:57:24Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b17c54fa",
+        "at": "2026-10-06T15:57:58Z",
+        "basis": "audit-reviewer (task mode, two rounds): one medium finding (a false claim that Node and Pillow were the only non-stdlib tools) fixed and re-reviewed clean against verify.sh, ci.yml and capture-demo-gif.py"
+      }
     },
     {
       "id": "P103.11",
       "title": "issue and PR templates point a contributor at the one page",
-      "status": "pending",
+      "status": "done",
       "description": ".github holds only workflows, so an issue arrives without the version or the doctor output needed to act on it, and a PR without the checks the repo requires. Add a bug template asking for /audit:version, /audit:doctor output, the command run and what happened; a feature template asking which module and what it blocks, which is where the freeze decision's revisit trigger is observed; a config.yml that routes exploitable weaknesses to SECURITY.md's private address instead of a public issue; and a PR template linking 'Your first change' with tools/verify.sh green and a red-first proof for any new check. gate-only: new Markdown and YAML; selftests runs the prose-number lint, which reads every committed .md.",
       "files": [
         ".github/ISSUE_TEMPLATE/bug_report.md",
@@ -421,21 +676,32 @@
       "dependsOn": [
         "P103.10"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "cc797e15",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Four new files under .github: a bug template asking for /audit:version and /audit:doctor output, the command run and what happened; a feature template asking which module and what it blocks, naming CONTRIBUTING.md's 'Optional modules take fixes only' Decision record entry so a request about an optional module is the evidence its revisit trigger waits for, with a generic line for any other entry; a config.yml routing exploitable weaknesses to SECURITY.md's private reporting section instead of a public issue; and a pull request template linking 'Your first change', with checkboxes for a green tools/verify.sh and a red-first proof of any new check.",
+        "descriptive": "Issues and pull requests now arrive with the version, the doctor output and the checks the repository needs, and a request about an optional module is pointed at the decision it can reopen."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T15:58:51Z",
+      "completedAt": "2026-10-06T19:02:19Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T16:31:10Z.30e833",
+        "status": "passed",
+        "at": "2026-10-06T16:31:10Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "cc797e15",
+        "at": "2026-10-06T19:02:19Z",
+        "basis": "audit-reviewer (task mode): one medium finding (name the optional-modules decision entry) fixed as proposed"
+      }
     },
     {
       "id": "P103.12",
       "title": "decision record: optional modules take fixes only, no new UI shape pins, no new prose lints",
-      "status": "pending",
+      "status": "done",
       "description": "The surface to maintain grows through discretionary work, so add one Decision record entry with three parts. (a) The panel, the usage views, the ADO connector, the demo and the theme editor take fixes only, no new features, until a user asks; exceptions named up front: the cost-truth work in the usage views (P104), the panel's state-truth fixes (P105) and an ADO feature a real user requests. (b) No new UI shape pins: when a UI part changes, its pins move to vitest or browser behaviour checks, with tools/count-ui-pins.py as the budget. (c) No new lints over prose or repository numbers, stating the consequence: a false documentation claim keeps no mechanical guard and is caught by review at release. Phrase each revisit trigger as an observable property of the system, as the entry on reversed decisions asks (for example, a user report that an optional module blocks their work), never as a count.",
       "files": [
         "CONTRIBUTING.md"
@@ -456,16 +722,207 @@
       "dependsOn": [
         "P103.10"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e906ab75",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "One Decision record entry at the end of CONTRIBUTING.md's Decision record: (a) the panel, the usage views, the ADO connector, the demo and the theme editor take fixes only until a user asks, with the cost-truth work in the usage views, the panel's state-truth fixes and a user-requested ADO feature named as the exceptions; (b) no new UI shape pins, with tools/count-ui-pins.py as the budget and a changed UI part moving its pins to vitest or browser behaviour checks; (c) no new lints over prose or repository numbers, with the consequence that a false documentation claim is caught by review at release. Each part has its own revisit trigger phrased as an observable event, not a count. No plan ids appear in the entry.",
+        "descriptive": "CONTRIBUTING.md records that the optional modules take fixes only until a user asks, that UI changes add no new shape pins, and that no new prose or number lints are added, each with a revisit trigger a reader can observe."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T15:58:51Z",
+      "completedAt": "2026-10-06T19:02:18Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T16:27:30Z.1089d1",
+        "status": "passed",
+        "at": "2026-10-06T16:27:30Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "e906ab75",
+        "at": "2026-10-06T19:02:18Z",
+        "basis": "audit-reviewer (task mode): one medium finding (private plan ids in the public entry) fixed as proposed"
+      }
+    },
+    {
+      "id": "P103.13-xi3",
+      "title": "a passed gate row whose changed paths are all undeclared is not a ledger contradiction",
+      "status": "done",
+      "description": "The gate recorder and the committed-ledger check disagree about one shape. run-test-gate records a task gate as passed when a path changed during the run that the work under test does not declare (TREE CHANGED OUTSIDE THIS WORK moves the exit code not at all, by design, because a sibling or the orchestrator may write in a shared tree), and it lists that path in observations.treeMutated with a basis saying none of the changed paths is declared. tools/check-example-ledgers.py el1 then reports that committed row as a contradiction (\"records 'passed' while its own observations.treeMutated names ...\"), so any branch whose committed evidence holds such a row stays red. Seen on this phase's branch on 2026-10-06: the orchestrator closed one task (a journal write) while a sibling task's recorded gate was running in the same worktree; the row was committed with that task and the next gate went red on it. Make the two agree on the recorder's documented rule: a passed row contradicts itself only when a changed path is one the work under test declares. Read the declared set from what the row records (its scope or the basis it carries), never from today's manifest, and if a row records no declared set, say so as its own finding rather than guessing. Decide with the basis in the outcome whether treeMutated is the right field for undeclared changes or whether the recorder should name them apart; a recorder change is out of this task's files, so record it as a follow-up if that is the answer. The committed rows already in the tree must pass the check after the fix.",
+      "files": [
+        "tools/check-example-ledgers.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/check-example-ledgers.py: a committed row recording passed whose treeMutated names only paths outside the work it declares is accepted, while a passed row naming a declared path is still reported as a contradiction",
+          "tools/check-example-ledgers.py: a row that records no declared set is its own finding, never silently accepted or rejected; and the committed ledgers in the tree pass"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "29035b8d",
+      "outcome": {
+        "technical": "tools/check-example-ledgers.py's contradiction rule now follows the recorder's own: a committed row recording passed contradicts itself only when its treeBasis says at least one changed path is declared by the work under test. The declared split is read from the ownership sentence run-test-gate's classify_mutations appends to treeBasis, never from today's manifest. Four branches: no ownership sentence is its own finding ('records no declared set'); 'the work under test declares no files' is a contradiction, because the recorder then attributes every changed path to the gate; 'N of M changed path(s) are declared' with N above zero is a contradiction quoting N of M; and N of zero is accepted. treeMutated stays the field (the evidence module deliberately declines a second owned-paths key); a structured owned count in the row is a possible follow-up so readers need not parse a sentence, and el30 pins the recorder's wording against the constants that parse it. Cases el27-el30, written before the implementation and seen failing (25/29); the stamp-verification red helper cannot prove an inline tools/ suite, because copying the test file over HEAD copies the fix with it. Fixture paths are spelled without a .py suffix so the tool-basename lint does not read them as references.",
+        "descriptive": "The committed-ledger check now follows the gate recorder's own rule, so a passed gate whose only changed paths belong to other work no longer turns a branch red, while a rewrite of the work's own files is still caught."
+      },
+      "startedAt": "2026-10-06T15:18:26Z",
+      "completedAt": "2026-10-06T15:57:55Z",
+      "verifiedBy": [
+        "el27",
+        "el28",
+        "el29",
+        "el30"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T15:55:37Z.d1d62b",
+        "status": "passed",
+        "at": "2026-10-06T15:55:37Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "29035b8d",
+        "at": "2026-10-06T15:57:55Z",
+        "basis": "audit-reviewer (task mode): clean; the parsed sentence matches the recorder byte for byte and el30 guards it; the plain check passes over every committed ledger"
+      }
+    },
+    {
+      "id": "P103.14-xi3",
+      "title": "the documents agree on the secret guard, the gate's tiers and the first-run order",
+      "status": "done",
+      "description": "Fixes review findings P103-R1 to P103-R5 and P103-R8 to P103-R11, which share files. (1) Every secret-read claim (plugins/audit/README.md's guard rows and invariant row, README.md) says a call naming a secret file beside a read verb the guard lists is refused, and names both open classes - a read that never names the file, and an unlisted verb naming it - linking SECURITY.md; the invariant row is graded as name-based refusal. (2) Wherever a document states when the plan gate enforces (README.md's first screen and later section, plugins/audit/README.md, QUICKSTART.md) it states the three tiers in the same words - observe with no plan, warn with a plan and nothing running, deny while a phase runs - or points at /audit:doctor, which prints the active tier. (3) QUICKSTART runs the read-only /audit:doctor check before the free backfill, so README's sentence that doctor checks the install before anything is written holds; README's own backfill block becomes a pointer to QUICKSTART. (4) The backfill is described as running no agent and no analysis, costing one ordinary turn, and leaving only the self-ignoring ledger in the working tree. (5) CONTRIBUTING.md's Decision record entry on documentation by audience is amended with the reason QUICKSTART now carries the free first look at spend, and its line about how the file opens names 'Your first change'; 'Your first change' adds npm ci and npx playwright install chromium after the clone, and the PR template's verify.sh line says the same. (6) An ordinal pointer in SECURITY.md and two counts in CONTRIBUTING.md's prose are replaced by names. (7) plugins/audit/README.md's command enumeration becomes a pointer to the command table. (8) commands/usage.md's brief no longer tells the agent both to fence and not to fence the output.",
+      "files": [
+        "README.md",
+        "QUICKSTART.md",
+        "plugins/audit/README.md",
+        "CONTRIBUTING.md",
+        "SECURITY.md",
+        ".github/pull_request_template.md",
+        "plugins/audit/commands/usage.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "bdd4c158",
+      "outcome": {
+        "technical": "The documents now agree with the code and with each other. Secret reads: README.md (first screen, enforced line, table row) and plugins/audit/README.md (hook bullet, enforced-table row) say a call naming a secret file beside a read verb the guard lists is refused, name SECURITY.md's two open classes (a read that never names the file; an unlisted verb naming it) with a link, and the invariant row is graded name-based refusal instead of enforced. Plan gate: one sentence, read off _config.plan_gate_mode - it observes with no plan, warns with a plan and nothing running, and denies while a phase runs, and /audit:doctor prints the active tier - replaces the differing statements in README.md, QUICKSTART.md and plugins/audit/README.md. QUICKSTART runs /audit:doctor before the backfill (steps swapped and renumbered after checking nothing links to a step by number or anchor), so README's sentence that doctor checks the install before anything is written holds, and README's own backfill block is now a pointer. The backfill is described as running no agent and no analysis, costing one ordinary turn, and leaving only the self-ignoring ledger in the working tree. CONTRIBUTING.md's Decision record entry on documentation by audience is amended with why QUICKSTART now carries the look at past spend and why it follows doctor, and names Your first change as the top of the file; Your first change runs npm ci and npx playwright install chromium after the clone, and the PR template says the same. An ordinal pointer in SECURITY.md and two counts in CONTRIBUTING.md are replaced by names; plugins/audit/README.md's per-command bullets become a pointer to the command table; commands/usage.md's fence rule is stated once by format. test__refs 304/304; doc drift, link, pin, handbook and prose-number lints clean.",
+        "descriptive": "The README, the quick-start, the plugin README, the contributor guide and the security document now say the same thing about what the secret guard catches, when the plan gate blocks, and the order of the first commands."
+      },
+      "startedAt": "2026-10-06T20:07:10Z",
+      "completedAt": "2026-10-06T20:33:23Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T20:26:41Z.85c772",
+        "status": "passed",
+        "at": "2026-10-06T20:26:41Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "bdd4c158",
+        "at": "2026-10-06T20:33:23Z",
+        "basis": "orchestrator check of the diff against phase review findings P103-R1 to R5 and R8 to R11: each addressed in the file named; the tier sentence matches plan_gate_mode; doc lints and test__refs green"
+      }
+    },
+    {
+      "id": "P103.15-xi3",
+      "title": "every open shape SECURITY.md names has a characterization case",
+      "status": "done",
+      "description": "Fixes review findings P103-R6 and P103-R7. The characterization suites carry a known-open row, each beside a watched twin, for every shape SECURITY.md names that has none today: secret reads through comm, cut, sort, jq, an editor and find -exec cat naming the file, and shell writes through sort -o and a git -C reset --hard. sr25's label says what its command does (the secret named beside diff, a verb the guard's list lacks). test_guard_bash_writes.py's pointer names the SECURITY.md paragraph by its lead sentence, and guard-bash-writes.py's comment beside the absorb branch says the command reads as read-only rather than that it is provably read-only (a comment change only; no guard logic changes).",
+      "files": [
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "plugins/audit/hooks/guard-bash-writes.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: comm, cut, sort, jq, an editor and find -exec cat naming a secret file are known-open rows beside watched twins",
+          "plugins/audit/tests/test_guard_bash_writes.py: sort -o and git -C reset --hard are known-open rows beside watched twins"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "a2cdfd4c",
+      "outcome": {
+        "technical": "Every open shape SECURITY.md names now has a known-open characterization row beside a twin the guard denies. test_guard_secrets_read.py gains sr28-sr33 - comm, cut, sort, jq, vim and find -exec cat naming .env.production - each pinned allow beside sr22 (cat .env.production, denied), and sr25's label now says the secret is named beside diff, a verb the guard's list lacks. test_guard_bash_writes.py's KNOWN_OPEN_CASES gains git -C /x reset --hard and sort -o out.py in.txt, both read as read-only today, and its pointer names the SECURITY.md paragraph by its lead sentence. guard-bash-writes.py's comment beside the absorb branch says the command reads as read-only rather than that it is provably read-only; the hunk is comment lines only, no logic. These rows pass today by design, so each was shown able to fail by flipping one expected verdict in a scratch copy of the test file: sr30 (394/395) and ko1-sorto (204/205), exit 1 each. Suites 395/395 and 205/205.",
+        "descriptive": "Every secret-read and shell-write shape the security document admits the guards miss is now pinned by a test, so closing one of those gaps forces the document to change with it."
+      },
+      "startedAt": "2026-10-06T20:07:11Z",
+      "completedAt": "2026-10-06T20:33:24Z",
+      "verifiedBy": [
+        "sr28",
+        "sr29",
+        "sr30",
+        "sr31",
+        "sr32",
+        "sr33",
+        "ko1-gitreset",
+        "ko1-sorto"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T20:33:18Z.b9f810",
+        "status": "passed",
+        "at": "2026-10-06T20:33:18Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "a2cdfd4c",
+        "at": "2026-10-06T20:33:24Z",
+        "basis": "orchestrator check against findings P103-R6 and R7: rows added beside denied twins, each shown able to fail by a flipped verdict in a scratch copy; the guard file's hunk verified comment-only"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-10-06T14:46:28Z",
+  "testEvidence": {
+    "runId": "2026-10-06T21:19:52Z.c07db0",
+    "status": "passed",
+    "at": "2026-10-06T21:19:52Z"
+  }
 }

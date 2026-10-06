@@ -654,7 +654,7 @@
     {
       "id": "P103",
       "title": "what the plugin says about itself is true",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P103.json"
     },
     {
@@ -962,7 +962,8 @@
       "P109.9",
       "P103.10",
       "P103.12",
-      "P104.7"
+      "P104.7",
+      "P103.14-xi3"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -1098,13 +1099,16 @@
       "P107.4",
       "P100.1",
       "P100.2",
-      "P100.3-zxo"
+      "P100.3-zxo",
+      "P103.8"
     ],
     "QUICKSTART.md": [
       "P18.10",
       "P50.1",
       "P54.3",
-      "P110.3"
+      "P110.3",
+      "P103.7",
+      "P103.14-xi3"
     ],
     "README.md": [
       "P2.3",
@@ -1114,7 +1118,8 @@
       "P50.2",
       "P103.4",
       "P103.5",
-      "P103.9"
+      "P103.9",
+      "P103.14-xi3"
     ],
     "SECURITY.md": [
       "P2.2",
@@ -1155,7 +1160,8 @@
       "P97.1",
       "P99.1",
       "P103.1",
-      "P103.3"
+      "P103.3",
+      "P103.14-xi3"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -1362,7 +1368,8 @@
       "P103.4",
       "P103.5",
       "P103.7",
-      "P100.2"
+      "P100.2",
+      "P103.14-xi3"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -1640,7 +1647,8 @@
     "plugins/audit/commands/usage.md": [
       "P26.2",
       "P31.2",
-      "P107.3"
+      "P107.3",
+      "P103.14-xi3"
     ],
     "plugins/audit/commands/version.md": [
       "P67.2"
@@ -1729,7 +1737,8 @@
       "P54.2",
       "P72.1",
       "P72.2-ttl",
-      "P108.2"
+      "P108.2",
+      "P103.15-xi3"
     ],
     "plugins/audit/hooks/guard-capabilities.py": [
       "P15.4",
@@ -2167,7 +2176,8 @@
       "P77.3-6u9",
       "P85.4",
       "P109.9",
-      "P102.8"
+      "P102.8",
+      "P103.8"
     ],
     "plugins/audit/scripts/_ui_theme.py": [
       "P20.5",
@@ -4141,7 +4151,8 @@
       "P72.1",
       "P72.2-ttl",
       "P108.2",
-      "P103.2"
+      "P103.2",
+      "P103.15-xi3"
     ],
     "plugins/audit/tests/test_guard_capabilities.py": [
       "P72.1"
@@ -4201,7 +4212,8 @@
       "P110.3",
       "P108.2",
       "P108.4",
-      "P103.2"
+      "P103.2",
+      "P103.15-xi3"
     ],
     "plugins/audit/tests/test_harvest_worktree.py": [
       "P43.3"
@@ -4495,7 +4507,8 @@
       "P59.2",
       "P84.3",
       "P84.5-791",
-      "P84.7-791"
+      "P84.7-791",
+      "P103.13-xi3"
     ],
     "tools/check-example-ledgers.py: a committed row whose status is not a schema enum member is a finding, and so is a passed verdict carrying a mutated tree": [
       "P32.10"
@@ -5103,7 +5116,8 @@
       "P103.11"
     ],
     ".github/pull_request_template.md": [
-      "P103.11"
+      "P103.11",
+      "P103.14-xi3"
     ],
     "plugins/audit/tests/test_gen_demo_usage.py": [
       "P104.1"
