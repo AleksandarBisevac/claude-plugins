@@ -698,4 +698,15 @@ not need to.
      **revert the `attempts` increment from step 2** (Edit it back down), record the cause in
      `task.outcome.technical`, leave `status = "in_progress"`, and **STOP with a human action item**
      (fix `meta.buildCommands` / `tests.gate` first). Never burn retries on missing infrastructure.
+   - **classifier gave no verdict** (a tool call refused with text containing
+     `auto mode cannot determine the safety` or `gave no verdict` — the wording
+     seen in 2.1.2xx transcripts) → the auto-mode permission classifier produced
+     **no verdict** on that step, which this pipeline used to read as a failed
+     attempt. It sits beside the infrastructure arm rather than inside it:
+     **revert the `attempts` increment from step 2** (Edit it back down), record
+     the refusal **verbatim** in `task.outcome.technical`, leave
+     `status = "in_progress"`, and report the classifier as **unavailable** —
+     raise **no human action item**, because there is no infrastructure to
+     repair here: the same classifier meets the same step again regardless. This
+     is `could-not-run`, never rendered as a failure.
 5. Manual gate items (e.g. `"manual: <checklist>"`) cannot be auto-run — surface them as **human action items**.

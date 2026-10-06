@@ -2730,6 +2730,59 @@ def _cases(check):
           % (_rv_compile,),
           _rv_compile == [])
 
+    # --- (cv) P108.3: a classifier no-verdict is `could-not-run`, never a fail --
+    # Claude Code's auto-mode permission classifier can refuse a tool call with
+    # text saying it reached no verdict ('auto mode cannot determine the safety'
+    # or 'gave no verdict', the wording seen in 2.1.2xx transcripts). The
+    # pipeline used to read that refusal as a failed attempt; this pins the arm
+    # that reads it as `could-not-run` instead, in both documents the rule is
+    # addressed to.
+    _cv_ref = _squash(_product_doc("reference/execute-task.md"))
+    _cv_anchor = "classifier gave no verdict"
+    check("cv1 execute-task.md carries BOTH classifier fragments, the exact "
+          "wording the transcripts showed, so a reader can match the refusal "
+          "text verbatim rather than guess at a paraphrase",
+          "auto mode cannot determine the safety" in _cv_ref
+          and "gave no verdict" in _cv_ref
+          and _cv_anchor in _cv_ref)
+    _cv_at = _cv_ref.find(_cv_anchor)
+    _cv_next = _cv_ref.find("5. Manual gate items", _cv_at)
+    _cv_arm = _cv_ref[_cv_at:_cv_next if _cv_next >= 0 else len(_cv_ref)]
+    check("cv2 ...and the ARM records `could-not-run`, reverts the attempts "
+          "increment and raises NO human action item - a missing interpreter "
+          "is fixed before the next run, while the same classifier meets the "
+          "same step again, which is what tells this arm apart from the "
+          "infrastructure arm beside it: %r" % (_cv_arm,),
+          "could-not-run" in _cv_arm
+          and "revert the `attempts` increment from step 2" in _cv_arm
+          and "no human action item" in _cv_arm
+          and "human action item" not in
+          _cv_arm.replace("no human action item", ""))
+    # THE ALLOW TWIN: the infrastructure arm right beside it still raises its OWN
+    # human action item - proving the isolation above reads the NEW arm and not
+    # the whole step, which would hide a copy-paste that merged the two arms.
+    check("cv3 THE ALLOW TWIN: the infrastructure arm this sits beside still "
+          "STOPS with its own human action item, unchanged",
+          "STOP with a human action item" in _cv_ref)
+
+    _cv_exec = _squash(_product_doc("agents/audit-executor.md"))
+    check("cv4 audit-executor.md tells the executor to report that SAME refusal "
+          "as `could-not-run`, never as `fail`, with the refusal verbatim in "
+          "`task.outcome.technical` - the field a retry and a reviewer both "
+          "read, so a paraphrase here is the same inference-from-a-refusal "
+          "defect the red-first rule already exists to refuse",
+          "auto mode cannot determine the safety" in _cv_exec
+          and "gave no verdict" in _cv_exec
+          and "`could-not-run`, never as `fail`" in _cv_exec
+          and "verbatim" in _cv_exec)
+
+    _cv_orch = _squash(_product_doc("reference/orchestrator.md"))
+    check("cv5 orchestrator.md's progress output carries the matching line, so "
+          "a long-running phase reports the classifier's unavailability the "
+          "same way it reports every other arm rather than going silent on it",
+          "[NO-VERDICT]" in _cv_orch and "classifier gave no verdict" in _cv_orch
+          and "no retry spent" in _cv_orch)
+
     # --- (rs) P42: the return shape, and the path that stopped asking for it ----
     # The executor's return is prose an agent writes: nothing parses it, nothing
     # rejects it, and its only reader is the orchestrator - the one actor that

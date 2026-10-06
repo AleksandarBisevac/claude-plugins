@@ -704,7 +704,8 @@ step happens** so a long run stays legible (not one dump at the end):
   parallel, print the group first (`  > parallel: <id>, <id>`).
 - **Each task, on return:** `  [OK] <taskId> — gates green, committed <shortSHA>` /
   `  [FAIL] <taskId> — <gate> failed (attempt k/max)` / `  [BLOCKED] <taskId> — attempts exhausted` /
-  `  [INFRA] <taskId> — <gate> could not run (human action item)`.
+  `  [INFRA] <taskId> — <gate> could not run (human action item)` /
+  `  [NO-VERDICT] <taskId> — classifier gave no verdict (unavailable, no retry spent)`.
 - **Sign-off:** one line per gate — `  - review: <passed|skipped|N findings>`, `  - testGate: <green|red>`,
   `  - runtimeBoot: <green|skipped|manual>` — then `[SIGNED OFF] PHASE <id> — merged into <branch>` (or
   `[MERGE] ff failed — <no-ff|stopped>`).
