@@ -64,12 +64,17 @@
       },
       "startedAt": "2026-10-06T21:26:46Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T22:03:26Z.c920dd",
+        "status": "passed",
+        "at": "2026-10-06T22:03:26Z"
+      }
     },
     {
       "id": "P108.2",
       "title": "Make shell-write refusals name the remedy instead of the Edit/Write tools",
-      "status": "in_progress",
+      "status": "done",
       "description": "The deny and ask texts of guard-secrets-read's shell-write arms tell the model to use the Edit/Write tools, and guard-bash-writes' notices say the same. That is the opposite of what the harness tells a model in auto mode. Reword each to say what is true and what to do: the file is outside the running task (name the phase), so widen the task with /audit:task scope <taskId> --files <path>, or stop and ask the operator; exempt paths are unaffected. Only message constants and docstrings change, never grading logic. That includes the docstring sentences in guard-secrets-read.py and _config.plan_gate_mode that claim one file gets one verdict however it is written: they must name the first-trivial-file allowance as Edit-only until the verdict task lands. Update the existing case that pins the old phrase.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -98,18 +103,32 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "73c2aa44",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Shell-write refusals and notices no longer steer to the Edit/Write tools, which an auto-mode refusal has usually already steered the model away from; they name the remedy instead. guard-secrets-read.py's plan-gate deny and ask texts for a shell write, and guard-bash-writes.py's warn, named and unproven notices, now say to put the file on an in_progress task (/audit:task scope <taskId> --files ...) or to stop and ask the operator, keeping the exempt-paths sentence; the lock-conflict notice keeps its own remedy with the tool names spelled out. Docstrings in guard-secrets-read.py and _config.py (the enforce key and plan_gate_mode) now say a shell write and an Edit of one file agree on the TIER, not necessarily the verdict, because trivialLineThreshold's first-free-file allowance is read only on require-plan's Edit/Write path - the divergence the verdict-contract task records. No grading logic changed. Cases we9 (rewritten) and we9b in test_guard_secrets_read.py; ew1, ew2, ew3, bg14b and fl3 in test_guard_bash_writes.py. Red-first proved through the helper: 2/396 (we9, we9b) and 4/210 (ew1, ew3, fl3, bg14b) at HEAD. No model or classifier refusal occurred while editing these guard messages.",
+        "descriptive": "When the plugin stops a shell command that writes a file outside the plan, its message now says how to fix that - add the file to the running task or ask the operator - instead of suggesting a different editing tool."
       },
       "startedAt": "2026-10-06T21:26:46Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T21:54:43Z",
+      "verifiedBy": [
+        "we9",
+        "we9b",
+        "ew1",
+        "ew2",
+        "ew3",
+        "bg14b",
+        "fl3"
+      ],
       "testEvidence": {
         "runId": "2026-10-06T21:54:33Z.89ba41",
         "status": "passed",
         "at": "2026-10-06T21:54:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "73c2aa44",
+        "at": "2026-10-06T21:54:43Z",
+        "basis": "orchestrator check: every shell-write refusal and notice template changed; docstrings corrected to tier agreement; red-first proved for both suites"
       }
     },
     {
