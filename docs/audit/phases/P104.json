@@ -25,5 +25,361 @@
     "findings": []
   },
   "summary": null,
-  "tasks": []
+  "tasks": [
+    {
+      "id": "P104.1",
+      "title": "the demo fixtures price their ledgers with the table they declare",
+      "status": "pending",
+      "description": "gen-demo-usage.py:181 prices each row with ul.price(counts, model) and no table, so the committed acme ledger, the example report and its twin, docs/index.html and docs/demo-large.html all move whenever DEFAULT_PRICING does, which contradicts the product's own rule that a row is priced once, when written, with the project's table. Price generated rows with the fixture's declared table (usage.pricing from its config, the table meter-usage would have used) and have gen-demo-manifest.py's write_config declare one matching its pricingAsOf; the acme config already declares one. Acceptance: no committed artifact changes in this task (verify.sh's derived-ledger diff and tools/check-rendered-artifacts.py stay green), and both stay green with DEFAULT_PRICING's sonnet row mutated. This must land before the price table changes.",
+      "files": [
+        "plugins/audit/scripts/demo/gen-demo-usage.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test_gen_demo_usage.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_gen_demo_usage.py: a fixture whose .claude/audit.config.json declares usage.pricing gets every row's costUSD priced at the declared rates, not DEFAULT_PRICING's, so a fixture with a different sonnet rate yields a different costUSD",
+          "plugins/audit/tests/test_gen_demo_manifest.py: the generated fixture config declares a usage.pricing table beside the manifest's meta.usage.pricingAsOf"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P104.2",
+      "title": "the shipped price table carries today's official rates with their date and source",
+      "status": "pending",
+      "description": "The table has no claude-opus-5-5 row (it prices at Opus 5's rate), holds Sonnet 5 at 3/15 and lets claude-fable-5-1 resolve to Fable 5's cache read; on the dogfood ledger the shown spend was overstated by about a sixth. Re-read https://platform.claude.com/docs/en/about-claude/pricing at implementation time (the research read Opus 5.5 at 4/20 with read 0.20, Sonnet 5 at 2/10 and Fable 5.1 read 0.25 on 2026-10-05; verify every rate rather than copying these), add the rows, set usage.pricingAsOf to that date in DEFAULTS and the template, and record the source URL beside both mirrors with pricing_divergences or a sibling check holding them equal. Correct the prose that the change falsifies: the read-0.1x multiplier sentence (comments and the schema description) if any official row departs from it, the table-size numbers in pricing_divergences' docstring and the pp comments (delete them), the pp2 fixture literal, and hooks/_config.py's pointer to usage_ledger.py. Acceptance: pp8 green, and the derived example ledger and rendered artifacts unchanged, which the previous task makes true.",
+      "files": [
+        "plugins/audit/scripts/usage/_usage_core.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/templates/audit.config.example.json",
+        "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/tests/test__usage_core.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__usage_core.py: rates_for('claude-opus-5-5') and a dated claude-opus-5-5 id resolve to their own row, not claude-opus-5's (red today: the longest prefix is claude-opus-5)",
+          "plugins/audit/tests/test__usage_core.py: rates_for('claude-fable-5-1') carries the official cache-read rate, not claude-fable-5's",
+          "plugins/audit/tests/test__usage_core.py: claude-sonnet-5 carries the rates the official page lists on the as-of date",
+          "plugins/audit/tests/test__usage_core.py: the shipped as-of date and source URL agree between _usage_core and hooks/_config.py, and a drifted date or URL is named the way pp8 names a drifted rate"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P104.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P104.3",
+      "title": "unit economics and cost bands report how many done tasks they priced",
+      "status": "pending",
+      "description": "unit_economics' completed counts only done tasks that carry ledger rows, and cost_bands calibrates from the same set, so 'cost per task' reads as if it covered every done task; on this repository's ledger only about a third of done tasks were attributed and main-loop spend never is. Return the denominator beside the numerator in both (done tasks in the plan, and done tasks with any attributed tokens) as data, without changing costPerTask or the bands themselves, so every surface can print coverage from one computation. The renderers come in the following tasks.",
+      "files": [
+        "plugins/audit/scripts/usage/_usage_economics.py",
+        "plugins/audit/tests/test__usage_economics.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__usage_economics.py: over a plan with four done tasks of which two carry ledger rows, unit_economics reports two priced of four done (not two of two), and costPerTask averages only the two",
+          "plugins/audit/tests/test__usage_economics.py: with no done task the coverage is absent rather than reported as complete, and a done task whose rows carry zero tokens is not counted as priced",
+          "plugins/audit/tests/test__usage_economics.py: cost_bands carries the same done-task denominator beside its sample"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P104.4",
+      "title": "the report and its Markdown twin print attribution coverage beside cost per task",
+      "status": "pending",
+      "description": "Print the coverage from the previous task beside every cost-per-task figure the report renders: the HTML tile (_usage_overview.py:148), the Markdown fact (_usage_markdown.py:168) and the routing table in both (_usage_detail.py, _usage_markdown.py:190-205), following render-report's rule that a claim carries its basis and a basis with no claim is noise. Re-render the committed artifacts with the recipes tools/check-rendered-artifacts.py prints (docs/index.html is a byte copy of the example report). The committed acme Markdown twin is read by _deps.doc_prose_numbers(), so a rendered 'N of M <noun>' would fail the build: word the line so the lint's ratio shape does not form, or exempt the derived twin in _output.PROSE_SCAN_EXEMPT with the reason docs/audit/audit-report.md's row gives, and say which. Run tools/check-rendered-artifacts.py, which no build-command key runs.",
+      "files": [
+        "plugins/audit/scripts/report/_usage_overview.py",
+        "plugins/audit/scripts/report/_usage_markdown.py",
+        "plugins/audit/scripts/report/_usage_detail.py",
+        "plugins/audit/tests/test__usage_overview.py",
+        "plugins/audit/tests/test__usage_markdown.py",
+        "plugins/audit/tests/test__usage_detail.py",
+        "examples/acme-store/acme-store-audit.html",
+        "examples/acme-store/acme-store-audit.md",
+        "docs/index.html",
+        "docs/demo-large.html"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__usage_overview.py: the cost-per-task tile's sub-line names priced versus done tasks and that main-loop spend is not attributed to a task, and the tile and its basis stay absent under showCost false",
+          "plugins/audit/tests/test__usage_markdown.py: the 'Cost per completed task' fact carries the same coverage, and the 'Model cost within each risk band' section states it",
+          "plugins/audit/tests/test__usage_detail.py: the HTML routing table states the coverage beside its cost/task column"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "report",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P104.3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P104.5",
+      "title": "/audit:usage prints attribution coverage beside its per-task figures",
+      "status": "pending",
+      "description": "The CLI calibrates its bands from 'this project's completed tasks' and lists per-task costs without saying how many done tasks those figures cover or that main-loop spend is never attributed to a task. Print the coverage from unit economics beside band_note's line and under the --by task table, in both ascii and md formats, and carry it in the --json payload. Acceptance: on the acme example the dashboard states priced versus done tasks next to the band thresholds.",
+      "files": [
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/tests/test_audit_usage.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_usage.py: the dashboard prints the coverage beside the band line under TOP TASKS, --by task prints it under its table, and --json carries the denominator beside the bands; all of it is absent under --no-cost and with no done task"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P104.3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P104.6",
+      "title": "the panel's Usage tab prints attribution coverage beside cost per task",
+      "status": "pending",
+      "description": "The panel computes its own unit economics in usage-metrics.js (uUnit, :108-125) and renders 'cost per task' (usage-view.js:283) and the routing cost/task (:368) with no coverage. Mirror the Python definition and print the same coverage, under the same showCost and empty-ledger silences. Read the refactoring-the-assembled-ui and writing-javascript skills and print the pins first (python3 tools/count-ui-pins.py); add no new shape pin, since the assertion is a vitest behaviour case. Any change under scripts/ui/panel moves the panel surface digest, so re-capture every panel screenshot with node tools/capture-screenshots.mjs (screenshot_capture_drift goes red otherwise) and run npx vitest run, which no build-command key runs.",
+      "files": [
+        "plugins/audit/scripts/ui/panel/usage-metrics.js",
+        "plugins/audit/scripts/ui/panel/usage-view.js",
+        "tools/ui-tests/usage-edges.test.mjs",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ui-tests/usage-edges.test.mjs: uUnit returns the done-task denominator counted from taskMeta over the whole plan, and the cost-per-task tile's sub-line and the routing table state priced versus done tasks and that main-loop spend is not attributed; filtering the rows narrows the numerator only"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "shots"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P104.3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P104.7",
+      "title": "pilot: compare Claude Code's own cost with the ledger's on the same work",
+      "status": "pending",
+      "description": "Decide whether Claude Code's own cost can replace the plugin's price table. On the pinned CLI version, first verify which sources exist and at what grain (verifying-external-behavior): a headless run's total_cost_usd and modelUsage costUSD, the OTel claude_code.cost.usage metric with its agent.name attribute, and any per-message cost in the transcript meter-usage already tails; per-task attribution needs per-subagent cost, which a session total cannot give. Run one short headless session that spawns one subagent, capped with --max-budget-usd, with OTel exported to the console, and compare native cost per session and per agent with the ledger rows meter-usage wrote for it at the corrected table. Record the result as an evaluated entry in CONTRIBUTING.md's Decision record (the measurement as dated history with the command that re-derives it, and a revisit trigger). gate-only: a measurement and a written decision, no product code.",
+      "files": [
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P104.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P104.8",
+      "title": "retire the shipped price table if the pilot shows native cost covers it",
+      "status": "pending",
+      "description": "Only if the pilot's recorded decision says native cost holds at per-agent grain: meter-usage records Claude Code's own cost where the source carries it and keeps the table for rows without one (backfill of old transcripts), each row saying which priced it. COMPATIBILITY.md promises that a config key the plugin reads keeps being read, so usage.pricing stays honoured; retiring means the plugin stops maintaining shipped rows, not that it stops reading the key. If the pilot says it does not hold, close with /audit:task done --no-change --reason citing the Decision record entry. Rescope files and cases with /audit:task scope before starting, since the pilot decides the shape; risk is high because every cost the plugin prints and the Stop-hook path change.",
+      "files": [
+        "plugins/audit/hooks/meter-usage.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/scripts/usage/_usage_core.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test_meter_usage.py",
+        "plugins/audit/tests/test_usage_ledger.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_meter_usage.py: a transcript entry carrying Claude Code's own cost is recorded at that cost, and an entry without one is priced from the table and marked as table-priced in the row",
+          "plugins/audit/tests/test_usage_ledger.py: a project's usage.pricing still prices rows that carry no native cost, so the config key keeps being read"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "report"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P104.7",
+        "P104.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
 }
