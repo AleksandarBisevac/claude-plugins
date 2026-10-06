@@ -678,7 +678,7 @@
     {
       "id": "P107",
       "title": "state writes never lose each other",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P107.json"
     },
     {
