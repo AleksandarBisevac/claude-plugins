@@ -1,7 +1,7 @@
 {
   "id": "P105",
   "title": "the panel tells the truth about its own state",
-  "status": "in_progress",
+  "status": "done",
   "description": "Tasks: (1) Overview branches on manifestExists && !rollup and shows the existing findings box instead of 'No plan yet'. (2) A failed poll shows a persistent offline banner and disables Save; a failed save says nothing was written. (3) Save writes only changed keys, so a default list is not frozen into the config. (4) The example's .claude/state is ignored. (5) GET / requires the token the URL already carries, the pidfile is 0600, and SECURITY.md says the panel trusts every local process of the same user. (6) The Azure DevOps card and column appear only when meta.ado is configured.",
   "desiredOutcome": "the panel shows an unreadable manifest as unreadable, shows a stopped server as stopped with Save disabled, saves only the keys a user changed, leaves a clean tree in the example, and serves its token only to a request that already carries it",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "6d0ef731b5ac60e6bef3c015cf9967583e3625f8",
   "branch": "audit/p105-the-panel-tells-the-truth-abou",
-  "mergedAt": null,
+  "mergedAt": "2026-10-06T21:31:50Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -771,5 +771,6 @@
     "runId": "2026-10-06T21:29:10Z.a03a4f",
     "status": "passed",
     "at": "2026-10-06T21:29:10Z"
-  }
+  },
+  "mergedHead": "e5806d0ed053af36f8b3f6e5c4400a71efe3d1ab"
 }
