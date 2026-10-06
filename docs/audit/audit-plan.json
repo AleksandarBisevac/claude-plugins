@@ -631,6 +631,13 @@
       "title": "the release guard's heredoc and quote reading, from BUG-15 through BUG-16",
       "status": "done",
       "shard": "phases/P99.json"
+    },
+    {
+      "id": "P100",
+      "title": "a stamp or a close never vouches for a gate verdict that no longer holds",
+      "status": "pending",
+      "shard": "phases/P100.json",
+      "priority": 1
     }
   ],
   "fileIndex": {
@@ -1750,7 +1757,8 @@
       "P82.13-fye",
       "P82.14-fye",
       "P82.15-fye",
-      "P94.5-579"
+      "P94.5-579",
+      "P100.1"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -1834,7 +1842,8 @@
       "P84.7-791",
       "P80.21-rtb",
       "P81.14-j7p",
-      "P81.18-j7p"
+      "P81.18-j7p",
+      "P100.2"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
@@ -2071,7 +2080,8 @@
       "P74.10-qq5",
       "P80.17-rtb",
       "P80.22-rtb",
-      "P87.2"
+      "P87.2",
+      "P100.2"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -2229,7 +2239,8 @@
       "P56.5",
       "P71.2-zso",
       "P71.4-zso",
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P100.1"
     ],
     "plugins/audit/scripts/governance/audit-journal.py": [
       "BF1.1",
@@ -2382,7 +2393,8 @@
       "P82.14-fye",
       "P82.15-fye",
       "P94.3",
-      "P94.6-579"
+      "P94.6-579",
+      "P100.1"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -2608,7 +2620,8 @@
       "P81.7",
       "P81.13-j7p",
       "P81.16-j7p",
-      "P96.1"
+      "P96.1",
+      "P100.2"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -3592,7 +3605,8 @@
       "P46.3",
       "P71.2-zso",
       "P71.4-zso",
-      "P74.3-qq5"
+      "P74.3-qq5",
+      "P100.1"
     ],
     "plugins/audit/tests/test__ui_theme.py": [
       "P20.5",
@@ -3754,7 +3768,8 @@
       "P81.13-j7p",
       "P81.16-j7p",
       "P92.2",
-      "P96.1"
+      "P96.1",
+      "P100.2"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -3793,7 +3808,8 @@
       "P80.17-rtb",
       "P87.2",
       "P92.3",
-      "P94.4"
+      "P94.4",
+      "P100.2"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
       "P28.2",
@@ -4120,7 +4136,8 @@
       "P82.14-fye",
       "P82.15-fye",
       "P94.3",
-      "P94.6-579"
+      "P94.6-579",
+      "P100.1"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
@@ -4457,14 +4474,16 @@
       "P74.4-qq5",
       "P74.5-qq5",
       "P74.6-qq5",
-      "P81.10"
+      "P81.10",
+      "P100.2"
     ],
     "plugins/audit/tests/test__verdict_binding.py": [
       "P74.3-qq5",
       "P74.4-qq5",
       "P74.5-qq5",
       "P74.6-qq5",
-      "P81.10"
+      "P81.10",
+      "P100.2"
     ],
     "plugins/audit/scripts/governance/record-outside-run.py": [
       "P74.9-qq5"
@@ -5012,5 +5031,436 @@
       }
     ]
   },
-  "proposals": []
+  "proposals": [
+    {
+      "id": "PROP-1",
+      "name": "the plugin's value is measured, not asserted",
+      "status": "proposed",
+      "origin": "audit-task add-phase --park",
+      "createdISO": "2026-10-06T09:33:21Z",
+      "branch": "main",
+      "benefit": "one end-to-end pipeline run on a fixture shows what a task costs and delivers through the plugin's own commands, and a reproducible with/without comparison on a feature-sized task reports outcome, cost, time and interventions per arm",
+      "openQuestions": [],
+      "materializedAs": null,
+      "materializedAt": null,
+      "payload": {
+        "phase": {
+          "id": "P101",
+          "title": "the plugin's value is measured, not asserted",
+          "status": "pending",
+          "description": "Tasks: (1) Pilot: one paid /audit:run end to end on the benchmark fixture, hard cap 4.50 USD (--max-budget-usd), recording what the orchestrator prose drives, cost per stage and where it stalls; this unblocks the decision on moving prose rules into scripts. (2) Design a subscription-based comparison: one feature-sized task in a brownfield fixture repo with hidden acceptance tests; arms = plain Claude Code, Claude Code with the same skills and a short CLAUDE.md, and the plugin's pipeline; same model, pinned CLI version, same skills, fresh session per run, randomized order; measure acceptance tests, out-of-scope changes, false completion claims, human interventions, wall clock, tokens and list-price equivalent, and share of the subscription window; scenarios: feature, bugfix, interrupted session plus resume, a step a guard must stop. (3) Run it within an agreed subscription time budget, n>=2 per arm, and publish the result with its limits.",
+          "desiredOutcome": "one end-to-end pipeline run on a fixture shows what a task costs and delivers through the plugin's own commands, and a reproducible with/without comparison on a feature-sized task reports outcome, cost, time and interventions per arm",
+          "testGate": [
+            "selftests",
+            "validate",
+            "plugin-validate",
+            "gate",
+            "report",
+            "lint",
+            "shots",
+            "interactive"
+          ],
+          "blockedBy": [],
+          "baseRef": null,
+          "branch": null,
+          "mergedAt": null,
+          "review": {
+            "tool": null,
+            "model": "sonnet",
+            "status": "pending",
+            "findings": []
+          },
+          "summary": null,
+          "tasks": []
+        }
+      }
+    },
+    {
+      "id": "PROP-2",
+      "name": "red-first proves a red outside Python",
+      "status": "proposed",
+      "origin": "audit-task add-phase --park",
+      "createdISO": "2026-10-06T09:33:22Z",
+      "branch": "main",
+      "benefit": "stamp-verification red proves a red in a jest or vitest project as it does under pytest, and an older cached copy that is asked for a newer verb names the newer installed copy",
+      "openQuestions": [],
+      "materializedAs": null,
+      "materializedAt": null,
+      "payload": {
+        "phase": {
+          "id": "P102",
+          "title": "red-first proves a red outside Python",
+          "status": "pending",
+          "description": "Tasks: (1) When no runner-output reader matches, say so and quote nothing as decisive (the npm update banner was quoted as the cause). (2) Design first, then build: a shared runner-output module (jest/vitest tallies and case identity), a per-runner baseline that tolerates a new empty suite, and dependency provision for the throwaway tree (node_modules) with its two leaks named. (3) Every entry point's usage error names its own version and, through one shared hook, the newer installed copy for this project; orchestrator docs resolve the plugin root per spawn and re-resolve after an update.",
+          "desiredOutcome": "stamp-verification red proves a red in a jest or vitest project as it does under pytest, and an older cached copy that is asked for a newer verb names the newer installed copy",
+          "testGate": [
+            "selftests",
+            "validate",
+            "plugin-validate",
+            "gate",
+            "report",
+            "lint",
+            "shots",
+            "interactive"
+          ],
+          "blockedBy": [],
+          "baseRef": null,
+          "branch": null,
+          "mergedAt": null,
+          "review": {
+            "tool": null,
+            "model": "sonnet",
+            "status": "pending",
+            "findings": []
+          },
+          "summary": null,
+          "tasks": []
+        }
+      }
+    },
+    {
+      "id": "PROP-3",
+      "name": "what the plugin says about itself is true",
+      "status": "proposed",
+      "origin": "audit-task add-phase --park",
+      "createdISO": "2026-10-06T09:33:22Z",
+      "branch": "main",
+      "benefit": "every documented claim a reader acts on matches the code: SECURITY.md names the known open read shapes, the README, QUICKSTART, examples and comments make no false claim, there is one quick-start, the demo shows today's text, and a newcomer and a contributor each have a one-page start",
+      "openQuestions": [],
+      "materializedAs": null,
+      "materializedAt": null,
+      "payload": {
+        "phase": {
+          "id": "P103",
+          "title": "what the plugin says about itself is true",
+          "status": "pending",
+          "description": "Tasks: (1) SECURITY.md names the five open secret-read shapes listed as Known open in 2.3.0 at class level, and corrects the post-detection sentence about commands 'provably unable to write'; the documented-gap rows become a characterization test in the repo. (2) Fix false claims: usage --backfill 'writes nothing', status.md's nonexistent /audit:run-gate, examples/README 'never dirties the tree', tests/_harness.py 'macos in CI', the fsync docstring in _manifest_io. (3) QUICKSTART is the only quick-start; other docs link to it; the README's first screen states who it is for and who does not need it. (4) Re-record the demo GIF and give it a text digest in captured-at.json so its words cannot rot unseen. (5) CONTRIBUTING gets a one-page 'Your first change'; add issue and PR templates. (6) Decision record: optional modules (panel, usage views, ADO, demo, theme editor) get fixes only, no new features, until a user asks; no new UI shape pins; no new prose lints.",
+          "desiredOutcome": "every documented claim a reader acts on matches the code: SECURITY.md names the known open read shapes, the README, QUICKSTART, examples and comments make no false claim, there is one quick-start, the demo shows today's text, and a newcomer and a contributor each have a one-page start",
+          "testGate": [
+            "selftests",
+            "validate",
+            "plugin-validate",
+            "gate",
+            "report",
+            "lint",
+            "shots",
+            "interactive"
+          ],
+          "blockedBy": [],
+          "baseRef": null,
+          "branch": null,
+          "mergedAt": null,
+          "review": {
+            "tool": null,
+            "model": "sonnet",
+            "status": "pending",
+            "findings": []
+          },
+          "summary": null,
+          "tasks": []
+        }
+      }
+    },
+    {
+      "id": "PROP-4",
+      "name": "the cost a user sees is the cost they paid",
+      "status": "proposed",
+      "origin": "audit-task add-phase --park",
+      "createdISO": "2026-10-06T09:33:22Z",
+      "branch": "main",
+      "benefit": "every cost the plugin prints uses current official prices with their date and source, and every per-task cost says how much of the work it actually attributes",
+      "openQuestions": [],
+      "materializedAs": null,
+      "materializedAt": null,
+      "payload": {
+        "phase": {
+          "id": "P104",
+          "title": "the cost a user sees is the cost they paid",
+          "status": "pending",
+          "description": "Tasks: (1) Price table rows for claude-opus-5-5, claude-sonnet-5 at its current price and claude-fable-5-1 (cache read 0.25), with pricingAsOf and the source URL; the hook-side copy stays equal through pricing_divergences. (2) Print attribution coverage beside every cost-per-task figure (tasks with any attributed tokens / tasks done; main loop not attributed). (3) Pilot reading Claude Code's own costUSD or OTel cost instead of the plugin's table, and retire the table if it holds.",
+          "desiredOutcome": "every cost the plugin prints uses current official prices with their date and source, and every per-task cost says how much of the work it actually attributes",
+          "testGate": [
+            "selftests",
+            "validate",
+            "plugin-validate",
+            "gate",
+            "report",
+            "lint",
+            "shots",
+            "interactive"
+          ],
+          "blockedBy": [],
+          "baseRef": null,
+          "branch": null,
+          "mergedAt": null,
+          "review": {
+            "tool": null,
+            "model": "sonnet",
+            "status": "pending",
+            "findings": []
+          },
+          "summary": null,
+          "tasks": []
+        }
+      }
+    },
+    {
+      "id": "PROP-5",
+      "name": "the panel tells the truth about its own state",
+      "status": "proposed",
+      "origin": "audit-task add-phase --park",
+      "createdISO": "2026-10-06T09:33:22Z",
+      "branch": "main",
+      "benefit": "the panel shows an unreadable manifest as unreadable, shows a stopped server as stopped with Save disabled, saves only the keys a user changed, leaves a clean tree in the example, and serves its token only to a request that already carries it",
+      "openQuestions": [],
+      "materializedAs": null,
+      "materializedAt": null,
+      "payload": {
+        "phase": {
+          "id": "P105",
+          "title": "the panel tells the truth about its own state",
+          "status": "pending",
+          "description": "Tasks: (1) Overview branches on manifestExists && !rollup and shows the existing findings box instead of 'No plan yet'. (2) A failed poll shows a persistent offline banner and disables Save; a failed save says nothing was written. (3) Save writes only changed keys, so a default list is not frozen into the config. (4) The example's .claude/state is ignored. (5) GET / requires the token the URL already carries, the pidfile is 0600, and SECURITY.md says the panel trusts every local process of the same user. (6) The Azure DevOps card and column appear only when meta.ado is configured.",
+          "desiredOutcome": "the panel shows an unreadable manifest as unreadable, shows a stopped server as stopped with Save disabled, saves only the keys a user changed, leaves a clean tree in the example, and serves its token only to a request that already carries it",
+          "testGate": [
+            "selftests",
+            "validate",
+            "plugin-validate",
+            "gate",
+            "report",
+            "lint",
+            "shots",
+            "interactive"
+          ],
+          "blockedBy": [],
+          "baseRef": null,
+          "branch": null,
+          "mergedAt": null,
+          "review": {
+            "tool": null,
+            "model": "sonnet",
+            "status": "pending",
+            "findings": []
+          },
+          "summary": null,
+          "tasks": []
+        }
+      }
+    },
+    {
+      "id": "PROP-6",
+      "name": "rules the model only follows become checks a script makes",
+      "status": "proposed",
+      "origin": "audit-task add-phase --park",
+      "createdISO": "2026-10-06T09:33:23Z",
+      "branch": "main",
+      "benefit": "the first rules the orchestrator prose asks the model to follow are made by scripts instead, each with a test and with its prose section deleted, and the bytes an execution command must read go down with each move",
+      "openQuestions": [],
+      "materializedAs": null,
+      "materializedAt": null,
+      "payload": {
+        "phase": {
+          "id": "P106",
+          "title": "rules the model only follows become checks a script makes",
+          "status": "pending",
+          "description": "Tasks, one rule per task, each deleting its prose: (1) audit-task start refuses a task that is not ready unless --force, which journals the exception. (2) Phase status and claim are written by a verb, not a hand edit. (3) executor.runsGate is resolved by a script, not by the model reading config. Measure the mandatory-read bytes of /audit:next before and after each. Waits for the pipeline pilot in the measurement phase.",
+          "desiredOutcome": "the first rules the orchestrator prose asks the model to follow are made by scripts instead, each with a test and with its prose section deleted, and the bytes an execution command must read go down with each move",
+          "testGate": [
+            "selftests",
+            "validate",
+            "plugin-validate",
+            "gate",
+            "report",
+            "lint",
+            "shots",
+            "interactive"
+          ],
+          "blockedBy": [],
+          "baseRef": null,
+          "branch": null,
+          "mergedAt": null,
+          "review": {
+            "tool": null,
+            "model": "sonnet",
+            "status": "pending",
+            "findings": []
+          },
+          "summary": null,
+          "tasks": []
+        }
+      }
+    },
+    {
+      "id": "PROP-7",
+      "name": "state writes never lose each other",
+      "status": "proposed",
+      "origin": "audit-task add-phase --park",
+      "createdISO": "2026-10-06T09:33:23Z",
+      "branch": "main",
+      "benefit": "two plugin writers running at once never silently drop each other's write: close-phase stamps under the index lock with an atomic rollback, a stale journal lock is broken by exactly one waiter, usage backfill keeps rows appended during its window, and the import-layer lint refuses a state write outside the sanctioned writers",
+      "openQuestions": [],
+      "materializedAs": null,
+      "materializedAt": null,
+      "payload": {
+        "phase": {
+          "id": "P107",
+          "title": "state writes never lose each other",
+          "status": "pending",
+          "description": "Tasks: (1) close-phase stamp_merged and record_merged_head under the index lock close-phase already takes for the stub mirror, rollback through atomic_write_json. (2) The stale journal lock is claimed by rename so only one waiter breaks it (no false tamper verdict). (3) Backfill re-reads the month file's tail after its replace, with no lock on the Stop hook's hot path. (4) A _deps rule: os.replace on plan or ledger paths only through sanctioned writers; reduce or justify the existing sites. Mechanisms reproduced by fixtures; not observed in 100 dogfood phases, hence after the higher-value phases.",
+          "desiredOutcome": "two plugin writers running at once never silently drop each other's write: close-phase stamps under the index lock with an atomic rollback, a stale journal lock is broken by exactly one waiter, usage backfill keeps rows appended during its window, and the import-layer lint refuses a state write outside the sanctioned writers",
+          "testGate": [
+            "selftests",
+            "validate",
+            "plugin-validate",
+            "gate",
+            "report",
+            "lint",
+            "shots",
+            "interactive"
+          ],
+          "blockedBy": [],
+          "baseRef": null,
+          "branch": null,
+          "mergedAt": null,
+          "review": {
+            "tool": null,
+            "model": "sonnet",
+            "status": "pending",
+            "findings": []
+          },
+          "summary": null,
+          "tasks": []
+        }
+      }
+    },
+    {
+      "id": "PROP-8",
+      "name": "the same operation gets the same verdict, and a refusal says what to do",
+      "status": "proposed",
+      "origin": "audit-task add-phase --park",
+      "createdISO": "2026-10-06T09:33:23Z",
+      "branch": "main",
+      "benefit": "for every documented operation class the plan gate's verdict is written down per tier, a refusal never tells the model to use a tool the harness steers away from, and a classifier that gives no verdict is recorded as could-not-run, not as a failed attempt",
+      "openQuestions": [],
+      "materializedAs": null,
+      "materializedAt": null,
+      "payload": {
+        "phase": {
+          "id": "P108",
+          "title": "the same operation gets the same verdict, and a refusal says what to do",
+          "status": "pending",
+          "description": "Tasks: (1) A verdict table (operation class x tier) that the hook corpus asserts; the operator decides three undefined boundary cases. (2) Shell-write refusal text names what to do (the file is outside the running task; scope it or ask) instead of 'use the Edit/Write tools'. (3) The orchestrator recognizes the auto-mode classifier's no-verdict text and records could-not-run. (4) Only after measuring the 3.0.x refusals: the same verdict for Edit and a shell write of the same change - guard-reading code, written by the human maintainer.",
+          "desiredOutcome": "for every documented operation class the plan gate's verdict is written down per tier, a refusal never tells the model to use a tool the harness steers away from, and a classifier that gives no verdict is recorded as could-not-run, not as a failed attempt",
+          "testGate": [
+            "selftests",
+            "validate",
+            "plugin-validate",
+            "gate",
+            "report",
+            "lint",
+            "shots",
+            "interactive"
+          ],
+          "blockedBy": [],
+          "baseRef": null,
+          "branch": null,
+          "mergedAt": null,
+          "review": {
+            "tool": null,
+            "model": "sonnet",
+            "status": "pending",
+            "findings": []
+          },
+          "summary": null,
+          "tasks": []
+        }
+      }
+    },
+    {
+      "id": "PROP-9",
+      "name": "less code ships, and less is maintained",
+      "status": "proposed",
+      "origin": "audit-task add-phase --park",
+      "createdISO": "2026-10-06T09:33:23Z",
+      "branch": "main",
+      "benefit": "the installed plugin carries no test suite or dev-only lints, panel and report share one status palette that meets WCAG AA, the doctor checks an install against the commit it came from, and CI pins its tools and runs on macOS",
+      "openQuestions": [],
+      "materializedAs": null,
+      "materializedAt": null,
+      "payload": {
+        "phase": {
+          "id": "P109",
+          "title": "less code ships, and less is maintained",
+          "status": "pending",
+          "description": "Tasks: (1) Move tests/, _deps.py and _refs.py out of plugins/audit/ (anchor in _output.py). (2) One status palette for panel and report (report ink tokens; delete the panel's raw palette). (3) Doctor picks the install record matching the cache folder; unverifiable only when nothing can be compared. (4) Pin the Claude Code CLI and ajv in CI; add a macOS + Python 3.9 selftest leg. (5) Native pilots, one per release with a measurement: PermissionDenied logging, SessionStart GC (including files never pruned today), lazy preimages, maxTurns instead of prose maxHours. (6) Deprecate /audit:migrate.",
+          "desiredOutcome": "the installed plugin carries no test suite or dev-only lints, panel and report share one status palette that meets WCAG AA, the doctor checks an install against the commit it came from, and CI pins its tools and runs on macOS",
+          "testGate": [
+            "selftests",
+            "validate",
+            "plugin-validate",
+            "gate",
+            "report",
+            "lint",
+            "shots",
+            "interactive"
+          ],
+          "blockedBy": [],
+          "baseRef": null,
+          "branch": null,
+          "mergedAt": null,
+          "review": {
+            "tool": null,
+            "model": "sonnet",
+            "status": "pending",
+            "findings": []
+          },
+          "summary": null,
+          "tasks": []
+        }
+      }
+    },
+    {
+      "id": "PROP-10",
+      "name": "the plugin owns only the guard rules only it can know",
+      "status": "proposed",
+      "origin": "audit-task add-phase --park",
+      "createdISO": "2026-10-06T09:33:24Z",
+      "branch": "main",
+      "benefit": "the plugin's command-reading guards keep the verdicts that depend on the plan and its own state, and generic destructive-command blocking is left to Claude Code's own layers through a recommended permissions fragment, with SECURITY.md saying which layer holds which guarantee",
+      "openQuestions": [],
+      "materializedAs": null,
+      "materializedAt": null,
+      "payload": {
+        "phase": {
+          "id": "P110",
+          "title": "the plugin owns only the guard rules only it can know",
+          "status": "pending",
+          "description": "Human-written (guard-reading code). Tasks: (1) Measure which share of 3.0.x guard refusals hit generic destructive operations the host would block anyway. (2) Design: keep plan scope, journal/manifest integrity and recorded-SHA protection; ship a recommended permissions.deny fragment for the rest. (3) One release reports instead of blocking the moved rules, then remove them. Risk: users without auto mode get only spelling-based permission rules; SECURITY.md must say so.",
+          "desiredOutcome": "the plugin's command-reading guards keep the verdicts that depend on the plan and its own state, and generic destructive-command blocking is left to Claude Code's own layers through a recommended permissions fragment, with SECURITY.md saying which layer holds which guarantee",
+          "testGate": [
+            "selftests",
+            "validate",
+            "plugin-validate",
+            "gate",
+            "report",
+            "lint",
+            "shots",
+            "interactive"
+          ],
+          "blockedBy": [],
+          "baseRef": null,
+          "branch": null,
+          "mergedAt": null,
+          "review": {
+            "tool": null,
+            "model": "sonnet",
+            "status": "pending",
+            "findings": []
+          },
+          "summary": null,
+          "tasks": []
+        }
+      }
+    }
+  ]
 }
