@@ -35,7 +35,7 @@
     {
       "id": "P101.1",
       "title": "one paid /audit:run on the bench fixture shows cost per stage and where the pipeline stalls",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The orchestrator runs this, not an executor. The user allotted 5 USD for it on 2026-10-06, so no second paid run is made without asking again. It is one paid `claude -p \"/audit:run P1.1\"` on the bench fixture, with `--max-budget-usd 4.50` as the hard cap, run through the quality-gates-internal harness at reports/2026-10-05-deep-analysis/fixtures/bench/: build_bench_repo.sh's plugin arm with bench-manifest.json, export_plugin.sh re-pinned from b090fbd5 to the commit under test, run_bench.sh with prompt.txt replaced by the command and keeping the model and effort it already pins, and extract_metrics.py and quality_check.py unchanged. The adapted arm file allows exactly the plugin's own script calls and the git verbs the pipeline needs, and the report lists every allow rule that had to be added, because the probe's arm file allowed only the test command and read-only git. The report records what the orchestrator prose drove (which reference files were read, and their bytes), tokens and list-price cost per stage (main loop, executor, reviewer, gate, close), turns and wall clock per stage, permission denials, where the run stalled or stopped, and the quality_check verdict. Every figure sits beside the command that re-derives it from the run's stream, the document names no machine path, and its findings are the input P106 waits on before moving prose rules into scripts.",
       "files": [
         "docs/research/pipeline-pilot.md"
@@ -54,16 +54,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T21:30:25Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T22:16:37Z.bab88d",
+        "status": "passed",
+        "at": "2026-10-06T22:16:37Z"
+      }
     },
     {
       "id": "P101.2",
