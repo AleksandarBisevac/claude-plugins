@@ -1,0 +1,426 @@
+{
+  "id": "P109",
+  "title": "less code ships, and less is maintained",
+  "status": "pending",
+  "description": "Tasks: (1) Move tests/, _deps.py and _refs.py out of plugins/audit/ (anchor in _output.py). (2) One status palette for panel and report (report ink tokens; delete the panel's raw palette). (3) Doctor picks the install record matching the cache folder; unverifiable only when nothing can be compared. (4) Pin the Claude Code CLI and ajv in CI; add a macOS + Python 3.9 selftest leg. (5) Native pilots, one per release with a measurement: PermissionDenied logging, SessionStart GC (including files never pruned today), lazy preimages, maxTurns instead of prose maxHours. (6) Deprecate /audit:migrate.",
+  "desiredOutcome": "the installed plugin carries no test suite or dev-only lints, panel and report share one status palette that meets WCAG AA, the doctor checks an install against the commit it came from, and CI pins its tools and runs on macOS",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P109.1",
+      "title": "panel and report share one status palette that meets WCAG AA",
+      "status": "pending",
+      "description": "Status pills in the panel read the report's --st-*-ink tokens from _ui_theme.py, so the two surfaces share one status palette. The panel-only role names (--ok, --warn, --err) stay as names but resolve to those tokens, so no raw status hex is left in panel-css. Ink values move only as far as WCAG AA needs on every surface a pill sits on, in both themes, measured in the browser over both pages. The committed report renders are regenerated in the same change. Print the pins first (python3 tools/count-ui-pins.py), follow the refactoring-the-assembled-ui and writing-css skills, and show the result to the user locally for approval before it lands.",
+      "files": [
+        "plugins/audit/scripts/_ui_theme.py",
+        "plugins/audit/scripts/ui/panel-css/tokens-and-reset.css",
+        "plugins/audit/scripts/ui/panel-css/status-colours.css",
+        "plugins/audit/tests/test__ui_theme.py",
+        "plugins/audit/tests/test__panel_ui.py",
+        "examples/acme-store/acme-store-audit.html",
+        "docs/index.html",
+        "docs/demo-large.html"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__ui_theme.py: every --st-*-ink token, light and dark, measures at least 4.5:1 by contrast_ratio against each surface token a status pill sits on in the panel and in the report",
+          "plugins/audit/tests/test__panel_ui.py: the assembled panel CSS defines --ok, --warn and --err only as var() references to the shared --st-*-ink tokens, with no raw hex for any of them"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "report",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P109.2",
+      "title": "the doctor checks an install against the record whose commit matches its cache folder",
+      "status": "pending",
+      "description": "Claude Code keys the plugin cache by version, so one cache folder can carry several install records that name different marketplace commits. install_record takes the first match, which makes cache_integrity report a byte-identical copy as modified. After this change, install_record returns every record for the folder's installPath. cache_integrity then answers clean when the bytes match any recorded commit. It answers modified only when at least one recorded commit could be compared and none matched, and it names the commits it compared. It answers unverifiable only when none of the recorded commits is present in the clone. Acceptance is the internal fixture reports/2026-10-05-deep-analysis/fixtures/arch/doctor_cache_integrity.py: its cases A, B and C must answer clean, clean and unverifiable.",
+      "files": [
+        "plugins/audit/scripts/status/_claude_home.py",
+        "plugins/audit/scripts/status/_doctor_setup.py",
+        "plugins/audit/tests/test__claude_home.py",
+        "plugins/audit/tests/test__doctor_setup.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__claude_home.py: with two install records for one cache folder naming different commits, install_record returns both rather than the first",
+          "plugins/audit/tests/test__doctor_setup.py: cache_integrity answers clean when the cache is byte-identical to one of several recorded commits, clean for a single correct record, and unverifiable only when no recorded commit is present in a shallow marketplace clone"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P109.3",
+      "title": "CI pins the Claude Code CLI and ajv, and runs the selftests on macOS with Python 3.9",
+      "status": "pending",
+      "description": "ajv-cli becomes an exact-version devDependency in package.json and the lockfile, so CI, verify.sh and CONTRIBUTING.md all run the same `ajv-cli validate` spelling that gate-parity matches. The plugin-validate job installs the Claude Code CLI at an explicit version. Together these stop an upstream release from turning an unchanged commit red. The selftests matrix gains a macOS leg on Python 3.9; first confirm that setup-python provides 3.9 on the chosen macOS image. _harness.py's sentence about where CI runs is then updated to name the legs the workflow really has. P103 corrects the same sentence, and whichever task lands second reconciles it. Done means the CI run on the commit is green on every leg.",
+      "files": [
+        ".github/workflows/ci.yml",
+        "package.json",
+        "package-lock.json",
+        "tools/verify.sh",
+        "CONTRIBUTING.md",
+        "plugins/audit/tests/_harness.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "plugin-validate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P109.4",
+      "title": "a PermissionDenied hook logs harness denials without changing any verdict",
+      "status": "pending",
+      "description": "detect-plan-skip.py is also registered for the PermissionDenied event, so no new .py is needed. For each harness denial it appends one line (tool, denial reason verbatim, session, timestamp) to a log under logsDir. It never writes to the committed journal, because a denial reason can carry command text that the journal's allow-list keeps out. It changes no verdict, prints nothing, exits 0 and never answers retry. Before wiring, confirm the event's name and payload against a real auto-mode denial (verifying-external-behavior skill). The task outcome records the measurement: denials logged over a dogfood window compared with what the transcript miner finds, plus the hook's cost from tools/bench-hooks.py. One native pilot per release.",
+      "files": [
+        "plugins/audit/hooks/hooks.json",
+        "plugins/audit/hooks/detect-plan-skip.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test_detect_plan_skip.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_detect_plan_skip.py: a PermissionDenied payload appends exactly one log line carrying the tool and the denial reason verbatim, with empty stdout and exit 0",
+          "plugins/audit/tests/test_detect_plan_skip.py: a PermissionDenied payload never yields a retry answer or any decision field"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P109.5",
+      "title": "state GC runs once at SessionStart and prunes every state family the plugin writes",
+      "status": "pending",
+      "description": "State GC moves from every UserPromptSubmit to a SessionStart registration of detect-plan-skip.py. The hook prints nothing on that event, because SessionStart stdout enters the context. The running-plugin stamp stays on the prompt. The GC first inventories every file family the plugin writes under stateDir, and under logsDir, where any log that is a record is named and left alone. It then extends pruning to the families _GC_PREFIXES misses today, each with its retention reason in the code. The task outcome records the measurement: the prompt hook's latency before and after (tools/bench-hooks.py), and the file count and bytes of the dogfood state directory before and after. One native pilot per release.",
+      "files": [
+        "plugins/audit/hooks/hooks.json",
+        "plugins/audit/hooks/detect-plan-skip.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test_detect_plan_skip.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_detect_plan_skip.py: a SessionStart payload prunes stale files of every state family the plugin writes, including one today's prefix tuple misses, keeps fresh ones and prints nothing",
+          "plugins/audit/tests/test_detect_plan_skip.py: a UserPromptSubmit payload no longer runs the GC"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P109.6",
+      "title": "a session that never writes the manifest keeps no preimage content",
+      "status": "pending",
+      "description": "On a session's first call, the Bash and MCP sweep in journal-writes.py stores a full copy of every swept target (manifest, shards, config), even in sessions that never write those files. This task makes that content lazy: a session keeps no preimage content for a target it never writes. A session's first write must still get its derived rows, which is the regression pre_cache's docstring guards against. The executor picks the mechanism; the candidate is a digest-only slot, with content kept only for a target that is dirty at Pre time. The task outcome records the measurement: preimage files and bytes in stateDir before and after, for a read-only session and for a manifest-writing session, plus the Bash hook latency from tools/bench-hooks.py. One native pilot per release.",
+      "files": [
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/tests/test_journal_writes.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_journal_writes.py: a session whose Bash calls write no swept target leaves no preimage content in stateDir",
+          "plugins/audit/tests/test_journal_writes.py: a session's first Bash write to a manifest shard still produces its derived rows"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P109.7",
+      "title": "the executor and reviewer carry a maxTurns bound taken from their measured turn counts",
+      "status": "pending",
+      "description": "The executor and reviewer agents get a maxTurns bound in their frontmatter. The value is set near the high tail of the per-spawn turn counts measured from the usage ledger, and the task outcome records that measurement and the command that produced it. First confirm against the sub-agents documentation whether maxTurns counts across SendMessage continuations. If it does, the continuation rule in orchestrator.md and execute-task.md shrinks to a pointer to the mechanical bound. If it does not, that finding is recorded and the prose stays. executor.maxHours keeps being read either way, because COMPATIBILITY.md promises that a config key that is read stays read. Blocked by P100, which is editing both reference files. One native pilot per release.",
+      "files": [
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "plugins/audit/tests/test__refs.py: the executor and reviewer agent files each declare maxTurns as a positive integer in their frontmatter"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "plugin-validate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P100"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P109.8",
+      "title": "/audit:migrate is marked deprecated with its removal release named",
+      "status": "pending",
+      "description": "/audit:migrate stays a working alias of /audit:layout sharded. It is marked deprecated, with its removal at the next major release named, in five places: its command description and body, the plugin README's command table, plugin.json's description, the handbook's command row, and PLUGIN-BUILD-GUIDE.md's tree line. The command still runs and still says its new name once. orchestrator.md's mention is left alone so that this task does not wait on P100.",
+      "files": [
+        "plugins/audit/commands/migrate.md",
+        "plugins/audit/README.md",
+        "plugins/audit/.claude-plugin/plugin.json",
+        "docs/handbook.html",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "plugin-validate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P109.9",
+      "title": "the test suite and the dev-only lints leave the shipped plugin",
+      "status": "pending",
+      "description": "plugins/audit/tests/ moves to tests/audit/ at the repository root, and _deps.py and _refs.py move to tools/, so the installed payload carries no test suite and no dev-only lint. _output.py stays the anchor, with TESTS_DIR repointed. Everything that names the old paths follows: every walk, the sweep, CI's paths, verify.sh, prove-gates, affected.py, the repo's require-claim-block hook and the documents. This is the phase's last task, and it waits on P100 and P102 to P108 because it touches every test file those phases edit. Before start, the orchestrator widens files to the full git mv list, because commit_scope matches exact paths. Pending tasks elsewhere that name a moved path (P110's guard tests) and the vermin path in meta.buildCommands.lint are re-pointed through the manifest verbs in audit-state commits. They are never changed in the task commit, which may not stage the index. Verify with a full sweep over a git archive export of the result, not the working tree. COMPATIBILITY.md already leaves these paths outside the promise.",
+      "files": [
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/scripts/_refs.py",
+        "tools/_deps.py",
+        "tools/_refs.py",
+        "tests/audit/_harness.py",
+        "tests/audit/test__output.py",
+        "tools/sweep-selftests.py",
+        "tools/_suite.py",
+        "tools/gate-parity.py",
+        "tools/prove-gates.py",
+        "tools/affected.py",
+        "tools/verify.sh",
+        ".github/workflows/ci.yml",
+        ".claude/hooks/require-claim-block.py",
+        "CLAUDE.md",
+        "CONTRIBUTING.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/audit/test__output.py: TESTS_DIR resolves outside PLUGIN_ROOT, and a git archive of plugins/audit/ at HEAD lists no tests/ directory, _deps.py or _refs.py"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "lint",
+          "validate",
+          "plugin-validate",
+          "gate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [
+        "P100",
+        "P102",
+        "P103",
+        "P104",
+        "P105",
+        "P106",
+        "P107",
+        "P108"
+      ],
+      "dependsOn": [
+        "P109.1",
+        "P109.2",
+        "P109.3",
+        "P109.4",
+        "P109.5",
+        "P109.6",
+        "P109.7",
+        "P109.8"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
