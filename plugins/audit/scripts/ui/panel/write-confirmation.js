@@ -461,6 +461,11 @@ function focusKeep(within){
  *   because a caller has nothing different to do about the two
  */
 async function confirmSave(o){
+ // Refused BEFORE the dialog: a confirm the server cannot act on is a promise the
+ // page cannot keep. The write controls are already marked unavailable, but a
+ // view re-rendered since the last tick builds its Save afresh, so this is the
+ // check that holds every surface at once.
+ if(OFFLINE){toast(OFFLINE_SAY,'err');return null;}
  const rows=o.rows();
  if(!rows.length){toast('nothing to save — '+o.empty);return null;}
  if(!await confirmChanges({title:o.title,rows:rows,scope:o.scope,
@@ -866,7 +871,7 @@ function appliedDiff(rows,res){
  * get their own sentence, because "nothing was written" and "nothing needed
  * writing" are not the same news.
  *
- * @param {{ok: (boolean|undefined), locked: (boolean|undefined), unchanged: (boolean|undefined), applied: (Array<Object>|undefined), journaled: (boolean|undefined), journaledWhy: (string|undefined)}} res -
+ * @param {{ok: (boolean|undefined), locked: (boolean|undefined), noAnswer: (boolean|undefined), unchanged: (boolean|undefined), applied: (Array<Object>|undefined), journaled: (boolean|undefined), journaledWhy: (string|undefined)}} res -
  *   the write endpoint's answer
  * @param {Array<{target: string, field: string, from: *, to: *}>} rows - what the
  *   dialog showed, so the echo can be compared against it
@@ -889,7 +894,8 @@ function appliedDiff(rows,res){
  */
 function saveOutcome(res,rows,what,slot,hint){
  if(!res||!res.ok){
-  toast(res&&res.locked?(what+' is locked — nothing was written')
+  toast(res&&res.noAnswer?NO_ANSWER
+    :res&&res.locked?(what+' is locked — nothing was written')
     :('rejected — nothing was written'),'err');
   return;}
  if(res.unchanged){toast('nothing to save — no values changed');return;}

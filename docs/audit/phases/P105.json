@@ -1,7 +1,7 @@
 {
   "id": "P105",
   "title": "the panel tells the truth about its own state",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Tasks: (1) Overview branches on manifestExists && !rollup and shows the existing findings box instead of 'No plan yet'. (2) A failed poll shows a persistent offline banner and disables Save; a failed save says nothing was written. (3) Save writes only changed keys, so a default list is not frozen into the config. (4) The example's .claude/state is ignored. (5) GET / requires the token the URL already carries, the pidfile is 0600, and SECURITY.md says the panel trusts every local process of the same user. (6) The Azure DevOps card and column appear only when meta.ado is configured.",
   "desiredOutcome": "the panel shows an unreadable manifest as unreadable, shows a stopped server as stopped with Save disabled, saves only the keys a user changed, leaves a clean tree in the example, and serves its token only to a request that already carries it",
   "testGate": [
@@ -15,9 +15,15 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "6d0ef731b5ac60e6bef3c015cf9967583e3625f8",
+  "branch": "audit/p105-the-panel-tells-the-truth-abou",
   "mergedAt": null,
+  "claim": {
+    "sessionId": "6c881c24-c1fd-461f-8c48-abb0170e0a5a",
+    "host": "MacBook-Pro-2",
+    "branch": "audit/p105-the-panel-tells-the-truth-abou",
+    "at": "2026-10-06T14:44:44Z"
+  },
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -29,7 +35,7 @@
     {
       "id": "P105.1",
       "title": "Name why an existing manifest could not be read in the state payload",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The panel's unreadable-plan branch can only print the reason the server sends, so build_state must always send one when the manifest file exists and no rollup was built. A file that is not valid JSON already yields a 'cannot parse manifest' finding. A file that parses to something other than an object (a list, a string) reaches the client today with manifestExists true, no rollup and an empty findings list, which is the silent case to close. Add that finding in _panel_state.build_state and pin both shapes.",
       "files": [
         "plugins/audit/scripts/panel/_panel_state.py",
@@ -53,16 +59,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T14:44:44Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T15:26:35Z.55a308",
+        "status": "passed",
+        "at": "2026-10-06T15:26:35Z"
+      }
     },
     {
       "id": "P105.2",
@@ -112,7 +123,7 @@
     {
       "id": "P105.3",
       "title": "Show a stopped panel server as offline and refuse writes while it is",
-      "status": "pending",
+      "status": "in_progress",
       "description": "When the server stops with a tab open, the page keeps looking live, Save still opens its dialog, and the PUT rejects into an uncaught TypeError with nothing on screen. The poll owns liveness. The first failed poll paints a persistent page-level offline banner, placed like the build-stale notice and wearing .findings warn, sharing that notice's placement rule in app-shell.css rather than adding a second. It also disables every write control, reached through data- attributes, and the next poll that answers clears both. In api(), a write whose fetch rejects resolves to a refusal-shaped answer, so every save path renders it through findingsBox and saveOutcome. Its words state what the page knows: the server did not answer, no write is confirmed, and the edits are still in the form. That is the honest form of 'nothing was written', because a rejected fetch cannot tell a refused connection from an answer lost after the write. Print the pins with `python3 tools/count-ui-pins.py` first; besides the gates listed, run `npx vitest run`.",
       "files": [
         "plugins/audit/scripts/ui/panel/core.js",
@@ -120,7 +131,25 @@
         "plugins/audit/scripts/ui/panel/write-confirmation.js",
         "plugins/audit/scripts/ui/panel-css/app-shell.css",
         "tools/ui-tests/server-offline.test.mjs",
-        "plugins/audit/tests/test__panel_page.py"
+        "plugins/audit/tests/test__panel_page.py",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png",
+        "docs/screenshots/captured-at.json"
       ],
       "tests": {
         "mode": "tdd",
@@ -142,16 +171,21 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T14:44:45Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T15:24:52Z.1dc9a1",
+        "status": "passed",
+        "at": "2026-10-06T15:24:52Z"
+      }
     },
     {
       "id": "P105.4",
@@ -203,7 +237,7 @@
     {
       "id": "P105.5",
       "title": "Make the panel's state directory ignore itself",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The first panel launch writes .claude/state/panel-openstate.json through a plain makedirs. In a project where no hook has run yet, the committed acme-store example included, the state directory then has no ignore rule and the launch leaves an untracked file, contrary to examples/README.md. Have _panel_runstate.record_opened create the directory through the hooks' own _config.ensure_local_dir (reached via _paths.hooks_config()), which drops the same self-ignoring .gitignore every other plugin-local directory gets, instead of adding an ignore line for the example only. Correct the first-launch sentence in examples/README.md. In the plugin README, name the state file beside the pidfile and the launch log, naming the files rather than counting them.",
       "files": [
         "plugins/audit/scripts/panel/_panel_runstate.py",
@@ -229,16 +263,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T14:44:45Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T15:28:35Z.6e815e",
+        "status": "passed",
+        "at": "2026-10-06T15:28:35Z"
+      }
     },
     {
       "id": "P105.6",
@@ -326,5 +365,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-10-06T14:44:44Z"
 }

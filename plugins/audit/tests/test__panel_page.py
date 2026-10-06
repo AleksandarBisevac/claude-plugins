@@ -125,8 +125,19 @@ def _cases(check):
     check("D9: it stops while the tab is hidden, and catches up on return",
           "if(document.hidden)return;" in M.UI_HTML
           and "visibilitychange" in M.UI_HTML)
-    check("D9: a failed poll leaves a stale badge rather than killing the panel",
-          "catch(e){/* a panel that dies because a poll failed" in M.UI_HTML)
+    # The catch used to swallow every failure, which is how a stopped server left
+    # the page looking live. It still keeps the panel up, but a fetch that got no
+    # answer now sets the offline state, and anything else is said in the console.
+    # The behaviour is executed by tools/ui-tests/server-offline.test.mjs; what is
+    # pinned here is the construct that suite relies on, inside the poll itself.
+    _d9 = M.UI_HTML[M.UI_HTML.index("async function pollRunStatus"):
+                    M.UI_HTML.index("function startRunPoll")]
+    check("D9: a failed poll sets the offline state instead of swallowing the "
+          "failure, and an answer of any shape clears it",
+          "}catch(e){runOffline(!!(e&&e.noAnswer));" in _d9
+          and "runOffline(false);" in _d9
+          and "catch(e){/*" not in _d9,
+          repr(_d9[-400:]))
 
     check("UI renders area badges (per tag) + area-searchable composition",
           ".badge.area" in M.UI_HTML and "P.area" in M.UI_HTML

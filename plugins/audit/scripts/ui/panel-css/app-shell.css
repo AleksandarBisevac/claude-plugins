@@ -52,8 +52,10 @@
    here. The gutters and the centre line are the shell's own and are repeated
    as literals because the shell writes them as literals too — there is no token
    for either — so the agreement is pinned by a case that reads both values out
-   of the assembled sheet rather than by this sentence. */
-.buildstale{max-width:92rem;margin:0 auto;padding:0 1.25rem}
+   of the assembled sheet rather than by this sentence.
+   The offline notice (runOffline()) is the same kind of page-level notice in the
+   same place, so it shares this one rule rather than carrying a copy of it. */
+.offlinenote,.buildstale{max-width:92rem;margin:0 auto;padding:0 1.25rem}
 .view{min-width:0}
 .tabs{position:sticky;top:calc(var(--topbar-h) + var(--sp-1))}
 .tabs .navttl{font-size:var(--t-label);text-transform:uppercase;letter-spacing:.12em;
