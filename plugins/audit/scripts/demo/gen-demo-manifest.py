@@ -122,9 +122,16 @@ TITLE_NOUNS = ("the checkout payload", "the session cookie", "the product query"
 # is priced once, with the project's own table: pointing this at the shipped
 # constant would mean every committed artifact `gen-demo-usage.py` prices from
 # this fixture moves the day that constant does, which is the drift a declared
-# table exists to stop. Its numbers equal the shipped table's AT THIS WRITING -
-# `tests/test_gen_demo_manifest.py` pins the shape, never the figures, because a
-# figure here is exactly the kind of number this project's own rule says rots.
+# table exists to stop. The figures were copied from the shipped table while it
+# was dated CONFIG_PRICING_AS_OF and are frozen there on purpose, so they are free
+# to fall behind it; `tests/test_gen_demo_manifest.py` pins the shape and the
+# date this table carries, never the figures.
+#
+# CONFIG_PRICING_AS_OF is that date, and the one the fixture's
+# `meta.usage.pricingAsOf` prints beside every figure priced from this table.
+# It is NOT the shipped table's date: that moves when the shipped rates do, and a
+# demo dated by it would claim a basis its numbers did not come from.
+CONFIG_PRICING_AS_OF = "2026-08-06"
 CONFIG_PRICING = {
     "_default":          {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
     "claude-opus-5":     {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
@@ -837,7 +844,7 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
             # to show what a well-formed one looks like. The fixture was the
             # defect there, not the renderer.
             "usage": {"ledgerDir": ".claude/usage", "showCost": True,
-                      "pricingAsOf": "2026-08-06"},
+                      "pricingAsOf": CONFIG_PRICING_AS_OF},
             "areas": areas,
             # Connector v2: configured so the ADO card has a form to show; the
             # links above make its banner read 'linked' rather than 'unverified'.

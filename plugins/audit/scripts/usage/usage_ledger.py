@@ -122,10 +122,10 @@ import _manifest_io  # noqa: E402  (one home for reading a manifest's shape)
 # still cover every public name those modules define, so a name added down there and
 # forgotten here fails by name instead of at a call site.
 from _usage_core import (  # noqa: E402,F401  (re-exported, see above)
-    DEFAULT_PRICING, GROUP_KEYS, TOKEN_KEYS, UNTAGGED_AREA, aggregate,
-    aggregate_area, bucket_date, bucket_hour, bucket_month, heatmap, hour_bucket,
-    parse_ts, price, pricing_divergences, rates_for, rows_for_area, task_index,
-    totals)
+    DEFAULT_PRICING, GROUP_KEYS, PRICING_AS_OF, PRICING_SOURCE_URL, TOKEN_KEYS,
+    UNTAGGED_AREA, aggregate, aggregate_area, bucket_date, bucket_hour,
+    bucket_month, heatmap, hour_bucket, parse_ts, price, pricing_divergences,
+    pricing_provenance_divergences, rates_for, rows_for_area, task_index, totals)
 from _usage_coverage import (  # noqa: E402,F401  (re-exported, see above)
     MONTHLY_PLAN_KEYS, POOR_COVERAGE_PCT, coverage, monthly_activity)
 from _usage_economics import (  # noqa: E402,F401  (re-exported, see above)

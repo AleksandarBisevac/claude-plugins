@@ -68,23 +68,36 @@ _output.install_path()
 # `tests/test__usage_core.py`'s `pp` cases load the hooks' own table and name any
 # field that drifts.
 # They cannot be merged - hooks/ may import nothing from scripts/ - so the copy is
-# deliberate and the case is what keeps it honest.
-# Cache rates follow the published multipliers off base input: write 1.25x at the
-# 5-minute TTL, 2x at the 1-hour TTL, read 0.1x.
+# deliberate and the case is what keeps it honest. The date and the page the rates
+# were read from are mirrored the same way and held equal by
+# `pricing_provenance_divergences()`.
+# Every rate is copied from the page, not derived: the cache writes follow the
+# published 1.25x (5-minute TTL) and 2x (1-hour TTL) multipliers off base input,
+# but the read multiplier is not uniform - the page prices some models' cache read
+# below the usual 0.1x, so a row computed from base input would overcharge them.
+#
+# Resolution is by LONGEST PREFIX, so a point release needs its own row whenever
+# its rates differ from its family's: without one, `claude-opus-5-5` resolves to
+# `claude-opus-5` and is priced at another model's rate with no warning.
 #
 # `_default` is Opus-tier on purpose: an unrecognized model is far more likely to be
 # a new frontier release than a cheap one, and over-stating spend is the safer error
 # for a cost display. Anything a project actually runs should get its own row.
+PRICING_AS_OF = "2026-10-06"
+PRICING_SOURCE_URL = "https://platform.claude.com/docs/en/about-claude/pricing"
 DEFAULT_PRICING = {
     "_default":          {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
     "claude-fable-5":    {"in": 10.0, "out": 50.0, "cacheW5m": 12.50, "cacheW1h": 20.0, "cacheR": 1.0},
+    "claude-fable-5-1":  {"in": 10.0, "out": 50.0, "cacheW5m": 12.50, "cacheW1h": 20.0, "cacheR": 0.25},
     "claude-mythos-5":   {"in": 10.0, "out": 50.0, "cacheW5m": 12.50, "cacheW1h": 20.0, "cacheR": 1.0},
+    "claude-mythos-5-1": {"in": 10.0, "out": 50.0, "cacheW5m": 12.50, "cacheW1h": 20.0, "cacheR": 0.25},
     "claude-opus-5":     {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
+    "claude-opus-5-5":   {"in":  4.0, "out": 20.0, "cacheW5m":  5.00, "cacheW1h":  8.0, "cacheR": 0.2},
     "claude-opus-4-8":   {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
     "claude-opus-4-7":   {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
     "claude-opus-4-6":   {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
     "claude-opus-4-5":   {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
-    "claude-sonnet-5":   {"in":  3.0, "out": 15.0, "cacheW5m":  3.75, "cacheW1h":  6.0, "cacheR": 0.3},
+    "claude-sonnet-5":   {"in":  2.0, "out": 10.0, "cacheW5m":  2.50, "cacheW1h":  4.0, "cacheR": 0.2},
     "claude-sonnet-4-6": {"in":  3.0, "out": 15.0, "cacheW5m":  3.75, "cacheW1h":  6.0, "cacheR": 0.3},
     "claude-sonnet-4-5": {"in":  3.0, "out": 15.0, "cacheW5m":  3.75, "cacheW1h":  6.0, "cacheR": 0.3},
     "claude-haiku-4-5":  {"in":  1.0, "out":  5.0, "cacheW5m":  1.25, "cacheW1h":  2.0, "cacheR": 0.1},
@@ -130,13 +143,13 @@ def pricing_divergences(mine, theirs, mine_name="mine", theirs_name="theirs"):
     means the two agree completely.
 
     Named rather than boolean because DEFAULT_PRICING above and
-    `hooks/_config.py DEFAULTS["usage"]["pricing"]` are 13 models x 5 rates that
-    must be kept identical BY HAND: hooks/ may import nothing from scripts/ and
-    has to price a model with no config file present, so the table cannot be
-    merged into one home. Each file carried a comment saying it mirrored the
-    other and nothing read either comment. A checker that only says "the tables
-    differ" hands the reader 65 numbers to diff, which is why every difference
-    is named down to `model.rate: <value> vs <value>`.
+    `hooks/_config.py DEFAULTS["usage"]["pricing"]` must be kept identical BY
+    HAND: hooks/ may import nothing from scripts/ and has to price a model with
+    no config file present, so the table cannot be merged into one home. Each
+    file carried a comment saying it mirrored the other and nothing read either
+    comment. A checker that only says "the tables differ" hands the reader every
+    rate of both tables to diff, which is why every difference is named down to
+    `model.rate: <value> vs <value>`.
 
     A table that is not a dict is REPORTED, never treated as empty-and-therefore-
     equal: the caller's most likely non-dict is a load that failed, and a failed
@@ -170,6 +183,43 @@ def pricing_divergences(mine, theirs, mine_name="mine", theirs_name="theirs"):
                 out.append("%s.%s: %s %r vs %s %r"
                            % (model, rate, mine_name, row_a[rate],
                               theirs_name, row_b[rate]))
+    return out
+
+
+_PROVENANCE_KEYS = ("pricingAsOf", "source")
+
+
+def _blank_field(value):
+    return not isinstance(value, str) or not value.strip()
+
+
+def pricing_provenance_divergences(mine, theirs, mine_name="mine",
+                                   theirs_name="theirs"):
+    """Every disagreement between two `{pricingAsOf, source}` provenances,
+    worded the way `pricing_divergences()` words a rate. `[]` means both name
+    the same date and the same page.
+
+    The date and the URL are mirrored for the same reason the rates are, and
+    drift the same way: a table corrected in both files with its date bumped in
+    one prints a basis the other copy's numbers did not come from.
+
+    A blank or missing field is reported on its own side even when the other
+    side is blank too - two empty dates agree, and say nothing. A provenance
+    that is not a dict is reported, never read as agreement."""
+    if not isinstance(mine, dict):
+        return ["%s is not a pricing provenance (%s)" % (mine_name, type(mine).__name__)]
+    if not isinstance(theirs, dict):
+        return ["%s is not a pricing provenance (%s)"
+                % (theirs_name, type(theirs).__name__)]
+    out = []
+    for key in _PROVENANCE_KEYS:
+        a, b = mine.get(key), theirs.get(key)
+        blanks = [name for name, value in ((mine_name, a), (theirs_name, b))
+                  if _blank_field(value)]
+        if blanks:
+            out.extend("%s: blank in %s" % (key, name) for name in blanks)
+        elif a != b:
+            out.append("%s: %s %r vs %s %r" % (key, mine_name, a, theirs_name, b))
     return out
 
 

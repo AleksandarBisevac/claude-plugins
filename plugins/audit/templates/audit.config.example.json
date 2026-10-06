@@ -100,14 +100,14 @@
       "areas": {}
     }
   },
-  "//usage": "Token metering (meter-usage.py + /audit:usage). Rates are USD per MILLION tokens and live here on purpose: a price change is a one-line edit in your repo, not a plugin release. Cost is priced and stored when a row is written, so editing this table never rewrites history. Only list the models you actually run - anything unlisted resolves by longest name prefix, then '_default'. authorMode: email|name|hash|none. The ledger records counts, model ids, timestamps, branch and author - never prompt content.",
+  "//usage": "Token metering (meter-usage.py + /audit:usage). Rates are USD per MILLION tokens and live here on purpose: a price change is a one-line edit in your repo, not a plugin release. Cost is priced and stored when a row is written, so editing this table never rewrites history. Only list the models you actually run - anything unlisted resolves by longest name prefix, then '_default'. The shipped rates and pricingAsOf are read from https://platform.claude.com/docs/en/about-claude/pricing - copy each rate from there rather than deriving it, since the cache-read multiplier differs between models. authorMode: email|name|hash|none. The ledger records counts, model ids, timestamps, branch and author - never prompt content.",
   "usage": {
     "enabled": true,
     "ledgerDir": ".claude/usage",
     "authorMode": "email",
     "showCost": true,
     "backfillOnFirstRun": true,
-    "pricingAsOf": "2026-08-06",
+    "pricingAsOf": "2026-10-06",
     "//bands": "Absolute cost bands for typical/high/outlier. Left null, the bands calibrate from this project's own completed tasks (median and p90), which needs no guess to mean something. Set BOTH to band by a budget instead - highUSD must be > 0 and <= outlierUSD, and any other pair is ignored in favour of the relative basis.",
     "bands": {
       "highUSD": null,
@@ -129,11 +129,11 @@
         "cacheR": 0.5
       },
       "claude-sonnet-5": {
-        "in": 3.0,
-        "out": 15.0,
-        "cacheW5m": 3.75,
-        "cacheW1h": 6.0,
-        "cacheR": 0.3
+        "in": 2.0,
+        "out": 10.0,
+        "cacheW5m": 2.5,
+        "cacheW1h": 4.0,
+        "cacheR": 0.2
       },
       "claude-haiku-4-5": {
         "in": 1.0,

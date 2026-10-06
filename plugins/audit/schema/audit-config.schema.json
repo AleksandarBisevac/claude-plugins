@@ -293,7 +293,7 @@
           "description": "Model id -> rate row. Lookup is exact match, then longest matching prefix (so a dated id resolves to its family), then the '_default' row.",
           "additionalProperties": {
             "type": "object",
-            "description": "USD per MILLION tokens for one model. Cache rates follow the published multipliers off base input: write 1.25x at the 5-minute TTL, 2x at the 1-hour TTL, read 0.1x.",
+            "description": "USD per MILLION tokens for one model, copied from the published pricing page rather than derived. Cache writes follow the published multipliers off base input (1.25x at the 5-minute TTL, 2x at the 1-hour TTL); the cache-read multiplier is not uniform, and the page prices some models' read below the usual 0.1x.",
             "additionalProperties": true,
             "properties": {
               "in": {

@@ -20,7 +20,7 @@ different ways if carried literally:
     on a machine with no such directory.
   * `rx1`/`rx2` - "is this public name served by usage_ledger?" was `n in globals()`
     because the suite WAS that namespace. It is `hasattr(M, n)` / `getattr(M, n)`
-    here. This half fails loudly (all 40 names reported missing) rather than
+    here. This half fails loudly (every name reported missing) rather than
     quietly, and is written out anyway so the next reader does not have to
     rediscover which of the two shapes was which.
 
@@ -672,7 +672,7 @@ def _cases(check):
     import _usage_routing
     import _usage_spend
 
-    # The four modules `_usage_analytics` was cut into at U3.2. `_usage_bench` is
+    # The four modules `_usage_analytics` was cut into. `_usage_bench` is
     # NOT here and that is not an omission: every name it defines starts with an
     # underscore, so it contributes nothing to re-export, and the passes it holds
     # are the four below's, counted there.
@@ -696,8 +696,8 @@ def _cases(check):
     # LOUDLY rather than quietly - which is why it is worth naming. Inline,
     # "is this name served?" was "is it in my own namespace?", because the suite
     # WAS the module. Here it has to ask the module: `hasattr(M, n)` and
-    # `getattr(M, n, None)`. Carried literally, `_missing` would list all 40
-    # names and rx1 would go red on a re-export that is perfectly intact.
+    # `getattr(M, n, None)`. Carried literally, `_missing` would list every
+    # name and rx1 would go red on a re-export that is perfectly intact.
     _missing = [n for n in _core_public + _analytics_public
                 if not hasattr(M, n)]
     check("rx1 every public name _usage_core and the four analytics modules define "
@@ -707,7 +707,7 @@ def _cases(check):
 
     def _definer(name):
         """The module that DEFINES `name`, for the identity check below. Read
-        rather than assumed: after U3.2 a name can come from any of five files,
+        rather than assumed: since the split a name can come from any of five files,
         and asking the wrong one would compare an object against itself."""
         for mod in (_core_mod,) + _analytics_mods:
             if name in _public_names(mod) and (
@@ -720,12 +720,39 @@ def _cases(check):
           all(getattr(M, n, None) is getattr(_definer(n), n, object())
               for n in _core_public + _analytics_public))
     # The second direction, and it is the one that looks vacuous: rx1 passes by
-    # construction if the five modules define NOTHING (a filter that narrows to
-    # empty must never read as 'all clear'). Only a literal count fails then.
-    check("rx3 ...and there are 18 + 30 of them, so rx1 cannot be green over an "
-          "empty or gutted module",
-          len(_core_public) == 18 and len(_analytics_public) == 30,
-          "got %d + %d" % (len(_core_public), len(_analytics_public)))
+    # construction if `_public_names` narrows to NOTHING (a filter that narrows
+    # to empty must never read as 'all clear'). The yardstick is read off
+    # usage_ledger.py's own import statements by AST rather than written here
+    # as a count, so it is a second source that cannot be gutted along with the
+    # filter, and a name added below and re-exported above moves both sides at
+    # once instead of turning a literal stale.
+    import ast
+
+    def _reexported_by_source():
+        """{defining module: sorted names} that usage_ledger.py's own
+        `from _usage_* import (...)` statements list."""
+        with open(M.__file__, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+        found = {}
+        for node in tree.body:
+            if isinstance(node, ast.ImportFrom) and node.level == 0 and (
+                    node.module or "").startswith("_usage_"):
+                found.setdefault(node.module, []).extend(
+                    a.name for a in node.names)
+        return dict((mod, sorted(names)) for mod, names in found.items())
+
+    _rx_src = _reexported_by_source()
+    _rx_core_src = _rx_src.get("_usage_core", [])
+    _rx_analytics_src = sorted(set(
+        n for mod in _analytics_mods for n in _rx_src.get(mod.__name__, [])))
+    check("rx3 ...and the names counted are exactly the ones usage_ledger.py's "
+          "import statements re-export, none of them empty, so rx1 cannot be "
+          "green over a filter that narrowed to nothing",
+          bool(_rx_core_src) and bool(_rx_analytics_src)
+          and _core_public == _rx_core_src
+          and _analytics_public == _rx_analytics_src,
+          "core %r vs source %r; analytics %r vs source %r"
+          % (_core_public, _rx_core_src, _analytics_public, _rx_analytics_src))
 
 
 def _selftest():

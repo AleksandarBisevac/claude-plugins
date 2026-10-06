@@ -335,7 +335,7 @@
     {
       "id": "P104.6",
       "title": "the panel's Usage tab prints attribution coverage beside cost per task",
-      "status": "in_progress",
+      "status": "done",
       "description": "The panel computes its own unit economics in usage-metrics.js (uUnit, :108-125) and renders 'cost per task' (usage-view.js:283) and the routing cost/task (:368) with no coverage. Mirror the Python definition and print the same coverage, under the same showCost and empty-ledger silences. Read the refactoring-the-assembled-ui and writing-javascript skills and print the pins first (python3 tools/count-ui-pins.py); add no new shape pin, since the assertion is a vitest behaviour case. Any change under scripts/ui/panel moves the panel surface digest, so re-capture every panel screenshot with node tools/capture-screenshots.mjs (screenshot_capture_drift goes red otherwise) and run npx vitest run, which no build-command key runs.",
       "files": [
         "plugins/audit/scripts/ui/panel/usage-metrics.js",
@@ -382,18 +382,24 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6516170d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "usage-metrics.js gains uDoneCoverage(facts), mirroring _done_task_coverage: done counted from the plan's task metadata over the whole plan, priced from the rows handed in (filtering narrows only the numerator), main-loop rows never attributed, null with no done task; uUnit carries it. uCoverageLine renders exactly the wording of _usage_economics._coverage_sentence, with a comment that it must change with it. usage-view.js prints it under the cost-per-task tile and above the routing table, both gated on showCost. No new shape pin; the assembled panel script parses (node --check). The panel screenshots were re-captured because the panel sources moved.",
+        "descriptive": "The panel's Usage tab now says how many of the plan's done tasks its cost-per-task figures cover, in the same words as the report and the CLI."
       },
       "startedAt": "2026-10-06T15:43:59Z",
-      "completedAt": null,
+      "completedAt": "2026-10-06T19:03:58Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-06T16:53:54Z.61358a",
         "status": "passed",
         "at": "2026-10-06T16:53:54Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6516170d",
+        "at": "2026-10-06T19:03:58Z",
+        "basis": "audit-reviewer (task mode): clean; counting and wording verified against the Python side; the assembled panel script parses"
       }
     },
     {
