@@ -666,7 +666,7 @@
     {
       "id": "P105",
       "title": "the panel tells the truth about its own state",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P105.json"
     },
     {
