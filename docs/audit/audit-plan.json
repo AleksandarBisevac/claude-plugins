@@ -696,7 +696,7 @@
     {
       "id": "P110",
       "title": "the plugin owns only the guard rules only it can know",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P110.json"
     }
   ],
