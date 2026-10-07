@@ -217,10 +217,12 @@
         "severity": "med",
         "file": "tools/stream-cost.py:234-235",
         "issue": "Found by the P117.5 executor. stream-cost.py keeps only the last result event of a stream. A headless session that is re-invoked, for example when a background task notifies it, emits several result events, each carrying the usage of its own stretch. whole-C-3 has three, and their usage blocks sum exactly to its main loop. Read with only the last one, the main loop prints DISAGREE, Opus prices differ by about half a dollar, and an orphan request is printed with negative tokens. So the tool cannot price a whole-feature arm C session, and T5's calibration on those sessions is blocked.",
-        "resolution": "Read every result event: sum their usage and modelUsage per model, and keep each final request's rebuild per result segment. Add a case with a stream holding two result events whose sum is known, plus a twin with one, and show it red against keeping only the last. Re-run the tool on all whole-C sessions and on the four recorded sessions; the latter's figures must not move."
+        "resolution": "fixed in P117.6-2sz (9e4ab790): Read every result event: sum their usage and modelUsage per model, and keep each final request's rebuild per result segment. Add a case with a stream holding two result events whose sum is known, plus a twin with one, and show it red against keeping only the last. Re-run the tool on all whole-C sessions and on the four recorded sessions; the latter's figures must not move.",
+        "fixTask": "P117.6-2sz",
+        "commit": "9e4ab790"
       }
     ],
-    "outcome": "[findings: 22 - 0 high, 6 med, 16 low; 21 with a recorded fix commit]"
+    "outcome": "[findings: 22 - 0 high, 6 med, 16 low; 22 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -505,7 +507,7 @@
     {
       "id": "P117.6-2sz",
       "title": "stream-cost reads every result event, so a re-invoked session is priced whole",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review finding P117-R22. tools/stream-cost.py reads every result event in a stream, not only the last. A headless session that is re-invoked, for example by a background task's notification, emits one result per stretch, each with that stretch's usage and modelUsage. The tool sums them per model, and rebuilds each stretch's missing final request against its own result. A new case holds a stream with two result events whose totals are known, with a single-result twin. It goes red against keeping only the last result, in a scratch copy. Re-reading the four recorded sessions leaves every figure the documents quote unchanged. The whole-feature arm C sessions are priced: whole-C-1, whole-C-3 and whole-C-2-r, with the main loop agreeing with the CLI's costUSD per model.",
       "files": [
         "tools/stream-cost.py",
@@ -535,19 +537,72 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "9e4ab790",
+      "outcome": {
+        "technical": "Fixes P117-R22. tools/stream-cost.py keeps every result event and tags each request with its stretch.\n\nWhat the CLI writes in each result event, measured on whole-C-1, whole-C-3 and whole-C-2-r (3, 3 and 5 results):\n- usage is per stretch: the main-loop requests between one init and the next sum exactly to that stretch's usage;\n- modelUsage and total_cost_usd are session totals, byte-identical in every result;\n- duration_ms and num_turns are per stretch.\n\nSo session_result sums usage, duration and turns and reads the session totals once, departing from the task's \"sum modelUsage\", which the evidence refutes because it would count every subagent several times. main_stretches pairs stretches by init event, or falls back to the summed usage with a note. Each stretch's main loop is checked against its own result, and output pools are per stretch.\n\nAll three whole-C sessions now price to the CLI's costUSD per model within float error. The old tool printed DIFFER by -0.507663 on whole-C-3. The four single-result recorded sessions read byte-identically to the old tool, so their figures keep the 9501aa91 pin, and the whole-C figures carry the new commit's pin, named by a git log -S command.\n\nNew cases sc25 to sc29: a two-result stream against a hand-worked answer, a single-result twin against over-counting, per-stretch checks, unpaired counts reported, and disagreeing totals reported. They are red against the keep-the-last code (24/29) and against each mutation, in scratch trees with anchors checked on disk; a re-run after a gap is identical. The red-first helper could not run: \"task P117.6-2sz declares no test file, so a throwaway at HEAD would prove nothing about this task's test\" (exit 2).\n\nA separate fault is recorded for the implementation phase: the final-request rebuild adds a phantom final for a background-launched agent, which shifts about a cent of Sonnet cost per session between stages without changing the model totals.",
+        "descriptive": "The cost tool now prices a session that was woken up again by a background task as one whole, and the three plugin-arm benchmark sessions match the CLI's own cost for every model."
+      },
+      "startedAt": "2026-10-07T15:50:41Z",
+      "completedAt": "2026-10-07T16:27:43Z",
+      "verifiedBy": [
+        "sc25",
+        "sc26",
+        "sc27",
+        "sc28",
+        "sc29"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T16:27:28Z.91d1d4",
+        "status": "passed",
+        "at": "2026-10-07T16:27:28Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9e4ab790",
+        "at": "2026-10-07T16:27:43Z",
+        "basis": "orchestrator check: the rule is built on measured result-event semantics across eleven stretches, all three whole-C sessions price to costUSD, and the four older sessions read byte-identically"
+      }
+    },
+    {
+      "id": "P117.7-2sz",
+      "title": "the design meets the user's cost target: a task at most 2x plain, ideally 1.25x, with the phase overhead budgeted and value-tested",
+      "status": "pending",
+      "description": "The user set the cost target on 2026-10-07, in two parts.\n\nTargets:\n1. Per task: the plugin's task cycle may cost at most 2x what plain Claude Code spends on the same task, ideally 1.25x.\n2. Per phase: planning, the phase review and the phase gate are budgeted separately as a phase overhead. That overhead has to pay for itself: each part of it is justified by what it catches, measured, or it is a candidate for removal.\n\nThe current design does not meet the per-task target. It predicts a one-task run falling from 1.7484 to 1.0047 USD against about 0.30 plain, which is about 3.3x. On the whole-feature benchmark the plugin arm averaged about ten times the plain arm (grade.txt of the nine valid sessions).\n\nWhere the cost sits (whole-C-3, Opus, grade.txt token lines, priced with the confirmed table):\n- cache reads, 10.66M tokens: 2.13 USD;\n- cache writes, mostly at the one-hour rate: 1.78 USD;\n- output: 0.93 USD.\n\nCache reads are 5 percent of the input price, and they still dominate through volume: 61 main-loop requests, about 174k tokens each. Every new tool output in the main loop is written once at the one-hour rate and then re-read on every later request.\n\nThis task revises docs/research/pipeline-cost-design.md so that the recommended set is predicted to meet the per-task target. The phase overhead is stated separately, with its own budget and a value test.\n\nEvidence:\n- The whole-feature sessions, now priceable.\n- Arm C's cost decomposed into:\n  - planning;\n  - the task cycle per task;\n  - sign-off;\n  - main-loop context carried per request, split by origin: reference prose, plugin script output, file reads, hand-backs;\n  - the main-loop request count.\n- What each phase-level step caught in the recorded sessions, against what the hidden tests and the grader show. This includes the hidden requirement that every arm missed.\n\nOptions to evaluate beside the earlier candidates:\n- a script that drives the whole pipeline deterministically, so the model only writes code and answers named decisions;\n- terse plugin script output by default;\n- one executor per phase instead of one per task;\n- fewer and cheaper main-loop requests;\n- a smaller subagent start: omitClaudeMd, preloaded skills, and the cache TTL that an agent definition can set;\n- a per-task review that is cheap enough to fit, or that moves to the phase;\n- an enforced rule moved from an agent's tool list to a hook, where that keeps it enforced.\n\nThe document gives a ladder:\n- what is reached with no change to any guarantee;\n- then, for each guarantee change, the saving it adds, the guarantee affected, and how that guarantee would be held instead.\n\nThe recommendation is the structurally correct set that meets the per-task target. Guarantee changes it needs go to the user as decisions with figures. The implementation tasks are restated so that together they reach the target, each with its own measurable target and confirming session.",
+      "files": [
+        "docs/research/pipeline-cost-design.md",
+        "docs/research/pipeline-cost-analysis.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-07T15:50:41Z",
+      "startedAt": null,
       "completedAt": null,
-      "verifiedBy": [],
-      "testEvidence": {
-        "runId": "2026-10-07T16:27:28Z.91d1d4",
-        "status": "passed",
-        "at": "2026-10-07T16:27:28Z"
-      }
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-07T11:45:57Z"
