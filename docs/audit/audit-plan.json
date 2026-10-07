@@ -642,7 +642,7 @@
     {
       "id": "P101",
       "title": "the plugin's value is measured, not asserted",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P101.json"
     },
     {
