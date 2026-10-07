@@ -10,7 +10,7 @@ allowed-tools: Bash
 Run
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/usage/audit-usage.py" <manifestPath> --format md $ARGUMENTS
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/usage/audit-usage.py" --format md $ARGUMENTS
 ```
 
 **Print its stdout verbatim in your own reply** — a tool result is collapsed behind the tool
@@ -80,7 +80,7 @@ Pass `$ARGUMENTS` through unchanged. Nothing here needs interpreting on your sid
 | `--no-cost` | tokens only, no dollar figures |
 | `--format md\|ascii` | `md` (the default above) renders pipe tables for this chat surface; `ascii` is the fixed-width terminal shape for pipes, logs and CI |
 | `--color auto\|always\|never` | ANSI color for humans at a real terminal (`auto` = TTY with `NO_COLOR` unset; this chat surface is a pipe, so it stays plain; `md` never colors) |
-| `--json` | machine-readable, for CI |
+| `--json` | machine-readable, for CI - keeps the cost fields beside `showCost`, which the payload carries at top level, rather than withholding either |
 | `--backfill` | re-read every transcript and rebuild the ledger |
 
 ## What the numbers mean

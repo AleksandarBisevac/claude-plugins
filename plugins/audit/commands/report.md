@@ -11,13 +11,15 @@ Read `${CLAUDE_PLUGIN_ROOT}/reference/orchestrator.md` and
 (read-only: no git-root/submodule check, no lock).
 
 Run
-`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report/render-report.py" <manifestPath>`
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report/render-report.py"`
 (pass `--out-dir <dir>` through from `$ARGUMENTS` when given; artifacts otherwise land next to the
-manifest) and print the written paths.
+manifest) and print the written paths. The script finds the manifest itself — the configured
+`manifestPath`, else `docs/audit/audit-plan.json` — and when there is none it exits 2 naming
+where it looked; relay that rather than searching for one.
 
 **Optional AI summary (recommended).** Before rendering, compose a 2–4 sentence, plain-language
 summary of the audit's current state — synthesize the phases' `desiredOutcome`/`summary`, notable
-task `outcome`s, open bugs, and the rollup (`audit-status.py <manifestPath> --json`). Write it to a
+task `outcome`s, open bugs, and the rollup (`audit-status.py --json`). Write it to a
 scratch file (e.g. `<out-dir or manifest dir>/.audit-summary.txt`, via Bash) and add
 `--summary-file <that file>` to the render command; the renderer shows it in a **Summary** box in the
 HTML, the Markdown, and the printable PDF. It is passed to the renderer only — it does **NOT** modify
@@ -141,7 +143,7 @@ precisely so that nothing leaves without a decision behind it.
 Then:
 
 1. Render the embeddable form — **not** the standalone file:
-   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report/render-report.py" <manifestPath> --format artifact`
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report/render-report.py" --format artifact`
    (add `--out-dir`/`--summary-file` exactly as above). It writes `<basename>.artifact.html`
    beside the normal outputs and never overwrites them.
 2. Publish that path with the **Artifact** tool. Give it `favicon: "🛡"`, and a `description` that

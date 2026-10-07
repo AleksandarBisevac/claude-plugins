@@ -158,7 +158,6 @@ _cores = _panel_state._cores
 _defaults = _panel_state._defaults
 _within = _panel_state._within
 _config_path = _panel_state._config_path
-_declared_as_of = _panel_state._declared_as_of
 _manifest_path = _panel_state._manifest_path
 _viewer = _panel_state._viewer
 _read_json = _panel_state._read_json

@@ -41,7 +41,6 @@ import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
 # Carried by module-level alias so every body below reads exactly as it did in
 # `_panel_state`, where these were siblings rather than imports.
 _load = _paths._load
-_declared_as_of = _paths._declared_as_of
 _manifest_path = _paths._manifest_path
 read_config = _paths.read_config
 
@@ -88,8 +87,15 @@ def _usage_shape(**overrides):
         "enabled": True,
         "ledgerDir": "",
         "showCost": True,
-        "pricingAsOf": None,
-        "pricingAsOfDeclared": False,
+        # Which place priced the ledger's rows (`resolve_pricing`'s `{basis,
+        # asOf, source}`) and the phrase every other cost surface prints for
+        # it, so the tab shows those words rather than retyping them. None on
+        # the exits with no rows: there is no cost on screen to give a basis.
+        # Its `asOf` is the only date the payload carries: the merged config's
+        # `pricingAsOf` is the shipped default whenever the project set none,
+        # so serving it would date a table that may not have priced anything.
+        "pricingBasis": None,
+        "rateBasis": None,
         "facts": [],
         # Empty on the no-ledger path even though the populated branch ships the
         # ten column names: there are no rows to read against them. Same KEY,
@@ -235,8 +241,20 @@ def _usage_manifest_slice(manifest):
     return (titles, task_meta, budgets)
 
 
-def _usage_derived(ul, manifest, rows, ucfg):
+def _usage_pricing(ul, manifest, config):
+    """The project's price table and which place priced it, `{table, basis,
+    asOf, source}` - `usage_ledger.resolve_pricing` over the manifest and the
+    RAW config this tab already read, the resolver the report, `/audit:usage`
+    and the meter hook ask too. The config must be the file as written:
+    `usage_cfg`'s merge fills in the shipped table, and the basis could then
+    not tell a project that declared one from a project that declared none."""
+    return ul.resolve_pricing(manifest, config)
+
+
+def _usage_derived(ul, manifest, rows, pricing):
     """The blocks that need the assembled MANIFEST, keyed by payload key.
+
+    `pricing` is the resolved rate table (`_usage_pricing(...)["table"]`).
 
     Returned as payload keys so the caller hands them straight to `_usage_shape`
     and no name is spelled twice on the way. Each is independently fail-soft:
@@ -245,8 +263,7 @@ def _usage_derived(ul, manifest, rows, ucfg):
     # Needs the assembled manifest and the per-tier counts, so it cannot be done
     # on the client. Fail-soft: no advice is the normal outcome anyway.
     try:
-        advice = ul.routing(manifest, rows,
-                            ucfg.get("pricing")).get("advice") or []
+        advice = ul.routing(manifest, rows, pricing).get("advice") or []
     except Exception:
         advice = []
 
@@ -354,29 +371,11 @@ def usage_state(project):
     config = read_config(project)
     ucfg = cfg_mod.usage_cfg(config)
     ledger_dir = str(cfg_mod.ledger_dir(project, config))
-    # THE RATE BASIS, TRIMMED AT THE DOOR - the one surface reaching
-    # `pricingAsOf` through `usage_cfg` that an earlier trim of the same key
-    # missed. The `pricingAsOfDeclared` line below already DECIDES on the trimmed
-    # value and this served the merged one AS TYPED, so the two disagreed about
-    # one config value inside one dict literal: a padded date reached the tab as
-    # `rates as of` followed by the padding, and a whitespace-only one shipped a
-    # truthy empty string beside a flag saying the project had declared nothing.
-    # The trim `report/_usage_load`, `status/audit-status` and
-    # `usage/audit-usage` apply to `meta.usage`'s copy of this key, applied here
-    # where the CONFIG file's copy becomes plugin data: whitespace collapses to
-    # None, the shape absence already has, so no renderer learns a second empty.
-    # `isinstance` before `.strip()`, because a hand-edited config may carry a
-    # number here and a raise inside this dict would cost the whole tab, not one
-    # line of it.
-    as_of_raw = ucfg.get("pricingAsOf")
     # What the CONFIG says, which is answerable with no ledger at all and so is
     # true of every exit below.
     declared = {"enabled": bool(ucfg.get("enabled", True)),
                 "ledgerDir": ledger_dir,
                 "showCost": bool(ucfg.get("showCost", True)),
-                "pricingAsOf": (as_of_raw.strip() or None)
-                if isinstance(as_of_raw, str) else None,
-                "pricingAsOfDeclared": _declared_as_of(config),
                 "bands": ucfg.get("bands") or {},
                 "gateCatches": _gate_catches_payload(project, config)}
     try:
@@ -387,8 +386,6 @@ def usage_state(project):
     if not rows:
         return _usage_shape(**declared)
 
-    rolled = len(rows) > _MAX_FACTS
-    facts, seen = _usage_facts(rows, ul.TOKEN_KEYS, rolled)
     # ONE read for the five consumers below. They each used to call
     # `load_manifest_safe(mpath)` for themselves, which on a sharded manifest is
     # 1 index + 1 file per phase EVERY TIME: measured at 100 file opens and 5 JSON
@@ -402,8 +399,30 @@ def usage_state(project):
     manifest = _mio.load_manifest_safe(_manifest_path(project, config))
     titles, task_meta, budgets = _usage_manifest_slice(manifest)
 
+    # Every cost this tab ships - the facts the browser sums and the derived
+    # blocks - is `priced_at_read`'s copy, priced at the resolved table,
+    # because the phrase beside it names that table; the rows that kept the
+    # figure stored when written are counted into the basis it is worded from.
+    pricing = _usage_pricing(ul, manifest, config)
+    priced = ul.priced_at_read(rows, pricing["table"])
+    rows = priced["rows"]
+    pricing = dict(pricing, pricedWhenWritten=priced["pricedWhenWritten"])
+    rolled = len(rows) > _MAX_FACTS
+    facts, seen = _usage_facts(rows, ul.TOKEN_KEYS, rolled)
+
+    # `facts` carries costUSD regardless of `showCost` - unlike a CSV a reader
+    # saves to disk and hands around, this payload never leaves the page: it is
+    # read over a token-protected localhost connection by the same browser tab
+    # that is about to render it, so withholding the figure here would only
+    # cost the client a second round trip to learn what it is not allowed to
+    # show. `showCost` is honoured where it was always meant to be - by what
+    # the tab DRAWS and by what a save-to-disk export carries out of the page.
     payload = dict(declared)
-    payload.update(_usage_derived(ul, manifest, rows, ucfg))
+    payload.update(_usage_derived(ul, manifest, rows, pricing["table"]))
+    payload.update({
+        "pricingBasis": {k: pricing[k] for k in
+                         ("basis", "asOf", "source", "pricedWhenWritten")},
+        "rateBasis": ul.rate_basis_phrase(pricing)})
     payload.update({"fields": list(_FACT_FIELDS), "facts": facts,
                     "phaseTitles": titles, "taskMeta": task_meta,
                     "phaseBudgets": budgets, "counts": _ledger_counts(rows),

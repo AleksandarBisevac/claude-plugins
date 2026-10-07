@@ -117,7 +117,10 @@ function openBrowse(dim,title,facts){
   // panel it contains.
   BROWSE.addEventListener('click',ev=>{if(ev.target===BROWSE)BROWSE.close();});
   document.body.append(BROWSE);}
- const rows=browseRows(dim,facts),cols=BCOL[dim]||BCOL.model;
+ // The cost column goes with showCost, header and cells together: both are
+ // drawn off this one list, so neither can outlive the other.
+ const rows=browseRows(dim,facts),
+   cols=(BCOL[dim]||BCOL.model).filter(([,key])=>USAGE.showCost||key!=='cost');
  let sort='tokens',desc=true,q='';
  const head=el('div',{class:'bhead'},
    el('h3',{},title+' — '+rows.length),
@@ -135,8 +138,12 @@ function openBrowse(dim,title,facts){
    ? 'cost band: '+(bi.basis==='absolute'
        ? 'configured thresholds'
        : 'this project’s own completed tasks, median/p90')
-     +' — typical ≤ '+uCost(bi.high)+' · high ≤ '+uCost(bi.outlier)
-     +' · outlier above'
+     // The band names stay with dollars off - each row still wears its pill -
+     // but the thresholds between them are dollar figures, so they go.
+     +(USAGE.showCost
+       ? ' — typical ≤ '+uCost(bi.high)+' · high ≤ '+uCost(bi.outlier)
+         +' · outlier above'
+       : ' — typical, high, outlier')
    : ['cost band: not shown — needs '+bi.gate+' completed tasks to calibrate, '
       +'there are '+bi.sample+'. ',
       settingsLink('Set absolute thresholds instead','usage.bands'),

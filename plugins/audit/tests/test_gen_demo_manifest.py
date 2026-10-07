@@ -559,23 +559,21 @@ def _cases(check):
           m["meta"]["createdISO"] == "2026-04-01T09:00:00Z")
 
     # The date printed beside a dollar figure is a CLAIM, and its basis is the
-    # rate table the figure was priced from. This fixture declares no
-    # `usage.pricing` of its own, so it is priced by the SHIPPED table, and the
-    # only place that table's date is written down is hooks/_config.py's DEFAULTS.
-    # Restating it here as a literal is deliberate - a derived date would move the
-    # demo's bytes silently the day rates change, which is exactly the drift a
-    # published artifact must not do quietly - so this case is what keeps the copy
-    # honest. Measured before it existed: setting the literal to "2019-01-01" left
-    # every suite in the tree green, with the demo page dating its costs eight
-    # years off the table that produced them.
-    hooks_cfg = _loader.load_hooks_config(modname="hooks_config_demo_rates")
-    shipped_as_of = (hooks_cfg.DEFAULTS.get("usage") or {}).get("pricingAsOf")
+    # rate table the figure was priced from. The fixture declares its own frozen
+    # table (`CONFIG_PRICING`, written into its config), so the date it prints is
+    # that table's own, `CONFIG_PRICING_AS_OF` - never the shipped table's, which
+    # moves whenever the shipped rates are corrected while the demo's figures do
+    # not. Measured before the first version of this case existed: setting the
+    # literal to "2019-01-01" left every suite in the tree green, with the demo
+    # page dating its costs years off the table that produced them.
     demo_as_of = (m["meta"].get("usage") or {}).get("pricingAsOf")
-    check("the demo dates its rates to the SHIPPED table's own pricingAsOf - it "
-          "declares no pricing table of its own, so any other date prints a basis "
-          "the numbers did not come from",
-          bool(shipped_as_of) and demo_as_of == shipped_as_of,
-          "demo=%r shipped=%r" % (demo_as_of, shipped_as_of))
+    check("the demo dates its rates to its OWN declared table's date - the "
+          "frozen CONFIG_PRICING is what prices it, so any other date prints a "
+          "basis the numbers did not come from",
+          isinstance(M.CONFIG_PRICING_AS_OF, str)
+          and bool(M.CONFIG_PRICING_AS_OF.strip())
+          and demo_as_of == M.CONFIG_PRICING_AS_OF,
+          "demo=%r declared table=%r" % (demo_as_of, M.CONFIG_PRICING_AS_OF))
 
     # --- schema coverage -----------------------------------------------------
     # The fixture is what the project SHOWS, so a schema field it never carries
@@ -941,6 +939,17 @@ def _cases(check):
         cf, cw = vc.validate_config(cfg)
         check("the generated config passes the plugin's config validator",
               not cf and not cw, "; ".join((cf + cw)[:3]))
+        # A ROW IS PRICED ONCE, WITH THE PROJECT'S OWN TABLE. Without this the
+        # fixture carried no `usage.pricing` at all, so `gen-demo-usage.py` priced
+        # every row at the shipped `DEFAULT_PRICING` and every committed artifact
+        # moved whenever that table did.
+        cfg_usage = cfg.get("usage") or {}
+        check("the generated config declares a usage.pricing table beside the "
+              "manifest's own meta.usage.pricingAsOf",
+              isinstance(cfg_usage.get("pricing"), dict)
+              and bool(cfg_usage.get("pricing"))
+              and cfg_usage.get("pricingAsOf") == m["meta"]["usage"]["pricingAsOf"],
+              repr(cfg_usage))
         mio = M._load_manifest_io()
         back = mio.load_manifest(os.path.join(tmp, "audit-plan.json"))
         check("sharded round-trip preserves phase count",

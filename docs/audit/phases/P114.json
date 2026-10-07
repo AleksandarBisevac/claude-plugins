@@ -1,0 +1,74 @@
+{
+  "id": "P114",
+  "title": "status names each locked phase's own remaining work and the copy it read",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "every UNFINISHED line in /audit:status counts the ready tasks of its own phase, read from the copy that holds that phase live, says which copy that was, and is silent for a phase with no ready task of its own",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P114.1",
+      "title": "each UNFINISHED line counts its own phase's ready tasks from the copy that holds the phase live",
+      "status": "pending",
+      "description": "Fixes BUG-19. In _status_facts.py, the UNFINISHED line for a held phase lock counts only the ready tasks of that phase. A phase with no ready task of its own gets no ready-work line; /audit:doctor still names a lock held with nothing left to run.\n\naudit-status.py injects the locks block. On the development branch, a phase whose own branch exists in this repository is read from that branch's copy of its shard: git show <branch>:<shard path>, which opens no file outside the git dir. The line names the copy it counted from. When that copy cannot be read, the line says the count is the development branch's copy and that the phase branch holds the live state. It does not present a stale count as current.\n\nThe --short entry view and the full view print the same sentence. Every claim carries its basis, and no number is written into prose.\n\nCases, each with its twin:\n- Two locked phases with different ready counts print different counts.\n- A locked phase whose own tasks are all done prints no ready-work line.\n- A phase whose branch copy has fewer ready tasks than the development branch's copy is counted from the branch copy, and the line names it.\n- An unreadable branch copy falls back to the development branch's copy, and the line says so.",
+      "files": [
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/tests/test_audit_status.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "bugId": "BUG-19"
+    }
+  ]
+}

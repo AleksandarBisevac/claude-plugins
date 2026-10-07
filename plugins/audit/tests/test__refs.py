@@ -3833,8 +3833,92 @@ def _cases(check):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    _placeholder_cases(check)
     _shell_argv_cases(check)
     _lock_recipe_cases(check)
+
+
+# --- a placeholder the script answers itself -------------------------------------
+# The placeholder is built rather than written, so this file never carries the
+# shape the lint looks for on a line of its own.
+_PH = "<" + "manifestPath" + ">"
+_THIN = ("status.md", "usage.md", "report.md", "next.md")
+
+
+def _placeholder_cases(check):
+    live = M.manifest_placeholder_drift()
+    check("mp1 THE LIVE CLAIM: no command hands the model a manifest "
+          "placeholder for a script that resolves the manifest itself: %r"
+          % (live,), live == [])
+    resolving = M.self_resolving_scripts()
+    check("mp2 the self-resolving set is DERIVED off the scripts and holds "
+          "the three a first-contact command runs - an empty set would make "
+          "mp1 vacuous: %r" % (resolving,),
+          set(("audit-status.py", "render-report.py", "audit-usage.py"))
+          <= set(resolving))
+    named = {}
+    for name in _THIN:
+        text = _product_doc("commands/" + name)
+        named[name] = sum(text.count(s) for s in resolving)
+    check("mp3 ...and status, usage, report and next each run one of them, so "
+          "their passing mp1 is about lines that exist: %r" % (named,),
+          all(named[n] > 0 for n in _THIN))
+
+    tmp = tempfile.mkdtemp()
+    try:
+        _write(tmp, _FX_SCRIPTS + "status/audit-status.py",
+               "m = _mio.resolve_manifest(project, args.manifest)\n")
+        _write(tmp, _FX_SCRIPTS + "governance/verify-invariants.py",
+               "path = sys.argv[1]\n")
+        _write(tmp, _FX_COMMANDS + "thin.md",
+               "intro\n"
+               "python3 \"scripts/status/audit-status.py\" %s $ARGUMENTS\n"
+               "python3 \"scripts/governance/verify-invariants.py\" %s --all\n"
+               "python3 \"scripts/status/audit-status.py\" --json\n"
+               % (_PH, _PH))
+        got = M.manifest_placeholder_drift(tmp, pending=())
+        check("mp4 RED: a command line handing a self-resolving script the "
+              "placeholder is reported by document, line and script: %r" % (got,),
+              got == [("commands/thin.md", 2, "audit-status.py")])
+        check("mp5 ALLOW: the same placeholder for a script that does NOT "
+              "resolve the manifest, and the resolving script with no "
+              "placeholder, are both left alone - only line 2 is named",
+              [g[1] for g in got] == [2])
+
+        _write(tmp, _FX_COMMANDS + "deep.md",
+               "python3 \"scripts/status/audit-status.py\" %s --short\n" % (_PH,))
+        _write(tmp, _FX_COMMANDS + "clean.md", "nothing to resolve here\n")
+        pend = (("commands/deep.md", "reads the orchestration reference"),
+                ("commands/clean.md", "row whose placeholder is already gone"))
+        got2 = M.manifest_placeholder_drift(tmp, pending=pend)
+        rels = sorted(g[0] for g in got2)
+        check("mp6 a pending row EXCUSES its document's placeholder, and a "
+              "pending row whose document carries none is reported stale so "
+              "the table cannot outlive its debt: %r" % (got2,),
+              rels == ["commands/clean.md", "commands/thin.md"]
+              and [g for g in got2 if g[0] == "commands/clean.md"][0][1] == 0)
+
+        # A command written over backslash-continued lines is one command: the
+        # placeholder on the continuation is handed to the script on the line
+        # above it.
+        _write(tmp, _FX_COMMANDS + "wrapped.md",
+               "intro\n"
+               "python3 \"scripts/status/audit-status.py\" \\\n"
+               "    %s --json\n"
+               "python3 \"scripts/status/audit-status.py\"\n"
+               "%s is the plan the next line reads\n"
+               % (_PH, _PH))
+        got3 = [g for g in M.manifest_placeholder_drift(tmp, pending=())
+                if g[0] == "commands/wrapped.md"]
+        check("mp7 RED: a placeholder on a backslash-continued line is reported "
+              "against the line the command starts on: %r" % (got3,),
+              got3 == [("commands/wrapped.md", 2, "audit-status.py")])
+        check("mp8 ALLOW: without the backslash the next line is a separate "
+              "line and is not joined to the script above it - only line 2 is "
+              "named: %r" % (got3,),
+              [g[1] for g in got3] == [2])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 # --- the worktree lock recipe, run as written ----------------------------------

@@ -9,8 +9,12 @@ allowed-tools: Bash
 Run
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath> $ARGUMENTS
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" $ARGUMENTS
 ```
+
+The script finds the manifest itself — the configured `manifestPath`, else
+`docs/audit/audit-plan.json` — and when there is none it exits 2 naming where it looked;
+relay that rather than searching for one.
 
 **Print its stdout verbatim. Do NOT re-format, summarize, re-tabulate, or "improve" it.**
 
