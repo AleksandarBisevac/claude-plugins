@@ -1158,7 +1158,8 @@
       "P112.1-uce",
       "P112.3-uce",
       "P114.1",
-      "P114.2-ffv"
+      "P114.2-ffv",
+      "P102.12-ptn"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1488,7 +1489,8 @@
       "P102.8",
       "P108.3",
       "P100.4-zxo",
-      "P102.6"
+      "P102.6",
+      "P102.12-ptn"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -2034,7 +2036,8 @@
       "P108.3",
       "P102.6",
       "P106.5-b6f",
-      "P106.7-b6f"
+      "P106.7-b6f",
+      "P102.12-ptn"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -2278,7 +2281,9 @@
       "P75.5-j5h",
       "P109.9",
       "P102.10",
-      "P100.3-zxo"
+      "P100.3-zxo",
+      "P102.13-ptn",
+      "P102.14-ptn"
     ],
     "plugins/audit/scripts/_refs.py": [
       "P23.1",
@@ -2733,7 +2738,9 @@
       "P102.5",
       "P102.6",
       "P102.7",
-      "P102.9"
+      "P102.9",
+      "P102.12-ptn",
+      "P102.14-ptn"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -3904,7 +3911,9 @@
       "P80.10",
       "P102.10",
       "P100.3-zxo",
-      "P102.3"
+      "P102.3",
+      "P102.13-ptn",
+      "P102.14-ptn"
     ],
     "plugins/audit/tests/test__panel_composition.py": [
       "P18.7",
@@ -4681,7 +4690,9 @@
       "P102.4",
       "P102.5",
       "P102.6",
-      "P102.7"
+      "P102.7",
+      "P102.12-ptn",
+      "P102.14-ptn"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
@@ -5522,11 +5533,13 @@
     "plugins/audit/scripts/governance/_runner_output.py": [
       "P102.3",
       "P102.4",
-      "P102.5"
+      "P102.5",
+      "P102.12-ptn"
     ],
     "plugins/audit/tests/test__runner_output.py": [
       "P102.3",
-      "P102.4"
+      "P102.4",
+      "P102.12-ptn"
     ],
     "plugins/audit/scripts/manifest/migrate-json-encoding.py": [
       "P102.10"
@@ -5719,6 +5732,13 @@
     "tools/demo-gate.tape": [
       "P112.1-uce",
       "P112.5-uce"
+    ],
+    "plugins/audit/scripts/manifest/materialize-proposal.py": [
+      "P102.13-ptn"
+    ],
+    "plugins/audit/tests/test_materialize_proposal.py": [
+      "P102.13-ptn",
+      "P102.14-ptn"
     ]
   },
   "bugs": [
