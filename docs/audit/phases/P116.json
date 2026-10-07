@@ -100,24 +100,30 @@
         "severity": "low",
         "file": "docs/research/benchmark-feature-results.md:123-127, 548-549",
         "issue": "This is the R2 problem again, in one remaining place. §2.1 judges whole-C-3's final message by the first reading only. It says \"The code does not do that for every return\", and §4.6 then counts it as \"one inaccurate description of the refund rule, in arm C\". But whole-C-3's sentence uses the request's own words. whole-C-3 says \"each refund is the returned units' share of what the order cost after the volume discount and coupon, rounded with the shop's existing helper. Once a whole order is returned, the refunds add up to exactly the order total\". The request says \"what the customer actually paid for the returned units: their share of the order total after the volume discount and any coupon, rounded …\". §3.4 (lines 409-410) says that on the second reading, cumulative proration meets both of those sentences on every return. So the document allows the request's words two readings but allows whole-C-3's near-copy of them only one, and it counts that against the plugin arm. Unlike the other final messages, whole-C-3 never says the refund is worked out on everything returned so far, and that difference is real and can be stated.",
-        "resolution": "In §2.1, say that whole-C-3's sentence repeats the request's wording, so it carries the same two readings. On the first reading it misdescribes the second return. On the second it describes the code. Unlike the other final messages, it does not say the refund is cumulative. In §4.6, replace \"one inaccurate description of the refund rule, in arm C\" with \"one description that states the rule only in the request's own, two-way wording, in arm C\"."
+        "resolution": "fixed in P116.4-3og (4fc0b04a): In §2.1, say that whole-C-3's sentence repeats the request's wording, so it carries the same two readings. On the first reading it misdescribes the second return. On the second it describes the code. Unlike the other final messages, it does not say the refund is cumulative. In §4.6, replace \"one inaccurate description of the refund rule, in arm C\" with \"one description that states the rule only in the request's own, two-way wording, in arm C\".",
+        "fixTask": "P116.4-3og",
+        "commit": "4fc0b04a"
       },
       {
         "id": "P116-R10",
         "severity": "low",
         "file": "docs/research/benchmark-feature-results.md:61-63",
         "issue": "\"It was run once more for `whole-B-2` … and that regenerated `grade.json` was identical to the recorded one, `visible.ran` included.\" I re-graded a scratch copy of whole-B-2 with the documented command. Every field matched except /visible/ran: the recorded value is 'Ran 49 tests in 0.026s' and the regenerated one is 'Ran 49 tests in 0.029s'. The sentence just before says this timing differs from run to run. The recorded grade.json was not overwritten (mtime 12:15:30 UTC). So 'visible.ran included' was a timing coincidence seen once, and it reads as a stronger reproduction than the other re-grades.",
-        "resolution": "Delete \"`visible.ran` included\", or say that the timing happened to match on that one run and differs from run to run, as it does for the others."
+        "resolution": "fixed in P116.4-3og (4fc0b04a): Delete \"`visible.ran` included\", or say that the timing happened to match on that one run and differs from run to run, as it does for the others.",
+        "fixTask": "P116.4-3og",
+        "commit": "4fc0b04a"
       },
       {
         "id": "P116-R11",
         "severity": "low",
         "file": "docs/research/benchmark-feature-results.md:617-618",
         "issue": "\"`whole-B-2-r` ran outside the seeded draw, last, in a later five-hour window\". In order.json, whole-B-2-r is seq 10. whole-C-2-r (seq 11, started 15:33:15 UTC) ran after it (15:30:48 UTC, §2.5). The same section says correctly that whole-C-2-r ran last (line 622).",
-        "resolution": "Change 'last' to 'at the end of `order.json`, before `whole-C-2-r`' or 'second to last'."
+        "resolution": "fixed in P116.4-3og (4fc0b04a): Change 'last' to 'at the end of `order.json`, before `whole-C-2-r`' or 'second to last'.",
+        "fixTask": "P116.4-3og",
+        "commit": "4fc0b04a"
       }
     ],
-    "outcome": "[findings: 11 - 0 high, 1 med, 10 low; 8 with a recorded fix commit]"
+    "outcome": "[findings: 11 - 0 high, 1 med, 10 low; 11 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -291,7 +297,7 @@
     {
       "id": "P116.4-3og",
       "title": "the benchmark results' last three sentences say only what the records show",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P116-R9 to P116-R11. whole-C-3's final sentence is described as carrying both readings of the request. The re-grade sentence drops the claim that visible.ran matched, because test timing differs from run to run. whole-B-2-r is described as second to last, before whole-C-2-r.",
       "files": [
         "docs/research/benchmark-feature-results.md"
@@ -319,18 +325,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4fc0b04a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes P116-R9 to P116-R11 in docs/research/benchmark-feature-results.md. In section 2.1, whole-C-3's final sentence is described as repeating the request's own wording, so it carries both readings. Section 4.6's arm-C line is reworded to match. Section 1.1's re-grade sentence says visible.ran differs from run to run. Section 5.9 says whole-B-2-r ran second to last. Prose, link and PII lints are clean.",
+        "descriptive": "Three last sentences of the benchmark write-up now say only what the records show."
       },
       "startedAt": "2026-10-07T17:53:27Z",
-      "completedAt": null,
+      "completedAt": "2026-10-07T18:02:34Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-07T18:02:33Z.83ba8c",
         "status": "passed",
         "at": "2026-10-07T18:02:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "4fc0b04a",
+        "at": "2026-10-07T18:02:34Z",
+        "basis": "orchestrator check: exactly the three edits the findings named, lints clean"
       }
     }
   ],
