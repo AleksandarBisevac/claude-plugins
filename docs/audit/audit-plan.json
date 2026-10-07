@@ -722,6 +722,12 @@
       "title": "status names each locked phase's own remaining work and the copy it read",
       "status": "pending",
       "shard": "phases/P114.json"
+    },
+    {
+      "id": "P115",
+      "title": "status shows every in-flight phase from the copy that holds it live",
+      "status": "pending",
+      "shard": "phases/P115.json"
     }
   ],
   "fileIndex": {
@@ -1669,7 +1675,8 @@
       "P80.17-rtb",
       "P81.12",
       "P103.5",
-      "P112.2-uce"
+      "P112.2-uce",
+      "P115.1"
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1",
@@ -3249,7 +3256,8 @@
       "P80.17-rtb",
       "P81.12",
       "P81.10",
-      "P114.1"
+      "P114.1",
+      "P115.1"
     ],
     "plugins/audit/scripts/status/audit-doctor.py": [
       "P10.3",
@@ -3313,7 +3321,8 @@
       "P104.13-tog",
       "P104.17-tog",
       "P112.2-uce",
-      "P114.1"
+      "P114.1",
+      "P115.1"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -4004,7 +4013,8 @@
       "P80.17-rtb",
       "P81.12",
       "P81.10",
-      "P114.1"
+      "P114.1",
+      "P115.1"
     ],
     "plugins/audit/tests/test__status_facts.py: --fail-on failing-tests refuses a run whose record says the tree was mutated": [
       "P32.7"
@@ -4115,7 +4125,8 @@
       "P104.11-tog",
       "P104.13-tog",
       "P112.2-uce",
-      "P114.1"
+      "P114.1",
+      "P115.1"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -6031,6 +6042,25 @@
         "plugins/audit/scripts/status/audit-status.py"
       ],
       "taskId": "P114.1",
+      "fixedIn": null,
+      "notes": null
+    },
+    {
+      "id": "BUG-20",
+      "title": "status's ready list and phase table show in-flight phases from the development branch's stale copy",
+      "status": "in_progress",
+      "severity": "med",
+      "reportedAt": "2026-10-07T08:01:57Z",
+      "reportedBy": null,
+      "description": "On the development branch, /audit:status's READY NOW list, its phase table and its progress counts read each in-flight phase from the development branch's own copy of the shard. A phase whose work is happening on its own branch, in a linked worktree, is therefore shown with tasks ready or pending that are already done there. The status does not say which copy it read. Only the UNFINISHED block reads the live copy. The maintainer read the stale ready list as work left to do.",
+      "repro": "With a phase in flight in a linked worktree and some of its tasks done there, run /audit:status on the development branch: those tasks are listed as ready or pending.",
+      "expected": "Every surface counts an in-flight phase from the copy that holds it live, through the same reader the UNFINISHED block uses, and says which copy it read.",
+      "actual": "The ready list, table and counts read the development branch shard; only UNFINISHED reads the live copy.",
+      "files": [
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/status/_status_facts.py"
+      ],
+      "taskId": "P115.1",
       "fixedIn": null,
       "notes": null
     }
