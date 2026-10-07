@@ -660,7 +660,7 @@
     {
       "id": "P104",
       "title": "the cost a user sees is the cost they paid",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P104.json"
     },
     {
