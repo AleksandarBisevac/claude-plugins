@@ -708,7 +708,7 @@
     {
       "id": "P112",
       "title": "the README demo shows a user's Claude Code session, not the plugin's internals",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P112.json"
     }
   ],
@@ -765,7 +765,8 @@
       "P92.4",
       "P109.3",
       "P109.9",
-      "P103.8"
+      "P103.8",
+      "P112.1-uce"
     ],
     ".gitignore": [
       "P4.4",
@@ -977,7 +978,8 @@
       "P103.12",
       "P104.7",
       "P103.14-xi3",
-      "P105.6"
+      "P105.6",
+      "P112.1-uce"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -1116,7 +1118,9 @@
       "P100.3-zxo",
       "P103.8",
       "P105.10-m32",
-      "P110.4-exo"
+      "P110.4-exo",
+      "P112.1-uce",
+      "P112.3-uce"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1137,7 +1141,8 @@
       "P103.4",
       "P103.5",
       "P103.9",
-      "P103.14-xi3"
+      "P103.14-xi3",
+      "P112.1-uce"
     ],
     "SECURITY.md": [
       "P2.2",
@@ -1255,7 +1260,8 @@
       "P105.3",
       "P105.2",
       "P105.7",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P112.1-uce"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
@@ -1533,7 +1539,8 @@
       "P31.2",
       "P57.1",
       "P57.4",
-      "P106.1"
+      "P106.1",
+      "P112.2-uce"
     ],
     "plugins/audit/commands/panel.md": [
       "P57.3",
@@ -1581,7 +1588,8 @@
     ],
     "plugins/audit/commands/report.md": [
       "P7.1",
-      "P57.1"
+      "P57.1",
+      "P112.2-uce"
     ],
     "plugins/audit/commands/resume.md": [
       "P7.1",
@@ -1620,7 +1628,8 @@
       "P75.2-j5h",
       "P80.17-rtb",
       "P81.12",
-      "P103.5"
+      "P103.5",
+      "P112.2-uce"
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1",
@@ -1673,7 +1682,8 @@
       "P26.2",
       "P31.2",
       "P107.3",
-      "P103.14-xi3"
+      "P103.14-xi3",
+      "P112.2-uce"
     ],
     "plugins/audit/commands/version.md": [
       "P67.2"
@@ -2202,7 +2212,8 @@
       "P85.4",
       "P109.9",
       "P102.8",
-      "P103.8"
+      "P103.8",
+      "P112.2-uce"
     ],
     "plugins/audit/scripts/_ui_theme.py": [
       "P20.5",
@@ -2695,7 +2706,8 @@
       "P71.2-zso",
       "P76.3-6qa",
       "P107.4",
-      "P103.6"
+      "P103.6",
+      "P112.2-uce"
     ],
     "plugins/audit/scripts/manifest/_manifest_merge.py": [
       "P60.1"
@@ -3081,7 +3093,8 @@
       "P80.7",
       "P86.2",
       "P80.14-rtb",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P112.2-uce"
     ],
     "plugins/audit/scripts/status/_doctor_ado.py": [
       "P57.5"
@@ -3229,7 +3242,8 @@
       "P81.9",
       "P81.12",
       "P81.10",
-      "P102.10"
+      "P102.10",
+      "P112.2-uce"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -3316,7 +3330,8 @@
       "P85.2",
       "P102.10",
       "P107.3",
-      "P104.5"
+      "P104.5",
+      "P112.2-uce"
     ],
     "plugins/audit/scripts/usage/usage_ledger.py": [
       "P14.1",
@@ -3644,7 +3659,8 @@
       "P65.1",
       "P69.3",
       "P69.4-j6r",
-      "P71.3-zso"
+      "P71.3-zso",
+      "P112.2-uce"
     ],
     "plugins/audit/tests/test__manifest_merge.py": [
       "P60.1"
@@ -3842,7 +3858,8 @@
       "P94.4",
       "P109.7",
       "P102.8",
-      "P108.3"
+      "P108.3",
+      "P112.2-uce"
     ],
     "plugins/audit/tests/test__report_html.py": [
       "P25.1",
@@ -3992,7 +4009,8 @@
       "P80.15-rtb",
       "P81.9",
       "P81.12",
-      "P94.1"
+      "P94.1",
+      "P112.2-uce"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -4078,7 +4096,8 @@
     "plugins/audit/tests/test_audit_usage.py": [
       "P53.7",
       "P107.3",
-      "P104.5"
+      "P104.5",
+      "P112.2-uce"
     ],
     "plugins/audit/tests/test_audit_version.py": [
       "P67.1",
@@ -4342,7 +4361,8 @@
       "P51.9",
       "P80.7",
       "P80.14-rtb",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P112.2-uce"
     ],
     "plugins/audit/tests/test_repair_commits.py": [
       "P59.13",
@@ -4521,7 +4541,8 @@
     ],
     "tools/capture-demo-gif.py": [
       "P59.13",
-      "P103.8"
+      "P103.8",
+      "P112.1-uce"
     ],
     "tools/capture-screenshots.mjs": [
       "BF1.2",
@@ -4533,7 +4554,8 @@
       "P63.9",
       "P80.20-rtb",
       "P80.23-rtb",
-      "P103.8"
+      "P103.8",
+      "P112.1-uce"
     ],
     "tools/check-committed-pii.py": [
       "P51.4",
@@ -4605,7 +4627,8 @@
       "P92.6-a1x",
       "P93.2",
       "P93.4-287",
-      "P109.9"
+      "P109.9",
+      "P112.2-uce"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -4649,7 +4672,8 @@
       "P102.8",
       "P102.10",
       "P107.4",
-      "P100.3-zxo"
+      "P100.3-zxo",
+      "P112.2-uce"
     ],
     "tools/redfirst.sh": [
       "P55.13"
@@ -4870,7 +4894,8 @@
     ],
     "docs/screenshots/demo-gate.gif": [
       "P84.7-791",
-      "P103.8"
+      "P103.8",
+      "P112.1-uce"
     ],
     "docs/screenshots/expanded.png": [
       "P84.7-791",
@@ -5223,7 +5248,8 @@
       "P108.4"
     ],
     "tools/ui-tests/capture-provenance.test.mjs": [
-      "P103.8"
+      "P103.8",
+      "P112.1-uce"
     ],
     ".github/ISSUE_TEMPLATE/bug_report.md": [
       "P103.11"
@@ -5289,6 +5315,9 @@
     ],
     "examples/acme-store/.claude/.gitignore": [
       "P105.9-m32"
+    ],
+    "tools/demo-gate.tape": [
+      "P112.1-uce"
     ]
   },
   "bugs": [
