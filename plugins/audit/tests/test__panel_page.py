@@ -2940,6 +2940,18 @@ def _cases(check):
     # renderUsage in tools/ui-tests/usage-edges.test.mjs.
     check("no advice, or advice with dollars switched off, renders nothing at all",
           "if(USAGE.showCost&&adv.length){" in M.UI_HTML)
+    # Construct pins as well: the browse dialog's column list and the budget block
+    # are where showCost is read, and the behaviour - no dollar figure in either
+    # with it off, and the figures back with it on - is driven by
+    # tools/ui-tests/usage-edges.test.mjs.
+    check("sc1 the browse dialog's columns are filtered on showCost in one place, "
+          "so its header and its cells are drawn off the same list",
+          M.UI_HTML.count("USAGE.showCost||key!=='cost'") == 1)
+    check("sc2 the budget block reads showCost before it reads a budget",
+          "function uBudgets(facts){" in M.UI_HTML
+          and M.UI_HTML.index("if(!USAGE.showCost)return [];",
+                              M.UI_HTML.index("function uBudgets(facts){"))
+          < M.UI_HTML.index("const B=USAGE.phaseBudgets||{};"))
 
     # --- contrast pairs, substituted rather than restated -------------------------
     # The Appearance tab's live preview graded FOUR pairs while _ui_theme graded

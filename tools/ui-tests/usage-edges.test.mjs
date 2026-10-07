@@ -320,6 +320,9 @@ describe('with showCost off the tab prints no per-task dollar figure', () => {
       e.appendChild = (c) => { e.kids.push(c); return c; };
       e.prepend = (...k) => { e.kids.unshift(...k); };
       e.replaceChildren = (...k) => { e.kids = [...k]; };
+      // The browse dialog opens itself modally; the shared stub has no dialog API.
+      e.showModal = () => {};
+      e.close = () => {};
       return e;
     };
     doc.createElement = (t) => keep(make(t));
@@ -348,8 +351,9 @@ describe('with showCost off the tab prints no per-task dollar figure', () => {
   // Six done tasks: past the projection's sample gate, so the projection fact
   // is drawn rather than the sample-size notice. One retried task, so the
   // retry fact has spend to state, and one advice row, so the recommendation
-  // has dollars to state. Every one of those is a dollar figure the report
-  // withholds with showCost off.
+  // has dollars to state. A budget on the one phase the rows land in, so the
+  // budget block has spend and a budget to compare. Every one of those is a
+  // dollar figure the report withholds with showCost off.
   function render(showCost) {
     const { ctx, root } = recordingPanel();
     const { F } = reach(ctx, ['F']);
@@ -369,11 +373,13 @@ describe('with showCost off the tab prints no per-task dollar figure', () => {
     }
     const usage = {
       facts, enabled: true, counts: { phases: 1 }, taskMeta, showCost,
+      phaseBudgets: { P1: 40 }, phaseTitles: { P1: 'the budgeted phase' },
       routingAdvice: [{ risk: 'high', from: 'opus', to: 'sonnet', tasks: 6,
         fromMeanAttempts: 1.2, atToRates: 5, atFromRates: 26.25, saving: 21.25,
         savingPct: 81, evidenceTasks: 3, evidenceAttempts: 1 }],
     };
-    vm.runInContext('USAGE = ' + JSON.stringify(usage) + ';', ctx);
+    // BANDS is a cache the boot may already have filled from another payload.
+    vm.runInContext('USAGE = ' + JSON.stringify(usage) + '; BANDS = null;', ctx);
     vm.runInContext('renderUsage();', ctx);
     const { uCoverageLine, uUnit } = reach(ctx, ['uCoverageLine', 'uUnit']);
     const covLine = uCoverageLine(uUnit(facts).doneTaskCoverage);
@@ -386,8 +392,24 @@ describe('with showCost off the tab prints no per-task dollar figure', () => {
     const table = all(root, hasClass('utbl'));
     const heads = table.flatMap((t) => all(t, (n) => n.tagName === 'TH').map(text));
     const cells = table.flatMap((t) => all(t, (n) => n.tagName === 'TD').map(text));
-    return { root, covLine, costTile, projection, projCov, heads, cells,
-      whole: text(root) };
+    const budgets = all(root, hasClass('bud')).map(text);
+    return { ctx, facts, root, covLine, costTile, projection, projCov, heads,
+      cells, budgets, whole: text(root) };
+  }
+
+  // The browse dialog is opened the way its button opens it, over the same
+  // facts the ranked list was drawn from, and read back off the dialog node.
+  function browse(showCost, dim) {
+    const { ctx, facts } = render(showCost);
+    vm.runInContext('openBrowse(' + JSON.stringify(dim) + ', "Browse", USAGE.facts);', ctx);
+    const dlg = vm.runInContext('BROWSE', ctx);
+    expect(facts.length).toBe(6);
+    const tds = (tr) => all(tr, (c) => c.tagName === 'TD');
+    const heads = all(dlg, (n) => n.tagName === 'TH').map(text);
+    const rows = all(dlg, (n) => n.tagName === 'TR' && tds(n).length > 0);
+    const note = (dlg.kids || []).map(text).filter((s) => s.startsWith('cost band'));
+    const pills = all(dlg, hasClass('bandpill')).map(text);
+    return { heads, rows, tds, note, pills, whole: text(dlg) };
   }
 
   it('the cost-per-task tile is not drawn at all', () => {
@@ -453,5 +475,55 @@ describe('with showCost off the tab prints no per-task dollar figure', () => {
     const r = render(true);
     expect(r.whole).toMatch(/\$1\.25 on tasks that needed more than one attempt/);
     expect(r.whole).toContain('What the evidence supports');
+  });
+
+  it('the budget block is not drawn at all, as the report withholds its own', () => {
+    const r = render(false);
+    expect(r.budgets).toEqual([]);
+    expect(r.whole).not.toContain('All budgeted phases');
+  });
+
+  it('...and with showCost on each budgeted phase states its spend of its '
+    + 'budget, and the total row the same [the twin]', () => {
+    const r = render(true);
+    expect(r.budgets.length).toBe(2);
+    expect(r.budgets[0]).toMatch(/\$26\.25 of \$40\.00/);
+    expect(r.budgets[1]).toMatch(/All budgeted phases.*\$26\.25 of \$40\.00/);
+  });
+
+  it('the browse dialog for tasks shows no dollar figure: no cost column, and '
+    + 'a band note that names the bands without their thresholds', () => {
+    const b = browse(false, 'task');
+    expect(b.whole.match(/\$[\d.,]+|<\$0\.01/g)).toBe(null);
+    expect(b.heads).not.toContain('cost');
+    expect(b.heads).toContain('cost band');
+    expect(b.rows.length).toBe(6);
+    b.rows.forEach((tr) => expect(b.tds(tr).length).toBe(b.heads.length));
+    expect(b.note.length).toBe(1);
+    expect(b.note[0]).toMatch(/typical.*high.*outlier/);
+    expect(b.pills.length).toBe(6);
+  });
+
+  it('...and with showCost on the cost column and the dollar thresholds are '
+    + 'there [the twin: a gate that always fires fails here]', () => {
+    const b = browse(true, 'task');
+    expect(b.heads).toContain('cost');
+    expect(b.rows.length).toBe(6);
+    expect(b.rows.filter((tr) => b.tds(tr).some((c) => DOLLAR.test(text(c))))
+      .length).toBe(6);
+    expect(b.note.length).toBe(1);
+    expect(b.note[0]).toMatch(/typical ≤ \$\d.*high ≤ \$\d/);
+  });
+
+  it('every dimension drops the cost column, header and cells together', () => {
+    for (const dim of ['phase', 'model', 'author', 'task']) {
+      const off = browse(false, dim), on = browse(true, dim);
+      expect(off.heads, dim).not.toContain('cost');
+      expect(off.whole.match(/\$[\d.,]+|<\$0\.01/g), dim).toBe(null);
+      expect(off.rows.length, dim).toBeGreaterThan(0);
+      off.rows.forEach((tr) => expect(off.tds(tr).length, dim).toBe(off.heads.length));
+      expect(on.heads, dim).toContain('cost');
+      expect(on.heads.length, dim).toBe(off.heads.length + 1);
+    }
   });
 });
