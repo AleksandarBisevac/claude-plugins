@@ -125,6 +125,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _tree_stamp  # noqa: E402  (the ONE tree identity: porcelain + the three fields)
 import _proc_group  # noqa: E402  (a child tree stopped whole; a stop signal as an exception)
 import _evidence_io as _ev  # noqa: E402  (where a run is recorded, and the pointer)
@@ -4545,6 +4546,7 @@ def main(argv, out=print):
     # <phase,...>` is a DIFFERENT flag on this same parser, and the two must
     # never collide.
     p.add_argument("--own", dest="own", action="store_true")
+    _claude_home.attach_usage_hint(p)
     try:
         args = p.parse_args(argv)
     except SystemExit as exc:

@@ -169,6 +169,130 @@ def _cases(check):
                                               + M.entries_missing_guard((M.TESTS_DIR,)))
           and M.py_files(M.TESTS_DIR) != [])
 
+    # ------------------------------------------------------------ the usage hook
+    # Every parser an entry point builds hands itself to the one shared usage hook,
+    # so a usage error from an older copy names the newer one. The fixtures carry the
+    # shapes the real tree uses - a parser hooked beside its construction, one wrapped
+    # at construction, a builder returning the hooked parser, a `parents=` template
+    # that never parses argv - and the shapes that would leave a parser bare.
+    hook = tempfile.mkdtemp(prefix="audit-usage-hook-")
+    try:
+        os.makedirs(os.path.join(hook, "sub"))
+        fixtures = {
+            os.path.join("sub", "bare.py"):
+                'import argparse\n'
+                'if __name__ == "__main__":\n'
+                '    p = argparse.ArgumentParser(prog="bare")\n'
+                '    p.parse_args()\n',
+            "hooked.py":
+                'import argparse\nimport _claude_home\n'
+                'if __name__ == "__main__":\n'
+                '    p = argparse.ArgumentParser(prog="hooked")\n'
+                '    p.add_argument("verb")\n'
+                '    _claude_home.attach_usage_hint(p)\n'
+                '    p.parse_args()\n',
+            "wrapped.py":
+                'import argparse\nimport _claude_home\n'
+                'def main():\n'
+                '    p = _claude_home.attach_usage_hint(\n'
+                '        argparse.ArgumentParser(prog="wrapped"))\n'
+                '    return p.parse_args()\n',
+            "builder.py":
+                'import argparse\nimport _claude_home\n'
+                'def build():\n'
+                '    parser = argparse.ArgumentParser(prog="builder")\n'
+                '    return _claude_home.attach_usage_hint(parser)\n',
+            "parent.py":
+                'import argparse\nimport _claude_home\n'
+                'def build():\n'
+                '    common = argparse.ArgumentParser(add_help=False)\n'
+                '    p = argparse.ArgumentParser(parents=[common])\n'
+                '    return _claude_home.attach_usage_hint(p)\n',
+            # The hook attached only after argv was parsed decorates nothing: the
+            # usage error has already been raised by the time it is installed.
+            "late.py":
+                'import argparse\nimport _claude_home\n'
+                'def main():\n'
+                '    p = argparse.ArgumentParser(prog="late")\n'
+                '    args = p.parse_args()\n'
+                '    _claude_home.attach_usage_hint(p)\n'
+                '    return args\n',
+            # The same NAME hooked in a different function is a different parser.
+            "elsewhere.py":
+                'import argparse\nimport _claude_home\n'
+                'def build():\n'
+                '    p = argparse.ArgumentParser(prog="elsewhere")\n'
+                '    return p\n'
+                'def other(p):\n'
+                '    return _claude_home.attach_usage_hint(p)\n',
+            # A parser no name holds cannot be handed to anything afterwards.
+            "unnamed.py":
+                'import argparse\n'
+                'def main():\n'
+                '    return argparse.ArgumentParser(prog="unnamed").parse_args()\n',
+            # Naming the constructor in prose or comparing against its name is not
+            # building one - the shape of the lint that reads other files' parsers
+            # and of the hook's own docstring.
+            "prose.py":
+                '"""Every ArgumentParser(...) here is read, never built."""\n'
+                'def built(fn):\n'
+                '    return fn == "ArgumentParser"\n',
+            "broken.py":
+                'p = argparse.ArgumentParser(\n',
+        }
+        for rel, text in fixtures.items():
+            with open(os.path.join(hook, rel), "w", encoding="utf-8") as fh:
+                fh.write(text)
+        found = M.usage_hint_violations((hook,))
+        where = sorted((rel, line) for rel, line, _why in found)
+        check("uh1 an entry point that builds a parser and never hands it to the "
+              "usage hook is named by file and line: %r" % (where,),
+              ("sub/bare.py", 3) in where)
+        check("uh2 ...and so is one that hands it over only AFTER parsing argv, "
+              "since the usage error has already been raised by then: %r"
+              % (where,), ("late.py", 4) in where)
+        check("uh3 ...and a parser hooked under the same name in ANOTHER function "
+              "is still bare where it was built: %r" % (where,),
+              ("elsewhere.py", 4) in where)
+        check("uh4 ...and a parser no name holds, and a file that will not parse "
+              "(reported, never skipped): %r" % (where,),
+              ("unnamed.py", 3) in where and ("broken.py", 0) in where)
+        # The over-fire twin: a lint that named every parser it saw would pass
+        # uh1-uh4 and fail here, on the hooked, wrapped, builder, parents= and
+        # prose fixtures that must stay quiet.
+        check("uh5 nothing else is named - a hooked, wrapped, built-and-returned "
+              "or parents= parser, and a file that only NAMES the constructor, all "
+              "stay quiet: %r" % (where,),
+              where == [("broken.py", 0), ("elsewhere.py", 4), ("late.py", 4),
+                        ("sub/bare.py", 3), ("unnamed.py", 3)])
+        check("uh6 every finding says why, in words: %r" % (found,),
+              all(why and isinstance(why, str) for _r, _l, why in found))
+    finally:
+        shutil.rmtree(hook, ignore_errors=True)
+
+    real_hook = M.usage_hint_violations()
+    check("uh7 no entry point under scripts/ builds a parser it never hands to the "
+          "usage hook: %r" % (real_hook,), real_hook == [])
+    # The allow case on the real tree, and the one that keeps uh7 from being green
+    # over an empty scan: every file that spells the constructor followed by an
+    # open parenthesis must be one the AST reads a parser in, except the two that
+    # only NAME it - `_refs.py` reads other files' constructions to learn which
+    # flags argparse adds, and `_claude_home.py`'s docstring describes the seam.
+    # Neither builds a parser, so neither owes the hook and neither is exempted.
+    spelled = set()
+    for rel, path in M.lint_py_files(M.SCRIPTS_DIR):
+        with open(path, encoding="utf-8") as fh:
+            if "ArgumentParser" + "(" in fh.read():
+                spelled.add(rel)
+    sites = set(rel for rel, _line, _why in
+                M.parser_sites(M.lint_py_files(M.SCRIPTS_DIR)))
+    mentions = set(["_refs.py", "status/_claude_home.py"])
+    check("uh8 the scan reads a parser in every file that spells one being built, "
+          "and in neither of the files that only name the constructor: sites "
+          "missing %r, unexpected %r"
+          % (sorted(spelled - mentions - sites), sorted(sites - (spelled - mentions))),
+          mentions <= spelled and sites == spelled - mentions and bool(sites))
+
     # --------------------------------------------------------- house-style AST bans
     # Same shape as the adoption-lint block above: a fixture directory per case, each
     # proving the checker actually reads the construct rather than merely never having

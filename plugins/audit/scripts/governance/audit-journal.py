@@ -81,6 +81,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _journal_io  # noqa: E402  (the trail this command is a front end for)
 import _evidence_io  # noqa: E402  (the OTHER chained record `verify` now reads)
 
@@ -1066,6 +1067,7 @@ def main(argv, out=print):
     p.add_argument("--session", default=None)
     p.add_argument("--limit", type=int, default=20)
     p.add_argument("--json", action="store_true", dest="as_json")
+    _claude_home.attach_usage_hint(p)
     try:
         args = p.parse_args(argv)
     except SystemExit as exc:

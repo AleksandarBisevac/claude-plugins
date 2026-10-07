@@ -573,7 +573,7 @@
     {
       "id": "P102.10",
       "title": "every entry point's parser goes through the one usage hook, held by a lint",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Apply the hook from the previous task to every other entry point that builds an ArgumentParser (`grep -rln 'ArgumentParser(' plugins/audit/scripts`). Each gets one call to the shared hook, never its own copy, which would be the DRY failure. A new lint beside the safe_stdio check in _output.py holds the rule, and it gets a row in tools/prove-gates.py. Regenerate the module map for the new edges (`python3 plugins/audit/scripts/_deps.py --render`). Entry points that parse argv by hand are listed in the outcome, not converted here. This touches files that P100, P106 and P107 also edit, so it is blocked by P106 and P107 and runs after them.",
       "files": [
         "plugins/audit/scripts/_output.py",
@@ -632,16 +632,21 @@
       "dependsOn": [
         "P102.9"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T08:45:42Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T09:04:29Z.8719d0",
+        "status": "passed",
+        "at": "2026-10-07T09:04:29Z"
+      }
     },
     {
       "id": "P102.11",

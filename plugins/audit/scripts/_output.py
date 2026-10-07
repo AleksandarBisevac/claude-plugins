@@ -1146,6 +1146,123 @@ def entries_missing_guard(dirs=None):
     return sorted(missing)
 
 
+# --- usage-hint check ---------------------------------------------------------
+# Read as a CALL, never as text: the lint that learns which flags argparse adds reads
+# other files' constructions, and the hook's own docstring describes the seam, so a
+# text match would convict two files that build no parser at all.
+_PARSER_CTOR = "ArgumentParser"
+_USAGE_HOOK = "attach_usage_hint"
+_PARSE_CALLS = ("parse_args", "parse_known_args", "parse_intermixed_args",
+                "parse_known_intermixed_args")
+
+
+def _called(call):
+    """The bare name a call reaches, `a.b.f(...)` and `f(...)` alike; '' otherwise."""
+    fn = call.func
+    if isinstance(fn, ast.Attribute):
+        return fn.attr
+    return fn.id if isinstance(fn, ast.Name) else ""
+
+
+def _scope_nodes(scope):
+    """Every node of one scope, stopping at each nested def, class and lambda.
+
+    A parser name is looked up in the scope that built it: `p` hooked in another
+    function is another `p`, and descending would read it as this one's."""
+    stack = list(ast.iter_child_nodes(scope))
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
+                             ast.Lambda)):
+            continue
+        yield node
+        stack.extend(ast.iter_child_nodes(node))
+
+
+def _scope_parsers(scope):
+    """(line, why) per parser built in `scope`; `why` is None when it is hooked."""
+    nodes = list(_scope_nodes(scope))
+    calls = [n for n in nodes if isinstance(n, ast.Call)]
+    hooked, wrapped, templates, parsed = {}, set(), set(), {}
+    for call in calls:
+        name = _called(call)
+        first = call.args[0] if call.args else None
+        if name == _USAGE_HOOK and isinstance(first, ast.Name):
+            hooked[first.id] = min(call.lineno, hooked.get(first.id, call.lineno))
+        elif name == _USAGE_HOOK and isinstance(first, ast.Call):
+            wrapped.add(id(first))
+        elif name in _PARSE_CALLS and isinstance(call.func, ast.Attribute) \
+                and isinstance(call.func.value, ast.Name):
+            held = call.func.value.id
+            parsed[held] = min(call.lineno, parsed.get(held, call.lineno))
+        for kw in call.keywords:
+            if kw.arg == "parents" and isinstance(kw.value, (ast.List, ast.Tuple)):
+                templates |= set(e.id for e in kw.value.elts
+                                 if isinstance(e, ast.Name))
+    held_by = {}
+    for node in nodes:
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call) \
+                and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            held_by[id(node.value)] = node.targets[0].id
+    found = []
+    for call in calls:
+        if _called(call) != _PARSER_CTOR:
+            continue
+        name = held_by.get(id(call))
+        if id(call) in wrapped or name in templates:
+            found.append((call.lineno, None))
+        elif name is None:
+            found.append((call.lineno, "built where no name holds it, so nothing "
+                          "can hand it to %s()" % (_USAGE_HOOK,)))
+        elif name not in hooked:
+            found.append((call.lineno, "`%s` is never handed to %s() in the scope "
+                          "that built it" % (name, _USAGE_HOOK)))
+        elif name in parsed and parsed[name] < hooked[name]:
+            found.append((call.lineno, "`%s` parses argv on line %d, before %s() "
+                          "on line %d - the usage error is raised by then"
+                          % (name, parsed[name], _USAGE_HOOK, hooked[name])))
+        else:
+            found.append((call.lineno, None))
+    return found
+
+
+def parser_sites(files):
+    """(rel, line, why) for every parser built in `files`, hooked or not.
+
+    `files` is `(rel, path)` pairs as `lint_py_files` yields them; `why` is None for
+    a parser handed to the usage hook before it parses, or for a `parents=` template
+    that never parses argv itself. A file that cannot be parsed is one row at line 0
+    with the reason, never skipped."""
+    out = []
+    for rel, path in files:
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), filename=rel)
+        except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+            out.append((rel, 0, "cannot be read or parsed: %s" % (exc,)))
+            continue
+        scopes = [tree] + [n for n in ast.walk(tree) if isinstance(
+            n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda))]
+        for scope in scopes:
+            out.extend((rel, line, why) for line, why in _scope_parsers(scope))
+    return sorted(out, key=lambda row: (row[0], row[1]))
+
+
+def usage_hint_violations(dirs=None):
+    """(rel, line, why) for every parser under `dirs` the usage hook never reaches.
+
+    The hook is `_claude_home.attach_usage_hint`: it makes a usage error name this
+    copy's version and any newer installed copy, which is what tells a caller running
+    an older cached copy that the verb it asked for lives in a newer one. One call
+    beside each construction, never a local copy of the hook. Scoped to `scripts/`:
+    hooks may not import it, and build no parser."""
+    dirs = dirs if dirs is not None else (SCRIPTS_DIR,)
+    found = []
+    for d in dirs:
+        found.extend(row for row in parser_sites(lint_py_files(d)) if row[2])
+    return found
+
+
 # --- house-style AST checks ---------------------------------------------------
 # The four bans: legal Python 3.8, illegal in this repo, and none of them caught by a
 # version gate (vermin flags syntax the interpreter cannot run at all — every one of

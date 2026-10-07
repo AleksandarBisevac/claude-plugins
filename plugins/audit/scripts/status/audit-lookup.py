@@ -99,6 +99,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _manifest_io as _mio  # noqa: E402  (layer 1: the loader, the id indexes)
 import _manifest_vocab as _vocab  # noqa: E402  (layer 1: `_strip_line_suffix`, the one
 #                                             reading of a `files` entry's range suffix)
@@ -581,7 +582,7 @@ def build_parser():
     run_p.add_argument("--task", dest="task", default=None, metavar="ID",
                        help="with `latest`: the newest run recorded for this "
                             "task")
-    return p
+    return _claude_home.attach_usage_hint(p)
 
 
 def main(argv):

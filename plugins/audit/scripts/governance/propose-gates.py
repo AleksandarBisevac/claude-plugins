@@ -64,6 +64,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _evidence_io as _evio  # noqa: E402  (layer 2: the ledger, and the tally)
 import _manifest_vocab  # noqa: E402  (layer 1: the sentences for a ledger that could not be found or read)
 
@@ -171,7 +172,7 @@ def build_parser():
                         "manifest's own directory)")
     p.add_argument("--json", action="store_true", dest="as_json",
                    help="print the result as JSON instead of the human render")
-    return p
+    return _claude_home.attach_usage_hint(p)
 
 
 def main(argv):

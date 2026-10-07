@@ -378,49 +378,49 @@ L6:
 
 L7:
   ado-connect -> _ado_connect, _output
-  audit-doctor -> _cli_fmt, _doctor_ado, _doctor_completions, _doctor_hygiene, _doctor_policy, _doctor_report, _doctor_setup, _doctor_trail, _output, _panel_runstate
-  audit-journal -> _evidence_io, _journal_io, _output
-  audit-lock -> _locks, _output
-  audit-logs -> _gate_feed, _output
-  audit-lookup -> _evidence_io, _journal_io, _loader, _manifest_io, _manifest_vocab, _output
-  audit-status -> _areas, _branch, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _scoped_commit, _status_facts, _ui_theme, _worktrees
-  audit-task -> _areas, _branch, _commit_trail, _evidence_io, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _locks, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
-  audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
+  audit-doctor -> _claude_home, _cli_fmt, _doctor_ado, _doctor_completions, _doctor_hygiene, _doctor_policy, _doctor_report, _doctor_setup, _doctor_trail, _output, _panel_runstate
+  audit-journal -> _claude_home, _evidence_io, _journal_io, _output
+  audit-lock -> _claude_home, _locks, _output
+  audit-logs -> _claude_home, _gate_feed, _output
+  audit-lookup -> _claude_home, _evidence_io, _journal_io, _loader, _manifest_io, _manifest_vocab, _output
+  audit-status -> _areas, _branch, _claude_home, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _scoped_commit, _status_facts, _ui_theme, _worktrees
+  audit-task -> _areas, _branch, _claude_home, _commit_trail, _evidence_io, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _locks, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
+  audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
-  close-phase -> _branch, _evidence_io, _journal_io, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _tree_stamp, _verdict_binding, _worktrees
-  commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
-  commit-manifest-index -> _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
-  commit-task-work -> _evidence_io, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
-  derive-phase-gate -> _evidence_io, _gate_derive, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
+  close-phase -> _branch, _claude_home, _evidence_io, _journal_io, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _tree_stamp, _verdict_binding, _worktrees
+  commit-audit-state -> _claude_home, _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
+  commit-manifest-index -> _claude_home, _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
+  commit-task-work -> _claude_home, _evidence_io, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
+  derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
-  full-gate -> _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
-  gen-demo-manifest -> _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
-  gen-demo-usage -> _demo_cast, _loader, _output
-  import-evidence -> _evidence_io, _journal_io, _loader, _manifest_io, _output, _panel_write
-  manage-worktrees -> _branch, _manifest_io, _output, _worktrees
+  full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
+  gen-demo-manifest -> _claude_home, _demo_cast, _evidence_io, _journal_io, _loader, _manifest_io, _output
+  gen-demo-usage -> _claude_home, _demo_cast, _loader, _output
+  import-evidence -> _claude_home, _evidence_io, _journal_io, _loader, _manifest_io, _output, _panel_write
+  manage-worktrees -> _branch, _claude_home, _manifest_io, _output, _worktrees
   materialize-proposal -> _manifest_io, _output, _proposals, _warning_groups
-  merge-manifest -> _id_refs, _id_shape, _locks, _manifest_io, _manifest_merge, _manifest_rules, _merge_install, _output
-  migrate-json-encoding -> _manifest_io, _manifest_rules, _output, _panel_write
+  merge-manifest -> _claude_home, _id_refs, _id_shape, _locks, _manifest_io, _manifest_merge, _manifest_rules, _merge_install, _output
+  migrate-json-encoding -> _claude_home, _manifest_io, _manifest_rules, _output, _panel_write
   migrate-manifest -> _id_shape, _manifest_io, _manifest_rules, _output
-  panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_runstate, _panel_settings, _panel_state, _panel_write, _ui_theme
-  propose-gates -> _evidence_io, _manifest_vocab, _output
+  panel-server -> _claude_home, _manifest_io, _output, _panel_discovery, _panel_page, _panel_runstate, _panel_settings, _panel_state, _panel_write, _ui_theme
+  propose-gates -> _claude_home, _evidence_io, _manifest_vocab, _output
   read-ado-links -> _ado_drift, _ado_tracked, _manifest_io, _output
-  record-outside-run -> _evidence_io, _journal_io, _manifest_io, _output
-  record-risk-confirmation -> _journal_io, _manifest_io, _output
+  record-outside-run -> _claude_home, _evidence_io, _journal_io, _manifest_io, _output
+  record-risk-confirmation -> _claude_home, _journal_io, _manifest_io, _output
   render-report -> _areas, _evidence_io, _evidence_view, _fmt, _invariants, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output
   repair-tests-add -> _journal_io, _locks, _manifest_io, _manifest_rules, _output
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
-  run-test-gate -> _evidence_io, _fmt, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _tree_stamp
-  set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
+  run-test-gate -> _claude_home, _evidence_io, _fmt, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _tree_stamp
+  set-priority -> _claude_home, _manifest_io, _output, _panel_write, _priority, _warning_groups
   stamp-verification -> _claude_home, _evidence_io, _locks, _manifest_io, _output, _proc_group, _runner_output, _tree_stamp, _worktrees
   validate-config -> _config_rules, _output
   validate-manifest -> _evidence_io, _manifest_io, _manifest_rules, _output, _warning_groups
-  verify-invariants -> _invariants, _manifest_io, _output
+  verify-invariants -> _claude_home, _invariants, _manifest_io, _output
 ```
 
 ---
@@ -1156,6 +1156,19 @@ raises instead of printing). Every `scripts/` entry point calls it as its first 
 enforced rather than remembered — `entries_missing_guard()` reads the directory and names any
 `__main__` block that skips it. `hooks/` deliberately does not import this module: its only
 output is `json.dumps` (ASCII by construction) plus its own selftest.
+
+**`usage_hint_violations()` holds the sister rule for argument parsing**: every
+`ArgumentParser` built under `scripts/` is handed to `_claude_home.attach_usage_hint()` in
+the scope that built it, before anything in that scope parses argv, so a usage error from an
+older cached copy names this copy's version and any newer installed one. One call beside each
+construction, never a copy of the hook. It reads calls, not text — a parser wrapped at
+construction counts as hooked, and a `parents=` template counts as nothing to hook, because
+it never parses argv itself — so a file that only names the constructor (`_refs.py` reading
+other files' parsers, the hook's own docstring) is neither reported nor exempted.
+`parser_sites()` is the full list it judges, hooked and bare alike. Sub-parsers built by
+`add_subparsers()` are outside it: an unknown verb is the top parser's error, which the
+hook already carries. Entry points that read `sys.argv` by hand build no parser and are
+outside it too.
 
 It is also **the anchor**, and that is why it is the one file that never moves.
 `SCRIPTS_DIR`, `PLUGIN_ROOT`, `HOOKS_DIR`, `TESTS_DIR` and `REPO_ROOT` are the single

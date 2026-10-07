@@ -422,6 +422,10 @@ TABLE = (
   _claim_payload("thirteen"), OUT, "pn0"),
  ("entries_missing_guard", S + "status/audit-status.py", "drop",
   r"^    safe_stdio\(\)$", None, OUT, "f1"),
+ # An entry point whose parser stops going through the usage hook answers an
+ # older copy's unknown verb with a bare "invalid choice" again.
+ ("usage_hint_violations", S + "status/audit-logs.py", "drop",
+  r"^    _claude_home\.attach_usage_hint\(ap\)$", None, OUT, "uh7"),
  ("layer_violations", S + "_fmt.py", "after", INSTALL,
   "\n\ndef _probe_up():\n    import _panel_state\n    return _panel_state\n",
   DEP, "r1"),
@@ -1285,6 +1289,12 @@ ALLOW = (
  # have. `f1` is the live-tree assertion, which is this rule's allow corpus.
  ("entries_missing_guard", S + "_output.py", "replace",
   "            if not entries:", "            if False:", OUT, "f1"),
+ # A parser wrapped at construction, and a `parents=` template that never parses
+ # argv, are the two narrowings. Take them away and the template every subcommand
+ # parser inherits from reads as a bare parser; `uh5` names those fixtures quiet.
+ ("usage_hint_violations", S + "_output.py", "replace",
+  "        if id(call) in wrapped or name in templates:",
+  "        if False:", OUT, "uh5"),
  # The docstring filter, removed - which is the bug this classifier actually
  # shipped: a migrated file DESCRIBING the contract came back classified as
  # carrying a suite, so the file that did the right thing was the defect.
