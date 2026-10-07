@@ -18,16 +18,10 @@
   "baseRef": "80a7eed2f52726a06ca43309b66a08a04fda1ab4",
   "branch": "audit/p104-the-cost-a-user-sees-is-the-co",
   "mergedAt": null,
-  "claim": {
-    "sessionId": "6c881c24-c1fd-461f-8c48-abb0170e0a5a",
-    "host": "MacBook-Pro-2",
-    "branch": "audit/p104-the-cost-a-user-sees-is-the-co",
-    "at": "2026-10-06T14:46:28Z"
-  },
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P104-R1",
@@ -248,7 +242,7 @@
     ],
     "outcome": "[findings: 24 - 1 high, 8 med, 15 low; 24 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "Every cost the plugin prints is now priced at read time from one resolved price table. That covers status, report and its Markdown twin, usage, the panel, the meter and the demo ledger. The table is the project's own usage.pricing when it declares one, and otherwise the shipped table. Each cost carries one date and source phrase, and that phrase counts any rows that kept the cost stored when they were written. The ledger counts a message once, at its final entry. Per-task costs state how much of the work they attribute, and the cost bands state their basis and how far completed tasks cover it.\n\nWith showCost off, no dollar figure reaches any rendered surface: tiles, projections, routing, retry spend, advice, the browse dialog, budgets and the CSV export. The panel's local data source keeps its cost data, and the code records why. The meter reads and prices the ledger once per run. Its notes count only the rows its figure rests on.\n\nThe review ran five rounds. All findings are fixed. The phase gate is green with screenshots and the interactive browser check.\n\nThe invariants check reports a manifest-revalidated breach on three earlier task commits. Each recorded a task linked to a bug that reached the committed index only in a later index commit. That was an ordering slip in bookkeeping; the current manifest validates. Whether the precedence change needs a major version stays the operator's decision, recorded in the CHANGELOG.",
   "tasks": [
     {
       "id": "P104.1",
@@ -1551,5 +1545,10 @@
       }
     }
   ],
-  "startedAt": "2026-10-06T14:46:28Z"
+  "startedAt": "2026-10-06T14:46:28Z",
+  "testEvidence": {
+    "runId": "2026-10-07T06:35:03Z.3dd7f1",
+    "status": "passed",
+    "at": "2026-10-07T06:35:03Z"
+  }
 }
