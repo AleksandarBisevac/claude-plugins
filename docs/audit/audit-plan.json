@@ -726,7 +726,7 @@
     {
       "id": "P115",
       "title": "status shows every in-flight phase from the copy that holds it live",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P115.json"
     },
     {
