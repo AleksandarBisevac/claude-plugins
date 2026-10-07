@@ -21,7 +21,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P112-R1",
@@ -179,7 +179,7 @@
     ],
     "outcome": "[findings: 17 - 0 high, 7 med, 10 low; 17 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "The README demo is now a recording of a real Claude Code session. The user types /audit commands, the plan gate refuses an edit the plan does not cover, and Claude offers the two ways forward. tools/demo-gate.tape drives the session and tools/capture-demo-gif.py records it. The recorder refuses a take whose account query names a person or organisation. It keeps its side effects out of the operator's config: an isolated config when a token is available, otherwise a before-and-after comparison that refuses a changed plugin set. It names everything a take writes and reports only the cleanup it observed. Its --check needs no account, network or login, and still fails CI when the refusal's words drift from what the gate prints.\n\nThe first-contact commands (status, report, usage and next) find the manifest themselves, so Claude never narrates an unfilled placeholder. They refuse the same way when a config or plan is unusable, and a lint holds the placeholder class.\n\n/audit:usage prints no dollar figure on a plan that turned costs off. Its --json carries showCost beside the cost data.\n\nThe review ran four rounds. Every finding is fixed except one, which is parked as a proposal for the rest of the placeholder class. The phase gate is green, with screenshots and the interactive browser check included.\n\nStill waiting on the operator: visual approval of the recorded frames, whose header line shows the account's plan name.",
   "tasks": [
     {
       "id": "P112.1-uce",
@@ -698,5 +698,10 @@
       }
     }
   ],
-  "startedAt": "2026-10-06T21:42:56Z"
+  "startedAt": "2026-10-06T21:42:56Z",
+  "testEvidence": {
+    "runId": "2026-10-07T06:03:37Z.37cd1a",
+    "status": "passed",
+    "at": "2026-10-07T06:03:37Z"
+  }
 }
