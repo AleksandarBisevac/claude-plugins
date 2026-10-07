@@ -416,7 +416,7 @@ L7:
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
   run-test-gate -> _evidence_io, _fmt, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _tree_stamp
   set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
-  stamp-verification -> _evidence_io, _locks, _manifest_io, _output, _proc_group, _tree_stamp, _worktrees
+  stamp-verification -> _evidence_io, _locks, _manifest_io, _output, _proc_group, _runner_output, _tree_stamp, _worktrees
   validate-config -> _config_rules, _output
   validate-manifest -> _evidence_io, _manifest_io, _manifest_rules, _output, _warning_groups
   verify-invariants -> _invariants, _manifest_io, _output
@@ -3983,17 +3983,6 @@ naming the signal. What it cannot cover is SIGKILL, which no handler sees. Layer
 in `plugins/audit/tests/test__proc_group.py`, and `run-test-gate.py`'s names are this module's
 objects.
 
-### `plugins/audit/scripts/governance/_runner_output.py`
-Every reading of what a test runner printed: `_SUMMARY_READERS` and `summary_count` for how many
-checks a runner's own summary says executed (`None`, never zero, for output no reader recognises),
-and `_FAILURE_READERS`, `jest_failures` and `_VITEST_FAIL_LINE` for which checks failed. They were
-written in `run-test-gate.py`; `stamp-verification.py red` asks the same output the same questions,
-and an entry point may not import another, so they moved here rather than being written twice.
-`failing_suites` and its path filters stayed in the gate, because they read `_evidence_io`'s
-limits and that module sits above this one. Layer 1; it reaches nothing but `_output`. Its cases
-are in `plugins/audit/tests/test__runner_output.py`, and `run-test-gate.py`'s names are this
-module's objects.
-
 **It also owns the shell a plan command runs under.** A plan's commands are POSIX shell, and
 `shell=True` is `cmd.exe` on Windows, which reads none of `export`, single quotes or `${VAR}`
 and still returns an exit code. `locate_sh` resolves in order: `/bin/sh` when it exists, and then
@@ -4011,6 +4000,27 @@ would give it; `locate_sh` returns `<root>\usr\bin` and `<root>\mingw64\bin` wit
 untouched. Both spawn sites take argv and env from ONE call, `shell_invocation`, so the shell and
 its PATH cannot drift apart between them. The path module is a parameter throughout, so the
 cases judge Windows spellings under `ntpath` on every host.
+
+### `plugins/audit/scripts/governance/_runner_output.py`
+Every reading of what a test runner printed: `_SUMMARY_READERS` and `summary_count` for how many
+checks a runner's own summary says executed (`None`, never zero, for output no reader recognises),
+and `_FAILURE_READERS`, `jest_failures` and `_VITEST_FAIL_LINE` for which checks failed. They were
+written in `run-test-gate.py`; `stamp-verification.py red` asks the same output the same questions,
+and an entry point may not import another, so they moved here rather than being written twice.
+`failing_suites` and its path filters stayed in the gate, because they read `_evidence_io`'s
+limits and that module sits above this one. Layer 1; it reaches nothing but `_output`. Its cases
+are in `plugins/audit/tests/test__runner_output.py`, and `run-test-gate.py`'s names are this
+module's objects.
+
+**It also holds what `red` reads** — `TALLY_READERS`, `CASE_READERS`, `read_tally` and
+`failing_cases`, the narrower question of whether a NAMED case failed an ASSERTION. The house
+harness, pytest and unittest are read by the patterns `red` always used, moved unchanged; jest and
+vitest are read through this module's own summary and failure readers, each case carrying its
+`suite` path, its title `chain` and an `assertion` flag that a matcher hint or an `AssertionError`
+sets and a thrown exception or a suite that failed to run never does. A suite that failed to run
+counts as a failure no case ran, so a run whose only failure is one is a collection error, never a
+red. Mocha and playwright have no row: what they print under a failure has not been recorded.
+The names `stamp-verification.py` keeps for them are this module's objects.
 
 ### `plugins/audit/scripts/governance/stamp-verification.py`
 The CLI over it: `take` a stamp, or `compare` one against the tree now — and `red`, which

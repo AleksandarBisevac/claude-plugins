@@ -2985,8 +2985,77 @@ def _decisive_cases(check):
           and "reader matched" not in error_basis)
 
 
+# What jest 30 prints, under `npx jest`, for one test whose `expect` failed: a
+# `FAIL <path>` header, the case's bullet, the matcher hint under it, and the
+# `Tests:` summary. The command is a wrapper and names no runner, so only the
+# output can say this was jest.
+_JEST_ASSERT = (
+    " FAIL  tests/add.test.js\n"
+    "  ● adds two numbers\n\n"
+    "    expect(received).toBe(expected) // Object.is equality\n\n"
+    "    Expected: 3\n"
+    "    Received: -1\n\n"
+    "      3 | test('adds two numbers', () => {\n"
+    "    > 4 |   expect(add(1, 2)).toBe(3);\n"
+    "        |                     ^\n\n"
+    "      at Object.toBe (tests/add.test.js:4:21)\n\n"
+    "Test Suites: 1 failed, 1 total\n"
+    "Tests:       1 failed, 1 total\n"
+    "Snapshots:   0 total\n"
+    "Time:        0.31 s\n"
+    "Ran all test suites.\n")
+# ...and for a suite that never loaded: no case ran, so the only bullet is the
+# failed-to-run heading, with its cause on the line under it.
+_JEST_NO_SUITE = (
+    " FAIL  tests/add.test.js\n"
+    "  ● Test suite failed to run\n\n"
+    "    Cannot find module '../src/add' from 'tests/add.test.js'\n\n"
+    "Test Suites: 1 failed, 1 total\n"
+    "Tests:       0 total\n"
+    "Snapshots:   0 total\n"
+    "Time:        0.2 s\n"
+    "Ran all test suites.\n")
+
+
+def _jest_cases(check):
+    cmd = ["npx", "jest"]
+    verdict, tally = M.classify_run(1, _JEST_ASSERT, cmd)
+    cases = [(c.get("label"), c.get("assertion"))
+             for c in M.failing_cases(_JEST_ASSERT)]
+    check("sr198 a jest `expect` failure under `npx jest` reads as red, its tally "
+          "jest's own `Tests:` line, with the bullet's case named and its "
+          "assertion flag true - it read as no-tally: %r %r %r"
+          % (verdict, tally, cases),
+          verdict == M.V_RED and (tally or {}).get("runner") == "jest"
+          and (tally or {}).get("collected") == 1
+          and (tally or {}).get("assertions") == 1
+          and cases == [("adds two numbers", True)])
+    verdict_s, tally_s = M.classify_run(1, _JEST_NO_SUITE, cmd)
+    cases_s = [(c.get("label"), c.get("assertion"))
+               for c in M.failing_cases(_JEST_NO_SUITE)]
+    code_s, _v, block_s, _n = M.red_verdict(
+        {"cmd": cmd, "code": 1, "text": _JEST_NO_SUITE, "problem": None,
+         "second": None, "head": None, "fix": None},
+        {"root": None, "implementation": [], "tests": ["tests/add.test.js"],
+         "cases": [], "symbols": [], "dropped": [], "new": [],
+         "head_files": None, "head_defs": None, "head_modules": None,
+         "path": None})
+    basis_s = (block_s or {}).get("basis", "")
+    check("sr199 THE ALLOW CASE for sr198: a jest suite that failed to run is "
+          "named, with its assertion flag false and counted as a failure no case "
+          "ran, so the run is a collection error and red stays could-not-prove, "
+          "quoting jest's own summary line: %r %r %r exit=%r %r"
+          % (verdict_s, tally_s, cases_s, code_s, basis_s),
+          verdict_s == M.V_COLLECT and (tally_s or {}).get("runner") == "jest"
+          and (tally_s or {}).get("failed") == 1
+          and cases_s == [("Test suite failed to run", False)]
+          and code_s == M.E_CANNOT_PROVE
+          and ": Tests:       0 total;" in basis_s)
+
+
 def _cases(check):
     _harness.stage(check, "sr-decisive", _decisive_cases)
+    _harness.stage(check, "sr-jest", _jest_cases)
     _harness.stage(check, "sr-crlf", _crlf_cases)
     _harness.stage(check, "sr-listing", _listing_cases)
     _harness.stage(check, "sr-holder", _holder_cases)

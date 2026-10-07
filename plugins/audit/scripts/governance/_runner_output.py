@@ -14,6 +14,15 @@ is what puts it at layer 1.
 WHAT STAYED BEHIND. `failing_suites` and its path filters read `_evidence_io`'s
 limits, and that module sits above layer 1, so they are still the gate's.
 
+AND WHAT `red` READS. `red` asks a narrower question than the gate - did a NAMED
+case fail an ASSERTION - so its tally and case readers (`TALLY_READERS`,
+`CASE_READERS`, `read_tally`, `failing_cases`) are a section of their own. The
+house harness, pytest and unittest are read by the patterns `red` always used;
+jest and vitest are read through this module's own summary and failure readers,
+each case carrying the per-case `assertion` flag. Mocha and playwright have no
+row there: what each prints under a failure has not been recorded, so which
+of their failures is an assertion cannot be read.
+
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 import os
@@ -204,6 +213,14 @@ def jest_failures(text):
     heading only - the first non-blank line under it - and is None for an
     ordinary assertion bullet, whose title already names the check.
     """
+    return [(title, suite, first if title == JEST_EXEC_ERROR else None)
+            for title, suite, first in _jest_blocks(text)]
+
+
+def _jest_blocks(text):
+    """`[(title, suite, first)]` - each jest failure bullet, the path on the
+    nearest `PASS`/`FAIL` header above it (None when none was printed), and
+    the first non-blank line under it, stripped."""
     lines = _ANSI.sub("", text or "").splitlines()
     out, suite = [], None
     for i, line in enumerate(lines):
@@ -212,14 +229,8 @@ def jest_failures(text):
             suite = header.group(1)
             continue
         bullet = _FAILURE_READERS["jest"].match(line)
-        if not bullet:
-            continue
-        title = bullet.group(1)
-        reason = None
-        if title == JEST_EXEC_ERROR:
-            reason = next((ln.strip() for ln in lines[i + 1:] if ln.strip()),
-                          None)
-        out.append((title, suite, reason))
+        if bullet:
+            out.append((bullet.group(1), suite, _first_below(lines, i)))
     return out
 
 
@@ -229,6 +240,321 @@ def jest_failures(text):
 # both because either spelling names a failing CHECK, but only this one names a
 # FILE.
 _VITEST_FAIL_LINE = re.compile(r"^[ \t]*FAIL[ \t]+(\S+)", re.M)
+
+
+# --- which case failed an assertion: the tally and cases `red` reads -------
+# `red` needs a COUNT and a NAME: at least one test collected, and at least one
+# named case failing an ASSERTION. A non-zero exit alone is not that - a compile
+# error, an import error and a runner that collected nothing all exit non-zero
+# with no assertion ever evaluated - and neither is an exception raised in a test
+# body, which pytest counts as `failed` and unittest as an error. A runner whose
+# tally this does not read is `no-tally` and never promoted to `red`.
+#
+# The house harness marks a block that raised while being BUILT with one of
+# these labels, and a duplicated case id with the third; none of them is an
+# assertion about the code.
+HOUSE_ESCAPES = ("RAISED WHILE ITS CASES WERE BEING BUILT",
+                 "selftest body raised before reaching the end",
+                 "DUPLICATE CASE ID")
+_HOUSE_TALLY = re.compile(r"^(?:ALL PASS|SELFTEST FAILED): (\d+)/(\d+) "
+                          + "cases " + "passed", re.M)
+# pytest frames its summary with `=` by default and prints it bare under -q.
+_PYTEST_SUMMARY = re.compile(
+    r"^(?:=+ )?((?:\d+ (?:failed|passed|errors?|skipped|xfailed|xpassed|"
+    r"warnings?|deselected)(?:, )?)+|no tests ran) in [\d.]+s\b.*$", re.M)
+_PYTEST_COUNT = re.compile(r"(\d+) (failed|passed|errors?|skipped|xfailed|xpassed)")
+_PYTEST_FAILED = re.compile(r"^(FAILED|ERROR) (\S+)(?: - (.*))?$", re.M)
+_UNITTEST_RAN = re.compile(r"^Ran (\d+) tests? in ", re.M)
+_UNITTEST_FAILED = re.compile(r"^FAILED \(([^)]*)\)", re.M)
+# The location is read off the SAME line as the case: two cases of one name in
+# two modules - HEAD's imported class and a subclass inheriting from it - each
+# keep their own.
+_UNITTEST_CASE = re.compile(r"^(FAIL|ERROR): (\S+)(?: \(([\w.]+)\))?", re.M)
+# A house case's id is its label's leading token when that token carries a digit
+# (`me1`, `ga9b`, `pc-sd0`) - the key the harness's `case_id()` hands out and
+# prove-gates attributes a mutation by. A label led by an ordinary word has no id
+# and is named by the whole label: its first word is one some case HEAD's run
+# prints almost always opens with too, so reading it as an id refuses the task's
+# own case.
+_HOUSE_CASE_ID = re.compile(r"^[A-Za-z][A-Za-z_-]*[0-9][A-Za-z0-9_-]*$")
+
+
+def house_case_id(label):
+    """The label's leading token when it is id-shaped, else None."""
+    head = label.split(None, 1)
+    if not head or not _HOUSE_CASE_ID.match(head[0]):
+        return None
+    return head[0]
+
+
+def _house_cases(text):
+    out = []
+    for ln in text.splitlines():
+        if ln.startswith("FAIL ") and not any(m in ln for m in HOUSE_ESCAPES):
+            label = ln[len("FAIL "):].strip()
+            out.append({"id": house_case_id(label), "label": label,
+                        "assertion": True, "why": "house FAIL"})
+    return out
+
+
+def _pytest_cases(text):
+    out = []
+    for kind, node, why in _PYTEST_FAILED.findall(text):
+        why = (why or "").strip()
+        out.append({"id": node.split("::")[-1], "label": node,
+                    "assertion": kind == "FAILED"
+                    and (why.startswith("assert") or why.startswith("AssertionError")),
+                    "why": why or kind})
+    return out
+
+
+def _unittest_site(name, where):
+    """`(module, class, qual)` a unittest line locates a case in: `where` is
+    `mod.Class` or, from 3.11, `mod.Class.test`, the class part a qualified
+    name when classes nest (`mod.Outer.Inner`). `qual` is that dotted path
+    whole, split, since only the declared files can say where the module ends
+    and the class chain begins; `module` and `class` read it as one class
+    deep. Nones when the line gives no location."""
+    parts = where.split(".") if where else []
+    if parts and parts[-1] == name:
+        parts = parts[:-1]
+    if len(parts) < 2:
+        return None, None, []
+    return ".".join(parts[:-1]), parts[-1], parts
+
+
+def _unittest_cases(text):
+    out = []
+    for kind, name, where in _UNITTEST_CASE.findall(text):
+        module, cls, qual = _unittest_site(name, where)
+        out.append({"id": name, "label": name, "assertion": kind == "FAIL",
+                    "why": kind, "module": module, "cls": cls, "qual": qual})
+    return out
+
+
+# jest and vitest name a case by the suite path their `FAIL` header or line
+# prints and its title chain - the `describe` titles and the test's own. Each
+# case carries both, as `suite` and `chain`, and `id` is the test's own title.
+# A suite that never ran a test is named with an EMPTY chain and no id: the tally
+# counts it as a failure no case ran, and it never sets the assertion flag.
+#
+# The first line under a jest bullet says what failed: the matcher hint
+# (`expect(received).toBe(expected)`) for an `expect`, an `AssertionError` line
+# for `node:assert`, and the exception itself for a body that threw - which is
+# the one of the three that is not an assertion.
+_JEST_ASSERTION = re.compile(r"^(?:expect[.(]|AssertionError\b)")
+_JEST_CHAIN = " › "
+# vitest prints chai's `AssertionError` for an `expect` failure and for
+# `node:assert` alike, on the line under the case's `FAIL`, and the exception
+# for a throw. Its `FAIL  <file> > <suite> > <name>` lines sit under `Failed
+# Tests`; a `FAIL  <file> [ <file> ]` line under `Failed Suites` carries no
+# chain and is a file whose suite never ran a test.
+_VITEST_ASSERTION = re.compile(r"^AssertionError\b")
+_VITEST_CHAIN = " > "
+_VITEST_CASE_LINE = re.compile(r"^[ \t]*FAIL[ \t]+(\S+)(.*?)[ \t]*$")
+
+
+def _first_below(lines, i):
+    """The first non-blank line after `lines[i]`, stripped, or None."""
+    return next((ln.strip() for ln in lines[i + 1:] if ln.strip()), None)
+
+
+def _suite_failure(suite, why):
+    return {"id": None, "label": suite, "assertion": False, "why": why,
+            "suite": suite, "chain": []}
+
+
+def _jest_cases(text):
+    # Exact repeats collapse: with more than one suite, jest prints every
+    # failure again under `Summary of all failing tests`, and the same bullet
+    # read twice is one case, not two.
+    out = []
+    for title, suite, first in _jest_blocks(text):
+        if title == JEST_EXEC_ERROR:
+            case = _suite_failure(suite, first or title)
+            case["label"] = title
+        else:
+            chain = title.split(_JEST_CHAIN)
+            case = {"id": chain[-1], "label": title,
+                    "assertion": bool(_JEST_ASSERTION.match(first or "")),
+                    "why": first or "jest bullet", "suite": suite, "chain": chain}
+        if case not in out:
+            out.append(case)
+    return out
+
+
+def _vitest_cases(text):
+    lines = _ANSI.sub("", text or "").splitlines()
+    out = []
+    for i, line in enumerate(lines):
+        hit = _VITEST_CASE_LINE.match(line)
+        if not hit:
+            continue
+        suite, rest, first = hit.group(1), hit.group(2), _first_below(lines, i)
+        if not rest.startswith(_VITEST_CHAIN):
+            case = _suite_failure(suite, first or "vitest FAIL")
+        else:
+            chain = rest[len(_VITEST_CHAIN):].split(_VITEST_CHAIN)
+            case = {"id": chain[-1], "label": _VITEST_CHAIN.join(chain),
+                    "assertion": bool(_VITEST_ASSERTION.match(first or "")),
+                    "why": first or "vitest FAIL", "suite": suite, "chain": chain}
+        if case not in out:
+            out.append(case)
+    return out
+
+
+CASE_READERS = {"house": _house_cases, "pytest": _pytest_cases,
+                "unittest": _unittest_cases, "jest": _jest_cases,
+                "vitest": _vitest_cases}
+
+
+def failing_cases(text, runner=None):
+    """`[{"id", "label", "assertion", "why"}]` - every failing case the runner
+    that ran named; `runner` defaults to the one `read_tally()` selects.
+
+    Only that runner's lines are read, never another's whose tally line merely
+    appears in the output: a passing house case may print
+    `ERROR: <path> is not a directory` because it asserts on that message, or
+    echo a whole captured unittest transcript, `Ran N tests` line included; a
+    test under another runner may print a line that opens with `FAIL `. No
+    tally, no runner, no cases. `label` is the whole name as printed; `id` is
+    the part a case is keyed by, None for a house label with no id-shaped lead.
+
+    `assertion` is True only where the runner says the case failed an assertion:
+    a house `FAIL` line that is not an escape, a pytest `FAILED` whose reason is
+    an `assert` or an `AssertionError`, a unittest `FAIL:`, a jest bullet whose
+    first line is a matcher hint or an `AssertionError`, a vitest `FAIL` line
+    whose next line is an `AssertionError`. A pytest `ERROR`, a pytest body
+    exception, a unittest `ERROR:`, a jest or vitest body that threw and a jest
+    or vitest suite that failed to run are named with it False."""
+    if runner is None:
+        tally = read_tally(text)
+        runner = tally["runner"] if tally is not None else None
+    reader = CASE_READERS.get(runner)
+    return reader(text) if reader is not None else []
+
+
+def _house_tally(text):
+    hits = _HOUSE_TALLY.findall(text)
+    if not hits:
+        return None
+    passed, total = int(hits[-1][0]), int(hits[-1][1])
+    asserting = _house_cases(text)
+    return {"runner": "house", "collected": total, "failed": total - passed,
+            "assertions": len(asserting)}
+
+
+def _pytest_tally(text):
+    hits = _PYTEST_SUMMARY.findall(text)
+    if not hits:
+        return None
+    # Every summary line is counted, as unittest's `Ran N` lines are: a command
+    # running two invocations prints two, and reading only the last would judge
+    # the whole run by its second half.
+    counts = {}
+    for hit in hits:
+        for n, kind in _PYTEST_COUNT.findall(hit):
+            key = kind.rstrip("s") if kind.startswith("error") else kind
+            counts[key] = counts.get(key, 0) + int(n)
+    ran = sum(counts.get(k, 0) for k in ("failed", "passed", "xfailed", "xpassed"))
+    asserting = [c for c in _pytest_cases(text) if c["assertion"]]
+    return {"runner": "pytest", "collected": ran,
+            "failed": counts.get("failed", 0) + counts.get("error", 0),
+            "assertions": len(asserting)}
+
+
+def _unittest_tally(text):
+    ran = _UNITTEST_RAN.findall(text)
+    if not ran:
+        return None
+    counts = {}
+    for hit in _UNITTEST_FAILED.findall(text):
+        for part in hit.split(","):
+            key, _sep, val = part.strip().partition("=")
+            if val.isdigit():
+                counts[key] = counts.get(key, 0) + int(val)
+    failures = counts.get("failures", 0)
+    # Every `Ran N` line is counted, as every FAILED line is: a command running
+    # two suites prints two, and reading only the last would pair one run's
+    # count with both runs' failures.
+    return {"runner": "unittest", "collected": sum(int(n) for n in ran),
+            "failed": failures + counts.get("errors", 0), "assertions": failures}
+
+
+def _summary_tally(text, runner, cases):
+    """A jest or vitest tally: the runner's own summary line read through
+    `summary_readers` - only that runner's row, so another runner's summary in
+    the same output is not summed into it - with each suite that never ran a
+    test counted as a failure no case ran."""
+    rows = [(joined, words) for name, joined, words in summary_readers(text)
+            if name == runner]
+    if not rows:
+        return None
+    joined, words = rows[0]
+    counts = {}
+    for n, word in _SUMMARY_PAIR.findall(joined):
+        counts[word] = counts.get(word, 0) + int(n)
+    crashed = len([c for c in cases if not c["chain"]])
+    return {"runner": runner, "collected": sum(counts.get(w, 0) for w in words),
+            "failed": counts.get("failed", 0) + crashed,
+            "assertions": len([c for c in cases if c["assertion"]])}
+
+
+def _jest_tally(text):
+    return _summary_tally(text, "jest", _jest_cases(text))
+
+
+def _vitest_tally(text):
+    return _summary_tally(text, "vitest", _vitest_cases(text))
+
+
+TALLY_READERS = (("house", _house_tally), ("pytest", _pytest_tally),
+                 ("unittest", _unittest_tally), ("jest", _jest_tally),
+                 ("vitest", _vitest_tally))
+
+
+def command_runner(cmd):
+    """The runner a test command names - `pytest`, `python -m unittest`, a house
+    `--selftest`, `jest` or `vitest` as the program it runs - or None when it
+    names none, or more than one. A wrapper (`npm test`, `npx vitest`) names
+    none, and the output decides."""
+    args = [str(a) for a in (cmd or ())]
+    named = set()
+    for i, arg in enumerate(args):
+        base = os.path.basename(arg)
+        follows_m = i > 0 and args[i - 1] == "-m"
+        if base in ("pytest", "py.test"):
+            named.add("pytest")
+        elif i == 0 and base in ("jest", "vitest"):
+            named.add(base)
+        elif follows_m and arg == "unittest":
+            named.add("unittest")
+        elif arg == "--selftest":
+            named.add("house")
+    return named.pop() if len(named) == 1 else None
+
+
+def read_tally(text, cmd=None):
+    """The tally of the runner that ran, or None when no known runner printed one.
+
+    One runner's tally is that runner's. When more than one appears - a house
+    case echoing a captured unittest transcript, a unittest test printing a
+    house tally - neither the order they were printed in nor a precedence
+    between runners says which ran: a merged pipe puts a test's buffered
+    stdout after the runner's own stderr. So the command decides when it names
+    a runner (`command_runner`), and otherwise the answer is
+    `{"runner": None, "mixed": [...]}`, which no reader reads cases from."""
+    tallies = [t for t in (reader(text) for _name, reader in TALLY_READERS)
+               if t is not None]
+    if not tallies:
+        return None
+    if len(tallies) == 1:
+        return tallies[0]
+    named = [t for t in tallies if t["runner"] == command_runner(cmd)]
+    if named:
+        return named[0]
+    return {"runner": None, "mixed": [t["runner"] for t in tallies],
+            "collected": 0, "failed": 0, "assertions": 0}
 
 
 if __name__ == "__main__":

@@ -90,6 +90,41 @@ def _jest_cases(check):
                                                   "src/d.test.ts"])
 
 
+# What vitest 4 prints for one `expect` failure: the file tree's cross, then
+# under `Failed Tests` the `FAIL <file> > <suite> > <name>` line with chai's
+# `AssertionError` on the line after it, then the summary.
+_VITEST_ASSERT = (
+    " ❯ tests/add.test.js (1 test | 1 failed) 4ms\n"
+    "   × math > adds two numbers 3ms\n\n"
+    "⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯\n\n"
+    " FAIL  tests/add.test.js > math > adds two numbers\n"
+    "AssertionError: expected -1 to be 3 // Object.is equality\n\n"
+    "- Expected\n+ Received\n\n- 3\n+ -1\n\n"
+    " ❯ tests/add.test.js:5:23\n\n"
+    " Test Files  1 failed (1)\n"
+    "      Tests  1 failed (1)\n"
+    "   Start at  10:00:00\n"
+    "   Duration  210ms\n")
+
+
+def _vitest_cases(check):
+    failing = getattr(M, "failing_cases", None)
+    read = getattr(M, "read_tally", None)
+    cases = ([(c.get("suite"), c.get("label"), c.get("assertion"))
+              for c in failing(_VITEST_ASSERT)] if failing else None)
+    check("ru9 a vitest `FAIL <file> > <suite> > <name>` line carrying an "
+          "AssertionError reads as ONE failing case, its file and title chain "
+          "kept and its assertion flag true - the file tree's cross is not a "
+          "second one: %r" % (cases,),
+          cases == [("tests/add.test.js", "math > adds two numbers", True)])
+    none = read("      Tests  no tests\n") if read else None
+    check("ru10 vitest's `Tests  no tests` reads as vitest having collected "
+          "nothing and failed nothing, never as an unreadable run: %r" % (none,),
+          (none or {}).get("runner") == "vitest"
+          and (none or {}).get("collected") == 0
+          and (none or {}).get("failed") == 0)
+
+
 def _layer_cases(check):
     with open(M.__file__, encoding="utf-8") as fh:
         tree = ast.parse(fh.read())
@@ -108,6 +143,7 @@ def _cases(check):
     _table_cases(check)
     _summary_cases(check)
     _jest_cases(check)
+    _vitest_cases(check)
     _layer_cases(check)
 
 
