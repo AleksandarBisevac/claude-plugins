@@ -100,7 +100,8 @@ Hard rules (non-negotiable):
   ```
   python3 "<plugin root>/scripts/governance/stamp-verification.py" red \
       --project <gitRoot> --manifest <manifestPath> --task <taskId> \
-      [--case <id or full label of the case you added>] -- <test command>
+      [--case <id or full label of the case you added>] [--deps-from <dir>] \
+      -- <test command>
   ```
 
   It checks HEAD out into a temp directory with `git worktree add --detach`, copies
@@ -110,10 +111,19 @@ Hard rules (non-negotiable):
   the `redFirst` block to return — `{status, basis, at}`, the shape below. The
   orchestrator's prompt gives you the resolved command. The throwaway holds only
   TRACKED files, and the run's environment is scrubbed of what points at the shared
-  tree (the output names what it dropped): a suite that needs an untracked
-  dependency — `node_modules`, an in-repo `.venv`, generated files — cannot run there
-  and comes back `could-not-prove`, which is the honest word for it, not a reason to
-  run the proof in the shared tree instead. **Never** write HEAD's copy
+  tree (the output names what it dropped). The ignored dependency directories of
+  `--deps-from <dir>` (`--project` by default) — `node_modules` at any depth, `.venv` —
+  are linked in entry by entry, and the output's `dependencies:` line names each one
+  linked or skipped and what became of each `.npmrc`. Each leak that link opens is
+  named, not closed: a link landing in the shared tree outside every dependency
+  directory (a workspace package, an editable install) would let HEAD's run read the
+  fix, so `workspace_links()` in `stamp-verification.py` refuses it by name, no run is
+  made and the answer is `could-not-prove`; a write a runner makes INTO a linked entry
+  lands in the source checkout and nothing watches it; the user's `~/.npmrc` and an
+  untracked project one never reach the run's fresh home, so a wrapper that needs a
+  private registry fails there. Anything else untracked — generated files — still
+  cannot run there and comes back `could-not-prove`, which is the honest word for it,
+  not a reason to run the proof in the shared tree instead. **Never** write HEAD's copy
   over a file (`git show HEAD:<file> > <file>`), revert your own fix, or edit a
   sibling's file to prove a red: the tree is shared, and a host refused exactly that
   beside a sibling's uncommitted work. Nothing mechanically stops the overwrite — the

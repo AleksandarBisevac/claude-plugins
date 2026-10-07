@@ -160,7 +160,15 @@ not need to.
      in the working tree's, a final import/attribute/name error naming it, and a second run
      with the working tree's implementation copied in that loses that error and reaches its
      assertions. The throwaway holds tracked files only and runs with a scrubbed
-     environment, so a suite needing an untracked dependency comes back `could-not-prove`. The executor used to be
+     environment; `--deps-from <dir>` (`--project` by default) links in its ignored
+     dependency directories (`node_modules` at any depth, `.venv`) entry by entry, named
+     on the output's `dependencies:` line. Its leaks are named, not closed: a link landing
+     in the shared tree outside every dependency directory (a workspace package, an
+     editable install) is refused by name by `workspace_links()` with no run made, so
+     the answer is `could-not-prove`; a runner's write into a linked entry lands in the
+     source checkout unwatched; the user's `~/.npmrc` and an untracked project one never
+     reach the fresh home. Any other untracked dependency still comes back
+     `could-not-prove`. The executor used to be
      told to undo its fix in the shared tree for the length of the run, which is a write
      over ground siblings are editing; a host refused it beside a sibling's uncommitted
      work. Nothing stops an executor overwriting a file anyway — the plan gate grades which

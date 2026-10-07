@@ -4054,7 +4054,7 @@ about a stale copy is a claim whose stamp belongs beside that warning, not inste
 **`red` runs the test against code without the fix somewhere other than the shared tree.** The
 briefs used to prove a red by undoing the fix in the working tree for the length of the run, which
 is a write over ground siblings are editing, and a host refused it beside a sibling's uncommitted
-work. `red --manifest M --task T -- <cmd>` checks HEAD out with `git worktree add --detach` into a
+work. `red --manifest M --task T [--deps-from DIR] -- <cmd>` checks HEAD out with `git worktree add --detach` into a
 temp directory (hooks pointed nowhere), copies the task's declared **test** files from the working
 tree over it — a declared file is a test when `tests.add` names it or its path has a test shape;
 the rest stay at HEAD, and the split is printed — runs the command there, and removes the
@@ -4083,10 +4083,21 @@ entries under the root, so an in-repo `.venv/bin` leaves PATH intact otherwise -
 `redFirst` basis names what was dropped. A value that is not itself a path but carries one under
 the root - an option string such as `NODE_OPTIONS=--require …/setup.js` - is kept, since it is
 not a path to rewrite, and named in the basis as `kept, naming the shared root`, because a runner
-reads the path inside it. The throwaway holds only tracked files, so a suite that needs an untracked dependency
-(`node_modules`, an in-repo `.venv`, generated files) cannot run there and comes back
-`could-not-prove`; and it shares the repository's git directory, so a test that runs git in its
-own cwd writes shared refs.
+reads the path inside it. The throwaway holds only tracked files, so `dependency_plan` asks git
+for the ignored directories of `--deps-from` (`--project` by default) and `link_dependencies`
+links each `node_modules`, at any depth, and each `.venv` whose parent exists at HEAD into it
+entry by entry, again after every reset; a real directory of links rather than one link to the
+whole directory, so a new entry a runner makes there stays in the throwaway, and `.cache`, `.vite`
+and `.vite-temp` are never linked. The leaks that link opens are named, not closed: a link or
+editable-install path landing in the shared tree outside every dependency directory (a workspace
+package) would let HEAD's run read the fix, so `workspace_links()` refuses it by name, no run is
+made and the answer is `could-not-prove`; a write a runner makes INTO a linked entry lands in the
+source checkout and nothing watches it; and the user's `~/.npmrc` and an untracked project one
+never reach the run's fresh home (a tracked one arrives with HEAD), with `NPM_CONFIG_USERCONFIG`
+dropped from the environment. Every basis names what was linked, from where, what was skipped and
+what became of each `.npmrc`. Any other untracked dependency (generated files) still cannot run
+there and comes back `could-not-prove`; and the throwaway shares the repository's git directory,
+so a test that runs git in its own cwd writes shared refs.
 
 **`proved` needs a tally, a named case of the task's own, and an assertion.** `classify_run()`
 reads the house harness's line, pytest's summary (framed, or bare under `-q`) or unittest's

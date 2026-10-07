@@ -319,7 +319,7 @@
     {
       "id": "P102.6",
       "title": "a new jest or vitest test file's baseline runs with the file absent",
-      "status": "in_progress",
+      "status": "done",
       "description": "For HEAD's run, _isolated_run lays each declared test file that is new at HEAD over as an EMPTY file, and jest refuses an empty suite. So every new JS test file turned the baseline red, and the answer became 'HEAD's own tests are already red'. For the runners the design note names, the baseline runs with the new file absent and the command's other targets run. The measurement in the note decides whether --passWithNoTests, or its vitest equivalent, is passed. A fake runner script keeps the sweep free of npm.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -353,30 +353,43 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8d749723",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py: run_red leaves a declared test file that is new at HEAD out of HEAD's run when _is_js_test_path reads it as jest or vitest (the git reset already removes it, so it is simply not written); every other new file is still laid over as an empty stub. baseline_problem also accepts _js_none_found: exit 1, the runner's own sentence ('No tests found, exiting with code N' for jest, 'No test files found, exiting with code N' for vitest; regex _JS_NO_TESTS), no tally counting a case or a failure, and at least one file left absent. The basis names stubbed and absent files separately and the payload gains baseline: {stubbed, absent}. The design note's part (3) is marked built. Decision, from the note's measurement: --passWithNoTests is not added - under jest it does not rescue an empty stub, leaving the file absent removes the need under both runners, and a flag added to a wrapper's argv (npm test) reaches the wrapper, not the runner.\nDocs: PLUGIN-BUILD-GUIDE.md step 1 of the stamp-verification section holds the full rule with a pointer to the design note; reference/execute-task.md and agents/audit-executor.md each carry a short clause pointing to it. No count written.\nTests: fake jest-shaped and pytest-shaped runners (no npm), stage sb-new-file: sb1-sb3 (the new file left absent proves; the payload names it; a stub would fail), sb4 (the no-test sentence beside a failure count is not accepted) and sb5 (its allow twin; refused when nothing was left absent). Red-first: the helper is could-not-prove for test_stamp_verification.py (sr23/sr24 red inside its throwaway, known); the red rests on the tdd red in the shared tree before the fix (185/188, only sb1-sb3) and scratch mutation rows in a unique temp copy, each red (never-accept, always-accept-when-absent, nothing-absent, everything-absent, drop-only-tally, drop-absent). Suites 190/190, test__refs 304/304, test__output 182/182, test__deps 299/299.",
+        "descriptive": "The red-first check can now prove a task that adds a brand-new jest or vitest test file: HEAD's comparison run leaves the new file out instead of failing on an empty one, and only the runner's own 'no tests found' answer is accepted as clean."
       },
       "startedAt": "2026-10-07T01:34:28Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T02:20:56Z",
+      "verifiedBy": [
+        "sb1",
+        "sb2",
+        "sb3",
+        "sb4",
+        "sb5"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T02:20:38Z.7d0d74",
         "status": "passed",
         "at": "2026-10-07T02:20:38Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8d749723",
+        "at": "2026-10-07T02:20:56Z",
+        "basis": "orchestrator check: the baseline leaves new JS test files absent as the design note chose, the flag decision is recorded with its basis, the three docs carry the rule, both halves of the acceptance rule have a case shown red by mutation"
       }
     },
     {
       "id": "P102.7",
       "title": "red links the project's ignored dependency directories into the throwaway",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The throwaway is a detached worktree that holds tracked files only, so node_modules is absent. Each run under its fresh HOME re-downloads an unpinned runner, or fails offline, and the .npmrc a private registry needs, kept in the user's home directory, is missing. Add --deps-from <dir>, defaulting to --project. It links into the throwaway the ignored dependency directories that `git ls-files --others --ignored --directory` names (node_modules at any depth, .venv). A workspace link that resolves into the shared tree would let HEAD's run read the fix and answer a false not-red, so it is refused by name. Writes a runner makes back through a link are named in the basis. The fresh HOME stays, and .npmrc is either resolved on purpose or named as dropped. In agents/audit-executor.md and reference/execute-task.md, replace the 'untracked dependency comes back could-not-prove' sentence with the flag and its leaks. The end-to-end check against real jest is the maintainer's field-report probe, driven by hand and recorded in the outcome.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
         "plugins/audit/tests/test_stamp_verification.py",
         "plugins/audit/agents/audit-executor.md",
-        "plugins/audit/reference/execute-task.md"
+        "plugins/audit/reference/execute-task.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -403,16 +416,21 @@
         "P102.5",
         "P102.6"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T02:20:56Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T02:48:07Z.186604",
+        "status": "passed",
+        "at": "2026-10-07T02:48:07Z"
+      }
     },
     {
       "id": "P102.8",

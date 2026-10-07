@@ -42,7 +42,8 @@ Usage:
                                 [--json]
   stamp-verification.py red     [--project DIR] --manifest M --task T
                                 [--case ID|LABEL ...] [--introduces SYMBOL ...]
-                                [--timeout S] [--json] -- <test command>
+                                [--deps-from DIR] [--timeout S] [--json]
+                                -- <test command>
 
   `compare` reads the stamp from stdin when neither --stamp nor --stamp-file is
   given, so a report or a commit message can be piped straight in.
@@ -78,12 +79,11 @@ temp directory and the worktree registration for it, and removes both on every
 path but SIGKILL, which no process can catch - the `red` section says what is
 reported instead.
 
-RED UNDER JEST AND VITEST - THE DESIGN, BUILT IN PART. Where a paragraph below
-does not say it is built, it describes code that does not exist yet: `red` now
-reads a jest or vitest tally, names its failing cases, credits one to the
-task by its title chain, and runs HEAD's baseline with a new jest or vitest
-test file absent (3); (4) is not built, so a suite needing `node_modules`
-still comes back `could-not-prove`. It is written here, before the code, so that the tasks that
+RED UNDER JEST AND VITEST - THE DESIGN, BUILT. Each part below says it is
+built: `red` reads a jest or vitest tally, names its failing cases, credits one
+to the task by its title chain, runs HEAD's baseline with a new jest or vitest
+test file absent (3), and links the ignored dependency directories in (4). It
+was written here, before the code, so that the tasks that
 build it share one answer to each question below rather than each settling its
 own; a case of the implementing work is what makes each paragraph true, and
 until one exists the paragraph is a plan. Nothing enforces that order; whoever
@@ -129,8 +129,7 @@ with no case, so a run whose only failure is a crashed suite is
 program basenames; a wrapper (`npm test`, `npx vitest`) names no runner and
 the output decides. The house, pytest and unittest patterns moved unchanged,
 so the two pytest summary patterns are still two: taking their union changes
-what `red` reads, and is left to a change of its own. What is NOT built yet is
-(4).
+what `red` reads, and is left to a change of its own.
 
 (2) WHICH CASE IS THE TASK'S: THE HEADER PATH AND THE TITLE CHAIN - BUILT. A jest or
 vitest case is identified by the suite path its `FAIL` header or line names
@@ -210,27 +209,29 @@ makes the stub question moot for both runners, and a flag appended to a
 wrapper's argv (`npm test`) reaches the wrapper rather than the runner.
 Measured once per runner and version, on one machine.
 
-(4) DEPENDENCIES: `--deps-from <dir>`, DEFAULTING TO `--project`. The
+(4) DEPENDENCIES: `--deps-from <dir>`, DEFAULTING TO `--project` - BUILT. The
 throwaway holds tracked files only, so a suite that imports from
-`node_modules` or runs from an in-repo `.venv` cannot load there. `red` will
-ask git, in `--deps-from`, for its ignored directories
-(`ls-files --others --ignored --exclude-standard --directory`) and take each
+`node_modules` or runs from an in-repo `.venv` cannot load there. `red` asks
+git, in `--deps-from`, for its ignored directories
+(`ls-files --others --ignored --exclude-standard --directory`) and takes each
 named `node_modules` or `.venv`, at any depth, whose parent directory exists
-at HEAD. A dependency directory is reproduced in the throwaway as a real
-directory of per-entry symlinks into the source, rebuilt after each reset,
-and never as one link to the whole directory: the cache directories a runner
-writes (`.cache`, and `.vite`, where vitest 4.1.10 was seen on 2026-10-06 to
-write `vitest/<hash>/results.json` after every run) are left out of the links
-and created empty in the throwaway, so those writes stay there. The basis names every
-directory linked and every one skipped, with the reason.
+at HEAD (`dependency_plan`). A dependency directory is reproduced in the
+throwaway as a real directory of per-entry symlinks into the source, rebuilt
+after each reset, and never as one link to the whole directory: the cache
+entries a runner writes (`.cache`; `.vite`, where vitest 4.1.10 was seen on
+2026-10-06 to write `vitest/<hash>/results.json` after every run; and
+`.vite-temp`, which this repository's own `node_modules` holds) are left out of
+the links, so a runner that writes one creates it in the throwaway's real
+directory. The basis names every directory linked and every one skipped, with
+the reason (`deps_clause`).
 
 THE LEAKS A LINK OPENS, each named and none left implicit:
   - a WORKSPACE LINK - an entry whose real path lands inside `--deps-from` or
     the project but outside every dependency directory (an npm or pnpm
     workspace package, a `pip install -e` path in a `.pth` file or an
     editable finder) - would load the SHARED tree's implementation into a
-    run that is meant to see HEAD's. It is refused by name, and the run is
-    `could-not-prove`. It is not re-pointed at the throwaway's own copy of the
+    run that is meant to see HEAD's. It is refused by name before any run is
+    made (`workspace_links`), and the run is `could-not-prove`. It is not re-pointed at the throwaway's own copy of the
     package, because that copy lacks the package's own ignored build output,
     and the run would then fail for a reason that is not the test's.
   - CACHES WRITTEN BACK THROUGH A LINK. The cache directories above stay in
@@ -242,9 +243,10 @@ THE LEAKS A LINK OPENS, each named and none left implicit:
     package lands in the shared tree, and the basis says that this is not
     watched.
   - REMOVAL MUST NOT FOLLOW A LINK. The reset's `git clean -ffdx` and the
-    final `shutil.rmtree` both have to unlink a symlink rather than descend
-    through it, or a cleanup deletes the shared tree's dependencies; a case
-    with a sentinel file behind a link is what is owed before this ships.
+    final `shutil.rmtree` both unlink a symlink rather than descend through
+    it, or a cleanup would delete the shared tree's dependencies; the case
+    that holds it keeps a sentinel file behind a link and asserts it survives
+    every reset and the removal.
 
 `.npmrc`. The jest and vitest binaries read none; npm, npx and pnpm, wrapping
 them, do. A TRACKED project `.npmrc` arrives with HEAD. An untracked one, and
@@ -1700,6 +1702,169 @@ def _names_shared_tree(cmd, root, project):
             or (os.path.isabs(a) and os.path.realpath(a).startswith(real))]
 
 
+# --- dependencies: the ignored directories linked into the throwaway ---
+# The throwaway holds tracked files only, so a suite importing from
+# `node_modules` or run from an in-repo `.venv` cannot start there. These are
+# linked in from `--deps-from` ENTRY BY ENTRY into a real directory, never as one
+# link to the whole directory: a new entry a runner creates beside them lands in
+# the throwaway, and the cache entries below are not linked at all, so their
+# writes stay there too. A write INTO a linked entry still lands in the source;
+# the basis says so rather than claiming it is watched.
+DEP_DIRS = ("node_modules", ".venv")
+DEP_CACHES = (".cache", ".vite", ".vite-temp")
+# A quoted absolute path in an editable install's finder module.
+_QUOTED = re.compile(r"""["']([^"'\n]+)["']""")
+
+
+def dep_rels(listing):
+    """The dependency directories in git's NUL-separated ignored listing, the
+    outermost only: one nested inside another is reached through its parent's
+    link already."""
+    rels = sorted(set(e.rstrip("/") for e in listing.split("\0")
+                      if e.rstrip("/") and e.rstrip("/").split("/")[-1] in DEP_DIRS))
+    return [r for r in rels if not any(r.startswith(o + "/") for o in rels)]
+
+
+def _editable_paths(path):
+    """The absolute paths an editable install points the interpreter at: the
+    path lines of a `.pth` file, the quoted paths of an `__editable__` finder."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError:
+        return []
+    if path.endswith(".pth"):
+        found = [ln.strip() for ln in text.splitlines()
+                 if ln.strip() and not ln.strip().startswith(("#", "import"))]
+    else:
+        found = _QUOTED.findall(text)
+    return [p for p in found if os.path.isabs(p)]
+
+
+def workspace_links(source, rels, roots):
+    """`[(entry, target)]` - every link, and every editable-install path, under
+    the dependency directories `rels` of `source` that lands inside `roots` but
+    outside every one of those directories: a workspace package, which would
+    load the shared tree's implementation into a run meant to see HEAD's."""
+    deps = [os.path.realpath(os.path.join(source, *r.split("/"))) for r in rels]
+
+    def into_tree(target):
+        real = os.path.realpath(target)
+        return _under(real, roots) and not _under(real, deps)
+
+    out = []
+    for rel in rels:
+        top = os.path.join(source, *rel.split("/"))
+        for base, dirs, files in os.walk(top):
+            for name in sorted(dirs + files):
+                full = os.path.join(base, name)
+                shown = "%s/%s" % (rel, os.path.relpath(full, top).replace(os.sep, "/"))
+                if os.path.islink(full):
+                    if into_tree(full):
+                        out.append((shown, os.path.realpath(full)))
+                elif name.endswith(".pth") or name.startswith("__editable__"):
+                    out.extend((shown, p) for p in _editable_paths(full)
+                               if into_tree(p))
+    return out
+
+
+def _npmrc_state(root, deadline):
+    """What becomes of each `.npmrc` that exists - an existence check, never a
+    read, since the user's carries registry credentials."""
+    _c, tracked = _git(root, ["ls-tree", "--name-only", "HEAD", "--", ".npmrc"],
+                       timeout=max(1, _left(deadline)))
+    said = []
+    if tracked.strip() == ".npmrc":
+        said.append("the project's tracked .npmrc carried with HEAD")
+    elif os.path.isfile(os.path.join(root, ".npmrc")):
+        said.append("the project's untracked .npmrc dropped")
+    if os.path.isfile(os.path.join(os.path.expanduser("~"), ".npmrc")):
+        said.append("the user's ~/.npmrc dropped (every run has a fresh home)")
+    return said or ["no .npmrc to carry or drop"]
+
+
+def dependency_plan(source, root, deadline):
+    """`(plan, problem)` - which ignored dependency directories of `source` are
+    linked into a throwaway of `root`, which are skipped and why, which
+    workspace links refuse the run, and what becomes of each `.npmrc`. A
+    directory is linked only where its parent exists at `root`'s HEAD."""
+    code, top = _git(source, ["rev-parse", "--show-toplevel"],
+                     timeout=max(1, _left(deadline)))
+    if code != 0:
+        return None, "--deps-from %s is not inside a git repository: %s" % (source, top)
+    code, listing = _git(top, ["ls-files", "-z", "--others", "--ignored",
+                               "--exclude-standard", "--directory"],
+                         timeout=max(1, _left(deadline)), strip=False)
+    if code != 0:
+        return None, "git could not list %s's ignored directories: %s" % (top, listing)
+    rels = [r for r in dep_rels(listing)
+            if os.path.isdir(os.path.join(top, *r.split("/")))]
+    parents = sorted(set(posixpath.dirname(r) for r in rels) - set([""]))
+    at_head = set()
+    if parents:
+        code, text = _git(root, ["ls-tree", "-z", "--name-only", "HEAD", "--"]
+                          + parents, timeout=max(1, _left(deadline)), strip=False)
+        at_head = set(p for p in text.split("\0") if p) if code == 0 else set()
+    linked = [r for r in rels if posixpath.dirname(r) in at_head | set([""])]
+    roots = sorted(set((top, os.path.realpath(top), root, os.path.realpath(root))))
+    return {"source": top, "linked": linked,
+            "skipped": [(r, "its parent directory is not at HEAD")
+                        for r in rels if r not in linked],
+            "refused": workspace_links(top, linked, roots),
+            "npmrc": _npmrc_state(root, deadline)}, None
+
+
+def link_dependencies(path, plan):
+    """Link each planned directory into the throwaway at `path`, entry by entry,
+    leaving out `DEP_CACHES` and anything HEAD already put there. Returns the
+    problem, or None."""
+    for rel in (plan or {}).get("linked") or []:
+        src = os.path.join(plan["source"], *rel.split("/"))
+        dst = os.path.join(path, *rel.split("/"))
+        try:
+            if not os.path.isdir(dst):
+                os.makedirs(dst)
+            for name in sorted(os.listdir(src)):
+                target = os.path.join(dst, name)
+                if name in DEP_CACHES or os.path.lexists(target):
+                    continue
+                entry = os.path.join(src, name)
+                os.symlink(entry, target, target_is_directory=os.path.isdir(entry))
+        except OSError as exc:
+            return "could not link %s into the throwaway: %s" % (rel, exc)
+    return None
+
+
+def refused_links_problem(plan):
+    """The run's problem when a workspace link refuses it, or None."""
+    if not plan or not plan["refused"]:
+        return None
+    return ("a dependency link lands in the shared tree outside every dependency "
+            "directory - a workspace package, through which HEAD's run would read "
+            "the working tree's implementation - so it is refused and no run is "
+            "made: %s" % ("; ".join("%s -> %s" % pair for pair in plan["refused"]),))
+
+
+def deps_clause(plan):
+    """The basis clause naming what was linked, from where, what a runner may
+    write back through, what was skipped and what became of each `.npmrc`."""
+    if plan is None:
+        return ""
+    src = plan["source"]
+    if plan["linked"]:
+        said = ("dependencies linked from %s, entry by entry: %s - %s are not "
+                "linked and a new entry a runner makes beside the links stays in "
+                "the throwaway, but a write into a linked entry lands in %s and is "
+                "not watched" % (src, ", ".join(plan["linked"]), ", ".join(DEP_CACHES),
+                                 ", ".join(os.path.join(src, *r.split("/"))
+                                           for r in plan["linked"])))
+    else:
+        said = "no ignored dependency directory linked from %s" % (src,)
+    if plan["skipped"]:
+        said += "; not linked: %s" % ("; ".join("%s (%s)" % s for s in plan["skipped"]),)
+    return "; %s; %s" % (said, "; ".join(plan["npmrc"]))
+
+
 # --- the throwaway tree itself ---
 def leftover_throwaways(root, timeout=120):
     """`[{"path", "state", "pid"}]` - registered worktrees whose path carries
@@ -1921,6 +2086,7 @@ def red_verdict(run, ctx):
     if ctx.get("naming"):
         env_clause += ("; kept, naming the shared root: %s - the run may have read "
                        "shared-tree files through it" % (", ".join(ctx["naming"]),))
+    env_clause += deps_clause(ctx.get("deps"))
     if run["problem"] is not None:
         return E_CANNOT_PROVE, V_NOT_RUN, {
             "status": RED_CANNOT, "at": at,
@@ -1935,7 +2101,8 @@ def red_verdict(run, ctx):
             "%s (%s): the test PASSED in the throwaway - HEAD's implementation with "
             "this task's test files, run with %s removed from its environment - so "
             "it proves nothing yet; fix the test, there is no redFirst word to "
-            "record for this" % (where, line, ", ".join(ctx["dropped"]) or "nothing"))
+            "record for this%s" % (where, line, ", ".join(ctx["dropped"]) or "nothing",
+                                   deps_clause(ctx.get("deps"))))
     failing = (failing_cases(text, tally["runner"])
                if tally is not None and tally["runner"] is not None else [])
     how = "HEAD's own tests green on HEAD's code"
@@ -2121,9 +2288,10 @@ def _isolated_env(env, scratch, tag):
 
 
 def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
-                  stubs=()):
+                  stubs=(), deps=None):
     """`(run, copied)` - the throwaway reset to HEAD, `rels` laid over it from
-    the working tree and each of `stubs` written as an EMPTY file, and the
+    the working tree, each of `stubs` written as an EMPTY file and the `deps`
+    plan's directories linked in again - the reset removed them - and the
     command run in an isolated environment. With less than a second of the
     deadline left no run is made at all - not even the reset's git calls,
     which would otherwise run past it."""
@@ -2140,6 +2308,9 @@ def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
         if not os.path.isdir(os.path.dirname(dst)):
             os.makedirs(os.path.dirname(dst))
         open(dst, "w").close()
+    problem = link_dependencies(path, deps)
+    if problem is not None:
+        return {"code": None, "text": "", "problem": problem, "seconds": 0.0}, copied
     return _timed_run(path, cmd, deadline, timeout,
                       _isolated_env(env, scratch, tag)), copied
 
@@ -2200,8 +2371,12 @@ def _red_scope(args, cmd, deadline):
         return None, ("none of task %s's test files (%s) is in the working tree, "
                       "so a throwaway would hold HEAD alone"
                       % (args.task, ", ".join(tests)))
+    deps, problem = dependency_plan(os.path.abspath(args.deps_from or args.project),
+                                    root, deadline)
+    if problem is not None:
+        return None, problem
     return {"root": root, "implementation": implementation, "tests": present,
-            "declared": tests}, None
+            "declared": tests, "deps": deps}, None
 
 
 def _arm():
@@ -2227,6 +2402,12 @@ def run_red(args, cmd, out):
     # still trusts - in the tree or under PYTHONPYCACHEPREFIX alike. So no run
     # writes one, and none is there to be read.
     env = dict(env, PYTHONDONTWRITEBYTECODE="1")
+    # The user's npm config carries registry credentials; a run's fresh home
+    # leaves it behind, and so must a variable pointing straight at it.
+    for key in sorted(k for k in env if k.lower() == "npm_config_userconfig"):
+        del env[key]
+        dropped.append(key)
+    deps = scope["deps"]
     _c, head = _git(root, ["rev-parse", "HEAD"], timeout=max(1, _left(deadline)))
     base = holder_base(root)
     if base is None:
@@ -2249,7 +2430,10 @@ def run_red(args, cmd, out):
     previous = _arm()
     try:
         try:
-            present, run["problem"] = _at_head(root, scope["declared"], deadline)
+            run["problem"] = refused_links_problem(deps)
+            present = set()
+            if run["problem"] is None:
+                present, run["problem"] = _at_head(root, scope["declared"], deadline)
             if run["problem"] is None:
                 state["new"] = sorted(set(scope["tests"]) - present)
                 # jest and vitest fail an empty suite, so a new file of theirs
@@ -2269,26 +2453,26 @@ def run_red(args, cmd, out):
                 run["head"], _c = _isolated_run(
                     root, path, [], cmd, deadline, args.timeout, env, holder,
                     "baseline", stubs=[rel for rel in state["new"]
-                                       if rel not in state["absent"]])
+                                       if rel not in state["absent"]], deps=deps)
                 run["head"]["absent"] = state["absent"]
             if run["problem"] is None:
                 task, copied = _isolated_run(root, path, scope["declared"], cmd,
                                              deadline, args.timeout, env, holder,
-                                             "task")
+                                             "task", deps=deps)
                 run["code"], run["text"], run["problem"] = (
                     task["code"], task["text"], task["problem"])
             if run["problem"] is None and _wants_second(run["code"], run["text"],
                                                         args.introduces, cmd):
                 run["second"], _c = _isolated_run(
                     root, path, scope["declared"] + scope["implementation"], cmd,
-                    deadline, args.timeout, env, holder, "second")
+                    deadline, args.timeout, env, holder, "second", deps=deps)
             verdict1 = (classify_run(run["code"], run["text"], cmd)[0]
                         if run["problem"] is None and run["code"] is not None
                         else None)
             if verdict1 == V_RED and baseline_problem(run["head"], cmd) is None:
                 run["fix"], _c = _isolated_run(
                     root, path, scope["declared"] + scope["implementation"], cmd,
-                    deadline, args.timeout, env, holder, "fix")
+                    deadline, args.timeout, env, holder, "fix", deps=deps)
         except KeyboardInterrupt as exc:
             run["problem"] = ("interrupted by %s before the run finished; the "
                               "run's process group was torn down"
@@ -2302,7 +2486,7 @@ def run_red(args, cmd, out):
             "head_defs": state["head_defs"],
             "head_modules": state["head_modules"],
             "head_js": state["head_js"], "path": path,
-            "deadline": deadline})
+            "deadline": deadline, "deps": deps})
     finally:
         removed = _remove_throwaway(root, holder, path)
         if previous is not None:
@@ -2310,6 +2494,10 @@ def run_red(args, cmd, out):
     payload = {"verdict": verdict, "redFirst": block, "note": note,
                "atHead": scope["implementation"], "copied": copied,
                "leftovers": leftovers,
+               "dependencies": {"source": deps["source"], "linked": deps["linked"],
+                                "skipped": [list(s) for s in deps["skipped"]],
+                                "refused": [list(r) for r in deps["refused"]],
+                                "npmrc": deps["npmrc"]},
                "baseline": {"stubbed": [rel for rel in state["new"]
                                         if rel not in state["absent"]],
                             "absent": state["absent"]},
@@ -2332,6 +2520,7 @@ def run_red(args, cmd, out):
         out("  at HEAD: %s" % (", ".join(scope["implementation"]) or "(none declared)"))
         out("  from the working tree: %s" % (", ".join(copied) or "(none)"))
         out("  environment: inherited, without %s" % (", ".join(dropped) or "nothing"))
+        out("  dependencies:%s" % (deps_clause(deps)[1:],))
         if naming:
             out("  kept, naming the shared root: %s" % (", ".join(naming),))
         for left in leftovers:
@@ -2384,6 +2573,10 @@ def build_parser():
                              "`red` only - a red "
                              "counts only when one of the task's own cases "
                              "fails an assertion")
+    parser.add_argument("--deps-from", dest="deps_from", default=None,
+                        help="the checkout whose ignored node_modules and .venv "
+                             "directories are linked into the throwaway; `red` only "
+                             "(default: --project)")
     parser.add_argument("--json", action="store_true", dest="as_json")
     return parser
 

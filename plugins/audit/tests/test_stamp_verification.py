@@ -3198,8 +3198,10 @@ def _jest_credit_cases(check):
           and "could not be read as" in unbalanced[0])
 
 
-# A jest-shaped runner, so a `red` over a jest project runs with no npm. It
-# answers as jest 30 was observed to (the design note in stamp-verification.py):
+# A jest-shaped runner, so a `red` over a jest project runs with no npm. Where
+# its cwd has a `node_modules` it writes into `node_modules/.cache`, the way a
+# real runner keeps its cache. It answers as jest 30 was observed to (the
+# design note in stamp-verification.py):
 # a named file that is empty fails to run, exit 1; no named file on disk is
 # `No tests found, exiting with code 1`, exit 0 only under --passWithNoTests.
 # A test is `test('<title>', () => { expect(<v() | int>).toBe(<int>); });`
@@ -3215,6 +3217,9 @@ def value(word):
     with open(os.path.join("src", "mine.py")) as fh:
         return int(fh.read().split("=")[1])
 out = []
+if os.path.isdir("node_modules"):
+    os.makedirs(os.path.join("node_modules", ".cache", "fakejest"), exist_ok=True)
+    open(os.path.join("node_modules", ".cache", "fakejest", "ran"), "w").close()
 targets = [a for a in sys.argv[1:] if not a.startswith("-") and os.path.isfile(a)]
 if not targets:
     code = 0 if "--passWithNoTests" in sys.argv else 1
@@ -3406,7 +3411,143 @@ def _none_found_cases(check):
           and no_absent is not None)
 
 
+# --- dependencies: the project's ignored node_modules linked into the throwaway ---
+# The throwaway holds tracked files only. These fixtures keep the jest-shaped
+# runner INSIDE an ignored `node_modules`, reached through a `.bin` link the way
+# npm lays one out, so a run can start only when the helper links that directory
+# in - and a sentinel beside it shows the removal unlinked rather than descended.
+def _deps_repo(prefix, wt_cases, head_extra=None, deps=True):
+    """A repository ignoring `node_modules/`, HEAD at `v = 1` and the working tree
+    at `v = 2` with a new `tests/new.test.js` holding `wt_cases`; with `deps`, an
+    ignored `node_modules` holding the runner, a `.bin/jest` link to it and a
+    sentinel file. Returns `(root, man, cmd)`."""
+    new_js = "tests/new.test.js"
+    head = {".gitignore": "node_modules/\n"}
+    head.update(head_extra or {})
+    root, man = _new_file_repo(prefix, head,
+                               {new_js: _js_test("mine", wt_cases)}, new_js)
+    if deps:
+        _deps_dir(root)
+    return root, man, [sys.executable, "node_modules/.bin/jest", new_js]
+
+
+def _deps_dir(base):
+    """`base/node_modules` with the fake runner, its `.bin` link and a sentinel."""
+    nm = os.path.join(base, "node_modules")
+    os.makedirs(os.path.join(nm, "fakejest"))
+    os.makedirs(os.path.join(nm, ".bin"))
+    _write(os.path.join(nm, "fakejest", "jest.py"), _FAKE_JEST)
+    _write(os.path.join(nm, "sentinel.txt"), "the shared tree's dependency\n")
+    os.makedirs(os.path.join(nm, ".cache"))
+    os.symlink(os.path.join("..", "fakejest", "jest.py"),
+               os.path.join(nm, ".bin", "jest"))
+    return nm
+
+
+def _deps_basis(payload):
+    return ((payload.get("redFirst") or {}).get("basis") or payload.get("note")
+            or json.dumps(payload))
+
+
+def _deps_cases(check):
+    root, man, cmd = _deps_repo("stamp-red-deps-", [("v is two", "v()", "2")],
+                                head_extra={".npmrc": "fund=false\n"})
+    code, payload = _red(root, man, cmd)
+    basis = _deps_basis(payload)
+    nm = os.path.join(root, "node_modules")
+    kept = [rel for rel in ("sentinel.txt", "fakejest/jest.py", ".bin/jest")
+            if os.path.lexists(os.path.join(nm, *rel.split("/")))]
+    cache = os.listdir(os.path.join(nm, ".cache"))
+    check("sd1 with --deps-from defaulting to --project, an ignored node_modules "
+          "holding a jest-shaped runner is linked into the throwaway and a new "
+          "failing test answers proved - without the link the runner is absent "
+          "there and the answer was could-not-prove; the basis names the linked "
+          "directory and the TRACKED .npmrc as carried with HEAD, and the removal "
+          "left every file behind the links in place, the runner's write into "
+          "node_modules/.cache staying in the throwaway: exit=%r kept=%r "
+          "source cache=%r %s" % (code, kept, cache, basis[:600]),
+          code == M.E_PROVED and "linked" in basis and "node_modules" in basis
+          and ".npmrc" in basis and "carried" in basis
+          and kept == ["sentinel.txt", "fakejest/jest.py", ".bin/jest"]
+          and cache == []
+          and (payload.get("dependencies") or {}).get("linked") == ["node_modules"]
+          and (payload.get("throwaway") or {}).get("removed") is True)
+
+    outside = _harness.fixture_root("stamp-red-deps-store-")
+    _write(os.path.join(outside, "index.js"), "module.exports = 1;\n")
+    root_w, man_w, cmd_w = _deps_repo("stamp-red-deps-ws-", [("v is two", "v()", "2")])
+    os.makedirs(os.path.join(root_w, "packages", "ws"))
+    _write(os.path.join(root_w, "packages", "ws", "index.js"), "x\n")
+    _git(root_w, "add", "packages/ws/index.js")
+    _git(root_w, "commit", "-q", "-m", "a workspace package")
+    os.symlink(os.path.join(root_w, "packages", "ws"),
+               os.path.join(root_w, "node_modules", "ws"))
+    code_w, payload_w = _red(root_w, man_w, cmd_w)
+    basis_w = _deps_basis(payload_w)
+    run_w = payload_w.get("run") or {}
+    check("sd2 a node_modules entry linking into the shared working tree (a "
+          "workspace package) is refused BY NAME and no run is made - HEAD's run "
+          "would read the fix through it: exit=%r head=%r exit-of-run=%r %s"
+          % (code_w, run_w.get("head"), run_w.get("exit"), basis_w[:600]),
+          code_w == M.E_CANNOT_PROVE and "node_modules/ws" in basis_w
+          and "workspace" in basis_w and run_w.get("head") is None
+          and run_w.get("exit") is None and run_w.get("fix") is None)
+
+    root_s, man_s, cmd_s = _deps_repo("stamp-red-deps-st-", [("v is two", "v()", "2")])
+    os.symlink(outside, os.path.join(root_s, "node_modules", "stored"))
+    code_s, payload_s = _red(root_s, man_s, cmd_s)
+    basis_s = _deps_basis(payload_s)
+    check("sd3 THE ALLOW CASE for sd2: an entry linking OUTSIDE the project (a "
+          "package store), and the `.bin` link resolving inside node_modules "
+          "itself, are linked and the red is proved - the refusal reads where a "
+          "link lands, not that it is a link: exit=%r %s" % (code_s, basis_s[:600]),
+          code_s == M.E_PROVED and "workspace" not in basis_s)
+
+    root_g, man_g, cmd_g = _deps_repo("stamp-red-deps-green-", [("one is one", "1", "1")])
+    _write(os.path.join(root_g, ".npmrc"), "fund=false\n")
+    os.makedirs(os.path.join(root_g, "scratch", "node_modules", "x"))
+    # Outside the tree on purpose: a value under the root is already dropped as
+    # a path into the shared tree, and would pass this case without the new rule.
+    userrc = os.path.join(_harness.fixture_root("stamp-red-deps-rc-"), "npmrc")
+    code_g, payload_g = _with_env("NPM_CONFIG_USERCONFIG", userrc,
+                                  lambda: _red(root_g, man_g, cmd_g))
+    note = _deps_basis(payload_g)
+    dropped = (payload_g.get("environment") or {}).get("dropped") or []
+    check("sd4 THE ALLOW CASE: a test that passes without the fix stays not red "
+          "(exit 1) with dependencies linked, and the note names the linked "
+          "directory, the source path a runner may write back through, the cache "
+          "directories kept in the throwaway, a node_modules whose parent HEAD "
+          "lacks as not linked, and the untracked project .npmrc as "
+          "dropped, with NPM_CONFIG_USERCONFIG dropped from the environment: "
+          "exit=%r dropped=%r %s" % (code_g, dropped, note[:800]),
+          code_g == M.E_NOT_RED and "linked" in note
+          and any(os.path.join(r, "node_modules") in note
+                  for r in (root_g, os.path.realpath(root_g)))
+          and ".cache" in note and ".npmrc" in note and "dropped" in note
+          and "not linked: scratch/node_modules (its parent directory is not at "
+              "HEAD)" in note
+          and "NPM_CONFIG_USERCONFIG" in dropped)
+
+    root_p, man_p, cmd_p = _deps_repo("stamp-red-deps-from-",
+                                      [("v is two", "v()", "2")], deps=False)
+    source = _harness.fixture_root("stamp-red-deps-source-")
+    subprocess.run(["git", "init", "-q", source], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _write(os.path.join(source, ".gitignore"), "node_modules/\n")
+    _deps_dir(source)
+    code_n, payload_n = _red(root_p, man_p, cmd_p)
+    code_f, payload_f = _red(root_p, man_p, cmd_p, "--deps-from", source)
+    check("sd5 --deps-from names another checkout holding node_modules: a project "
+          "with none of its own proves the red from it, and without the flag the "
+          "same run is could-not-prove: without=%r with=%r %s"
+          % (code_n, code_f, _deps_basis(payload_f)[:600]),
+          code_n == M.E_CANNOT_PROVE and code_f == M.E_PROVED
+          and any(s in _deps_basis(payload_f)
+                  for s in (source, os.path.realpath(source))))
+
+
 def _cases(check):
+    _harness.stage(check, "sd-deps", _deps_cases)
     _harness.stage(check, "sb-new-file", _new_file_cases)
     _harness.stage(check, "sb-none-found", _none_found_cases)
     _harness.stage(check, "sr-decisive", _decisive_cases)
