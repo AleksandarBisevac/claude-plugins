@@ -1395,14 +1395,25 @@ def redacted_text(project, text):
 # writer and the detector. An `https://host/Users/x` still does not fire: the
 # word there follows the host, not the scheme.
 #
+# FOR THE FILE SCHEME ONLY, A TOKEN ALSO STARTS AFTER `file://<host>`, and the
+# host is part of the match. A file URL's host names the machine whose disk the
+# path is on, so `file://localhost/Users/x` is the same home directory as
+# `file:///Users/x`; an https host names a web server, whose path is a page.
+#
 # THE SHAPES AFTER THE HOME-DIRECTORY PAIR WERE THE DETECTOR'S ALONE, and the
 # writer let each through to a hash-chained row the detector then flagged when
 # nothing could change it. They sit here now for the same reason that pair does.
 _TOKEN_CLASS = r"[A-Za-z0-9._~$+/\\-]"
-MACHINE_PATH_TOKEN_START = r"(?:(?<!%s)|(?<=://))" % (_TOKEN_CLASS,)
+MACHINE_PATH_TOKEN_START = (r"(?:(?<!%s)|(?<=://)|(?i:(?<=file://))"
+                            r"[A-Za-z0-9.-]+(?=[/\\]))" % (_TOKEN_CLASS,))
 # A slug's start: `_TOKEN_CLASS` without the separators, because a slug is
 # itself a segment and so follows one.
 _SLUG_START = r"(?<![A-Za-z0-9._~$+-])"
+# What follows a slug's user segment for it to be a slug: another segment, or
+# a separator closing it as a path segment. Without one of the two, a dash-led
+# word at a token start - an option named `-home-<word>`, a `-Users-<name>` in
+# prose - matched, and the writer replaced a whole sentence for it.
+_SLUG_USER = r"-(?:Users|home)-[A-Za-z0-9._]+"
 _MACHINE_PATH_SHAPES = (
     ("posix-home", re.compile(MACHINE_PATH_TOKEN_START
                               + r"[/\\]?(?:Users|home)/[A-Za-z0-9._-]+")),
@@ -1412,15 +1423,23 @@ _MACHINE_PATH_SHAPES = (
     # harness names a project's scratch and session directories. The slug is
     # a whole path segment, so its leading dash stands at a token start - or
     # behind a drive letter's own dash, the Windows spelling - and a kebab
-    # word holding `-home-` mid-word is prose, not a slug.
+    # word holding `-home-` mid-word is prose, not a slug. A real slug
+    # carries more than the user segment, or stands between separators; the
+    # lone segment is taken only where a separator sits before or after it.
     ("session-slug", re.compile(
-        _SLUG_START + r"(?:[A-Za-z]-)?-(?:Users|home)-[A-Za-z0-9._]+"
-        r"|" + _SLUG_START + r"-private-tmp-")),
+        _SLUG_START + r"(?:[A-Za-z]-)?" + _SLUG_USER
+        + r"(?:-[A-Za-z0-9._]|(?=[/\\]))"
+        r"|(?<=[/\\])(?:[A-Za-z]-)?" + _SLUG_USER
+        + r"|" + _SLUG_START + r"-private-tmp-")),
     ("escaped-path", re.compile(r"%2F(?:Users|home)%2F|%5CUsers%5C", re.I)),
     ("tempdir-session", re.compile(
         MACHINE_PATH_TOKEN_START + r"/?(?:private/)?tmp/claude-\d+"
         r"|" + MACHINE_PATH_TOKEN_START + r"/?var/folders/[A-Za-z0-9_+]{2,}"
         r"|\\Temp\\claude-", re.I)),
+    # Refused at the writer's door even in prose such as `use ~/.config`, by
+    # choice: the commit-time detector reads this same pattern and fails the
+    # build on it, so a row the writer let through would be one the build then
+    # rejects after its hash chain made it permanent.
     ("unexpanded-home", re.compile(r"(?:^|[\s\"'=:(\[,])~/")),
 )
 # THE PUBLIC NAME IS THE DETECTOR'S, and nothing in this module reads it. A row
@@ -1430,6 +1449,9 @@ _MACHINE_PATH_SHAPES = (
 # leaves out for that reason.
 MACHINE_PATH_SHAPES = _MACHINE_PATH_SHAPES
 _TOKEN_CHAR = re.compile(_TOKEN_CLASS)
+# A `posix-home` match the writer takes: its home word stands behind a
+# separator, which a match missing its leading one does not have.
+_HOME_AFTER_SEPARATOR = re.compile(r"[/\\](?:Users|home)/")
 # The shape name a refusal gives for the checkout's own root, which is machine
 # layout whatever directory it sits under and so has no pattern of its own.
 _CHECKOUT_ROOT_SHAPE = "checkout-root"
@@ -1510,11 +1532,12 @@ def _root_at(flat, root):
 def _shape_fires(name, match):
     """Whether one pattern match is machine identity TO THE WRITER.
 
-    `posix-home` fires only on a match carrying its leading separator; the
-    detector reads the same pattern without that condition - the section's
-    note above `_MACHINE_PATH_SHAPES` says why the two differ."""
+    `posix-home` fires only on a match carrying a separator before its home
+    word - first in the match, or after a file URL's host; the detector reads
+    the same pattern without that condition - the section's note above
+    `_MACHINE_PATH_SHAPES` says why the two differ."""
     if name == "posix-home":
-        return match.group(0)[:1] in ("/", "\\")
+        return _HOME_AFTER_SEPARATOR.search(match.group(0)) is not None
     return True
 
 

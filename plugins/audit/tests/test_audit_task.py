@@ -7967,6 +7967,40 @@ def _cases(check):
               and [n.get("text") for n in
                    ((task_in(mpnt, "P2.4") or {}).get("notes") or [])][-1:]
               == [_nt6_text])
+        # Prose naming an option and a bare user name, each a dash-led word
+        # at a token start with nothing after it, is not a session slug.
+        _nt7_text = ("fix the go-home-now button; rename " + "-home-dir"
+                     + " option, abc " + "-Users-bob")
+        _nt7 = run(["note", "P2.4", "--text", _nt7_text, "--project-dir", projnt])
+        check("nt7 ALLOW: a note naming a -home-<word> option and a "
+              "-Users-<name> in prose is written verbatim - the mutation this "
+              "catches is a slug shape that takes the user segment alone: %r"
+              % (_nt7,),
+              _nt7[0] == 0
+              and [n.get("text") for n in
+                   ((task_in(mpnt, "P2.4") or {}).get("notes") or [])][-1:]
+              == [_nt7_text])
+        _nt8_path = "/".join(("", "Users", "someone", "r.html"))
+        with open(mpnt, "rb") as _fh:
+            _nt8_before = _fh.read()
+        _nt8 = run(["note", "P2.4", "--text",
+                    "open file://localhost%s now" % (_nt8_path,),
+                    "--project-dir", projnt])
+        with open(mpnt, "rb") as _fh:
+            _nt8_after = _fh.read()
+        _nt8_web = "open https://localhost%s now" % (_nt8_path,)
+        _nt8_ok = run(["note", "P2.4", "--text", _nt8_web,
+                       "--project-dir", projnt])
+        check("nt8 a file URL naming a host before a home directory is refused "
+              "at the door as posix-home, nothing written, and its https twin "
+              "with the same host and path is written verbatim: %r"
+              % ((_nt8[0], _nt8[1][:160], _nt8_ok[0]),),
+              _nt8[0] == 2 and "posix-home" in _nt8[1]
+              and "someone" not in _nt8[1] and _nt8_after == _nt8_before
+              and _nt8_ok[0] == 0
+              and [n.get("text") for n in
+                   ((task_in(mpnt, "P2.4") or {}).get("notes") or [])][-1:]
+              == [_nt8_web])
 
         # ---- (md) a gate command and a test name pass the same door ----------------
         projgd, mpgd = mk("gd-gate-door", pd_fixture())

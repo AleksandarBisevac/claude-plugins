@@ -593,6 +593,19 @@ BASELINE = (
      "repository path the writer must accept - a file a repository may hold, "
      "not a directory of any machine. posix-home flags `home/` at a token start "
      "by design, and the row is chained, so it is recorded rather than rewritten."),
+    ("docs/audit/journal/2026-10.6c881c24-c1fd-461f-8c48.wt-d215e320.jsonl", 194,
+     "unexpanded-home",
+     "a review-finding row quoting the reviewer's own probe text: the tilde "
+     "config directory every install shares, written to show it is refused at "
+     "the writer's door. A placeholder location, not a path of any machine; the "
+     "row is chained, so it is recorded rather than rewritten."),
+    ("docs/audit/journal/2026-10.6c881c24-c1fd-461f-8c48.wt-d215e320.jsonl", 195,
+     "posix-home",
+     "a review-finding row quoting the reviewer's own probe text: two file URLs "
+     "into a placeholder home directory of a one-letter user, one with no host "
+     "and one naming localhost, showing which of the two the shapes caught. "
+     "Neither names a machine; the row is chained, so it is recorded rather "
+     "than rewritten."),
     # THE PLAN'S ROWS, recorded when the plan entered the domain. Every one is a
     # shape QUOTED in a task's text - an example, a fixture name, a phrase - and
     # names no machine. KEYED BY WHAT THE LINE SAYS (`line_anchor`), not by its
@@ -1332,6 +1345,30 @@ def _cases(check):
     _kebab_hits = scan_text("f.md", _kebab, "report")
     check("q2d ALLOW: kebab prose holding -home-<word> and -Users-<word> "
           "mid-word trips nothing: %r" % (_kebab_hits,), _kebab_hits == [])
+    # A dash-led word at a token start with nothing after it - an option name,
+    # a bare user name in prose - is not a slug either; beside a separator the
+    # same lone segment is.
+    _prose = "rename -home-dir option, abc -Users-%s here" % _user
+    _prose_hits = scan_text("f.md", _prose, "report")
+    check("q2e ALLOW: prose naming a -home-<word> option and a lone "
+          "-Users-<name> trips nothing: %r" % (_prose_hits,), _prose_hits == [])
+    _lone = ("/projects/-Users-%s" % _user, "-home-%s/s.jsonl" % _user)
+    _lone_unseen = [line for line in _lone
+                    if "session-slug" not in set(h[2] for h in
+                                                 scan_text("f.md", line,
+                                                           "report"))]
+    check("q2f ...and the same lone segment beside a path separator is found: "
+          "%r" % (_lone_unseen,), _lone_unseen == [])
+    # A file URL may name a host before its path; an https URL with the same
+    # host and path names a web page.
+    _hosted = scan_text("f.md", "open file://localhost/Users/%s/r.html" % _user,
+                        "report")
+    _web = scan_text("f.md", "open https://localhost/Users/%s/r.html" % _user,
+                     "report")
+    check("q2g a file URL naming a host before a home directory is found, and "
+          "its https twin with the same host and path trips nothing: %r"
+          % ((_hosted, _web),),
+          "posix-home" in set(h[2] for h in _hosted) and _web == [])
 
     # The rule this whole file would otherwise break one layer out. Counted over
     # the rendered line rather than asserted absent, because a report that

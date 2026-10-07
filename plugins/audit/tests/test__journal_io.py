@@ -3893,6 +3893,60 @@ def _shape_parity_cases(check):
               M.machine_path_shape(kebab) is None
               and M.check_free_text(proj, "--text", kebab) is None
               and M.redacted_free_text(proj, kebab) == kebab)
+        # A WORD THAT STARTS A TOKEN AFTER WHITESPACE is the placement sp8
+        # leaves open: an option name or a bare user name in prose, no second
+        # segment and no separator beside it. Mixed with a kebab word, because
+        # the redactor's fallback replaced such a whole sentence at once.
+        prose = ("fix the go-home-now button; rename " + "-home-dir"
+                 + " option, abc " + "-Users-bob" + " here")
+        check("sp9 ALLOW: prose naming a -home-<word> option and a -Users-<name> "
+              "with nothing after it is neither named, refused, rewritten nor "
+              "flagged - the mutation this catches is a slug shape that takes "
+              "the user segment alone: %r"
+              % ((M.machine_path_shape(prose),
+                  M.redacted_free_text(proj, prose),
+                  tool.scan_text("x.md", prose, "plan")),),
+              M.machine_path_shape(prose) is None
+              and M.check_free_text(proj, "--text", prose) is None
+              and M.redacted_free_text(proj, prose) == prose
+              and tool.scan_text("x.md", prose, "plan") == [])
+        lone = ("/projects/" + "-Users-bob",
+                "-".join(("", "home", "bob")) + "/s.jsonl",
+                "\\".join(("D:", "p", "C-" + "-Users-bob")))
+        got_lone = [(p, M.machine_path_shape(p)) for p in lone]
+        check("sp10 ...and the same lone user segment beside a path separator "
+              "IS a slug - the mutation this catches is a narrowing that "
+              "demands a second segment everywhere: %r" % (got_lone,),
+              all(g[1] == "session-slug" for g in got_lone))
+        tilde = "use " + "~" + "/.config"
+        check("sp11 a home tilde in prose stays refused at the door, because "
+              "the commit-time detector fails the build on it: %r"
+              % (M.check_free_text(proj, "--text", tilde),),
+              "unexpanded-home" in (M.check_free_text(proj, "--text", tilde)
+                                    or ""))
+
+        hosted = "file://localhost" + "/".join(("", "Users", "someone",
+                                                "r.html"))
+        said = "open %s now" % (hosted,)
+        hits = [h[2] for h in tool.scan_text("x.md", said, "plan")]
+        check("sp12 a file URL naming a host before a home directory is "
+              "refused, redacted and flagged: %r"
+              % ((M.check_free_text(proj, "--text", said),
+                  M.redacted_free_text(proj, said), hits),),
+              "posix-home" in (M.check_free_text(proj, "--text", said) or "")
+              and M.redacted_free_text(proj, said)
+              == "open %s now" % (M.OUTSIDE_TOKEN,)
+              and "posix-home" in hits)
+        web = "open https://localhost" + "/".join(("", "Users", "someone",
+                                                   "r.html")) + " now"
+        check("sp13 ALLOW twin: an https URL with the very same host and path "
+              "is neither refused, rewritten nor flagged - the mutation this "
+              "catches is a host start granted to every scheme: %r"
+              % ((M.check_free_text(proj, "--text", web),
+                  tool.scan_text("x.md", web, "plan")),),
+              M.check_free_text(proj, "--text", web) is None
+              and M.redacted_free_text(proj, web) == web
+              and tool.scan_text("x.md", web, "plan") == [])
 
         url = "file://" + "/".join(("", "Users", "someone", "r.html"))
         said = "open %s now" % (url,)
