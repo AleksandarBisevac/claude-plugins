@@ -20,8 +20,44 @@
 // the browser gate in `tools/ui-checks/stage-tabs.mjs`.
 import fs from 'node:fs';
 import path from 'node:path';
+import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { REPO_ROOT, loadPanel, reach } from './sandbox.mjs';
+
+// A minimal but COMPLETE rollup: every key `renderOver` reads before it ever
+// reaches the copyHeadline line, so a case can set STATE once and trust that
+// nothing upstream of the assertion throws. `copyHeadline` itself is the one
+// key each case below varies.
+function baseRollup() {
+  return {
+    valid: true, findings: 0, warnings: 0, areas: {}, phases: [], ready: [],
+    tasks: { total: 0, byStatus: {} },
+    bugs: { total: 0, byStatus: {}, open: 0, openHighSeverity: 0 },
+  };
+}
+
+function setState(ctx, state) {
+  vm.runInContext('STATE = ' + JSON.stringify(state) + ';', ctx);
+}
+
+// Collects every string `el()` turned into a text node, the same technique
+// `plan-unreadable.test.mjs` uses: the sandbox's stub elements do not
+// accumulate appended children, so a rendered sentence is only visible as a
+// text node it created.
+function renderedTexts(ctx, fn) {
+  const texts = [];
+  const orig = ctx.document.createTextNode;
+  ctx.document.createTextNode = (t) => {
+    texts.push(String(t));
+    return orig(t);
+  };
+  try {
+    fn();
+  } finally {
+    ctx.document.createTextNode = orig;
+  }
+  return texts.join('\n');
+}
 
 const P = reach(loadPanel().ctx, ['ovExcerpt', 'ovShownText', 'ovOutcomeIsBasis']);
 
@@ -145,5 +181,132 @@ describe('ovExcerpt makes the hit visible, not merely claimed', () => {
   it('nothing in, nothing out', () => {
     expect(P.ovExcerpt('', 'x', W)).toBe('');
     expect(P.ovExcerpt(undefined, 'x', W)).toBe('');
+  });
+});
+
+// The row's COPY NOTE. A phase worked on in another worktree reaches the Overview
+// as that worktree holds it, and the rollup entry carries `copy` - the sentence
+// naming where it was read from. The row is the only place a reader sees which
+// copy a count came from, so the note is shown whenever the entry carries one and
+// never otherwise. Reached per case rather than at the top, so a source without
+// the helper fails these cases by name instead of the whole file.
+describe('ovCopyNote names the copy a row was read from', () => {
+  const C = () => reach(loadPanel().ctx, ['ovCopyNote']);
+
+  it('a row read from a linked worktree says so, and is marked live', () => {
+    const got = C().ovCopyNote({ id: 'P1', copy: {
+      live: true, basis: 'read from the worktree file /x/p1-tree/P1.json' } });
+    expect(got).toEqual({ live: true,
+      text: 'copy: read from the worktree file /x/p1-tree/P1.json' });
+  });
+
+  it('a row that fell back to this checkout is marked stale, never live', () => {
+    const got = C().ovCopyNote({ id: 'P1', copy: {
+      live: false, basis: "shows this checkout's copy - may not be current" } });
+    expect(got.live).toBe(false);
+    expect(got.text).toContain("shows this checkout's copy");
+  });
+
+  it('the twin: a row of this checkout\'s own live copy carries no note', () => {
+    // The over-fire direction. A helper that always answered would paint a
+    // note on every row of every plan, and the cases above would still pass.
+    expect(C().ovCopyNote({ id: 'P2' })).toBe(null);
+    expect(C().ovCopyNote({ id: 'P2', copy: {} })).toBe(null);
+    expect(C().ovCopyNote({ id: 'P2', copy: null })).toBe(null);
+  });
+});
+
+// The READY NOW card's copy notes. The card's numbers - which tasks are ready,
+// and so which command a reader copies - can come from a phase read from another
+// worktree's copy, either because the ready task is in that phase or because it
+// depends on a task there. The server names those phases (`readyCopies`, one
+// line each in `/audit:status`'s wording); this turns them into what the card
+// draws, and nothing when there are none.
+describe('ovReadyCopyNotes draws the copies Ready now was read from', () => {
+  const C = () => reach(loadPanel().ctx, ['ovReadyCopyNotes']);
+
+  it('one note per named phase, in the server\'s words, live or stale', () => {
+    const got = C().ovReadyCopyNotes({ readyCopies: [
+      { phase: 'P1', live: true, line: 'phase P1 read from the worktree file /x/P1.json' },
+      { phase: 'P4', live: false, line: "phase P4 shows this checkout's copy - may not be current" },
+    ] });
+    expect(got).toEqual([
+      { live: true, text: 'phase P1 read from the worktree file /x/P1.json' },
+      { live: false, text: "phase P4 shows this checkout's copy - may not be current" },
+    ]);
+  });
+
+  it('the twin: nothing named, or an older payload with no key, draws nothing', () => {
+    // The over-fire direction: a card that drew a note for every payload would
+    // pass the case above.
+    expect(C().ovReadyCopyNotes({ readyCopies: [] })).toEqual([]);
+    expect(C().ovReadyCopyNotes({})).toEqual([]);
+    expect(C().ovReadyCopyNotes({ readyCopies: [{ phase: 'P1', live: true }] })).toEqual([]);
+  });
+});
+
+// The TASK STRIP. Its pills count `tasks.byStatus`, which the server takes over
+// the plan with each live copy laid over it. The filter a pill sets keeps a
+// phase by that phase's own count of the status - and those counts used to come
+// from the composition, which is this checkout's copy, so with a phase finished
+// in a worktree the `done` pill read 1 and pressing it showed no phase.
+describe('ovPhaseStatus is the strip filter\'s counts, off the pills\' plan', () => {
+  const C = () => reach(loadPanel().ctx, ['ovPhaseStatus']);
+  // P1 read from a worktree that finished P1.1; this checkout's composition
+  // still has it pending, which is what the filter must NOT read.
+  const ROLLUP = {
+    tasks: { total: 3, byStatus: { done: 1, pending: 2 } },
+    phaseTaskStatus: { P1: { done: 1, pending: 1 }, P2: { pending: 1 } },
+  };
+
+  it('every pill\'s count is what its filter finds, with a phase overlaid', () => {
+    const per = C().ovPhaseStatus(ROLLUP);
+    for (const [st, n] of Object.entries(ROLLUP.tasks.byStatus)) {
+      const found = Object.keys(per).reduce((a, pid) => a + ((per[pid] || {})[st] || 0), 0);
+      expect(found, st).toBe(n);
+    }
+    expect(Object.keys(per).filter((pid) => (per[pid] || {}).done)).toEqual(['P1']);
+  });
+
+  it('the twin: nothing overlaid, nothing done, and no phase kept by `done`', () => {
+    const per = C().ovPhaseStatus({ tasks: { total: 2, byStatus: { pending: 2 } },
+      phaseTaskStatus: { P1: { pending: 1 }, P2: { pending: 1 } } });
+    expect(Object.keys(per).filter((pid) => (per[pid] || {}).done)).toEqual([]);
+  });
+
+  it('a phase id that is an Object.prototype name is a phase, not a property', () => {
+    const per = C().ovPhaseStatus({ phaseTaskStatus: { constructor: { done: 2 } } });
+    expect(per.constructor.done).toBe(2);
+    expect(C().ovPhaseStatus({}).toString).toBe(undefined);
+  });
+});
+
+// The COPY HEADLINE. `copyHeadline` is the one sentence `_status_facts.rollup`
+// writes beside the counts and Next when a phase in flight elsewhere was laid
+// over this checkout's plan — the report's hero prints it off the same key
+// (`_report_page._copy_headline_html`), so the panel renders exactly the string
+// the server sent rather than composing its own words from `liveCopyError` or
+// the per-phase `copy` notes.
+describe('renderOver draws the payload\'s copyHeadline beside the live-copy error', () => {
+  it('a payload carrying the sentence renders it', () => {
+    const { ctx } = loadPanel();
+    const headline = 'These counts and Next take a phase in flight elsewhere '
+      + "from this checkout's copy, which may not be current; each such phase "
+      + 'says why.';
+    setState(ctx, { manifestExists: true,
+      rollup: Object.assign(baseRollup(), { copyHeadline: headline }) });
+    const { renderOver } = reach(ctx, ['renderOver']);
+    expect(renderedTexts(ctx, renderOver)).toContain(headline);
+  });
+
+  it('the twin: a payload with no copyHeadline renders nothing for it', () => {
+    // The over-fire direction. A branch that rendered unconditionally would
+    // still pass the case above.
+    const { ctx } = loadPanel();
+    setState(ctx, { manifestExists: true, rollup: baseRollup() });
+    const { renderOver } = reach(ctx, ['renderOver']);
+    const texts = renderedTexts(ctx, renderOver);
+    expect(texts).not.toContain('in flight elsewhere');
+    expect(texts).not.toContain('take a phase');
   });
 });

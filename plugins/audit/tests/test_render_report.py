@@ -1913,10 +1913,217 @@ def _resolve_cases(check):
         shutil.rmtree(root, ignore_errors=True)
 
 
+def _md_ready(md):
+    """The ids the Markdown twin lists under `## Ready now`, in its order."""
+    lines = (md or "").splitlines()
+    if "## Ready now" not in lines:
+        return []
+    for ln in lines[lines.index("## Ready now") + 1:]:
+        if ln.strip() and not ln.startswith(">"):
+            return [x.strip() for x in ln.split(",")]
+    return []
+
+
+def _md_section(md, pid):
+    """The Markdown twin's lines from phase `pid`'s heading to the next one."""
+    lines = (md or "").splitlines()
+    at = [i for i, ln in enumerate(lines) if ln.startswith("## %s " % (pid,))]
+    if not at:
+        return []
+    nxt = [i for i, ln in enumerate(lines) if i > at[0] and ln.startswith("## ")]
+    return lines[at[0]:(nxt[0] if nxt else len(lines))]
+
+
+def _html_phase_row(html, pid):
+    """The `<tr class="phase">` row for `pid`, or ''."""
+    m = re.search(r'<tr class="phase" id="phase-%s".*?</tr>' % re.escape(pid),
+                  html or "", re.S)
+    return m.group(0) if m else ""
+
+
+def _embedded_md(html):
+    import base64
+    m = re.search(r'window\.AUDIT_MD_B64="([^"]*)"', html or "")
+    return base64.b64decode(m.group(1)).decode("utf-8") if m else ""
+
+
+def _live_copy_cases(check):
+    """A report rendered while a phase is finished in a linked worktree shows
+    that phase as the worktree holds it and names the copy beside it - in the
+    HTML, in the Markdown twin and in the twin embedded in the HTML, which is
+    the file people forward. The bug counts and the bug table stay this
+    checkout's. The last case asks `/audit:status --json`, the panel payload
+    and this report for the ready list over one repository and expects one
+    answer."""
+    import shutil
+    import test__live_copy as LC
+    labels = ("rl1", "rl2", "rl3", "rl4", "rl5", "rl6", "rl7", "rl8", "rl9")
+    if not shutil.which("git"):
+        for lbl in labels:
+            _harness.skip(check, lbl, "git is not on PATH, and the worktree "
+                          "and the branch live in git", True)
+        return
+    root = _harness.fixture_root("render-report-live-copy-")
+    try:
+        fx = LC.worktree_fixture(os.path.join(root, "linked"), True)
+        out = os.path.join(root, "out-linked")
+        code, err = _in_project(fx["repo"], [fx["manifest"], "--out-dir", out])
+        md = _read(os.path.join(out, "audit-report.md")) or ""
+        html = _read(os.path.join(out, "audit-report.html")) or ""
+        p1 = _md_section(md, "P1")
+        copy_md = [ln for ln in p1 if "copy:" in ln]
+        check("rl1 the Markdown twin lists the worktree's ready work and names, "
+              "under P1's heading, the worktree file P1 was read from",
+              code == 0 and _md_ready(md) == ["P1.2", "P2.1"]
+              and len(copy_md) == 1 and "p1-tree" in copy_md[0]
+              and any(ln.startswith("| P1.1 | first | done |") for ln in p1),
+              "code=%r err=%r ready=%r P1=%r" % (code, err, _md_ready(md), p1))
+        row = _html_phase_row(html, "P1")
+        check("rl2 the HTML's P1 row carries the same copy note, marked live",
+              'data-copynote="live"' in row and "p1-tree" in row,
+              "row=%r" % (row[:600],))
+        embedded = _embedded_md(html)
+        check("rl3 the twin embedded in the HTML - what a forwarded report "
+              "carries - holds the copy note beside the overlaid phase too",
+              _md_section(embedded, "P1") == p1
+              and len([ln for ln in _md_section(embedded, "P1")
+                                      if "copy:" in ln and "p1-tree" in ln]) == 1,
+              "embedded P1=%r" % (_md_section(embedded, "P1"),))
+        bug_rows = [ln for ln in md.splitlines() if ln.startswith("| BUG-1 |")]
+        check("rl4 the bug fixed only in the worktree stays open in the report - "
+              "the bug counts and the bug table read this checkout",
+              "1 open bug(s)" in md and len(bug_rows) == 1
+              and "| open |" in bug_rows[0],
+              "bugs=%r" % (bug_rows,))
+        fx2 = LC.worktree_fixture(os.path.join(root, "alone"), False)
+        out2 = os.path.join(root, "out-alone")
+        code2, err2 = _in_project(fx2["repo"],
+                                  [fx2["manifest"], "--out-dir", out2])
+        md2 = _read(os.path.join(out2, "audit-report.md")) or ""
+        html2 = _read(os.path.join(out2, "audit-report.html")) or ""
+        check("rl5 ...and their twin: with no worktree the report lists this "
+              "checkout's ready work and names no copy anywhere",
+              code2 == 0 and _md_ready(md2) == ["P1.1", "P2.1"]
+              and "copy:" not in md2 and "data-copynote=" not in html2
+              and "data-note=\"live-copy\"" not in html2,
+              "code=%r err=%r ready=%r" % (code2, err2, _md_ready(md2)))
+        # The parity case. Each surface is asked the way its user asks it:
+        # the command's own `main`, the panel through the reader its server
+        # hands it, the report off disk.
+        status = _loader.load_script("audit-status.py", modname="audit_status_rl")
+        import contextlib
+        import io
+        buf = io.StringIO()
+        saved = os.environ.get("CLAUDE_PROJECT_DIR")
+        try:
+            os.environ["CLAUDE_PROJECT_DIR"] = fx["repo"]
+            with contextlib.redirect_stdout(buf), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                scode = status.main([fx["manifest"], "--json"])
+        finally:
+            if saved is None:
+                os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            else:
+                os.environ["CLAUDE_PROJECT_DIR"] = saved
+        sready = json.loads(buf.getvalue()).get("ready") if scode == 0 else None
+        import _panel_state
+        reader, why = LC._reader()
+        ok, st = _harness.attempt(_panel_state.build_state, fx["repo"],
+                                  live=getattr(reader, "flight_for", None))
+        pready = ((st or {}).get("rollup") or {}).get("ready") if ok else None
+        own_ready = _status_facts_ready(fx["manifest"])
+        check("rl6 /audit:status --json, the panel payload and the rendered "
+              "report agree on the ready list for a phase done in a linked "
+              "worktree - and it is not this checkout's own list",
+              sready == pready == _md_ready(md) == ["P1.2", "P2.1"]
+              and own_ready != sready,
+              "status=%r panel=%r report=%r own=%r why=%r"
+              % (sready, pready if ok else st, _md_ready(md), own_ready, why))
+        # The gate certifies this checkout. A task the worktree marked blocked
+        # - uncommitted, which the worktree's file is read with - shows on the
+        # overlaid row, and must not reach the verdict at the top.
+        LC._write_shard(fx["tree"], "P1", "fixer", "in_progress",
+                        [dict(t, status="blocked") if t["id"] == "P1.2" else t
+                         for t in LC._p1_tasks("done")])
+        out3 = os.path.join(root, "out-blocked")
+        code3, err3 = _in_project(fx["repo"], [fx["manifest"], "--out-dir", out3])
+        html3 = _read(os.path.join(out3, "audit-report.html")) or ""
+        hero = re.search(r'<p class="vd-why">(.*?)</p>', html3)
+        why3 = hero.group(1) if hero else None
+        check("rl7 a task blocked only in the worktree shows on the overlaid "
+              "row but stays out of the gate verdict, which reads this "
+              "checkout: the high bug is the one reason given",
+              code3 == 0 and 'class="pblocked"' in _html_phase_row(html3, "P1")
+              and why3 == "1 high-severity bug still open",
+              "code=%r err=%r why=%r" % (code3, err3, why3))
+        # A task of ANOTHER phase made ready by the worktree's work: P2.1
+        # depends on P1.1, which only the worktree finished. Every number a
+        # reader acts on - Next, the done count, the ready list - came from
+        # that copy, so the hero and Ready now name it in both surfaces.
+        got = _ready_copy_surfaces(
+            LC.worktree_fixture(os.path.join(root, "cross"), True, cross=True),
+            os.path.join(root, "out-cross"))
+        check("rl8 a cross-phase dependency made ready only in a linked "
+              "worktree names that copy once in the HTML hero, once in its "
+              "Ready now, once in the Markdown twin's Ready now and once "
+              "under its Overall line",
+              got["code"] == 0 and got["ready"] == ["P1.2", "P2.1"]
+              and len(got["hero"]) == 1
+              and "read from another copy" in got["hero"][0]
+              and len(got["htmlReady"]) == 1 and "p1-tree" in got["htmlReady"][0]
+              and len(got["mdReady"]) == 1
+              and got["mdReady"][0].startswith("- phase P1 read from ")
+              and "p1-tree" in got["mdReady"][0]
+              and len(got["mdOverall"]) == 1,
+              "got=%r" % (got,))
+        alone = _ready_copy_surfaces(
+            LC.worktree_fixture(os.path.join(root, "cross-alone"), False,
+                                cross=True),
+            os.path.join(root, "out-cross-alone"))
+        check("rl9 ...and its twin: the same dependency with no worktree names "
+              "no copy in the hero, in Ready now or under the Overall line",
+              alone["code"] == 0 and alone["ready"] == ["P1.1"]
+              and alone["hero"] == [] and alone["htmlReady"] == []
+              and alone["mdReady"] == [] and alone["mdOverall"] == [],
+              "got=%r" % (alone,))
+    finally:
+        _harness.remove_tree(root)
+
+
+def _ready_copy_surfaces(fx, out):
+    """What the rendered report says about copies where a reader acts: the
+    hero's copy lines, Ready now's copy notes in the HTML, and the Markdown
+    twin's Ready now notes and Overall copy line - each a list, so a second
+    copy of a note counts rather than hides."""
+    code, err = _in_project(fx["repo"], [fx["manifest"], "--out-dir", out])
+    md = _read(os.path.join(out, "audit-report.md")) or ""
+    html = _read(os.path.join(out, "audit-report.html")) or ""
+    hero = re.search(r'<section class="overall".*?</section>', html, re.S)
+    ready = re.search(r'>Ready now</h2>(.*?)(?:<h2|</main>)', html, re.S)
+    lines = md.splitlines()
+    at = lines.index("## Ready now") if "## Ready now" in lines else len(lines)
+    tail = lines[at + 1:]
+    nxt = [i for i, ln in enumerate(tail) if ln.startswith("## ")]
+    return {"code": code, "err": err, "ready": _md_ready(md),
+            "hero": re.findall(r'data-copynote="hero"[^>]*>([^<]*)<',
+                               hero.group(0) if hero else ""),
+            "htmlReady": re.findall(r'data-note="ready-copy"[^>]*>([^<]*)<',
+                                    ready.group(1) if ready else ""),
+            "mdReady": [ln for ln in tail[:nxt[0] if nxt else len(tail)]
+                        if ln.startswith("- phase ")],
+            "mdOverall": [ln for ln in lines if ln.startswith("**Copies:**")]}
+
+
+def _status_facts_ready(manifest_path):
+    import _status_facts
+    return _status_facts.rollup(_mio.load_manifest(manifest_path), [], [])["ready"]
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _resolve_cases(check)
+        _harness.stage(check, "rl", _live_copy_cases)
     return _harness.run(body)
 
 

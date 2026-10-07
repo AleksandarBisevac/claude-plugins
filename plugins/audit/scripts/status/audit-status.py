@@ -100,11 +100,8 @@ import _status_facts  # noqa: E402  (what the manifest SAYS: rollup, readiness, 
 import _invariants  # noqa: E402  (what GIT says: the post-hoc check behind --fail-on invariant-breach)
 import _evidence_io  # noqa: E402  (where a run's record lives - and WHEN this
 #                                   plan could first have recorded one at all)
-import _locks  # noqa: E402  (which phase locks are held, and whether a holder is
-#                             alive - the evidence behind --fail-on unfinished-run)
-import _branch  # noqa: E402  (what a phase's own branch is called - one answer for every surface)
-import _worktrees  # noqa: E402  (which worktree has a phase branch out, and the ref probe)
-import _scoped_commit  # noqa: E402  (the stderr-keeping git runner a branch copy is read through)
+import _live_copy  # noqa: E402  (which copy holds a phase in flight live - the one
+#                                 reader the panel and the report read it through too)
 
 # --- the facts, under the names this command has always called them --------------
 # NOT copies. `_status_facts` (layer 2) owns every one of these; the aliases exist
@@ -139,6 +136,16 @@ rollup = _status_facts.rollup
 unmet_refs = _status_facts.unmet_refs
 evaluate_gate = _status_facts.evaluate_gate
 budget_breaches = _status_facts.budget_breaches
+row_copies = _status_facts.row_copies
+ready_counts = _status_facts.ready_counts
+
+# --- the reader, under the names this command has always called them -------------
+# NOT copies either. `_live_copy` owns the reader of a phase in flight, because the
+# panel and the report have to read such a phase exactly as this command does and
+# neither may import an entry point; `tests/test__live_copy.py` pins each name to
+# be that module's own object.
+in_flight = _live_copy.in_flight
+flight_for = _live_copy.flight_for
 invariant_breaches = _status_facts.invariant_breaches
 unfinished_runs = _status_facts.unfinished_runs
 provisional_phases = _status_facts.provisional_phases
@@ -276,7 +283,7 @@ def portability_block(manifest, project):
         return {"error": "the portability scan could not run: %s" % (msg[:200],)}
 
 
-def locks_block(manifest, project, manifest_path=None):
+def locks_block(manifest, project, manifest_path=None, flight=None):
     """Which audit locks this clone holds — the evidence `unfinished-run` grades.
 
     `{"scheme": bool, "held": [{"name", "live", "basis"}]}`, or a block with NO
@@ -317,321 +324,38 @@ def locks_block(manifest, project, manifest_path=None):
 
     EACH HELD PHASE LOCK ALSO CARRIES `readyCount`, `readyLive` AND
     `readyBasis` - that phase's own ready work, whether it was counted from the
-    copy holding the phase live, and the sentence naming that copy, all decided
-    by `phase_ready_counts`. `manifest_path` is what lets it name the file to
-    read from a phase branch or the worktree that has it out; without it no
+    copy holding the phase live, and the sentence naming that copy, all taken
+    from `in_flight`, the one reader every other surface of this command reads
+    an in-flight phase through. `manifest_path` is what lets it name the file
+    to read from a phase branch or the worktree that has it out; without it no
     such copy can be located and the sentence says the count fell back to this
     checkout's.
+
+    `flight` is `in_flight`'s answer when the caller already has one - `main`
+    reads it once for the rollup, and this block counts from the same reads
+    rather than asking git for every copy, or for the lock directory, a second
+    time. Without it the block reads the locks itself. An answer carrying an
+    error is that error here: the lock directory was asked for once, and a
+    second lookup would be a second answer to the same question.
     """
     try:
-        git_root = _invariants.git_root_for(manifest, project)
-        if not _locks.available(git_root):
+        if flight is None:
+            flight = in_flight(manifest, manifest_path,
+                               _invariants.git_root_for(manifest, project))
+        if flight.get("error"):
+            return {"error": "the audit locks could not be read: %s"
+                             % (flight["error"],)}
+        if not flight.get("scheme"):
             return {"scheme": False, "held": []}
         held = [{"name": r.get("name"), "live": r.get("live"),
-                 "basis": r.get("basis")} for r in _locks.collect(git_root)]
+                 "basis": r.get("basis")} for r in flight["held"]]
     except Exception as exc:                       # defensive; see the docstring
         return {"error": "the audit locks could not be read: %s" % (exc,)}
     prefix = _status_facts.PHASE_LOCK_PREFIX
-    phase_ids = [str(r["name"])[len(prefix):] for r in held
-                 if isinstance(r.get("name"), str)
-                 and r["name"].startswith(prefix)]
-    counts = phase_ready_counts(manifest, manifest_path, git_root, phase_ids)
+    counts = ready_counts(manifest, flight["reads"])
     return {"scheme": True,
             "held": [dict(r, **counts.get(
                 str(r.get("name"))[len(prefix):], {})) for r in held]}
-
-
-def _phase_body(doc, phase_id):
-    """The phase dict with this id in a parsed shard or single-file manifest.
-
-    Both shapes are read so the layout a copy keeps does not decide whether it
-    can be counted: a shard IS one phase, a single file lists every phase.
-    """
-    candidates = [doc] if isinstance(doc, dict) and "tasks" in doc else (
-        (doc.get("phases") or []) if isinstance(doc, dict) else [])
-    for body in candidates:
-        if isinstance(body, dict) and str(body.get("id")) == str(phase_id):
-            return body
-    return None
-
-
-def _branch_copy(git_root, branch, rel, phase_id):
-    """`(phase body, None)` as `branch` commits `rel`, or `(None, why)`.
-
-    `git show <branch>:<rel>` reads the blob out of the object store, so no
-    checkout of the branch is needed - which is the copy to read when no
-    worktree has the branch out, because then nothing uncommitted can exist.
-    """
-    return _show_phase(git_root, "refs/heads/%s" % (branch,), rel, phase_id)
-
-
-def _tree_copy(path, phase_id):
-    """`(phase body, None)` as the file at `path` holds it right now, or
-    `(None, why)`.
-
-    THE FILE IN THE WORKTREE THAT HAS THE PHASE BRANCH OUT, uncommitted edits
-    included. A run marks a task done in that file before any commit carries
-    it, so the branch tip lags the run by up to a whole wave - and a count off
-    the tip reports work as ready that the run has already finished. Opening
-    another checkout's file is a read; nothing here writes to it.
-    """
-    try:
-        with open(path, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError) as exc:
-        return None, "%s could not be read (%s)" % (path, exc)
-    body = _phase_body(doc, phase_id)
-    if body is None:
-        return None, "%s holds no phase %s" % (path, phase_id)
-    return body, None
-
-
-def _show_phase(git_root, rev, rel, phase_id):
-    """`(phase body, None)` as commit `rev` holds `rel`, or `(None, why)`."""
-    spec = "%s:%s" % (rev, rel)
-    code, out, err = _scoped_commit.run_git(git_root, ["show", spec])
-    if code != 0:
-        return None, "git show %s answered %s: %s" % (
-            spec, code, " ".join((err or "").split())[:160] or "no output")
-    try:
-        body = _phase_body(json.loads(out), phase_id)
-    except ValueError as exc:
-        return None, "git show %s is not readable JSON (%s)" % (spec, exc)
-    if body is None:
-        return None, "git show %s holds no phase %s" % (spec, phase_id)
-    return body, None
-
-
-def _readiness_moved(git_root, branch, rel, phase_id):
-    """`(note, known)` - whether this checkout's copy of `rel` changed after
-    `branch` forked, in a way that moves the phase's readiness.
-
-    CALL THIS ONLY WHEN THE COUNT CAME FROM THE BRANCH'S COMMITTED COPY - no
-    worktree holds `branch` out, so `git show` is the only copy there was to
-    read. That copy is the branch tip, but the development branch may have
-    moved the same file on since the fork - a task added, a dependency
-    rewritten - and a count off the tip alone would then miss that. So the
-    count stays the branch's, and the sentence says what it may be missing.
-
-    A worktree that holds `branch` out is read for its own file instead
-    (`_tree_copy`), uncommitted edits included - that copy already IS
-    whatever is live there, so it has nothing this question could be about,
-    and the caller must not run this check over it.
-
-    THE QUESTION IS ABOUT CONTENT, NOT COMMITS. A count of commits to the file
-    reads a `--no-ff` landing of a branch that predates the file as a commit to
-    it, although the merge brought the file nothing, and a landed reword of a
-    description as a change although no task moved. So the common path is one
-    `git diff --quiet <branch>...HEAD` - the file at the fork point against
-    HEAD's - which costs what the count did. Only when that says the file
-    changed are both copies read and their `readiness_projection`s compared.
-
-    `known` is False whenever the note is not empty: a count that may be
-    missing a readiness change, or whose divergence git could not report, is
-    not one a zero may be silent on.
-    """
-    spec = "refs/heads/%s...HEAD" % (branch,)
-    code, _out, err = _scoped_commit.run_git(
-        git_root, ["diff", "--quiet", spec, "--", rel])
-    if code == 0:
-        return "", True
-    why = "git diff --quiet %s answered %s: %s" % (
-        spec, code, " ".join((err or "").split())[:160] or "no output")
-    if code == 1:
-        why = None
-        mcode, mout, merr = _scoped_commit.run_git(
-            git_root, ["merge-base", "refs/heads/%s" % (branch,), "HEAD"])
-        fork = (mout or "").strip()
-        if mcode != 0 or not fork:
-            why = "git merge-base answered %s: %s" % (
-                mcode, " ".join((merr or "").split())[:160] or "no output")
-        if why is None:
-            was, why = _show_phase(git_root, fork, rel, phase_id)
-        if why is None:
-            now, why = _show_phase(git_root, "HEAD", rel, phase_id)
-        if why is None:
-            if (_status_facts.readiness_projection(was)
-                    == _status_facts.readiness_projection(now)):
-                return "", True
-            return ("; this checkout's copy of %s changed after branch `%s` "
-                    "forked, in a way that moves readiness, so the branch's "
-                    "copy may be missing that change" % (rel, branch), False)
-    return ("; whether this checkout's copy of %s changed after branch `%s` "
-            "forked could not be asked (%s), so this count is not current"
-            % (rel, branch, why), False)
-
-
-def _fallback(local, on, branch, why):
-    """This checkout's count, marked as NOT the live copy.
-
-    The branch exists, and that is all this sentence asserts about it: its copy
-    could not be read, so which copy holds the phase live is exactly what is
-    unknown. A zero here is a stale reading, and it prints.
-    """
-    return {"readyCount": local, "readyLive": False,
-            "readyBasis": "counted from this checkout's copy %s - branch `%s` "
-                          "exists but its copy could not be read (%s), so this "
-                          "count is not current" % (on, branch, why)}
-
-
-def _shard_rel(manifest_path, git_root, phase):
-    """The phase's file as a path under the git root, or None.
-
-    Every worktree of a clone lays its files out at the same paths relative to
-    its own root, so this one path names the file in the branch's commits and
-    in any worktree that has the branch out.
-    """
-    if not manifest_path:
-        return None
-    _index, phase_file = _invariants.manifest_files(manifest_path, phase)
-    try:
-        rel = _output.posix_rel(os.path.abspath(phase_file),
-                                os.path.abspath(git_root))
-    except ValueError:
-        return None
-    return None if rel.startswith("..") else rel
-
-
-def _here_words(view):
-    """How the sentence names the branch this checkout has out."""
-    here = view.get("here")
-    if here and here.get("branch"):
-        return "on `%s`" % (here["branch"],)
-    if here and here.get("detached"):
-        return "on a detached HEAD"
-    return "on a branch the worktree list could not name (%s)" % (
-        view.get("error") or "this checkout is in none of the trees it lists")
-
-
-def _phase_ready_count(manifest, manifest_path, git_root, phase_id, view, user):
-    """`{"readyCount", "readyLive", "readyBasis"}` for one held phase - its OWN
-    ready tasks, counted from the copy judged to hold the phase live, whether
-    that copy is the live one, and the sentence naming it.
-
-    WHICH COPY, in order:
-
-    - this checkout, when it has the phase branch out;
-    - the file in another worktree that has the branch out, uncommitted state
-      included (`_tree_copy` says why the tip is not enough);
-    - the branch's committed copy, when no worktree has it out;
-    - this checkout's copy, when no branch of that name exists - then it is the
-      only copy there is.
-
-    The branch name comes from `_branch.branch_of`, the one answer every
-    surface gives, because the development branch's copy of a shard need not
-    record the branch its phase later ran on.
-
-    A PHASE THIS CHECKOUT'S PLAN DOES NOT HOLD GETS NO COUNT. A lock names it,
-    so a run of it exists somewhere - on a branch whose phase this checkout's
-    index never learned of - and zero would be the silent row. `readyCount`
-    None is what `unfinished_runs` refuses.
-    """
-    phase = _invariants.phase_of(manifest, phase_id)
-    if phase is None:
-        return {"readyCount": None, "readyLive": False,
-                "readyBasis": "this checkout's plan holds no phase %s, so the "
-                              "copy that holds it live cannot be named from "
-                              "here" % (phase_id,)}
-    local = len(_status_facts.ready_by_phase(manifest).get(phase_id) or [])
-    on = _here_words(view)
-    branch = _branch.branch_of((manifest or {}).get("meta") or {}, phase,
-                               user)["name"]
-    here = view.get("here") or {}
-    if here.get("branch") == branch:
-        return {"readyCount": local, "readyLive": True,
-                "readyBasis": "counted from this checkout, which has `%s` "
-                              "checked out" % (branch,)}
-    probe = _worktrees.ref_exists(git_root, branch)
-    if probe["exists"] is False:
-        return {"readyCount": local, "readyLive": True,
-                "readyBasis": "counted from this checkout's copy %s - no "
-                              "branch `%s` exists in this repository (%s)"
-                              % (on, branch, probe["basis"])}
-    if probe["exists"] is None:
-        return _fallback(local, on, branch, probe["basis"])
-    rel = _shard_rel(manifest_path, git_root, phase)
-    if rel is None:
-        return _fallback(local, on, branch,
-                         "the phase's file could not be placed under the git "
-                         "root, so the file to read is unknown")
-    caveat = ""
-    live = True
-    holder = (None if view.get("error")
-              else _worktrees.holder_of(view.get("trees"), branch)["tree"])
-    body = None
-    if view.get("error"):
-        live = False
-        caveat = ("; which worktree has the branch out could not be asked (%s), "
-                  "so uncommitted work there is not in this count"
-                  % (view["error"],))
-    elif holder is not None:
-        path = os.path.join(holder.get("path") or "", *rel.split("/"))
-        body, why = _tree_copy(path, phase_id)
-        source = "the worktree file %s, which has `%s` checked out" % (
-            path, branch)
-        if body is None:
-            live = False
-            caveat = ("; the worktree that has the branch out could not be "
-                      "read (%s), so its uncommitted work is not in this count"
-                      % (why,))
-    note, current = "", True
-    if body is None:
-        body, why = _branch_copy(git_root, branch, rel, phase_id)
-        source = "branch `%s`'s copy of %s" % (branch, rel)
-        if body is None:
-            return _fallback(local, on, branch, why)
-        # Only the branch's COMMITTED copy is what the fork-point diff is
-        # about. A worktree's file already carries whatever is live there,
-        # uncommitted edits included, so a readiness-moving edit this
-        # checkout lands on its own history afterwards is not a gap in that
-        # copy - there is nothing for this question to ask.
-        note, current = _readiness_moved(git_root, branch, rel, phase_id)
-    counted = dict(manifest)
-    counted["phases"] = [dict(p, **body) if p is phase else p
-                         for p in (manifest.get("phases") or [])]
-    return {"readyCount": len(
-                _status_facts.ready_by_phase(counted).get(phase_id) or []),
-            "readyLive": live and current,
-            "readyBasis": "counted from %s%s%s" % (source, caveat, note)}
-
-
-def phase_ready_counts(manifest, manifest_path, git_root, phase_ids):
-    """`{phase id: {"readyCount", "readyLive", "readyBasis"}}` for each held
-    phase lock.
-
-    WHAT IT COSTS, AND WHY THAT IS ACCEPTABLE. Nothing at all when no phase lock
-    is held - the early return below - so the everyday status view of a
-    checkout with no run in flight pays no git call here. With a lock held: the
-    worktree list (which also names the branch this checkout has out, so no
-    separate HEAD read) and the identity lookup once, then per held phase a ref
-    probe, a read of its copy and one content diff of its file since the fork
-    - and, only when that diff says the file changed, its fork point and a
-    read of each copy, to ask whether the change moved readiness. Each call goes through a
-    runner with a timeout, the calls scale with the locks held rather than with
-    the plan, and a held lock is exactly the state this view exists to describe
-    correctly.
-
-    One phase's read failing is that phase's sentence, never the whole block's
-    error: the other locks were read, and refusing them all for one unreadable
-    branch would hide every answer that was available.
-    """
-    if not phase_ids:
-        return {}
-    listed = _worktrees.list_worktrees(git_root)
-    trees = listed.get("trees") or []
-    view = {"trees": trees, "error": listed.get("error") or "",
-            "here": _worktrees.standing_in(trees, git_root)}
-    user = _worktrees.git_user_name(git_root)
-    out = {}
-    for pid in phase_ids:
-        try:
-            out[pid] = _phase_ready_count(manifest, manifest_path, git_root,
-                                          pid, view, user)
-        except Exception as exc:                   # defensive; see the docstring
-            out[pid] = {"readyCount": None, "readyLive": False,
-                        "readyBasis": "the count of phase %s's own ready work "
-                                      "could not be taken: %s" % (pid, exc)}
-    return out
 
 
 def _unfinished_detail(summary):
@@ -1117,7 +841,7 @@ def _evidence_cell(holder):
 
 
 def render_status(manifest, summary, width=18, only_phase=None, pt=None,
-                  view=None):
+                  view=None, own=None):
     """Plain-ASCII status report. Printed verbatim by /audit:status.
 
     Pure ASCII, no ANSI, no box-drawing — the same constraint audit-usage.py's
@@ -1130,15 +854,21 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None,
     Three of them used to be written out inline here — the header, the phase
     table and READY NOW — which made this function four times the length of any
     block it sits beside and hid that they are all the same kind of thing.
+
+    `own` is this checkout's own plan when `manifest` has live copies laid
+    over it; the BUGS block and RESUMABLE read it, because a bug is open until
+    its fix lands here and RESUMABLE offers to resume a run here. None means
+    `manifest` is this checkout's own.
     """
     pt = pt or _cli_fmt.PLAIN
+    here = own if own is not None else manifest
     lines = _header_lines(manifest, summary, width, pt=pt)
     lines += _phase_table_lines(manifest, summary, only_phase, view)
     lines += _ready_lines(manifest, summary, pt=pt)
     lines += _area_lines(summary, pt=pt)
-    lines += _bug_lines(manifest, summary, pt=pt)
+    lines += _bug_lines(here, summary, pt=pt)
     lines += _proposal_lines(manifest, summary, pt=pt)
-    lines += _resumable_lines(manifest, summary, pt=pt)
+    lines += _resumable_lines(here, summary, pt=pt)
     lines += _unfinished_lines(summary, pt=pt)
     return "\n".join(lines)
 
@@ -1425,6 +1155,13 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None):
             if word:
                 head += "  full %s" % _clip(word, 88)
         out.append(head)
+        # WHICH COPY THIS ROW IS, whenever it is not this checkout's own live
+        # one: a phase in flight elsewhere is shown as that copy holds it, and
+        # a row whose live copy could not be read says it shows this
+        # checkout's and that this may not be current. Never clipped - the
+        # end of the sentence is the half that says whether to trust it.
+        if isinstance(pe.get("copy"), dict):
+            out.append("       copy: %s" % (pe["copy"].get("basis"),))
         if pe.get("desiredOutcome"):
             out.append("       desired: %s"
                        % _clip(_one_line(pe["desiredOutcome"]), 88))
@@ -1481,13 +1218,14 @@ def _ready_lines(manifest, summary, pt=None):
     # It prints in the empty case too: "nothing is ready" and "the phase you
     # pinned is blocked" are different news.
     pnote = summary.get("priorityNote")
+    copies = _copy_notes(summary)
     if not ready_list:
         out.append(pt.paint("  READY NOW  nothing - every pending task is "
                             "waiting on something, or the plan is complete",
                             "header"))
         if pnote:
             out.append("    note: %s" % pnote)
-        return out
+        return out + copies
     shown = ready_list[:READY_LIST_MAX]
     out.append(pt.paint("  READY NOW  %d task(s)%s"
                         % (len(ready_list),
@@ -1505,6 +1243,24 @@ def _ready_lines(manifest, summary, pt=None):
     if len(shown) < len(ready_list):
         out.append("    ... and %d more - /audit:next runs the first in order"
                    % (len(ready_list) - len(shown)))
+    return out + copies
+
+
+def _copy_notes(summary):
+    """One line per phase this list was read from a copy other than this
+    checkout's own live one, and one when nobody could ask which those are.
+
+    Said in READY NOW and not only in the table, because `--short` carries
+    this block and no table: a phase whose tasks a worktree finished is
+    ABSENT from the list, and an absence with no word beside it reads as
+    this checkout's own state. Said for every such phase, whether or not it
+    has a task listed, for that reason.
+    """
+    out = ["    phase %s %s" % (p.get("id"), p["copy"].get("basis"))
+           for p in summary.get("phases") or []
+           if isinstance(p, dict) and isinstance(p.get("copy"), dict)]
+    if summary.get("liveCopyError"):
+        out.append("    %s" % (summary["liveCopyError"],))
     return out
 
 
@@ -1702,6 +1458,13 @@ def _bug_lines(manifest, summary, pt=None):
     out = ["", pt.paint("  BUGS  %d total - %d open (%d high severity)"
                         % (summary["bugs"]["total"], summary["bugs"]["open"],
                            summary["bugs"]["openHighSeverity"]), "header")]
+    # A fix a live copy elsewhere shows done, named on the line under its bug
+    # (`_status_facts.bugs_fixed_elsewhere`): the bug stays open here, and the
+    # copy that holds the fix is the news. Never clipped, for the copy line's
+    # reason - the end of the sentence says which file it was.
+    shown = dict((e.get("id"), e) for e in
+                 (summary["bugs"].get("elsewhere") or [])
+                 if isinstance(e, dict))
     for b in bugs:
         eff = effective_bug_status(b, tasks)
         if eff in CLOSED_BUG:
@@ -1713,6 +1476,11 @@ def _bug_lines(manifest, summary, pt=None):
                    % (b.get("id") or "?", _theme.label(eff) or "?",
                       b.get("severity") or "-",
                       _one_line(b.get("title"))[:44], flag))
+        there = shown.get(b.get("id"))
+        if there:
+            out.append("             %s elsewhere by task %s - %s"
+                       % (there.get("status"), there.get("taskId"),
+                          there.get("copy") or "which copy could not be named"))
     return out
 
 
@@ -1780,10 +1548,23 @@ def _resumable_lines(manifest, summary, pt=None):
 
     `_mio.phase_running` is that question and the rest of it, asked where the plan
     gate asks it: a phase whose every task is finished and whose sign-off is not
-    recorded still reads in_progress, and has no run in it to resume."""
+    recorded still reads in_progress, and has no run in it to resume.
+
+    `manifest` is THIS CHECKOUT'S OWN PLAN, never one with live copies laid
+    over it: `/audit:resume` resumes a run from here, and a phase another
+    worktree has running is not interrupted because its copy says
+    in_progress. For the same reason a phase whose lock is held by a live
+    holder (`summary["locks"]`, `judge`'s verdict) is skipped - that is a run
+    going on, not one that stopped. A gone holder's phase still prints."""
     pt = pt or _cli_fmt.PLAIN
+    prefix = _status_facts.PHASE_LOCK_PREFIX
+    running_live = set(
+        str(r.get("name"))[len(prefix):]
+        for r in ((summary or {}).get("locks") or {}).get("held") or []
+        if isinstance(r, dict) and r.get("live") is True
+        and str(r.get("name")).startswith(prefix))
     for p in ((manifest or {}).get("phases") or []):
-        if not isinstance(p, dict):
+        if not isinstance(p, dict) or str(p.get("id")) in running_live:
             continue
         if _mio.phase_running(p):
             where = " on %s" % p["branch"] if p.get("branch") else ""
@@ -1819,10 +1600,12 @@ def _unfinished_lines(summary, pt=None):
     `_status_facts` so the render and the exit code cannot disagree.
 
     NOT FOLDED INTO `RESUMABLE`, which sits directly above it. That block reads
-    the PHASE STATUS the plan wrote down; this one reads the LOCK on disk. A
-    phase left `in_progress` by an interrupted command is a different fact from a
-    lock nobody gave back, they can each be true without the other, and one
-    heading over two pieces of evidence is how a reader stops trusting either.
+    the PHASE STATUS this checkout's plan wrote down, and consults a lock only
+    to stay quiet while a live holder is running the phase; this one reads the
+    LOCK on disk. A phase left `in_progress` by an interrupted command is a
+    different fact from a lock nobody gave back, they can each be true without
+    the other, and one heading over two pieces of evidence is how a reader
+    stops trusting either.
     """
     pt = pt or _cli_fmt.PLAIN
     block = (summary or {}).get("locks")
@@ -2229,11 +2012,41 @@ def main(argv):
     # consumers are `--json`'s `evidenceBoundary` key, the panel that reads it, and
     # the gate's excuse note; each of those still gets it.
     want_boundary = want_json or want_gate or want_discovery
-    summary = rollup(manifest, findings, warnings,
-                     usage=usage_summary(manifest, manifest_path,
+    # EVERY SURFACE READS AN IN-FLIGHT PHASE FROM ITS LIVE COPY, through the
+    # one reader (`in_flight`), asked once here. Its bodies are laid over the
+    # plan, and that plan - not this checkout's files alone - is what the
+    # rollup counts and the renders print: READY NOW, the phase table, the
+    # counts, --short and --json alike, and the UNFINISHED block counts from
+    # the same reads.
+    #
+    # THREE READERS STAY ON THIS CHECKOUT'S OWN COPY, because they certify it
+    # or advise about it. The bug counts: a fix that exists only in another
+    # worktree has not landed here, so `own=` counts the bugs from this
+    # checkout and names, beside each, the copy that shows its fix. RESUMABLE
+    # (`render_status`'s `own`): it offers to resume THIS checkout's run. And
+    # --gate: every condition is evaluated over a rollup of this checkout's
+    # own copy (`gate_view` below), never over the overlay - a gate that
+    # passed on work sitting uncommitted in somebody else's worktree would be
+    # certifying a tree it never read. The validator reads this checkout's
+    # files too, because those are what it is asked to validate, and so do
+    # the gate-only blocks below, which ask git about this checkout's history.
+    project = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    flight = flight_for(manifest, manifest_path, project)
+    # The overlay the panel and the report take too (`live_view`). `own` is
+    # set only when a read laid a body over the plan: only then is `plan` a
+    # different plan from this checkout's own, and with none the payload
+    # stays the one a plan with nothing in flight always had.
+    live = _status_facts.live_view(manifest, flight)
+    plan = live["plan"]
+    laid = live["own"] is not None
+    boundary = boundary_for(manifest_path) if want_boundary else None
+    summary = rollup(plan, findings, warnings,
+                     usage=usage_summary(plan, manifest_path,
                                          full=(want_json or want_gate)),
-                     boundary=boundary_for(manifest_path) if want_boundary
-                     else None)
+                     boundary=boundary, copies=live["copies"], own=live["own"])
+    rolled_keys = set(summary)
+    if live["note"]:
+        summary["liveCopyError"] = live["note"]
 
     if want_discovery:
         # CLAUDE_PROJECT_DIR is how Claude Code names the project on every
@@ -2263,20 +2076,23 @@ def main(argv):
     # waves and the state sat on disk, knowable, until a human asked a day later, so the
     # surface a human actually opens has to carry it. The three other injected
     # blocks are gate-only because each costs git calls per phase or a walk of
-    # the repository; this one is a `rev-parse` and a directory listing, which is
-    # what `/audit:doctor` already pays to answer the same question - plus, only
-    # when a phase lock IS held, a few git calls per held phase to count its own
-    # ready work from the copy that holds it live (`phase_ready_counts`).
+    # the repository; this one costs nothing further - the lock directory was
+    # found and listed by `in_flight` above, once, which is what `/audit:doctor`
+    # already pays to answer the same question. Each held phase's own ready work
+    # is counted from the reads `in_flight` already took, so no copy is read
+    # twice.
     #
     # `--json` IS DELIBERATELY NOT ON THIS LIST. The bare payload is pinned byte
-    # for byte against the pure rollup (case dv1), and a lock is a fact about
-    # this checkout at this instant rather than about the plan the payload
-    # describes. Under `--gate --json` it travels, because then it was asked for.
+    # for byte against the pure rollup (case dv1) of a plan with nothing in
+    # flight, and a lock row is a fact about this checkout at this instant
+    # rather than about the plan the payload describes. What --json does carry
+    # is the plan as its live copies hold it, each row read from elsewhere
+    # naming its copy. Under `--gate --json` the block travels, because then it
+    # was asked for.
     if ((want_gate and "unfinished-run" in conditions)
             or not (want_json or want_gate)):
-        summary["locks"] = locks_block(
-            manifest, os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd(),
-            manifest_path)
+        summary["locks"] = locks_block(manifest, project, manifest_path,
+                                       flight=flight)
 
     # THE THIRD PLACE'S OWN ANSWER, injected on the SAME asymmetry as `locks`
     # above and for a sibling reason: the human render's `tests` column names it
@@ -2293,8 +2109,18 @@ def main(argv):
             manifest, manifest_path,
             os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 
+    gate_view = summary
+    if want_gate and laid:
+        # This checkout's own rollup, with every block injected above carried
+        # over as it is: those were asked of this checkout already.
+        gate_view = rollup(manifest, findings, warnings,
+                           usage=usage_summary(manifest, manifest_path,
+                                               full=True),
+                           boundary=boundary)
+        gate_view.update((k, v) for k, v in summary.items()
+                         if k not in rolled_keys)
     if want_gate:
-        failed = evaluate_gate(summary, conditions)
+        failed = evaluate_gate(gate_view, conditions)
         summary["gate"] = {
             "conditions": conditions,
             "failed": failed,
@@ -2334,7 +2160,7 @@ def main(argv):
             # `sh0` pins its output byte for byte - and `only_phase`/`view` are
             # a full-render policy that the condensed form has no table to
             # apply either to.
-            print(render_short(manifest, summary, pt=pt))
+            print(render_short(plan, summary, pt=pt))
         else:
             # THE DEFAULT PICK, and it is copied rather than invented: the
             # identical expression decides `_report_page`'s starting view and
@@ -2350,8 +2176,8 @@ def main(argv):
                                    for p in summary["phases"])
                 view = ("active" if (segs_present & set(("active", "pending")))
                         else "all")
-            print(render_status(manifest, summary, only_phase=only_phase, pt=pt,
-                                view=view))
+            print(render_status(plan, summary, only_phase=only_phase, pt=pt,
+                                view=view, own=manifest))
 
     if want_gate:
         # WHERE THE VERDICT GOES. The machine-readable verdict is already whole in
@@ -2368,35 +2194,39 @@ def main(argv):
         # since the whole point of the boundary is to turn a fail into a pass -
         # and it is emitted only when `no-test-evidence` was actually asked for,
         # so a gate that never read the boundary stays byte-for-byte as it was.
+        # Every sentence below reads `gate_view`, the rollup the verdict was
+        # taken from, so a detail cannot count a different copy than its
+        # condition did.
+        gv = gate_view
         if "no-test-evidence" in conditions:
-            note = _evidence_excuse_note(summary)
+            note = _evidence_excuse_note(gv)
             if note:
                 say(note)
         if "invariant-breach" in conditions:
-            note = _invariant_baseline_note(summary)
+            note = _invariant_baseline_note(gv)
             if note:
                 say(note)
         failed = summary["gate"]["failed"]
         if failed:
             for c in failed:
                 detail = {
-                    "invalid": "%d validator finding(s)" % summary["findings"],
+                    "invalid": "%d validator finding(s)" % gv["findings"],
                     "open-high-bugs": "%d open high-severity bug(s)"
-                                      % summary["bugs"]["openHighSeverity"],
-                    "open-bugs": "%d open bug(s)" % summary["bugs"]["open"],
+                                      % gv["bugs"]["openHighSeverity"],
+                    "open-bugs": "%d open bug(s)" % gv["bugs"]["open"],
                     "blocked-tasks": "%d blocked task(s)"
-                                     % summary["tasks"]["byStatus"].get("blocked", 0),
+                                     % gv["tasks"]["byStatus"].get("blocked", 0),
                     "in-progress": "work in progress",
-                    "over-budget": _budget_detail(summary, 100.0),
-                    "budget-80": _budget_detail(summary, BUDGET_WARN_PCT),
-                    "invariant-breach": _invariant_detail(summary),
-                    "failing-tests": _failing_tests_detail(summary),
-                    "no-test-evidence": _no_evidence_detail(summary),
-                    "stranded-skills": _stranded_detail(summary),
-                    "unfinished-run": _unfinished_detail(summary),
-                    "provisional": _provisional_detail(summary),
-                    "stale-full-run": _stale_full_run_detail(summary),
-                    "unknown-full-run": _unknown_full_run_detail(summary),
+                    "over-budget": _budget_detail(gv, 100.0),
+                    "budget-80": _budget_detail(gv, BUDGET_WARN_PCT),
+                    "invariant-breach": _invariant_detail(gv),
+                    "failing-tests": _failing_tests_detail(gv),
+                    "no-test-evidence": _no_evidence_detail(gv),
+                    "stranded-skills": _stranded_detail(gv),
+                    "unfinished-run": _unfinished_detail(gv),
+                    "provisional": _provisional_detail(gv),
+                    "stale-full-run": _stale_full_run_detail(gv),
+                    "unknown-full-run": _unknown_full_run_detail(gv),
                 }.get(c, "")
                 say("GATE FAILED: %s (%s)" % (c, detail))
             return 1

@@ -112,6 +112,8 @@ import _panel_runstate        # noqa: E402  (records the server reaching LISTENI
 import _panel_state          # noqa: E402  (the read-side payloads: state/areas/policy/journal/usage)
 import _panel_write          # noqa: E402  (the write path: locks, change rows, journal, writers)
 import _panel_page           # noqa: E402  (the assembled page: UI_HTML + UI_TEMPLATE)
+import _live_copy            # noqa: E402  (the reader of a phase in flight elsewhere,
+#                                          handed to build_state, which sits below it)
 
 # The settings-form schema and the write-path allow-lists are settings-shape
 # knowledge, not server plumbing — they live in _panel_settings.py.
@@ -348,8 +350,12 @@ def _make_handler(project, token):
             if not self._guard():
                 return
             if path == "/api/state":
+                # The reader is handed in because `_panel_state` sits below
+                # its layer; the Overview then shows a phase worked on in
+                # another worktree as `/audit:status` does.
                 self._json(200, build_state(
-                    project, full_run_cache=_full_run_cache)); return
+                    project, full_run_cache=_full_run_cache,
+                    live=_live_copy.flight_for)); return
             if path == "/api/runstatus":
                 # Deliberately NOT `/api/state` on a timer. Two reasons, and the
                 # second is correctness rather than cost: build_state computes the
