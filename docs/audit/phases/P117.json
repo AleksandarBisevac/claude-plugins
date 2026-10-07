@@ -1,7 +1,7 @@
 {
   "id": "P117",
   "title": "a pipeline run's fixed cost is measured stage by stage and cut by infrastructure",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "the tokens and time a pipeline run spends are attributed to stages and to the files each stage reads, by offline tools with tests, and an infrastructure design that cuts the fixed part is chosen on that evidence with its saving predicted and a benchmark that will confirm or refute it",
   "testGate": [
@@ -15,21 +15,392 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "a73b836a9e8c79ff993ba7f371f9b749fe3349c1",
+  "branch": "audit/p117-a-pipeline-run-s-fixed-cost-is",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P117-R1",
+        "severity": "med",
+        "file": "tools/stream-cost.py:446-452, 1318-1324",
+        "issue": "No case can catch a broken check behind the '(agrees)' verdict. That verdict compares a rebuilt final request's cache read with the prefix identity's prediction, and the analysis (§1.1) cites it as evidence. I mutated a scratch copy and two mutations stayed green at 21/21: `verdict = (\"agrees\" if True` (M6), and `cr = predicted` in the single-dispatch branch (M7). The fixture's residual and identity always agree, so no case ever produces 'DIFFERS'. A third mutation also stayed green: `one_hour = False` (M8), because every subagent in the fixture writes at the five-minute rate. Today's verdicts are correct: I rebuilt both by hand (29497+513=30010, 22133+1337=23470). The gap is that a regression would print the same evidence word with the suite green. P117.1's outcome says scratch mutations 'each turned their intended case red: sc1-sc21', but it names no command or exit code.",
+        "resolution": "fixed in P117.3-2sz (9501aa91): Add a case whose modelUsage cacheRead is off from the identity by a known k, and assert that 'DIFFERS by k' is printed and '(agrees)' is not. Add a case with a one-hour subagent write, and assert the rebuilt request's cw1. Show both red against the two mutations above.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
+      },
+      {
+        "id": "P117-R2",
+        "severity": "med",
+        "file": "docs/research/pipeline-cost-design.md:348-350, 370, 404-407; plugins/audit/agents/audit-reviewer.md:153, 177",
+        "issue": "C3 needs the reviewer to write, and the design does not say so. C3 says 'Each agent files its return through a verb … and the agent hands back one line'. Under decision 3(a) that file goes into the committed evidence directory. The reviewer's definition says 'You have Bash so you can LOOK' and 'Must not: anything that writes'. The design still says 'Guarantees. None is weakened' and 'The enforced and followed tables lose no row'. The README row 'the reviewer cannot edit' is still literally true, because Bash is not Edit. But the reviewer's read-only contract has to be loosened for C3 to work: if the main loop filed the reviewer's return instead, the hand-back would land back in its context and the C3 saving would be lost. T3 lists 'both agent prompts' as files to change without saying this.",
+        "resolution": "fixed in P117.3-2sz (9501aa91): In C3's Guarantees and in T3, name the loosening: the reviewer gains one write, and say where it goes. Say how it is held, for example a filing verb that can only write the reviewer's own return path, checked by commit-scope. Alternatively, choose 3(b) for the reviewer and state the trade.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
+      },
+      {
+        "id": "P117-R3",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:93-98, 510-528; docs/research/pipeline-cost-analysis.md:258-260",
+        "issue": "The design lists 'the stamp comparison' as one of eight fixed per-task requests, and the stream does not show that. In feature-C-1 the comparison ran inside the gate request (…nt66Ew ran run-test-gate.py and then stamp-verification.py compare in one Bash call). The separate request …yyXaVM was a re-check: its own text reads 'The stamp came back stale, so I'll check which field moved'. The second close attempt was a retry after zsh passed `$V` as one word. The design names that one-off, but only per candidate, not in the §5 headline. The analysis §4 lists six per-task steps (start, dispatch, gate, review dispatch, commit, done), so the two documents disagree. Through m = 4 + 8N, both repeats are assumed to happen on every one of five tasks, and that feeds C7's 0.0795 per task and the 8→5 reduction in §5.",
+        "resolution": "fixed in P117.3-2sz (9501aa91): Describe …yyXaVM as a re-check after a stale verdict, with its recurrence unmeasured. Give §1.2 and §5 with m = 4+6N beside 4+8N, or state how much of the 43.0% and 41.1% comes from removing the two repeats. Make the analysis and the design agree on the per-task count.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
+      },
+      {
+        "id": "P117-R4",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:110-113, 211-214, 484-487, 629-640",
+        "issue": "Arithmetic problems in the cost model:\n(a) The task formula adds c·r·2·(N−1) for the release and the report re-reading earlier tasks. The measured 0.7742 per task already includes those two requests' reads of its task, so this counts them twice (0.0400 at N=5 today, 0.0165 after).\n(b) C1 subtracts 9 × 16952 from the executor's 180263 cache reads to get 27695. The executor's first request read 0, so the right figure is 8 × 16952, giving 44647. The read term becomes 0.1264, not 0.1229, and the net per task 0.0593, not 0.0627. The verdict does not change.\n(c) Some figures cannot be reproduced from what is shown. C6b's −0.0653 has no arithmetic. C7's 0.0264 'not already in the run class' has none either. The run figure 0.3291 needs an unstated ~0.0109 for reads made before the prose was written, beyond the 'three quantities' the text names.",
+        "resolution": "fixed in P117.3-2sz (9501aa91): Drop the 2(N−1) term, or justify it. Correct 27695 to 44647. Write out the arithmetic for −0.0653 and 0.0264, and add the early-reads term to the §5 run line.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
+      },
+      {
+        "id": "P117-R5",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:546-549, 562, 702-709",
+        "issue": "T2's target table, which a ceiling gate is meant to hold, compares three different quantities under one header, 'Read first, at most':\n- `/audit:run` 153701 is the read-first files only, without the command body;\n- both `/audit:phase` rows, 242068, are measure-context's total, which includes the 39769-byte phase.md body;\n- `/audit:task add` 110599 is `wc -c` on whole files, frontmatter included, while measure-context counts bodies without frontmatter.",
+        "resolution": "fixed in P117.3-2sz (9501aa91): Pick one quantity, either read-first only or the entry total, and restate every row and target in it. Make `--gate` measure exactly that quantity.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
+      },
+      {
+        "id": "P117-R6",
+        "severity": "low",
+        "file": "tools/measure-context.py:200-220; docs/research/pipeline-cost-analysis.md:320",
+        "issue": "listing() counts every command's description as always-on, including the 8 of 21 commands that set `disable-model-invocation: true`. At HEAD those 8 account for 2860 of the 9659 listing bytes. The design's own §0.1 marks R4, 'descriptions out of startup context', as shipped through exactly that frontmatter. So the analysis prints a measured always-on figure that the design's premise says is about 30% too high. No case covers this rule.",
+        "resolution": "fixed in P117.3-2sz (9501aa91): Leave out of the listing any command or skill whose frontmatter sets disable-model-invocation: true. Add a fixture case for it, show it red, and regenerate §6's block.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
+      },
+      {
+        "id": "P117-R7",
+        "severity": "low",
+        "file": "tools/stream-cost.py:590-592, 737, 820-826, 1426-1443",
+        "issue": "Two problems with how manifest edits are classed:\n- An Edit of plan state is classed as `file` work. The tool result goes through classify(), which treats a plan-state path as `task`, but the emitted Edit bytes always go to `file` through emitFile. In feature-C-1, plan's $file of 0.0082 is the Edit of docs/audit/audit-plan.json, and the pilot shows the same for 0.0074.\n- The plan-state rule for the Read and Edit tools has no case. Mutating line 592 to always return \"file\" (M14) stays green at 21/21. sc12 covers only the Bash `cat` form.",
+        "resolution": "fixed in P117.3-2sz (9501aa91): Class emitted Edit/Write bytes by their target path, the same way classify() does. Add sc12 shapes for Read and Edit of docs/audit/audit-plan.json and show them red against M14.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
+      },
+      {
+        "id": "P117-R8",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:27, 773, 799",
+        "issue": "The confirming benchmark's protocol is cited at docs/research/benchmark-feature-design.md. That file is not on this branch or on main. It exists only at a289dcbb, on the unmerged branch audit/p116-a-whole-feature-in-an-existing. P117 does not declare P116 in blockedBy. The citation is a code span, so the link lint will not catch it, and if P117 lands first its §7 points at nothing.",
+        "resolution": "fixed in P117.3-2sz (9501aa91): Declare P117 blockedBy P116, or say in the text that the protocol lands with P116.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
+      },
+      {
+        "id": "P117-R9",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-analysis.md:317, 348, 386; docs/research/pipeline-cost-design.md:292, 547, 702, 764-766, 862",
+        "issue": "Several re-derivation commands use refs that move: `--ref main`, `--ref HEAD`, and `git diff --stat f7eaade4 HEAD`. `main` already resolves to 17570502, not the a73b836a9e8c printed in the analysis. Once T2 changes the reference files, the 'At HEAD' figures can no longer be re-derived with the printed command.",
+        "resolution": "fixed in P117.3-2sz (9501aa91): Pin the SHAs the figures were taken at (a73b836a, 7b489337), as the T1 target already does.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
+      },
+      {
+        "id": "P117-R10",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:102-103, 138-152, 459-461, 482-483, 828",
+        "issue": "Three claims go beyond their basis:\n(a) §8.5 says 'The plugin cannot set it', but C6a and §9 call the same question unknown, and the host facts only say it is not documented.\n(b) The design says 'R8's risky arm gates on computed properties instead'. R8 (token-efficiency-audit.md:644-646) gates on task.risk med/high OR redFirst not proved OR the gate disagreeing.\n(c) Every dollar prediction uses w = 8.0, the one-hour main-loop write. The host facts say that is the default only on a subscription within plan usage; an API key gets five minutes. §1.4 does not list this.",
+        "resolution": "fixed in P117.3-2sz (9501aa91): In §8.5, call it unknown. Restate R8's `risky` arm accurately. Add the TTL and billing assumption to §1.4.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
+      },
+      {
+        "id": "P117-R11",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-analysis.md:118-121",
+        "issue": "The analysis says 'The differences have two causes' (output apportioned by input share, and missing final requests) as if measured. No arithmetic splits the published-minus-billed differences between those two causes.",
+        "resolution": "fixed in P117.3-2sz (9501aa91): Mark it as inference, or show the decomposition.",
+        "fixTask": "P117.3-2sz",
+        "commit": "9501aa91"
+      },
+      {
+        "id": "P117-R12",
+        "severity": "med",
+        "file": "docs/research/pipeline-cost-design.md:519-525, 808, 914-917, 980-986, 1099-1100",
+        "issue": "R2 only partly holds. The reviewer's new write is now named, but the claim about what holds it is stronger than the mechanism described. C3 says the verb 'takes the task id and the role, and no path argument … So the only file this write can produce is the reviewer's own return.' That conclusion does not follow. The task id and the role both come from the caller, so a reviewer's one call can write the executor's return for the same task, or a return for any other task. T3's three cases (a path-like argument refused, a malformed return writes nothing, the written path equals the derived one) do not pin either one. This matters because `done --from-return` takes the outcome, `verifiedBy` and `redFirst` from the filed returns (lines 467-469). An executor return that the reviewer overwrote would become the recorded claim, and the claim-to-task binding is what the reviewer exists to check. The fix task asked for 'one filing verb that can only write the reviewer's own return path'. The same overstatement is repeated in the §4 table ('held to its own return by the filing verb'), in §5's *What it does not do*, in §8.3 and in T3 ('Those cases are what holds the write to the reviewer's own return').",
+        "resolution": "fixed in P117.4-2sz (adece536): Pick one of two. (a) Make the verb write-once for each task and role: it refuses a second filing and leaves the first byte-identical. Add that as a fourth T3 case. Then list under *What nothing checks* that the role and task id are the caller's word, so a filing under a role or task not yet filed is a followed rule. (b) Keep the mechanism and change the claim: replace 'the reviewer's own return' with 'a return path the verb derives from the task id and role it is given', move the caller-chosen role and task id under *What nothing checks*, and reword the four echoes to match.",
+        "fixTask": "P117.4-2sz",
+        "commit": "adece536"
+      },
+      {
+        "id": "P117-R13",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:182-190, 198, 200, 869, 874-878 (same shape at 598-607 and 705-716)",
+        "issue": "The new k = 6 baseline undercounts what the two one-off requests cost, so t at k = 6 comes out about 0.0011 too high. The removal counts:\n- reads of their content by the surviving requests (1229 × 4, 3569 × 1);\n- their own reads, with 1229 subtracted from the retry's.\nIt leaves out 5672 tokens of reads:\n- the retry's own read of the re-check's 1229, subtracted as if it were counted elsewhere, which it is not;\n- the read lost by the request after each removed one, which now writes the content instead of reading it: 1458 at the reviewer dispatch and 2985 at the release.\n§5 counts reads in full, by position (lines 862-864). Applied to the six-request shape, that gives (99642 − 63636) × r = 0.0072 against the document's 0.0061. So the removal is 0.0936, not 0.0925, and t is 0.6113, not 0.6124. The knock-on, with every other term unchanged:\n- §1.2: 1.6229 → about 1.6217 and 5.5257 → about 5.5200;\n- §5: 0.2252 → 0.2241; the k = 6 savings 0.6181 (38.1%) → 0.6170 (38.0%) and 1.8841 (34.1%) → 1.8784 (34.0%); the one-off differences 0.1256 → 0.1267 and 0.7725 → 0.7782.\nThe k = 8 column and the 1.0047 / 3.6416 headline do not move. C5 and C7 remove single requests the same way and also miss the shifted read: about 0.0002 and 0.0005. No verdict changes. The executor's model.py builds the same partial delta (`carry_rm`, `reads_av`), and its 'check from six' line is a tautology, so it could not catch this.",
+        "resolution": "fixed in P117.4-2sz (adece536): Compute t at k = 6 the way §5 computes the after state: positional reads over the six-request shape, (2616×6 + 5159×5 + 1458×4 + 3646×3 + 1195×2 + 2985×1) × r, against today's 99642 × r. Restate the k = 6 figures above. For C5 and C7, either add the shifted read or say it is left out.",
+        "fixTask": "P117.4-2sz",
+        "commit": "adece536"
+      },
+      {
+        "id": "P117-R14",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-analysis.md:35-39, 418; docs/research/pipeline-cost-design.md:35-37, 1145 (against 931-933 and 1004-1013)",
+        "issue": "R9's pin for the stream-cost figures still moves. The pin is 'the commit that last changed this document' (`git log -1 -- <doc>`), so it moves with every later edit of the document. The design already plans such an edit: T5 is 'an addendum' to this file, and it lands after T1 changes `tools/stream-cost.py`. From then on, the printed command points at a different tool than the one these figures came from. The other pins (a73b836a, 7b489337, f7eaade4, v3.1.0) are fixed and reproduce.",
+        "resolution": "fixed in P117.4-2sz (adece536): Now that the commit exists, write `9501aa91` in. A later commit can name an earlier one. Alternatively, name the tool's blob (`git rev-parse <commit>:tools/stream-cost.py`), which is known before the commit is made.",
+        "fixTask": "P117.4-2sz",
+        "commit": "adece536"
+      },
+      {
+        "id": "P117-R15",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:737-738, 999-1001",
+        "issue": "This diff did not change these lines. C7's confirming reading and T4's target read 'at most 5 plan, gate and close requests per task' off `per stage, as billed` → `req`. Those stages also hold the five run-level requests. In feature-C-1: plan 5 + gate 3 + close 5 = 13 = 5 run-level + 8 per task. So a one-task after-session would read 10 and fail a target it actually meets. The second clause, `7 + 5N` main-loop requests, is stated correctly.",
+        "resolution": "fixed in P117.4-2sz (adece536): Either subtract the five run-level requests before dividing by N, or keep only the `7 + 5N` clause.",
+        "fixTask": "P117.4-2sz",
+        "commit": "adece536"
+      },
+      {
+        "id": "P117-R16",
+        "severity": "med",
+        "file": "docs/research/pipeline-cost-design.md T3, T4, C7; tools/stream-cost.py stage rule",
+        "issue": "Found by the P117.4 executor; an inference, since no arm C session has run. The confirming after-study is arm C, which plans with /audit:phase add and /audit:task add. The stage rule counts everything from the end of orient to the executor dispatch as plan work. So T4's request clauses and T3's per-task output and token readings would count planning requests, and could refute a change that meets them. The targets were calibrated on an /audit:run session, which plans nothing.",
+        "resolution": "fixed in P117.4-2sz (adece536): T1 adds a stage split that reports requests under a planning command apart from the task cycle's plan work. T3, T4 and C7's confirming reading exclude planning and name the row they read. The assumptions section states that the calibration session planned nothing and that arm C does.",
+        "fixTask": "P117.4-2sz",
+        "commit": "adece536"
+      },
+      {
+        "id": "P117-R17",
+        "severity": "med",
+        "file": "docs/research/pipeline-cost-design.md:596-610, 1030-1035, 1100-1110, 1172",
+        "issue": "T3 and C3's confirming readings are said to be 'the task cycle with planning excluded' (596, 1100-1101), but sign-off is still counted in them. The after-study is arm C (§7, 1161), and arm C's prompt runs the phase 'with /audit:phase <its id> through sign-off' (<h2>/plugin-sentence.txt). So sign-off's main-loop output lands in `output pool, measured: main loop`, and its task-class tokens land in `contexts:` → `main`, `task`. Neither prediction (4472, 9547) counts them. The new T1 bullet lists the readings that need the sign-off split as 'C7's and T4's \"before sign-off\", section 7's whole-set reading and T5's S' (1030-1031). T3 is not on that list. §7's T4 row says 'before sign-off'; its T3 row (1172) does not. The margins for one task are small: 5000 − 4472 = 528 tokens and 11000 − 9547 = 1453. Sign-off spawns a reviewer (§1.4, 244), and C3 computes no brief for it. In `feature-C-1` the per-task reviewer brief was 2817 output tokens. A sign-off brief that size would put a one-task session over the output target. That is the same class as R15 and R16: a target refuted by work the prediction never counted. Because sign-off is paid once per session, the flip is likely at small N rather than at every N. But §7 confirms a target only when every after session meets it, so a single small-N session is enough to break it.",
+        "resolution": "fixed in P117.5-2sz (fd0d366d): Add 'before sign-off' to both C3 readings (600-607), to both T3 output bullets (1103-1107) and to §7's T3 row. Add T3 and C3 to T1's list of readings that need the sign-off split (1030-1031), under the same rule as the others: a reading that cannot place sign-off says so.",
+        "fixTask": "P117.5-2sz",
+        "commit": "fd0d366d"
+      },
+      {
+        "id": "P117-R18",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:1016-1025, 1036-1043",
+        "issue": "Two gaps in T1's planning rule. (a) The span closes only at another command or at `audit-task.py start`. The `add` invocation has already loaded the whole of phase.md, including its run section (`git show 7b489337:plugins/audit/commands/phase.md`, line 37). If the model then runs the phase without a new Skill call, every request between the last `add` and the first `start` reads as planning. Those are section 1.2's run-level preflight, manifest read and lock (in feature-C-1, main-loop requests 2-4 come before the start at 5). That contradicts 'So `plan` keeps the run's own requests' (1024-1025). T4's 'less the run's own five' then subtracts requests that are no longer in plan, gate or close, which biases the reading toward a pass. (b) T1's only planning target is the empty row on `feature-C-1` (1041-1042). An implementation that never reports planning also passes it.",
+        "resolution": "fixed in P117.5-2sz (fd0d366d): (a) Also close the span at the first main-loop request that runs a plugin script other than the `audit-task.py add`/`add-phase` verbs (the preflight or the lock). Or state the case and have T4 subtract only the run-level requests that fall outside planning. (b) Add a positive target: `whole-C-2`'s stream, whose main-loop Skill call `{\"skill\": \"audit:phase\", \"args\": \"add\"}` must open a non-empty `planning` row. Add a twin fixture in which `start` closes the span.",
+        "fixTask": "P117.5-2sz",
+        "commit": "fd0d366d"
+      },
+      {
+        "id": "P117-R19",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:1174",
+        "issue": "The whole-set reading subtracts the `planning` row's `$total`. That total holds every prose write made inside the span. By the design's own T2 table (1064), `/audit:phase add` reads 242068 bytes first at `7b489337`: phase.md lines 9-12 name all four reference files before any verb is chosen. After T2, `add` may still read up to 30000 bytes. Prose that a planning command reads and the run then reuses would come out of the session total, while §5's run class predicts it. The reading would then come in under the prediction for a reason the change did not cause.",
+        "resolution": "fixed in P117.5-2sz (fd0d366d): Subtract only planning's own task-class part (its `out` and the `task` tokens T1 prints for it). Or subtract the planning row less its `Read <plugin>/reference/…` writes. Or state the prose case beside the row.",
+        "fixTask": "P117.5-2sz",
+        "commit": "fd0d366d"
+      },
+      {
+        "id": "P117-R20",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:1173, 1121-1122",
+        "issue": "Two constants are left in T4's readings. (a) §7's T4 row reads '`req` per task, before sign-off, with the `planning` row apart'. It omits 'less the run's own five', which T4 (1119-1120) and C7 (812-817) now require. Read off the table, `feature-C-1` gives 13 per task, not 8. (b) The second clause fixes orient at 2 ('which adds orient's 2'). Orient ends at the first call that is not a plugin read (`tools/stream-cost.py:337-338`). A Skill call is not a plugin read, so an arm C session whose first request makes the `add` call has an orient of 0. `7 + 5N` would then sit 2 above what that session can reach, which also biases toward a pass.",
+        "resolution": "fixed in P117.5-2sz (fd0d366d): (a) Add 'less the run's own five (section 1.2)' to §7's T4 row. (b) In T4's second clause, read orient's request count off the session's `per stage, as billed` instead of fixing it at 2.",
+        "fixTask": "P117.5-2sz",
+        "commit": "fd0d366d"
+      },
+      {
+        "id": "P117-R21",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:552-556, 569-575 (against 540-542)",
+        "issue": "The write-once guarantee and the four echoes (887, 996-998, 1096-1099, 1223-1225) are accurate. Two premises around them are stated as facts, with no mechanism and no T3 case. (a) 'The reviewer is dispatched only once the executor's return is filed, because its brief carries that return as filed.' Handing the brief over is itself a followed rule (540-541), and nothing says `brief` refuses to compose a reviewer brief before the executor's return is filed. (b) 'its own task is left with none, and `done --from-return` refuses that close (above).' The 'above' (542) says only that it refuses 'when no return is filed'. No case pins a close with one role's return missing, or which start's returns the close reads.",
+        "resolution": "fixed in P117.5-2sz (fd0d366d): Either specify both and pin each with a T3 case: `brief` for the reviewer exits non-zero until the executor's return for the current start is filed, and `done --from-return` refuses unless both roles' returns for the current start are filed. Or move both sentences under *What nothing checks* as followed rules.",
+        "fixTask": "P117.5-2sz",
+        "commit": "fd0d366d"
+      },
+      {
+        "id": "P117-R22",
+        "severity": "med",
+        "file": "tools/stream-cost.py:234-235",
+        "issue": "Found by the P117.5 executor. stream-cost.py keeps only the last result event of a stream. A headless session that is re-invoked, for example when a background task notifies it, emits several result events, each carrying the usage of its own stretch. whole-C-3 has three, and their usage blocks sum exactly to its main loop. Read with only the last one, the main loop prints DISAGREE, Opus prices differ by about half a dollar, and an orphan request is printed with negative tokens. So the tool cannot price a whole-feature arm C session, and T5's calibration on those sessions is blocked.",
+        "resolution": "fixed in P117.6-2sz (9e4ab790): Read every result event: sum their usage and modelUsage per model, and keep each final request's rebuild per result segment. Add a case with a stream holding two result events whose sum is known, plus a twin with one, and show it red against keeping only the last. Re-run the tool on all whole-C sessions and on the four recorded sessions; the latter's figures must not move.",
+        "fixTask": "P117.6-2sz",
+        "commit": "9e4ab790"
+      },
+      {
+        "id": "P117-R23",
+        "severity": "med",
+        "file": "docs/research/pipeline-cost-design.md:130-135, 1657-1669, 1730-1733, 1774-1777, 2394, 2449-2450",
+        "issue": "The per-task ratio favours the plugin, and the document never says so. The top of the ratio is the task cycle, which leaves out the plugin's session-level work: the session-start write is in planning, and the report is in the run's close. The bottom is arm A's whole session, which keeps plain's session-level work. Measured with the result-reading commit's `analyse()` costs, arm A's first request (session-start write plus the file listing) and its last (the closing summary) cost 0.0793, 0.0955 and 0.0877. That is 15.7, 15.9 and 16.4 percent of whole-A-1, -2 and -3. With those two requests taken out of the bottom (mean 0.459507 instead of 0.547004), the predicted ratios change. Rung 1 becomes 2.05 / 1.95 / 2.18, mean 2.06, not 1.72 / 1.64 / 1.83. G2 becomes 1.60 / 1.50 / 1.75. G1 becomes 1.40 / 1.29 / 1.55, mean 1.41, not 1.17 / 1.09 / 1.30, mean 1.19. Section 5.1's single-task shape compares a whole plugin session with a whole plain session, so it treats both sides alike. It gives 2.16 at rung 1, which agrees with the fairer reading. The document's 0.2 says only that 'the description leaves the plain side open'. The gap matters because it is larger than both margins the headlines rest on. Rung 1's 'meets the ceiling in every session' and G1's 'meets the ideal on the arm's mean' both reverse under the fairer reading, and the user chose G1 partly on the second.",
+        "resolution": "fixed in P117.8-2sz (68f43cac): Next to the definition in 0.2, say that the bottom holds plain's session-level open and close and the top does not, and give the size. Print the per-task ratio both ways in 5.1's ladder: against whole arm A, and against arm A less its first and last main-loop requests (or add the plugin's equivalent session-start write to the cycle). Restate the rung 1 and G1 claims in 5.2 and section 8 for each reading, and say which one the target means. Put that same quantity in section 7's per-task row, so the after-study measures what the decision used.",
+        "fixTask": "P117.8-2sz",
+        "commit": "68f43cac"
+      },
+      {
+        "id": "P117-R24",
+        "severity": "med",
+        "file": "docs/research/pipeline-cost-design.md:1475-1478, 1566, 1786-1796, 2228-2247, 2447-2450 (against plugins/audit/reference/execute-task.md:304-377 and plugins/audit/agents/audit-reviewer.md:34, 114-147)",
+        "issue": "G1's guarantee change is stated as 'the per-task intent check moves', but G1 removes more than that, and the way it is held may never fire. (a) The per-task review returns two more answers. One is a red-first grade: a `not-proved` on a `tdd` task becomes a human action item (execute-task.md:352). The other is the inherited-test question. That question is bounded by `tests.gate`, which only a task-mode review receives. Under G1 the phase review is not handed any task's `tests.gate`, so the inherited-test question comes back `not-asked` by construction, and phase mode grades red-first as `not-attempted`. Neither is listed as given up or moved. (In these sessions neither caught anything: all nine per-task reviews returned `inheritedTests: not-asked`, and their red-first words echoed the executor's: `proved` six times, `could-not-prove` three times. So the decision may well stand, but the statement is not exact.) (b) Under 'held by', the phase brief carries each task's return and description but not its commit or diff. The reviewer definition's stated reason for asking per task is exactly that the phase diff 'has no way back to the task that produced each line'. (c) With no per-task reviewer filing a return, T3's `done --from-return` forces every G1 task to close `--intent not-asked` with a basis. T6's sign-off refusal accepts 'a `not-asked` with its basis', and today's sign-off already counts a deliberate `not-asked` as answered (execute-task.md:373-377). Read literally, every G1 task meets the refusal at its own close, so the refusal never fires. T6's micro-test would only catch this if its fixture closes tasks the G1 way, and T6 does not say it does.",
+        "resolution": "fixed in P117.8-2sz (68f43cac): In C14, the section 4 table, 5.2 and section 8 decision 1, name everything G1 removes per task: the intent binding before commit, the red-first grade, and the inherited-test question. Then either carry each into the phase review or list it as given up. Have the phase reviewer's computed brief (T3/T6) carry each task's commit SHA and its `tests.gate` commands, and ask the binding, red-first and inherited-test questions per task. Give a G1 task a close state that is not `not-asked`, such as one recording that its intent is deferred to the phase review, and make the sign-off verb refuse unless the phase review answered for that task. Pin it with a T6 case: a fixture whose tasks closed the G1 way must be refused at sign-off when one binding is missing.",
+        "fixTask": "P117.8-2sz",
+        "commit": "68f43cac"
+      },
+      {
+        "id": "P117-R25",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:1604-1611, 1798-1814, 2366",
+        "issue": "Section 5.3 says 'Any one of them can double and the worst session stays under the ceiling'. Two rows do not support that. (a) The requests row uses C7's 5 per task instead of 4, a 25 percent rise. Doubling it to 8 per task adds 12 × (37755 × 0.2e-6 + 250 × 20e-6) = 0.1506, which puts whole-C-2-r at 2.10. (b) Output and writes are treated as independent, but the main loop's output is written back into its own cache at the next request. In whole-A-1, 10016 of 12166 output tokens came back as main-loop cache writes (0.82, from the tool's `items`). Rung 1 sets W = 3000 below O = 3500. Doubling output together with its write-back (about 2870 × 9.3e-6 ≈ 0.027 on top of 0.0700) puts whole-C-2-r at about 2.00. There is also no sensitivity check for G1, the chosen rung. Its mean margin to 1.25 is about 0.035 per session, less than doubling output alone (0.04 before write-back). T11's probe threshold of 500 output tokens per request is taken from this table.",
+        "resolution": "fixed in P117.8-2sz (68f43cac): Double every row, or rename the column to say what each row actually varies. Tie W to O (W ≥ 0.82 × O plus the tool results). Add a G1 table against the 1.25 ideal. Set the probe's output threshold from the tied model.",
+        "fixTask": "P117.8-2sz",
+        "commit": "68f43cac"
+      },
+      {
+        "id": "P117-R26",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:2061-2063, 2089-2094",
+        "issue": "T1's target says 'the `unattributed` row is gone' on all three arm C records. The stated mechanism, which skips the rebuild for a dispatch whose tool result is the async-launch notice, does not get there on whole-C-2-r. Its two async dispatches are RKf8vq (cacheR 33634) and MMJ2sv (32179), 65813 together, against a row of −70856. That leaves −5043 (dispatch command, and the `dispatch` lines at 9e4ab790). The document itself says that row 'is not yet explained'.",
+        "resolution": "fixed in P117.8-2sz (68f43cac): Limit the target to whole-C-3 and whole-C-1 and keep whole-C-2-r as an open reading. Or add an investigation step to T1 that names the second cause before the target is set.",
+        "fixTask": "P117.8-2sz",
+        "commit": "68f43cac"
+      },
+      {
+        "id": "P117-R27",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:1624-1627, 1477-1478",
+        "issue": "Several estimates carry the 'estimate' label but no stated judgement, which section 0's label definition requires. In sign-off: each request reads P′ + 4000, writes 600, the final report emits 1000, and the filing request costs 0.005. In G1: 1500 tokens per return in the phase review. They are small. The sign-off ones are about 0.06 of the predicted 0.25–0.27, against a budget margin of 0.07–0.12.",
+        "resolution": "fixed in P117.8-2sz (68f43cac): Base each one on a reading, for example whole-C-3's sign-off requests 45–57 with the span and billed-span commands, or the filed-return size implied by feature-C-1's hand-backs (6142 and 3550 bytes). Or add them to a sensitivity row for the phase-overhead budget.",
+        "fixTask": "P117.8-2sz",
+        "commit": "68f43cac"
+      },
+      {
+        "id": "P117-R28",
+        "severity": "med",
+        "file": "docs/research/pipeline-cost-design.md:1982-1990, 2535-2539, 2548-2551 (against plugins/audit/scripts/manifest/audit-task.py:7010-7060)",
+        "issue": "The deferred close can be bypassed. The rule is attached to `done --from-return` alone: under `phase`, that form records `deferred` and refuses an `--intent` flag. The plain close is untouched: `done <id> --commit <sha> --intent not-asked --intent-basis \"...\"`. `_done_flags_refusal` accepts it today, and the design never retires it. The same goes for `--intent matches` typed by the main loop. Either way, a task with a diff can still close with a word other than `deferred`. The sign-off refusal reads only tasks closed `deferred`, and its allow case lets a phase with no `deferred` task sign off as today. So a task closed the plain way never meets the refusal. Section 5.2 says the refusal 'cannot be met at the task's own close'. That is true only of the `--from-return` form. T6's only close-side case is `done --from-return --intent not-asked`, so an implementation that checks inside `--from-return` alone passes every case. Separately, `--no-change` has no diff for 'a task with a diff' to be judged against. A task whose work landed can still close that way as `not-asked`. That escape also exists today, so it is not new, but it is now the one the design leaves unnamed.",
+        "resolution": "fixed in P117.9-2sz (ec004935): Put the rule on `done` itself under `review.perTask: phase`. Every close that passes `--commit` records `deferred`, with or without `--from-return`, and any `--intent` word is refused. Add T6 cases: under `phase`, plain `done --commit <sha> --intent not-asked --intent-basis ...` and `done --commit <sha> --intent matches` are each refused and write nothing. Under `always`, the same flags close as today; that is the allow half. In section 5.2's 'Held by', list the `--no-change` close of a task whose files changed as a rule that is followed but not enforced.",
+        "fixTask": "P117.9-2sz",
+        "commit": "ec004935"
+      },
+      {
+        "id": "P117-R29",
+        "severity": "med",
+        "file": "docs/research/pipeline-cost-design.md:1536-1540, 2424-2430, 2460-2471, 2529-2531 (against plugins/audit/agents/audit-reviewer.md:55-57 and its return format at :231, at 7b489337)",
+        "issue": "C14 says 'A phase-mode review as written answers none of the three per task' and fixes this through the brief alone. But the reviewer's own definition is what says so. In `mode: phase`, '`redFirst` is `not-attempted`', and its return format holds one `intent` object, not one per task. T3 lists `audit-reviewer.md` only for the filing line. Neither T3's nor T6's files name three things: the definition's phase-mode rule, its return format, or the filing verb's shape for a phase return. T6's refusal reads per-task answers from that return. T6's cases run offline on hand-made fixtures of the return. Under G1 the probe runs no phase review (T11, step 2). So the first time a real phase reviewer is asked the per-task questions is the full benchmark, the paid step. A reviewer following its definition there files one phase intent and `not-attempted`. The refusal would then correctly hold every task, which stalls step 3's sign-off.",
+        "resolution": "fixed in P117.9-2sz (ec004935): Add to T6's files (or T3's) the phase-mode paragraph and return format of `agents/audit-reviewer.md`. Under `review.perTask: phase`, the return carries a `tasks` array: per task id, the intent answer and note, the red-first grade and basis, and the inherited-test answer and basis. Define the filing verb's shape for that return. Add a case in which a phase return missing one task's entry is refused at filing. Add an offline check that the prompt's return format and the verb's shape name the same keys, after the model of `red_first_vocabulary_drift`.",
+        "fixTask": "P117.9-2sz",
+        "commit": "ec004935"
+      },
+      {
+        "id": "P117-R30",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:1986-1990, 2537-2539 (against 1742-1746)",
+        "issue": "`not-asked` 'stays for ... a fix task sign-off creates from a finding'. The same paragraph refuses an `--intent` flag on any task with a diff under `phase`, and a fix task has a diff. Nothing says how `done` tells a fix task apart, and no T6 case closes one. If the exemption keys on something the caller sets, it is a second way past `deferred`. If there is no exemption, a G1 fix task closes `deferred`, and sign-off refuses until a second phase review answers for it. Section 5.1's sign-off model leaves that cost out: there a fix task is `next`, the executor and `next`, closed `not-asked`.",
+        "resolution": "fixed in P117.9-2sz (ec004935): Key the exemption on the plan's own record: the task is the `fixTask` of a finding in `phase.review.findings`. Add a T6 case. Under `phase`, a task recorded that way closes `not-asked` with its basis, and a task not recorded that way is refused with the same flags.",
+        "fixTask": "P117.9-2sz",
+        "commit": "ec004935"
+      },
+      {
+        "id": "P117-R31",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:~2680-2684 (T11 step 2), against 2052-2063 (5.3) and 1792 (G1's T)",
+        "issue": "Two stops in the probe do not follow the document's own choices. (a) The output stops of 320 and 390 tokens are set on the whole-A reading, which section 0.2 says the target does not mean. Like for like, G1's binding limit is the 2.0 ceiling. In whole-C-2-r that leaves (2 × 0.459507 − 0.7296) / 230e-6 ≈ 825 tokens over 250. (b) The writes check reads 'output plus 400 tokens of tool results a task, against the 388 assumed'. 388 is rung 1's T. G1's, the rung the user chose, is 194, so this check passes at twice G1's assumption. Neither changes a decision: a stop only triggers a re-derivation, and doubling G1's tool results moves its mean by 0.0051.",
+        "resolution": "fixed in P117.9-2sz (ec004935): Say which reading each stop protects: it is stricter than the target on purpose, or give its like-for-like figure as well. Give the writes check per rung, with 194 under G1.",
+        "fixTask": "P117.9-2sz",
+        "commit": "ec004935"
+      },
+      {
+        "id": "P117-R32",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:1029-1033 and the 5.2 table row at 1926",
+        "issue": "The rung 1 (`always`) hold has the same gap as finding 1 one level down. C3's refusal (no reviewer return, and no `--intent not-asked` with a basis) is stated for `done --from-return`. A plain `done --commit <sha> --intent matches` skips the per-task review with no filed return. The row's wording comes from an earlier revision. This diff changed only its left column.",
+        "resolution": "fixed in P117.9-2sz (ec004935): Fix this together with finding 1: the refusal belongs on `done`, not only on `--from-return`.",
+        "fixTask": "P117.9-2sz",
+        "commit": "ec004935"
+      },
+      {
+        "id": "P117-R33",
+        "severity": "low",
+        "file": "commit 68f43cac message (and b72372f7)",
+        "issue": "Both task commits touch a `.md` and carry no `claims:` block. `.claude/hooks/require-claim-block.py` covers every `.md`, but it fires only on a Bash `git commit`. These commits came through the plugin's commit path (`Audit-Row:` trailer), which the hook never sees. This is pipeline behaviour, not this diff's lines.",
+        "resolution": "fixed in P117.9-2sz (ec004935): Have the executor's filed return carry the claims block and the commit path append it, or record that commits made by the plugin are outside the hook's reach.",
+        "fixTask": "P117.9-2sz",
+        "commit": "ec004935"
+      },
+      {
+        "id": "P117-R34",
+        "severity": "med",
+        "file": "docs/research/pipeline-cost-design.md 5.2 'The one exception', T6 'The close'",
+        "issue": "The fix-task exemption can be acquired after the fact. resolve-finding --fix-task writes fixTask onto any finding, does not refuse one outside the task's phase, and overwrites an existing link. reopen keeps fixTask. So a task closed deferred can gain the link, be reopened, restarted and closed not-asked, which takes it out of the sign-off refusal. The finding verb also lets the caller mint a finding to link a new task to.",
+        "resolution": "fixed in P117.10-2sz (00ec0711): Key the exemption on a field only add writes onto the task (task.fixes), held only while a finding of the task's own phase names it as fixTask. Or make resolve-finding refuse to create a link in a G1 phase. Add the reopen-sequence T6 case, and name the minted-finding leg as followed or key the exemption on findings recorded from a filed phase-review return.",
+        "fixTask": "P117.10-2sz",
+        "commit": "00ec0711"
+      },
+      {
+        "id": "P117-R35",
+        "severity": "med",
+        "file": "docs/research/pipeline-cost-design.md the tasks entry shape, the phase-return filing, T6 'The refusal'",
+        "issue": "A per-task entry in the phase return carries no commit, and the spec does not say which filed phase return the sign-off refusal reads. A task answered at one commit can be reopened, re-committed and re-closed deferred while the old entry still satisfies the refusal.",
+        "resolution": "fixed in P117.10-2sz (00ec0711): Add commit to each entry and to the key check. The filing verb refuses an entry whose commit is not the task's recorded commit, and the refusal counts an entry only when its commit equals the task's current commit. Add the reopen-and-recommit T6 case.",
+        "fixTask": "P117.10-2sz",
+        "commit": "00ec0711"
+      },
+      {
+        "id": "P117-R36",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md C3 COMPATIBILITY and T3 Files",
+        "issue": "The precedent for done refusing a close lives under COMPATIBILITY.md's 'Outside this document entirely', not a Not promised list.",
+        "resolution": "fixed in P117.10-2sz (00ec0711): Point both sentences there, and have T3 add its entry there.",
+        "fixTask": "P117.10-2sz",
+        "commit": "00ec0711"
+      },
+      {
+        "id": "P117-R37",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md T6 'The key, once per phase'",
+        "issue": "move accepts a started blocked or pending task, so a task can leave a G1 phase for one with no key and close not-asked.",
+        "resolution": "fixed in P117.10-2sz (00ec0711): Record the key on the task at start and have done read it, or name the cross-phase move as followed.",
+        "fixTask": "P117.10-2sz",
+        "commit": "00ec0711"
+      },
+      {
+        "id": "P117-R38",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md run_git citation",
+        "issue": "run_git is defined at _scoped_commit.py:85; line 105 is its subprocess call.",
+        "resolution": "fixed in P117.10-2sz (00ec0711): Cite :85, with the subprocess at :105.",
+        "fixTask": "P117.10-2sz",
+        "commit": "00ec0711"
+      },
+      {
+        "id": "P117-R39",
+        "severity": "med",
+        "file": "docs/research/pipeline-cost-design.md 5.2 'The key, read once per phase and kept by the task', T6 'The key, once per phase', T6 table block row",
+        "issue": "Only start records the key, and a missing key reads always. done needs no start: _started is true for a blocked task, and block takes a pending task straight to blocked. So under a configured phase key, a never-started phase's task can be blocked, committed by hand and closed not-asked, and the property leaves it out. A blocked task moved into a never-started phase does the same.",
+        "resolution": "fixed in P117.11-2sz (315e4808): Record the key at every write that makes _started true, or have done record it from the phase or the live config when the task has none, so always only ever means a phase that started under always. Add the block and block-then-move T6 cases, and keep the always half.",
+        "fixTask": "P117.11-2sz",
+        "commit": "315e4808"
+      },
+      {
+        "id": "P117-R40",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md T6 'Outside audit-task.py and close-phase.py'",
+        "issue": "The claim that a commit repair-commits clears cannot land is false after a rebase: the rewritten changes are on the branch under a new SHA, and the task then records no commit.",
+        "resolution": "fixed in P117.11-2sz (315e4808): Restate it and add repair-commits --apply to section 5.2's followed item, next to reopen and the --no-change close.",
+        "fixTask": "P117.11-2sz",
+        "commit": "315e4808"
+      },
+      {
+        "id": "P117-R41",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md 5.2 and T6 'The refusal', C3 COMPATIBILITY",
+        "issue": "The property applies to signoff --verdict skipped as well, which is a new refusal of an existing verb form that neither the consequences nor the COMPATIBILITY entry names.",
+        "resolution": "fixed in P117.11-2sz (315e4808): State it, add a T6 case, and include it in the T3 COMPATIBILITY entry.",
+        "fixTask": "P117.11-2sz",
+        "commit": "315e4808"
+      }
+    ],
+    "outcome": "[findings: 41 - 0 high, 13 med, 28 low; 41 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "A plugin pipeline run's cost is measured stage by stage and by content, offline, and the infrastructure that cuts it is chosen against the user's target: a task at most 2x plain Claude Code, ideally 1.25x, with the phase overhead budgeted.\n\ntools/stream-cost.py attributes every request of a recorded session to a stage, a content origin and the task cycle. It reads every result event of a re-invoked session, and it prices the whole-feature plugin sessions to the CLI's costUSD per model. tools/measure-context.py reports what each command and agent loads, at any ref. The load-bearing selftest cases of both tools were shown red against scratch-copy mutations.\n\ndocs/research/pipeline-cost-analysis.md shows where the cost sits. The work itself costs about the same with or without the plugin. The gap is the reference prose and command bodies the main loop carries on every request, the request count, each agent's fresh start, and the phase overhead.\n\ndocs/research/pipeline-cost-design.md decomposes all nine whole-feature sessions and gives a ladder:\n- A script-driven pipeline, with briefs by file, rules printed at their step, four main-loop requests a task, planning in one batch and sign-off as one step, is predicted at 2.03-2.26x plain like for like with no guarantee change.\n- With G1, the per-task review's three answers move into the phase review, bound to each task's commit and held by one property that sign-off and close-phase ask at landing. That is predicted at 1.33-1.59x, mean 1.45x, which meets the 2x ceiling and not the 1.25x ideal.\n- These are predictions from recorded sessions, and the document says so.\n\nThe user chose G1, a phase-overhead budget of 1.00, and the main loop's cache TTL documented rather than changed. The design gives implementation tasks, each with an offline micro-test, in the user's order: micro-tests first, then one single-task paid probe, then the full benchmark.\n\nSeven review rounds at Opus found 41 issues, all resolved by fix tasks P117.3 to P117.11. They covered untested verdicts, cost-model arithmetic, the result-event reading, the like-for-like denominator, and the bypasses of the G1 hold, which the last fix closed as a class. Instrument and plugin faults found along the way are recorded in the internal plan for the implementation phase.",
   "tasks": [
     {
       "id": "P117.1",
       "title": "a pipeline run's tokens and time are attributed to stages and files by offline tools with tests",
-      "status": "pending",
+      "status": "done",
       "description": "Measures where a pipeline run spends its tokens and time, with offline tools that have tests and make no paid call. Requested by the user on 2026-10-07 after the feature benchmark showed that the plugin pipeline costs several times more than plain Claude Code on a task both solve.\n\n1. Static context measure. A tool computes what each command and agent loads before it does any work: the command file, every reference file the command instructs the model to read, the agent definition, auto-loaded skills, and the always-on cost (plugin listing, CLAUDE.md). It reports bytes and an estimated token count, labelled as an estimate with its rule. It is computed for the pipeline's real path (/audit:run, /audit:next, /audit:phase, sign-off, executor, reviewer), at the published tag and at local main.\n\n2. Stream attribution. A tool reads a recorded stream-json session and attributes every model request's tokens to a stage: the main loop before any dispatch, plan and manifest work, executor, reviewer, gate, close. It splits each stage into cache write, cache read, input and output, priced with the shipped table. It names the file reads that created the largest cache writes. Run it on the recorded plugin sessions: the pipeline pilot, and the plugin arm of the feature benchmark under the internal analysis directory's experiments. Report what each stage cost in each.\n\n3. Tests. Each tool has a selftest that meets the repository's contract, with fixtures. Attribution is proved on a hand-built stream whose answer is known, including a twin that must not move a token between stages.\n\n4. docs/research/pipeline-cost-analysis.md states, from these measurements:\n- which part of a run's cost is fixed per run, per task, and per file the work touches;\n- what the prompt cache already saves and what it cannot;\n- the largest single contributors.\nEvery figure sits beside the command that re-derives it.",
       "files": [
         "tools/measure-context.py",
@@ -61,21 +432,35 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7b489337",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/stream-cost.py attributes every request of a recorded stream-json session to a stage: orient, plan, executor, gate, reviewer, close, or main for a session that dispatches nothing. It reports each stage's cache write, cache read, input and output, priced through _usage_core.price. A second view attributes cost by content origin, using exact read counts from the cached-prefix identity: the session start, each reference file read, agent starts, briefs, hand-backs and the files the work touches, classed as fixed per run, per task or per file. Each subagent's final request, which the stream omits, is rebuilt from the modelUsage residual, and the tool labels any estimate. tools/measure-context.py computes what each command and agent loads before working: the up-front read paragraphs, the agent prompt and preloaded skills, and the always-on listing, at any git ref, in bytes and in calibrated tokens. docs/research/pipeline-cost-analysis.md explains both published observations with figures re-derived by these commands. In the pilot, the reference prose /audit:run names is written into the cache once and carried on every later main-loop request, and that is the largest share of the run. In the plugin arm of the feature benchmark against the plain arm, the per-file cost is about equal; the gap is the run class (reference prose) and the task class (agent starts written fresh, briefs, hand-backs). The document reports what the cache saves and cannot save, the largest contributors, the measured bytes-per-token of the prose, and the prose growth from v3.1.0 to main. gate-parity gains one NOT_AN_EXEMPTION row for the tool's legend table. The red-first helper could not run because the task declares no separate test file. Instead, scratch-copy mutations of both tools each turned their intended case red: sc1-sc21 and mc1-mc12, with over-fire twins. Every tool output was regenerated after a gap and was byte-identical.",
+        "descriptive": "Two new offline tools show exactly where a plugin run spends its tokens - the reference documents read up front and the fresh start of each agent - and that the coding work itself costs about the same with or without the plugin."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-07T11:45:57Z",
+      "completedAt": "2026-10-07T12:31:34Z",
+      "verifiedBy": [
+        "sc1-sc21",
+        "mc1-mc12; tools/stream-cost.py and measure-context.py over the four recorded sessions"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T12:31:21Z.5e8d1b",
+        "status": "passed",
+        "at": "2026-10-07T12:31:21Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7b489337",
+        "at": "2026-10-07T12:31:34Z",
+        "basis": "orchestrator check: both published observations explained with re-derivable figures, tools reproduce the CLI's costUSD per model, mutations proved every case, run at Opus 5.5 xhigh as the user asked"
+      }
     },
     {
       "id": "P117.2",
       "title": "the infrastructure that cuts the fixed cost is chosen on the measured evidence",
-      "status": "pending",
+      "status": "done",
       "description": "Chooses the infrastructure that cuts the pipeline's fixed cost, on the evidence the analysis produced. docs/research/pipeline-cost-design.md compares candidates on the same criteria. Candidates to evaluate, and any others the evidence points to:\n- a light path chosen by task risk and size;\n- reference prose loaded by section on demand instead of whole documents;\n- a per-task spawn brief, computed by a script, that replaces the reference reading;\n- rules a script already enforces deleted from the prose;\n- the reviewer gated by risk;\n- a layout that keeps the prompt cache warm across stages.\n\nCriteria for each candidate:\n- predicted saving, computed from the measured stage costs and labelled a prediction;\n- what the plugin guarantees that could weaken, and how that is held;\n- maintenance cost;\n- migration and COMPATIBILITY.md obligations;\n- the benchmark run that would confirm or refute it.\n\nThe document recommends the structurally correct option. It also gives the implementation tasks, each with its own measurable target, so the next phase step can be planned from it.",
       "files": [
         "docs/research/pipeline-cost-design.md",
@@ -104,16 +489,513 @@
       "dependsOn": [
         "P117.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8deeaae7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "docs/research/pipeline-cost-design.md compares the candidates on one set of criteria: predicted saving from the measured run, task and file classes, the guarantee each could weaken and how it is held, maintenance cost, migration and COMPATIBILITY.md obligations, and the benchmark session that confirms or refutes it. Candidates: light path (C1), section-on-demand prose (C2), script-computed briefs with filed results (C3), deleting prose for script-enforced rules (C4), a risk-gated reviewer (C5), cache layout (C6a main-loop TTL, C6b reviewer fork), combined commands (C7), and subcommand dispatch before reading (C8). C7 and C8 were found by the evidence: a main-loop request costs several times an executor request, and /audit:phase add reads the whole reference set before picking its subcommand. Recommended: C3, C7, C2 and C8, with C4 as the deletion rule. The prediction, from one formula over feature-C-1's classes, is a one-task run from 1.7485 to 0.9962 USD and a five-task phase from 6.7077 to 3.9486 USD, with no enforced guarantee removed. Rejected: C1, because it drops the executor's enforced no-web-tools rule and costs more than it saves once C3 lands; C6b, because it costs more per task and the fork inherits the parent's tools, losing the enforced reviewer-cannot-edit rule; C6a, because the plugin has no documented way to set the main-loop TTL. User decisions are listed with recommendations: keep the per-task reviewer (C5 only as an opt-in setting defaulting to always), do not build the light path, file results in the committed evidence directory, run the whole-feature arm C baseline before implementing, publish no TTL advice until the gaps are measured. Implementation tasks T1-T6 each carry files, a target re-derived by tools/measure-context.py or tools/stream-cost.py, and a confirming session. The confirming after-study is a copy of the harness that changes only the plugin commit. Inputs are single sessions and the document says so; sign-off request counts are assumed. docs/README.md is unchanged, because its research row already covers the document. Lints were proven live on planted copies before their green was trusted.",
+        "descriptive": "A design document picks how to cut the plugin's fixed cost: scripts write each agent's brief, commands read only the prose they need, and fewer main-loop steps per task. It predicts a one-task run falls from about 1.75 to 1.00 USD with no enforced guarantee removed, and names the benchmark that will check it."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-07T12:33:32Z",
+      "completedAt": "2026-10-07T13:12:03Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T13:11:51Z.e72a59",
+        "status": "passed",
+        "at": "2026-10-07T13:11:51Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8deeaae7",
+        "at": "2026-10-07T13:12:03Z",
+        "basis": "orchestrator check: every candidate the task named is compared on the stated criteria, savings are labelled predictions with their arithmetic, user decisions are listed with recommendations, implementation tasks carry measurable targets; run at Opus 5.5 xhigh as the user asked"
+      }
+    },
+    {
+      "id": "P117.3-2sz",
+      "title": "the cost tools' verdicts and classes are pinned by cases, and the design's arithmetic and guarantees are stated exactly",
+      "status": "done",
+      "description": "Fixes review findings P117-R1 to P117-R11 of the cost phase's first review round.\n\nTools:\n- stream-cost.py gains these cases, each shown red against the mutation the review named before it is trusted:\n  - a modelUsage cache read that is off from the prefix identity by a known amount, which must print the DIFFERS verdict with that amount and never the agrees verdict;\n  - a subagent that writes at the one-hour rate, which must carry the one-hour write into the rebuilt final request;\n  - Read and Edit of the plan files, classed as plan work.\n- Emitted Edit and Write bytes are classed by their target path, the same way tool results are.\n- measure-context.py leaves out of the always-on listing any command or skill whose frontmatter sets disable-model-invocation, with a case for it.\n- The analysis block that prints the listing is regenerated.\n\nDocuments:\n- The design names that C3 needs the reviewer to file its return, and says how that write is held. It is one filing verb that can only write the reviewer's own return path, or 3(b) is chosen for the reviewer with the trade stated.\n- The per-task request count is made to agree between the analysis and the design, the re-check after a stale stamp is described as one observation, and the predictions are given with both counts.\n- The cost-model arithmetic is corrected and written out:\n  - the double-counted re-read term;\n  - the executor's read subtraction;\n  - the reviewer-fork and C7 figures;\n  - the early-reads term in the run line.\n- T2's target table uses one quantity throughout, the one the ceiling gate measures.\n- The confirming benchmark's protocol is said to land with the whole-feature benchmark phase.\n- Every re-derivation command is pinned to the SHA its figures were taken at.\n- These claims are restated to their basis:\n  - the main-loop TTL is called unknown;\n  - R8's risky arm is quoted accurately;\n  - the TTL and billing assumption is listed with the model's assumptions;\n  - the two-cause sentence in the analysis is marked as inference or decomposed.",
+      "files": [
+        "tools/stream-cost.py",
+        "tools/measure-context.py",
+        "docs/research/pipeline-cost-analysis.md",
+        "docs/research/pipeline-cost-design.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "9501aa91",
+      "outcome": {
+        "technical": "Fixes P117-R1 to P117-R11. stream-cost.py: emitted Edit and Write bytes are classed by their target path through classify(); new cases sc22 (a residual off by a known amount prints DIFFERS with that amount, never agrees, and the rebuilt request keeps the billed read), sc23 (a one-hour subagent write is carried into the rebuilt final request and pricing still agrees with costUSD), sc24 and four new sc12 shapes (Read and Edit of the plan files classed as plan work, with a source-file twin). measure-context.py leaves commands and skills that set disable-model-invocation out of the always-on listing and prints how many it withheld (mc13, with a false twin). Every new case went red against the mutation the review named (M6, M7, M8, M14) and against the new rules' own mutations, in scratch copies, with each anchor checked on disk; at HEAD those mutations survive 21/21; two probe runs about 45 minutes apart were identical. Documents: C3 now names that the reviewer files its return through one verb that derives its own path and takes none, says commit-scope does not hold that write, and keeps \"the reviewer writes nothing else\" as an unenforced rule; the README's enforced row is untouched. Both documents list six per-task steps plus two one-offs each seen once, and predictions are given at eight and six requests per task. The cost model's arithmetic is corrected and written out: R4's four terms and nine more of the same class found on re-derivation (run carry split exactly, run-level work no longer multiplied by N, C1, C3, C5, C6a terms and the fresh-loop break-even). The new prediction is a one-task run from 1.7484 (measured) to 1.0047 USD and a five-task run from 6.2983 to 3.6416 at eight requests per task. T2's targets use measure-context's entry total throughout. The confirming protocol is said to land with the whole-feature benchmark phase. Re-derivation commands are pinned to SHAs. The main-loop TTL is called unknown, R8's risky arm is quoted with its three conditions, the TTL and billing assumption is listed, and the two-cause sentence is marked as inference. The red-first helper could not run: \"task P117.3-2sz declares no test file, so a throwaway at HEAD would prove nothing about this task's test\" (exit 2).",
+        "descriptive": "The cost tools now have tests that fail if their verdicts or content classes break, and the design's cost model is restated so every figure can be recomputed; a one-task run is still predicted to fall from about 1.75 to about 1.00 USD."
+      },
+      "startedAt": "2026-10-07T13:21:25Z",
+      "completedAt": "2026-10-07T14:06:42Z",
+      "verifiedBy": [
+        "sc12",
+        "sc22",
+        "sc23",
+        "sc24",
+        "mc13"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T14:06:29Z.287412",
+        "status": "passed",
+        "at": "2026-10-07T14:06:29Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9501aa91",
+        "at": "2026-10-07T14:06:42Z",
+        "basis": "orchestrator check: each of the eleven findings maps to a change with evidence; the four surviving mutations now go red; the corrected prediction re-derives from the written arithmetic"
+      }
+    },
+    {
+      "id": "P117.4-2sz",
+      "title": "the reviewer's filed return is held write-once and the six-request figures count every read",
+      "status": "done",
+      "description": "Fixes review findings P117-R12 to P117-R15 from the cost phase's second review round. Documents only.\n\n- The design's filing verb is made write-once for each task and role. It refuses a second filing and leaves the first byte-identical, which becomes a fourth T3 case. The design then lists under what nothing checks that the role and task id are the caller's word, so a filing under a role or a task not yet filed is a followed rule. The four places that repeat the claim are reworded to match: the side-by-side table, the recommendation's \"What it does not do\", decision 3 and T3.\n- The six-request baseline's removal of the two one-off requests counts reads by position, the way section 5 counts the after state, and the six-request figures are restated. C5 and C7 either add the shifted read or say it is left out.\n- The stream-cost pin names the commit 9501aa91 in place of \"the commit that last changed this document\".\n- C7's confirming reading and T4's target subtract the run-level requests before dividing by the task count, or keep only the 7 + 5N clause.",
+      "files": [
+        "docs/research/pipeline-cost-design.md",
+        "docs/research/pipeline-cost-analysis.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "adece536",
+      "outcome": {
+        "technical": "Fixes P117-R12 to P117-R16, documents only. R12: the design's filing verb is write-once for each task and role within the task's current start, so a second filing is refused and the first return stays byte-identical; the reviewer cannot replace the executor's filed return. T3 gains a fourth case with an allow half (the other role, and a filing after a re-start, still write). The task id and role are named as the caller's word under what nothing checks, and the four echoes use one wording. The start is part of the key because start re-stamps startedAt and the infrastructure and classifier arms set attempts back, so a key on task and role alone would refuse a retry. R13: the six-request baseline removes the two one-off requests by position (99642 against 63636 read tokens, re-derived two ways), t moves 0.6124 to 0.6113, and every dependent k = 6 figure, C5, C7 and C1 moves with it; C5 after C3 and C7 also gains three terms it had left out (0.1051 to 0.1153). The k = 8 headline is unchanged at 1.0047 and 3.6416. R14: both tools are pinned at 9501aa91 in both documents. R15: C7's confirming reading and T4's target subtract the run's own requests before dividing by the task count. R16, a fault the executor found: whole-feature arm C plans with /audit:phase add and /audit:task add, and the stage rule would count those requests as task-cycle plan work. T1 gains a planning stage, opened by a main-loop Skill call to audit:phase or audit:task with add and closed before the next command or audit-task start. T3, T4, C7 and the section 7 whole-set row read the task cycle with planning excluded and name the T1 row. Section 1.4 states that the calibration session planned nothing and arm C does. Sign-off is not split yet, and readings that cannot place it say so. Superseded figures stay once as history pinned to 9501aa91. Prose, link and PII lints 0, sweep green.",
+        "descriptive": "The design now says exactly what stops the reviewer from replacing another agent's result and what still relies on the caller. The cheaper-baseline figures count every read, and the confirming benchmark will no longer count planning steps as task work."
+      },
+      "startedAt": "2026-10-07T14:18:25Z",
+      "completedAt": "2026-10-07T15:03:28Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T15:03:12Z.4c40d8",
+        "status": "passed",
+        "at": "2026-10-07T15:03:12Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "adece536",
+        "at": "2026-10-07T15:03:28Z",
+        "basis": "orchestrator check: each of R12-R16 maps to a change with line numbers; the k = 8 headline is unchanged; the k = 6 removal re-derives two ways"
+      }
+    },
+    {
+      "id": "P117.5-2sz",
+      "title": "the after-study reads the task cycle as one span, so planning, sign-off and run-level work fall outside it by construction",
+      "status": "done",
+      "description": "Fixes review findings P117-R17 to P117-R21 from the cost phase's third review round. Documents only.\n\nThree rounds found the same class. A target read off a whole-session stage table was refuted or flattered by work its prediction never counted: run-level requests, planning, and sign-off. This fix closes the class with one rule rather than a fourth patch.\n\n1. The task cycle is defined as a span. It runs from the main-loop request that calls the first task's `audit-task.py start` through the request that calls the last task's `done`. Planning and sign-off fall outside it by construction, and run-level requests are counted apart.\n2. T1 reports that span. T3's and T4's targets, C3's and C7's confirming readings, and section 7's rows read inside it, and each one names the row it reads.\n3. The planning span's closing rule, and the subtraction of run-level requests and of orient's fixed count, are replaced by the span or made consistent with it.\n4. T1 gets a positive planning target, on the recorded arm C stream whose Skill call was add, plus a twin.\n5. Section 7's whole-set reading subtracts only planning's task-class part, or states the prose case.\n6. The two premises around the write-once filing verb are either pinned by T3 cases or moved under what nothing checks:\n   - the reviewer's brief waits for the executor's filed return;\n   - `done --from-return` needs both roles' returns for the current start.\n\nThe k = 8 headline does not move.",
+      "files": [
+        "docs/research/pipeline-cost-design.md",
+        "docs/research/pipeline-cost-analysis.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "fd0d366d",
+      "outcome": {
+        "technical": "Fixes P117-R17 to P117-R21, documents only, by closing the class rather than patching a fourth instance. Design section 1.1 defines the task cycle once, as a span of the stream. It opens at the main-loop request that calls the first task's audit-task start, and it closes at the last done before any request inside it plans a task. Closing at the last done would have held sign-off's fix tasks: phase-signoff.md has sign-off create and start one per actionable finding, and whole-C-3 did so after its last real done. In feature-C-1 the cycle is requests 6 to 13: k = 8, c = 21857, task class 0.704895, file class 0.212897, and an estimated output of 11374. The task class left outside it is 0.0774, paid once per run. Every per-task target and confirming reading reads inside the span: T3, T4, T6, C1, C2/C4, C3, C5, C7, section 7 and the analysis per-task row. The patches it replaces are deleted and kept once as history: less the run's own five, the 7 + 5N clause, and the planning-row subtraction. Targets moved by what the cycle leaves out of feature-C-1, rounded to 50: output 5000 to 2350 against a prediction moved from 4472 to 1815, and content tokens 11000 to 7400 against 9547 to 5949. Planning closes at its last add or add-phase before the cycle. T1 gains positive targets: whole-C-2 has planning request 1 and no cycle; whole-C-3 has planning 1-12 and cycle 15-36; and two twin fixtures. The whole-set reading subtracts only planning's task class. The write-once verb's two premises are specified and pinned by T3 cases with allow halves: the reviewer's brief refuses until the executor's return for the current start is filed, and done --from-return needs both returns or --intent not-asked with its basis. The parts of the cycle that depend on the order the prose gives are said to be unenforced. The k = 8 headline is unchanged. The executor found a fault outside its files: stream-cost.py keeps only the last result event, so a session with several results (whole-C-3 has three) cannot be priced. That is recorded as a finding with its own fix task.",
+        "descriptive": "Per-task cost targets now read one span of a session, from the first task's start to its last close, so planning, setup and sign-off can no longer distort them."
+      },
+      "startedAt": "2026-10-07T15:14:16Z",
+      "completedAt": "2026-10-07T15:50:38Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T15:50:19Z.702ee5",
+        "status": "passed",
+        "at": "2026-10-07T15:50:19Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "fd0d366d",
+        "at": "2026-10-07T15:50:38Z",
+        "basis": "orchestrator check: one span definition replaces the three patches, each finding maps to a change, the span is shown request by request on feature-C-1 and bounded on whole-C-3, and the k = 8 headline is unchanged"
+      }
+    },
+    {
+      "id": "P117.6-2sz",
+      "title": "stream-cost reads every result event, so a re-invoked session is priced whole",
+      "status": "done",
+      "description": "Fixes review finding P117-R22. tools/stream-cost.py reads every result event in a stream, not only the last. A headless session that is re-invoked, for example by a background task's notification, emits one result per stretch, each with that stretch's usage and modelUsage. The tool sums them per model, and rebuilds each stretch's missing final request against its own result. A new case holds a stream with two result events whose totals are known, with a single-result twin. It goes red against keeping only the last result, in a scratch copy. Re-reading the four recorded sessions leaves every figure the documents quote unchanged. The whole-feature arm C sessions are priced: whole-C-1, whole-C-3 and whole-C-2-r, with the main loop agreeing with the CLI's costUSD per model.",
+      "files": [
+        "tools/stream-cost.py",
+        "docs/research/pipeline-cost-analysis.md",
+        "docs/research/pipeline-cost-design.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "9e4ab790",
+      "outcome": {
+        "technical": "Fixes P117-R22. tools/stream-cost.py keeps every result event and tags each request with its stretch.\n\nWhat the CLI writes in each result event, measured on whole-C-1, whole-C-3 and whole-C-2-r (3, 3 and 5 results):\n- usage is per stretch: the main-loop requests between one init and the next sum exactly to that stretch's usage;\n- modelUsage and total_cost_usd are session totals, byte-identical in every result;\n- duration_ms and num_turns are per stretch.\n\nSo session_result sums usage, duration and turns and reads the session totals once, departing from the task's \"sum modelUsage\", which the evidence refutes because it would count every subagent several times. main_stretches pairs stretches by init event, or falls back to the summed usage with a note. Each stretch's main loop is checked against its own result, and output pools are per stretch.\n\nAll three whole-C sessions now price to the CLI's costUSD per model within float error. The old tool printed DIFFER by -0.507663 on whole-C-3. The four single-result recorded sessions read byte-identically to the old tool, so their figures keep the 9501aa91 pin, and the whole-C figures carry the new commit's pin, named by a git log -S command.\n\nNew cases sc25 to sc29: a two-result stream against a hand-worked answer, a single-result twin against over-counting, per-stretch checks, unpaired counts reported, and disagreeing totals reported. They are red against the keep-the-last code (24/29) and against each mutation, in scratch trees with anchors checked on disk; a re-run after a gap is identical. The red-first helper could not run: \"task P117.6-2sz declares no test file, so a throwaway at HEAD would prove nothing about this task's test\" (exit 2).\n\nA separate fault is recorded for the implementation phase: the final-request rebuild adds a phantom final for a background-launched agent, which shifts about a cent of Sonnet cost per session between stages without changing the model totals.",
+        "descriptive": "The cost tool now prices a session that was woken up again by a background task as one whole, and the three plugin-arm benchmark sessions match the CLI's own cost for every model."
+      },
+      "startedAt": "2026-10-07T15:50:41Z",
+      "completedAt": "2026-10-07T16:27:43Z",
+      "verifiedBy": [
+        "sc25",
+        "sc26",
+        "sc27",
+        "sc28",
+        "sc29"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T16:27:28Z.91d1d4",
+        "status": "passed",
+        "at": "2026-10-07T16:27:28Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9e4ab790",
+        "at": "2026-10-07T16:27:43Z",
+        "basis": "orchestrator check: the rule is built on measured result-event semantics across eleven stretches, all three whole-C sessions price to costUSD, and the four older sessions read byte-identically"
+      }
+    },
+    {
+      "id": "P117.7-2sz",
+      "title": "the design meets the user's cost target: a task at most 2x plain, ideally 1.25x, with the phase overhead budgeted and value-tested",
+      "status": "done",
+      "description": "The user set the cost target on 2026-10-07, in two parts.\n\nTargets:\n1. Per task: the plugin's task cycle may cost at most 2x what plain Claude Code spends on the same task, ideally 1.25x.\n2. Per phase: planning, the phase review and the phase gate are budgeted separately as a phase overhead. That overhead has to pay for itself: each part of it is justified by what it catches, measured, or it is a candidate for removal.\n\nThe current design does not meet the per-task target. It predicts a one-task run falling from 1.7484 to 1.0047 USD against about 0.30 plain, which is about 3.3x. On the whole-feature benchmark the plugin arm averaged about ten times the plain arm (grade.txt of the nine valid sessions).\n\nWhere the cost sits (whole-C-3, Opus, grade.txt token lines, priced with the confirmed table):\n- cache reads, 10.66M tokens: 2.13 USD;\n- cache writes, mostly at the one-hour rate: 1.78 USD;\n- output: 0.93 USD.\n\nCache reads are 5 percent of the input price, and they still dominate through volume: 61 main-loop requests, about 174k tokens each. Every new tool output in the main loop is written once at the one-hour rate and then re-read on every later request.\n\nThis task revises docs/research/pipeline-cost-design.md so that the recommended set is predicted to meet the per-task target. The phase overhead is stated separately, with its own budget and a value test.\n\nEvidence:\n- The whole-feature sessions, now priceable.\n- Arm C's cost decomposed into:\n  - planning;\n  - the task cycle per task;\n  - sign-off;\n  - main-loop context carried per request, split by origin: reference prose, plugin script output, file reads, hand-backs;\n  - the main-loop request count.\n- What each phase-level step caught in the recorded sessions, against what the hidden tests and the grader show. This includes the hidden requirement that every arm missed.\n\nOptions to evaluate beside the earlier candidates:\n- a script that drives the whole pipeline deterministically, so the model only writes code and answers named decisions;\n- terse plugin script output by default;\n- one executor per phase instead of one per task;\n- fewer and cheaper main-loop requests;\n- a smaller subagent start: omitClaudeMd, preloaded skills, and the cache TTL that an agent definition can set;\n- a per-task review that is cheap enough to fit, or that moves to the phase;\n- an enforced rule moved from an agent's tool list to a hook, where that keeps it enforced.\n\nThe document gives a ladder:\n- what is reached with no change to any guarantee;\n- then, for each guarantee change, the saving it adds, the guarantee affected, and how that guarantee would be held instead.\n\nThe recommendation is the structurally correct set that meets the per-task target. Guarantee changes it needs go to the user as decisions with figures. The implementation tasks are restated so that together they reach the target, each with its own measurable target and confirming session.",
+      "files": [
+        "docs/research/pipeline-cost-design.md",
+        "docs/research/pipeline-cost-analysis.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "b72372f7",
+      "outcome": {
+        "technical": "Revises docs/research/pipeline-cost-design.md against the user's target: a task at most 2x plain, ideally 1.25x, with the phase overhead budgeted and value-tested. All nine whole-feature sessions are priced with tools/stream-cost.py at HEAD, and arm C is split into planning, preflight, task cycle, sign-off, sign-off's fix task and close.\n\nMeasured:\n- the task cycle costs 3.95-4.74x plain;\n- the cycle's main loop is 69-70 percent of it, at 22-28 requests for three tasks, each reading 168k-191k tokens;\n- reference prose and command bodies are 60-71 percent of what the cycle read;\n- the /audit:phase body is injected again on every invocation;\n- phase overhead is 2.91-3.35 USD per session, larger than the cycle;\n- no phase-level step moved a graded result.\n\nThe prediction model main(k, P, W, O) = r(kP + W(k-1)/2) + wW + oO reproduces today's cycle main loop within 1.1 percent in all three sessions.\n\nRung 1, with no guarantee change, is a script-driven pipeline. The script runs every step that needs no judgement, hands briefs by file path, prints each rule at its step, asks judgements as named decisions, and takes four main-loop requests per task, with planning as one batch call and sign-off as one step. It is predicted at 1.64-1.83x plain per task and 3.17-3.57x arm A (2.06-2.32x arm B) per whole session. Each labelled estimate is doubled in a sensitivity check, and the worst session stays under 2.0.\n\nG1 moves the per-task intent review into the phase review and is predicted at 1.09-1.30x per task. G2 gates it on a computed signal. Both go to the user, with G1 recommended. One caveat is stated: a single task on feature-C-1 is 2.16x at rung 1 and 1.81x with G1.\n\nThe phase overhead budget is 0.75 USD per phase, with a value test per step. Implementation tasks are restated for a new phase, each with an offline micro-test. The order is micro-tests, then one single-task probe (about 0.64), then the full benchmark (about 5.6).\n\nHost behaviour measured once per session: the longest main-loop gap was 67-81 s, so one-hour writes bought nothing; a later dispatch of the same agent type read its start from cache; ${CLAUDE_PLUGIN_ROOT} is substituted in command bodies.\n\nAn instrument fault is recorded for T1: stream-cost.py sizes only tool_result user blocks, so an injected command body is booked as main-loop output. Totals are right and labels are wrong.",
+        "descriptive": "The cost design now meets the user's ceiling on paper: a script-driven pipeline is predicted at about 1.7x plain per task with no guarantee change, and about 1.2x if the per-task intent review moves to the phase review, with a budget for the phase overhead and a micro-test for each fix."
+      },
+      "startedAt": "2026-10-07T16:27:45Z",
+      "completedAt": "2026-10-07T17:53:25Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T17:16:15Z.5e1b54",
+        "status": "passed",
+        "at": "2026-10-07T17:16:15Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b72372f7",
+        "at": "2026-10-07T17:53:25Z",
+        "basis": "orchestrator check: all nine sessions decomposed by stage, every rung carries both ratios, the guarantee changes are listed as user decisions, and the tasks carry micro-tests in the user's order"
+      }
+    },
+    {
+      "id": "P117.8-2sz",
+      "title": "the per-task ratio states what its two sides hold, and G1 names everything it moves",
+      "status": "done",
+      "description": "Fixes review findings P117-R23 to P117-R27 from the cost phase's fourth review round. Documents only.\n\n- The per-task ratio's definition states that its denominator holds plain's session-level open and close and its numerator does not, and gives the size of that difference. The ladder prints the ratio both ways.\n- G1's guarantee change names everything the per-task review returns that G1 would drop: the intent binding before commit, the red-first grade, and the inherited-test question. Each one is either carried into the phase reviewer's computed brief, or listed as given up. The user chose G1 on the earlier wording, so section 8 restates the decision with the full list.\n- The sensitivity section doubles every row, ties writes to output, and adds a G1 table against the 1.25 ideal.\n- T1's unattributed-row target is limited to the sessions its mechanism explains.\n- The remaining sign-off and G1 estimates are based on readings, or added to a sensitivity row.",
+      "files": [
+        "docs/research/pipeline-cost-design.md",
+        "docs/research/pipeline-cost-analysis.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "68f43cac",
+      "outcome": {
+        "technical": "Fixes P117-R23 to P117-R27 in docs/research/pipeline-cost-design.md.\n\nR23: section 0.2 states that the cycle leaves out the plugin's session open and close, while whole arm A keeps plain's (15.7 to 16.4 percent of each A session). Every per-task ratio is printed both ways, and like-for-like is taken as the target's meaning. Rung 1 is 2.03-2.26 like-for-like and 1.70-1.90 against whole A. G1 is 1.33-1.59 like-for-like and 1.12-1.33 against whole A; with the moved review charged back it is 1.66-2.12 and 1.39-1.78.\n\nR24: the per-task review's three answers (the intent binding, the red-first grade and the inherited-test question) are carried into the phase reviewer's computed brief, with each task's SHA, files, filed return, recorded run and tests.gate. A new close state, deferred, is added, and sign-off refuses while any deferred task lacks an answer; T6 gets cases. Carrying costs 0.15-0.26 a session and takes the phase overhead to 0.80-0.95, against the 0.75 budget. Section 8 restates the G1 decision with the full list.\n\nR25: writes are tied to output, in the baseline and in the sensitivity check. Every row is doubled, and a G1 table against 1.25 is added. G1 meets 2x like-for-like in every session and does not reach 1.25.\n\nA new correction: filing writes the return back once.\n\nR26: the T1 unattributed target is limited to whole-C-3 and whole-C-1, with an investigation step for whole-C-2-r.\n\nR27: the sign-off estimates rest on readings.\n\nSuperseded figures are kept once as dated history. Lints are clean.",
+        "descriptive": "The design now compares the plugin with plain like for like: the script-driven pipeline alone is about 2.1x plain per task, and with the per-task review moved to the phase review about 1.45x, which meets the 2x ceiling but not the 1.25x ideal."
+      },
+      "startedAt": "2026-10-07T18:10:52Z",
+      "completedAt": "2026-10-07T19:15:12Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T18:53:08Z.8303c9",
+        "status": "passed",
+        "at": "2026-10-07T18:53:08Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "68f43cac",
+        "at": "2026-10-07T19:15:12Z",
+        "basis": "orchestrator check: each finding maps to a change; the ratio is printed both ways; G1 carries all three per-task answers with a sign-off refusal; the sensitivity check doubles every row"
+      }
+    },
+    {
+      "id": "P117.9-2sz",
+      "title": "G1's and rung 1's holds sit on done itself and the reviewer's phase return is specified",
+      "status": "done",
+      "description": "Fixes review findings P117-R28 to P117-R33 from the cost phase's fifth review round. Documents only. They are the G1 and rung-1 holds, specified tightly enough to implement:\n- under review.perTask phase, the rule sits on done itself, so every close with --commit records deferred and any --intent word is refused; under always, the same applies to the reviewer-return refusal;\n- the reviewer definition's phase-mode rule, its return format with a per-task array, and the filing verb's phase-return shape are added to the files T6 (or T3) owns;\n- the fix-task exemption keys on the plan's own record, with a T6 case;\n- the probe's stops say which reading they protect, and the writes check is given per rung;\n- the plugin's own commit path and the claims-block hook are named, with the gap stated as a finding for T3's filed returns.",
+      "files": [
+        "docs/research/pipeline-cost-design.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "ec004935",
+      "outcome": {
+        "technical": "Fixes P117-R28 to P117-R33 in docs/research/pipeline-cost-design.md, a specification fix.\n\n- R28 and R32: the holds sit on done itself, inside _locked_done before _done_task, the only writer that sets a task done. Under review.perTask phase, every close passing --commit records deferred and refuses any --intent word. Under always, a close needs the reviewer's filed return or --intent not-asked with its basis, and a typed word that differs from the filed answer is refused. The followed-only residue is listed: a --no-change close of changed files, a cancel of landed work, a hand edit, an outside merge.\n- R29: T6 owns the reviewer definition's phase-mode paragraph and return format. The return carries a tasks array with per-task intent, red-first and inherited-test answers, and a key-agreement check.\n- R30: the fix-task exemption keys on phase.review.findings[].fixTask, written at add time by a new add --fixes.\n- R31: the probe stops say they protect the whole-A reading and are stricter than the target on purpose. The writes check is per rung.\n- R33: the plugin's commit path is outside the claims-block hook. T3 specifies a claims text in the filed return, which the commit message appends.\n\nFurther holds found while specifying: the key is pinned per phase at start, close-phase asks whether sign-off passed, and the phase return's write-once key is the brief's head. No earlier figure changed. Lints are clean, and every one of the added code citations resolves.",
+        "descriptive": "The design now places every hold where it cannot be bypassed: on the close itself, in every form, with the reviewer's per-task answers given an owner and a shape."
+      },
+      "startedAt": "2026-10-07T19:25:11Z",
+      "completedAt": "2026-10-07T19:57:32Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T19:57:31Z.01d256",
+        "status": "passed",
+        "at": "2026-10-07T19:57:31Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ec004935",
+        "at": "2026-10-07T19:57:32Z",
+        "basis": "orchestrator check: each of the six findings maps to a change; the remaining unenforced paths are named; figures unchanged"
+      }
+    },
+    {
+      "id": "P117.10-2sz",
+      "title": "the G1 hold is specified as a property with every writing verb enumerated",
+      "status": "done",
+      "description": "Fixes review findings P117-R34 to P117-R38 from the cost phase's sixth review round. Documents only.\n\nTwo rounds in a row found a new way past the G1 hold by reading verbs one at a time, so this task closes the class.\n- It applies R34's and R35's resolutions: the exemption is keyed on a field only add writes onto the task, and each per-task answer is bound to the commit it judged.\n- It applies the three low resolutions.\n- It specifies the hold as a property. Under the phase key, a task whose files changed cannot reach the phase's landing without the three answers bound to its current commit.\n- T6's acceptance includes an enumeration of every verb that writes a task's status, intentCheck, commit or a finding's fixTask, or that moves or reopens a task. Each verb either has a refused case under the phase key, or is named as followed with its reason, and the enumeration is derived from the code rather than typed.",
+      "files": [
+        "docs/research/pipeline-cost-design.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "00ec0711",
+      "outcome": {
+        "technical": "Fixes P117-R34 to P117-R38 by stating the G1 hold as one property of the plan's record. Under review.perTask phase, a task whose files changed cannot reach its phase's landing without the intent answer, the red-first grade and the inherited-test answer recorded in intentCheck, with intentCheck.commit equal to its current commit. Sign-off and close-phase.py ask the same function of the record before landing, so a verb the list misses still cannot land a phase. A T6 case pins a commit edited by hand after sign-off.\n\nThe verbs T6 answers for are derived from the code by a command printed in section 10. It walks the dispatch map's verbs, close-phase and the validator, reports the keys each writes, and was shown able to fail on a fixture. Each verb has a refused case or a named followed reason.\n\nPer finding:\n- R34: the exemption is keyed on task.fixes, which only add --fixes writes, held while the named finding sits in the task's own phase and names it. The reopen sequence is refused, and the minted-finding leg is named as followed.\n- R35: each per-task entry carries commit. The filing verb refuses a mismatched or duplicate commit, and sign-off counts only entries matching the current commit.\n- R36: the COMPATIBILITY reference points to \"Outside this document entirely\".\n- R37: the key is recorded on the task at first start.\n- R38: the run_git citation is corrected.\n\nNo figure changed, and the lints are clean.",
+        "descriptive": "The guarantee that every changed task gets its review is now one rule checked at landing, and the commands that could get around it are listed from the code with an answer for each."
+      },
+      "startedAt": "2026-10-07T20:04:02Z",
+      "completedAt": "2026-10-07T20:45:14Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T20:45:14Z.44f402",
+        "status": "passed",
+        "at": "2026-10-07T20:45:14Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "00ec0711",
+        "at": "2026-10-07T20:45:14Z",
+        "basis": "orchestrator check: the property is stated once and asked at both landing points; the verb list is derived by a printed command shown able to fail; every finding maps to a change"
+      }
+    },
+    {
+      "id": "P117.11-2sz",
+      "title": "the G1 key is never read from a default",
+      "status": "done",
+      "description": "Fixes review findings P117-R39 to P117-R41 from the cost phase's seventh review round. Documents only. The G1 key is never read from a default. It is recorded at every write that makes a task count as started, or done records it from the phase or the live config when the task has none, so always means only a phase that really started under always. T6 adds the block and block-then-move cases. The repair-commits claim is restated, and that writer is listed as followed. signoff --verdict skipped is named as refused for a phase with a task owed an answer, with a T6 case and a COMPATIBILITY entry.",
+      "files": [
+        "docs/research/pipeline-cost-design.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "315e4808",
+      "outcome": {
+        "technical": "Fixes P117-R39 to P117-R41. The G1 key has no default. A task with none takes its phase's recorded key, and a phase with none takes the live config's value at that moment. done and sign-off record what they took on the task and on the phase, and close-phase reads a missing key the same way. The block-from-pending path and the block-then-move path are named with citations and T6 cases. repair-commits --apply after a rebase is listed as followed, not held. signoff --verdict skipped is refused while a task is owed an answer, with a T6 case and a COMPATIBILITY entry that T6 adds. Figures are unchanged and the lints are clean; the orchestrator read the key paragraph before closing.",
+        "descriptive": "The design no longer lets a missing review setting count as the per-task default, so a task that was never started cannot skip its review."
+      },
+      "startedAt": "2026-10-07T20:52:02Z",
+      "completedAt": "2026-10-07T21:08:50Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T21:08:49Z.e6ce4e",
+        "status": "passed",
+        "at": "2026-10-07T21:08:49Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "315e4808",
+        "at": "2026-10-07T21:08:50Z",
+        "basis": "orchestrator check: read the rewritten key paragraph; each finding maps to a change with line numbers; figures unchanged"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-10-07T11:45:57Z",
+  "testEvidence": {
+    "runId": "2026-10-07T21:15:49Z.4537ca",
+    "status": "passed",
+    "at": "2026-10-07T21:15:49Z"
+  }
 }
