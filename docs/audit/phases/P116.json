@@ -1,7 +1,7 @@
 {
   "id": "P116",
   "title": "a whole feature in an existing codebase shows where each way of working fails and what it costs",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "one feature spanning several existing modules, built three ways - vibe coding, organized skills agents and CLAUDE.md, and the plugin pipeline - is graded on hidden acceptance tests, invented APIs or files, reuse of existing code, scope, unbacked claims, interventions, cost and time, at n of at least three sessions per way, with the results and their limits published",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "f7eaade49fd136630262f1a456790704d1d52505",
   "branch": "audit/p116-a-whole-feature-in-an-existing",
-  "mergedAt": null,
+  "mergedAt": "2026-10-07T18:10:21Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -351,5 +351,6 @@
     "runId": "2026-10-07T18:09:43Z.bc62b5",
     "status": "passed",
     "at": "2026-10-07T18:09:43Z"
-  }
+  },
+  "mergedHead": "f1de273400cad4da4be414bcf0605575d5467728"
 }
