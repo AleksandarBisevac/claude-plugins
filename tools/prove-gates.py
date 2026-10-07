@@ -1008,12 +1008,12 @@ TABLE = (
  ("schema_vocab_drift", S + "manifest/_manifest_vocab.py", "replace",
   'KNOWN_MERGE = {"auto", "removeWorktree", "deleteBranch"}',
   'KNOWN_MERGE = {"auto", "removeWorktree"}', MVO, "mv18"),
- # A recommended subset that stops being a subset. `CLAIM_KEYS` names three fields
- # of `phase.claim`; a fourth that the schema does not declare is the shape a
+ # A recommended subset that stops being a subset. `CLAIM_KEYS` names the fields a
+ # claim is asked for; one more that the schema does not declare is the shape a
  # rename leaves when only one side is updated.
  ("schema_subset_drift", S + "manifest/_manifest_vocab.py", "replace",
-  'CLAIM_KEYS = ("sessionId", "host", "branch")',
-  'CLAIM_KEYS = ("sessionId", "host", "branch", "worktree")', MVO, "mv23"),
+  'CLAIM_KEYS = ("sessionId", "branch")',
+  'CLAIM_KEYS = ("sessionId", "branch", "worktree")', MVO, "mv23"),
  # An inline vocabulary at its `_unknown_keys()` call, drifted from the schema.
  # These are the levels whose words are a set LITERAL rather than a named set, so
  # nothing but this rule compares them with anything.

@@ -1053,6 +1053,45 @@ def _gate_cases(check):
                                               {"gateBasis": "Cleared"})))
 
 
+def _stub_claim_cases(check):
+    """A legacy `claim` on an index stub - what a phase sign-off must clear.
+
+    `_merge_phase` lets a stub's claim stand in for a body that carries none, so
+    a sign-off that pops the body's claim alone leaves the phase claimed the
+    moment the manifest is assembled again."""
+    claim = {"sessionId": "s-old", "branch": "audit/p2", "at": "t0"}
+    index = {"meta": {"version": 3},
+             "phases": [{"id": "P2", "title": "B", "status": "in_progress",
+                         "shard": "phases/P2.json", "claim": dict(claim)},
+                        {"id": "P3", "title": "C", "status": "pending",
+                         "shard": "phases/P3.json", "claim": dict(claim)}]}
+    before = json.dumps(index, sort_keys=True)
+    signed_body = {"id": "P2", "status": "done", "tasks": []}
+    # The fallback this cleanup exists for, read off the merge itself: the
+    # signed-off body has no claim, and the stub's comes back.
+    check("sc1 the premise: a body sign-off emptied of its claim still "
+          "assembles CLAIMED while the stub holds one: %r"
+          % (M._merge_phase(index["phases"][0], signed_body).get("claim"),),
+          M._merge_phase(index["phases"][0], signed_body).get("claim") == claim)
+    cleared, dropped = M.index_without_stub_claim(index, "P2")
+    stubs = dict((s["id"], s) for s in cleared["phases"])
+    check("sc2 a legacy claim on an index stub is gone after sign-off clears "
+          "it: the stub has no claim, the assembled phase has none, the claim "
+          "dropped is returned, and the input index is untouched: %r"
+          % ((stubs["P2"], dropped),),
+          "claim" not in stubs["P2"] and dropped == claim
+          and "claim" not in M._merge_phase(stubs["P2"], signed_body)
+          and json.dumps(index, sort_keys=True) == before)
+    check("sc3 SECOND DIRECTION: only the named phase's stub is cleared, and a "
+          "stub with no claim answers None, so a caller does not dirty the "
+          "index for nothing: %r" % ((stubs["P3"].get("claim"),
+                                       M.index_without_stub_claim(cleared,
+                                                                  "P2")[1]),),
+          stubs["P3"].get("claim") == claim
+          and M.index_without_stub_claim(cleared, "P2")[1] is None
+          and M.index_without_stub_claim(cleared, "P9")[1] is None)
+
+
 def _write_json(path, obj):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
@@ -1156,6 +1195,7 @@ def _resolve_cases(check):
 
 def _selftest():
     def body(check):
+        _stub_claim_cases(check)
         _cases(check)
         _root_key_cases(check)
         _phase_status_cases(check)

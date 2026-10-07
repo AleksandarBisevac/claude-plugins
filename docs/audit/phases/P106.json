@@ -1,7 +1,7 @@
 {
   "id": "P106",
   "title": "rules the model only follows become checks a script makes",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Tasks, one rule per task, each deleting its prose: (1) audit-task start refuses a task that is not ready unless --force, which journals the exception. (2) Phase status and claim are written by a verb, not a hand edit. (3) executor.runsGate is resolved by a script, not by the model reading config. Measure the mandatory-read bytes of /audit:next before and after each. Waits for the pipeline pilot in the measurement phase.",
   "desiredOutcome": "the first rules the orchestrator prose asks the model to follow are made by scripts instead, each with a test and with its prose section deleted, and the bytes an execution command must read go down with each move",
   "testGate": [
@@ -15,21 +15,284 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "b6d9a4a31d2a09b7b126553d6d34e78e2114d631",
+  "branch": "audit/p106-rules-the-model-only-follows-b",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P106-R1",
+        "severity": "high",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:3226-3261,3632-3643",
+        "issue": "A phase claim has no liveness: _claim_plan returns contested for any claim whose sessionId differs from the current one, and only sign-off or cancel clears it, so ordinary multi-session use of a sharded plan is refused - the next /audit:next session continuing a phase, every /audit:resume after a crash or lost session, a session id change across a resume, and (with no session id) a held claim even --force cannot replace - making --force the normal way to continue a phase and a forced row no longer an exception.",
+        "resolution": "fixed in P106.4-b6f (fca3219f): Refuse only when the holder may still be live: when no live run holds the phase-<id> lock (the _locks liveness answer audit-lock status gives), take the claim over without --force and record it on the task.start row as a takeover with that basis; refuse, with --force as the way past, only when a live holder exists or liveness cannot be asked; decide and test the no-session path explicitly; cases for a sequential second session (takeover) and a live holder (refused).",
+        "fixTask": "P106.4-b6f",
+        "commit": "fca3219f"
+      },
+      {
+        "id": "P106-R2",
+        "severity": "med",
+        "file": "plugins/audit/reference/execute-task.md:11-13; reference/orchestrator.md:386-398,669-690; commands/task.md:480; scripts/manifest/audit-task.py:3276-3287,3611-3615",
+        "issue": "The orchestrator flow says nothing about what to do on the new readiness and claim refusals, while both refusal texts offer --force --reason as the next step and task.md calls --force the route for promoting a task by hand, inviting a model mid-run to add --force with a reason in its own words rather than the operator's.",
+        "resolution": "fixed in P106.5-b6f (c3482e27): On a readiness or claim refusal the orchestrator stops and relays the refusal verbatim; --force only on the human's instruction with the human's words as --reason (the operator's-words rule); reword both refusal texts to name the operator's decision before the flag; task.md describes --force as the operator's exception.",
+        "fixTask": "P106.5-b6f",
+        "commit": "c3482e27"
+      },
+      {
+        "id": "P106-R3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:3641-3643,3740",
+        "issue": "With no session id and another session's claim held, a forced start keeps the claim but still reports claimReplaced and writes 'FORCED past ... claim of session X' as if it had been replaced.",
+        "resolution": "fixed in P106.4-b6f (fca3219f): Set replaced only when a claim was written in its place, word the no-session force as kept, and pin claimReplaced None with the claim byte-identical.",
+        "fixTask": "P106.4-b6f",
+        "commit": "fca3219f"
+      },
+      {
+        "id": "P106-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:3632",
+        "issue": "The claim's sessionId is the raw CLAUDE_CODE_SESSION_ID, unsanitised and unbounded, written into a committed shard and the task.start row, while _journal_io.env_session_id() exists to bound exactly this value; the journal actor and the claim can spell one session two ways.",
+        "resolution": "fixed in P106.4-b6f (fca3219f): Use _journal_io.env_session_id() for the claim write and the holder comparison, with a case for an over-long or unsafe value.",
+        "fixTask": "P106.4-b6f",
+        "commit": "fca3219f"
+      },
+      {
+        "id": "P106-R5",
+        "severity": "low",
+        "file": "plugins/audit/commands/run.md:56",
+        "issue": "run.md step 4 'Unmet blockers -> refuse and list them' still asks the model to apply the readiness rule by hand, a second copy of the rule start now enforces.",
+        "resolution": "fixed in P106.5-b6f (c3482e27): Point it at the start refusal and say to relay it.",
+        "fixTask": "P106.5-b6f",
+        "commit": "c3482e27"
+      },
+      {
+        "id": "P106-R6",
+        "severity": "low",
+        "file": "plugins/audit/reference/execute-task.md:11-18",
+        "issue": "Deleting sub-steps a and d left step 1 as a paragraph followed by a lone 'b.-c.' sub-item.",
+        "resolution": "fixed in P106.5-b6f (c3482e27): Fold the b-c text into step 1 or re-letter it, keeping the citations that point at it true.",
+        "fixTask": "P106.5-b6f",
+        "commit": "c3482e27"
+      },
+      {
+        "id": "P106-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_manifest_io.py:176-177",
+        "issue": "On the sharded layout a claim on an index stub is a fallback when the shard has none; start writes the shard and sign-off pops the assembled claim, so a legacy stub claim survives sign-off and reappears as another session's claim.",
+        "resolution": "fixed in P106.4-b6f (fca3219f): Have sign-off and cancel also drop a stub claim on the index under the index lock, or stop reading stub claims once a shard exists.",
+        "fixTask": "P106.4-b6f",
+        "commit": "fca3219f"
+      },
+      {
+        "id": "P106-R8",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:3251-3298,3351-3357,3424-3427",
+        "issue": "start reads an absent phase lock as proof nobody runs the phase, so a live session that started by hand (/audit:task start takes no phase lock) has its claim silently taken over by the next session, the orchestrated path too (its acquire succeeds because the hand starter holds no lock), and a claim pulled from another clone is always read as unheld; the takeover line says the holder 'holds no live run', which an absent lock cannot establish.",
+        "resolution": "fixed in P106.6-b6f (791d8387): Give every claim readable liveness: start takes a hand-off phase-<id> lock (recording CLAUDE_PID as audit-lock acquire does) when it writes a claim and none is held, so a hand start leaves the evidence an orchestrated one does; until a claim carries that evidence, treat none under another session's claim as unaskable unless this run holds the lock; word the takeover as its basis ('no live phase-<id> lock in this clone'); a case where a hand start with a live pid and no lock makes the next session refuse.",
+        "fixTask": "P106.6-b6f",
+        "commit": "791d8387"
+      },
+      {
+        "id": "P106-R9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:3290-3291,3301",
+        "issue": "A holder judged dead by the age rule alone (a lock with no pid, or from another host, older than the age limit) is taken over with no human involved, while audit-lock acquire treats the same verdict as exit 4 and its protocol asks the human before --takeover.",
+        "resolution": "fixed in P106.6-b6f (791d8387): Map a not-live verdict whose basis is the age fallback (no pid probed) to unaskable; keep dead for a pid gone on this host and the empty interrupted take; cases for a no-pid and an other-host lock past the age limit, both refusing.",
+        "fixTask": "P106.6-b6f",
+        "commit": "791d8387"
+      },
+      {
+        "id": "P106-R10",
+        "severity": "low",
+        "file": "plugins/audit/commands/task.md:468,490-501",
+        "issue": "task.md's claim prose drifted from the code: an unconditional refusal still listed, 'only when that other session still runs a live lock' where the code refuses any live lock this run does not hold, no mention of the no-session keep, and the --json keys omit claimKept and claimHolder.",
+        "resolution": "fixed in P106.7-b6f (2aa81131): Make each sentence true of _claim_plan and _claim_refusal, and list every --json key the start result carries.",
+        "fixTask": "P106.7-b6f",
+        "commit": "2aa81131"
+      },
+      {
+        "id": "P106-R11",
+        "severity": "low",
+        "file": "plugins/audit/reference/execute-task.md:11-16,26-28; reference/orchestrator.md:401-404",
+        "issue": "The relay-and-force rule is written three times in the files /audit:next must read (plus run.md and task.md), raising those bytes, while no script can tell an operator's --reason from the model's - a prose-only rule in the phase that exists to remove them.",
+        "resolution": "fixed in P106.7-b6f (2aa81131): State it once where the operator's-words rule lives and point to it elsewhere, recovering the bytes; record that it is a prose-only rule until a mechanism reads the reason from the operator's own prompt.",
+        "fixTask": "P106.7-b6f",
+        "commit": "2aa81131"
+      },
+      {
+        "id": "P106-R12",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py start keep path and _take_phase_lock",
+        "issue": "A keep start does no lock work, so liveness is written once and never refreshed: a session that resumes under a new process leaves its lock naming a dead pid and another session's start takes the claim and lock over while it still runs, and a keep start ignores another session's live phase lock, so both sessions run the phase.",
+        "resolution": "fixed in P106.8-b6f (aa375390): Run _take_phase_lock on keep too, so another run's live lock refuses a keep start; in the ours branch, re-take the lock for this run when its recorded pid is gone or differs from the current process, so the lock names the live process. Cases: a same-session start under a new process after the old one died, then another session's start, refused; a keep start while another session's live lock is held, refused.",
+        "fixTask": "P106.8-b6f",
+        "commit": "aa375390"
+      },
+      {
+        "id": "P106-R13",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_locks.py held_by_us",
+        "issue": "held_by_us reads a handed-off lock as ours on a session match alone even when its recorded pid is gone, so acquire answers 'already yours' to a resumed session over a lock every other reader judges dead.",
+        "resolution": "fixed in P106.8-b6f (aa375390): Refresh the recorded pid on a same-session re-entry whose recorded pid is gone, through the same re-take the start's ours branch uses.",
+        "fixTask": "P106.8-b6f",
+        "commit": "aa375390"
+      },
+      {
+        "id": "P106-R14",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py _release_start_lock and the orchestrator's acquire",
+        "issue": "After a hand start takes the start lock, the same session's orchestrator acquire answers exit 5 and leaves it, and sign-off then releases it by its start note, so the merge runs with no phase lock held while the orchestrator believes it holds one.",
+        "resolution": "fixed in P106.8-b6f (aa375390): When the orchestrator's acquire meets a start-noted lock of its own session, re-take it under the orchestrator's note so the start-note release leaves it; a case runs hand start, orchestrator acquire, sign-off, and finds the lock still held.",
+        "fixTask": "P106.8-b6f",
+        "commit": "aa375390"
+      },
+      {
+        "id": "P106-R15",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py _release_start_lock",
+        "issue": "A sign-off or cancel by a session that never held the start lock, while the starting session is live, prints release_refusal's takeover text telling the operator another session took the lock over and to re-read their writes, though nothing was taken over.",
+        "resolution": "fixed in P106.8-b6f (aa375390): Print this function's own wording naming the live holder and saying the lock was left in place; keep the takeover text for a run that actually held the lock.",
+        "fixTask": "P106.8-b6f",
+        "commit": "aa375390"
+      },
+      {
+        "id": "P106-R16",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py start, between the lock take and the guarded write",
+        "issue": "Calls between taking the lock and the first guarded write are not covered by undo_lock, so an exception there leaves a lock under the live process that refuses every other session until it ends.",
+        "resolution": "fixed in P106.8-b6f (aa375390): Take the lock immediately before the writing try, or wrap the span from take to validated write so undo_lock runs and the exception re-raises.",
+        "fixTask": "P106.8-b6f",
+        "commit": "aa375390"
+      },
+      {
+        "id": "P106-R17",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py _holder_gone",
+        "issue": "_holder_gone calls two private helpers of _locks, so a rename inside _locks silently breaks a second module.",
+        "resolution": "fixed in P106.8-b6f (aa375390): Expose one public predicate in _locks that judge and the release conflict also use, and call it from audit-task.",
+        "fixTask": "P106.8-b6f",
+        "commit": "aa375390"
+      },
+      {
+        "id": "P106-R18",
+        "severity": "low",
+        "file": "plugins/audit/commands/task.md claim paragraph",
+        "issue": "The paragraph says a start takes the claim over whenever the holder's lock is not live, but no lock in this clone and an age-only lock are refused as unaskable; a takeover happens only on a lock observed gone or on this run's own live lock.",
+        "resolution": "fixed in P106.9-b6f (4733c18e): Name the takeover conditions as the code decides them and say that no lock and an age-only lock are refused as unaskable.",
+        "fixTask": "P106.9-b6f",
+        "commit": "4733c18e"
+      },
+      {
+        "id": "P106-R19",
+        "severity": "low",
+        "file": "plugins/audit/commands/status.md resume line",
+        "issue": "The line says resume's start takes a dead holder's lock over itself, but resume first acquires the phase lock and a dead holder answers exit 4, which stops for the human before a --takeover rerun; start's own takeover belongs to a hand-typed start.",
+        "resolution": "fixed in P106.9-b6f (4733c18e): Say resume takes the dead lock over through its own acquire after the human confirms exit 4, that start then reuses that lock, and that start's own takeover is for a hand-typed start.",
+        "fixTask": "P106.9-b6f",
+        "commit": "4733c18e"
+      },
+      {
+        "id": "P106-R20",
+        "severity": "low",
+        "file": "plugins/audit/commands/task.md --force paragraph",
+        "issue": "The --force paragraph still restates the relay rule that now lives once in manifest-conventions.md.",
+        "resolution": "fixed in P106.9-b6f (4733c18e): Replace the clause with the pointer the other call sites use and keep only the flag mechanics.",
+        "fixTask": "P106.9-b6f",
+        "commit": "4733c18e"
+      },
+      {
+        "id": "P106-R21",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py _release_start_lock",
+        "issue": "The left-in-place wording covers only a holder judge reads as live: a start lock judged by age alone (no pid, another host, an unprobeable pid) falls through to release_refusal's text telling the operator another session took the lock over and to re-read their writes, which is false because this session never held it.",
+        "resolution": "fixed in P106.10-b6f (a87c0cf0): Decide on taken_from alone: without it, always print the left-in-place sentence naming the holder and the judge basis; keep the takeover sentence for taken_from; cases with a pid-less aged lock and a foreign-host lock.",
+        "fixTask": "P106.10-b6f",
+        "commit": "a87c0cf0"
+      },
+      {
+        "id": "P106-R22",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_locks.py acquire refresh branch",
+        "issue": "A resumed run's preflight acquire re-records its own gone-pid lock and answers already-yours with 'not this call's to give back', so an orchestrator following its guidance never releases it and the merged phase stays locked against other sessions while the resumed process lives, then needs a human-confirmed takeover.",
+        "resolution": "fixed in P106.10-b6f (a87c0cf0): When the acquire is handed off, treat re-recording a gone pid as this call's hold: return 0, carry the token and say it was re-recorded from a gone pid; keep already-yours for non-handed-off callers and refresh(); a case where a resumed acquire then release leaves no lock.",
+        "fixTask": "P106.10-b6f",
+        "commit": "a87c0cf0"
+      },
+      {
+        "id": "P106-R23",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_locks.py refresh; audit-task.py _take_phase_lock",
+        "issue": "refresh re-records a lock whose recorded pid is still alive whenever it differs from the asking process, so a live run's release is refused as taken over and the lock can read dead while that run still works the phase.",
+        "resolution": "fixed in P106.10-b6f (a87c0cf0): Re-record only when the recorded holder is gone or no pid is recorded; a live recorded pid stays and is reported; an allow/deny pair.",
+        "fixTask": "P106.10-b6f",
+        "commit": "a87c0cf0"
+      },
+      {
+        "id": "P106-R24",
+        "severity": "low",
+        "file": "plugins/audit/commands/status.md resume line",
+        "issue": "The line says resume's acquire meets the dead holder as exit 4 and a human-confirmed takeover, which holds only for a different session id; the same session resumed under a new process has its lock re-recorded by acquire with no exit 4.",
+        "resolution": "fixed in P106.10-b6f (a87c0cf0): Name both cases, worded to match the settled acquire behaviour.",
+        "fixTask": "P106.10-b6f",
+        "commit": "a87c0cf0"
+      },
+      {
+        "id": "P106-R25",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py start's outer exception handler",
+        "issue": "The outer handler that gives the lock back also wraps the branch cut after the validated write, so an unexpected raise there releases the lock while the written claim stays.",
+        "resolution": "fixed in P106.10-b6f (a87c0cf0): End the guarded span at the validated write, or restore the snapshot in the handler once the write has landed so claim and lock are undone together.",
+        "fixTask": "P106.10-b6f",
+        "commit": "a87c0cf0"
+      },
+      {
+        "id": "P106-R26",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/audit-lock.py comment",
+        "issue": "A new comment says the test module holds that no module reaches a private _locks helper, but the scan covers only scripts/ and hooks/ and test modules still reach private names; the line also overruns the block's width.",
+        "resolution": "fixed in P106.10-b6f (a87c0cf0): Say no module under scripts/ or hooks/ reaches one, and rewrap.",
+        "fixTask": "P106.10-b6f",
+        "commit": "a87c0cf0"
+      },
+      {
+        "id": "P106-R27",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_locks.py held_by_us pid rule",
+        "issue": "The CLAUDE_PID rule answers ours without the other-session check the token rule has, so with yields a caller of another or no session sharing the holder's pid can re-take a yielding start lock.",
+        "resolution": "fixed in P106.10-b6f (a87c0cf0): Add the other-session check to the pid rule, matching the token rule, with a case.",
+        "fixTask": "P106.10-b6f",
+        "commit": "a87c0cf0"
+      },
+      {
+        "id": "P106-R28",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py _take_phase_lock and _phase_lock_line",
+        "issue": "A hand-typed start in a resumed session over this session's orchestrator lock whose pid is gone gets the re-record's 0, reports took and prints that sign-off or a cancel gives the lock back, but sign-off releases only a start-noted lock, so the lock stays naming the live resumed process; a failed start on that path would also release a lock it did not take under its own note.",
+        "resolution": "fixed in P106.11-b6f (f5fe36b4): Count a re-record as took only when the lock carries the start note; otherwise report ours with a line saying it was re-recorded and keeps its own hold's note so the run that took it releases it, and never undo it on a failed start; separate-process case plus its start-note twin asserting the printed line and the lock file agree.",
+        "fixTask": "P106.11-b6f",
+        "commit": "f5fe36b4"
+      },
+      {
+        "id": "P106-R29",
+        "severity": "low",
+        "file": "plugins/audit/commands/status.md; plugins/audit/reference/orchestrator.md",
+        "issue": "The docs say a resumed session's acquire re-records its lock under the live process, which holds only when CLAUDE_PID is exported; without it the lock reads dead and meets exit 4, and a start's yielding lock is superseded rather than re-recorded.",
+        "resolution": "fixed in P106.11-b6f (f5fe36b4): Name the CLAUDE_PID condition and the exit-4 path without it.",
+        "fixTask": "P106.11-b6f",
+        "commit": "f5fe36b4"
+      }
+    ],
+    "outcome": "[findings: 29 - 1 high, 6 med, 22 low; 29 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "Several rules the orchestrator prose asked the model to follow are now decided by audit-task start, each with tests:\n- Start refuses a task that is not ready.\n- Start writes the phase claim with the session id and branch.\n- The spawn brief resolves the executor's gate rule.\n- The phase claim is bound to the phase lock, and _locks owns the lock's liveness: one public predicate decides whether the holder is gone.\n\nThe phase lock follows its session through the whole run:\n- A resumed session's acquire re-records its own gone-pid lock under the live process and releases it at the end.\n- A start honours another run's live lock.\n- The lock stays held through the merge.\n- A failed start gives back only a lock it took under its own note.\n- Every release message says truthfully who holds the lock.\n\nThe prose these rules replaced is either deleted or reduced to one pointer. The rule for relaying a refusal is stated once, in manifest-conventions.md. task.md, status.md and orchestrator.md describe the takeover, refusal and resume conditions as the code decides them.\n\nThe review ran six rounds, each lock defect reproduced in separate processes, and every finding is fixed. The phase gate is green, with screenshots and the interactive check, and the invariants check found no breach. Whether the bytes an execution command reads went down across the phase was not measured as one figure; individual tasks reported both increases and decreases.",
   "tasks": [
     {
       "id": "P106.1",
       "title": "audit-task start refuses a task that is not ready unless --force, which journals the exception",
-      "status": "pending",
+      "status": "done",
       "description": "start reports what a task waits on but never refuses ('REPORTED, NEVER REFUSED' in _locked_start), so readiness is a rule the model only follows. Make start refuse a pending task with unmet references, unless --force with --reason, which the task.start row journals. It reads _status_facts.unmet_refs, with no second copy of the rule. Starting a task by hand for the plan gate keeps working through --force. Delete the prose the rule came from: the term list and the 'Satisfied' paragraph under orchestrator.md's '## Readiness rule'. Keep the heading, which _areas.py and _priority.py cite, and keep the priority and parallel-safety paragraphs. Point commands/next.md step 1 at the ready list and the refusal, document the flags in commands/task.md, and move README.md's Readiness row from the 'Followed' table to the enforced one. Record `wc -c` of commands/next.md and the reference files it requires, before and after. This phase waits for P101's pipeline pilot (P101.1), whose findings decide which prose rules move first.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -37,7 +300,8 @@
         "plugins/audit/commands/task.md",
         "plugins/audit/commands/next.md",
         "plugins/audit/reference/orchestrator.md",
-        "plugins/audit/README.md"
+        "plugins/audit/README.md",
+        "plugins/audit/tests/test__refs.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -62,28 +326,56 @@
         "P101.1"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1e2412b9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py start now refuses a task whose own or phase references are unmet, unless the task is already in_progress (a retry). The check goes through _waiting_on, which reads _status_facts.unmet_refs, so the readiness rule exists in one place. The refusal exits 2, writes nothing, adds no journal row, names each unmet reference as /audit:status spells it (e.g. `P2 (phase)`), and points to --force --reason. New --force flag; VERB_FLAGS[\"start\"] = (\"force\", \"reason\"); _start_flags_refusal refuses --force without --reason and --reason without --force; --reason - reads stdin. A forced start writes mode: forced, reason and basis (\"unmet: ...\") on its task.start row (keys already in _journal_io.DETAILS_KEYS); its summary says FORCED past unmet ...; --json gains forced and forcedReason. An ordinary start writes none of these.\nDecisions: a blocked task with unmet references is refused too (the rule is about unmet references, not the status label); --force on a task that is already ready is accepted and records nothing extra.\nDocs: orchestrator.md's Readiness rule keeps its heading, priority and parallel-safety paragraphs; the term list and 'Satisfied' paragraph are replaced by a pointer to ready_tasks, unmet_refs and the start refusal. next.md step 1 takes the first READY NOW entry. task.md: argument hint, a --force example, the journal bullet, the refusal list, and the readiness paragraph. README: the Readiness row moves from Followed to the enforced table; the /audit:task row names --force. test__refs.py pf2 lists start among verbs whose hint carries flags (scope widened for exactly that).\nBytes (wc -c), this task's share: next.md 2453 -> 2456, orchestrator.md 57593 -> 57353.\nTests: test_audit_task pr10, pr10b, pr10c, pr11, pr11b replace the old report-only pr10/pr11; pr11c is the allow twin (a ready task starts with no mode on its row; a re-start of an in_progress task is not refused). Red-first proved through the helper at HEAD b6d9a4a3: 715/720 with exactly pr10-pr11b failing. Suites: test_audit_task 720/720, test__refs 304/304, test__areas, test__output, test__deps, test__priority green; ruff clean.",
+        "descriptive": "audit-task start now refuses a task that is not ready unless it is forced with a recorded reason, so readiness is enforced by the script instead of being a rule the model reads and follows."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T22:17:03Z",
+      "completedAt": "2026-10-07T00:23:56Z",
+      "verifiedBy": [
+        "pr10",
+        "pr10b",
+        "pr10c",
+        "pr11",
+        "pr11b",
+        "pr11c"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T00:21:34Z.7e9a9b",
+        "status": "passed",
+        "at": "2026-10-07T00:21:34Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "1e2412b9",
+        "at": "2026-10-07T00:23:56Z",
+        "basis": "orchestrator check: the refusal reads unmet_refs, writes nothing on refusal, a forced start records mode, reason and basis, the readiness term list left orchestrator.md, and red-first was proved with allow twins"
+      }
     },
     {
       "id": "P106.2",
       "title": "audit-task start writes the phase claim, and the hand-edited phase-entry steps are deleted",
-      "status": "pending",
+      "status": "done",
       "description": "execute-task.md's step 1a tells the model to Edit phase.status to in_progress, which start already does through _panel_write's phase promotion. Step 1d tells it to hand-write phase.claim into the shard. Make start write the claim on the sharded layout; sign-off already releases it. Then delete the prose the rule came from: steps 1a and 1d under execute-task.md's '## Execute the task'. Keep the 1b-1c pointer to the verb, and keep README.md's '§ Execute the task 1b–1c' citation pointing at the step that remains. Record the mandatory-read bytes of /audit:next before and after. Like the rest of this phase, it waits for P101's pipeline pilot.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/reference/execute-task.md",
         "plugins/audit/commands/task.md",
-        "plugins/audit/README.md"
+        "plugins/audit/README.md",
+        "tools/check-committed-pii.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        "plugins/audit/tests/test__help.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "tools/prove-gates.py",
+        "plugins/audit/schema/audit-plan.schema.json"
       ],
       "tests": {
         "mode": "tdd",
@@ -110,21 +402,42 @@
       "dependsOn": [
         "P106.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7eb31513",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task start now writes phase.claim on the sharded layout, in the same _write_add that _heal_phase_status promotes the phase in: {sessionId from $CLAUDE_CODE_SESSION_ID (read through _journal_io.ENV_SESSION_VAR), branch (entry or current), at}. No host is written: the shard is committed, and the journal drops actor.host for the same reason. _claim_plan decides before any write (none / keep / take / contested / no-session). A claim held by another session is refused with exit 2 before any write, naming that claim's session, branch and at; --force --reason replaces it and journals the claim it replaced (forced gains replaced). The task.start row carries phase-keyed changes rows for claim.sessionId, claim.branch and claim.at; --json gains claim, claimAction and claimReplaced. With no session id, no claim is written and the output says so. Any start on a sharded phase with no claim takes one (re-entry after an interruption included); a re-start by the holding session keeps the claim byte for byte.\nexecute-task.md: steps 1a (hand-edit phase.status) and 1d (hand-write phase.claim) are deleted; step 1 says the start verb sets both and refuses another session's claim; the b-c sub-step keeps its label because README and _invariants cite it. /audit:next's mandatory-read bytes (wc -c of next.md, orchestrator.md, manifest-conventions.md, execute-task.md): 151841 -> 151193.\nNo host anywhere: _manifest_vocab.CLAIM_KEYS = (sessionId, branch), so a claim the verb writes revalidates with no warning; _manifest_phases' wording follows; the schema's claim description says host stays an accepted key (COMPATIBILITY.md) but the plugin writes none; gen-demo-manifest's lease has the same shape (no committed render moved: check-rendered-artifacts --before-commit OK); tools/check-committed-pii.py reports plan-claim-host for a host under any phase claim in a committed plan file; prove-gates' schema_subset_drift row re-anchored on the new CLAIM_KEYS.\nDocs: task.md (argument hint, claim bullet, journal rows, refusal list, --force and --json keys), README's /audit:task row.\nTests: test_audit_task pc1-pc8 (pc3 the allow twin; pc7 no host key; pc8 a started sharded plan revalidates with no claim warning while a branchless claim still warns); check-committed-pii q32 plus q24/q25 fixtures (a host-free claim stays clean); test__manifest_phases mp10/mp11, test__manifest_vocab mv25/mv27/mv28, test_gen_demo_manifest lease cases updated to derive from CLAIM_KEYS. Red-first proved through the helper at HEAD 775df9c1 (pc1, pc2, pc4, pc5, pc6; 721/726); pc7 and pc8 were red in the shared tree before their fixes; the PII cases were proved by never-fire and over-fire mutations (33/36 each). Full sweep 305/305 files ok; prove-gates --selftest 37/37; validator OK.",
+        "descriptive": "Starting a task now records which session holds the phase - without naming the machine, since the plan is committed - and refuses a phase another session holds unless forced with a recorded reason, so the two hand-edit steps the orchestrator used to follow are gone."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-07T00:24:02Z",
+      "completedAt": "2026-10-07T01:32:47Z",
+      "verifiedBy": [
+        "pc1",
+        "pc2",
+        "pc3",
+        "pc4",
+        "pc5",
+        "pc6",
+        "pc7",
+        "pc8",
+        "q32"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T01:25:48Z.b50fc1",
+        "status": "passed",
+        "at": "2026-10-07T01:25:48Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7eb31513",
+        "at": "2026-10-07T01:32:47Z",
+        "basis": "orchestrator check: the claim is written by the verb in the same write as the phase promotion, steps 1a/1d deleted with bytes measured, and the orchestrator's privacy correction (no host, PII backstop) applied across verb, validator, schema text, demo and check"
+      }
     },
     {
       "id": "P106.3",
       "title": "the spawn brief resolves executor.runsGate, and the orchestrator no longer reads config for it",
-      "status": "pending",
+      "status": "done",
       "description": "execute-task.md step 3 tells the model to read .claude/audit.config.json through hooks/_config.load() and executor_gate_policy(), and to state the reading in the spawn prompt. Instead, audit-lookup.py brief, whose answer is already pasted into that prompt, resolves it and prints the word with its basis. It calls executor_gate_policy loaded through _loader, the way _gate_feed does, because a script may not import hooks/. An unrecognised value is a refusal, not the default. Delete the prose the rule came from: the bullet 'Resolve executor.runsGate the same way — at spawn, by you' in execute-task.md step 3. The brief bullet carries the line instead. Update audit-lookup's PLUGIN-BUILD-GUIDE.md section and regenerate the module map. Record the mandatory-read bytes of /audit:next before and after. It waits for P101's pipeline pilot.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -154,16 +467,547 @@
         "P101.1"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "775df9c1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-lookup.py brief now resolves executor.runsGate itself and prints it as the brief's last line with its basis (set by executor.runsGate in .claude/audit.config.json; or the default, with no config file or with the key unset), and adds it to --json as runsGate {reading, default, basis}. It reads hooks/_config.executor_gate_policy through _loader the way _gate_feed does, on the project's config as written, so an absent key is told apart from one set to the default. An unrecognised value, or a config that does not parse, is refused on stderr with exit 3 and no reading, rather than defaulted. execute-task.md step 3's bullet telling the orchestrator to resolve executor.runsGate itself is deleted; the brief bullet says its last line is the reading to paste and to stop and ask the human when brief refuses. PLUGIN-BUILD-GUIDE.md's audit-lookup section and the module-map line are updated. Mandatory reads of /audit:next measured with `git cat-file -s HEAD:<file>` against `wc -c`: execute-task.md 57795 to 56398 bytes, the four files together 153475 to 152078. Cases rg1-rg7 in test_audit_lookup.py; red-first proved through the helper (40/47 at HEAD); mutations (an invalid value folded into the default, the keyed flag forced false, every set value refused) each reddened their cases.",
+        "descriptive": "The brief the orchestrator pastes into an executor's prompt now states how the executor's own gate is to run, read from the project's config by a script, so the orchestrator no longer has to read the config and follow instructions to do it."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T22:17:04Z",
+      "completedAt": "2026-10-07T00:23:57Z",
+      "verifiedBy": [
+        "rg1",
+        "rg2",
+        "rg3",
+        "rg4",
+        "rg5",
+        "rg6",
+        "rg7"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T00:23:43Z.14c8aa",
+        "status": "passed",
+        "at": "2026-10-07T00:23:43Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "775df9c1",
+        "at": "2026-10-07T00:23:57Z",
+        "basis": "orchestrator check: the brief prints the reading with its basis and refuses an unknown value, the prose step is deleted, and the bytes measurement is recorded; red-first proved"
+      }
+    },
+    {
+      "id": "P106.4-b6f",
+      "title": "a phase claim yields to a new session when its holder is gone, and refuses only a live one",
+      "status": "done",
+      "description": "Fixes review findings P106-R1 (high), P106-R3, P106-R4 and P106-R7. A phase claim refuses a start only while its holder may still be live. When the claim's session holds no live run of the phase - asked through the same lock liveness `audit-lock.py status` answers for `phase-<id>` - a start by another session takes the claim over without --force and records it on the task.start row as a takeover, with the liveness basis and the replaced session in its changes rows. A start is refused, with --force --reason as the operator's way past, only when a live holder exists or liveness cannot be asked; the refusal text names that decision as the operator's before it names the flag. The no-session path (no CLAUDE_CODE_SESSION_ID) is decided and tested: a forced start with no session id keeps the held claim and reports it as kept, never as replaced (R3). The claim's sessionId and the holder comparison use _journal_io.env_session_id(), which bounds and sanitises the value that lands in a committed row (R4). Sign-off and cancel also drop a legacy claim on the index stub under the index lock, so a stub claim cannot reappear after sign-off (R7). Cases: a sequential second session starting the next task of a phase whose previous session left no live lock is a recorded takeover; the same with a live phase lock is refused; the no-session force keeps the claim and reports claimReplaced None; an over-long or unsafe session id is written bounded; a stub claim is gone after sign-off.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/tests/test__manifest_io.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a second session starting the next task of a phase whose previous holder left no live phase lock takes the claim over and records the takeover, while a live phase lock still refuses; a forced start with no session id keeps the claim and reports nothing replaced; an unsafe session id is written bounded",
+          "plugins/audit/tests/test__manifest_io.py: a legacy claim on an index stub is gone after sign-off"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "validate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "fca3219f",
+      "outcome": {
+        "technical": "Liveness comes from the existing reader: audit-task.py imports _locks (a downward L7 -> L1 edge) and the new _phase_holder(git_root, phase_id) asks about phase-<id> exactly as `audit-lock.py status` does - _locks.lock_dir, the directory listing _locks.collect walks, _locks.read_lock, _locks.judge for the verdict and basis (every uncertainty judge resolves to live stays live), the name from _status_facts.PHASE_LOCK_PREFIX, and _locks.held_by_us to tell whose live lock it is. 'Liveness cannot be asked' is state unaskable: no lock dir (no git common dir), an id _locks.valid_name refuses, or a listing that raises; a lock dir that does not exist is state none, as status answers.\n_claim_plan: a claim whose holder has no live phase lock is taken over by a later session without --force (state none or not live, or a live lock this run holds - the lock the orchestrator takes before start); a live lock held by any other session, or unaskable liveness, refuses, with the refusal giving the holder basis first, then 'the operator's decision, not this verb's', then --force. The takeover is not a forced start (no mode key); it adds a claim.takeover changes row (from the replaced session, to the liveness basis) beside the claim.sessionId/branch/at rows, and the summary says 'taken over from session X (basis)'. With no session id, an unforced start whose holder is not live runs and keeps the claim it cannot replace; with a blocking holder it is contested, and a forced start keeps the claim, reported as kept ('kept: no session id to replace it with'), never as replaced. JSON gains claimReplaced (only when a new claim was written over the held one), claimKept and claimHolder {state, basis}. The session id comes from _journal_io.env_session_id(), bounded and sanitised, for the written claim and the keep comparison. Sign-off, group sign-off and phase cancel also clear a legacy claim on the index stub under the index lock they already hold, through _manifest_io.index_without_stub_claim (non-mutating; a null claim reads as {}); single-file plans are a no-op. The --force help says 'while that session may still hold a live run of it'.\nTests: test_audit_task tk1-tk11 (tk1 no lock, tk2 dead pid, tk4 own lock are takeovers; tk3, tk5 refuse a live other holder; the no-session paths; bounded ids) with pc4/pc5 now planting a live phase lock; test__manifest_io sc1-sc3 (the stub claim is dropped, the other stub left). Red-first proved through the helper at HEAD a5f8d462: test_audit_task 728/739 (11 failing), test__manifest_io via --introduces index_without_stub_claim. Suites 739/739 and 159/159; ruff and house lints clean. commands/task.md still states the old claim rule; the docs task that owns it rewrites it.\nGuide: the module map fence regenerated from _deps.py --render (the audit-task edge gains _locks).",
+        "descriptive": "A new session can now continue a phase whose previous session has ended - the hand-over is recorded with the reason it was safe - and a start is refused only while another session is actually still running that phase."
+      },
+      "startedAt": "2026-10-07T01:41:53Z",
+      "completedAt": "2026-10-07T02:22:43Z",
+      "verifiedBy": [
+        "tk1",
+        "tk2",
+        "tk3",
+        "tk4",
+        "tk5",
+        "tk6",
+        "tk9",
+        "sc1",
+        "sc2",
+        "sc3"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T02:22:33Z.0d7d0d",
+        "status": "passed",
+        "at": "2026-10-07T02:22:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "fca3219f",
+        "at": "2026-10-07T02:22:43Z",
+        "basis": "orchestrator check: P106-R1, R3, R4 and R7 fixed using the existing lock-liveness reader, takeover recorded not forced, refusal names the operator's decision first, red-first proved with allow twins"
+      }
+    },
+    {
+      "id": "P106.5-b6f",
+      "title": "the orchestrator relays start's refusals and leaves --force to the operator",
+      "status": "done",
+      "description": "Fixes review findings P106-R2, P106-R5 and P106-R6. The orchestrator flow says what to do on start's readiness and claim refusals: stop and relay the refusal verbatim; pass --force only on the human's instruction, with the human's words as --reason (the operator's-words rule in manifest-conventions). execute-task.md step 1/2, orchestrator.md's Phase entry and its Resume steps carry that one sentence each, pointing at the verb rather than restating the rule. commands/task.md describes --force as the operator's exception, not a route for promoting a task by hand. commands/run.md step 4 stops restating the readiness rule and points at start's refusal. execute-task.md's step 1 no longer carries an orphaned 'b.-c.' sub-item; every citation of it (README, _invariants) stays true. Record the bytes /audit:next must read before and after.",
+      "files": [
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/commands/run.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P106.4-b6f"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "c3482e27",
+      "outcome": {
+        "technical": "The orchestrator flow now says what to do on start's two refusals, pointing at the verb rather than restating its rule: execute-task.md step 1 (claim refusal) and step 2 (readiness refusal) say to stop and relay the refusal verbatim and to pass --force --reason only on the human's own instruction with the human's words as the reason (manifest-conventions' operator's-words rule); orchestrator.md's Phase entry gains one bullet saying the same, and Resume step 3 points at those steps. commands/task.md: the readiness paragraph describes --force as the operator's exception, never a route for promoting a task by hand; the claim paragraph states the takeover/liveness rule (refused only while the holder may still be live or liveness cannot be asked; otherwise start takes the claim over and records it), and the documented claimAction values gain takeover, which _claim_plan returns. commands/run.md step 4 relays start's refusal instead of restating the readiness rule. execute-task.md step 1's orphaned 'b.-c.' sub-item gets its 'a.' so the README and _invariants citations of step 1b stay true. Bytes /audit:next must read (wc -c of next.md, orchestrator.md, manifest-conventions.md, execute-task.md): 151193 before, 152089 after - this task adds pointer sentences where the flow said nothing, so it raises the count; the phase's total is still below where it began (153475 before P106.1). Doc lints: test__refs 304/304, test__output 182/182, test__deps 307/307.",
+        "descriptive": "The orchestrator's instructions now tell it to stop and pass a refusal from starting a task to the user word for word, and to use the override only when the user says so in their own words, instead of inviting it to add the override itself."
+      },
+      "startedAt": "2026-10-07T02:22:44Z",
+      "completedAt": "2026-10-07T02:31:54Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T02:31:46Z.4d331b",
+        "status": "passed",
+        "at": "2026-10-07T02:31:46Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c3482e27",
+        "at": "2026-10-07T02:31:54Z",
+        "basis": "orchestrator check: P106-R2, R5 and R6 addressed, the claim paragraph matches the takeover code, the step-1b citations stay true; the bytes rise is stated, the phase total remains below its start"
+      }
+    },
+    {
+      "id": "P106.6-b6f",
+      "title": "every phase claim carries readable liveness, so a takeover never overwrites a live session",
+      "status": "done",
+      "description": "Fixes review findings P106-R8 (med) and P106-R9.\n\nEvery phase claim carries readable liveness, so that a takeover never overwrites a live session's claim. When start writes a claim and this run holds no phase-<id> lock, it takes one: a hand-off lock recording CLAUDE_PID the way `audit-lock.py acquire` does, through the same _locks writer. A hand-typed start then leaves the same evidence an orchestrated one does. The orchestrator's own lock (held_by_us) is reused, never doubled. Sign-off and cancel release it as they release the phase lock today; say where, in code.\n\nUntil a claim carries that evidence, `none` under another session's claim is read as `unaskable` unless this run holds the lock. That covers a claim pulled from another clone and one written before this change.\n\nA holder judged not live only by the age rule is `unaskable`, not `dead`. That covers no pid recorded, another host, and a probe that answered nothing. `dead` stays for a pid gone on this host and for the empty file an interrupted take leaves.\n\nThe takeover line and the summary state the basis itself (\"no live phase-<id> lock in this clone\"). They never conclude that the holder \"holds no live run\".\n\nCases:\n- A hand start by session A, with a live pid and no prior lock, makes session B's start refuse.\n- A then ends (its pid is gone) and B's start takes the claim over.\n- Locks with no pid, or from another host, past the age limit both refuse.\n- A claim with no lock at all, from another clone, refuses.\n- The orchestrator path (its own lock held) still takes over without --force.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a hand start by a live session leaves a phase lock so the next session's start refuses, the same claim is taken over once that pid is gone, no-pid and other-host locks past the age limit refuse, and a claim with no lock from another clone refuses"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "validate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "791d8387",
+      "outcome": {
+        "technical": "audit-task.py: a start that writes a claim and holds no phase lock takes one through _take_phase_lock -> _locks.acquire(git_root, 'phase-<id>', note=_START_LOCK_NOTE, wait=0, handed_off=True), the writer and flag audit-lock.py acquire uses, so CLAUDE_PID is recorded and the format is the same (ours: the orchestrator's lock is reused untouched; stale with the holder gone, or forced: taken over; live, or stale by age alone: held; not a git repository or unwritable: none, the start goes ahead). It is taken before any manifest write; held and unforced refuses (_lock_refusal) with nothing written; undo_lock() releases it on each rollback path. _phase_holder returns dead only where _holder_gone sees an end (the empty file of an interrupted take, or a pid gone on this host); every other not-live verdict (no pid, another host, an unanswered probe) is unaskable with a basis saying it was judged by age alone. _claim_plan (gaining an optional phase_id) passes the holder through _holder_under_claim: under another session's claim, none becomes unaskable, the claim possibly from another clone or predating the start lock. _takeover_basis words a takeover as 'no live phase-<id> lock in this clone (<judge basis>)' (or the ours basis); the claim.takeover row, the takeover line and the journal summary use it, and 'holds no live run' is gone. _release_start_lock(git_root, phase_id) releases only a lock whose note is the start's, through _locks.release, from _locked_signoff (after the phase.verdict row) and _locked_cancel (phase kind); the orchestrator's phase lock, held through the merge, is left alone. JSON gains phaseLock, claimTakeoverBasis and phaseLockReleased; text gains a phase lock line. Decisions: the start's lock is told apart by its existing note field; a start that writes no claim (a restart keeping its own claim, or no session id) takes no lock; a forced start never seizes a live lock.\nTests: tk1 (a claim with no lock now refuses as unaskable), tk2 (takeover row and wording), tk7 (a dead lock), and hl1-hl11 (a hand start writes acquire's lock format; a second session then refuses; after the pid is killed it takes over claim and lock; the takeover wording; no-pid and other-host locks past the age limit refuse; the orchestrator's lock reused byte for byte; sign-off and cancel release the start's lock and leave the orchestrator's alone). Red-first proved through the helper at HEAD c3482e27 (11 of 750 failing); an over-fire mutation (no note check on release) turned hl10, hl11 red. Suites: test_audit_task 750/750, test__locks 108/108, test_audit_lock 84/84, test__output, test__deps, test__refs green; ruff and vermin clean.",
+        "descriptive": "Starting a task by hand now takes the same phase lock the orchestrator takes, so another session can no longer take over a phase while its holder is still running; locks that only look old, and claims with no lock behind them, are refused rather than taken over."
+      },
+      "startedAt": "2026-10-07T02:41:07Z",
+      "completedAt": "2026-10-07T05:11:48Z",
+      "verifiedBy": [
+        "tk1",
+        "tk2",
+        "hl1",
+        "hl2",
+        "hl3",
+        "hl5",
+        "hl6",
+        "hl7",
+        "hl8",
+        "hl9",
+        "hl10",
+        "hl11"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T05:11:18Z.2208ac",
+        "status": "passed",
+        "at": "2026-10-07T05:11:18Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "791d8387",
+        "at": "2026-10-07T05:11:48Z",
+        "basis": "orchestrator check: P106-R8 and R9 fixed through the existing _locks writer and judge, release named in code at sign-off and cancel, red-first proved with allow twins"
+      }
+    },
+    {
+      "id": "P106.7-b6f",
+      "title": "the claim prose matches the code and the relay rule is stated once",
+      "status": "done",
+      "description": "Fixes review findings P106-R10 and P106-R11.\n\ncommands/task.md's claim paragraph is true of _claim_plan and _claim_refusal as they stand after the liveness fix:\n- A claim refuses only while its holder may still be live, or liveness cannot be asked.\n- Any live phase lock this run does not hold refuses.\n- With no session id, the claim is kept and claimAction is no-session.\n- Every --json key the start result carries is listed, including claimKept and claimHolder.\n\nThe rule \"stop and relay start's refusal verbatim; --force --reason only on the human's instruction, with the human's words as the reason\" is stated once, beside manifest-conventions' \"The operator's words go in unchanged\". execute-task.md steps 1-2, orchestrator.md's Phase entry, run.md and task.md point to it instead of restating it. Say there, in one sentence, that it is a rule the model follows: no script can tell an operator's --reason from the model's. Record the bytes /audit:next must read before and after; the restatements' removal should bring them back down.",
+      "files": [
+        "plugins/audit/commands/task.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/commands/run.md",
+        "plugins/audit/commands/status.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P106.6-b6f"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "2aa81131",
+      "outcome": {
+        "technical": "task.md's claim paragraph is rewritten to say only what _claim_plan, _claim_refusal, _take_phase_lock and _lock_refusal do: a claim is refused only for a live holder; with no session id nothing is written over a held claim (claimAction no-session); the phase lock refusal and the claim refusal are two separate doors; and the start result's --json keys are listed in full (claim, claimAction, claimReplaced, claimKept, claimHolder, claimTakeoverBasis, phaseLock). The rule that a writer script's refusal is relayed verbatim, with --force --reason only on the human's own instruction, is stated once in manifest-conventions.md under the operator's words section, and execute-task.md, orchestrator.md, run.md and task.md point to it instead of restating it. status.md's unfinished-phase-lock line no longer tells the operator to release a dead holder's lock by hand: start takes a dead holder's lock over itself and records the takeover. Gate-only task; test__refs, test__output and test__deps selftests green.",
+        "descriptive": "The task and resume documentation now describe the claim and phase-lock refusals exactly as start makes them, the rule for relaying a refusal lives in one place, and resume no longer asks the operator to release a dead session's lock by hand."
+      },
+      "startedAt": "2026-10-07T05:12:20Z",
+      "completedAt": "2026-10-07T05:39:58Z",
+      "verifiedBy": [
+        "test__refs",
+        "test__output",
+        "test__deps selftests"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T05:39:39Z.532ac1",
+        "status": "passed",
+        "at": "2026-10-07T05:39:39Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2aa81131",
+        "at": "2026-10-07T05:39:58Z",
+        "basis": "orchestrator check: P106-R10 and R11 fixed, prose read against _claim_plan, _claim_refusal, _take_phase_lock and _lock_refusal, relay rule stated once with pointers from every call site"
+      }
+    },
+    {
+      "id": "P106.8-b6f",
+      "title": "a held phase lock names a live process for as long as its session holds the phase",
+      "status": "done",
+      "description": "Fixes review findings P106-R12 to P106-R17. The phase lock must name a live process for as long as a session holds the phase.\n\n- A keep start runs _take_phase_lock as a take does, so another run's live lock refuses it. When the ours branch finds a recorded pid that is gone, or one that differs from the current process, it re-takes the lock for this run so the lock names the live process. _locks.held_by_us applies the same refresh on a same-session re-entry whose recorded pid is gone, so acquire no longer answers 'already yours' over a lock every other reader judges dead.\n- The orchestrator's acquire can meet a start-noted lock of its own session. It then re-takes that lock under its own note, so sign-off's start-note release leaves it in place and the merge runs under a held lock.\n- When the releasing session never held the lock and the holder is live, _release_start_lock prints its own wording: it names the live holder and says the lock was left in place. release_refusal's takeover text stays for a run that actually held the lock.\n- The span from the lock take to the validated write is covered: an exception there runs undo_lock and re-raises.\n- _locks exposes one public predicate for \"the holder is gone\". judge, the release conflict and audit-task's _holder_gone all use it, and no private _locks helper is called from another module.\n\nCases. Each refusal gets an allow twin, driven in scratch repos with distinct session ids and pids:\n- a same-session start under a new process after the old one died, followed by another session's start, is refused;\n- a keep start while another session's live lock is held is refused;\n- hand start, then orchestrator acquire, then sign-off: the lock is still held;\n- a sign-off by a non-holder while the holder is live prints the left-in-place wording;\n- an exception injected between take and write leaves no lock.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/scripts/governance/audit-lock.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/tests/test_audit_lock.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "aa375390",
+      "outcome": {
+        "technical": "_locks.py gains a public holder_gone(info, path, host), true only for an empty claim file or a pid gone on this host, which judge, the release conflict, held_by_us and audit-task's _phase_holder all decide by; the private helper it replaced is removed and no module reads a private _locks name any more (an AST case scans scripts/ and hooks/). held_by_us flags a same-session claim whose recorded pid is gone, and acquire then re-records the claim under the live process and answers ours; with no live pid to record the claim reads dead like any other. acquire takes a yields flag: a hand-off acquire by the same session takes over a yielding claim under its own note, so the orchestrator's acquire over a hand start's lock re-takes it and sign-off's start-note release leaves it held through the merge. Public refresh() and taken_from() join it. audit-task.py: a keep start runs _take_phase_lock, which takes with yields and on ours refreshes the lock to the current process, so another run's live lock refuses a keep start and a resumed session's lock names its live process; _release_start_lock says a live holder's lock was left in place when this session never held it, keeping the takeover wording for a lock that was really taken over; the span from the lock take through the git cut is wrapped so an exception releases a lock the start took and re-raises. audit-lock.py drops private re-exports it never used. Cases lv1-lv12 drive each hole in scratch repos, each step its own process with its own session and pid; hg1-hg4 and rf1-rf7 cover the predicate and refresh. Red-first: proved on test__locks (8 cases) and test_audit_task (9 cases) at HEAD; second-direction mutations (refresh unconditional, supersede without hand-off) turned the allow twins red in a scratch copy.",
+        "descriptive": "A phase lock now follows its session: a resumed session moves the lock onto its new process, a start honours another session's live lock, the lock stays held through the merge, and a failed start gives its lock back."
+      },
+      "startedAt": "2026-10-07T05:49:13Z",
+      "completedAt": "2026-10-07T06:22:40Z",
+      "verifiedBy": [
+        "lv1",
+        "lv2",
+        "lv3",
+        "lv4",
+        "lv5",
+        "lv6",
+        "lv7",
+        "lv8",
+        "lv9",
+        "lv10",
+        "lv11",
+        "lv12",
+        "hg1",
+        "hg2",
+        "hg3",
+        "hg4",
+        "rf1",
+        "rf2",
+        "rf3",
+        "rf4",
+        "rf5",
+        "rf6",
+        "rf7"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T06:22:29Z.4199e8",
+        "status": "passed",
+        "at": "2026-10-07T06:22:29Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "aa375390",
+        "at": "2026-10-07T06:22:40Z",
+        "basis": "orchestrator check: P106-R12..R17 fixed through one public holder_gone predicate and a refresh in _locks, each reviewer hole reproduced red at HEAD in separate processes, allow twins and second-direction mutations proved"
+      }
+    },
+    {
+      "id": "P106.9-b6f",
+      "title": "the claim, takeover and resume documentation states the conditions the code decides by",
+      "status": "done",
+      "description": "Fixes review findings P106-R18 to P106-R20. The documentation must be true of the code as P106.8 leaves it.\n\n- In task.md's claim paragraph, name the takeover conditions as _claim_plan and _holder_under_claim decide them: a lock observed gone, or this run's own live lock. Also say that no lock in this clone, and a lock judged by age alone, are refused as unaskable.\n- status.md's resume line must say:\n  - /audit:resume takes a dead holder's lock over through its own acquire after the human confirms exit 4;\n  - start then reuses that lock;\n  - start's own takeover is for a hand-typed start.\n  Make resume.md and orchestrator.md agree wherever they describe the same path.\n- In task.md's --force paragraph, replace the restated relay rule with the pointer to manifest-conventions.md that the other call sites use. Keep only the flag mechanics: --force needs --reason, and --reason - reads stdin.",
+      "files": [
+        "plugins/audit/commands/task.md",
+        "plugins/audit/commands/status.md",
+        "plugins/audit/commands/resume.md",
+        "plugins/audit/reference/orchestrator.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P106.8-b6f"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "4733c18e",
+      "outcome": {
+        "technical": "task.md's claim paragraph names the takeover conditions as _claim_plan and _holder_under_claim decide them: a takeover happens when the lock's run was observed to end (_locks.holder_gone) or the live phase lock is this run's own (_locks.held_by_us); no such lock in this clone, or one judge could only place by its age, is refused as unaskable because neither says the holder stopped. The --force paragraph drops its restated relay rule for the pointer to manifest-conventions.md the other call sites use and keeps only the flag mechanics (--force needs --reason, --reason without --force is refused, --reason - reads stdin). status.md's resume line says /audit:resume's own preflight acquire meets a dead holder as exit 4 and takes the lock over through that acquire once the human confirms, that the start it then runs reuses the held lock, and that start's own takeover is for a hand-typed start. Exit codes read from _locks.py; resume.md and orchestrator.md read in full and found to agree, so unchanged. Gate-only; doc_prose_numbers reports nothing.",
+        "descriptive": "The task and status documentation now say exactly when a start may take a phase over, when it is refused, and how resuming a stopped run takes its lock back."
+      },
+      "startedAt": "2026-10-07T06:22:43Z",
+      "completedAt": "2026-10-07T06:42:10Z",
+      "verifiedBy": [
+        "test__refs",
+        "test__output",
+        "test__deps selftests"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T06:41:58Z.7b9727",
+        "status": "passed",
+        "at": "2026-10-07T06:41:58Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "4733c18e",
+        "at": "2026-10-07T06:42:10Z",
+        "basis": "orchestrator check: P106-R18..R20 fixed, each sentence read against the committed lock code and its exit codes, relay rule now stated once"
+      }
+    },
+    {
+      "id": "P106.10-b6f",
+      "title": "a lock is given back by the run that holds it, and every release message is true of who holds it",
+      "status": "done",
+      "description": "Fixes review findings P106-R21 to P106-R27. A lock is given back by the run that holds it. A release message tells the truth about who holds the lock.\n\n- _release_start_lock decides on _locks.taken_from alone. Without a recorded takeover from this session, it prints the left-in-place sentence, naming the holder and judge's basis, whether judge reads the holder as live, aged or foreign. release_refusal's takeover sentence is kept for a lock that records taking over from this session.\n- acquire's refresh branch, when handed off (the CLI and orchestrator path), treats re-recording its own session's gone-pid lock as this call's hold. It returns 0, carries the token, and says the lock was re-recorded from a pid that is gone, so the resumed run's release at the end gives it back. Callers that are not handed off, and refresh(), keep already-yours.\n- refresh() re-records only when the recorded holder is gone or no pid is recorded. A live recorded pid is left as it is and reported.\n- start's guarded span ends at the validated write. If something raises after the write has landed, the snapshot is restored together with the lock, so a claim never stays without its lock.\n- held_by_us's CLAUDE_PID rule also requires that the caller is not another session, matching the token rule.\n- status.md's resume line names both cases. A different session meets exit 4 and a human-confirmed takeover. The same session resumed under a new process has its own lock re-recorded by the acquire and released by that run at the end.\n- audit-lock.py's comment says that no module under scripts/ or hooks/ reaches a private _locks helper, and is rewrapped to the block's width.\n\nCases, each with its twin, driven in separate processes:\n- a pid-less aged start lock and a foreign-host start lock each get the left-in-place wording;\n- a resumed acquire followed by release leaves no lock;\n- refresh over a live recorded pid leaves it unchanged;\n- a raise after the write restores the claim and the lock together;\n- another session sharing the holder's pid is not ours.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/scripts/governance/audit-lock.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/tests/test_audit_lock.py",
+        "plugins/audit/commands/status.md",
+        "plugins/audit/reference/orchestrator.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "a87c0cf0",
+      "outcome": {
+        "technical": "_locks.py: held_by_us's CLAUDE_PID rule now also requires that the caller is not another session. A yielding claim is replaced only by a caller naming the claim's own session. _rerecord takes taken=: a handed-off acquire that re-records its own session's lock from a gone pid returns 0, carries the token, and says the claim was re-recorded from a gone pid and is to be released at the end of the run, while callers that are not handed off and refresh() still get already-yours. refresh() leaves a recorded pid that is not gone in place and reports judge's basis, re-recording only a gone holder or a pid-less claim. audit-task.py: _release_start_lock decides on _locks.taken_from alone and otherwise says the lock was left in place, naming the holder by session, pid or host with judge's basis. start's outer handler restores the snapshot and then gives the lock back for any raise once the snapshot is taken, the branch cut included. audit-lock.py's comment says no module under scripts/ or hooks/ other than _locks.py reaches a private _locks helper, rewrapped. status.md's resume sentence names both cases: a different session meets exit 4 and a human-confirmed takeover, while the same session under a new process has its lock re-recorded by its acquire and releases it at the end. orchestrator.md's Release paragraph says a resumed run's acquire answers acquired, so that run releases the lock too. Every reviewer case reproduced red at HEAD as a separate-process test: lv13 and lv14 (pid-less aged and foreign-host locks), lv16 (resumed run), lv18 (live-pid refresh), lv19 (no-session re-take), plus lv20 (a session sharing the holder's pid through start). Red-first was proved on test__locks (rf2, rf8, rf10) and test_audit_task (lv13, lv14, lv16, lv18-lv21). Over-fire mutations turned lv8, lv15, rf2b, rf4, rf9, rf11, rf5 and lv22 red.",
+        "descriptive": "A resumed run now releases the lock it re-took, a live run's lock is never moved to another process, and a release refusal only says the lock was taken over when the lock records that."
+      },
+      "startedAt": "2026-10-07T06:56:13Z",
+      "completedAt": "2026-10-07T07:32:51Z",
+      "verifiedBy": [
+        "rf2",
+        "rf2b",
+        "rf8",
+        "rf9",
+        "rf10",
+        "rf11",
+        "lv13",
+        "lv14",
+        "lv15",
+        "lv16",
+        "lv17",
+        "lv18",
+        "lv19",
+        "lv20",
+        "lv21",
+        "lv22"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T07:32:44Z.1df882",
+        "status": "passed",
+        "at": "2026-10-07T07:32:44Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "a87c0cf0",
+        "at": "2026-10-07T07:32:51Z",
+        "basis": "orchestrator check: P106-R21..R27 fixed in _locks and audit-task with docs matched, every reviewer case reproduced red at HEAD in separate processes, allow twins proved by over-fire mutations"
+      }
+    },
+    {
+      "id": "P106.11-b6f",
+      "title": "start reports a lock as its own take only when it is the start's lock",
+      "status": "done",
+      "description": "Fixes review findings P106-R28 and P106-R29. Start reports a lock as its own take only when it is the start's lock.\n\nIn _take_phase_lock, a code-0 re-record counts as 'took' only when the lock carries the start note. Any other lock re-recorded for this session, such as an orchestrator's 'phase run' lock whose pid was gone, is reported as 'ours'. The line says the lock was re-recorded under the live process and keeps its own hold's note, so the run that took it releases it. undo_lock never releases such a lock on a failed start.\n\nstatus.md and orchestrator.md name the CLAUDE_PID condition: the same session's acquire re-records its lock under the process CLAUDE_PID names. With none exported, the lock reads dead and meets exit 4 like any other dead holder. A start's yielding lock is superseded rather than re-recorded.\n\nSeparate-process cases, each with its twin:\n- An orchestrator-note lock: its pid is killed, a resumed hand-typed start runs, then sign-off. The printed line and the lock file agree, and the lock is still held by its orchestrator note.\n- The same flow over a start-note lock: the lock is released at sign-off.\n- A failed start on the orchestrator-note path leaves the lock in place.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/commands/status.md",
+        "plugins/audit/reference/orchestrator.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "f5fe36b4",
+      "outcome": {
+        "technical": "audit-task.py: _took_or_rerecorded(git_root, name, basis) handles both of _take_phase_lock's acquire 0-returns, the plain acquire and the takeover re-acquire, and reads the lock file back. A lock carrying the start note is 'took'. Any other lock is 'ours', with a basis taken from the file: re-recorded under the live pid from the gone pid recorded in refreshedFrom, keeping its own hold's note (named), and released by the run that took it, because sign-off and a phase cancel leave it in place. _phase_lock_line prints that through its 'reused' branch. undo_lock releases only 'took', so a failed start leaves such a lock in place; its comment says so. _locks.py is unchanged. status.md and orchestrator.md now state the CLAUDE_PID condition: the same session's acquire re-records under the process CLAUDE_PID names, and with none exported the lock reads dead and gets exit 4. They also say that a start's yielding lock is superseded rather than re-recorded, and that a hand start re-recording the orchestrator's lock keeps that lock's note. lv23 and lv24 run the reviewer's flow as separate processes. lv25 and lv26 cover the failed start. Red-first: the stamp-verification helper proved lv23 and lv25 red at HEAD. The over-fire mutation 'always ours' turned lv24, lv26, lv9, lv21 and hl3 red.",
+        "descriptive": "A resumed start no longer claims the orchestrator's lock as its own, so its message matches what sign-off does, and a failed start leaves that lock alone."
+      },
+      "startedAt": "2026-10-07T07:41:31Z",
+      "completedAt": "2026-10-07T08:14:36Z",
+      "verifiedBy": [
+        "lv23",
+        "lv24",
+        "lv25",
+        "lv26"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T08:14:29Z.0c69c6",
+        "status": "passed",
+        "at": "2026-10-07T08:14:29Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "f5fe36b4",
+        "at": "2026-10-07T08:14:36Z",
+        "basis": "orchestrator check: P106-R28 and R29 fixed by reading the lock's note back after acquire, reviewer flow reproduced red at HEAD in separate processes, over-fire mutation proved the twins"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-10-06T22:17:03Z",
+  "testEvidence": {
+    "runId": "2026-10-07T08:39:30Z.8bd403",
+    "status": "passed",
+    "at": "2026-10-07T08:39:30Z"
+  }
 }
