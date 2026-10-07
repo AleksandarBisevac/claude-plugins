@@ -21,7 +21,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P117-R1",
@@ -395,7 +395,7 @@
     ],
     "outcome": "[findings: 41 - 0 high, 13 med, 28 low; 41 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "A plugin pipeline run's cost is measured stage by stage and by content, offline, and the infrastructure that cuts it is chosen against the user's target: a task at most 2x plain Claude Code, ideally 1.25x, with the phase overhead budgeted.\n\ntools/stream-cost.py attributes every request of a recorded session to a stage, a content origin and the task cycle. It reads every result event of a re-invoked session, and it prices the whole-feature plugin sessions to the CLI's costUSD per model. tools/measure-context.py reports what each command and agent loads, at any ref. The load-bearing selftest cases of both tools were shown red against scratch-copy mutations.\n\ndocs/research/pipeline-cost-analysis.md shows where the cost sits. The work itself costs about the same with or without the plugin. The gap is the reference prose and command bodies the main loop carries on every request, the request count, each agent's fresh start, and the phase overhead.\n\ndocs/research/pipeline-cost-design.md decomposes all nine whole-feature sessions and gives a ladder:\n- A script-driven pipeline, with briefs by file, rules printed at their step, four main-loop requests a task, planning in one batch and sign-off as one step, is predicted at 2.03-2.26x plain like for like with no guarantee change.\n- With G1, the per-task review's three answers move into the phase review, bound to each task's commit and held by one property that sign-off and close-phase ask at landing. That is predicted at 1.33-1.59x, mean 1.45x, which meets the 2x ceiling and not the 1.25x ideal.\n- These are predictions from recorded sessions, and the document says so.\n\nThe user chose G1, a phase-overhead budget of 1.00, and the main loop's cache TTL documented rather than changed. The design gives implementation tasks, each with an offline micro-test, in the user's order: micro-tests first, then one single-task paid probe, then the full benchmark.\n\nSeven review rounds at Opus found 41 issues, all resolved by fix tasks P117.3 to P117.11. They covered untested verdicts, cost-model arithmetic, the result-event reading, the like-for-like denominator, and the bypasses of the G1 hold, which the last fix closed as a class. Instrument and plugin faults found along the way are recorded in the internal plan for the implementation phase.",
   "tasks": [
     {
       "id": "P117.1",
@@ -992,5 +992,10 @@
       }
     }
   ],
-  "startedAt": "2026-10-07T11:45:57Z"
+  "startedAt": "2026-10-07T11:45:57Z",
+  "testEvidence": {
+    "runId": "2026-10-07T21:15:49Z.4537ca",
+    "status": "passed",
+    "at": "2026-10-07T21:15:49Z"
+  }
 }
