@@ -3053,9 +3053,155 @@ def _jest_cases(check):
           and ": Tests:       0 total;" in basis_s)
 
 
+# A jest test file as a task adds it: a comment and strings holding brackets and
+# quotes that a text-level reading would misnest, a regex literal holding a
+# paren, a template literal with a substitution, a `.each` whose title is a
+# format jest fills in at run time, and a loop building titles from a template
+# beside the literal test in the same describe.
+_JS_NEW = "\n".join([
+    "import { add } from '../src/add';",
+    "// a comment with an apostrophe isn't a string ( {",
+    "describe('math', () => {",
+    "  const shape = /^\\(x\\)$/;",
+    "  test('adds two numbers', () => {",
+    "    expect(add(1, 2)).toBe(3); /* ) */",
+    "    expect(`${add(1, {a: 1}.a)}`).toMatch(shape);",
+    "  });",
+    "  it.each([[1, 2]])('doubles %i', (a, b) => {",
+    "    expect(add(a, a)).toBe(b);",
+    "  });",
+    "  for (const n of [1]) test(`loop ${n} done`, () => expect(n).toBe(n));",
+    "});",
+    "test(\"top ( level\", () => { expect('}').toBe('}'); });",
+    ""])
+# The same test file at HEAD, laid out differently and commented, which is no
+# change to any test body.
+_JS_HEAD_SAME = _JS_NEW.replace("expect(add(1, 2)).toBe(3); /* ) */",
+                                "expect(add(1, 2))\n      .toBe(3); // layout")
+_JS_EDITED = _JS_NEW.replace("toBe(3);", "toBe(4);")
+_JS_OTHER = "test('something else', () => { expect(1).toBe(1); });\n"
+
+
+def _jest_fail(path, chain, hint="expect(received).toBe(expected) // Object.is equality"):
+    """What jest prints for one failing `expect` in `path`, its bullet the title
+    chain joined the way jest joins it."""
+    return (" FAIL  %s\n  ● %s\n\n    %s\n\n    Expected: 3\n    Received: -1\n\n"
+            "Test Suites: 1 failed, 1 total\nTests:       1 failed, 1 passed, "
+            "2 total\nSnapshots:   0 total\nTime:        0.31 s\n"
+            % (path, " › ".join(chain), hint))
+
+
+def _jest_credit(text, tests, wt, head, cmd=("npx", "jest")):
+    """`credit_problem` of every assertion failure jest named in `text`, against
+    `head` (`{rel: text}` of HEAD's test files; None when they could not be read)."""
+    scope = {"tests": tests, "cmd": list(cmd), "roots": ("/repo",), "wt": wt,
+             "head_defs": {}, "head_modules": {}, "others": (),
+             "head_js": None if head is None else M.js_test_definitions(head)}
+    return [M.credit_problem(f, "jest", scope)
+            for f in M.failing_cases(text, "jest") if f["assertion"]]
+
+
+def _jest_credit_cases(check):
+    new = "tests/add.test.js"
+    adds = _jest_fail(new, ["math", "adds two numbers"])
+    head_green = {"code": 0, "problem": None,
+                  "text": " PASS  tests/other.test.js\nTests:       1 passed, 1 total\n"}
+    fix_green = {"code": 0, "problem": None,
+                 "text": " PASS  tests/add.test.js\nTests:       2 passed, 2 total\n"}
+    run = {"cmd": ["npx", "jest"], "code": 1, "text": adds, "problem": None,
+           "second": None, "head": head_green, "fix": fix_green}
+    root = _harness.fixture_root("stamp-jest-credit-")
+    try:
+        os.makedirs(os.path.join(root, "tests"))
+        _write(os.path.join(root, new), _JS_NEW)
+        ctx = {"root": root, "implementation": ["src/add.js"], "tests": [new],
+               "cases": [], "symbols": [], "dropped": [], "new": [new],
+               "head_files": ["src/add.js", "tests/other.test.js"],
+               "head_defs": {}, "head_modules": {}, "path": None,
+               "head_js": M.js_test_definitions({"tests/other.test.js": _JS_OTHER})}
+        code, _v, block, _n = M.red_verdict(run, ctx)
+        undefined = dict(run, text=_jest_fail(new, ["math", "subtracts"]))
+        code_u, _v, block_u, _n = M.red_verdict(undefined, ctx)
+        bare = dict(run, text=_jest_fail(new, ["adds two numbers"]))
+        code_b, _v, block_b, _n = M.red_verdict(bare, ctx)
+    finally:
+        _harness.remove_tree(root)
+    basis, basis_u, basis_b = [(b or {}).get("basis", "")
+                               for b in (block, block_u, block_b)]
+    check("sj1 a failing jest case whose title chain is new in a declared test file "
+          "is credited to the task, and red proves it end to end: %r %r"
+          % (code, basis),
+          code == M.E_PROVED and "adds two numbers" in basis)
+    check("sj2 THE DENY TWIN for sj1: the same file, a title chain it does not "
+          "define - a describe-free bullet naming only the test's title, or a "
+          "title under the describe that the file never writes - is not credited, "
+          "so red stays could-not-prove: %r %r %r %r"
+          % (code_u, basis_u, code_b, basis_b),
+          code_u == M.E_CANNOT_PROVE and code_b == M.E_CANNOT_PROVE
+          and "defines no test" in basis_u and "defines no test" in basis_b)
+    wt = {new: _JS_NEW}
+    same = _jest_credit(adds, [new], wt, {new: _JS_HEAD_SAME})
+    edited = _jest_credit(adds, [new], {new: _JS_EDITED}, {new: _JS_HEAD_SAME})
+    copied = _jest_credit(adds, [new], wt, {"tests/old.test.js": _JS_HEAD_SAME})
+    unread = _jest_credit(adds, [new], wt, None)
+    check("sj3 a failing jest case whose title chain and body are identical in "
+          "HEAD's copy of a test file - layout and comments aside - is not "
+          "credited, nor is one copied from another HEAD test file, nor any when "
+          "HEAD's files could not be read; the same chain with a body the task "
+          "edited is credited: same %r edited %r copied %r unread %r"
+          % (same, edited, copied, unread),
+          len(same) == 1 and same[0] and "HEAD's tests/add.test.js" in same[0]
+          and edited == [None]
+          and len(copied) == 1 and copied[0]
+          and "HEAD's tests/old.test.js" in copied[0]
+          and len(unread) == 1 and unread[0] and "could not be read" in unread[0])
+    other = _jest_credit(_jest_fail("tests/other.test.js",
+                                    ["math", "adds two numbers"]),
+                         [new], {new: _JS_NEW}, {})
+    nested = "packages/app/tests/add.test.js"
+    suffix = _jest_credit(adds, [nested], {nested: _JS_NEW}, {})
+    twice = _jest_credit(adds, [nested, "packages/lib/tests/add.test.js"],
+                         {nested: _JS_NEW,
+                          "packages/lib/tests/add.test.js": _JS_NEW}, {})
+    check("sj4 a failure jest locates in a test file the task does not declare is "
+          "not credited, nor one whose path is the tail of two declared files; "
+          "THE ALLOW TWIN: the same failure in a declared file, printed relative "
+          "to a package root, is located by its suffix and credited: other %r "
+          "suffix %r twice %r" % (other, suffix, twice),
+          len(other) == 1 and other[0] and "no declared test file" in other[0]
+          and suffix == [None]
+          and len(twice) == 1 and twice[0] and "no declared test file" in twice[0])
+    each = _jest_credit(_jest_fail(new, ["math", "doubles 1"]), [new], wt, {})
+    loop = _jest_credit(_jest_fail(new, ["math", "loop 1 done"]), [new], wt, {})
+    top = _jest_credit(_jest_fail(new, ["top ( level"]), [new], wt, {})
+    broken = "test('adds two numbers', () => { expect(1).toBe(1);\n"
+    closed = _jest_credit(adds, [new], wt, {"tests/broken.test.js": broken})
+    elsewhere = _jest_credit(adds, [new], wt, {"tests/broken.test.js":
+                                               broken.replace("adds two", "x")})
+    unbalanced = _jest_credit(adds, [new], {new: _JS_NEW + "})"}, {})
+    check("sj5 a jest title built at run time (`.each`) is refused credit by name, "
+          "a HEAD test file the reader cannot balance refuses a case whose title "
+          "it holds, and an unbalanced declared file credits nothing; THE ALLOW "
+          "TWINS: a literal title holding a bracket is credited, and an "
+          "unreadable HEAD file NOT holding the title refuses nothing - and a "
+          "template title built in a loop is refused while the literal test "
+          "beside it stays credited (sj1): each %r loop %r top %r closed %r "
+          "elsewhere %r unbalanced %r"
+          % (each, loop, top, closed, elsewhere, unbalanced),
+          len(each) == 1 and each[0] and "run time" in each[0]
+          and len(loop) == 1 and loop[0] and "run time" in loop[0]
+          and top == [None]
+          and len(closed) == 1 and closed[0]
+          and "tests/broken.test.js" in closed[0]
+          and elsewhere == [None]
+          and len(unbalanced) == 1 and unbalanced[0]
+          and "could not be read as" in unbalanced[0])
+
+
 def _cases(check):
     _harness.stage(check, "sr-decisive", _decisive_cases)
     _harness.stage(check, "sr-jest", _jest_cases)
+    _harness.stage(check, "sj-credit", _jest_credit_cases)
     _harness.stage(check, "sr-crlf", _crlf_cases)
     _harness.stage(check, "sr-listing", _listing_cases)
     _harness.stage(check, "sr-holder", _holder_cases)

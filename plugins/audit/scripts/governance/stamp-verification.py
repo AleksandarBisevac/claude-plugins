@@ -80,8 +80,10 @@ reported instead.
 
 RED UNDER JEST AND VITEST - THE DESIGN, BUILT IN PART. Where a paragraph below
 does not say it is built, it describes code that does not exist yet: `red` now
-reads a jest or vitest tally and names its failing cases, and a jest or vitest
-run still comes back `could-not-prove`. It is written here, before the code, so that the tasks that
+reads a jest or vitest tally, names its failing cases and credits one to the
+task by its title chain, and a jest or vitest run whose baseline lays a new
+test file over as an empty stub still comes back `could-not-prove`, since (3)
+is not built. It is written here, before the code, so that the tasks that
 build it share one answer to each question below rather than each settling its
 own; a case of the implementing work is what makes each paragraph true, and
 until one exists the paragraph is a plan. Nothing enforces that order; whoever
@@ -128,35 +130,41 @@ program basenames; a wrapper (`npm test`, `npx vitest`) names no runner and
 the output decides. The house, pytest and unittest patterns moved unchanged,
 so the two pytest summary patterns are still two: taking their union changes
 what `red` reads, and is left to a change of its own. What is NOT built yet is
-(2) to (4): a jest or vitest red is read and named, and then refused credit,
-because `case_site` locates no jest or vitest case in a declared file.
+(3) and (4).
 
-(2) WHICH CASE IS THE TASK'S: THE HEADER PATH AND THE TITLE CHAIN. A jest or
+(2) WHICH CASE IS THE TASK'S: THE HEADER PATH AND THE TITLE CHAIN - BUILT. A jest or
 vitest case is identified by the suite path its `FAIL` header or line names
 and its title chain - the `describe` titles and the test's own, split on
 jest's ` › ` or vitest's ` > `. The path locates it in a declared test file
 the way `case_site` locates a pytest node: relative to the throwaway's root,
 or, where a config moved the root (a monorepo package), by a suffix that
-matches exactly one declared test file; none or several locate nothing.
+matches exactly one declared test file and no other file; none or several
+locate nothing.
 
-CREDIT IS REFUSED where any test file in HEAD's tree, with a jest or vitest
-test extension, holds the same title chain whose test body is identical -
-the equivalent of the ast-identical def `credit_problem` looks for. `ast`
-reads only Python, so a reading of JS/TS source is owed, and the choice is a
-SMALL STDLIB TOKENIZER over a text-level reading. A regex cannot find which
-`test(` call sits inside which `describe(` callback, because brackets inside
-strings, template literals, comments and regex literals throw the nesting
-off; a tokenizer that knows those token kinds can. It splits a file into
-tokens, tracks bracket depth, records each `describe` / `test` / `it` call
-whose first argument is a plain string literal, with its chain, and keeps the
-test's argument tokens - comments and whitespace dropped - as the body two
-copies are compared by. It fails CLOSED: a HEAD file it cannot tokenize with
-balanced brackets refuses credit for every case it might hold, never grants
-it, because a misread HEAD copy would otherwise look like no HEAD copy at
-all. A title built at run time - `test.each`, a template literal with
-`${}`, a variable - has no chain in the source; such a case is refused credit
-by name. JSX text and a regex literal right after `)` are the tokenizer's
-known blind spots, and both fall on the fail-closed side.
+The declared file's working-tree copy must define a test with exactly that
+chain, and CREDIT IS REFUSED where any test file in HEAD's tree with a jest or
+vitest test name (`_is_js_test_path`) holds the same title chain whose test
+body is identical - the equivalent of the ast-identical def `credit_problem`
+looks for (`_js_credit_problem`). `ast` reads only Python, so JS/TS source is
+read by a SMALL STDLIB TOKENIZER (`js_test_cases`) rather than a text-level
+reading: a regex cannot find which `test(` call sits inside which
+`describe(` callback, because brackets inside strings, template literals,
+comments and regex literals throw the nesting off; a tokenizer that knows
+those token kinds can. It records each `describe` / `test` / `it` call, with
+its chain, and keeps the test's argument tokens - comments and whitespace
+dropped - as the body two copies are compared by. It fails CLOSED: a
+declared file it cannot read with every literal closed and every bracket
+balanced credits nothing, and such a HEAD file refuses every case whose
+title it may hold (`_js_unread_holding`), because a misread HEAD copy would
+otherwise look like no HEAD copy at all. A title built at run time - `.each`,
+a template literal with `${}`, a variable - has no chain in the source; such
+a case is refused credit by name, and so is a literal case a run-time title
+of the same file could also fill in (a template's literal parts and a
+`.each` format's text are matched; anything else matches every title at its
+depth). JSX text and a regex literal right after `)` are the tokenizer's
+known blind spots: a misreading either unbalances the file, which is refused,
+or misreads HEAD's copy and the working tree's alike, so an unchanged body
+still compares equal.
 
 (3) THE BASELINE: A NEW FILE IS ABSENT, NOT AN EMPTY STUB. HEAD's own run
 lays each declared test file new at HEAD over as an empty file, and under
@@ -427,7 +435,9 @@ def read_stamp_text(args, stdin=None):
 # must be red, the fix run - the task's tests on the working tree's
 # implementation - green, and only a failure the runner locates in a declared
 # test file, whose named class defines it with no ast-identical def of that class
-# chain and name anywhere in HEAD's test files, is the task's. Every run is made in the throwaway reset to HEAD with an isolated
+# chain and name anywhere in HEAD's test files (for jest and vitest: whose
+# title chain it defines, with no identical test body under that chain in
+# HEAD's test files), is the task's. Every run is made in the throwaway reset to HEAD with an isolated
 # environment of its own, so the runs differ only in the files laid over. What
 # that cannot see - state reached by an absolute path or the shared git
 # directory, network state, a flaky HEAD case - is named in the guide.
@@ -870,7 +880,18 @@ def case_site(failure, runner, tests, cmd, roots=(), others=()):
     qualified: the longest prefix naming a declared file is the module), or
     `__main__` when the command runs a declared file as a script; a house run
     is located only as the one declared script its command runs, with
-    `classes` None, because its FAIL lines carry no location at all."""
+    `classes` None, because its FAIL lines carry no location at all. A jest or
+    vitest case is located by the suite path its `FAIL` header or line prints,
+    read as a real path, so an exact match is the file and a tail matches only
+    when exactly one declared file ends with it and no other file does (a config
+    that moved the root prints a path relative to a package); `classes` is its
+    describe titles and `name` the test's own title. A suite that never ran a
+    test has no chain and is located nowhere."""
+    if runner in JS_RUNNERS:
+        chain = list(failure.get("chain") or [])
+        rel = _one_declared(_as_rel(failure.get("suite"), roots), tests, others,
+                            real_path=True)
+        return (rel, chain[:-1], chain[-1]) if rel and chain else None
     name = (failure.get("id") or "").split("[")[0]
     script = _as_rel(_house_script(cmd), roots)
     if runner == "pytest":
@@ -1132,6 +1153,346 @@ def test_definitions(texts):
     return out
 
 
+# --- which jest or vitest case a JS/TS test file defines ---
+# `ast` reads only Python, so a jest or vitest case is read off its source by a
+# small tokenizer: a regex cannot tell which `test(` sits inside which
+# `describe(` callback once a string, a template literal, a comment or a regex
+# literal holds a bracket. It knows those token kinds, so the brackets it counts
+# are the code's. What it reads is each `describe` / `test` / `it` call (any
+# `.only`, `.skip` ... between the name and the paren), its title chain, and its
+# argument tokens - comments and whitespace dropped - as the body two copies are
+# compared by. A file it cannot read with every bracket balanced and every
+# literal closed is None, never an empty file: a misread HEAD copy must not look
+# like no HEAD copy at all. JSX text and a regex literal right after `)` are
+# blind spots; a misreading of either surfaces as an unbalanced file (refused)
+# or as the same misreading of both copies (compared alike).
+JS_RUNNERS = ("jest", "vitest")
+_JS_TEST_FILE = re.compile(r"\.(test|spec)\.[cm]?[jt]sx?$")
+_JS_SOURCE = re.compile(r"\.[cm]?[jt]sx?$")
+_JS_CALLS = ("describe", "test", "it")
+_JS_IDENT = re.compile(r"[A-Za-z_$\u0080-\uffff][\w$\u0080-\uffff]*")
+_JS_NUMBER = re.compile(r"\.?\d[\w.]*")
+# After one of these a `/` starts a regex literal; after a name, a number, `)`
+# or `]` it divides.
+_JS_REGEX_AFTER = ("return", "typeof", "instanceof", "in", "of", "new", "delete",
+                   "void", "throw", "case", "do", "else", "yield", "await")
+_JS_OPEN = {"(": ")", "[": "]", "{": "}"}
+_JS_ESCAPE = re.compile(r"\\(u\{[0-9A-Fa-f]+\}|u[0-9A-Fa-f]{4}|x[0-9A-Fa-f]{2}|"
+                        r"\r\n|[\s\S])")
+_JS_SIMPLE_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "b": "\b", "f": "\f",
+                      "v": "\v", "0": "\0", "\n": "", "\r\n": "", "\r": ""}
+# The placeholders jest and vitest fill a `.each` title with.
+_JS_EACH_FORMAT = re.compile(r"%[psdifjoO#$%]|\$[\w.]+")
+
+
+def _js_unescape(body):
+    """A string literal's value, its escapes decoded."""
+    def one(hit):
+        esc = hit.group(1)
+        if esc[0] == "u" and len(esc) > 1:
+            return chr(int(esc[1:].strip("{}"), 16))
+        if esc[0] == "x" and len(esc) == 3:
+            return chr(int(esc[1:], 16))
+        return _JS_SIMPLE_ESCAPES.get(esc, esc)
+    return _JS_ESCAPE.sub(one, body)
+
+
+def _js_quoted_end(src, i):
+    """The index past the string literal opening at `src[i]`; ValueError when
+    it is not closed on its line."""
+    quote, j = src[i], i + 1
+    while j < len(src):
+        ch = src[j]
+        if ch == "\\":
+            j += 2
+            continue
+        if ch == quote:
+            return j + 1
+        if ch == "\n":
+            break
+        j += 1
+    raise ValueError("an unterminated string at offset %d" % (i,))
+
+
+def _js_template_end(src, i):
+    """`(end, chunks)` - the index past the template literal opening at
+    `src[i]`, and its literal text decoded, split at each `${}` substitution
+    (one chunk when it holds none)."""
+    j, start, chunks = i + 1, i + 1, []
+    while j < len(src):
+        ch = src[j]
+        if ch == "\\":
+            j += 2
+        elif ch == "`":
+            return j + 1, chunks + [_js_unescape(src[start:j])]
+        elif src.startswith("${", j):
+            chunks.append(_js_unescape(src[start:j]))
+            _tokens, j = _js_scan(src, j + 2, inside=True)
+            start = j
+        else:
+            j += 1
+    raise ValueError("an unterminated template literal at offset %d" % (i,))
+
+
+def _js_regex_end(src, i):
+    """The index past the regex literal opening at `src[i]`, flags included."""
+    j, in_class = i + 1, False
+    while j < len(src) and src[j] != "\n":
+        ch = src[j]
+        if ch == "\\":
+            j += 2
+            continue
+        if ch == "[":
+            in_class = True
+        elif ch == "]":
+            in_class = False
+        elif ch == "/" and not in_class:
+            flags = _JS_IDENT.match(src, j + 1)
+            return flags.end() if flags else j + 1
+        j += 1
+    raise ValueError("an unterminated regex literal at offset %d" % (i,))
+
+
+def _js_regex_may_start(tokens):
+    if not tokens:
+        return True
+    kind, raw = tokens[-1][0], tokens[-1][1]
+    if kind == "id":
+        return raw in _JS_REGEX_AFTER
+    return kind == "p" and raw not in (")", "]")
+
+
+def _js_scan(src, i=0, inside=False):
+    """`(tokens, end)` - `[(kind, raw, value)]` from `src[i]` on, kinds `id`,
+    `num`, `str` (a quoted string or a template with no substitution, `value`
+    its decoded text), `tpl` (a template with one, `value` its literal text
+    split at each substitution), `re` and `p` (one
+    punctuation character). `inside` scans a `${}` substitution and stops past
+    the `}` that closes it. ValueError on a literal or comment left open."""
+    tokens, depth, n = [], 0, len(src)
+    while i < n:
+        ch = src[i]
+        if ch.isspace():
+            i += 1
+        elif src.startswith("//", i):
+            nl = src.find("\n", i)
+            i = n if nl < 0 else nl
+        elif src.startswith("/*", i):
+            end = src.find("*/", i + 2)
+            if end < 0:
+                raise ValueError("an unterminated comment at offset %d" % (i,))
+            i = end + 2
+        elif ch in "'\"":
+            end = _js_quoted_end(src, i)
+            tokens.append(("str", src[i:end], _js_unescape(src[i + 1:end - 1])))
+            i = end
+        elif ch == "`":
+            end, chunks = _js_template_end(src, i)
+            tokens.append(("tpl", src[i:end], chunks) if len(chunks) > 1
+                          else ("str", src[i:end], chunks[0]))
+            i = end
+        elif ch == "/" and _js_regex_may_start(tokens):
+            end = _js_regex_end(src, i)
+            tokens.append(("re", src[i:end], None))
+            i = end
+        else:
+            word = _JS_IDENT.match(src, i) or _JS_NUMBER.match(src, i)
+            if word:
+                kind = "num" if word.group(0)[0] in ".0123456789" else "id"
+                tokens.append((kind, word.group(0), None))
+                i = word.end()
+                continue
+            if inside and ch == "}" and depth == 0:
+                return tokens, i + 1
+            depth += {"{": 1, "}": -1}.get(ch, 0)
+            tokens.append(("p", ch, None))
+            i += 1
+    if inside:
+        raise ValueError("an unterminated template substitution")
+    return tokens, i
+
+
+def _js_pairs(tokens):
+    """`{open index: close index}` of every bracket, or None when they do not
+    balance."""
+    pairs, stack = {}, []
+    for k, (kind, raw, _v) in enumerate(tokens):
+        if kind != "p":
+            continue
+        if raw in _JS_OPEN:
+            stack.append(k)
+        elif raw in (")", "]", "}"):
+            if not stack or _JS_OPEN[tokens[stack[-1]][1]] != raw:
+                return None
+            pairs[stack.pop()] = k
+    return pairs if not stack else None
+
+
+def _js_title_token(tokens, open_at, close_at):
+    """The token a call's first argument is when it is a lone `str` or `tpl`
+    literal, else None."""
+    first, after = open_at + 1, open_at + 2
+    if first < close_at and tokens[first][0] in ("str", "tpl") \
+            and tokens[after][1] in (",", ")") and tokens[after][0] == "p":
+        return tokens[first]
+    return None
+
+
+def _js_title(tokens, open_at, close_at):
+    """The literal title a call's first argument spells, or None when the
+    title is built at run time."""
+    token = _js_title_token(tokens, open_at, close_at)
+    return token[2] if token is not None and token[0] == "str" else None
+
+
+def _js_title_pattern(tokens, open_at, close_at, each):
+    """The regex a title built at run time matches, or None when nothing of
+    it is literal: a template's literal parts with anything between them, and
+    a `.each` title format with anything in place of each placeholder."""
+    token = _js_title_token(tokens, open_at, close_at)
+    if token is None:
+        return None
+    parts = token[2] if token[0] == "tpl" else [token[2]]
+    if each:
+        parts = [p for part in parts for p in _JS_EACH_FORMAT.split(part)]
+    return "^" + "[\\s\\S]*".join(re.escape(p) for p in parts) + "$"
+
+
+def js_test_cases(text):
+    """`{"tests": [(chain, body)], "dynamic": [chain]}` of a JS/TS test file,
+    or None when it cannot be read with every literal closed and every bracket
+    balanced. `chain` is the tuple of describe titles and the test's own;
+    `body` the tuple of the test call's argument tokens. A `dynamic` chain is
+    one some element of which is built at run time (`.each`, a template with a
+    substitution, a variable): that element is `("~", pattern)`, the pattern
+    the regex `_js_title_pattern` reads off a template or a `.each` format,
+    and None for anything else."""
+    try:
+        tokens, _end = _js_scan(text or "")
+    except (ValueError, IndexError):
+        return None
+    pairs = _js_pairs(tokens)
+    if pairs is None:
+        return None
+    tests, dynamic, scopes, k = [], [], [], 0
+    while k < len(tokens):
+        while scopes and scopes[-1][0] < k:
+            scopes.pop()
+        kind, raw, _v = tokens[k]
+        if kind != "id" or raw not in _JS_CALLS or (
+                k and tokens[k - 1][0] == "p" and tokens[k - 1][1] == "."):
+            k += 1
+            continue
+        j, each = k + 1, False
+        while j + 1 < len(tokens) and tokens[j][1] == "." and tokens[j + 1][0] == "id":
+            each = each or tokens[j + 1][1] == "each"
+            j += 2
+        if j >= len(tokens) or tokens[j][1] != "(" or tokens[j][0] != "p":
+            k += 1
+            continue
+        open_at = j
+        if each:
+            table_close = pairs[j]
+            if table_close + 1 >= len(tokens) or tokens[table_close + 1][1] != "(":
+                k = j + 1
+                continue
+            open_at = table_close + 1
+        close_at = pairs[open_at]
+        title = None if each else _js_title(tokens, open_at, close_at)
+        element = title if title is not None else (
+            "~", _js_title_pattern(tokens, open_at, close_at, each))
+        parent = scopes[-1][1] if scopes else ()
+        chain = parent + (element,)
+        if raw == "describe":
+            scopes.append((close_at, chain))
+        elif any(not isinstance(e, str) for e in chain):
+            dynamic.append(chain)
+        else:
+            tests.append((chain, tuple(t[1] for t in tokens[open_at + 1:close_at])))
+        k = open_at + 1
+    return {"tests": tests, "dynamic": dynamic}
+
+
+def _js_chain_matches(pattern_chain, chain):
+    """Whether a `dynamic` chain could be filled in as `chain`."""
+    if len(pattern_chain) != len(chain):
+        return False
+    for element, title in zip(pattern_chain, chain):
+        if isinstance(element, str):
+            if element != title:
+                return False
+        elif element[1] is not None and not re.match(element[1], title):
+            return False
+    return True
+
+
+def js_test_definitions(texts):
+    """`{"defs": {(chain, body): rel}, "unread": {rel: text}}` of each file of
+    `texts` (`{rel: text}`): the jest and vitest cases HEAD already has, keyed so
+    a copy of one is found wherever it lands, and the files `js_test_cases`
+    could not read, kept whole so a case they might hold is refused."""
+    defs, unread = {}, {}
+    for rel in sorted(texts):
+        cases = js_test_cases(texts[rel])
+        if cases is None:
+            unread[rel] = texts[rel]
+            continue
+        for chain, body in cases["tests"]:
+            defs.setdefault((chain, body), rel)
+    return {"defs": defs, "unread": unread}
+
+
+# A title holding one of these may be spelled in source by an escape, so a file
+# the tokenizer could not read is not searched for it - it is assumed to hold it.
+_JS_TITLE_ESCAPABLE = re.compile("[\"'`\\\\\u0080-\U0010ffff]")
+
+
+def _js_unread_holding(unread, title):
+    """The unreadable HEAD test files that may hold a test titled `title`."""
+    if _JS_TITLE_ESCAPABLE.search(title):
+        return sorted(unread)
+    return sorted(rel for rel, text in unread.items() if title in (text or ""))
+
+
+def _js_credit_problem(site, scope):
+    """Why a located jest or vitest case is NOT the task's own, or None.
+
+    The declared file's working-tree copy must define a test with exactly that
+    title chain, and no test of it built at run time may fill in the same chain
+    - otherwise which of them failed cannot be told. Then no test file in HEAD's
+    tree may hold a test with that chain whose body is the same token for token:
+    that is HEAD's case, unchanged, wherever it now sits. A HEAD test file the
+    tokenizer cannot read refuses every case whose title it may hold."""
+    rel, describes, name = site
+    chain = tuple(describes) + (name,)
+    where = "%s (%s)" % (rel, " > ".join(chain))
+    cases = js_test_cases(scope["wt"].get(rel))
+    if cases is None:
+        return ("%s could not be read as JS/TS source with every literal closed and "
+                "every bracket balanced, so which tests it defines cannot be told"
+                % (rel,))
+    built = [c for c in cases["dynamic"] if _js_chain_matches(c, chain)]
+    bodies = [body for c, body in cases["tests"] if c == chain]
+    if built:
+        return ("%s builds a test title at run time (`.each`, a template or a "
+                "variable) that may be this one, so which test failed cannot be "
+                "told" % (where,))
+    if not bodies:
+        return "%s defines no test with that title chain" % (where,)
+    head = scope.get("head_js")
+    if head is None:
+        return "HEAD's test files could not be read to tell an edit from HEAD's case"
+    same = [head["defs"][(chain, b)] for b in bodies if (chain, b) in head["defs"]]
+    if same:
+        return ("its test body in %s is unchanged from HEAD's %s (the same title "
+                "chain and tokens) - HEAD's case" % (where, same[0]))
+    held = _js_unread_holding(head["unread"], name)
+    if held:
+        return ("HEAD's %s could not be read as JS/TS source and may hold this "
+                "case, so it is not credited" % (", ".join(held),))
+    return None
+
+
 def credit_problem(failure, runner, scope):
     """Why this failing case is NOT the task's own, or None when it is.
 
@@ -1150,11 +1511,15 @@ def credit_problem(failure, runner, scope):
     nothing else. Layout and comments do not count as a change; any edit to
     the def's ast does. A house run carries no definitions, so the one script
     it runs is compared whole: a script identical to one of HEAD's test files
-    is HEAD's suite, moved or copied."""
+    is HEAD's suite, moved or copied. A jest or vitest case is judged by
+    `_js_credit_problem`, its title chain and test body standing in for the
+    class chain and the def."""
     site = case_site(failure, runner, scope["tests"], scope["cmd"],
                      scope.get("roots", ()), scope.get("others", ()))
     if site is None:
         return "the runner locates it in no declared test file"
+    if runner in JS_RUNNERS:
+        return _js_credit_problem(site, scope)
     rel, classes, name = site
     if classes is None:
         modules = scope.get("head_modules")
@@ -1218,26 +1583,39 @@ def module_key(text):
     return ast.dump(tree) if tree is not None else "text:" + (text or "")
 
 
+def _is_js_test_path(rel, named):
+    """A jest or vitest test file: a `.test.`/`.spec.` JS/TS name, or a JS/TS
+    file under `__tests__` or among the declared `named`."""
+    parts = rel.split("/")
+    return bool(_JS_TEST_FILE.search(rel)) or (bool(_JS_SOURCE.search(rel)) and (
+        rel in named or "__tests__" in parts[:-1]))
+
+
 def head_tree(root, named, deadline):
-    """`(files, defs, modules)` - every path in HEAD's tree; `test_definitions`
-    of the `.py` test files among them (`_is_test_path`, the declared `named`
-    counting as tests); and `{module_key: rel}` of the same files, for a house
-    run, whose cases carry no definition to compare. Any is None when git
-    could not answer under the deadline, which the credit reads as a refusal,
-    never as "nothing"."""
+    """`(files, defs, modules, js)` - every path in HEAD's tree;
+    `test_definitions` of the `.py` test files among them (`_is_test_path`,
+    the declared `named` counting as tests); `{module_key: rel}` of the same
+    files, for a house run, whose cases carry no definition to compare; and
+    `js_test_definitions` of the jest and vitest test files
+    (`_is_js_test_path`). Any is None when git could not answer under the
+    deadline, which the credit reads as a refusal, never as "nothing"."""
     code, text = _git(root, ["ls-tree", "-r", "-z", "--name-only", "HEAD"],
                       timeout=max(1, _left(deadline)), strip=False)
     if code != 0:
-        return None, None, None
+        return None, None, None, None
     files = [p for p in text.split("\0") if p]
     tests = [p for p in files if p.endswith(".py") and _is_test_path(p, named)]
-    texts, problem = _cat_blobs(root, tests, deadline)
+    js_tests = [p for p in files if _is_js_test_path(p, named)]
+    texts, problem = _cat_blobs(root, tests + js_tests, deadline)
     if problem is not None:
-        return files, None, None
+        return files, None, None, None
     modules = {}
-    for rel in sorted(texts):
-        modules.setdefault(module_key(texts[rel]), rel)
-    return files, test_definitions(texts), modules
+    for rel in sorted(tests):
+        if rel in texts:
+            modules.setdefault(module_key(texts[rel]), rel)
+    py_texts = dict((rel, texts[rel]) for rel in tests if rel in texts)
+    js_texts = dict((rel, texts[rel]) for rel in js_tests if rel in texts)
+    return files, test_definitions(py_texts), modules, js_test_definitions(js_texts)
 
 
 def _throwaway_files(path):
@@ -1500,9 +1878,8 @@ def red_verdict(run, ctx):
     tree's code, made when the task's run is red on a green baseline. Every
     run has an isolated environment of its own. `ctx` is `{"root",
     "implementation", "tests", "cases", "symbols", "dropped", "new",
-    "head_files", "head_defs", "head_modules", "path"}` - `head_tree`'s
-    answer, and the
-    throwaway's path."""
+    "head_files", "head_defs", "head_modules", "head_js", "path"}` -
+    `head_tree`'s answer, and the throwaway's path."""
     at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     shown = " ".join(run["cmd"])
     env_clause = "; run without %s" % (", ".join(ctx["dropped"]) or "nothing",)
@@ -1548,7 +1925,8 @@ def red_verdict(run, ctx):
                  "roots": tuple(r for r in (ctx["root"], ctx.get("path")) if r),
                  "wt": _test_texts(ctx["root"], ctx["tests"]),
                  "head_defs": ctx.get("head_defs"),
-                 "head_modules": ctx.get("head_modules"), "others": others}
+                 "head_modules": ctx.get("head_modules"),
+                 "head_js": ctx.get("head_js"), "others": others}
         own, refused = own_failures(failing, ctx["cases"], tally["runner"], scope)
         refused_clause = _refused_clause(refused)
         uncredited = "; ".join(
@@ -1556,14 +1934,18 @@ def red_verdict(run, ctx):
             ((f, credit_problem(f, tally["runner"], scope)) for f in failing
              if f["assertion"]) if why)
         if not own and not ctx["cases"]:
+            rule = (("whose working-tree copy defines its title chain, with no "
+                     "test of that chain and identical body in HEAD's test files")
+                    if tally["runner"] in JS_RUNNERS else
+                    ("whose named class defines it, with no identical def in "
+                     "HEAD's test files"))
             return E_CANNOT_PROVE, verdict, {
                 "status": RED_CANNOT, "at": at,
                 "basis": "%s with failing cases %s, but none is the task's own (%s) "
                          "- a case is the task's only when the runner locates it in "
-                         "a declared test file (%s) whose named class defines it, "
-                         "with no identical def in HEAD's test files - %s%s"
+                         "a declared test file (%s) %s - %s%s"
                          % (where, _ids(failing), uncredited or "none asserted",
-                            ", ".join(ctx["tests"]), line, env_clause)}, None
+                            ", ".join(ctx["tests"]), rule, line, env_clause)}, None
         if own:
             return E_PROVED, verdict, {
                 "status": RED_PROVED, "at": at,
@@ -1822,7 +2204,7 @@ def run_red(args, cmd, out):
     run = {"cmd": cmd, "code": None, "text": "", "problem": None, "second": None,
            "head": None, "fix": None}
     state = {"new": [], "head_files": None, "head_defs": None,
-             "head_modules": None}
+             "head_modules": None, "head_js": None}
     copied = []
     previous = _arm()
     try:
@@ -1830,8 +2212,8 @@ def run_red(args, cmd, out):
             present, run["problem"] = _at_head(root, scope["declared"], deadline)
             if run["problem"] is None:
                 state["new"] = sorted(set(scope["tests"]) - present)
-                (state["head_files"], state["head_defs"],
-                 state["head_modules"]) = head_tree(
+                (state["head_files"], state["head_defs"], state["head_modules"],
+                 state["head_js"]) = head_tree(
                     root, set(scope["tests"]), deadline)
                 _copied, run["problem"] = _build_throwaway(
                     root, path, [], timeout=max(1, _left(deadline)))
@@ -1870,7 +2252,8 @@ def run_red(args, cmd, out):
             "symbols": args.introduces, "dropped": dropped, "naming": naming,
             "new": state["new"], "head_files": state["head_files"],
             "head_defs": state["head_defs"],
-            "head_modules": state["head_modules"], "path": path,
+            "head_modules": state["head_modules"],
+            "head_js": state["head_js"], "path": path,
             "deadline": deadline})
     finally:
         removed = _remove_throwaway(root, holder, path)

@@ -196,7 +196,7 @@
     {
       "id": "P102.4",
       "title": "red reads a jest or vitest tally and its failing cases through the shared module",
-      "status": "in_progress",
+      "status": "done",
       "description": "TALLY_READERS, CASE_READERS and command_runner in stamp-verification.py know only house, pytest and unittest. run-test-gate reads jest, vitest, mocha, pytest and playwright. So red answered no-tally on a genuine jest assertion failure. red now reads tallies and cases through the shared module, which gains the per-case assertion flag red needs for jest and vitest. Mocha and playwright join only if the design note says their output carries what red needs. The house, pytest and unittest readings stay exactly as they are. Regenerate the module map for the new edge.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -230,24 +230,35 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f98ee708",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "red's tally and case readers moved into plugins/audit/scripts/governance/_runner_output.py, in a section `# --- which case failed an assertion: the tally and cases red reads`: HOUSE_ESCAPES, the house/pytest/unittest regexes, house_case_id, the house/pytest/unittest case and tally readers, CASE_READERS, TALLY_READERS, command_runner, failing_cases and read_tally - the house, pytest and unittest code unchanged. stamp-verification.py imports _runner_output and keeps aliases for the names it or its tests use (house_case_id, _unittest_tally, failing_cases, read_tally), the pattern run-test-gate already uses.\nNew readers: _jest_cases and _vitest_cases give each case id (the test's own title), label, suite, chain and assertion. The jest flag is true when the first line under the bullet is a matcher hint (expect( / expect.) or AssertionError; the vitest flag only for AssertionError. A jest 'Test suite failed to run' bullet or a vitest `FAIL <file> [ <file> ]` line becomes a case with an empty chain, id None and assertion False; exact repeats (jest's 'Summary of all failing tests') are collapsed. _jest_tally and _vitest_tally (via _summary_tally) read only that runner's row from summary_readers and count each suite that failed to run as a failure with no case, so a run whose only failure is a crashed suite is collection-error, not red. jest_failures now builds on _jest_blocks with an unchanged result (test_run_test_gate 486/486, ru6 green). command_runner names jest/vitest only when it is the program itself (argv[0] basename); npm test / npx jest name no runner. _TALLY_KEYS quotes jest 'Tests:' and vitest 'Tests ' summary lines in the basis.\nDocs: stamp-verification's design note says which parts are built and which are not; _runner_output's module docstring gains an 'AND WHAT red READS' paragraph; PLUGIN-BUILD-GUIDE.md's module map regenerated from _deps.render() (the stamp-verification edge gains _runner_output), and the _runner_output section moved below _proc_group's shell-lookup paragraph, which the previous task's insertion had split from its module.\nDecisions: mocha and playwright not added (the design note records no failure output that says which failure is an assertion); the two pytest summary patterns are not merged (house/pytest/unittest readings stay exactly as they are; the note says it is a change of its own); case_site still places no jest/vitest case in a declared file, so an end-to-end jest red is still could-not-prove (later design parts).\nTests: test_stamp_verification sr198, sr199; test__runner_output ru9, ru10. Red-first: helper proved test__runner_output at HEAD 8dc401ad (ru9, ru10; 8/10); test_stamp_verification came back could-not-prove because its sr23/sr24 are red inside the helper's own throwaway (a known limitation), so sr198/sr199 rest on the tdd red seen in the shared tree before the fix (both no-tally) and on six scratch mutations of _runner_output in a unique mktemp copy, each reddening its target. Suites 10/10, 180/180, test__deps 299/299, test__output 182/182, test_run_test_gate 486/486; ruff and vermin clean.",
+        "descriptive": "The red-first check now understands jest and vitest output: it reads their pass/fail tally and names each failing test, flags which failures were assertions, and treats a test file that crashed as a collection error rather than a proof."
       },
       "startedAt": "2026-10-07T00:19:22Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T00:55:40Z",
+      "verifiedBy": [
+        "sr198",
+        "sr199",
+        "ru9",
+        "ru10"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T00:55:28Z.57cbc0",
         "status": "passed",
         "at": "2026-10-07T00:55:28Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "f98ee708",
+        "at": "2026-10-07T00:55:40Z",
+        "basis": "orchestrator check: TALLY_READERS and CASE_READERS now live in the shared module with jest and vitest readers carrying the assertion flag; house/pytest/unittest moved unchanged; mocha/playwright deliberately out per the design note; module map regenerated"
       }
     },
     {
       "id": "P102.5",
       "title": "a jest or vitest failure is credited to the task by suite path and title chain",
-      "status": "pending",
+      "status": "in_progress",
       "description": "case_site, credit_problem and module_key use Python's ast to decide whether a failing case is the task's own. So for a JS failure there is no notion of a case HEAD already has. Implement the per-runner identity the design note chose: jest and vitest locate a failure by suite path and title chain, and HEAD's case is the same chain with an identical body in HEAD's copy of the file. The Python credit rule is unchanged.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -277,16 +288,21 @@
       "dependsOn": [
         "P102.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T00:55:41Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T01:34:16Z.a6aca1",
+        "status": "passed",
+        "at": "2026-10-07T01:34:16Z"
+      }
     },
     {
       "id": "P102.6",
