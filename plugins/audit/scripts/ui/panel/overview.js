@@ -272,6 +272,41 @@ const ovCopyNote=p=>{const c=p&&p.copy;
  if(!c||typeof c!=='object'||!c.basis)return null;
  return {live:c.live===true,text:'copy: '+c.basis};};
 /**
+ * The copy notes the Ready now card draws under its list.
+ *
+ * The ready ids are what a reader runs, and they can come from a phase read
+ * from another worktree's copy - the ready task's own phase, or one it depends
+ * on. The server names each such phase once (`readyCopies`, off
+ * `_status_facts.ready_copy_notes`) in `/audit:status`'s wording; nothing is
+ * decided here, so the card and the report cannot name different phases.
+ * @param {{readyCopies: (Array<{phase: string, live: boolean, line: string}>|undefined)}} r -
+ *   the rollup
+ * @returns {Array<{live: boolean, text: string}>} one note per named phase, in
+ *   the server's order; empty when nothing ready came from another copy
+ */
+const ovReadyCopyNotes=r=>(r&&Array.isArray(r.readyCopies)?r.readyCopies:[])
+ .filter(n=>n&&typeof n==='object'&&n.line)
+ .map(n=>({live:n.live===true,text:String(n.line)}));
+/**
+ * Each phase's tasks by status, as the task strip's filter reads them.
+ *
+ * Off the rollup's `phaseTaskStatus`, taken over the same overlaid plan as the
+ * `tasks.byStatus` the pills count, so pressing a pill keeps exactly the phases
+ * its count was made of. The composition is this checkout's copy and must not
+ * be read here: with a task finished only in a worktree, the `done` pill would
+ * count it and its filter would find no phase holding it.
+ * @param {{phaseTaskStatus: (Object<string, Object<string, number>>|undefined)}} r -
+ *   the rollup
+ * @returns {Object<string, Object<string, number>>} phase id to status counts,
+ *   prototype-free at both levels so a phase or status named like an Object
+ *   member is a key and not an inherited property
+ */
+const ovPhaseStatus=r=>{const out=Object.create(null);
+ const per=(r&&r.phaseTaskStatus)||{};
+ Object.keys(per).forEach(pid=>{const m=out[pid]=Object.create(null);
+  const c=per[pid]||{};Object.keys(c).forEach(s=>{m[s]=c[s];});});
+ return out;};
+/**
  * A window of `text` around the first case-insensitive hit for `term`.
  *
  * Windowed rather than truncated, and that is the whole reason it exists: the
@@ -928,14 +963,11 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
    +(dead?' · '+(rs.index.liveBasis||''):'')));}
 
  // --- the two strips: legend and filter in one control ------------------------
- // Per-phase status counts come from the composition (the same manifest), because
- // the rollup carries done/total per phase and nothing finer — and "which phases
- // have work in progress" is the question the strip is for.
+ // Per-phase status counts come from the rollup's `phaseTaskStatus`, the same
+ // plan the pills count (`ovPhaseStatus` says why not the composition) - and
+ // "which phases have work in progress" is the question the strip is for.
  const tasks=(STATE.composition||{}).tasks||[];
- // Two levels, two outside keys: the phase id and the task status.
- const pStatus=Object.create(null);
- tasks.forEach(t=>{const m=pStatus[t.phaseId]=pStatus[t.phaseId]||Object.create(null);
-  const s=t.status||'';m[s]=(m[s]||0)+1;});
+ const pStatus=ovPhaseStatus(r);
  const tBy=r.tasks.byStatus||{},bBy=r.bugs.byStatus||{};
  const tstrip=el('div',{class:'ovstrip'},el('span',{class:'ovlbl'},'Tasks'),
    el('span',{class:'mut'},r.tasks.total+' total'));
@@ -1203,6 +1235,10 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
  // The remainder is COUNTED rather than dropped, and it names where the rest is.
  if(ready.length>RSHOW)rcard.append(el('div',{class:'mut'},
    '+'+(ready.length-RSHOW)+' more ready — see Plan & models'));
+ // The copy of every phase this list was decided from, under the list: a
+ // command copied off another worktree's copy must say so where it is copied.
+ ovReadyCopyNotes(r).forEach(n=>rcard.append(el('div',{class:n.live?'mut small':'findings warn',
+   'data-ovreadycopy':n.live?'live':'stale'},n.text)));
  c.append(rcard);
 
  // --- bugs ---------------------------------------------------------------------

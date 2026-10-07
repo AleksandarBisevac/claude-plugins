@@ -415,7 +415,6 @@ def render_report(project):
             # produce a button that silently does nothing.
             "href": "/report", "exists": os.path.isfile(html_path)}
 
-# --- the whole of /api/state ----------------------------------------------------
 # --- a phase worked on elsewhere ----------------------------------------------
 NO_LIVE_READER = ("no reader of the live copies was handed to this payload, so "
                   "every row shows this checkout's copy, which may not be "
@@ -447,6 +446,7 @@ def _live_view(status_facts, manifest, mpath, project, live):
     return status_facts.live_view(manifest, flight)
 
 
+# --- the whole of /api/state ----------------------------------------------------
 def build_state(project, run=None, full_run_cache=None, live=None):
     """`GET /api/state` — the whole panel payload, off one manifest read.
 
@@ -458,6 +458,23 @@ def build_state(project, run=None, full_run_cache=None, live=None):
     writes from and the run state stay on this checkout's own files: they are
     what this panel edits and what a gate certifies. With no `live` the
     rollup says it shows this checkout's copy (`liveCopyError`).
+
+    The Ready now card draws the rollup's `readyCopies`, the copy note of
+    each phase the ready list was decided from. `phaseTaskStatus` exists for
+    the Overview alone and is taken over the same overlaid plan: each phase's
+    tasks by status, which the task strip's filter keeps phases by - so a
+    pill's count, taken from `tasks.byStatus` of that plan, is what pressing
+    it finds.
+
+    WHAT THE READER COSTS, on every call: every git call `_live_copy.in_flight`
+    makes - a fixed set per call, then more per phase branch that exists; its
+    docstring is the one count, under "WHAT IT COSTS". This payload is
+    therefore NOT on the poll's timer: the browser asks for it at boot, after
+    the panel's own writes, and when `/api/runstatus`'s `fingerprint`
+    (`_panel_runstate.data_fingerprint`) moves. That stamp covers this
+    checkout's plan files and the same files in every other worktree of the
+    clone - the copies this reader reads - so a run advancing in a linked
+    worktree refetches it, and an edit to a file no surface reads does not.
 
     `run` AND `full_run_cache` EXIST FOR THE THIRD PLACE ALONE, and both
     default to today's behaviour when omitted. `run` is the injected git
@@ -530,6 +547,7 @@ def build_state(project, run=None, full_run_cache=None, live=None):
                                 own=view["own"])
             if view["note"]:
                 rollup["liveCopyError"] = view["note"]
+            rollup["phaseTaskStatus"] = as_.phase_task_status(view["plan"])
             # THE LEDGER IS READ ONCE, HERE, AND HANDED TO BOTH THE EVIDENCE
             # TAB AND THE THIRD PLACE'S ANCESTRY CHECK - `boundary`'s pattern
             # one call over, and for the same reason: two reads of a ledger a

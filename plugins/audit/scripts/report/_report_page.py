@@ -538,6 +538,22 @@ def _invalid_block(summary):
             "</strong></p>" % summary["findings"]], []
 
 
+def _copy_headline_html(summary):
+    """The hero's one line saying its counts and Next hold another copy's
+    work, or ''.
+
+    The hero is where a reader acts - Next is a command to copy - and every
+    number in it is taken over the plan with each phase in flight elsewhere
+    laid over it. Each phase row names its copy, but a reader who stops at the
+    hero never reaches one. Off the rollup's `copyHeadline`, the sentence
+    the Markdown twin prints under its Overall line.
+    """
+    line = summary.get("copyHeadline")
+    if not line:
+        return ""
+    return ('<p class="muted" data-copynote="hero">%s</p>' % e(line))
+
+
 def _gate_block(meta, summary, verdict):
     """The verdict hero, the narrative summary, and the grid holding both.
 
@@ -574,7 +590,7 @@ def _gate_block(meta, summary, verdict):
         '<p class="vd-basis">%s</p>'
         '<div class="vd-next">%s</div>'
         '<div class="vd-stats">%s<span class="muted">%s · '
-        "%d of %d phases signed off · %s</span></div></section>"
+        "%d of %d phases signed off · %s</span></div>%s</section>"
         % (_anchor(record),
            (' data-gate="%s"' % gate) if gate else "",
            e({"clear": "Clear", "blocked": "Blocked"}.get(gate, "Unknown")),
@@ -590,7 +606,8 @@ def _gate_block(meta, summary, verdict):
                e(", ".join(_GATE_LABELS.get(c, c) for c in conds)))) if conds else "",
            nxt, _bar(tdone, ttotal), _fmt.plural(tdone, "task") + " done",
            phdone, len(summary["phases"]),
-           _fmt.plural(summary["bugs"]["open"], "open bug")))
+           _fmt.plural(summary["bugs"]["open"], "open bug"),
+           _copy_headline_html(summary)))
 
     # AI-authored narrative summary (written by /audit:report into
     # meta.reportSummary); the quantitative "Overall" line above is the
@@ -973,10 +990,20 @@ def _ready_block(manifest, summary):
             return [], []
         record = ("ready", "Ready now", 0, False)
         return ['<h2 id="%s">Ready now</h2>%s' % (_anchor(record), note_html)], [record]
+    # The copy of every phase this list was decided from - the phase of a
+    # ready task and any phase one depends on - in `/audit:status`'s words.
+    # Under the list it describes, because the ids above it are what a reader
+    # runs, and a "Cleared: depends on ... (done)" off another worktree's copy
+    # reads as this checkout's state without it.
+    copy_html = "".join(
+        '<p class="muted" data-note="ready-copy" data-copynote="%s">%s</p>'
+        % ("live" if n["live"] else "stale", e(n["line"]))
+        for n in summary.get("readyCopies") or []
+        if isinstance(n, dict) and n.get("line"))
     record = ("ready", "Ready now", len(summary["ready"]), False)
-    return ['<h2 id="%s">Ready now</h2>%s%s'
+    return ['<h2 id="%s">Ready now</h2>%s%s%s'
             % (_anchor(record), note_html,
-               _ready_now_dl(manifest, summary["ready"]))], [record]
+               _ready_now_dl(manifest, summary["ready"]), copy_html)], [record]
 
 
 def _tail_block(manifest, summary, usage, basename, fragment, evidence=None,

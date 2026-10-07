@@ -92,7 +92,9 @@ def render_md(manifest, summary, usage=None, evidence=None, own=None):
 
     A PHASE READ FROM ANOTHER COPY SAYS SO under its heading, off the rollup
     entry's `copy`, and what could not be asked about those copies is said
-    under the overall line. The twin is embedded in the HTML and travels with
+    under the overall line, after the rollup's `copyHeadline` when the counts
+    hold another copy's work. Ready now lists the rollup's `readyCopies`
+    under its ids: the copy of each phase the ready list was decided from. The twin is embedded in the HTML and travels with
     it, so it carries the note wherever the overlaid phase goes. `own` is this
     checkout's plan when `manifest` has a live copy laid over it; the bug
     table is read from it, as the bug counts in `summary` are."""
@@ -116,6 +118,12 @@ def render_md(manifest, summary, usage=None, evidence=None, own=None):
     out += ["**Overall:** %d/%d tasks done · %d/%d phases signed off · %d open bug(s) · %d ready now"
             % (tdone, summary["tasks"]["total"], phdone, len(summary["phases"]),
                summary["bugs"]["open"], len(summary["ready"])), ""]
+    # The counts above and the Ready now list below can hold another copy's
+    # work; said once, beside the counts, off the rollup key the HTML hero
+    # reads, so a forwarded twin does not pass them off as this checkout's.
+    headline = summary.get("copyHeadline")
+    if headline:
+        out += ["**Copies:** %s" % cell(headline), ""]
     if summary.get("liveCopyError"):
         out += ["**Live copies:** %s" % cell(summary["liveCopyError"]), ""]
     # THE ONE SENTENCE THE COLUMN CANNOT CARRY. The HTML badge holds the read
@@ -215,6 +223,13 @@ def render_md(manifest, summary, usage=None, evidence=None, own=None):
         if pnote:
             out += ["> %s" % cell(pnote), ""]
         out += [", ".join(cell(r) for r in summary["ready"]), ""]
+        # The copy of every phase this list was decided from, in
+        # `/audit:status`'s words - the ready ids are what a reader runs, and
+        # one read from another worktree's copy must say so where it is read.
+        notes = [n for n in summary.get("readyCopies") or []
+                 if isinstance(n, dict) and n.get("line")]
+        if notes:
+            out += ["- %s" % cell(n["line"]) for n in notes] + [""]
     elif pnote:
         out += ["## Ready now", "", "> %s" % cell(pnote), ""]
     usage_md = _usage_md(usage)

@@ -61,7 +61,7 @@ def _p1_tasks(first):
              "dependsOn": ["P1.1"]}]
 
 
-def worktree_fixture(root, linked):
+def worktree_fixture(root, linked, cross=False):
     """`{"repo", "manifest", "tree"}` - a git repository on `main` whose own
     copy of the plan says nothing has started.
 
@@ -70,6 +70,10 @@ def worktree_fixture(root, linked):
     committed P1.1 done, so the copy holding P1 live has P1.2 ready and P1.1
     finished while this checkout's copy still lists P1.1 as ready and the bug
     as open. Without it there is no branch and no worktree: the twin.
+
+    With `cross`, P2.1 depends on P1.1, so a task of another phase is made
+    ready by the work the worktree did - the dependency a ready list has to
+    name the copy of even though no task of P1 is the one listed.
 
     The values are chosen so the two copies disagree on every list a surface
     prints - the ready list, P1's done count and the copy note - and a surface
@@ -98,8 +102,10 @@ def worktree_fixture(root, linked):
                              "severity": "high", "status": "open",
                              "taskId": "P1.1"}]}, fh)
     _write_shard(repo, "P1", "fixer", "pending", _p1_tasks("pending"))
-    _write_shard(repo, "P2", "other", "pending",
-                 [{"id": "P2.1", "title": "t", "status": "pending"}])
+    p21 = {"id": "P2.1", "title": "t", "status": "pending"}
+    if cross:
+        p21["dependsOn"] = ["P1.1"]
+    _write_shard(repo, "P2", "other", "pending", [p21])
     sh("init", "-q")
     sh("add", "-A")
     sh("commit", "-qm", "the plan")
@@ -217,11 +223,58 @@ def _reader_cases(check):
         _harness.remove_tree(root)
 
 
+def _lookup_cases(check):
+    """A lock directory that could not be looked up is not the absence of a
+    repository. Both make `_locks.lock_dir` answer None; only the second means
+    nothing can be in flight, so only the first may reach a surface as a
+    sentence - and the second must stay silent, or every project outside git
+    would print a failure it does not have."""
+    labels = ("lk1", "lk2")
+    if not shutil.which("git"):
+        for lbl in labels:
+            _harness.skip(check, lbl, "git is not on PATH, and the lookup is "
+                          "a git call", True)
+        return
+    lc, why = _reader()
+    root = _harness.fixture_root("live-copy-lookup-")
+    plan = {"meta": {"version": 3}, "phases": []}
+    try:
+        broken = os.path.join(root, "broken")
+        os.makedirs(broken)
+        # A checkout whose `.git` names a git directory that is gone - a
+        # worktree whose main clone was moved is the ordinary way to get one.
+        with open(os.path.join(broken, ".git"), "w", encoding="utf-8") as fh:
+            fh.write("gitdir: %s\n" % os.path.join(root, "gone", "worktrees",
+                                                   "x"))
+        got = lc.in_flight(plan, None, broken) if lc else {}
+        note = (_status_facts.live_view(plan, got).get("note")
+                if lc else "")
+        check("lk1 a lock directory whose lookup failed is said in the note, "
+              "with git's own answer, and is not read as no repository",
+              lc is not None and got.get("scheme") is not False
+              and "lock directory" in str(got.get("error"))
+              and "rev-parse" in str(got.get("error"))
+              and "lock directory" in str(note),
+              "why=%r got=%r" % (why, got))
+        plain = os.path.join(root, "plain")
+        os.makedirs(plain)
+        none = lc.in_flight(plan, None, plain) if lc else {}
+        check("lk2 ...and its twin: a directory in no repository has no lock "
+              "scheme and nothing to say",
+              lc is not None and none.get("scheme") is False
+              and not none.get("error") and not none.get("note")
+              and _status_facts.live_view(plan, none).get("note") == "",
+              "got=%r" % (none,))
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
         _harness.stage(check, "lc", _moved_cases)
         _harness.stage(check, "lv", _overlay_cases)
         _harness.stage(check, "lr", _reader_cases)
+        _harness.stage(check, "lk", _lookup_cases)
     return _harness.run(body)
 
 

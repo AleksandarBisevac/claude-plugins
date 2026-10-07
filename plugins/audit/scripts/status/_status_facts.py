@@ -329,22 +329,25 @@ def with_live_bodies(manifest, reads):
 
 
 def row_copies(reads, unread=None):
-    """`{phase id: {"live", "basis"}}` - the copy each row says it came from.
+    """`{phase id: {"live", "read", "basis"}}` - the copy each row says it
+    came from.
 
     Only a row that is NOT this checkout's own live copy says anything: a
     phase read from another copy says which, and a phase that fell back to
     this checkout's copy says it shows that copy and that this may not be
-    current. A phase this plan does not hold has no row to say it on.
-    `unread` is `_live_copy.in_flight`'s rows for branches that exist and were
-    not read, carried as they are.
+    current. `read` is True only for the first kind - the row's counts hold
+    another copy's work. A phase this plan does not hold has no row to say it
+    on. `unread` is `_live_copy.in_flight`'s rows for branches that exist and
+    were not read, carried as they are with `read` False.
     """
-    out = dict((str(k), dict(v)) for k, v in (unread or {}).items())
+    out = dict((str(k), dict(v, read=False)) for k, v in (unread or {}).items())
     for pid, read in (reads or {}).items():
         if not isinstance(read, dict) or (read.get("own") and read.get("live")):
             continue
         if not read.get("own") and not read.get("counted"):
             continue
         out[str(pid)] = {"live": bool(read.get("live")),
+                         "read": not read.get("own"),
                          "basis": "%s %s" % ("shows" if read.get("own")
                                              else "read from", read["basis"])}
     return out
@@ -394,6 +397,106 @@ def live_view(manifest, flight):
             "own": manifest if laid else None,
             "note": "; ".join(w for w in (flight.get("error"), flight.get("note"))
                               if w)}
+
+
+def _ready_sources(manifest, ready):
+    """`set` of phase ids the ready list was decided from: the phase of each
+    ready task, the phase each of its `dependsOn` and `blockedBy` refs names
+    or owns, and the same for its phase's `blockedBy`.
+
+    A ref is read the way `ready_tasks` reads it - a task id or a phase id -
+    so a task made ready by a dependency finished in another copy names that
+    copy's phase although no task of that phase is listed.
+    """
+    owner = _mio.phase_of_task(manifest)
+    phases = {str(p.get("id")): p for p in (manifest.get("phases") or [])
+              if isinstance(p, dict)}
+    tasks = _mio.tasks_by_id(manifest)
+
+    def phase_of_ref(ref):
+        if ref in owner:
+            return str(owner[ref])
+        return str(ref) if str(ref) in phases else None
+
+    out = set()
+    for tid in ready or []:
+        pid = owner.get(tid)
+        if pid is None:
+            continue
+        task = tasks.get(tid) or {}
+        refs = (list(task.get("dependsOn") or []) + list(task.get("blockedBy") or [])
+                + list((phases.get(str(pid)) or {}).get("blockedBy") or []))
+        out.add(str(pid))
+        out.update(p for p in (phase_of_ref(r) for r in refs
+                               if isinstance(r, str)) if p)
+    return out
+
+
+def ready_copy_notes(manifest, summary):
+    """`[{"phase", "live", "basis", "line"}]` - the copy note of each phase the
+    ready list was decided from, in plan order, for each such phase whose
+    rollup entry names a copy.
+
+    `manifest` is the plan `summary` was rolled up from - with any live copy
+    laid over it - and `line` is `/audit:status`'s own wording for a copy
+    under READY NOW, `phase <id> <basis>`, so every surface says it in the
+    same words. Only the contributing phases are named: the phase of a ready
+    task and any phase a ready task depends on (`_ready_sources`). A phase
+    whose finished work left the list is said once, beside the counts, by
+    `copy_headline`. Empty when nothing ready came from another copy.
+    """
+    if not isinstance(manifest, dict) or not isinstance(summary, dict):
+        return []
+    sources = _ready_sources(manifest, summary.get("ready"))
+    out = []
+    for entry in summary.get("phases") or []:
+        copy = entry.get("copy") if isinstance(entry, dict) else None
+        if str(entry.get("id")) not in sources or not isinstance(copy, dict):
+            continue
+        if not copy.get("basis"):
+            continue
+        out.append({"phase": entry.get("id"), "live": bool(copy.get("live")),
+                    "basis": copy["basis"],
+                    "line": "phase %s %s" % (entry.get("id"), copy["basis"])})
+    return out
+
+
+def copy_headline(summary):
+    """The one sentence beside a surface's counts and Next when any phase was
+    read from somewhere other than this checkout's own live copy, or None.
+
+    Two sentences, because the two cases are different news: a phase READ
+    from another copy puts that copy's work into the counts, while a phase
+    that fell back to this checkout's copy leaves work out that may exist.
+    Which one a row is comes from its copy's `read` (`row_copies`).
+    """
+    copies = [p["copy"] for p in (summary or {}).get("phases") or []
+              if isinstance(p, dict) and isinstance(p.get("copy"), dict)]
+    if not copies:
+        return None
+    if any(c.get("read") for c in copies):
+        return ("These counts and Next include work read from another copy "
+                "than this checkout's: a phase in flight elsewhere is shown "
+                "as that copy holds it, and each such phase names its copy.")
+    return ("These counts and Next take a phase in flight elsewhere from this "
+            "checkout's copy, which may not be current; each such phase says "
+            "why.")
+
+
+def phase_task_status(manifest):
+    """`{phase id: {task status: n}}` over `manifest`'s tasks.
+
+    The per-phase half of `rollup`'s `tasks.byStatus`, taken over the same
+    plan so a surface filtering phases by a status keeps exactly the phases
+    whose tasks that status's count was made of. Cancelled tasks are counted
+    here as they are in `byStatus`.
+    """
+    out = {}
+    for p, t in _mio.iter_tasks(manifest if isinstance(manifest, dict) else {}):
+        counts = out.setdefault(str(p.get("id")), {})
+        st = str(t.get("status"))
+        counts[st] = counts.get(st, 0) + 1
+    return out
 
 
 def ready_by_phase(manifest):
@@ -1051,6 +1154,10 @@ def rollup(manifest, findings, warnings, usage=None, boundary=None,
     gets no key, so a plan with nothing in flight elsewhere rolls up exactly
     as it always did.
 
+    With `copies`, the rollup also carries `readyCopies`
+    (`ready_copy_notes`) and `copyHeadline` (`copy_headline`), the two things
+    a surface says about copies where a reader acts.
+
     `own` is this checkout's own plan, handed over when `manifest` has live
     copies laid over it. The bug block is then counted from `own` - a bug is
     open until its fix lands here - and carries `elsewhere`, each open bug
@@ -1231,6 +1338,14 @@ def rollup(manifest, findings, warnings, usage=None, boundary=None,
         out["evidenceBoundary"] = boundary
     if isinstance(own, dict):
         out["bugs"]["elsewhere"] = bugs_fixed_elsewhere(own, manifest, copies)
+    # What a surface says beside the numbers a reader acts on, decided here
+    # once so the report, its Markdown twin and the panel cannot name
+    # different phases: `readyCopies` under Ready now, `copyHeadline` beside
+    # the counts and Next. Only with copies named - with none, no row carries
+    # a copy and both would be empty.
+    if copies:
+        out["readyCopies"] = ready_copy_notes(manifest, out)
+        out["copyHeadline"] = copy_headline(out)
     return out
 
 

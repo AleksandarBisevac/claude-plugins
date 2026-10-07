@@ -261,11 +261,71 @@ def _verified_cases(check):
           and "whole at" not in no_full)
 
 
+def _ready_copy_plan(cross):
+    """P1 is read from another copy and holds no ready task of its own; P2.1
+    depends on P1.1 when `cross`; P3.1 depends on nothing. So with `cross` P1
+    contributes to the ready list only through a dependency, and without it
+    P1 contributes nothing."""
+    p21 = {"id": "P2.1", "title": "t", "status": "pending"}
+    if cross:
+        p21["dependsOn"] = ["P1.1"]
+    return {"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "elsewhere", "status": "in_progress",
+         "tasks": [{"id": "P1.1", "title": "t", "status": "done"},
+                   {"id": "P1.2", "title": "t", "status": "blocked"}]},
+        {"id": "P2", "title": "waits", "status": "pending", "tasks": [p21]},
+        {"id": "P3", "title": "free", "status": "pending",
+         "tasks": [{"id": "P3.1", "title": "t", "status": "pending"}]}],
+        "bugs": [], "fileIndex": {}}
+
+
+def _ready_section(text):
+    lines = text.splitlines()
+    if "## Ready now" not in lines:
+        return []
+    rest = lines[lines.index("## Ready now") + 1:]
+    nxt = [i for i, ln in enumerate(rest) if ln.startswith("## ")]
+    return rest[:nxt[0] if nxt else len(rest)]
+
+
+def _ready_copy_cases(check):
+    """Ready now names the copy of every phase that contributed to it - the
+    phase of a ready task AND the phase a ready task depends on - in
+    `/audit:status`'s wording; the Overall line says, once, that its counts
+    include work read from another copy."""
+    import _status_facts
+    copies = {"P1": {"live": True, "read": True,
+                     "basis": "read from the worktree file X"}}
+    plan = _ready_copy_plan(True)
+    text = M.render_md(plan, _status_facts.rollup(plan, [], [], copies=copies))
+    notes = [ln for ln in _ready_section(text) if "worktree file X" in ln]
+    check("rm-rc1 a ready task of another phase that depends on a task read "
+          "from another copy brings that copy's note into Ready now, once, in "
+          "status's words: %r" % (_ready_section(text),),
+          notes == ["- phase P1 read from the worktree file X"])
+    over = [ln for ln in text.splitlines() if ln.startswith("**Copies:**")]
+    check("rm-rc2 ...and the Overall line is followed by the one sentence "
+          "saying the counts include work read from another copy: %r" % (over,),
+          len(over) == 1 and "read from another copy" in over[0])
+    free = _ready_copy_plan(False)
+    text2 = M.render_md(free, _status_facts.rollup(free, [], [],
+                                                   copies=copies))
+    check("rm-rc3 ...and its twin: with no dependency on P1 nothing ready came "
+          "from its copy, so Ready now names none: %r" % (_ready_section(text2),),
+          "P2.1, P3.1" in _ready_section(text2) and not [
+              ln for ln in _ready_section(text2) if "worktree file X" in ln])
+    bare = M.render_md(plan, _status_facts.rollup(plan, [], []))
+    check("rm-rc4 ...and with no copy at all neither Ready now nor the "
+          "Overall line says anything about one",
+          "worktree file X" not in bare and "**Copies:**" not in bare)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _signoff_cases(check)
         _verified_cases(check)
+        _ready_copy_cases(check)
     return _harness.run(body)
 
 

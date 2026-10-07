@@ -1957,7 +1957,7 @@ def _live_copy_cases(check):
     answer."""
     import shutil
     import test__live_copy as LC
-    labels = ("rl1", "rl2", "rl3", "rl4", "rl5", "rl6", "rl7")
+    labels = ("rl1", "rl2", "rl3", "rl4", "rl5", "rl6", "rl7", "rl8", "rl9")
     if not shutil.which("git"):
         for lbl in labels:
             _harness.skip(check, lbl, "git is not on PATH, and the worktree "
@@ -2056,8 +2056,62 @@ def _live_copy_cases(check):
               code3 == 0 and 'class="pblocked"' in _html_phase_row(html3, "P1")
               and why3 == "1 high-severity bug still open",
               "code=%r err=%r why=%r" % (code3, err3, why3))
+        # A task of ANOTHER phase made ready by the worktree's work: P2.1
+        # depends on P1.1, which only the worktree finished. Every number a
+        # reader acts on - Next, the done count, the ready list - came from
+        # that copy, so the hero and Ready now name it in both surfaces.
+        got = _ready_copy_surfaces(
+            LC.worktree_fixture(os.path.join(root, "cross"), True, cross=True),
+            os.path.join(root, "out-cross"))
+        check("rl8 a cross-phase dependency made ready only in a linked "
+              "worktree names that copy once in the HTML hero, once in its "
+              "Ready now, once in the Markdown twin's Ready now and once "
+              "under its Overall line",
+              got["code"] == 0 and got["ready"] == ["P1.2", "P2.1"]
+              and len(got["hero"]) == 1
+              and "read from another copy" in got["hero"][0]
+              and len(got["htmlReady"]) == 1 and "p1-tree" in got["htmlReady"][0]
+              and len(got["mdReady"]) == 1
+              and got["mdReady"][0].startswith("- phase P1 read from ")
+              and "p1-tree" in got["mdReady"][0]
+              and len(got["mdOverall"]) == 1,
+              "got=%r" % (got,))
+        alone = _ready_copy_surfaces(
+            LC.worktree_fixture(os.path.join(root, "cross-alone"), False,
+                                cross=True),
+            os.path.join(root, "out-cross-alone"))
+        check("rl9 ...and its twin: the same dependency with no worktree names "
+              "no copy in the hero, in Ready now or under the Overall line",
+              alone["code"] == 0 and alone["ready"] == ["P1.1"]
+              and alone["hero"] == [] and alone["htmlReady"] == []
+              and alone["mdReady"] == [] and alone["mdOverall"] == [],
+              "got=%r" % (alone,))
     finally:
         _harness.remove_tree(root)
+
+
+def _ready_copy_surfaces(fx, out):
+    """What the rendered report says about copies where a reader acts: the
+    hero's copy lines, Ready now's copy notes in the HTML, and the Markdown
+    twin's Ready now notes and Overall copy line - each a list, so a second
+    copy of a note counts rather than hides."""
+    code, err = _in_project(fx["repo"], [fx["manifest"], "--out-dir", out])
+    md = _read(os.path.join(out, "audit-report.md")) or ""
+    html = _read(os.path.join(out, "audit-report.html")) or ""
+    hero = re.search(r'<section class="overall".*?</section>', html, re.S)
+    ready = re.search(r'>Ready now</h2>(.*?)(?:<h2|</main>)', html, re.S)
+    lines = md.splitlines()
+    at = lines.index("## Ready now") if "## Ready now" in lines else len(lines)
+    tail = lines[at + 1:]
+    nxt = [i for i, ln in enumerate(tail) if ln.startswith("## ")]
+    return {"code": code, "err": err, "ready": _md_ready(md),
+            "hero": re.findall(r'data-copynote="hero"[^>]*>([^<]*)<',
+                               hero.group(0) if hero else ""),
+            "htmlReady": re.findall(r'data-note="ready-copy"[^>]*>([^<]*)<',
+                                    ready.group(1) if ready else ""),
+            "mdReady": [ln for ln in tail[:nxt[0] if nxt else len(tail)]
+                        if ln.startswith("- phase ")],
+            "mdOverall": [ln for ln in lines if ln.startswith("**Copies:**")]}
 
 
 def _status_facts_ready(manifest_path):

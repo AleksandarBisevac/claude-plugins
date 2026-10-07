@@ -370,6 +370,50 @@ def live_reads(manifest, manifest_path, git_root, phase_ids, view=None,
 
 
 # --- what is in flight ----------------------------------------------------------
+def _in_a_repository(path):
+    """Whether `path` or a directory above it holds a `.git` entry.
+
+    The fact `_lock_dir` separates its two Nones by: a `.git` file or
+    directory is what makes a directory part of a repository at all, so its
+    absence all the way up is the one None that means no repository.
+    """
+    here = os.path.realpath(path or ".")
+    while True:
+        if os.path.exists(os.path.join(here, ".git")):
+            return True
+        up = os.path.dirname(here)
+        if up == here:
+            return False
+        here = up
+
+
+def _lock_dir(git_root):
+    """`(lock directory, None)`, `(None, None)` for no repository, or
+    `(None, why)` when the lookup failed.
+
+    `_locks.lock_dir` answers None for both a directory in no repository and a
+    repository git could not describe, and only the first means nothing can be
+    in flight. A failed lookup read as no repository would show every phase
+    run under a lock elsewhere from this checkout's copy and say nothing, so
+    the failure is told apart by whether a `.git` exists at or above the git
+    root, and then asked again through the runner that keeps git's stderr,
+    which becomes the `why`.
+    """
+    ld = _locks.lock_dir(git_root)
+    if ld:
+        return ld, None
+    if not _in_a_repository(git_root):
+        return None, None
+    code, out, err = _scoped_commit.run_git(
+        git_root, ["rev-parse", "--git-common-dir"])
+    if code == 0 and (out or "").strip():
+        return None, ("git rev-parse --git-common-dir answered %s only on a "
+                      "second ask, so the first lookup's failure is not known"
+                      % ((out or "").strip(),))
+    return None, "git rev-parse --git-common-dir answered %s: %s" % (
+        code, " ".join((err or "").split())[:160] or "no output")
+
+
 def _held_locks(ld):
     """`_locks.collect`'s rows for a lock directory already found.
 
@@ -504,11 +548,16 @@ def in_flight(manifest, manifest_path, git_root):
     the same way, through `live_reads`.
 
     THE LOCK DIRECTORY IS LOOKED UP HERE, ONCE, and `scheme` carries the
-    answer to `locks_block`, which used to ask again. No lock directory means
-    no git repository, and then nothing can be in flight anywhere.
+    answer to `locks_block`, which used to ask again. No repository means no
+    lock directory, and then nothing can be in flight anywhere. A lookup that
+    FAILED in a repository is not that answer (`_lock_dir`): it comes back as
+    `error`, which `live_view` puts in the note and `locks_block` refuses to
+    read as a clean bill, and nothing is read - which phases a lock names is
+    exactly what is unknown.
 
     WHAT IT COSTS, in a git repository: the lock directory lookup (one
-    `git rev-parse --git-common-dir`) and its listing, one worktree list, one
+    `git rev-parse --git-common-dir`, and a second only when the first failed
+    there) and its listing, one worktree list, one
     identity lookup and one `git for-each-ref` over the local branches, on
     every invocation. Then one `git merge-base --is-ancestor` per phase no
     lock names whose branch another worktree has out, or whose unfinished
@@ -519,7 +568,14 @@ def in_flight(manifest, manifest_path, git_root):
     Each call goes through a runner with a timeout, and the per-phase calls
     scale with the phase branches that exist rather than with the plan.
     """
-    ld = _locks.lock_dir(git_root)
+    ld, why = _lock_dir(git_root)
+    if why:
+        return {"held": None, "reads": {}, "scheme": None, "unread": {},
+                "note": "",
+                "error": "which phase locks are held could not be asked - the "
+                         "lock directory could not be looked up (%s), so every "
+                         "row shows this checkout's copy, which may not be "
+                         "current" % (why,)}
     if not ld:
         return {"held": [], "reads": {}, "scheme": False, "unread": {},
                 "note": ""}

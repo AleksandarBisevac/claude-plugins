@@ -602,7 +602,7 @@ def _live_copy_cases(check):
     `test__live_copy.worktree_fixture`, the one the report's suite reads too."""
     import shutil
     import test__live_copy as LC
-    labels = ("pl1", "pl2", "pl3", "pl4", "pl5")
+    labels = ("pl1", "pl2", "pl3", "pl4", "pl5", "pl6", "pl7", "pl8", "pl9")
     if not shutil.which("git"):
         for lbl in labels:
             _harness.skip(check, lbl, "git is not on PATH, and the worktree "
@@ -649,8 +649,64 @@ def _live_copy_cases(check):
               ok3 and r3.get("ready") == ["P1.1", "P2.1"]
               and "this checkout's copy" in str(r3.get("liveCopyError")),
               "rollup=%r" % (r3,))
+        # The Ready now card's notes: P2.1 depends on P1.1, which only the
+        # worktree finished, so both ready tasks came from P1's copy.
+        fx4 = LC.worktree_fixture(os.path.join(root, "cross"), True,
+                                  cross=True)
+        ok4, st4 = _harness.attempt(M.build_state, fx4["repo"], live=live)
+        r4 = (st4 or {}).get("rollup") or {} if ok4 else {}
+        notes = r4.get("readyCopies")
+        check("pl6 the payload hands the Ready now card the copy note of the "
+              "phase its ready work came from - once, in status's words",
+              ok4 and r4.get("ready") == ["P1.2", "P2.1"]
+              and isinstance(notes, list) and len(notes) == 1
+              and notes[0].get("phase") == "P1" and notes[0].get("live") is True
+              and str(notes[0].get("line")).startswith("phase P1 read from ")
+              and "p1-tree" in str(notes[0].get("line")),
+              "readyCopies=%r" % (notes,))
+        fx5 = LC.worktree_fixture(os.path.join(root, "cross-alone"), False,
+                                  cross=True)
+        ok5, st5 = _harness.attempt(M.build_state, fx5["repo"], live=live)
+        r5 = (st5 or {}).get("rollup") or {} if ok5 else {}
+        check("pl7 ...and its twin: with no worktree the card has no note to "
+              "draw",
+              ok5 and r5.get("ready") == ["P1.1"]
+              and not r5.get("readyCopies"),
+              "rollup=%r" % (r5,))
+        # The task strip: its pills count `tasks.byStatus` of the plan with
+        # P1's live copy laid over it, so the per-phase counts its filter
+        # keeps a phase by must come from that same plan - or the `done`
+        # pill reads 1 and pressing it shows no phase.
+        check("pl8 every status pill's count is the sum of the per-phase counts "
+              "the strip's filter reads, with a phase overlaid",
+              ok4 and _pill_sums(r4) == (r4.get("tasks") or {}).get("byStatus")
+              and ((r4.get("phaseTaskStatus") or {}).get("P1") or {}).get(
+                  "done") == 1,
+              "byStatus=%r phaseTaskStatus=%r"
+              % ((r4.get("tasks") or {}).get("byStatus"),
+                 r4.get("phaseTaskStatus")))
+        check("pl9 ...and its twin: with nothing overlaid the two still agree, "
+              "and P1 has nothing done",
+              ok5 and _pill_sums(r5) == (r5.get("tasks") or {}).get("byStatus")
+              and not ((r5.get("phaseTaskStatus") or {}).get("P1") or {}).get(
+                  "done"),
+              "phaseTaskStatus=%r" % (r5.get("phaseTaskStatus"),))
     finally:
         _harness.remove_tree(root)
+
+
+def _pill_sums(rollup):
+    """`{status: n}` summed over the rollup's per-phase task counts, or None
+    when the payload carries none - so a missing key cannot read as agreeing
+    with an empty plan."""
+    per = rollup.get("phaseTaskStatus")
+    if not isinstance(per, dict):
+        return None
+    out = {}
+    for counts in per.values():
+        for st, n in (counts or {}).items():
+            out[st] = out.get(st, 0) + n
+    return out
 
 
 def _selftest():

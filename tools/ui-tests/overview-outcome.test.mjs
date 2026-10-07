@@ -179,3 +179,68 @@ describe('ovCopyNote names the copy a row was read from', () => {
     expect(C().ovCopyNote({ id: 'P2', copy: null })).toBe(null);
   });
 });
+
+// The READY NOW card's copy notes. The card's numbers - which tasks are ready,
+// and so which command a reader copies - can come from a phase read from another
+// worktree's copy, either because the ready task is in that phase or because it
+// depends on a task there. The server names those phases (`readyCopies`, one
+// line each in `/audit:status`'s wording); this turns them into what the card
+// draws, and nothing when there are none.
+describe('ovReadyCopyNotes draws the copies Ready now was read from', () => {
+  const C = () => reach(loadPanel().ctx, ['ovReadyCopyNotes']);
+
+  it('one note per named phase, in the server\'s words, live or stale', () => {
+    const got = C().ovReadyCopyNotes({ readyCopies: [
+      { phase: 'P1', live: true, line: 'phase P1 read from the worktree file /x/P1.json' },
+      { phase: 'P4', live: false, line: "phase P4 shows this checkout's copy - may not be current" },
+    ] });
+    expect(got).toEqual([
+      { live: true, text: 'phase P1 read from the worktree file /x/P1.json' },
+      { live: false, text: "phase P4 shows this checkout's copy - may not be current" },
+    ]);
+  });
+
+  it('the twin: nothing named, or an older payload with no key, draws nothing', () => {
+    // The over-fire direction: a card that drew a note for every payload would
+    // pass the case above.
+    expect(C().ovReadyCopyNotes({ readyCopies: [] })).toEqual([]);
+    expect(C().ovReadyCopyNotes({})).toEqual([]);
+    expect(C().ovReadyCopyNotes({ readyCopies: [{ phase: 'P1', live: true }] })).toEqual([]);
+  });
+});
+
+// The TASK STRIP. Its pills count `tasks.byStatus`, which the server takes over
+// the plan with each live copy laid over it. The filter a pill sets keeps a
+// phase by that phase's own count of the status - and those counts used to come
+// from the composition, which is this checkout's copy, so with a phase finished
+// in a worktree the `done` pill read 1 and pressing it showed no phase.
+describe('ovPhaseStatus is the strip filter\'s counts, off the pills\' plan', () => {
+  const C = () => reach(loadPanel().ctx, ['ovPhaseStatus']);
+  // P1 read from a worktree that finished P1.1; this checkout's composition
+  // still has it pending, which is what the filter must NOT read.
+  const ROLLUP = {
+    tasks: { total: 3, byStatus: { done: 1, pending: 2 } },
+    phaseTaskStatus: { P1: { done: 1, pending: 1 }, P2: { pending: 1 } },
+  };
+
+  it('every pill\'s count is what its filter finds, with a phase overlaid', () => {
+    const per = C().ovPhaseStatus(ROLLUP);
+    for (const [st, n] of Object.entries(ROLLUP.tasks.byStatus)) {
+      const found = Object.keys(per).reduce((a, pid) => a + ((per[pid] || {})[st] || 0), 0);
+      expect(found, st).toBe(n);
+    }
+    expect(Object.keys(per).filter((pid) => (per[pid] || {}).done)).toEqual(['P1']);
+  });
+
+  it('the twin: nothing overlaid, nothing done, and no phase kept by `done`', () => {
+    const per = C().ovPhaseStatus({ tasks: { total: 2, byStatus: { pending: 2 } },
+      phaseTaskStatus: { P1: { pending: 1 }, P2: { pending: 1 } } });
+    expect(Object.keys(per).filter((pid) => (per[pid] || {}).done)).toEqual([]);
+  });
+
+  it('a phase id that is an Object.prototype name is a phase, not a property', () => {
+    const per = C().ovPhaseStatus({ phaseTaskStatus: { constructor: { done: 2 } } });
+    expect(per.constructor.done).toBe(2);
+    expect(C().ovPhaseStatus({}).toString).toBe(undefined);
+  });
+});
