@@ -271,17 +271,21 @@
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py _take_phase_lock and _phase_lock_line",
         "issue": "A hand-typed start in a resumed session over this session's orchestrator lock whose pid is gone gets the re-record's 0, reports took and prints that sign-off or a cancel gives the lock back, but sign-off releases only a start-noted lock, so the lock stays naming the live resumed process; a failed start on that path would also release a lock it did not take under its own note.",
-        "resolution": "Count a re-record as took only when the lock carries the start note; otherwise report ours with a line saying it was re-recorded and keeps its own hold's note so the run that took it releases it, and never undo it on a failed start; separate-process case plus its start-note twin asserting the printed line and the lock file agree."
+        "resolution": "fixed in P106.11-b6f (f5fe36b4): Count a re-record as took only when the lock carries the start note; otherwise report ours with a line saying it was re-recorded and keeps its own hold's note so the run that took it releases it, and never undo it on a failed start; separate-process case plus its start-note twin asserting the printed line and the lock file agree.",
+        "fixTask": "P106.11-b6f",
+        "commit": "f5fe36b4"
       },
       {
         "id": "P106-R29",
         "severity": "low",
         "file": "plugins/audit/commands/status.md; plugins/audit/reference/orchestrator.md",
         "issue": "The docs say a resumed session's acquire re-records its lock under the live process, which holds only when CLAUDE_PID is exported; without it the lock reads dead and meets exit 4, and a start's yielding lock is superseded rather than re-recorded.",
-        "resolution": "Name the CLAUDE_PID condition and the exit-4 path without it."
+        "resolution": "fixed in P106.11-b6f (f5fe36b4): Name the CLAUDE_PID condition and the exit-4 path without it.",
+        "fixTask": "P106.11-b6f",
+        "commit": "f5fe36b4"
       }
     ],
-    "outcome": "[findings: 29 - 1 high, 6 med, 22 low; 27 with a recorded fix commit]"
+    "outcome": "[findings: 29 - 1 high, 6 med, 22 low; 29 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -943,7 +947,7 @@
     {
       "id": "P106.11-b6f",
       "title": "start reports a lock as its own take only when it is the start's lock",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P106-R28 and P106-R29. Start reports a lock as its own take only when it is the start's lock.\n\nIn _take_phase_lock, a code-0 re-record counts as 'took' only when the lock carries the start note. Any other lock re-recorded for this session, such as an orchestrator's 'phase run' lock whose pid was gone, is reported as 'ours'. The line says the lock was re-recorded under the live process and keeps its own hold's note, so the run that took it releases it. undo_lock never releases such a lock on a failed start.\n\nstatus.md and orchestrator.md name the CLAUDE_PID condition: the same session's acquire re-records its lock under the process CLAUDE_PID names. With none exported, the lock reads dead and meets exit 4 like any other dead holder. A start's yielding lock is superseded rather than re-recorded.\n\nSeparate-process cases, each with its twin:\n- An orchestrator-note lock: its pid is killed, a resumed hand-typed start runs, then sign-off. The printed line and the lock file agree, and the lock is still held by its orchestrator note.\n- The same flow over a start-note lock: the lock is released at sign-off.\n- A failed start on the orchestrator-note path leaves the lock in place.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -974,18 +978,29 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f5fe36b4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py: _took_or_rerecorded(git_root, name, basis) handles both of _take_phase_lock's acquire 0-returns, the plain acquire and the takeover re-acquire, and reads the lock file back. A lock carrying the start note is 'took'. Any other lock is 'ours', with a basis taken from the file: re-recorded under the live pid from the gone pid recorded in refreshedFrom, keeping its own hold's note (named), and released by the run that took it, because sign-off and a phase cancel leave it in place. _phase_lock_line prints that through its 'reused' branch. undo_lock releases only 'took', so a failed start leaves such a lock in place; its comment says so. _locks.py is unchanged. status.md and orchestrator.md now state the CLAUDE_PID condition: the same session's acquire re-records under the process CLAUDE_PID names, and with none exported the lock reads dead and gets exit 4. They also say that a start's yielding lock is superseded rather than re-recorded, and that a hand start re-recording the orchestrator's lock keeps that lock's note. lv23 and lv24 run the reviewer's flow as separate processes. lv25 and lv26 cover the failed start. Red-first: the stamp-verification helper proved lv23 and lv25 red at HEAD. The over-fire mutation 'always ours' turned lv24, lv26, lv9, lv21 and hl3 red.",
+        "descriptive": "A resumed start no longer claims the orchestrator's lock as its own, so its message matches what sign-off does, and a failed start leaves that lock alone."
       },
       "startedAt": "2026-10-07T07:41:31Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T08:14:36Z",
+      "verifiedBy": [
+        "lv23",
+        "lv24",
+        "lv25",
+        "lv26"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T08:14:29Z.0c69c6",
         "status": "passed",
         "at": "2026-10-07T08:14:29Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "f5fe36b4",
+        "at": "2026-10-07T08:14:36Z",
+        "basis": "orchestrator check: P106-R28 and R29 fixed by reading the lock's note back after acquire, reviewer flow reproduced red at HEAD in separate processes, over-fire mutation proved the twins"
       }
     }
   ],
