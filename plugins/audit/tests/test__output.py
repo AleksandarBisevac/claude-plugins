@@ -293,6 +293,117 @@ def _cases(check):
           % (sorted(spelled - mentions - sites), sorted(sites - (spelled - mentions))),
           mentions <= spelled and sites == spelled - mentions and bool(sites))
 
+    # ----------------------------------------------- the hand-parsed dispatcher shape
+    # The other half of the same check: a dispatcher that reads its verb by hand
+    # (`if verb not in (...)`) builds no parser, so `parser_sites()` cannot see it -
+    # `materialize-proposal.py` was exactly this (P102-R5) before it called the hint
+    # directly in the branch that refuses an unrecognised verb. Two signals are
+    # both required (see the module comment above `verb_dispatch_sites`), each
+    # proven necessary by its own twin below: a fixture that has one signal but
+    # not the other must stay as quiet as a plain validator.
+    vd = tempfile.mkdtemp(prefix="audit-verb-dispatch-")
+    try:
+        vd_fixtures = {
+            # The deny case: the shape the review found - a name dispatched on
+            # elsewhere (`verb == "list"`) whose unknown-verb branch prints the
+            # usage block and nothing else.
+            "bare.py":
+                'import sys\n'
+                'USAGE = "usage: bare.py <verb>\\n"\n'
+                'def main(argv):\n'
+                '    verb = argv[0]\n'
+                '    if verb not in ("list", "plan", "drop"):\n'
+                '        sys.stderr.write(USAGE)\n'
+                '        return 2\n'
+                '    if verb == "list":\n'
+                '        return 0\n'
+                '    return 1\n',
+            # The allow twin: structurally identical, differing only in the one
+            # call this check is about - proving the lint reads the call and not
+            # merely the shape of the `if`.
+            "hinted.py":
+                'import sys\n'
+                'import _claude_home\n'
+                'USAGE = "usage: hinted.py <verb>\\n"\n'
+                'def main(argv):\n'
+                '    verb = argv[0]\n'
+                '    if verb not in ("list", "plan", "drop"):\n'
+                '        sys.stderr.write(USAGE)\n'
+                '        hint = _claude_home.usage_hint(None, None, None, None)\n'
+                '        sys.stderr.write("\\n".join(hint))\n'
+                '        return 2\n'
+                '    if verb == "list":\n'
+                '        return 0\n'
+                '    return 1\n',
+            # Dispatched on, but the refusal is an ordinary sentence, never the
+            # shared usage block - `materialize-proposal.py`'s OWN `--all applies
+            # to plan and materialize only` branch is exactly this shape, and
+            # owes the hint no more than any other one-line refusal does.
+            "ordinary_refusal.py":
+                'import sys\n'
+                'def main(argv):\n'
+                '    verb = argv[0]\n'
+                '    if verb not in ("plan", "materialize"):\n'
+                '        sys.stderr.write("--all applies to plan and '
+                'materialize only\\n")\n'
+                '        return 2\n'
+                '    if verb == "plan":\n'
+                '        return 0\n'
+                '    return 1\n',
+            # Prints the usage block, but the name is never dispatched on again -
+            # a validated flag, not a verb - `ado-connect.py`'s `--transport`
+            # check is exactly this shape.
+            "validated_flag.py":
+                'import sys\n'
+                'USAGE = "usage: validated_flag.py --transport auto|mcp|az\\n"\n'
+                'def main(argv):\n'
+                '    transport_hint = argv[0]\n'
+                '    if transport_hint not in ("auto", "mcp", "az"):\n'
+                '        sys.stderr.write(USAGE)\n'
+                '        return 2\n'
+                '    return 0\n',
+            # A single flag check is not a verb dispatch, and a membership test
+            # against one literal is not "unknown among several" - neither owes
+            # the hint, and a lint that fired on either would be unusable on this
+            # tree's many `"--flag" in argv` checks.
+            "flag_only.py":
+                'def main(argv):\n'
+                '    if "--json" not in argv:\n'
+                '        return 1\n'
+                '    return 0\n',
+            "single_literal.py":
+                'import sys\n'
+                'def main(argv):\n'
+                '    if argv[0] not in ("list",):\n'
+                '        sys.stderr.write("usage\\n")\n'
+                '        return 2\n'
+                '    return 0\n',
+        }
+        for rel, text in vd_fixtures.items():
+            with open(os.path.join(vd, rel), "w", encoding="utf-8") as fh:
+                fh.write(text)
+        vd_found = M.usage_hint_violations((vd,))
+        vd_where = sorted((rel, line) for rel, line, _why in vd_found)
+        check("vd1 a hand-parsed unknown-verb branch that never calls "
+              "_claude_home.usage_hint is named by file and line: %r" % (vd_where,),
+              ("bare.py", 5) in vd_where)
+        check("vd2 ...its why says what is missing: %r" % (vd_found,),
+              any(rel == "bare.py" and why and "usage_hint" in why
+                  for rel, _line, why in vd_found))
+        check("vd3 the allow twin - same shape, the hint called in the branch - "
+              "stays quiet, and so do a dispatched-but-ordinary refusal, a "
+              "usage-printing but never-dispatched flag, a single-flag check "
+              "and a one-literal membership test: %r" % (vd_where,),
+              vd_where == [("bare.py", 5)])
+    finally:
+        shutil.rmtree(vd, ignore_errors=True)
+
+    real_verb_dispatch = M.verb_dispatch_sites(M.lint_py_files(M.SCRIPTS_DIR))
+    check("vd4 no hand-parsed dispatcher under scripts/ refuses an unknown verb "
+          "without calling the usage hint: %r"
+          % ([r for r in real_verb_dispatch if r[2]],),
+          all(why is None for _rel, _line, why in real_verb_dispatch))
+
     # --------------------------------------------------------- house-style AST bans
     # Same shape as the adoption-lint block above: a fixture directory per case, each
     # proving the checker actually reads the construct rather than merely never having

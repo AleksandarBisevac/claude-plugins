@@ -757,7 +757,7 @@
     {
       "id": "P102.12-ptn",
       "title": "red proves on every runner it reads without refusing a run over a directory it does not need",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P102-R1 to P102-R4 and P102-R6. red proves on every runner it reads without refusing a run over a directory it does not need.\n\n- A dependency directory that holds a link into the tree, such as a workspace link or an editable install's .pth, is skipped. Its reason goes into the plan's skipped list, which the deps clause prints, and the run proceeds without it.\n- jest's node:assert hint line counts as an assertion.\n- Terminal escapes are stripped once, before the tally and failing-case readers.\n- The design note is in the present tense, and it no longer says the pytest patterns became one.\n- The workspace-link scan looks only at entry shapes that can be links: top-level and scoped symlinks, and .pth or __editable__ files under site-packages. It checks the deadline.\n- The docstring, comment and PLUGIN-BUILD-GUIDE describe what jest prints for node:assert.\n\nCases, each with a twin:\n- an editable .pth in an in-repo virtualenv with a system-python unittest command still proves;\n- jest's real node:assert text proves;\n- jest's coloured summary line is read;\n- the scan is bounded.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -791,18 +791,34 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8b6e21f7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_runner_output.py: plain_text() removes every terminal control sequence, and read_tally, failing_cases and jest_failures call it once on entry, so a coloured jest summary line (FORCE_COLOR or --colors) is read. _JEST_ASSERTION accepts expect and the hint jest prints for a node:assert failure (assert(...) or assert.<name>(...)). It no longer accepts AssertionError, which jest never printed first, so the change can miss a proof but never invent one. The module docstring and comments describe what jest prints. stamp-verification.py: workspace_links(source, rels, roots, deadline) returns links and a problem. It scans only top-level and @scope entries, plus .pth and __editable__ files directly under a site-packages directory (de-duplicated by inode), and checks the deadline before each entry; a passed deadline is a timeout problem, never a partial list. dependency_plan skips a directory holding a link into the tree, recording the entry and its target in the skipped list the deps clause prints, and the run goes ahead without it. refused_links_problem and the refused key are removed. The design note is in the present tense and keeps the two pytest patterns as two. The build guide, audit-executor.md and execute-task.md describe the skip. Cases: ru11-ru14 (jest's real node:assert text and its coloured output, each with a twin); sd2 rewritten, plus sd6-sd9 (an editable .pth into the tree proves with the virtualenv skipped, a .pth outside the tree stays linked, and the scan's shapes and deadline). Red-first proved for test__runner_output through the helper. For test_stamp_verification the helper could not prove, because HEAD's own suite is red inside the throwaway at two cases about SIGTERM and leftover throwaways that pass in the shared tree; the ordinary tdd red was seen (sd2, sd6, sd8, sd9 failed before the fix).",
+        "descriptive": "The red-first check no longer gives up on a project that has its own package installed in a local virtual environment, reads jest failures from node's assert, and understands coloured test output."
       },
       "startedAt": "2026-10-07T09:13:28Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T10:31:26Z",
+      "verifiedBy": [
+        "ru11",
+        "ru12",
+        "ru13",
+        "ru14",
+        "sd2",
+        "sd6",
+        "sd7",
+        "sd8",
+        "sd9"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T10:16:56Z.430909",
         "status": "passed",
         "at": "2026-10-07T10:16:56Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8b6e21f7",
+        "at": "2026-10-07T10:31:26Z",
+        "basis": "orchestrator check: P102-R1..R4 and R6 fixed, the editable-install regression reproduced and proved, jest text captured from a real run, scan bounded by shape and deadline; helper could-not-prove on one suite is recorded with its reason"
       }
     },
     {

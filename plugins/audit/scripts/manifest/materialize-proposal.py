@@ -63,6 +63,9 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (the usage hint this file hand-parses its verb
+#                      instead of building a parser, so there is no `parser.error`
+#                      for `attach_usage_hint` to patch - see `_print_usage` below)
 import _manifest_io as _mio  # noqa: E402  (to resolve --all before the rule runs)
 import _proposals  # noqa: E402  (the rule this command is a front end for)
 import _warning_groups as _wg  # noqa: E402  (the shape a repeated warning prints in)
@@ -218,6 +221,15 @@ def main(argv):
     as_json = "--json" in rest
     if verb not in ("list", "plan", "materialize", "drop", "revive"):
         sys.stderr.write(USAGE)
+        # This file hand-parses its verb rather than building a parser, so there is
+        # no `parser.error` for `attach_usage_hint` to patch - this is the one place
+        # that hook would have fired, spelled out by hand instead. An older cached
+        # copy asked for a verb only a newer one knows would otherwise print this
+        # usage block and nothing else, and read as "the verb does not exist".
+        project = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+        hint = _claude_home.usage_hint(_claude_home.claude_home(), project,
+                                       _output.plugin_version(), _output.PLUGIN_ROOT)
+        sys.stderr.write("\n".join(hint) + "\n")
         return 2
 
     # Before `--all` is resolved: `list` has no id to name and no closure to walk,
