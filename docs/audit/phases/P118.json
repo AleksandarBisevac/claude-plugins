@@ -1,0 +1,531 @@
+{
+  "id": "P118",
+  "title": "the plugin pipeline costs at most 2x plain per task",
+  "status": "pending",
+  "description": "Implements the cost design in docs/research/pipeline-cost-design.md, section 6, on the user's decisions of 2026-10-07: G1 (the per-task intent review, the red-first grade and the inherited-test question move into the phase review, with a deferred close and a sign-off refusal), the phase-overhead budget raised to 1.00, and the main loop's cache TTL documented but not changed. The order is fixed by the user: implement, run each task's micro-test, and only then one single-task paid probe and the full benchmark, both run by the orchestrator. Each task's design section gives its mechanism, targets and micro-test; the task text below names what it owns.",
+  "desiredOutcome": "a task run through the plugin pipeline costs at most 2x plain Claude Code doing the same task, measured like for like, with the phase overhead within 1.00 USD-equivalent a phase, each fix confirmed by its offline micro-test before any paid session",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P118.1",
+      "title": "the cost instruments read spans, injected command bodies and background agents as the design predicts",
+      "status": "pending",
+      "description": "Design section 6, T1. measure-context gains --sections and entries for /audit:phase add, /audit:task add and the phase run form before and at sign-off. stream-cost gains: the task cycle as its own section, read off the verb and its operand; the planning row; sign-off, its fix task and the close as three parts; the longest gap per context; each dispatch's start read and written by agent type; injected command bodies sized as their own source; and no phantom final for a background-launched agent (internal fault F563). Targets are T1's, on feature-C-1, whole-C-1, whole-C-2, whole-C-3 and the twin fixtures. whole-C-2-r's remaining unattributed amount is investigated and named before any target is set for it. Every new case is shown red first.",
+      "files": [
+        "tools/measure-context.py",
+        "tools/stream-cost.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P118.2",
+      "title": "plugin verbs print one success line by default and the long form on --verbose",
+      "status": "pending",
+      "description": "Design section 6, T7. One shared helper in _output.py prints the success line. Each verb the driver or the main loop calls prints, on success, one line of at most 200 bytes naming what was done and the record it wrote. --verbose prints today's text unchanged, and a refusal always prints in full. Micro-test: each verb's success path on its selftest fixture, shown red against a verb that still prints the long form.",
+      "files": [
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/governance/audit-lock.py",
+        "plugins/audit/scripts/governance/verify-invariants.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/scripts/manifest/validate-manifest.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_run_test_gate.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/tests/test_audit_lock.py",
+        "plugins/audit/tests/test_verify_invariants.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/tests/test_validate_manifest.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/tests/test_audit_status.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P118.3",
+      "title": "agent briefs are computed by a script and agent returns are filed write-once",
+      "status": "pending",
+      "description": "Design section 6, T3. brief writes the whole brief to a file. A write-once filing verb takes the task id and the role, and no path; it derives the one file it writes, refuses a second filing in one start, and leaves the first byte-identical, with allow halves. The reviewer's brief refuses while the executor's return for the current start is unfiled. done --from-return closes from the filed returns and carries the red-first block onto task.redFirst (internal fault F561). The phase reviewer's computed brief carries the saved request text and, for each task, its SHA, files, filed return, recorded run and tests.gate. Every case the design lists is shown red first.",
+      "files": [
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/scripts/_refs.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P118.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P118.4",
+      "title": "planning is one batch call that saves the request and its open choices",
+      "status": "pending",
+      "description": "Design section 6, T9. audit-task add --from-file adds a phase and its tasks in one call, revalidates once, and refuses a malformed file or a missing dependency while writing nothing. The file carries the request's text verbatim and a list of its open choices. The add section of phase.md is verb-scoped. Cases are shown red first.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P118.3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P118.5",
+      "title": "a step driver runs every step that needs no judgement, in four main-loop requests a task",
+      "status": "pending",
+      "description": "Design section 6, T4. drive-phase.py next <phase> reads the plan and the filed returns, performs every due step that needs no judgement by calling the existing verbs, and prints one instruction: dispatch, decide or done. A refusal prints the verb's own refusal and stops. The recorded gate stays before the reviewer. The new entry point owes everything CLAUDE.md names for a new .py. stream-cost's cycle rule reads the driver's start and done in the same change. Micro-test: a drive over a three-task fixture plan, with four model-facing steps a task, success prints of at most 300 bytes, a stale stamp naming the moved field, and a refused verb stopping the drive, each shown red against a mutated driver.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/scripts/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/commands/run.md",
+        "plugins/audit/commands/next.md",
+        "plugins/audit/commands/resume.md",
+        "tools/stream-cost.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P118.3",
+        "P118.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P118.6",
+      "title": "under review.perTask phase the per-task review moves into the phase review and sign-off refuses an unanswered task",
+      "status": "pending",
+      "description": "Design section 6, T6, as G1. review.perTask takes always (today), phase (G1) or signals (G2). Under phase, the driver dispatches no per-task reviewer, and done --from-return writes the deferred state and refuses an --intent flag on a task with a diff. The phase reviewer's brief asks each task's three answers, and the sign-off verb refuses while any deferred task lacks one. Whether phase becomes the default is a release decision for the user, because COMPATIBILITY.md makes a changed default a major release. Every case the design lists is shown red first. The panel control and the doctor line follow if the schema lint requires them.",
+      "files": [
+        "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/scripts/config/_config_rules.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/tests/test__config_rules.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_audit_lookup.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P118.5",
+        "P118.4"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P118.7",
+      "title": "agent prompts are trimmed and each agent files its own return through submit",
+      "status": "pending",
+      "description": "Design section 6, T8. The executor's last act is drive-phase.py submit --role executor <task>, which takes the stamp, runs the red-first helper on a tdd task and files the return. The reviewer uses submit --role reviewer. The prose that explained those steps leaves each prompt. Targets: executor at most 9000 bytes, reviewer at most 7000, by measure-context. submit's cases are shown red first.",
+      "files": [
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/agents/audit-reviewer.md",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P118.5"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P118.8",
+      "title": "sign-off is one step that ends with the landing stamp committed",
+      "status": "pending",
+      "description": "Design section 6, T10. At sign-off the driver prints the phase reviewer's dispatch, then one decide for the triage, then runs the phase gate, the invariants check, the sign-off verb, the commit, the landing and the lock release as one step. Findings are recorded from one file in one call. The landing commits the status and mergedAt it stamps into the parent tree, and verify-invariants flags a landed phase whose status is uncommitted (internal fault F564). Cases are shown red first.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/tests/test_drive_phase.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_close_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P118.6"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P118.9",
+      "title": "no pipeline command makes the main loop read reference prose, and a ceiling gate holds it there",
+      "status": "pending",
+      "description": "Design section 6, T2. Each rule is re-homed to the step text the driver prints, the agent prompt that acts on it, or, for prose that explains what a script enforces, the build guide and the script's docstring. A new lint checks that every followed row's Stated-in resolves to a printed step text or an agent prompt section. measure-context.py --gate holds the T2 ceilings in CI and verify.sh. Both are shown red first.",
+      "files": [
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/commands/run.md",
+        "plugins/audit/commands/next.md",
+        "plugins/audit/commands/resume.md",
+        "plugins/audit/commands/review.md",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/scripts/_refs.py",
+        "plugins/audit/tests/test__refs.py",
+        "plugins/audit/README.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "tools/measure-context.py",
+        "tools/verify.sh",
+        ".github/workflows/ci.yml",
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P118.5",
+        "P118.6",
+        "P118.7",
+        "P118.8"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P118.10",
+      "title": "the doctor prints the main loop's cache TTL trade from the user's own sessions",
+      "status": "pending",
+      "description": "Design section 6, T12, the documentation-only decision on the TTL. From a recorded session the doctor prints the longest main-loop gap, the one-hour writes and their price at each TTL. It recommends nothing the gaps do not support, and the setting stays the user's. First establish whether the usage ledger holds per-request times; if it does not, name where the doctor reads them from. Twin synthetic sessions are shown red first.",
+      "files": [
+        "plugins/audit/scripts/status/_doctor_hygiene.py",
+        "plugins/audit/tests/test__doctor_hygiene.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P118.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
