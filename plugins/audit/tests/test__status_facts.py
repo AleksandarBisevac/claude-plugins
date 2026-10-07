@@ -1728,12 +1728,15 @@ def _own_ready_cases(check):
     injecting command counted it and named the copy it counted from - never on
     the length of the plan-wide ready list, which is the same figure for every
     phase and so said nothing about any one of them."""
-    def lock(phase, count, basis="counted from this checkout's copy"):
+    def lock(phase, count, basis="counted from this checkout's copy",
+             live=True):
         row = {"name": "phase-%s" % (phase,), "live": True,
                "basis": "held by a fixture holder on this host"}
         if count is not None:
             row["readyCount"] = count
             row["readyBasis"] = basis
+        if live is not None:
+            row["readyLive"] = live
         return row
 
     # The plan-wide list is LONGER than either phase's own share, and its length
@@ -1819,6 +1822,31 @@ def _own_ready_cases(check):
           grouped == {"P5": ["P5.1", "P5.2"], "P6": ["P6.1"]}
           and sum(len(v) for v in grouped.values())
           == len(M.ready_tasks(plan)))
+
+    # A zero is the silent row only when it was counted from the copy that
+    # holds the phase live. ul3 is this pair's other half: the same zero,
+    # marked live, says nothing and passes.
+    stale_basis = ("counted from this checkout's copy on `main` - branch "
+                   "`audit/p8-done` exists but its copy could not be read, so "
+                   "this count is not current")
+    stale = {"locks": {"held": [lock("P8", 0, stale_basis, live=False)]},
+             "ready": plan_ready}
+    said = M.unfinished_runs(stale) or []
+    check("ul10 a zero counted from a copy that is NOT the live one is a line, "
+          "not a silence - the line carries the zero and the sentence saying "
+          "the count is not current, and the gate fails: %r" % (said,),
+          len(said) == 1
+          and "phase P8 holds a lock with 0 task(s) still ready" in said[0]
+          and stale_basis in said[0]
+          and M.evaluate_gate(stale, ["unfinished-run"]) == ["unfinished-run"])
+    unsaid = {"locks": {"held": [lock("P8", 0, live=None)]},
+              "ready": plan_ready}
+    check("ul11 ...and a zero whose row never said which copy it came from is "
+          "not silent either - an absent mark is not a claim that the copy was "
+          "live: %r" % (M.unfinished_runs(unsaid),),
+          len(M.unfinished_runs(unsaid) or []) == 1
+          and M.evaluate_gate(unsaid, ["unfinished-run"])
+          == ["unfinished-run"])
 
 
 def _selftest():

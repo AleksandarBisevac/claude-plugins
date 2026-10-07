@@ -37,7 +37,8 @@ plan tags areas (per tag: phases and done/total tasks, ` - <owner>` when the are
 declares its advisory owner, an `untagged` footer, and — only when a phase actually
 carries several tags — the caveat that such a phase counts under each), a
 RESUMABLE line when a phase was interrupted, and an UNFINISHED block when a phase
-lock is still held while there is ready work left.
+lock is still held while that phase has ready work of its own left — or when how
+much it has left could not be counted from the copy that holds it live.
 
 **RESUMABLE and UNFINISHED are two lines about two different facts**, and each can
 be true without the other. RESUMABLE reads the phase status the plan wrote down;
@@ -154,8 +155,9 @@ meanings, rendered from the same tuple the gate evaluates:
   Graded from the repository alone and never from a home directory, so the verdict
   is the same on every runner as on the author's laptop — which is the point, since
   the machine that wrote the plan is the one machine where every name resolves
-- `unfinished-run` — a **phase lock still held while tasks are ready to run**: a
-  run that stopped mid-phase. `/audit:phase P5` means *execute every ready task,
+- `unfinished-run` — a **phase lock still held while that phase has ready tasks
+  of its own**, counted from the copy that holds the phase live: a run that stopped
+  mid-phase. A held lock whose count could not be taken from that copy trips it too. `/audit:phase P5` means *execute every ready task,
   then sign off*, and a run that commits one wave, names the next and stops has
   done neither — see below
 - `provisional` — a **merged phase `meta.fullGate` has not yet certified whole**:
@@ -289,17 +291,47 @@ Nothing had refused anything. It sat idle until a human asked a day later.
 
 | lock | ready list | verdict |
 |---|---|---|
-| held | non-empty | **UNFINISHED** — a run stopped mid-phase |
+| held | the phase's own, non-empty | **UNFINISHED** — a run stopped mid-phase |
 | absent | empty | finished |
 | absent | non-empty | **not running** — the ordinary state of every planned phase |
 
 That last row is the one that decides whether the signal is worth anything. A plan
 with ready work and no lock is every planned phase there has ever been, so a reading
 that tripped there would fire on every plan in the world and be muted the same day.
-The lock is the half that decides; the ready list is what says the run had somewhere
-left to go. A lock held with **nothing** ready is silent too — that run had nowhere
-to go, so a lock still on disk there is a sign-off in flight or a lock to give back,
-which is `/audit:doctor`'s question.
+The lock is the half that decides; the phase's **own** ready work is what says the
+run had somewhere left to go. A lock held with **nothing of its own** ready is silent
+too, whatever the rest of the plan has ready — that run had nowhere to go, so a lock
+still on disk there is a sign-off in flight or a lock to give back, which is
+`/audit:doctor`'s question.
+
+**Each line counts its own phase, from the copy that holds that phase live, and
+names that copy.** A phase run on its own branch records its progress there, so the
+development branch's copy of its shard goes stale the moment the run starts. The
+copy read is, in order:
+
+- this checkout's own file, when it has the phase's branch checked out;
+- the file in the worktree that has the branch checked out, uncommitted edits
+  included — a run marks tasks done there before any commit carries them, so the
+  branch tip lags it;
+- the branch's committed copy (`git show`), when no worktree has it out;
+- this checkout's copy, when no branch of that name exists — it is then the only
+  copy there is.
+
+When this checkout's HEAD has commits to the phase's file that the branch lacks, the
+line says so: the count is still the branch's, and it may be missing what those
+commits added.
+
+**A count nobody could take from the live copy is never a silent zero.** Zero is the
+silent row only when it was counted from the copy that holds the phase live. A branch
+that exists but whose copy could not be read falls back to this checkout's copy, and
+the line says the branch exists, that its copy could not be read, and that the count
+is not current — and it prints, and trips the condition, even when that count is
+zero. So does a count that may be missing the commits above, or one taken while git
+could not say which worktree has the branch out. A held lock for a phase this
+checkout's plan does not hold carries **no** count at all: a run of that phase exists
+somewhere this checkout's index never learned of, so the line names the phase, says
+this plan holds no such phase, and the condition fails rather than passing on a zero
+nobody counted.
 
 **A stale lock counts as readily as a live one, and that is a decision.** The
 liveness verdict resolves every uncertainty *towards* live — a false "dead" costs two
@@ -327,9 +359,15 @@ in the git dir, so no repository really does mean no locks, and the condition is
 silent. A lock directory that could not be *read* is the other thing entirely and
 **fails** the condition, the same three-state reading `invariant-breach` uses.
 
-**This command still takes no lock.** It reads which ones are held — one
-`rev-parse` and one directory listing, the same read `/audit:doctor` already makes —
-and never acquires, releases or takes over one.
+**This command still takes no lock.** It reads which ones are held — a
+`rev-parse` and a directory listing, the same read `/audit:doctor` already makes —
+and never acquires, releases or takes over one. **The count costs git calls only
+when a phase lock is held**, so a checkout with no run in flight pays nothing more:
+with a lock held, `git worktree list` and `git config user.name` once, then per held
+phase a `git rev-parse --verify` for its branch, a read of its copy (the worktree's
+file, or `git show` of the branch) and a `git rev-list --count` for the commits the
+branch lacks. Each runs with a timeout, and the total grows with the locks held, not
+with the plan.
 
 `invariant-breach` is out of the default for a different reason: it reads git several
 times per started phase, and a default that slow is a default somebody replaces. What
@@ -365,9 +403,11 @@ act on what the output says.
 
 - **INVALID MANIFEST** — relay it and stop. `/audit:doctor` names the findings.
 - **RESUMABLE** — offer `/audit:resume`.
-- **UNFINISHED** — a phase run stopped with work still ready. The line already
-  names the phase and the command that picks it up, and which command it names
-  depends on whether the lock's holder is still there. Relay it; do not delete the
+- **UNFINISHED** — a phase run stopped with work of its own still ready, or a held
+  lock whose ready work could not be counted from the copy that holds it live. Each
+  line names the phase, the copy its count came from (or why there is no count),
+  and — for a counted row — the command that picks it up, which depends on whether
+  the lock's holder is still there. Relay it; do not delete the
   lock without confirming with the human that no run is live.
 - **nothing ready** — the plan is either complete or fully blocked. The `waiting on`
   column says which, per task, so do not guess.

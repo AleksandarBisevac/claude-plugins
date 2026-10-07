@@ -102,7 +102,8 @@ import _evidence_io  # noqa: E402  (where a run's record lives - and WHEN this
 import _locks  # noqa: E402  (which phase locks are held, and whether a holder is
 #                             alive - the evidence behind --fail-on unfinished-run)
 import _branch  # noqa: E402  (what a phase's own branch is called - one answer for every surface)
-import _worktrees  # noqa: E402  (the git runner and the ref probe a branch copy is read through)
+import _worktrees  # noqa: E402  (which worktree has a phase branch out, and the ref probe)
+import _scoped_commit  # noqa: E402  (the stderr-keeping git runner a branch copy is read through)
 
 # --- the facts, under the names this command has always called them --------------
 # NOT copies. `_status_facts` (layer 2) owns every one of these; the aliases exist
@@ -313,11 +314,13 @@ def locks_block(manifest, project, manifest_path=None):
     Third caller of one spelling of "where git runs", which is what that
     function's own docstring asks for.
 
-    EACH HELD PHASE LOCK ALSO CARRIES `readyCount` AND `readyBasis` - that
-    phase's own ready work and the copy it was counted from, which
-    `phase_ready_counts` decides. `manifest_path` is what lets it name the file
-    to ask a phase branch for; without it a branch copy cannot be located and
-    the sentence says the count fell back to this checkout's.
+    EACH HELD PHASE LOCK ALSO CARRIES `readyCount`, `readyLive` AND
+    `readyBasis` - that phase's own ready work, whether it was counted from the
+    copy holding the phase live, and the sentence naming that copy, all decided
+    by `phase_ready_counts`. `manifest_path` is what lets it name the file to
+    read from a phase branch or the worktree that has it out; without it no
+    such copy can be located and the sentence says the count fell back to this
+    checkout's.
     """
     try:
         git_root = _invariants.git_root_for(manifest, project)
@@ -337,29 +340,29 @@ def locks_block(manifest, project, manifest_path=None):
                 str(r.get("name"))[len(prefix):], {})) for r in held]}
 
 
-def _head_branch(git_root):
-    """The branch this checkout has out, or None on a detached HEAD or no answer."""
-    code, out, _err = _worktrees._git(
-        git_root, ["symbolic-ref", "--short", "-q", "HEAD"])
-    if code != 0:
-        return None
-    return (out or "").strip() or None
+def _phase_body(doc, phase_id):
+    """The phase dict with this id in a parsed shard or single-file manifest.
+
+    Both shapes are read so the layout a copy keeps does not decide whether it
+    can be counted: a shard IS one phase, a single file lists every phase.
+    """
+    candidates = [doc] if isinstance(doc, dict) and "tasks" in doc else (
+        (doc.get("phases") or []) if isinstance(doc, dict) else [])
+    for body in candidates:
+        if isinstance(body, dict) and str(body.get("id")) == str(phase_id):
+            return body
+    return None
 
 
 def _branch_copy(git_root, branch, rel, phase_id):
     """`(phase body, None)` as `branch` commits `rel`, or `(None, why)`.
 
-    `git show <branch>:<rel>` reads the blob out of the object store, so nothing
-    outside the git dir is opened and no checkout of the branch is needed. `rel`
-    is a shard (one phase) or a single-file manifest (every phase), and both
-    shapes are read here so the layout the branch keeps does not decide whether
-    its copy can be counted.
+    `git show <branch>:<rel>` reads the blob out of the object store, so no
+    checkout of the branch is needed - which is the copy to read when no
+    worktree has the branch out, because then nothing uncommitted can exist.
     """
-    if not rel:
-        return None, "this checkout's file for the phase could not be placed " \
-                     "under the git root"
     spec = "refs/heads/%s:%s" % (branch, rel)
-    code, out, err = _worktrees._git(git_root, ["show", spec])
+    code, out, err = _scoped_commit.run_git(git_root, ["show", spec])
     if code != 0:
         return None, "git show %s answered %s: %s" % (
             spec, code, " ".join((err or "").split())[:160] or "no output")
@@ -367,104 +370,225 @@ def _branch_copy(git_root, branch, rel, phase_id):
         doc = json.loads(out)
     except ValueError as exc:
         return None, "git show %s is not readable JSON (%s)" % (spec, exc)
-    candidates = [doc] if isinstance(doc, dict) and "tasks" in doc else (
-        (doc.get("phases") or []) if isinstance(doc, dict) else [])
-    for body in candidates:
-        if isinstance(body, dict) and str(body.get("id")) == str(phase_id):
-            return body, None
-    return None, "git show %s holds no phase %s" % (spec, phase_id)
+    body = _phase_body(doc, phase_id)
+    if body is None:
+        return None, "git show %s holds no phase %s" % (spec, phase_id)
+    return body, None
 
 
-def _phase_ready_count(manifest, manifest_path, git_root, phase_id, head, user):
-    """`{"readyCount", "readyBasis"}` for one held phase - its OWN ready tasks,
-    counted from the copy judged to hold the phase live, and the sentence that
-    names that copy.
+def _tree_copy(path, phase_id):
+    """`(phase body, None)` as the file at `path` holds it right now, or
+    `(None, why)`.
 
-    WHICH COPY. A phase run on its own branch commits its progress there, so the
-    shard this checkout holds goes stale the moment the run starts - and a
-    development-branch checkout reading it reports work the branch has already
-    done. So the phase's branch is asked for its copy whenever this checkout is
-    not on that branch; when it is, its own file is the branch's live copy. The
-    name comes from `_branch.branch_of`, the one answer every surface gives,
-    because the development branch's copy of a shard need not record the branch
-    its phase later ran on.
-
-    WHEN THAT COPY CANNOT BE READ, the count falls back to this checkout's copy
-    and the sentence says so - names the branch that holds the live state, and
-    that the count is therefore not current - rather than presenting a stale
-    figure as the answer. A phase with no branch of its own in this repository
-    is counted here too, and the sentence names the branch that was looked for.
+    THE FILE IN THE WORKTREE THAT HAS THE PHASE BRANCH OUT, uncommitted edits
+    included. A run marks a task done in that file before any commit carries
+    it, so the branch tip lags the run by up to a whole wave - and a count off
+    the tip reports work as ready that the run has already finished. Opening
+    another checkout's file is a read; nothing here writes to it.
     """
-    local = len(_status_facts.ready_by_phase(manifest).get(phase_id) or [])
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as exc:
+        return None, "%s could not be read (%s)" % (path, exc)
+    body = _phase_body(doc, phase_id)
+    if body is None:
+        return None, "%s holds no phase %s" % (path, phase_id)
+    return body, None
+
+
+def _commits_branch_lacks(git_root, branch, rel):
+    """`(note, known)` - whether this checkout's HEAD has commits to `rel`
+    that `branch` does not.
+
+    A copy read off a phase branch is the live copy of the work the run did,
+    but the development branch may have moved the same file on since the
+    branch forked - a task added, a dependency rewritten - and a count off the
+    branch alone would then miss that. So the count stays the branch's, and the
+    sentence says what it may be missing. `known` is False whenever the note is
+    not empty: a count that may be missing commits, or whose divergence git
+    could not report, is not one a zero may be silent on.
+    """
+    spec = "refs/heads/%s..HEAD" % (branch,)
+    code, out, err = _scoped_commit.run_git(
+        git_root, ["rev-list", "--count", spec, "--", rel])
+    try:
+        ahead = int((out or "").strip()) if code == 0 else None
+    except ValueError:
+        ahead = None
+    if ahead is None:
+        return ("; whether this checkout's HEAD has commits to %s that the "
+                "branch lacks could not be asked (git rev-list %s answered %s: "
+                "%s)" % (rel, spec, code,
+                         " ".join((err or "").split())[:160] or "no output"),
+                False)
+    if ahead == 0:
+        return "", True
+    return ("; this checkout's HEAD has %d commit(s) to %s that branch `%s` "
+            "lacks, so that copy may be missing them" % (ahead, rel, branch),
+            False)
+
+
+def _fallback(local, on, branch, why):
+    """This checkout's count, marked as NOT the live copy.
+
+    The branch exists, and that is all this sentence asserts about it: its copy
+    could not be read, so which copy holds the phase live is exactly what is
+    unknown. A zero here is a stale reading and prints like any other count.
+    """
+    return {"readyCount": local, "readyLive": False,
+            "readyBasis": "counted from this checkout's copy %s - branch `%s` "
+                          "exists but its copy could not be read (%s), so this "
+                          "count is not current" % (on, branch, why)}
+
+
+def _shard_rel(manifest_path, git_root, phase):
+    """The phase's file as a path under the git root, or None.
+
+    Every worktree of a clone lays its files out at the same paths relative to
+    its own root, so this one path names the file in the branch's commits and
+    in any worktree that has the branch out.
+    """
+    if not manifest_path:
+        return None
+    _index, phase_file = _invariants.manifest_files(manifest_path, phase)
+    try:
+        rel = _output.posix_rel(os.path.abspath(phase_file),
+                                os.path.abspath(git_root))
+    except ValueError:
+        return None
+    return None if rel.startswith("..") else rel
+
+
+def _here_words(view):
+    """How the sentence names the branch this checkout has out."""
+    here = view.get("here")
+    if here and here.get("branch"):
+        return "on `%s`" % (here["branch"],)
+    if here and here.get("detached"):
+        return "on a detached HEAD"
+    return "on a branch the worktree list could not name (%s)" % (
+        view.get("error") or "this checkout is in none of the trees it lists")
+
+
+def _phase_ready_count(manifest, manifest_path, git_root, phase_id, view, user):
+    """`{"readyCount", "readyLive", "readyBasis"}` for one held phase - its OWN
+    ready tasks, counted from the copy judged to hold the phase live, whether
+    that copy is the live one, and the sentence naming it.
+
+    WHICH COPY, in order:
+
+    - this checkout, when it has the phase branch out;
+    - the file in another worktree that has the branch out, uncommitted state
+      included (`_tree_copy` says why the tip is not enough);
+    - the branch's committed copy, when no worktree has it out;
+    - this checkout's copy, when no branch of that name exists - then it is the
+      only copy there is.
+
+    The branch name comes from `_branch.branch_of`, the one answer every
+    surface gives, because the development branch's copy of a shard need not
+    record the branch its phase later ran on.
+
+    A PHASE THIS CHECKOUT'S PLAN DOES NOT HOLD GETS NO COUNT. A lock names it,
+    so a run of it exists somewhere - on a branch whose phase this checkout's
+    index never learned of - and zero would be the silent row. `readyCount`
+    None is what `unfinished_runs` refuses.
+    """
     phase = _invariants.phase_of(manifest, phase_id)
-    on = ("on `%s`" % (head,)) if head else "on a detached HEAD"
     if phase is None:
-        return {"readyCount": local,
-                "readyBasis": "counted from this checkout's copy %s, which "
-                              "holds no phase %s" % (on, phase_id)}
+        return {"readyCount": None, "readyLive": False,
+                "readyBasis": "this checkout's plan holds no phase %s, so the "
+                              "copy that holds it live cannot be named from "
+                              "here" % (phase_id,)}
+    local = len(_status_facts.ready_by_phase(manifest).get(phase_id) or [])
+    on = _here_words(view)
     branch = _branch.branch_of((manifest or {}).get("meta") or {}, phase,
                                user)["name"]
-    if head and head == branch:
-        return {"readyCount": local,
+    here = view.get("here") or {}
+    if here.get("branch") == branch:
+        return {"readyCount": local, "readyLive": True,
                 "readyBasis": "counted from this checkout, which has `%s` "
                               "checked out" % (branch,)}
     probe = _worktrees.ref_exists(git_root, branch)
     if probe["exists"] is False:
-        return {"readyCount": local,
+        return {"readyCount": local, "readyLive": True,
                 "readyBasis": "counted from this checkout's copy %s - no "
                               "branch `%s` exists in this repository (%s)"
                               % (on, branch, probe["basis"])}
-    why = None
-    body = None
-    rel = None
     if probe["exists"] is None:
-        why = probe["basis"]
-    elif not manifest_path:
-        why = "no manifest path was handed to this read, so the file to ask " \
-              "the branch for is unknown"
-    else:
-        _index, phase_file = _invariants.manifest_files(manifest_path, phase)
-        try:
-            rel = _output.posix_rel(os.path.abspath(phase_file),
-                                    os.path.abspath(git_root))
-        except ValueError:
-            rel = None
-        if rel is not None and rel.startswith(".."):
-            rel = None
-        body, why = _branch_copy(git_root, branch, rel, phase_id)
+        return _fallback(local, on, branch, probe["basis"])
+    rel = _shard_rel(manifest_path, git_root, phase)
+    if rel is None:
+        return _fallback(local, on, branch,
+                         "the phase's file could not be placed under the git "
+                         "root, so the file to read is unknown")
+    caveat = ""
+    live = True
+    holder = (None if view.get("error")
+              else _worktrees.holder_of(view.get("trees"), branch)["tree"])
+    body = None
+    if view.get("error"):
+        live = False
+        caveat = ("; which worktree has the branch out could not be asked (%s), "
+                  "so uncommitted work there is not in this count"
+                  % (view["error"],))
+    elif holder is not None:
+        path = os.path.join(holder.get("path") or "", *rel.split("/"))
+        body, why = _tree_copy(path, phase_id)
+        source = "the worktree file %s, which has `%s` checked out" % (
+            path, branch)
+        if body is None:
+            live = False
+            caveat = ("; the worktree that has the branch out could not be "
+                      "read (%s), so its uncommitted work is not in this count"
+                      % (why,))
     if body is None:
-        return {"readyCount": local,
-                "readyBasis": "counted from this checkout's copy %s, because "
-                              "branch `%s`'s copy could not be read (%s) - that "
-                              "branch holds the phase live, so this count is "
-                              "not current" % (on, branch, why)}
-    live = dict(manifest)
-    live["phases"] = [dict(p, **body) if p is phase else p
-                      for p in (manifest.get("phases") or [])]
+        body, why = _branch_copy(git_root, branch, rel, phase_id)
+        source = "branch `%s`'s copy of %s" % (branch, rel)
+        if body is None:
+            return _fallback(local, on, branch, why)
+    note, current = _commits_branch_lacks(git_root, branch, rel)
+    counted = dict(manifest)
+    counted["phases"] = [dict(p, **body) if p is phase else p
+                         for p in (manifest.get("phases") or [])]
     return {"readyCount": len(
-                _status_facts.ready_by_phase(live).get(phase_id) or []),
-            "readyBasis": "counted from branch `%s`'s copy of %s"
-                          % (branch, rel)}
+                _status_facts.ready_by_phase(counted).get(phase_id) or []),
+            "readyLive": live and current,
+            "readyBasis": "counted from %s%s%s" % (source, caveat, note)}
 
 
 def phase_ready_counts(manifest, manifest_path, git_root, phase_ids):
-    """`{phase id: {"readyCount", "readyBasis"}}` for each held phase lock.
+    """`{phase id: {"readyCount", "readyLive", "readyBasis"}}` for each held
+    phase lock.
 
-    One phase's read failing is that phase's fallback sentence, never the whole
-    block's error: the other locks were read, and refusing them all for one
-    unreadable branch would hide every answer that was available.
+    WHAT IT COSTS, AND WHY THAT IS ACCEPTABLE. Nothing at all when no phase lock
+    is held - the early return below - so the everyday status view of a
+    checkout with no run in flight pays no git call here. With a lock held: the
+    worktree list (which also names the branch this checkout has out, so no
+    separate HEAD read) and the identity lookup once, then per held phase a ref
+    probe, a read of its copy and a divergence count. Each call goes through a
+    runner with a timeout, the calls scale with the locks held rather than with
+    the plan, and a held lock is exactly the state this view exists to describe
+    correctly.
+
+    One phase's read failing is that phase's sentence, never the whole block's
+    error: the other locks were read, and refusing them all for one unreadable
+    branch would hide every answer that was available.
     """
     if not phase_ids:
         return {}
-    head = _head_branch(git_root)
+    listed = _worktrees.list_worktrees(git_root)
+    trees = listed.get("trees") or []
+    view = {"trees": trees, "error": listed.get("error") or "",
+            "here": _worktrees.standing_in(trees, git_root)}
     user = _worktrees.git_user_name(git_root)
     out = {}
     for pid in phase_ids:
         try:
             out[pid] = _phase_ready_count(manifest, manifest_path, git_root,
-                                          pid, head, user)
+                                          pid, view, user)
         except Exception as exc:                   # defensive; see the docstring
-            out[pid] = {"readyCount": None,
+            out[pid] = {"readyCount": None, "readyLive": False,
                         "readyBasis": "the count of phase %s's own ready work "
                                       "could not be taken: %s" % (pid, exc)}
     return out
@@ -1633,7 +1757,8 @@ def _resumable_lines(manifest, summary, pt=None):
 
 
 def _unfinished_lines(summary, pt=None):
-    """UNFINISHED — a phase lock still held while the plan has work ready to run.
+    """UNFINISHED — a phase lock still held while that phase has work of its own
+    ready, or whose ready work could not be counted from the live copy.
 
     THE OTHER HALF OF A RUN STOPPING MID-PHASE. The condition makes the state
     gradeable; this is what makes it VISIBLE, and visibility is what the defect
@@ -1669,9 +1794,13 @@ def _unfinished_lines(summary, pt=None):
     rows = unfinished_runs(summary)
     if rows is None:
         return []
-    out = ["", pt.paint("  UNFINISHED  %d phase run(s) stopped mid-phase - the "
-                        "lock is still held and the phase has ready work of "
-                        "its own left"
+    # The heading counts every row it lists, and a row may be a lock whose
+    # ready work could not be counted from the live copy - so it promises what
+    # each line says rather than that every one is a run with work left.
+    out = ["", pt.paint("  UNFINISHED  %d held phase lock(s) to look at - each "
+                        "line says how much of that phase's own work is still "
+                        "ready and which copy it was counted from, or why it "
+                        "could not be counted"
                         % len(rows), "warn")]
     out += ["    %s" % r for r in rows]
     return out
@@ -1782,8 +1911,11 @@ CONDITION_HELP = {
                       "(a run that stopped mid-phase: "
                       "a wave committed, the next wave was named, and the turn "
                       "ended. THREE STATES, and the third is the reason this is "
-                      "worth having - a lock held with ready work left is an "
-                      "unfinished run, no lock and no ready work is a finished "
+                      "worth having - a lock held while its own phase has "
+                      "ready work left, counted from the copy holding that "
+                      "phase live, is an unfinished run, and so is a held lock "
+                      "whose count could not be taken from that copy; no lock "
+                      "and no ready work is a finished "
                       "plan, and NO LOCK with ready work left is every planned "
                       "phase there has ever been, which is why it must not "
                       "trip. A STALE lock counts as readily as a live one: the "

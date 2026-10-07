@@ -22,14 +22,58 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P114-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/audit-status.py _phase_ready_count",
+        "issue": "A phase branch checked out in a linked worktree - how every phase here runs - is counted from its committed tip, while its live state is that worktree's uncommitted shard, so the line names a copy that is not the live one and the gate can fail on work that is no longer ready.",
+        "resolution": "When the branch is checked out in a linked worktree, count from that worktree's shard file and name the path in the basis; a case with uncommitted shard state that differs from the tip."
+      },
+      {
+        "id": "P114-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/audit-status.py; plugins/audit/scripts/status/_status_facts.py unfinished_runs",
+        "issue": "A held lock for a phase this checkout's index does not hold is given a count of zero, which is the silent row, so no line prints and the gate passes; a fallback row whose stale local count is zero is silent too and never prints its not-current basis.",
+        "resolution": "Return no count with the basis that this checkout's plan holds no such phase so the refusal line names it, and treat zero as silent only when counted from the live copy; a case for each with a twin."
+      },
+      {
+        "id": "P114-R3",
+        "severity": "med",
+        "file": "plugins/audit/commands/status.md",
+        "issue": "The command's contract for UNFINISHED and --fail-on unfinished-run still describes the plan-wide rule, so a CI user predicts the wrong gate verdict.",
+        "resolution": "Rewrite those passages for the per-phase count, the copy it is read from, the uncounted refusal and the extra git calls when a lock is held."
+      },
+      {
+        "id": "P114-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/audit-status.py _phase_ready_count",
+        "issue": "The branch copy is preferred without regard to ancestry, so a shard the development branch changed after the cut is missed with no note, and the unreadable fallback asserts the branch holds the phase live for any existing branch.",
+        "resolution": "Say in the basis when this checkout's copy has commits to the shard the branch lacks, and word the fallback as 'exists but its copy could not be read'."
+      },
+      {
+        "id": "P114-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/audit-status.py _head_branch",
+        "issue": "_head_branch duplicates _id_shape.current_branch and reaches into the private _worktrees._git.",
+        "resolution": "Reuse one public head reader."
+      },
+      {
+        "id": "P114-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/audit-status.py UNFINISHED header",
+        "issue": "The header counts refusal rows as phases with ready work of their own, which nobody counted.",
+        "resolution": "Count only rows that carry a count, or word the header to cover refusals."
+      }
+    ],
+    "outcome": "[findings: 6 - 0 high, 3 med, 3 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P114.1",
       "title": "each UNFINISHED line counts its own phase's ready tasks from the copy that holds the phase live",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes BUG-19. In _status_facts.py, the UNFINISHED line for a held phase lock counts only the ready tasks of that phase. A phase with no ready task of its own gets no ready-work line; /audit:doctor still names a lock held with nothing left to run.\n\naudit-status.py injects the locks block. On the development branch, a phase whose own branch exists in this repository is read from that branch's copy of its shard: git show <branch>:<shard path>, which opens no file outside the git dir. The line names the copy it counted from. When that copy cannot be read, the line says the count is the development branch's copy and that the phase branch holds the live state. It does not present a stale count as current.\n\nThe --short entry view and the full view print the same sentence. Every claim carries its basis, and no number is written into prose.\n\nCases, each with its twin:\n- Two locked phases with different ready counts print different counts.\n- A locked phase whose own tasks are all done prints no ready-work line.\n- A phase whose branch copy has fewer ready tasks than the development branch's copy is counted from the branch copy, and the line names it.\n- An unreadable branch copy falls back to the development branch's copy, and the line says so.",
       "files": [
         "plugins/audit/scripts/status/_status_facts.py",
@@ -61,19 +105,92 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e04e7557",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_status_facts.py: ready_by_phase(manifest) splits the ready list by owning phase, and unfinished_runs reads each held phase lock row's readyCount and readyBasis instead of the plan-wide list; a zero count is silent, and a missing or non-integer count is refused as never counted, naming its basis. The sentence now reads: phase X holds a lock with N task(s) still ready, <copy basis>: <lock basis>. <repair>. audit-status.py: locks_block takes the manifest path, and phase_ready_counts gives each held phase lock its count through _phase_ready_count. That function counts this checkout's copy when the phase branch is checked out here or does not exist, naming the branch it looked for. Otherwise it reads the branch's copy with git show refs/heads/<branch>:<shard or manifest path> in either layout and says so. If that read fails, it falls back to this checkout's copy and says the branch holds the phase live and the count is not current. One phase's failure stays in that phase's sentence. The branch name comes from _branch.branch_of, because the development branch's shards of phases in flight record no branch. render_short now prints the same UNFINISHED lines as the full view. PLUGIN-BUILD-GUIDE's module map names the two new imports (_branch, _worktrees). Red-first proved: ul1-ul9 in test__status_facts and lb1-lb7 in test_audit_status failed at HEAD and pass with the change; lb builds a real repo with phase branches ahead of, behind and absent from main, a phase with nothing ready, and a worktree with its branch checked out. Known limit: a lock for a phase this checkout's index does not hold is counted as zero and stays silent, with its basis only in the payload.",
+        "descriptive": "The status view now says how much work each locked phase really has left, read from that phase's own branch when the work lives there, and says which copy it counted; a phase with nothing left gets no warning."
       },
       "startedAt": "2026-10-07T06:46:49Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T07:05:50Z",
+      "verifiedBy": [
+        "ul1",
+        "ul2",
+        "ul3",
+        "ul4",
+        "ul5",
+        "ul6",
+        "ul7",
+        "ul8",
+        "ul9",
+        "lb1",
+        "lb2",
+        "lb3",
+        "lb4",
+        "lb5",
+        "lb6",
+        "lb7"
+      ],
       "bugId": "BUG-19",
       "testEvidence": {
         "runId": "2026-10-07T07:05:36Z.7bcd63",
         "status": "passed",
         "at": "2026-10-07T07:05:36Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "e04e7557",
+        "at": "2026-10-07T07:05:50Z",
+        "basis": "orchestrator check: BUG-19 fixed, per-phase count with its copy named, silent at zero, refused when uncounted, red-first proved on both suites with real branches, live check on the real tree silent for the phases whose branch copies have nothing ready"
+      }
+    },
+    {
+      "id": "P114.2-ffv",
+      "title": "every UNFINISHED count comes from the live copy, and an uncounted phase is never a silent zero",
+      "status": "in_progress",
+      "description": "Fixes review findings P114-R1 to P114-R6. Each UNFINISHED count must come from the copy that holds the phase live, and a count nobody computed must never read as zero.\n\n- When a phase branch is checked out in a linked worktree (_worktrees.list_worktrees), the count comes from that worktree's shard file, uncommitted state included, and the basis names the path. Reading a worktree's file is a read, not a write. audit-status.py is the entry point, so this read belongs there; the fact module stays pure.\n- A held lock for a phase this checkout's index does not hold carries no count. Its basis says this checkout's plan holds no such phase, so the refusal line names it and the gate fails rather than passing on a silent zero. A zero is silent only when it was counted from the live copy. A fallback row says its count is not current even when that count is zero.\n- When the development branch's copy has commits to the shard that the branch lacks, the basis says so. The unreadable fallback says the branch exists but its copy could not be read. It no longer asserts that the branch holds the phase live.\n- One public head reader replaces _head_branch, with no reach into a private _worktrees helper.\n- The UNFINISHED header counts only the rows that carry a count, or is worded to cover refusals too.\n- commands/status.md's UNFINISHED and --fail-on unfinished-run passages describe the per-phase count, the copy it is read from, the uncounted refusal, and the git calls made when a lock is held.\n\nCases, each with its twin:\n- a linked worktree whose uncommitted shard differs from the tip;\n- a lock for a phase the index does not hold;\n- a fallback with a stale zero;\n- a branch behind the development branch's shard.",
+      "files": [
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/commands/status.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-07T07:05:56Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T07:25:28Z.b5effa",
+        "status": "passed",
+        "at": "2026-10-07T07:25:28Z"
       }
     }
   ],

@@ -1395,7 +1395,14 @@ def unfinished_runs(summary):
     a git call and this module opens nothing, so `audit-status.py` counts each
     held phase from the copy it judged live and hands over `readyCount` with
     `readyBasis`, the sentence naming that copy - which this line prints
-    verbatim, because the copy is the claim's basis.
+    verbatim, because the copy is the claim's basis - and `readyLive`, True only
+    when that copy IS the one holding the phase live.
+
+    A ZERO IS SILENT ONLY WHEN IT WAS COUNTED FROM THE LIVE COPY. A zero read
+    off a fallback copy is a stale reading of a phase whose real state lives
+    elsewhere, so it prints like any other count and its basis says it is not
+    current. An absent `readyLive` is not a claim that the copy was live, so it
+    is read as False.
 
     THE SAME THREE STATES `invariant_breaches` AND `stranded_skills` HAVE, plus
     the reading of a lock this one adds. The `locks` block is INJECTED by
@@ -1442,9 +1449,10 @@ def unfinished_runs(summary):
                        % (phase, row.get("readyBasis")
                           or "no count and no reason were handed over"))
             continue
-        # THE SILENT ROW. Nothing of its own is ready, so the run had nowhere
-        # left to go - whatever the rest of the plan still has ready.
-        if count == 0:
+        # THE SILENT ROW. Nothing of its own is ready in the copy that holds
+        # it live, so the run had nowhere left to go - whatever the rest of the
+        # plan still has ready.
+        if count == 0 and row.get("readyLive") is True:
             continue
         repair = (UNFINISHED_LIVE if row.get("live") else UNFINISHED_STALE) % (
             phase,)
