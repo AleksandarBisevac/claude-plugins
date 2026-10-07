@@ -530,12 +530,143 @@ def _two_tree_cases(check):
             os.environ["CLAUDE_PROJECT_DIR"] = held
 
 
+# One write in each spelling the plan gate grades, and each way the shell runs
+# a command inside another one. `%s` in a write is the target; `%s` in a
+# wrapper is the whole write.
+_SB_WRITES = (
+    ("redirect", "echo x > %s"),
+    ("tee", "echo x | tee %s"),
+    ("sed -i", "sed -i '' 's/A/B/' %s"),
+    ("interpreter", "python3 -c \"open('%s','w').write('x')\""),
+)
+_SB_WRAPS = (
+    ("subshell", "(%s)"),
+    ("substitution", "$(%s)"),
+    ("backticks", "`%s`"),
+    ("quoted substitution", "x=\"$(%s)\""),
+)
+
+
+def _subshell_cases(check):
+    """A write inside `( )`, `$( )` or backticks is the same write.
+
+    The shell runs the body of each of them, so the file it writes is written
+    exactly as if the command stood alone. The fixture runs a phase whose task
+    declares one file, which is the deny tier by evidence; the other tiers are
+    pinned through the knob."""
+    root = Path(_harness.fixture_root("guard-secrets-subshell-"))
+    (root / "src").mkdir(parents=True)
+    (root / "docs" / "audit" / "journal").mkdir(parents=True)
+    (root / "docs" / "audit" / "audit-plan.json").write_text(json.dumps(
+        {"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "in_progress",
+                 "files": ["src/declared.py"]}]}]}), encoding="utf-8")
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    held = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(root)
+    tiers = [(t, _config._deep_merge(cfg, {"planGate": t}))
+             for t in _config.PLAN_GATE_TIERS]
+
+    def shell(sid, cmd, use_cfg=None):
+        ok, got = _harness.attempt(M.decide, {
+            "tool_name": "Bash", "session_id": sid, "cwd": str(root),
+            "tool_input": {"command": cmd}}, cfg=use_cfg or cfg)
+        return got if ok else ("raised", str(got))
+
+    def graded(verdict, target):
+        return (verdict[0], verdict[0] != "allow" and target in verdict[1])
+
+    def sid_of(*parts):
+        # A session id is reduced to a safe file name before the slot is
+        # stored, so one carrying a space would be read back by `_slot_file`
+        # from a file nobody wrote - and an empty slot is what a case asserts.
+        return "-".join(parts).replace(" ", "_")
+
+    try:
+        for wname, write in _SB_WRITES:
+            for pname, wrap in _SB_WRAPS:
+                plain_cmd = write % "src/sb.py"
+                wrapped_cmd = wrap % plain_cmd
+                seen = []
+                for tier, tcfg in tiers:
+                    sids = (sid_of("sb-p", wname, pname, tier),
+                            sid_of("sb-w", wname, pname, tier))
+                    for sid in sids:
+                        _spend_slot(root, cfg, sid)
+                    plain = shell(sids[0], plain_cmd, use_cfg=tcfg)
+                    wrapped = shell(sids[1], wrapped_cmd, use_cfg=tcfg)
+                    seen.append((tier, graded(plain, "src/sb.py"),
+                                 graded(wrapped, "src/sb.py")))
+                check("sb1 a %s inside a %s is graded like the same %s outside "
+                      "it at every tier, and the deny tier refuses it naming the "
+                      "file" % (wname, pname, wname),
+                      all(p == w for _t, p, w in seen)
+                      and dict((t, p) for t, p, _w in seen)["deny"]
+                      == ("block", True), seen)
+        eval_first = "python3 -c \"open('src/sa.py','w').write('x')\"; "
+        warn = _config._deep_merge(cfg, {"planGate": "warn"})
+        for wname, write in _SB_WRITES:
+            for pname, wrap in _SB_WRAPS:
+                cmd = eval_first + wrap % (write % "src/sb2.py")
+                sid = sid_of("sb2", wname, pname)
+                denied = shell(sid, cmd)
+                check("sb2 after an interpreter write that would take the free "
+                      "slot, a %s inside a %s is a second file and is refused at "
+                      "the deny tier, spending no slot" % (wname, pname),
+                      denied[0] == "block" and "src/sb2.py" in denied[1]
+                      and _slot_file(root, cfg, sid) == [],
+                      (denied, _slot_file(root, cfg, sid)))
+                wid = sid_of("sb3", wname, pname)
+                warned = shell(wid, cmd, use_cfg=warn)
+                check("sb3 ...and at the warn tier, the same %s inside a %s "
+                      "runs and the slot is spent once, on the first file"
+                      % (wname, pname),
+                      warned[0] == "allow"
+                      and _slot_file(root, cfg, wid) == ["src/sa.py"],
+                      (warned, _slot_file(root, cfg, wid)))
+        journal = "docs/audit/journal/2026-10.s.jsonl"
+        for pname, wrap in _SB_WRAPS:
+            got = shell(sid_of("sb4", pname), wrap % ("echo '{}' >> " + journal))
+            check("sb4 a journal append inside a %s is refused like the bare "
+                  "append, naming the journal as typed" % (pname,),
+                  got[0] == "block" and (journal + "\n") in got[1], got)
+        # THE ALLOW TWINS: a group or substitution whose body only reads is no
+        # write, at the strictest tier, and takes no slot.
+        for name, cmd in (
+                ("a read-only subshell", "(cd src && ls)"),
+                ("a substitution that only reads", "x=$(cat README.md)"),
+                ("backticks that only read", "x=`cat README.md`"),
+                ("a quoted substitution that only reads",
+                 "x=\"$(git log -1 --format=%s)\"")):
+            sid = sid_of("sb5", name)
+            got = shell(sid, cmd)
+            check("sb5 %s is allowed at the deny tier and takes no slot" % name,
+                  got[0] == "allow" and _slot_file(root, cfg, sid) == [],
+                  (got, _slot_file(root, cfg, sid)))
+        for pname, wrap in _SB_WRAPS:
+            got = M._shell_write_targets(wrap % "echo x > src/a.py")
+            check("sb6 the closer of a %s ends the target, it is not part of "
+                  "the name" % (pname,), got == ["src/a.py"], got)
+        # The over-fire direction: a closer cut wherever it appears would take
+        # a parenthesis out of a quoted name.
+        quoted = M._shell_write_targets("echo hi > \"a(1).py\"")
+        check("sb7 ...while a parenthesis inside a quoted name closes nothing "
+              "and stays in it", quoted == ["a(1).py"], quoted)
+    finally:
+        if held is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = held
+
+
 def _cases(check):
     """Exercise the decision core with fictional secret paths (never real files)."""
     _harness.stage(check, "gs-live", _refresh_cases)
     _harness.stage(check, "ts", _slot_cases)
     _harness.stage(check, "sj", _journal_cases)
     _harness.stage(check, "tt", _two_tree_cases)
+    _harness.stage(check, "sb", _subshell_cases)
     cfg = _config._deep_merge(_config.DEFAULTS, {})
     tmp = Path(_harness.fixture_root("guard-secrets-selftest-"))
 

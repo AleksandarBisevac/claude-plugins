@@ -77,6 +77,10 @@ Rule #2 branch calls it.
     `tee <file>`, and `>`/`>>` redirects (which also catches
     `cat > file <<EOF` heredocs). The block message names the path and the
     remedy: widen the running task's `files`, or stop and ask the operator.
+    A write inside a subshell, a `$( )` substitution or backticks is the same
+    write and is read the same way (`_shell_states`); a command handed to
+    another program as a quoted argument (`bash -c "..."`) is not descended
+    into by the `sed -i` arm - `_shell_states`' comment names that residual.
   Both arms ask `_ungoverned_write_target` the same questions — can the
   destination be established at all, source extension, inside the repository
   or a linked worktree of it (judged against THAT tree's plan,
@@ -1366,42 +1370,109 @@ def _clauses(cmd):
 # WHAT CANNOT BE TOKENISED FALLS BACK TO THE WIDER HARVEST. An unbalanced quote is
 # a clause this cannot read, and the old harvest over-reports, which on a write
 # guard is the safe side of not knowing.
-def _quote_walk(text, start, stop):
-    """(position, open quote) after walking `text` from `start` by the shell's quoting
-    rules - nothing escapes inside single quotes, a backslash escapes the next
-    character elsewhere - up to `stop`, or to the first UNQUOTED character in `stop`
-    when it is a string of separators."""
-    quote = None
-    i = start
-    limit = stop if isinstance(stop, int) else len(text)
-    while i < limit:
+#
+# A GROUP THE SHELL RUNS IS NOT PART OF THE WORD BEFORE ITS CLOSER. A subshell
+# `( ... )`, a substitution `$( ... )` and backticks each run their body as a
+# command, so a write inside one writes the same file it writes alone. The
+# closer was read as the last character of the target, so the redirect, `tee`
+# and `sed -i` arms graded `src/a.py)` - no source extension, so no verdict -
+# and the same write outside the group was refused. The walk below tracks the
+# groups as the shell nests them: a substitution reopens the unquoted state
+# inside double quotes, a parenthesis inside quotes is a character, and only
+# a closer that pairs with an opener ends a word. What it still cannot see is
+# a command handed to another program as a QUOTED ARGUMENT (`bash -c "..."`,
+# `eval '...'`): that is the quoted-argument residual `_inplace_targets` states,
+# and the redirect and `tee` arms read such text as they always did.
+_ESCAPED = "\\"
+
+
+def _shell_states(text):
+    """(quotes, depths): the open quote (None, `'` or `"`, or `_ESCAPED` for an
+    unquoted character a backslash escapes) and the group nesting
+    depth in force BEFORE each character of `text`, plus one entry after the last.
+
+    The shell's quoting rules - nothing escapes inside single quotes, a backslash
+    escapes the next character elsewhere - and its grouping: an unquoted `(`, a
+    `$(` inside double quotes and a backtick each open a group whose body is
+    unquoted, and the closer that pairs with it restores the quote it opened in.
+    A closer that pairs with nothing (a `case` pattern's `)`) changes nothing."""
+    quotes, depths = [], []
+    quote, nest = None, []
+    i, n = 0, len(text)
+    while i < n:
+        quotes.append(quote)
+        depths.append(len(nest))
         ch = text[i]
+        step = 1
         if quote == "'":
             if ch == "'":
                 quote = None
         elif ch == "\\":
-            i += 1
+            step = 2
+        elif ch == "`":
+            if quote is None and nest and nest[-1][0] == "`":
+                quote = nest.pop()[1]
+            else:
+                nest.append(("`", quote))
+                quote = None
         elif quote == '"':
             if ch == '"':
                 quote = None
+            elif text.startswith("$(", i):
+                nest.append((")", quote))
+                quote = None
+                step = 2
         elif ch in ("'", '"'):
             quote = ch
-        elif not isinstance(stop, int) and ch in stop:
-            break
-        i += 1
-    return min(i, len(text)), quote
+        elif ch == "(":
+            nest.append((")", None))
+        elif ch == ")" and nest and nest[-1][0] == ")":
+            quote = nest.pop()[1]
+        if step == 2 and i + 1 < n:
+            # An escaped character is no separator and no quote of its own.
+            quotes.append(_ESCAPED if ch == "\\" and quote is None else quote)
+            depths.append(len(nest))
+        i += step
+    quotes.append(quote)
+    depths.append(len(nest))
+    return quotes[:n + 1], depths[:n + 1]
 
 
-def _in_quote(text, pos):
-    """True when `pos` in `text` sits inside a single- or double-quoted word."""
-    return _quote_walk(text, 0, pos)[1] is not None
+def _closes_group(depths, pos):
+    """True when the character at `pos` is the closer of a group it pairs with."""
+    return depths[pos + 1] < depths[pos]
 
 
-def _clause_end(text, start):
-    """Where the clause starting at `start` ends: the first separator the SHELL sees.
+def _word_end(depths, start, end):
+    """`end`, or the first group closer in `text[start:end]` when one sits there:
+    a word taken by a pattern that knows no grouping stops at it."""
+    for pos in range(start, end):
+        if _closes_group(depths, pos):
+            return pos
+    return end
+
+
+def _in_quote(text, pos, states=None):
+    """True when `pos` in `text` sits inside a single- or double-quoted word -
+    and not inside a group the shell runs there, whose body is unquoted."""
+    quotes = (states or _shell_states(text))[0]
+    return quotes[min(pos, len(text))] not in (None, _ESCAPED)
+
+
+def _clause_end(text, start, states=None):
+    """Where the clause starting at `start` ends: the first separator the SHELL sees
+    at the clause's own depth, or the closer of the group the clause sits in.
     The clause patterns stop at any `|`, and a sed script is routinely delimited by
     one (`'s|a|b|'`), which cut the clause inside its own script."""
-    return _quote_walk(text, start, "|&;\n")[0]
+    quotes, depths = states or _shell_states(text)
+    level = depths[start]
+    for pos in range(start, len(text)):
+        if depths[pos + 1] < level:
+            return pos
+        if (quotes[pos] is None and depths[pos] == level
+                and text[pos] in "|&;\n"):
+            return pos
+    return len(text)
 
 
 def _clause_words(span):
@@ -1502,10 +1573,11 @@ def _interp_file_operands(words):
 def _inplace_targets(text, clause_re, operands):
     """Every file an in-place clause of `clause_re` in `text` rewrites."""
     out = []
+    states = _shell_states(text)
     for m in clause_re.finditer(text):
-        if _in_quote(text, m.start()):
+        if _in_quote(text, m.start(), states):
             continue
-        span = text[m.start():_clause_end(text, m.start())]
+        span = text[m.start():_clause_end(text, m.start(), states)]
         words = _clause_words(span)
         if words is None:
             out.extend(_PATHY_TOKEN.findall(span))
@@ -1515,14 +1587,17 @@ def _inplace_targets(text, clause_re, operands):
 
 
 def _shell_write_targets(cmd):
-    """Best-effort extraction of file paths a shell command WRITES to."""
+    """Best-effort extraction of file paths a shell command WRITES to - inside a
+    subshell, a substitution or backticks as outside one."""
     targets = []
+    depths = _shell_states(cmd)[1]
     for m in _SHELL_REDIRECT.finditer(cmd):
-        t = m.group(1).strip("'\"")
+        t = cmd[m.start(1):_word_end(depths, m.start(1), m.end(1))].strip("'\"")
         if t and not t.startswith(("&", "(")) and t != "/dev/null":
             targets.append(t)
     for m in _TEE_CLAUSE.finditer(cmd):
-        for tok in m.group(1).split():
+        operands = cmd[m.start(1):_word_end(depths, m.start(1), m.end(1))]
+        for tok in operands.split():
             tok = tok.strip("'\"")
             if tok and not tok.startswith("-"):
                 targets.append(tok)

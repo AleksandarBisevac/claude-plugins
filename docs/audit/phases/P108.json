@@ -376,7 +376,7 @@
     {
       "id": "P108.6-4gh",
       "title": "a secret path inside a string literal is not a read",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix BUG-19-4gh: guard-secrets-read refuses a program fed to an interpreter's stdin whose only reference to a secret file is a string literal (python3 - <<'PY' DOC = \"the guard refuses open('.env') in a program\"; print(len(DOC)) PY) - the guard matches the program's text, not an operation it performs. Decided 2026-10-06: that program is allowed. A secret path that appears only inside a string literal that is not the argument of a read call is not a read; a program that passes such a literal to open(), read_text(), or a subprocess that reads it is still refused, and so is every shape the guard refuses today outside string literals. test_hooks.py's g06 loses its known-divergence mark. This is guard-reading code: if a model or classifier safeguard stops the attempt, the refusal is recorded verbatim with audit-task note and the task is handed to the human; nobody rewords the work to get past it.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -411,19 +411,35 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ed891f8b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "guard-secrets-read.py, read classifier only: new _inert_literal_spans(body) (with _runs_text, _inert_literal, _in_spans, _LIVE_IN_SOME_LANGUAGE and the _RUNS_TEXT fragment list) returns the character spans of string literals no interpreter would run; _eval_read_targets, _unestablished_read_target and _shell_out_arguments take inert=() and skip a read-call or shell-out match that starts inside such a span; _eval_reads_a_secret computes the spans once per body. The write arms (_WRITE_CALL_EXPR, _eval_bindings, _eval_write_targets) are unchanged.\nDecisions: literals are found with ast.parse (lazily imported, warnings silenced), never a hand quote scan, so only a body that parses as Python is narrowed and anything else is graded as strictly as before; a literal counts as inert only on one line, with a plain ' or \" and no prefix (an f-string is code), its quote only at its ends, and none of backslash, $, @, backtick or #{ (the body may be fed to ruby, perl or node); the narrowing is off for the whole body if any call could run text (a callee that is not a plain name or attribute, or a name holding one of the _RUNS_TEXT fragments - exec, eval, spawn, popen, system, compile, import, run, call, load, send and the like), and the comment states the limit (a runner whose name holds none of them is not recognised). Residual, on the refusing side: the inline `python3 -c` spelling of the same program is still refused, because the eval arm reads that clause as shell text that does not parse as Python and fails closed.\ntest_hooks.py: g06 loses its today/contradicts marks; KNOWN_DIVERGENCE is now empty and the hk2a label prints 'none'.\nTests: allow sl1 (heredoc, the g06 shape), sl2 (here-string), sl7 (a shell-out call quoted inside a literal); block sl3 (literal beside a real open), sl4 (bound name), sl5 (exec), sl6 (Ruby interpolation), sl8 (real subprocess), sl9 (f-string). Red-first proved through the helper at HEAD 3dbef505: test_guard_secrets_read 447/450 (sl1, sl2, sl7), test_hooks 126/129 (hk1, hk2, hk4 on g06). In-memory mutations each red: no masking (sl1), _runs_text never (sl5), live-character check off (sl6), _runs_text always (sl1, over-fire). Suites 450/450, 129/129; ruff, vermin, bench-hooks --gate (3.11 not measured), and the source-reading lints green.",
+        "descriptive": "A program that only mentions reading a secret file inside a quoted string is no longer refused, while every program that actually reads one - directly, through a variable, through exec, or by interpolation - still is."
       },
       "startedAt": "2026-10-07T01:44:13Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T02:08:49Z",
+      "verifiedBy": [
+        "sl1",
+        "sl2",
+        "sl3",
+        "sl4",
+        "sl5",
+        "sl6",
+        "sl7",
+        "sl8",
+        "sl9"
+      ],
       "bugId": "BUG-19-4gh",
       "testEvidence": {
         "runId": "2026-10-07T02:08:39Z.fd7e71",
         "status": "passed",
         "at": "2026-10-07T02:08:39Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ed891f8b",
+        "at": "2026-10-07T02:08:49Z",
+        "basis": "orchestrator check: BUG-19-4gh's decided behaviour holds, g06's divergence mark removed, read arm only, allow and block twins red-first proved; the -c spelling residual is on the refusing side and stated"
       }
     },
     {
@@ -499,7 +515,7 @@
     {
       "id": "P108.8-4gh",
       "title": "a write inside a subshell or command substitution is graded like the same write outside it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix BUG-20-4gh. guard-secrets-read's shell-write reader must descend into subshell `( ... )` and command-substitution `$( ... )` (and backtick) bodies, so a redirect, `tee`, `sed -i` or interpreter write inside one is graded exactly like the same write outside it. Reuse the shared shell readers in hooks/_config (command_clauses / split_heredocs) rather than adding a second grammar. If a form stays unreadable, it is named in the guard's own list of what it cannot see. Cases: each form alone at every tier; each after an interpreter write in the same command (the second file is graded and the slot is spent at most once); and allow twins: a read-only subshell such as `(cd src && ls)`, and a substitution that only reads, such as `x=$(cat README.md)`.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -525,17 +541,22 @@
       "dependsOn": [
         "P108.6-4gh"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T02:08:50Z",
       "completedAt": null,
       "verifiedBy": [],
-      "bugId": "BUG-20-4gh"
+      "bugId": "BUG-20-4gh",
+      "testEvidence": {
+        "runId": "2026-10-07T02:24:35Z.8727fe",
+        "status": "passed",
+        "at": "2026-10-07T02:24:35Z"
+      }
     }
   ],
   "startedAt": "2026-10-06T21:26:46Z"

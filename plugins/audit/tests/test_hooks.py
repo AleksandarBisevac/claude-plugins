@@ -292,6 +292,11 @@ ROWS = (
     {"id": "n17", "class": "read-non-secret", "tool": "Bash",
      "input": _bash("grep -n 'git stash' " + DEMO),
      "why": "search source for a QUOTED forbidden phrase"},
+    {"id": "n18", "class": "read-non-secret", "tool": "Bash",
+     "input": _bash("(cd src && ls)"), "why": "a subshell that only reads"},
+    {"id": "n19", "class": "read-non-secret", "tool": "Bash",
+     "input": _bash("x=$(cat README.md)"),
+     "why": "a command substitution that only reads"},
     {"id": "g06", "class": "read-non-secret", "tool": "Bash",
      "input": _bash("python3 - <<'PY'\nDOC = \"the guard refuses open('.env') "
                     "in a program\"\nprint(len(DOC))\nPY"),
@@ -346,6 +351,12 @@ ROWS = (
      "why": "shell append to the journal",
      "decided": "deny - " + OPERATOR_DECISION + "; the edit tools already "
                 "refuse the journal, and one operation gets one verdict"},
+    {"id": "b10p", "class": "journal-write", "tool": "Bash",
+     "input": _bash("(echo '{}' >> " + JOURNAL + ")"),
+     "why": "the same append as b10, inside a subshell"},
+    {"id": "b10b", "class": "journal-write", "tool": "Bash",
+     "input": _bash("x=`echo '{}' | tee -a " + JOURNAL + "`"),
+     "why": "the same append through tee, inside backticks"},
     # manifest edits
     {"id": "b11", "class": "manifest-edit-orchestrator", "tool": "Edit",
      "input": _edit(MANIFEST, "\"title\": \"r\"", "\"title\": \"renamed\""),
