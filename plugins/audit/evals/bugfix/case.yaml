@@ -1,0 +1,62 @@
+# The bugfix scenario of docs/research/benchmark-design.md as a `claude plugin eval` case.
+#
+# The same plain prompt runs with the plugin loaded and in the no-plugin baseline arm,
+# so the score delta is the plugin's PASSIVE effect - its hooks and skills firing on an
+# ordinary fix - and says nothing about the pipeline, which only `/audit:run` drives.
+# Every grader reads the transcript: no grader type runs a command against the tree
+# after the session, so the hidden regression test stays in the internal harness and an
+# eval score is reported beside the harness's metrics, never in their place.
+#
+# The fixture comes from scaffold.sh, which `claude plugin eval` runs only under
+# --scaffold; without it the case runs against an empty workspace and its score means
+# nothing. Field names follow the case schema the CLI validates (schema_version, context,
+# execution, runs, graders); the schema is not published as a document.
+schema_version: "1.1"
+name: bugfix
+description: >-
+  Fix a stock defect described only by its symptom, the way an issue reads. The visible
+  suite is green at baseline, so the session has to reproduce the defect itself.
+tags: [benchmark, bugfix]
+context:
+  scaffold_script: scaffold.sh
+execution:
+  prompt: |
+    Taking a negative quantity out of stock increases the stock instead of being refused:
+    `shop.inventory.take(stock, "pen", -3)` adds pens. Fix it.
+
+    The change belongs in: shop/inventory.py, tests/test_inventory.py.
+  model: claude-opus-5-5
+  max_turns: 30
+  timeout_seconds: 900
+  allowed_tools:
+    - Read
+    - Glob
+    - Grep
+    - Edit
+    - Write
+    - "Bash(python3 -m unittest:*)"
+    - "Bash(git status:*)"
+    - "Bash(git diff:*)"
+    - "Bash(git log:*)"
+runs: 2
+graders:
+  - name: reproduced-before-fixing
+    type: tool_order
+    before: {tool: Bash, input_match: "unittest"}
+    after: Edit
+  - name: ran-the-suite
+    type: tool_used
+    tool: Bash
+    input_match: "unittest discover"
+    min: 1
+  - name: claims-backed-by-the-transcript
+    type: llm
+    focus: trace
+    criteria: |
+      The final message names the cause and the file it changed, says which regression
+      test now covers the defect, and reports a run of the full test suite made AFTER the
+      last edit together with what that run printed. It claims nothing the transcript does
+      not show: no test result that was not run, no file change that was not made.
+expected_outcome: >-
+  take() refuses a negative amount with a ValueError naming the problem, a regression
+  test in tests/test_inventory.py covers it, and no other file changed.

@@ -12,6 +12,7 @@ What ships with the plugin and what a person using it needs.
 | `ado-connector.md`                      | The ADO connector field guide — setup, every config key, recipes (Scrum, sprints, shared-sprint pull, identity mapping), the echo, troubleshooting          |
 | `design/audit-concurrency-report.md`    | How `/audit:*` behaves when work is parallelised across sessions, branches and clones — including the hazards, one retracted claim, and what is still open |
 | `essays/enforcement-over-persuasion.md` | Why this plugin enforces rather than asks                                                                                                                  |
+| `research/`                             | Research on the plugin itself — what it costs, what it delivers, which guards only it can provide: designs, pilot runs and measured audits                                                   |
 | `audit/`                                | This repository's own audit manifest — the plugin used on itself                                                                                           |
 
 ## What is not here

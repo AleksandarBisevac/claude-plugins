@@ -123,12 +123,11 @@
     {
       "id": "P101.3",
       "title": "the with/without benchmark runs n>=2 per arm and publishes its result with its limits",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Runs the protocol the design fixes, at n>=2 per arm, within a subscription time budget agreed with the user before the first session. It publishes docs/research/benchmark-results.md with: the metrics the design names, per arm and scenario, each figure beside the command or grader output that re-derives it; the raw per-run records, kept in the internal repo; and a limits section (sample size, one fixture, one model, what the subscription meter could and could not show). The orchestrator runs any session that needs a human together with the user; an executor never does. If the design calls for eval cases, one case.yaml per scenario it names goes under plugins/audit/evals/. The interrupted-session scenario stays harness-only, because an eval case is one session. plugins/audit/evals/results/ is added to .gitignore, and the evals/ directory gets its line in PLUGIN-BUILD-GUIDE.md's tree. Eval paths the design does not call for are dropped from files before start. docs/README.md gains a row for the research documents.",
       "files": [
         "docs/research/benchmark-results.md",
         "docs/README.md",
-        "plugins/audit/evals/feature/case.yaml",
         "plugins/audit/evals/bugfix/case.yaml",
         "plugins/audit/evals/guard-stop/case.yaml",
         ".gitignore",
@@ -152,16 +151,31 @@
         "P101.2",
         "P101.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T08:36:28Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-07T08:36:28Z",
+          "text": "Budget agreed with the user on 2026-10-07: about 3 USD of list-price equivalent for all paid sessions in this task. Within that budget the run covers one scenario (feature) across all three arms at n=2, with Sonnet 5 fixed for every arm because the plugin pipeline on Opus cost more than half the budget in one bugfix session. Each session has a hard cap from --max-budget-usd. The bugfix, interrupted-plus-resume and guard scenarios are not run; the results document says so in its limits. The design names guard and bugfix as eval cases, so those two case files are written but not run. The feature eval path was dropped from files because the design keeps feature harness-only."
+        },
+        {
+          "at": "2026-10-07T08:37:45Z",
+          "text": "The plan changed with the user on 2026-10-07: the test is outcome-first. Each arm gets the same feature task and runs to completion, and the result is what the task cost to complete and the quality of what was delivered. The model is the account default (Opus 5.5) for every arm. --max-budget-usd is only a safety stop, set per session to what remains of the total budget; a session that reaches it is reported as not finished within that amount. Sessions run in the order plain then plugin, and further sessions (a second of each, then the skills arm) are added only while budget remains."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T09:14:26Z.5e1240",
+        "status": "passed",
+        "at": "2026-10-07T09:14:26Z"
+      }
     }
   ],
   "startedAt": "2026-10-06T14:44:44Z"
