@@ -1,7 +1,7 @@
 {
   "id": "P116",
   "title": "a whole feature in an existing codebase shows where each way of working fails and what it costs",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "one feature spanning several existing modules, built three ways - vibe coding, organized skills agents and CLAUDE.md, and the plugin pipeline - is graded on hidden acceptance tests, invented APIs or files, reuse of existing code, scope, unbacked claims, interventions, cost and time, at n of at least three sessions per way, with the results and their limits published",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "f7eaade49fd136630262f1a456790704d1d52505",
+  "branch": "audit/p116-a-whole-feature-in-an-existing",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,7 +29,7 @@
     {
       "id": "P116.1",
       "title": "the whole-feature benchmark's protocol, fixture and grader are built and proven offline",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Builds the protocol, the fixture and the harness for a whole-feature benchmark, with no paid call. The user asked for these on 2026-10-07: a whole feature among existing features, not a single task; scenarios where an agent can hallucinate or has to search the codebase; and three ways of working.\n\nFixture. A brownfield repository that is larger and more realistic than the earlier feature fixture:\n- several existing features across modules, with domain helpers the new feature should reuse (money rounding, date handling, persistence transactions, error types, an event or audit log);\n- conventions that appear only in the code, not in any document;\n- a deprecated module as a distractor, a stale doc paragraph that contradicts the code, and an unrelated TODO that invites an out-of-scope edit;\n- one existing test that the obvious-but-wrong implementation of the feature breaks.\n\nThe fixture is built fresh per session, with hidden acceptance tests and a reference solution. The builder refuses to run unless the reference passes and the untouched tree fails.\n\nFeature. One feature request that a user would plausibly give, for example returns and refunds that touch orders, inventory, pricing and coupons, persistence, a CLI command and a report. It is several tasks of work. The request names domain concepts, not function names, so the session must find the real APIs. Some requirements are discoverable only by reading existing behaviour.\n\nArms. The same feature request goes to every arm:\n- A, vibe coding: plain Claude Code with the request only. No CLAUDE.md, no skills.\n- B, organized: a CLAUDE.md with the project's conventions, skills for the codebase, and custom agents (for example an explorer and a reviewer) in .claude/agents.\n- C, the plugin: B plus the audit plugin. The session starts from the same request and uses the plugin's own flow to plan the feature into a phase of tasks and run it. If that takes more than one session, the harness scripts the follow-ups and counts them as interventions.\n\nGrading, all offline, in grade.py:\n- hidden acceptance tests passed;\n- hallucination: imports or calls of functions, modules or files that do not exist, and final-message claims about files, functions or tests that the tool calls and the final tree do not back;\n- reuse: the feature uses the existing helpers rather than reimplementing them, checked by AST rules defined per helper;\n- scope: changed paths outside the feature, the protected test modified, the deprecated module touched;\n- codebase search: counts of Grep, Glob and Read before the first edit, reported as an observation, not a score;\n- interventions, wall clock, turns, and tokens by type with list-price cost.\n\nProtocol. The model is fixed across arms (Opus 5.5, the account default). --max-budget-usd is a safety stop only. The CLI version is pinned. n of at least three sessions per arm, run in a seeded order. No session starts while the five-hour window reads at or above the threshold in the earlier design, and every deviation is recorded. The cost estimate per session and in total uses the earlier measurements (the plain feature session, the plugin pipeline session and the pilot) and is stated as an estimate, not a measurement.\n\nDry run, no paid call. Show that the grader:\n- passes the reference;\n- fails the untouched tree;\n- flags a planted hallucinated solution (calls a non-existent helper, claims a test it never ran);\n- flags a planted reimplementation of an existing helper;\n- flags a planted out-of-scope edit.\nPrint the exact claude command per arm.\n\nOutputs:\n- the protocol: docs/research/benchmark-feature-design.md in this repository;\n- the harness and fixture: under the internal analysis directory fixtures/bench-feature-v2/, outside this repository;\n- a docs/README.md row.",
       "files": [
         "docs/research/benchmark-feature-design.md",
@@ -56,16 +56,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T11:36:46Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T12:06:04Z.9a3ee9",
+        "status": "passed",
+        "at": "2026-10-07T12:06:04Z"
+      }
     },
     {
       "id": "P116.2",
@@ -109,5 +114,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-10-07T11:36:46Z"
 }

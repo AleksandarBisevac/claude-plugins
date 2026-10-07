@@ -13,6 +13,7 @@ What ships with the plugin and what a person using it needs.
 | `design/audit-concurrency-report.md`    | How `/audit:*` behaves when work is parallelised across sessions, branches and clones — including the hazards, one retracted claim, and what is still open |
 | `essays/enforcement-over-persuasion.md` | Why this plugin enforces rather than asks                                                                                                                  |
 | `research/`                             | Research on the plugin itself — what it costs, what it delivers, which guards only it can provide: designs, pilot runs and measured audits                                                   |
+| `research/benchmark-feature-design.md`  | The whole-feature benchmark's protocol, written before any session runs: one feature request across existing modules, built three ways (plain, organized skills, agents and `CLAUDE.md`, the plugin pipeline), graded offline on hidden acceptance tests, hallucination, reuse, scope, claims, interventions and cost |
 | `audit/`                                | This repository's own audit manifest — the plugin used on itself                                                                                           |
 
 ## What is not here
