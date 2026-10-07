@@ -101,6 +101,8 @@ import _evidence_io  # noqa: E402  (where a run's record lives - and WHEN this
 #                                   plan could first have recorded one at all)
 import _locks  # noqa: E402  (which phase locks are held, and whether a holder is
 #                             alive - the evidence behind --fail-on unfinished-run)
+import _branch  # noqa: E402  (what a phase's own branch is called - one answer for every surface)
+import _worktrees  # noqa: E402  (the git runner and the ref probe a branch copy is read through)
 
 # --- the facts, under the names this command has always called them --------------
 # NOT copies. `_status_facts` (layer 2) owns every one of these; the aliases exist
@@ -272,7 +274,7 @@ def portability_block(manifest, project):
         return {"error": "the portability scan could not run: %s" % (msg[:200],)}
 
 
-def locks_block(manifest, project):
+def locks_block(manifest, project, manifest_path=None):
     """Which audit locks this clone holds — the evidence `unfinished-run` grades.
 
     `{"scheme": bool, "held": [{"name", "live", "basis"}]}`, or a block with NO
@@ -310,17 +312,162 @@ def locks_block(manifest, project):
     repository is a subdirectory keeps its locks in THAT repository's git dir.
     Third caller of one spelling of "where git runs", which is what that
     function's own docstring asks for.
+
+    EACH HELD PHASE LOCK ALSO CARRIES `readyCount` AND `readyBasis` - that
+    phase's own ready work and the copy it was counted from, which
+    `phase_ready_counts` decides. `manifest_path` is what lets it name the file
+    to ask a phase branch for; without it a branch copy cannot be located and
+    the sentence says the count fell back to this checkout's.
     """
     try:
         git_root = _invariants.git_root_for(manifest, project)
         if not _locks.available(git_root):
             return {"scheme": False, "held": []}
-        return {"scheme": True,
-                "held": [{"name": r.get("name"), "live": r.get("live"),
-                          "basis": r.get("basis")}
-                         for r in _locks.collect(git_root)]}
+        held = [{"name": r.get("name"), "live": r.get("live"),
+                 "basis": r.get("basis")} for r in _locks.collect(git_root)]
     except Exception as exc:                       # defensive; see the docstring
         return {"error": "the audit locks could not be read: %s" % (exc,)}
+    prefix = _status_facts.PHASE_LOCK_PREFIX
+    phase_ids = [str(r["name"])[len(prefix):] for r in held
+                 if isinstance(r.get("name"), str)
+                 and r["name"].startswith(prefix)]
+    counts = phase_ready_counts(manifest, manifest_path, git_root, phase_ids)
+    return {"scheme": True,
+            "held": [dict(r, **counts.get(
+                str(r.get("name"))[len(prefix):], {})) for r in held]}
+
+
+def _head_branch(git_root):
+    """The branch this checkout has out, or None on a detached HEAD or no answer."""
+    code, out, _err = _worktrees._git(
+        git_root, ["symbolic-ref", "--short", "-q", "HEAD"])
+    if code != 0:
+        return None
+    return (out or "").strip() or None
+
+
+def _branch_copy(git_root, branch, rel, phase_id):
+    """`(phase body, None)` as `branch` commits `rel`, or `(None, why)`.
+
+    `git show <branch>:<rel>` reads the blob out of the object store, so nothing
+    outside the git dir is opened and no checkout of the branch is needed. `rel`
+    is a shard (one phase) or a single-file manifest (every phase), and both
+    shapes are read here so the layout the branch keeps does not decide whether
+    its copy can be counted.
+    """
+    if not rel:
+        return None, "this checkout's file for the phase could not be placed " \
+                     "under the git root"
+    spec = "refs/heads/%s:%s" % (branch, rel)
+    code, out, err = _worktrees._git(git_root, ["show", spec])
+    if code != 0:
+        return None, "git show %s answered %s: %s" % (
+            spec, code, " ".join((err or "").split())[:160] or "no output")
+    try:
+        doc = json.loads(out)
+    except ValueError as exc:
+        return None, "git show %s is not readable JSON (%s)" % (spec, exc)
+    candidates = [doc] if isinstance(doc, dict) and "tasks" in doc else (
+        (doc.get("phases") or []) if isinstance(doc, dict) else [])
+    for body in candidates:
+        if isinstance(body, dict) and str(body.get("id")) == str(phase_id):
+            return body, None
+    return None, "git show %s holds no phase %s" % (spec, phase_id)
+
+
+def _phase_ready_count(manifest, manifest_path, git_root, phase_id, head, user):
+    """`{"readyCount", "readyBasis"}` for one held phase - its OWN ready tasks,
+    counted from the copy judged to hold the phase live, and the sentence that
+    names that copy.
+
+    WHICH COPY. A phase run on its own branch commits its progress there, so the
+    shard this checkout holds goes stale the moment the run starts - and a
+    development-branch checkout reading it reports work the branch has already
+    done. So the phase's branch is asked for its copy whenever this checkout is
+    not on that branch; when it is, its own file is the branch's live copy. The
+    name comes from `_branch.branch_of`, the one answer every surface gives,
+    because the development branch's copy of a shard need not record the branch
+    its phase later ran on.
+
+    WHEN THAT COPY CANNOT BE READ, the count falls back to this checkout's copy
+    and the sentence says so - names the branch that holds the live state, and
+    that the count is therefore not current - rather than presenting a stale
+    figure as the answer. A phase with no branch of its own in this repository
+    is counted here too, and the sentence names the branch that was looked for.
+    """
+    local = len(_status_facts.ready_by_phase(manifest).get(phase_id) or [])
+    phase = _invariants.phase_of(manifest, phase_id)
+    on = ("on `%s`" % (head,)) if head else "on a detached HEAD"
+    if phase is None:
+        return {"readyCount": local,
+                "readyBasis": "counted from this checkout's copy %s, which "
+                              "holds no phase %s" % (on, phase_id)}
+    branch = _branch.branch_of((manifest or {}).get("meta") or {}, phase,
+                               user)["name"]
+    if head and head == branch:
+        return {"readyCount": local,
+                "readyBasis": "counted from this checkout, which has `%s` "
+                              "checked out" % (branch,)}
+    probe = _worktrees.ref_exists(git_root, branch)
+    if probe["exists"] is False:
+        return {"readyCount": local,
+                "readyBasis": "counted from this checkout's copy %s - no "
+                              "branch `%s` exists in this repository (%s)"
+                              % (on, branch, probe["basis"])}
+    why = None
+    body = None
+    rel = None
+    if probe["exists"] is None:
+        why = probe["basis"]
+    elif not manifest_path:
+        why = "no manifest path was handed to this read, so the file to ask " \
+              "the branch for is unknown"
+    else:
+        _index, phase_file = _invariants.manifest_files(manifest_path, phase)
+        try:
+            rel = _output.posix_rel(os.path.abspath(phase_file),
+                                    os.path.abspath(git_root))
+        except ValueError:
+            rel = None
+        if rel is not None and rel.startswith(".."):
+            rel = None
+        body, why = _branch_copy(git_root, branch, rel, phase_id)
+    if body is None:
+        return {"readyCount": local,
+                "readyBasis": "counted from this checkout's copy %s, because "
+                              "branch `%s`'s copy could not be read (%s) - that "
+                              "branch holds the phase live, so this count is "
+                              "not current" % (on, branch, why)}
+    live = dict(manifest)
+    live["phases"] = [dict(p, **body) if p is phase else p
+                      for p in (manifest.get("phases") or [])]
+    return {"readyCount": len(
+                _status_facts.ready_by_phase(live).get(phase_id) or []),
+            "readyBasis": "counted from branch `%s`'s copy of %s"
+                          % (branch, rel)}
+
+
+def phase_ready_counts(manifest, manifest_path, git_root, phase_ids):
+    """`{phase id: {"readyCount", "readyBasis"}}` for each held phase lock.
+
+    One phase's read failing is that phase's fallback sentence, never the whole
+    block's error: the other locks were read, and refusing them all for one
+    unreadable branch would hide every answer that was available.
+    """
+    if not phase_ids:
+        return {}
+    head = _head_branch(git_root)
+    user = _worktrees.git_user_name(git_root)
+    out = {}
+    for pid in phase_ids:
+        try:
+            out[pid] = _phase_ready_count(manifest, manifest_path, git_root,
+                                          pid, head, user)
+        except Exception as exc:                   # defensive; see the docstring
+            out[pid] = {"readyCount": None,
+                        "readyBasis": "the count of phase %s's own ready work "
+                                      "could not be taken: %s" % (pid, exc)}
+    return out
 
 
 def _unfinished_detail(summary):
@@ -839,8 +986,9 @@ SHORT_FULL_VIEW_POINTER = "/audit:status"
 
 def render_short(manifest, summary, width=18, pt=None):
     """The condensed render an automated run echoes mid-flight: the overall
-    line, the usage line, the READY NOW block (with the command to type), and
-    a closing line naming the command for the full view.
+    line, the usage line, the READY NOW block (with the command to type), the
+    UNFINISHED block when a lock was read, and a closing line naming the
+    command for the full view.
 
     NOT THE DEFAULT, and never substituted for it: `render_status` is what a
     typed `/audit:status` renders, unchanged — `sh0` pins its bytes against
@@ -864,6 +1012,9 @@ def render_short(manifest, summary, width=18, pt=None):
     if usage:
         lines.append("  " + _usage_line(summary, usage))
     lines += _ready_lines(manifest, summary, pt=pt)
+    # The same block the full view ends on, so a run stopped mid-phase reads the
+    # same sentence in the view an automated run echoes between waves.
+    lines += _unfinished_lines(summary, pt=pt)
     lines.append("")
     lines.append("  Full view: %s" % SHORT_FULL_VIEW_POINTER)
     return "\n".join(lines)
@@ -1519,7 +1670,8 @@ def _unfinished_lines(summary, pt=None):
     if rows is None:
         return []
     out = ["", pt.paint("  UNFINISHED  %d phase run(s) stopped mid-phase - the "
-                        "lock is still held and there is ready work left"
+                        "lock is still held and the phase has ready work of "
+                        "its own left"
                         % len(rows), "warn")]
     out += ["    %s" % r for r in rows]
     return out
@@ -1939,8 +2091,10 @@ def main(argv):
     # waves and the state sat on disk, knowable, until a human asked a day later, so the
     # surface a human actually opens has to carry it. The three other injected
     # blocks are gate-only because each costs git calls per phase or a walk of
-    # the repository; this one is a single `rev-parse` and a directory listing,
-    # which is what `/audit:doctor` already pays to answer the same question.
+    # the repository; this one is a `rev-parse` and a directory listing, which is
+    # what `/audit:doctor` already pays to answer the same question - plus, only
+    # when a phase lock IS held, a few git calls per held phase to count its own
+    # ready work from the copy that holds it live (`phase_ready_counts`).
     #
     # `--json` IS DELIBERATELY NOT ON THIS LIST. The bare payload is pinned byte
     # for byte against the pure rollup (case dv1), and a lock is a fact about
@@ -1949,7 +2103,8 @@ def main(argv):
     if ((want_gate and "unfinished-run" in conditions)
             or not (want_json or want_gate)):
         summary["locks"] = locks_block(
-            manifest, os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+            manifest, os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd(),
+            manifest_path)
 
     # THE THIRD PLACE'S OWN ANSWER, injected on the SAME asymmetry as `locks`
     # above and for a sibling reason: the human render's `tests` column names it

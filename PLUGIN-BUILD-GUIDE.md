@@ -381,7 +381,7 @@ L7:
   audit-lock -> _locks, _output
   audit-logs -> _gate_feed, _output
   audit-lookup -> _evidence_io, _journal_io, _manifest_io, _manifest_vocab, _output
-  audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
+  audit-status -> _areas, _branch, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme, _worktrees
   audit-task -> _areas, _branch, _commit_trail, _evidence_io, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
