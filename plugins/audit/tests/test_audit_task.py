@@ -40,6 +40,7 @@ import _manifest_vocab as _vocab                   # noqa: E402  (the gate-basis
 import _manifest_phases as _phases                 # noqa: E402  (the identity pin below: an alias, not a second body)
 import _gate_derive                                # noqa: E402  (the identity pin below: an alias, not a second body)
 import _panel_write                                # noqa: E402  (as audit-task imports it)
+import _locks as _lock_lib                         # noqa: E402  (its claim writer, which the command no longer re-exports)
 
 M = _loader.load_script("audit-task.py", modname="audit_task")
 
@@ -1010,8 +1011,8 @@ def _cases(check):
         else:
             projk, mpathk = mk("k-lock", base_manifest(), git=True)
             # `audit-lock.py`, and nothing that reads a lock. This group
-            # ACQUIRES and seizes one - it drives `main()` and `_write_lock`,
-            # which are the command's half. The panel used to publish a
+            # ACQUIRES and seizes one - it drives `main()`, the command's half,
+            # and plants a claim through the library's writer. The panel used to publish a
             # READ-side accessor that answered with the library, and the write
             # path reached it for a command entry point the library never
             # promised; the accessor is out of that path now, and a taker says
@@ -1057,7 +1058,7 @@ def _cases(check):
                     lpath = os.path.join(lockmod.lock_dir(projk), "index.lock")
                     info = lockmod.read_lock(lpath)
                     info["pid"] = deadp.pid
-                    lockmod._write_lock(lpath, info)
+                    _lock_lib._write_lock(lpath, info)
                     code, txt = run(["add", "Stale", "--phase", "P2",
                                      "--project-dir", projk])
                     check("k2 an abandoned holder -> exit 4, offering --takeover",
@@ -5342,7 +5343,11 @@ def _cases(check):
             tk9 = tk_start("tk-unsafe-mine", {"sessionId": _tk8_want,
                                               "branch": "audit/p3",
                                               "at": "2026-01-01T00:00:00Z"},
-                           lock_pid=os.getpid())
+                           # The lock is the one this session's own start writes:
+                           # `_locks` records the session id as the environment
+                           # spells it, the claim the bounded value.
+                           lock_pid=os.getpid(),
+                           lock_session=os.environ["CLAUDE_CODE_SESSION_ID"])
             check("tk9 ...and the holder comparison reads the same bounded "
                   "value, so that session's own claim is kept, not contested: %r"
                   % ((tk9["code"], tk9["json"].get("claimAction")),),
@@ -5425,7 +5430,8 @@ def _cases(check):
                 check("hl1 a hand-typed start by session A with a live $CLAUDE_PID "
                       "and no prior lock takes the phase-P3 lock in "
                       "`_locks.acquire`'s own format - handed off, A's session, "
-                      "A's pid, this host, a token: %r"
+                      "A's pid, this host, a token, and yielding to a longer "
+                      "hold of A's own: %r"
                       % ((hl_a["code"], sorted(hl_info),
                           hl_info.get("sessionId"), hl_info.get("pid")),),
                       hl_a["code"] == 0
@@ -5437,7 +5443,7 @@ def _cases(check):
                       and bool(hl_info.get("token"))
                       and sorted(hl_info) == ["handedOff", "hostname", "note",
                                               "pid", "sessionId", "startedAt",
-                                              "token"])
+                                              "token", "yields"])
                 hl_b = hl_start(hl_proj, "s-hand-b", os.getpid())
                 check("hl2 ...so session B's start, while A's pid runs, is "
                       "REFUSED: exit 2, the shard byte identical, A's lock "
@@ -5589,6 +5595,281 @@ def _cases(check):
                 os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
             else:
                 os.environ["CLAUDE_CODE_SESSION_ID"] = _pc_env_was
+
+        # ---- (lv) a held phase lock names a live process -----------------------
+        # Every step is its own process with its own session id and $CLAUDE_PID,
+        # the way two sessions and a restarted run really meet: in one process the
+        # token a take carries in the environment would let every later call back
+        # in, and the cases would be about that instead. The pids are sleepers this
+        # suite starts and kills, so "the holder died" is an observed exit.
+        _lv_task_py = os.path.join(_output.SCRIPTS_DIR, "manifest", "audit-task.py")
+        _lv_lock_py = os.path.join(_output.SCRIPTS_DIR, "governance",
+                                   "audit-lock.py")
+
+        def lv_env(session, pid):
+            env = dict((k, v) for k, v in os.environ.items()
+                       if not k.startswith("CLAUDE_") and k != _locks.TOKEN_ENV)
+            env["CLAUDE_CODE_SESSION_ID"] = session
+            env["CLAUDE_PID"] = str(pid)
+            return env
+
+        def lv_call(script, proj, argv, session, pid):
+            done = subprocess.run([sys.executable, script] + argv,
+                                  env=lv_env(session, pid), cwd=proj,
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            return done.returncode, done.stdout.decode("utf-8", "replace")
+
+        def lv_start(proj, session, pid):
+            code, txt = lv_call(_lv_task_py, proj, ["start", "P3.1", "--json",
+                                                    "--project-dir", proj],
+                                session, pid)
+            return {"code": code, "txt": txt, "json": pc_json(txt)}
+
+        def lv_lock(proj, argv, session, pid):
+            return lv_call(_lv_lock_py, proj, argv + ["--project", proj, "--wait",
+                                                      "0"], session, pid)
+
+        def lv_signoff(proj, session, pid):
+            lv_call(_lv_task_py, proj, ["cancel", "P3.1", "--reason", "fixture",
+                                        "--project-dir", proj], session, pid)
+            return lv_call(_lv_task_py, proj,
+                           ["signoff", "P3", "--verdict", "passed", "--summary",
+                            "s", "--no-evidence-reason", "fixture",
+                            "--project-dir", proj], session, pid)
+
+        def lv_path(proj):
+            return os.path.join(_locks.lock_dir(proj), "phase-P3.lock")
+
+        def lv_shard_bytes(proj, mp):
+            with open(pc_shard_path(mp, "P3"), "rb") as fh:
+                return fh.read()
+
+        def lv_sleeper():
+            return subprocess.Popen([sys.executable, "-c",
+                                     "import time; time.sleep(300)"])
+
+        def lv_kill(proc):
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait()
+
+        _lv_procs = []
+        try:
+            _lv_procs.extend(lv_sleeper() for _n in range(4))
+            _lv_p1, _lv_p2, _lv_pb, _lv_pa = _lv_procs
+
+            # A RESUMED SESSION RUNS UNDER A NEW PROCESS. Its keep start must move
+            # the lock onto that process, or the lock still names the dead one and
+            # the next session reads the phase as abandoned.
+            lv1_proj, lv1_mp = pc_repo("lv-resume")
+            lv1_a1 = lv_start(lv1_proj, "s-lv-a", _lv_p1.pid)
+            lv_kill(_lv_p1)
+            lv1_a2 = lv_start(lv1_proj, "s-lv-a", _lv_p2.pid)
+            lv1_info = _locks.read_lock(lv_path(lv1_proj))
+            lv1_before = lv_shard_bytes(lv1_proj, lv1_mp)
+            lv1_b = lv_start(lv1_proj, "s-lv-b", _lv_pb.pid)
+            check("lv1 a same-session start under a NEW process after the old one "
+                  "died re-records the phase lock under the live process, so "
+                  "another session's start is then REFUSED - exit 2, the shard "
+                  "byte identical: %r"
+                  % ((lv1_a1["code"], lv1_a2["code"],
+                      lv1_a2["json"].get("claimAction"), lv1_info.get("pid"),
+                      _lv_p2.pid, lv1_b["code"], lv1_b["txt"][:200]),),
+                  lv1_a1["code"] == 0 and lv1_a2["code"] == 0
+                  and lv1_a2["json"].get("claimAction") == "keep"
+                  and lv1_info.get("pid") == _lv_p2.pid
+                  and lv1_info.get("sessionId") == "s-lv-a"
+                  and lv1_b["code"] == 2
+                  and lv_shard_bytes(lv1_proj, lv1_mp) == lv1_before)
+            # The allow twin: the refresh does not make a lock immortal. Once the
+            # process it names is gone too, the next session takes the phase.
+            lv_kill(_lv_p2)
+            lv2_b = lv_start(lv1_proj, "s-lv-b", _lv_pb.pid)
+            check("lv2 ALLOW: once the re-recorded process is gone as well, the "
+                  "other session's start takes the claim over without --force: %r"
+                  % ((lv2_b["code"], lv2_b["json"].get("claimAction")),),
+                  lv2_b["code"] == 0
+                  and lv2_b["json"].get("claimAction") == "takeover")
+
+            # A KEEP START ASKS THE LOCK TOO. A session that kept its claim but
+            # gave its lock back must not start again under another run's live
+            # lock just because the claim is its own.
+            lv3_proj, lv3_mp = pc_repo("lv-keep-foreign")
+            lv3_a1 = lv_start(lv3_proj, "s-lv-a", _lv_pa.pid)
+            lv3_rel = lv_lock(lv3_proj, ["release", "phase-P3"], "s-lv-a",
+                              _lv_pa.pid)
+            lv3_acq = lv_lock(lv3_proj, ["acquire", "phase-P3", "--note",
+                                         "phase run"], "s-lv-b", _lv_pb.pid)
+            lv3_lock = _locks.read_lock(lv_path(lv3_proj))
+            lv3_before = lv_shard_bytes(lv3_proj, lv3_mp)
+            lv3_a2 = lv_start(lv3_proj, "s-lv-a", _lv_pa.pid)
+            check("lv3 a keep start while ANOTHER session's live phase lock is "
+                  "held is REFUSED - exit 2, the shard byte identical, the other "
+                  "session's lock untouched: %r"
+                  % ((lv3_a1["code"], lv3_rel[0], lv3_acq[0], lv3_a2["code"],
+                      lv3_a2["json"].get("phaseLock"), lv3_a2["txt"][:200]),),
+                  lv3_a1["code"] == 0 and lv3_rel[0] == 0 and lv3_acq[0] == 0
+                  and lv3_a2["code"] == 2
+                  and lv_shard_bytes(lv3_proj, lv3_mp) == lv3_before
+                  and _locks.read_lock(lv_path(lv3_proj)) == lv3_lock
+                  and lv3_lock.get("sessionId") == "s-lv-b")
+            lv4_proj, _lv4_mp = pc_repo("lv-keep-dead")
+            lv4_a1 = lv_start(lv4_proj, "s-lv-a", _lv_pa.pid)
+            lv_lock(lv4_proj, ["release", "phase-P3"], "s-lv-a", _lv_pa.pid)
+            lv_lock(lv4_proj, ["acquire", "phase-P3", "--note", "phase run"],
+                    "s-lv-b", pc_gone_pid())
+            lv4_a2 = lv_start(lv4_proj, "s-lv-a", _lv_pa.pid)
+            lv4_lock = _locks.read_lock(lv_path(lv4_proj))
+            check("lv4 ALLOW: the same keep start over a lock whose process is "
+                  "gone runs, and the lock is this session's afterwards: %r"
+                  % ((lv4_a1["code"], lv4_a2["code"],
+                      lv4_a2["json"].get("claimAction"), lv4_lock.get("sessionId"),
+                      lv4_lock.get("pid")),),
+                  lv4_a1["code"] == 0 and lv4_a2["code"] == 0
+                  and lv4_a2["json"].get("claimAction") == "keep"
+                  and lv4_lock.get("sessionId") == "s-lv-a"
+                  and lv4_lock.get("pid") == _lv_pa.pid)
+
+            # THE MERGE RUNS UNDER A HELD LOCK. The orchestrator's acquire over the
+            # lock its own hand start took must leave a lock sign-off does not
+            # give back - sign-off releases only the start's.
+            lv5_proj, _lv5_mp = pc_repo("lv-merge")
+            lv5_a = lv_start(lv5_proj, "s-lv-a", _lv_pa.pid)
+            lv5_acq = lv_lock(lv5_proj, ["acquire", "phase-P3", "--note",
+                                         "phase run"], "s-lv-a", _lv_pa.pid)
+            lv5_so = lv_signoff(lv5_proj, "s-lv-a", _lv_pa.pid)
+            lv5_lock = _locks.read_lock(lv_path(lv5_proj))
+            check("lv5 hand start, then the orchestrator's acquire, then sign-off: "
+                  "the phase lock is STILL HELD, under the orchestrator's note: %r"
+                  % ((lv5_a["code"], lv5_acq, lv5_so[0], lv5_lock),),
+                  lv5_a["code"] == 0 and lv5_acq[0] == 0 and lv5_so[0] == 0
+                  and os.path.exists(lv_path(lv5_proj))
+                  and lv5_lock.get("note") == "phase run"
+                  and lv5_lock.get("sessionId") == "s-lv-a")
+            lv6_proj, _lv6_mp = pc_repo("lv-merge-none")
+            lv6_a = lv_start(lv6_proj, "s-lv-a", _lv_pa.pid)
+            lv6_so = lv_signoff(lv6_proj, "s-lv-a", _lv_pa.pid)
+            check("lv6 ALLOW: with no orchestrator acquire in between, sign-off "
+                  "gives back the lock the start took: %r"
+                  % ((lv6_a["code"], lv6_so[0], lv6_so[1][-200:]),),
+                  lv6_a["code"] == 0 and lv6_so[0] == 0
+                  and not os.path.exists(lv_path(lv6_proj))
+                  and "released phase-P3" in lv6_so[1])
+
+            # A SIGN-OFF BY A SESSION THAT NEVER HELD THE LOCK was not taken over,
+            # and must not be told it was.
+            lv7_proj, _lv7_mp = pc_repo("lv-nonholder")
+            lv7_a = lv_start(lv7_proj, "s-lv-a", _lv_pa.pid)
+            lv7_so = lv_signoff(lv7_proj, "s-lv-b", _lv_pb.pid)
+            check("lv7 a sign-off by a non-holder while the holder is live says "
+                  "the lock was LEFT IN PLACE and names the live holder - never "
+                  "that this run was taken over: %r"
+                  % ((lv7_a["code"], lv7_so[0],
+                      [ln for ln in lv7_so[1].splitlines() if "phase lock" in ln]),),
+                  lv7_a["code"] == 0 and lv7_so[0] == 0
+                  and os.path.exists(lv_path(lv7_proj))
+                  and "left in place" in lv7_so[1]
+                  and "s-lv-a" in lv7_so[1]
+                  and "took it over" not in lv7_so[1])
+            lv8_proj, _lv8_mp = pc_repo("lv-takenover")
+            lv8_a = lv_start(lv8_proj, "s-lv-a", _lv_pa.pid)
+            lv8_tk = lv_lock(lv8_proj, ["acquire", "phase-P3", "--takeover",
+                                        "--note", M._START_LOCK_NOTE],
+                             "s-lv-b", _lv_pb.pid)
+            lv8_so = lv_signoff(lv8_proj, "s-lv-a", _lv_pa.pid)
+            check("lv8 ALLOW: a sign-off by the run whose lock WAS taken over "
+                  "keeps the takeover wording: %r"
+                  % ((lv8_a["code"], lv8_tk[0], lv8_so[0],
+                      [ln for ln in lv8_so[1].splitlines() if "phase lock" in ln]),),
+                  lv8_a["code"] == 0 and lv8_tk[0] == 0 and lv8_so[0] == 0
+                  and "took it over" in lv8_so[1]
+                  and "left in place" not in lv8_so[1])
+        finally:
+            for _lv_proc in _lv_procs:
+                lv_kill(_lv_proc)
+
+        # AN EXCEPTION BETWEEN THE LOCK TAKE AND THE VALIDATED WRITE gives the
+        # lock back. Driven in process, because the injection is a replaced
+        # function; the token the take carries is restored with the environment.
+        _lv_env_was = dict((k, os.environ.get(k)) for k in
+                           ("CLAUDE_CODE_SESSION_ID", "CLAUDE_PID",
+                            _locks.TOKEN_ENV))
+        _lv_start_task = M._start_task
+
+        def lv_boom(*_a, **_k):
+            raise RuntimeError("injected between the lock take and the write")
+        try:
+            os.environ["CLAUDE_CODE_SESSION_ID"] = "s-lv-x"
+            os.environ["CLAUDE_PID"] = str(os.getpid())
+            lv9_proj, lv9_mp = pc_repo("lv-raise")
+            lv9_before = lv_shard_bytes(lv9_proj, lv9_mp)
+            M._start_task = lv_boom
+            try:
+                lv9_code, lv9_txt = run(["start", "P3.1", "--project-dir", lv9_proj])
+            finally:
+                M._start_task = _lv_start_task
+            check("lv9 an exception injected between the lock take and the write "
+                  "leaves NO phase lock and the shard as it was: %r"
+                  % ((lv9_code, lv9_txt[-200:],
+                      os.path.exists(lv_path(lv9_proj))),),
+                  lv9_code != 0 and "injected" in lv9_txt
+                  and not os.path.exists(lv_path(lv9_proj))
+                  and lv_shard_bytes(lv9_proj, lv9_mp) == lv9_before)
+            lv10_proj, _lv10_mp = pc_repo("lv-raise-ours")
+            pc_lock(lv10_proj, os.getpid(), "s-lv-x")
+            with open(lv_path(lv10_proj), "rb") as _fh:
+                lv10_before = _fh.read()
+            M._start_task = lv_boom
+            try:
+                lv10_code, _lv10_txt = run(["start", "P3.1", "--project-dir",
+                                            lv10_proj])
+            finally:
+                M._start_task = _lv_start_task
+            lv10_after = b""
+            if os.path.exists(lv_path(lv10_proj)):
+                with open(lv_path(lv10_proj), "rb") as _fh:
+                    lv10_after = _fh.read()
+            # The other direction: the rollback gives back only a lock this start
+            # took. An unconditional release would take the orchestrator's.
+            check("lv10 ALLOW: the same exception under a phase lock this start "
+                  "did NOT take leaves that lock byte for byte: %r" % (lv10_code,),
+                  lv10_code != 0 and lv10_after == lv10_before)
+            lv11_proj, _lv11_mp = pc_repo("lv-noraise")
+            lv11_code, _lv11_txt = run(["start", "P3.1", "--project-dir",
+                                        lv11_proj])
+            check("lv11 ALLOW: with nothing injected the same start keeps the lock "
+                  "it took: %r" % (lv11_code,),
+                  lv11_code == 0 and os.path.exists(lv_path(lv11_proj)))
+
+            # ONE PREDICATE FOR "THE HOLDER IS GONE": `_phase_holder` reads it
+            # from `_locks`, so a change to it changes this reading too.
+            # No $CLAUDE_PID here: the planted lock records this suite's pid, and
+            # with the variable naming it too the lock would read as this run's.
+            os.environ.pop("CLAUDE_PID", None)
+            lv12_proj, _lv12_mp = pc_repo("lv-gone")
+            pc_lock(lv12_proj, os.getpid(), "s-lv-other")
+            _lv_had = hasattr(_locks, "holder_gone")
+            _lv_gone_was = getattr(_locks, "holder_gone", None)
+            _locks.holder_gone = lambda *_a, **_k: True
+            try:
+                lv12 = M._phase_holder(lv12_proj, "P3")
+            finally:
+                if _lv_had:
+                    _locks.holder_gone = _lv_gone_was
+                else:
+                    del _locks.holder_gone
+            lv12b = M._phase_holder(lv12_proj, "P3")
+            check("lv12 `_phase_holder` decides a lock's holder is gone through "
+                  "`_locks.holder_gone`: forced true it reads a live lock dead, "
+                  "and left alone the same lock reads live: %r" % ((lv12, lv12b),),
+                  lv12.get("state") == "dead" and lv12b.get("state") == "live")
+        finally:
+            M._start_task = _lv_start_task
+            for _k, _v in _lv_env_was.items():
+                if _v is None:
+                    os.environ.pop(_k, None)
+                else:
+                    os.environ[_k] = _v
 
         # ---- (pd) `done`: the close, and the SHA that makes it a record -------
         # THE LOSS, from this repository and not from a scenario. With no verb

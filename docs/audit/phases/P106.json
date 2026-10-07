@@ -91,31 +91,102 @@
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py:3251-3298,3351-3357,3424-3427",
         "issue": "start reads an absent phase lock as proof nobody runs the phase, so a live session that started by hand (/audit:task start takes no phase lock) has its claim silently taken over by the next session, the orchestrated path too (its acquire succeeds because the hand starter holds no lock), and a claim pulled from another clone is always read as unheld; the takeover line says the holder 'holds no live run', which an absent lock cannot establish.",
-        "resolution": "Give every claim readable liveness: start takes a hand-off phase-<id> lock (recording CLAUDE_PID as audit-lock acquire does) when it writes a claim and none is held, so a hand start leaves the evidence an orchestrated one does; until a claim carries that evidence, treat none under another session's claim as unaskable unless this run holds the lock; word the takeover as its basis ('no live phase-<id> lock in this clone'); a case where a hand start with a live pid and no lock makes the next session refuse."
+        "resolution": "fixed in P106.6-b6f (791d8387): Give every claim readable liveness: start takes a hand-off phase-<id> lock (recording CLAUDE_PID as audit-lock acquire does) when it writes a claim and none is held, so a hand start leaves the evidence an orchestrated one does; until a claim carries that evidence, treat none under another session's claim as unaskable unless this run holds the lock; word the takeover as its basis ('no live phase-<id> lock in this clone'); a case where a hand start with a live pid and no lock makes the next session refuse.",
+        "fixTask": "P106.6-b6f",
+        "commit": "791d8387"
       },
       {
         "id": "P106-R9",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:3290-3291,3301",
         "issue": "A holder judged dead by the age rule alone (a lock with no pid, or from another host, older than the age limit) is taken over with no human involved, while audit-lock acquire treats the same verdict as exit 4 and its protocol asks the human before --takeover.",
-        "resolution": "Map a not-live verdict whose basis is the age fallback (no pid probed) to unaskable; keep dead for a pid gone on this host and the empty interrupted take; cases for a no-pid and an other-host lock past the age limit, both refusing."
+        "resolution": "fixed in P106.6-b6f (791d8387): Map a not-live verdict whose basis is the age fallback (no pid probed) to unaskable; keep dead for a pid gone on this host and the empty interrupted take; cases for a no-pid and an other-host lock past the age limit, both refusing.",
+        "fixTask": "P106.6-b6f",
+        "commit": "791d8387"
       },
       {
         "id": "P106-R10",
         "severity": "low",
         "file": "plugins/audit/commands/task.md:468,490-501",
         "issue": "task.md's claim prose drifted from the code: an unconditional refusal still listed, 'only when that other session still runs a live lock' where the code refuses any live lock this run does not hold, no mention of the no-session keep, and the --json keys omit claimKept and claimHolder.",
-        "resolution": "Make each sentence true of _claim_plan and _claim_refusal, and list every --json key the start result carries."
+        "resolution": "fixed in P106.7-b6f (2aa81131): Make each sentence true of _claim_plan and _claim_refusal, and list every --json key the start result carries.",
+        "fixTask": "P106.7-b6f",
+        "commit": "2aa81131"
       },
       {
         "id": "P106-R11",
         "severity": "low",
         "file": "plugins/audit/reference/execute-task.md:11-16,26-28; reference/orchestrator.md:401-404",
         "issue": "The relay-and-force rule is written three times in the files /audit:next must read (plus run.md and task.md), raising those bytes, while no script can tell an operator's --reason from the model's - a prose-only rule in the phase that exists to remove them.",
-        "resolution": "State it once where the operator's-words rule lives and point to it elsewhere, recovering the bytes; record that it is a prose-only rule until a mechanism reads the reason from the operator's own prompt."
+        "resolution": "fixed in P106.7-b6f (2aa81131): State it once where the operator's-words rule lives and point to it elsewhere, recovering the bytes; record that it is a prose-only rule until a mechanism reads the reason from the operator's own prompt.",
+        "fixTask": "P106.7-b6f",
+        "commit": "2aa81131"
+      },
+      {
+        "id": "P106-R12",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py start keep path and _take_phase_lock",
+        "issue": "A keep start does no lock work, so liveness is written once and never refreshed: a session that resumes under a new process leaves its lock naming a dead pid and another session's start takes the claim and lock over while it still runs, and a keep start ignores another session's live phase lock, so both sessions run the phase.",
+        "resolution": "Run _take_phase_lock on keep too, so another run's live lock refuses a keep start; in the ours branch, re-take the lock for this run when its recorded pid is gone or differs from the current process, so the lock names the live process. Cases: a same-session start under a new process after the old one died, then another session's start, refused; a keep start while another session's live lock is held, refused."
+      },
+      {
+        "id": "P106-R13",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_locks.py held_by_us",
+        "issue": "held_by_us reads a handed-off lock as ours on a session match alone even when its recorded pid is gone, so acquire answers 'already yours' to a resumed session over a lock every other reader judges dead.",
+        "resolution": "Refresh the recorded pid on a same-session re-entry whose recorded pid is gone, through the same re-take the start's ours branch uses."
+      },
+      {
+        "id": "P106-R14",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py _release_start_lock and the orchestrator's acquire",
+        "issue": "After a hand start takes the start lock, the same session's orchestrator acquire answers exit 5 and leaves it, and sign-off then releases it by its start note, so the merge runs with no phase lock held while the orchestrator believes it holds one.",
+        "resolution": "When the orchestrator's acquire meets a start-noted lock of its own session, re-take it under the orchestrator's note so the start-note release leaves it; a case runs hand start, orchestrator acquire, sign-off, and finds the lock still held."
+      },
+      {
+        "id": "P106-R15",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py _release_start_lock",
+        "issue": "A sign-off or cancel by a session that never held the start lock, while the starting session is live, prints release_refusal's takeover text telling the operator another session took the lock over and to re-read their writes, though nothing was taken over.",
+        "resolution": "Print this function's own wording naming the live holder and saying the lock was left in place; keep the takeover text for a run that actually held the lock."
+      },
+      {
+        "id": "P106-R16",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py start, between the lock take and the guarded write",
+        "issue": "Calls between taking the lock and the first guarded write are not covered by undo_lock, so an exception there leaves a lock under the live process that refuses every other session until it ends.",
+        "resolution": "Take the lock immediately before the writing try, or wrap the span from take to validated write so undo_lock runs and the exception re-raises."
+      },
+      {
+        "id": "P106-R17",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py _holder_gone",
+        "issue": "_holder_gone calls two private helpers of _locks, so a rename inside _locks silently breaks a second module.",
+        "resolution": "Expose one public predicate in _locks that judge and the release conflict also use, and call it from audit-task."
+      },
+      {
+        "id": "P106-R18",
+        "severity": "low",
+        "file": "plugins/audit/commands/task.md claim paragraph",
+        "issue": "The paragraph says a start takes the claim over whenever the holder's lock is not live, but no lock in this clone and an age-only lock are refused as unaskable; a takeover happens only on a lock observed gone or on this run's own live lock.",
+        "resolution": "Name the takeover conditions as the code decides them and say that no lock and an age-only lock are refused as unaskable."
+      },
+      {
+        "id": "P106-R19",
+        "severity": "low",
+        "file": "plugins/audit/commands/status.md resume line",
+        "issue": "The line says resume's start takes a dead holder's lock over itself, but resume first acquires the phase lock and a dead holder answers exit 4, which stops for the human before a --takeover rerun; start's own takeover belongs to a hand-typed start.",
+        "resolution": "Say resume takes the dead lock over through its own acquire after the human confirms exit 4, that start then reuses that lock, and that start's own takeover is for a hand-typed start."
+      },
+      {
+        "id": "P106-R20",
+        "severity": "low",
+        "file": "plugins/audit/commands/task.md --force paragraph",
+        "issue": "The --force paragraph still restates the relay rule that now lives once in manifest-conventions.md.",
+        "resolution": "Replace the clause with the pointer the other call sites use and keep only the flag mechanics."
       }
     ],
-    "outcome": "[findings: 11 - 1 high, 2 med, 8 low; 7 with a recorded fix commit]"
+    "outcome": "[findings: 20 - 1 high, 3 med, 16 low; 11 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -506,7 +577,7 @@
     {
       "id": "P106.7-b6f",
       "title": "the claim prose matches the code and the relay rule is stated once",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P106-R10 and P106-R11.\n\ncommands/task.md's claim paragraph is true of _claim_plan and _claim_refusal as they stand after the liveness fix:\n- A claim refuses only while its holder may still be live, or liveness cannot be asked.\n- Any live phase lock this run does not hold refuses.\n- With no session id, the claim is kept and claimAction is no-session.\n- Every --json key the start result carries is listed, including claimKept and claimHolder.\n\nThe rule \"stop and relay start's refusal verbatim; --force --reason only on the human's instruction, with the human's words as the reason\" is stated once, beside manifest-conventions' \"The operator's words go in unchanged\". execute-task.md steps 1-2, orchestrator.md's Phase entry, run.md and task.md point to it instead of restating it. Say there, in one sentence, that it is a rule the model follows: no script can tell an operator's --reason from the model's. Record the bytes /audit:next must read before and after; the restatements' removal should bring them back down.",
       "files": [
         "plugins/audit/commands/task.md",
@@ -535,19 +606,124 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "2aa81131",
+      "outcome": {
+        "technical": "task.md's claim paragraph is rewritten to say only what _claim_plan, _claim_refusal, _take_phase_lock and _lock_refusal do: a claim is refused only for a live holder; with no session id nothing is written over a held claim (claimAction no-session); the phase lock refusal and the claim refusal are two separate doors; and the start result's --json keys are listed in full (claim, claimAction, claimReplaced, claimKept, claimHolder, claimTakeoverBasis, phaseLock). The rule that a writer script's refusal is relayed verbatim, with --force --reason only on the human's own instruction, is stated once in manifest-conventions.md under the operator's words section, and execute-task.md, orchestrator.md, run.md and task.md point to it instead of restating it. status.md's unfinished-phase-lock line no longer tells the operator to release a dead holder's lock by hand: start takes a dead holder's lock over itself and records the takeover. Gate-only task; test__refs, test__output and test__deps selftests green.",
+        "descriptive": "The task and resume documentation now describe the claim and phase-lock refusals exactly as start makes them, the rule for relaying a refusal lives in one place, and resume no longer asks the operator to release a dead session's lock by hand."
+      },
+      "startedAt": "2026-10-07T05:12:20Z",
+      "completedAt": "2026-10-07T05:39:58Z",
+      "verifiedBy": [
+        "test__refs",
+        "test__output",
+        "test__deps selftests"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T05:39:39Z.532ac1",
+        "status": "passed",
+        "at": "2026-10-07T05:39:39Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2aa81131",
+        "at": "2026-10-07T05:39:58Z",
+        "basis": "orchestrator check: P106-R10 and R11 fixed, prose read against _claim_plan, _claim_refusal, _take_phase_lock and _lock_refusal, relay rule stated once with pointers from every call site"
+      }
+    },
+    {
+      "id": "P106.8-b6f",
+      "title": "a held phase lock names a live process for as long as its session holds the phase",
+      "status": "in_progress",
+      "description": "Fixes review findings P106-R12 to P106-R17. The phase lock must name a live process for as long as a session holds the phase.\n\n- A keep start runs _take_phase_lock as a take does, so another run's live lock refuses it. When the ours branch finds a recorded pid that is gone, or one that differs from the current process, it re-takes the lock for this run so the lock names the live process. _locks.held_by_us applies the same refresh on a same-session re-entry whose recorded pid is gone, so acquire no longer answers 'already yours' over a lock every other reader judges dead.\n- The orchestrator's acquire can meet a start-noted lock of its own session. It then re-takes that lock under its own note, so sign-off's start-note release leaves it in place and the merge runs under a held lock.\n- When the releasing session never held the lock and the holder is live, _release_start_lock prints its own wording: it names the live holder and says the lock was left in place. release_refusal's takeover text stays for a run that actually held the lock.\n- The span from the lock take to the validated write is covered: an exception there runs undo_lock and re-raises.\n- _locks exposes one public predicate for \"the holder is gone\". judge, the release conflict and audit-task's _holder_gone all use it, and no private _locks helper is called from another module.\n\nCases. Each refusal gets an allow twin, driven in scratch repos with distinct session ids and pids:\n- a same-session start under a new process after the old one died, followed by another session's start, is refused;\n- a keep start while another session's live lock is held is refused;\n- hand start, then orchestrator acquire, then sign-off: the lock is still held;\n- a sign-off by a non-holder while the holder is live prints the left-in-place wording;\n- an exception injected between take and write leaves no lock.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/scripts/governance/audit-lock.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test__locks.py",
+        "plugins/audit/tests/test_audit_lock.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-07T05:12:20Z",
+      "startedAt": "2026-10-07T05:49:13Z",
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-10-07T05:39:39Z.532ac1",
+        "runId": "2026-10-07T06:22:29Z.4199e8",
         "status": "passed",
-        "at": "2026-10-07T05:39:39Z"
+        "at": "2026-10-07T06:22:29Z"
       }
+    },
+    {
+      "id": "P106.9-b6f",
+      "title": "the claim, takeover and resume documentation states the conditions the code decides by",
+      "status": "pending",
+      "description": "Fixes review findings P106-R18 to P106-R20. The documentation must be true of the code as P106.8 leaves it.\n\n- In task.md's claim paragraph, name the takeover conditions as _claim_plan and _holder_under_claim decide them: a lock observed gone, or this run's own live lock. Also say that no lock in this clone, and a lock judged by age alone, are refused as unaskable.\n- status.md's resume line must say:\n  - /audit:resume takes a dead holder's lock over through its own acquire after the human confirms exit 4;\n  - start then reuses that lock;\n  - start's own takeover is for a hand-typed start.\n  Make resume.md and orchestrator.md agree wherever they describe the same path.\n- In task.md's --force paragraph, replace the restated relay rule with the pointer to manifest-conventions.md that the other call sites use. Keep only the flag mechanics: --force needs --reason, and --reason - reads stdin.",
+      "files": [
+        "plugins/audit/commands/task.md",
+        "plugins/audit/commands/status.md",
+        "plugins/audit/commands/resume.md",
+        "plugins/audit/reference/orchestrator.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P106.8-b6f"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-06T22:17:03Z"
