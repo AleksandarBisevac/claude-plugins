@@ -35,7 +35,22 @@ phase merges, read the protocol at `a289dcbb`. Commands run from this repository
 the plugin the whole-feature study runs. The `stream-cost.py` and `measure-context.py` figures are
 those tools' output at `9501aa91`. Re-derive them from a checkout of that commit. T1 changes both
 tools, so a pin that followed this document's latest commit would point at a tool these figures did
-not come from. Prices are the plugin's shipped table,
+not come from.
+
+One part of T1 has landed: `stream-cost.py` reads every `result` event, from the commit
+`git log --format=%h -S'def session_result' -- tools/stream-cost.py | tail -1` prints, called the
+result-reading commit below. Which pin a figure carries follows from it:
+
+- **`9501aa91` stays** on every `stream-cost.py` figure of `feature-C-1`, `feature-A-1`,
+  `feature-A-2` and the pilot. Each holds one result event (`grep -c '"type":"result"'
+  <record>/stream.jsonl`), and the result-reading commit prints each of them byte for byte as
+  `9501aa91` does, in text and with `--json`. Section 10's cycle command prints the same two lines
+  at both commits.
+- **The result-reading commit** carries the figures of the arm C sessions `whole-C-1`,
+  `whole-C-3` and `whole-C-2-r` that section 6, T1, quotes as read by it. `9501aa91` cannot price
+  those sessions, and its readings of them stay pinned to it as the evidence of why.
+
+Prices are the plugin's shipped table,
 `_usage_core.DEFAULT_PRICING`. For
 `claude-opus-5-5` the rates per million tokens are: input 4.0, output 20.0, five-minute write 5.0,
 one-hour write 8.0, cache read 0.2. The reviewer in `feature-C-1` ran on a model that resolves to the
@@ -225,7 +240,7 @@ rule puts its bounds, with section 10's event command:
 - sign-off's own review followed at 47, and the sign-off at 55.
 
 Closed at the last `done`, the cycle would have held requests 37 to 44 too. The session's figures
-are T5's, and section 6, T1, says why the pinned tool cannot yet price them.
+are T5's. `9501aa91` cannot price them, and the result-reading commit can (section 6, T1).
 
 ### 1.2 The formulas
 
@@ -1151,12 +1166,50 @@ commit, with `--bytes-per-token 2.63` where it applies.
   - The planning rule keys on the `Skill` call because that is how arm C invokes a command:
     `whole-C-2` and `whole-C-3` both open with `{"skill": "audit:phase", "args": "add"}`. The call
     was denied in `whole-C-2` (`<x2>/invalid.jsonl`) and allowed in `whole-C-3`.
-  - `stream-cost.py` reads every `result` event. The pinned tool keeps the last one
-    (`tools/stream-cost.py:234-235`), and `whole-C-3` holds three. Their `usage` blocks sum to its
-    main loop's own requests: in 122, cacheW 211809, cacheR 10626961. Read from the last block alone,
-    its main loop `DISAGREE`s with the stream and opus prices `DIFFER by -0.507663` (the
-    `reconstruction:` and `pricing:` lines). Neither the target on it below nor T5 can be read until
-    this lands.
+  - `stream-cost.py` reads every `result` event. **This part has landed**, at the result-reading
+    commit (section 0). `9501aa91` keeps the last one (`tools/stream-cost.py:234-235` there), and
+    `whole-C-3` holds three. Read from the last block alone, its main loop `DISAGREE`s with the
+    stream and opus prices `DIFFER by -0.507663` (the `reconstruction:` and `pricing:` lines at
+    `9501aa91`). What the CLI writes in each result was read off the arm C sessions before the rule
+    was set, with section 10's result command:
+    - `usage` is its own stretch's main loop. A stretch opens at an `init` event, and the main-loop
+      requests up to the next one sum to that stretch's `usage` in every stretch of `whole-C-1`,
+      `whole-C-3` and `whole-C-2-r`. Summed over its results, `usage` is `whole-C-3`'s main loop:
+      in 122, cacheW 211809, cacheR 10626961.
+    - `modelUsage` and `total_cost_usd` are the session's. Each session repeats them unchanged in
+      every result, and `total_cost_usd` is the sum of one `modelUsage`'s `costUSD`. Summed over
+      the results, they would count every subagent once per result.
+    - Every result sits at the end of its stream, so a stretch is told by its `init` event, not
+      by where its result sits.
+
+    At the result-reading commit, condensed from each report's header, `reconstruction:` and
+    `pricing:` lines (`python3 tools/stream-cost.py <x2>/<session>/stream.jsonl`):
+
+    ```
+    <x2>/whole-C-3    3 result events; the main loop agrees in every stretch
+                      claude-opus-5-5   priced=4.856048 costUSD=4.856048  agree
+                      claude-sonnet-5-5 priced=0.770360 costUSD=0.770359  agree
+    <x2>/whole-C-1    3 result events; the main loop agrees in every stretch
+                      claude-opus-5-5   priced=4.373351 costUSD=4.373351  agree
+                      claude-sonnet-5-5 priced=0.695109 costUSD=0.695109  agree
+    <x2>/whole-C-2-r  5 result events; the main loop agrees in every stretch
+                      claude-opus-5-5   priced=4.823008 costUSD=4.823008  agree
+                      claude-sonnet-5-5 priced=0.777877 costUSD=0.777877  agree
+    ```
+
+    `whole-C-3`'s sonnet row prints two values a digit apart under `agree`: with `--json` they
+    differ by 2.2e-16, and six decimals round them apart. Each model's total is whole. Its split
+    across stages is not yet: each report also prints an `unattributed` row holding a negative
+    `claude-sonnet-5-5` cache read, the `belong to no request` line of `reconstruction:` (−67063,
+    −57341 and −70856, in the block's order). In `whole-C-3` that is the two final requests
+    rebuilt for `opKrv7` and `KRKraC`, cacheR 33679 and 33384 in their `dispatch` lines. Section
+    10's dispatch command shows why. Both were started in the background: the call's tool result is
+    a notice that an async agent launched, and each agent's last request in the stream is its own
+    report, as text. So their final requests were not missing, and the rebuild counts each twice.
+    In `whole-C-1` the two dispatches launched that way sum to its row exactly. In `whole-C-2-r`
+    no set of its dispatches whose last request is text alone does, so its row is not yet
+    explained. The fault is the final-request rebuild's, not the result reading's, and it moves
+    cost between one model's stages, never out of the session.
   - What follows the cycle holds sign-off, any fix task it runs and the run's close, together. T1
     prints that as one part. T5 separates sign-off from the run's close by their tool calls, as
     section 1.1 does for `whole-C-3`.
@@ -1174,7 +1227,7 @@ commit, with `--bytes-per-token 2.63` where it applies.
     neither, so the old rule read every one of its requests as planning.
   - On `whole-C-3`, planning is requests 1 to 12. Requests 13 and 14 fall in neither span. The cycle
     is 15 to 36, holding P1.1, P1.2 and P1.3, and P1.4-fcb's `done` is printed after it. Its main
-    loop agrees with its `result` events.
+    loop agrees with its `result` events, which the result-reading commit already prints.
   - Twin fixtures, each pair built so that only the rule tells them apart:
     - a run whose preflight and lock sit between the last `add` and the first `start`, against one
       whose `start` follows the last `add`. The `planning` row holds the same requests in both, and
@@ -1270,8 +1323,8 @@ commit, with `--bytes-per-token 2.63` where it applies.
   own requests, sign-off and the run's close. The revision at `adece536` also capped every
   main-loop request before sign-off other than planning at `7 + 5N`, which fixed orient at 2. An arm
   C session whose first request makes the `add` call has none: `whole-C-3`'s `per stage, as billed`
-  at the pinned tool prints no `orient` row, because a `Skill` call is not a plugin read
-  (`tools/stream-cost.py:337-338`).
+  at `9501aa91` prints no `orient` row, and neither does the result-reading commit's, because a
+  `Skill` call is not a plugin read (`tools/stream-cost.py:337-338` at `9501aa91`).
 - **Confirming session:** the after-study.
 
 ### T5 — Calibrate the model from the baseline sessions
@@ -1302,9 +1355,10 @@ commit, with `--bytes-per-token 2.63` where it applies.
 for byte the one these figures were taken at: `git diff --stat f7eaade4 7b489337 -- plugins/audit`
 prints nothing. When this section was first written on 2026-10-07, no arm C session of that study
 was valid yet: `whole-C-2` is in `<x2>/invalid.jsonl`. `whole-C-3` was recorded later that day and
-is not in that file. Section 1.1 reads only its tool calls, and T1 must read all of its `result`
-events before T5 can read its figures. So the baseline and T5's calibration both wait on these
-sessions.
+is not in that file. Section 1.1 reads only its tool calls. T1's result reading has landed, so from
+the result-reading commit on the tool prices `whole-C-3`, `whole-C-1` and `whole-C-2-r` to each
+model's `costUSD`, with the main loop agreeing in every stretch (section 6, T1). T5's calibration
+still waits on the rest of T1, and its stage figures on the rebuild fault T1 names.
 
 **After.** Use a copy of `<h2>` that changes `benchlib.EXPERIMENTS` and `pins.json` → `pluginSha`, and
 nothing else. That follows the harness's own precedent: v2 is "a copy of `../bench-feature/` extended,
@@ -1441,7 +1495,10 @@ And from the records:
 
 | Figure | Command |
 |---|---|
-| stage, class, row and context figures | `python3 tools/stream-cost.py <record>/stream.jsonl` (`--json` for `requests` and `items`), from a checkout of `9501aa91` |
+| stage, class, row and context figures | `python3 tools/stream-cost.py <record>/stream.jsonl` (`--json` for `requests` and `items`), from a checkout of `9501aa91`; the result-reading commit prints the same bytes for these sessions (section 0) |
+| the arm C sessions' result events, main loop and pricing (section 6, T1) | `python3 tools/stream-cost.py <x2>/<session>/stream.jsonl`, its header, `reconstruction:` and `pricing:` lines, from a checkout of the result-reading commit |
+| what the CLI writes in each result event | the result command below; it reads the stream alone, so it needs no checkout |
+| how each dispatch was launched, and how its last request in the stream ends | the dispatch command below; it reads the stream alone |
 | bytes read first per entry, at a ref | `python3 tools/measure-context.py --ref 7b489337 --ref f7eaade4 --bytes-per-token 2.63`, from the same checkout |
 | `/audit:task`'s entry total, until T1 adds the entry, from the same checkout | `python3 -c "import importlib.util as u; s=u.spec_from_file_location('mc','tools/measure-context.py'); m=u.module_from_spec(s); s.loader.exec_module(m); src,_=m.git_source('7b489337'); print(sum(r['bytes'] for r in m.entry_rows(src,'command','commands/task.md',None)))"` |
 | the main loop's tool calls per request | the snippet in section 1.1 |
@@ -1525,6 +1582,63 @@ EOF
 
 On `feature-C-1` it printed `eknkfg avGJjL 8 11374.0`, then task tokens `21857.0` and a cost of
 task `0.704895`, file `0.212897`, run `0.0`. The cycle cannot hold an orient request: a request that
-runs a plugin script is never in orient (`tools/stream-cost.py:337-338`), and the cycle opens at one,
-with every later request after it. So the command charges every input it counts to the task class,
-as the tool does outside orient.
+runs a plugin script is never in orient (`tools/stream-cost.py:337-338` at `9501aa91`), and the
+cycle opens at one, with every later request after it. So the command charges every input it
+counts to the task class, as the tool does outside orient.
+
+The result command takes a stream. For each result event, in stream order, it prints the
+stretch's number, the input side of the main-loop requests between that stretch's `init` event and
+the next, and the result's own `usage`, as in, cacheW and cacheR. Then it prints whether
+`modelUsage` and `total_cost_usd` are the same in every result.
+
+```
+python3 - <x2>/whole-C-3/stream.jsonl <<'EOF'
+import json, sys
+k, req, ends = -1, {}, []
+F = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+for l in open(sys.argv[1], encoding="utf-8"):
+    e = json.loads(l) if l.strip() else {}
+    if e.get("type") == "system" and e.get("subtype") == "init":
+        k += 1
+    elif e.get("type") == "result":
+        ends.append(e)
+    elif e.get("type") == "assistant" and not e.get("parent_tool_use_id"):
+        v = [e["message"]["usage"].get(f) or 0 for f in F]
+        s, old = req.get(e["message"]["id"], (k, [0, 0, 0]))
+        req[e["message"]["id"]] = (s, [max(a, b) for a, b in zip(old, v)])
+for i, r in enumerate(ends):
+    print(i + 1, [sum(v[j] for s, v in req.values() if s == i) for j in range(3)], [r["usage"].get(f) for f in F])
+print("same totals in every result:", len(set(json.dumps([r.get("modelUsage"), r.get("total_cost_usd")], sort_keys=True) for r in ends)) == 1)
+EOF
+```
+
+On `whole-C-1`, `whole-C-3` and `whole-C-2-r` each line's two lists were equal, and the last line
+read `True`.
+
+The dispatch command takes a stream. For each `Agent` or `Task` call it prints the call's id
+suffix, its `run_in_background`, the content types of the agent's last request in the stream, and
+the start of the call's tool result.
+
+```
+python3 - <x2>/whole-C-3/stream.jsonl <<'EOF'
+import json, sys
+calls, last, back = {}, {}, {}
+for l in open(sys.argv[1], encoding="utf-8"):
+    e = json.loads(l) if l.strip() else {}
+    m, p = e.get("message") if isinstance(e.get("message"), dict) else {}, e.get("parent_tool_use_id")
+    for c in m.get("content") if isinstance(m.get("content"), list) else []:
+        if c.get("name") in ("Agent", "Task"):
+            calls[c["id"]] = (c.get("input") or {}).get("run_in_background")
+        if c.get("type") == "tool_result" and c.get("tool_use_id") in calls:
+            x = c.get("content")
+            back[c["tool_use_id"]] = (x if isinstance(x, str) else "".join(t.get("text") or "" for t in x))[:34]
+    if e.get("type") == "assistant" and p:
+        last.setdefault(p, {}).setdefault(m["id"], set()).update(c.get("type") for c in m.get("content") or [])
+for a, bg in calls.items():
+    print(a[-6:], bg, sorted(list(last.get(a, {"-": set()}).values())[-1]), repr(back.get(a)))
+EOF
+```
+
+On `whole-C-3` it printed `opKrv7` and `KRKraC` with `None`, `['text']` and
+`'Async agent launched successfully.'`, and every other dispatch with `False`, `['tool_use']` and a
+`[Subagent hand-back]` result.

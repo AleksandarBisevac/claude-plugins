@@ -55,18 +55,34 @@ single-task runs, where that case does not arise.
 WHAT THE STREAM DOES NOT CARRY, AND WHAT IS DONE ABOUT IT.
 
   * A subagent's last request - the one that writes its hand-back - is absent from the
-    stream. It is rebuilt from the result event: per model, `modelUsage` minus every
+    stream. It is rebuilt from the result events: per model, `modelUsage` minus every
     request the stream shows. With one dispatch on a model that residual IS the missing
     request; the prefix identity predicts its cache read independently, and the two are
     printed side by side. With several dispatches on one model each cache read comes
     from the identity and the residual cache write is split by the bytes that entered
     after each dispatch's last visible request - an estimate, and labelled as one.
   * Output counts in the stream are emit-time and undercount. The measured ones are the
-    main loop's (`result.usage`, which the stream's own input-side sums are checked
-    against) and each model's (`modelUsage`). Within such a pool, output is apportioned
-    to requests by the bytes each emitted - an estimate, labelled.
+    main loop's (each stretch's `usage`, which the stream's own input-side sums are
+    checked against) and each model's (`modelUsage`). Within such a pool, output is
+    apportioned to requests by the bytes each emitted - an estimate, labelled.
   * A cache write that held content from more than one source is split across them by
     bytes - an estimate; how many writes needed it is printed.
+
+A RE-INVOKED SESSION RUNS IN STRETCHES. When a background task's notification wakes a
+headless session, the session runs again under the same id: each stretch opens with an
+`init` event of its own and closes with a result event of its own, and the recorded
+streams hold every result at their end, so a stretch is told by its `init` and never by
+where its result sits. The result events do not all carry the same kind of figure:
+
+  * `usage` is the stretch's own main loop. The results' `usage` blocks are summed, the
+    main loop is checked stretch by stretch against its own result, and each stretch's
+    output is a measured pool of its own;
+  * `modelUsage` and `total_cost_usd` are the whole session's, repeated in every result,
+    so they are read once, from the last. Summed, every subagent would be counted once
+    per stretch. Results that disagree on them are reported, never reconciled.
+
+A stream whose `init` events do not pair one to one with its results is checked on the
+summed `usage` alone, and the reconstruction says so.
 
 PRICES come from the plugin's own shipped table (`_usage_core.DEFAULT_PRICING`), with
 the five-minute and one-hour write rates applied to the split the stream records. The
@@ -210,8 +226,10 @@ def _usage_counts(usage):
 
 
 def parse(events):
-    """The session as this tool reads it: requests (deduplicated by message id),
-    the agent dispatches, every tool result's size, a timeline and the result event.
+    """The session as this tool reads it: requests (deduplicated by message id, each
+    with the stretch it ran in), the agent dispatches, every tool result's size, a
+    timeline, every result event (`ends`) and the session's reading of them
+    (`result`, from `session_result`).
 
     An assistant event without a message id cannot be joined to a request; it is
     counted in `unjoined` rather than dropped silently.
@@ -222,7 +240,7 @@ def parse(events):
                        if isinstance(p, dict) and isinstance(p.get("path"), str)
                        and os.path.isabs(p.get("path"))))
     requests, order, agents, results, calls = {}, [], {}, {}, {}
-    timeline, seen, unjoined, result = [], set(), 0, None
+    timeline, seen, unjoined, ends, inits = [], set(), 0, [], 0
     for event in events:
         uid = event.get("uuid")
         if uid is not None:
@@ -231,8 +249,10 @@ def parse(events):
             seen.add(uid)
         kind = event.get("type")
         stamp = _ts(event.get("timestamp"))
-        if kind == "result":
-            result = event
+        if kind == "system" and event.get("subtype") == "init":
+            inits += 1
+        elif kind == "result":
+            ends.append(event)
         elif kind == "assistant":
             message = event.get("message") or {}
             mid = message.get("id")
@@ -243,7 +263,8 @@ def parse(events):
             if req is None:
                 req = {"id": mid, "context": event.get("parent_tool_use_id") or MAIN,
                        "model": message.get("model") or "?", "tools": [],
-                       "emitWrite": {}, "emitOther": 0, "reconstructed": False}
+                       "emitWrite": {}, "emitOther": 0, "reconstructed": False,
+                       "stretch": max(inits - 1, 0)}
                 req.update(_usage_counts(message.get("usage")))
                 requests[mid] = req
                 order.append(mid)
@@ -285,7 +306,64 @@ def parse(events):
     return {"roots": roots, "cwd": init.get("cwd") or "", "init": init,
             "requests": [requests[m] for m in order], "agents": agents,
             "results": results, "calls": calls, "timeline": timeline,
-            "result": result, "unjoined": unjoined}
+            "result": session_result(ends), "ends": ends, "inits": inits,
+            "unjoined": unjoined}
+
+
+# A result's `usage` holds its own stretch's main loop, so these are summed across
+# results. The tool reads no other key of a result's usage, so no other is summed.
+_STRETCH_USAGE = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens",
+                  "output_tokens")
+# Per stretch as well: they differ from result to result, smallest in the stretch with
+# the fewest requests.
+_STRETCH_COUNTS = ("duration_ms", "num_turns")
+# The whole session's, repeated in every result: read once, from the last.
+_SESSION_TOTALS = ("modelUsage", "total_cost_usd")
+
+
+def session_result(ends):
+    """The session as its result events report it, or None when it has none.
+
+    One result stands as it is. Several are one per stretch: `usage` and the
+    per-stretch counts are summed, and every other field - the session's totals
+    among them - is the last result's."""
+    if not ends:
+        return None
+    if len(ends) == 1:
+        return ends[0]
+    merged = dict(ends[-1])
+    merged["usage"] = dict((key, sum(int((e.get("usage") or {}).get(key) or 0) for e in ends))
+                           for key in _STRETCH_USAGE)
+    for key in _STRETCH_COUNTS:
+        values = [e.get(key) for e in ends]
+        merged[key] = None if None in values else sum(values)
+    return merged
+
+
+def _same_totals(ends):
+    """True when every result carries the last one's session totals."""
+    def shape(event, key):
+        return json.dumps(event.get(key), sort_keys=True)
+    return all(shape(e, key) == shape(ends[-1], key) for e in ends for key in _SESSION_TOTALS)
+
+
+def main_stretches(session):
+    """([(number, usage, requests)], why): the main loop's requests grouped by the
+    result whose `usage` must account for them. `number` counts stretches from one,
+    and is None for the single group a session gets when it has one result, or when
+    its `init` events do not pair one to one with its results; `why` names that
+    second case and is None otherwise."""
+    main = [r for r in session["requests"] if r["context"] == MAIN]
+    ends = session["ends"]
+    whole = [(None, (session["result"] or {}).get("usage") or {}, main)]
+    if len(ends) < 2:
+        return whole, None
+    if session["inits"] != len(ends):
+        return whole, ("main loop: result events %d, init events %d - no request can be "
+                       "placed in its stretch, so it is checked against the summed usage "
+                       "alone" % (len(ends), session["inits"]))
+    return [(k + 1, end.get("usage") or {}, [r for r in main if r["stretch"] == k])
+            for k, end in enumerate(ends)], None
 
 
 # --- stages --------------------------------------------------------------------
@@ -387,24 +465,23 @@ def reconstruct(session):
                     "is not measured, so output is not priced"]
     reqs = session["requests"]
     notes, extra = [], []
-    usage_main = result.get("usage") or {}
-    main_reqs = [r for r in reqs if r["context"] == MAIN]
-    seen_main = _input_side(main_reqs)
-    told_main = {"in": int(usage_main.get("input_tokens") or 0),
-                 "cw": int(usage_main.get("cache_creation_input_tokens") or 0),
-                 "cr": int(usage_main.get("cache_read_input_tokens") or 0)}
-    main_gap = dict((k, told_main[k] - seen_main[k]) for k in told_main)
-    if any(main_gap.values()):
-        notes.append("main loop: result.usage and the stream's own requests DISAGREE "
-                     "by in=%(in)d cacheW=%(cw)d cacheR=%(cr)d; the gap is a request of "
-                     "its own, stage unattributed" % main_gap)
-        model = main_reqs[-1]["model"] if main_reqs else "?"
-        extra.append(_pseudo("residual:main", MAIN, model,
-                             {"in": main_gap["in"], "cw5": 0, "cw1": main_gap["cw"],
-                              "cr": main_gap["cr"]}, "main-loop gap"))
-    else:
-        notes.append("main loop: result.usage agrees with the stream's own requests "
-                     "(in, cacheW, cacheR)")
+    ends = session["ends"]
+    if len(ends) > 1:
+        notes.append(("%d result events, one per stretch: their usage is summed, and "
+                      "modelUsage and total_cost_usd, the same in every one, are read once"
+                      if _same_totals(ends) else
+                      "%d result events DISAGREE on modelUsage or total_cost_usd: both are "
+                      "read from the last, which is the session's whole only if the CLI "
+                      "reports them cumulatively") % len(ends))
+    groups, why = main_stretches(session)
+    if why:
+        notes.append(why)
+    fallback = next((r["model"] for r in reversed(reqs) if r["context"] == MAIN), "?")
+    for number, told_usage, members in groups:
+        note, gap = _main_gap(number, len(groups), told_usage, members, fallback)
+        notes.append(note)
+        if gap is not None:
+            extra.append(gap)
     usage = result.get("modelUsage") or {}
     by_model = {}
     for aid, dispatch in sorted(session["agents"].items()):
@@ -448,6 +525,28 @@ def reconstruct(session):
     return extra, notes
 
 
+def _main_gap(number, count, told_usage, members, fallback):
+    """(note, residual request or None): one group of main-loop requests against the
+    usage that must account for them. A gap is a request of its own, so every token
+    the result reports stays attributed somewhere visible."""
+    where = "main loop" if number is None else "main loop, stretch %d of %d" % (number, count)
+    seen = _input_side(members)
+    told = {"in": int(told_usage.get("input_tokens") or 0),
+            "cw": int(told_usage.get("cache_creation_input_tokens") or 0),
+            "cr": int(told_usage.get("cache_read_input_tokens") or 0)}
+    gap = dict((k, told[k] - seen[k]) for k in told)
+    if not any(gap.values()):
+        return ("%s: result.usage agrees with the stream's own requests (in, cacheW, cacheR)"
+                % where), None
+    note = ("%s: result.usage and the stream's own requests DISAGREE by in=%d cacheW=%d "
+            "cacheR=%d; the gap is a request of its own, stage unattributed"
+            % (where, gap["in"], gap["cw"], gap["cr"]))
+    rid = "residual:main" if number is None else "residual:main:%d" % number
+    model = members[-1]["model"] if members else fallback
+    return note, _pseudo(rid, MAIN, model, {"in": gap["in"], "cw5": 0, "cw1": gap["cw"],
+                                            "cr": gap["cr"]}, "main-loop gap")
+
+
 def _rebuild_finals(model, members, resid, results, notes):
     if not members:
         return []
@@ -489,14 +588,24 @@ def _rebuild_finals(model, members, resid, results, notes):
 def apportion_output(session, reqs):
     """{request id: output tokens}, or None when no result event measured any.
 
-    Pools are measured; the split inside a pool is by emitted bytes [estimate]."""
+    Pools are measured - the main loop's one per stretch - and the split inside a pool
+    is by emitted bytes [estimate]."""
     result = session["result"]
     if result is None:
         return None, ["output not measured: no result event"]
     main = [r for r in reqs if r["context"] == MAIN and not r["id"].startswith("residual:")]
     main_out = int((result.get("usage") or {}).get("output_tokens") or 0)
-    notes = ["output pool, measured: main loop %d tokens (result.usage)" % main_out]
-    out = _split(main, main_out)
+    groups, _why = main_stretches(session)
+    notes = ["output pool, measured: main loop %d tokens (result.usage%s)"
+             % (main_out, "" if len(groups) == 1 else
+                ", over %d stretches, each split within its own" % len(groups))]
+    out = {}
+    for number, told_usage, members in groups:
+        pool = int(told_usage.get("output_tokens") or 0)
+        if pool and not members:
+            notes.append("main loop%s: %d output tokens belong to no request the stream "
+                         "shows" % ("" if number is None else ", stretch %d" % number, pool))
+        out.update(_split(members, pool))
     usage = result.get("modelUsage") or {}
     for model in sorted(usage):
         pool = int(usage[model].get("outputTokens") or 0)
@@ -957,9 +1066,13 @@ def render(reading, top=10):
     init = session["init"]
     lines = ["stream-cost: claude_code %s, main model %s"
              % (init.get("claude_code_version") or "?", init.get("model") or "?")]
+    stretched = len(session["ends"]) > 1
     if session["result"] is not None:
-        lines.append("[measured] result event: total_cost_usd=%s duration_ms=%s num_turns=%s"
-                     % (result.get("total_cost_usd"), result.get("duration_ms"),
+        lines.append("[measured] %s: total_cost_usd=%s duration_ms=%s num_turns=%s"
+                     % ("result event" if not stretched else
+                        "%d result events, one per stretch, duration_ms and num_turns summed"
+                        % len(session["ends"]),
+                        result.get("total_cost_usd"), result.get("duration_ms"),
                         result.get("num_turns")))
     lines.append("reconstruction:")
     lines.extend("  " + n for n in reading["notes"])
@@ -997,11 +1110,20 @@ def render(reading, top=10):
                         r["usdIn"], r["usdCw"], r["usdCr"], r["usdOut"], r["usd"],
                         100.0 * r["usd"] / billed if billed else 0.0, wall.get(stage, 0.0)))
     rebuilt = any(r["rebuilt"] for r in table.values())
+    duration = result.get("duration_ms")
+    if not duration:
+        timed = ""
+    elif stretched:
+        # The span less the summed duration_ms is not time before the first event here:
+        # in the recorded streams a stretch's stamped extent differs from its own
+        # duration_ms, in both directions.
+        timed = "; duration_ms summed over the stretches is %.1fs" % (duration / 1000.0)
+    else:
+        timed = ("; duration_ms adds %.1fs before the first one"
+                 % (duration / 1000.0 - reading["wall"]["span"]))
     lines.append("  %swall_s partitions the first-to-last stream timestamp: %.1fs%s"
                  % ("* holds a rebuilt request. " if rebuilt else "", reading["wall"]["span"],
-                    "" if not result.get("duration_ms") else
-                    "; duration_ms adds %.1fs before the first one"
-                    % (result["duration_ms"] / 1000.0 - reading["wall"]["span"])))
+                    timed))
     filled = reading["content"]
     matrix = origin_matrix(reading)
     lines.append("")
@@ -1248,8 +1370,10 @@ def _fx_result(main=None, exe=None, rev=None, exe_ttl="5m"):
 def _fx_events(flow, split=False, noise=False, duplicate=False, result=True, roots=True):
     """The stream for `flow`. `split` emits one event per content block with the usage
     repeated on each, as Claude Code does; `noise` interleaves the system events a real
-    stream carries; `duplicate` replays one event under its own uuid. `result` is True
-    for the known-answer result event, False for none, or the result event itself."""
+    stream carries; `duplicate` replays one event under its own uuid. An `("init",)`
+    step opens a stretch with an `init` event of its own. `result` is True for the
+    known-answer result event, False for none, a result event, or a list of them -
+    every one written at the end, where the recorded streams hold them."""
     init = {"type": "system", "subtype": "init", "uuid": "u-init", "cwd": _FX_REPO,
             "model": _FX_OPUS, "claude_code_version": "0.0.0",
             "plugins": ([{"name": "audit", "path": _FX_PLUGIN}] if roots else [])
@@ -1285,6 +1409,8 @@ def _fx_events(flow, split=False, noise=False, duplicate=False, result=True, roo
                            "parent_tool_use_id": parent,
                            "message": {"content": [{"type": "tool_result", "tool_use_id": tid,
                                                     "content": "y" * size}]}})
+        elif step[0] == "init":
+            events.append(dict(init, uuid="u-init-%d" % n))
         else:
             events.append({"type": "user", "uuid": "u-brief-" + step[1], "timestamp": stamp(),
                            "parent_tool_use_id": step[1],
@@ -1296,9 +1422,47 @@ def _fx_events(flow, split=False, noise=False, duplicate=False, result=True, roo
                   and e["message"]["id"] == "msg_m4"
                   and any(b.get("name") == "Agent" for b in e["message"]["content"])]
         events.append(json.loads(json.dumps(replay[-1])))
-    if result:
+    if isinstance(result, list):
+        events.extend(result)
+    elif result:
         events.append(result if isinstance(result, dict) else _fx_result())
     return events
+
+
+# The known-answer session as a re-invoked one: a second `init` opens a stretch at the
+# main loop's fifth request, after the executor's hand-back. Each stretch's main loop,
+# worked out by hand from `_fx_session` - requests m1-m4, then m5-m8 - sums to
+# `_FX_MAIN`. The output split between them is chosen, not derived: a split by bytes
+# across the whole main loop puts a different share in each.
+_FX_STRETCHES = ({"in": 8, "cw": 1160, "cr": 1570, "out": 500},
+                 {"in": 8, "cw": 450, "cr": 5950, "out": 400})
+
+
+def _fx_stretched(flow):
+    """`flow` with a second stretch opened before the main loop's request m5."""
+    at = next(i for i, step in enumerate(flow) if step[0] == "req" and step[1] == "m5")
+    return list(flow[:at]) + [("init",)] + list(flow[at:])
+
+
+def _fx_ends(stretches):
+    """One result event per stretch: its own `usage`, and the known-answer session's
+    `modelUsage` and `total_cost_usd` repeated in each, as the recorded CLI writes them."""
+    ends = []
+    for k, part in enumerate(stretches):
+        end = _fx_result()
+        end["total_cost_usd"] = sum(row["costUSD"] for row in end["modelUsage"].values())
+        end.update({"uuid": "u-result-%d" % k, "result_index": k, "duration_ms": 1000 * (k + 2),
+                    "usage": {"input_tokens": part["in"],
+                              "cache_creation_input_tokens": part["cw"],
+                              "cache_read_input_tokens": part["cr"],
+                              "output_tokens": part["out"]}})
+        ends.append(end)
+    return ends
+
+
+def _fx_main_out(reading, ids):
+    """Output tokens the reading gives to the main-loop requests `ids`."""
+    return sum(reading["output"]["msg_" + i] for i in ids)
 
 
 def _fx_stage_totals(reading):
@@ -1640,6 +1804,95 @@ def _cases(check):
           and planned["content"]["contexts"][MAIN]["heldByClass"]["file"] == 0
           and planned["costs"]["msg_e2"]["out"] > 0
           and _close(plan_classes["file"]["out"], planned["costs"]["msg_e2"]["out"]))
+
+    stretched = _fx_stretched(flow)
+    two = analyse(_fx_events(stretched, result=_fx_ends(_FX_STRETCHES)))
+    one = analyse(_fx_events(flow, result=_fx_ends((_FX_MAIN,))))
+    rows_two, total_two = reconciliation(two)
+    shares = (_fx_main_out(two, ("m1", "m2", "m3", "m4")),
+              _fx_main_out(two, ("m5", "m6", "m7", "m8")))
+    whole_share = _fx_main_out(one, ("m1", "m2", "m3", "m4"))
+    agreed = ["main loop, stretch %d of 2: result.usage agrees with the stream's own "
+              "requests (in, cacheW, cacheR)" % k for k in (1, 2)]
+    text = render(two)
+    check("sc25 a session re-invoked once - two stretches, each with its own init and its own "
+          "result, both results at the end - reads as the hand-worked answer: every token in "
+          "the stage of the request that paid it and none unattributed, each stretch's main "
+          "loop agreeing with its own result, each stretch's output its own measured pool "
+          "(500 and 400, where one pool split by bytes gives the first %.1f), every model "
+          "priced to its costUSD, and the header saying two results were read. Keeping the "
+          "last result alone reads the first stretch as a gap of negative tokens: %r"
+          % (whole_share, (_fx_stage_totals(two), shares)),
+          _fx_stage_totals(two) == _FX_EXPECTED
+          and two["session"]["result"]["usage"] == {
+              "input_tokens": _FX_MAIN["in"], "cache_creation_input_tokens": _FX_MAIN["cw"],
+              "cache_read_input_tokens": _FX_MAIN["cr"], "output_tokens": _FX_MAIN["out"]}
+          and not [r for r in two["requests"] if r["id"].startswith("residual:")]
+          and [n for n in two["notes"] if n.startswith("main loop")] == agreed
+          and _close(shares[0], 500) and _close(shares[1], 400)
+          and not _close(whole_share, 500)
+          and len(rows_two) == 2
+          and all(told is not None and abs(priced - told) < 1e-9 for _m, priced, told in rows_two)
+          and "2 result events, one per stretch, duration_ms and num_turns summed" in text
+          and "duration_ms summed over the stretches is 5.0s" in text
+          and "before the first one" not in text)
+
+    def rebuilt_of(r):
+        return sorted((q["id"], q["in"], q["cw5"], q["cw1"], q["cr"])
+                      for q in r["requests"] if q["reconstructed"])
+    rows_one, total_one = reconciliation(one)
+    check("sc26 THE SINGLE-RESULT TWIN: the same session with ONE result carrying the same "
+          "totals reads the same wherever the output split does not reach - every stage's "
+          "tokens, every rebuilt final request, every model's price and costUSD, the total "
+          "cost and the total output. Summing modelUsage or total_cost_usd, which every "
+          "result repeats, would count each subagent once per stretch: %r"
+          % ((rebuilt_of(two), rows_two, total_two),),
+          _fx_stage_totals(two) == _fx_stage_totals(one) == _FX_EXPECTED
+          and rebuilt_of(two) == rebuilt_of(one) and len(rebuilt_of(one)) == 2
+          and [(m, t) for m, _p, t in rows_two] == [(m, t) for m, _p, t in rows_one]
+          and all(_close(a[1], b[1]) for a, b in zip(rows_two, rows_one))
+          and total_one and total_two == total_one
+          and _close(sum(two["output"].values()), sum(one["output"].values())))
+
+    skew = 37
+    traded = (dict(_FX_STRETCHES[0], cr=_FX_STRETCHES[0]["cr"] - skew),
+              dict(_FX_STRETCHES[1], cr=_FX_STRETCHES[1]["cr"] + skew))
+    off = analyse(_fx_events(stretched, result=_fx_ends(traded)))
+    gaps = sorted((r["id"], r["cr"]) for r in off["requests"] if r["id"].startswith("residual:"))
+    told_off = [n for n in off["notes"] if n.startswith("main loop, stretch ")
+                and "DISAGREE by in=0 cacheW=0 cacheR=" in n]
+    check("sc27 each stretch's main loop is held to its own result: two results that trade "
+          "%d cache-read tokens, their sum still the main loop's, print a gap in each "
+          "stretch, -%d and +%d, where a check of the sum alone passes: %r"
+          % (skew, skew, skew, (gaps, told_off)),
+          gaps == [("residual:main:1", -skew), ("residual:main:2", skew)]
+          and len(told_off) == 2)
+
+    unpaired = analyse(_fx_events(flow, result=_fx_ends(_FX_STRETCHES)))
+    why = [n for n in unpaired["notes"] if "result events 2, init events 1 - " in n]
+    check("sc28 two results with one init cannot be placed stretch by stretch, and the "
+          "reconstruction SAYS so; the main loop is held to the summed usage, which it meets, "
+          "and its output is one pool, as with one result. The paired session of sc25 says "
+          "nothing of the kind: %r" % (why,),
+          len(why) == 1
+          and not [r for r in unpaired["requests"] if r["id"].startswith("residual:")]
+          and [n for n in unpaired["notes"] if n.startswith("main loop: result.usage")]
+          == ["main loop: result.usage agrees with the stream's own requests (in, cacheW, "
+              "cacheR)"]
+          and all(_close(unpaired["output"][k], one["output"][k]) for k in one["output"])
+          and not [n for n in two["notes"] if "init events" in n])
+
+    drifted = _fx_ends(_FX_STRETCHES)
+    drifted[0]["modelUsage"][_FX_OPUS]["inputTokens"] -= 1
+    odd = analyse(_fx_events(stretched, result=drifted))
+    loud = [n for n in odd["notes"] if "DISAGREE on modelUsage or total_cost_usd" in n]
+    same = [n for n in two["notes"] if "the same in every one, are read once" in n]
+    check("sc29 results that disagree on the session totals they repeat are REPORTED, and "
+          "the last is the one read; results that agree say so, and never the first: %r"
+          % ((loud, same),),
+          len(loud) == 1 and _fx_stage_totals(odd) == _FX_EXPECTED
+          and len(same) == 1
+          and not [n for n in two["notes"] if "DISAGREE on modelUsage" in n])
 
 
 def _selftest():

@@ -38,6 +38,14 @@ the tool that reads either can: the `stream-cost.py` and `measure-context.py` fi
 tools' output at `9501aa91`. Re-derive them from a checkout of that commit. A later change to either
 tool does not move this pin, so the command and the figures keep naming the same tool.
 
+One later change was checked against every session here rather than assumed harmless.
+`stream-cost.py` came to read every `result` event instead of the last (section 1), at the commit
+`git log --format=%h -S'def session_result' -- tools/stream-cost.py | tail -1` prints, the
+result-reading commit. Each session here holds one result event (`grep -c '"type":"result"'
+<record>/stream.jsonl`), and from a checkout of either commit the tool prints every one of them
+byte for byte the same, in text and with `--json`. So every figure here carries both pins, and this
+document keeps naming `9501aa91`.
+
 ## 1. The instruments
 
 **`python3 tools/stream-cost.py <stream.jsonl>`** reads one recorded `stream-json` session and
@@ -55,9 +63,17 @@ prints two views of it.
 The content view rests on an identity that the tool checks on every request. Within one context,
 a request reads from cache what the first request read, plus everything written since. When the
 identity holds, a write's carrying cost is a count of reads. Two things the stream lacks are
-rebuilt from the result event. One is each subagent's final request, the one that writes its
+rebuilt from the result events. One is each subagent's final request, the one that writes its
 hand-back. The other is the true output counts, since the stream carries only emit-time counts.
 The tool prints the basis for both.
+
+A session that is re-invoked, for example when a background task notifies it, runs in stretches.
+Each stretch opens with an `init` event and closes with a result event of its own. A result's
+`usage` is its own stretch's main loop, so the tool sums those and checks the main loop stretch
+by stretch. `modelUsage` and `total_cost_usd` are the whole session's, repeated in every result,
+so it reads them once. That rule was read off the whole-feature arm C sessions
+([pipeline-cost-design.md](pipeline-cost-design.md), section 6, T1). Every session in this
+document ran as one stretch.
 
 **`python3 tools/measure-context.py --ref <ref> [--ref <ref>]`** lists what each step on the
 pipeline's path loads before it does any work:
@@ -424,7 +440,7 @@ prose written differently.
 
 | Figure | Command |
 |---|---|
-| per-stage billing, content view, classes, cache economics, largest writes and outputs, contexts | `python3 tools/stream-cost.py <record>/stream.jsonl` (`--json` for every row), from a checkout of `9501aa91` |
+| per-stage billing, content view, classes, cache economics, largest writes and outputs, contexts | `python3 tools/stream-cost.py <record>/stream.jsonl` (`--json` for every row), from a checkout of `9501aa91` or of the result-reading commit (section 0), which print the same bytes for every session here |
 | the prose each pipeline step loads, and its growth between refs | `python3 tools/measure-context.py --ref v3.1.0 --ref a73b836a --bytes-per-token 2.63`, from the same checkout |
 | the sizes at the commits the sessions ran | `python3 tools/measure-context.py --ref 5df231ec76c9 --ref b6d9a4a31d2a`, from the same checkout |
 | the task cycle's bounds and figures in `feature-C-1` | the event and cycle commands in [pipeline-cost-design.md](pipeline-cost-design.md), section 10, from the same checkout |

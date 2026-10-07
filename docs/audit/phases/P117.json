@@ -505,7 +505,7 @@
     {
       "id": "P117.6-2sz",
       "title": "stream-cost reads every result event, so a re-invoked session is priced whole",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes review finding P117-R22. tools/stream-cost.py reads every result event in a stream, not only the last. A headless session that is re-invoked, for example by a background task's notification, emits one result per stretch, each with that stretch's usage and modelUsage. The tool sums them per model, and rebuilds each stretch's missing final request against its own result. A new case holds a stream with two result events whose totals are known, with a single-result twin. It goes red against keeping only the last result, in a scratch copy. Re-reading the four recorded sessions leaves every figure the documents quote unchanged. The whole-feature arm C sessions are priced: whole-C-1, whole-C-3 and whole-C-2-r, with the main loop agreeing with the CLI's costUSD per model.",
       "files": [
         "tools/stream-cost.py",
@@ -533,16 +533,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T15:50:41Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T16:27:28Z.91d1d4",
+        "status": "passed",
+        "at": "2026-10-07T16:27:28Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T11:45:57Z"
