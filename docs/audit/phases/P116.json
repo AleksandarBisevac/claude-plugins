@@ -202,7 +202,7 @@
     {
       "id": "P116.3-3og",
       "title": "the benchmark results report B-2 as the stream shows and close the remaining record gaps",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes review findings from the whole-feature benchmark phase's first review round.\n\n- The B-2 invalidation reason is corrected to what the stream shows: both skills launched under settings that lacked the Skill allow rule, so the recorded reason holds for whole-C-2 only. whole-B-2 is reinstated as a valid session from the seeded order, and whole-B-2-r is reported as an extra observation. Every arm-B figure is restated with both, with the arithmetic shown.\n- The over-specification judgement states both readings side by side, and the wording about arms not catching the requirement is neutral.\n- Limits says what pins.json's digests cover and that they were rewritten once.\n- The runner and renderer edits after the first session are named with their times.\n- §1 says the records and harness are untracked in the internal repository's working tree.\n- The rebuild and AST scripts are kept beside the records.\n- The uncommitted journal shard whole-C-3 left on main is listed.\n- The design's out-of-date price note is corrected in the results document.\n- docs/README.md gains a row for the results document.",
       "files": [
         "docs/research/benchmark-feature-results.md",
@@ -229,16 +229,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T16:35:26Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T17:04:44Z.f7eade",
+        "status": "passed",
+        "at": "2026-10-07T17:04:44Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T11:36:46Z"

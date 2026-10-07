@@ -4,14 +4,17 @@
 fixes. They were run on 2026-10-07, and "observed" has the meaning that design's section 0 gives it:
 seen once, on one machine, on the date and records named below. **Read sections 5 and 6 before
 section 4.** Three sessions per arm are three observations per arm, so nothing in this document is
-a rate, and no difference is called significant.
+a rate, and no difference is called significant. Arm B also has one extra observation,
+`whole-B-2-r`. It is reported beside arm B's sessions, and every arm-B figure it would change is
+given both ways (section 5.2).
 
 What the sessions showed, in one paragraph: every session in every arm built the feature, kept
 the visible suite green, and failed the same hidden test the same way, producing the same output
 (section 3). The arms differed on what the grader's scope and reuse rules see. Every arm-A session
 edited the protected test's existing assertion, wrote stock directly, and changed a file the
-request did not need. No arm-B or arm-C session did any of those things. Those three are rules the
-organized `CLAUDE.md` given to arms B and C writes down. Arm C cost several times what arm B cost,
+request did not need. No arm-B or arm-C session did any of those things, and neither did the extra
+one. Those three are rules the organized `CLAUDE.md` given to arms B and C writes down. Arm C cost
+several times what arm B cost,
 and it left a branch, commits, a plan and an evidence trail that the hidden tests do not score
 (section 4).
 
@@ -24,15 +27,16 @@ is labelled **derived** and its arithmetic is shown.
 | | |
 |---|---|
 | Protocol | `benchmark-feature-design.md`, unchanged since the commit that added it; that commit was made before the first session started (section 5.9) |
-| Harness | `reports/2026-10-05-deep-analysis/fixtures/bench-feature-v2/` in the internal repository: fixture builder, request, plugin sentence, hidden acceptance tests, reference, runner, grader, price table |
-| Raw records | `reports/2026-10-05-deep-analysis/experiments/bench-feature-v2/<label>/` in the internal repository: the stream, run meta, settings snapshot, diff, git log and status, metrics and grade of each session; `invalid.jsonl` beside them |
+| Harness | `reports/2026-10-05-deep-analysis/fixtures/bench-feature-v2/`, untracked, in the internal repository's working tree (section 1.2): fixture builder, request, plugin sentence, hidden acceptance tests, reference, runner, grader, price table |
+| Raw records | `reports/2026-10-05-deep-analysis/experiments/bench-feature-v2/<label>/`, untracked, in the same working tree: the stream, run meta, settings snapshot, diff, git log and status, metrics and grade of each session; `invalid.jsonl` beside them |
+| Checks | `reports/2026-10-05-deep-analysis/experiments/bench-feature-v2/checks/`, beside the records: the scripts behind the tree rebuild (section 3.1), the refund probe (section 3.2) and the comparison of test definitions (section 4.1) |
 | Request | `request.txt`, the same bytes in every arm; arm C's prompt adds `plugin-sentence.txt` after a blank line (`run-meta.json` → `command`) |
 | Arms | A, plain; B, organized skills, agents and `CLAUDE.md`; C, B plus the `audit` plugin on an empty plan |
 | Model, effort | `claude-opus-5-5`, `medium` in every main loop (`run-meta.json` → `pins`); a subagent ran on what its arm's configuration picks (section 2.3) |
 | Claude Code | the version `pins.json` → `claudeVersion` names, read back from each stream's `init` (`grade.txt` → `validity`) |
 | Plugin under test | `plugins/audit` exported with `git archive` at the commit `pins.json` → `pluginSha` names, version `run-meta.json` → `pluginExport.pluginVersion` |
 | Order | `order.json`: the seeded shuffle, its seed and the one-liner that re-derives it, plus the two re-runs appended at the end (section 5.2) |
-| Valid sessions | the labels `order.json` lists, other than the two `invalid.jsonl` names |
+| Valid sessions | the seeded labels in `order.json` (the entries with no `note`), with `whole-C-2-r` in place of `whole-C-2`. `invalid.jsonl` also names `whole-B-2`. Section 5.2 says why this document counts `whole-B-2` valid and reports `whole-B-2-r` as an extra observation |
 | Safety stop | `run-meta.json` → `budgetStopUSD`, per arm (section 5.3); no session reached it (`grade.txt` → `finish`) |
 | Prices | `prices.json`, read from the official pricing page on 2026-10-07 by the orchestrator (`confirmedAgainstOfficialPage`) |
 
@@ -52,9 +56,11 @@ that folder.
 
   The grader reads the fixture repository that `run-meta.json` → `repo` names. The two variables
   keep it from writing bytecode into the harness or an index refresh into the fixture. On
-  2026-10-07 this re-grade was run once for every valid session. Each regenerated `grade.json`
-  was identical to the recorded one except for `visible.ran`, whose `Ran N tests in <seconds>`
-  timing differs run to run.
+  2026-10-07 this re-grade was run once for every session the first version of this document
+  counted valid. Each regenerated `grade.json` was identical to the recorded one except for
+  `visible.ran`, whose `Ran N tests in <seconds>` timing differs run to run. It was run once more
+  for `whole-B-2` when section 5.2 reinstated it, and that regenerated `grade.json` was identical
+  to the recorded one, `visible.ran` included.
 - **Stream metrics.** `python3 <h2>/extract_metrics.py <x2>/<label>/stream.jsonl`.
 - **The per-result-event figures** in section 2.4:
 
@@ -62,12 +68,30 @@ that folder.
   python3 -c "import json,sys;[print(e['num_turns'],e['duration_ms'],e['duration_api_ms'],len(e.get('permission_denials') or [])) for e in map(json.loads,open(sys.argv[1])) if e.get('type')=='result']" <x2>/<label>/stream.jsonl
   ```
 
-- **A session's final tree, rebuilt offline.** Section 3.1.
+- **A session's final tree, rebuilt offline.** `python3 <x2>/checks/rebuild_tree.py <label> --out
+  <scratch>` writes the tree to `<scratch>/<label>` and compares it with the fixture (section 3.1).
+- **The refund probe.** `python3 <x2>/checks/probe_refunds.py <scratch>/<label> …` (section 3.2).
+- **Seed test definitions.** `python3 <x2>/checks/compare_seed_tests.py <scratch>/<label> …`
+  (section 4.1).
+
+Each script's docstring states its procedure and exit codes. None of them writes under `<x2>` or
+`<h2>`: the rebuild writes only under `--out`, and the probe keeps its store in a temporary
+directory it removes.
+
+### 1.2 Where the records live
+
+The harness, the records and the checks are **untracked**. From the internal repository's root,
+`git status --short -- reports/2026-10-05-deep-analysis` prints
+`?? reports/2026-10-05-deep-analysis/`, and `git ls-files reports/2026-10-05-deep-analysis` prints
+nothing. So every figure here rests on one working tree on one machine, with no history behind it.
+The earlier versions of the harness files edited during the run are not kept (section 5.10).
 
 ## 2. Per session
 
 Rows are grouped by arm. `seq` is the session's position in `order.json`. The re-derivation of
-each column is in its header.
+each column is in its header. The `whole-B-2-r` row is marked *(extra)* in every table. It is the
+extra arm-B observation (section 5.2), and no per-arm figure counts it unless the figure is given
+both ways.
 
 ### 2.1 Outcome, claims and interventions
 
@@ -77,8 +101,9 @@ each column is in its header.
 | `whole-A-2` | 1 | `13/14 passed` | `PASS (OK)` | `none` | `True` | `0` | `success` |
 | `whole-A-3` | 5 | `13/14 passed` | `PASS (OK)` | `none` | `True` | `0` | `success` |
 | `whole-B-1` | 7 | `13/14 passed` | `PASS (OK)` | `none` | `True` | `0` | `success` |
-| `whole-B-2-r` | 10 | `13/14 passed` | `PASS (OK)` | `none` | `True` | `0` | `success` |
+| `whole-B-2` | 3 | `13/14 passed` | `PASS (OK)` | `none` | `True` | `0` | `success` |
 | `whole-B-3` | 9 | `13/14 passed` | `PASS (OK)` | `none` | `True` | `0` | `success` |
+| `whole-B-2-r` *(extra)* | 10 | `13/14 passed` | `PASS (OK)` | `none` | `True` | `0` | `success` |
 | `whole-C-1` | 8 | `13/14 passed` | `PASS (OK)` | `none` | `True` | `0` | `success` |
 | `whole-C-2-r` | 11 | `13/14 passed` | `PASS (OK)` | `none` | `True` | `0` | `success` |
 | `whole-C-3` | 6 | `13/14 passed` | `PASS (OK)` | `none` | `True` | `0` | `success` |
@@ -91,8 +116,10 @@ final message, each backed by a test run after the last edit (`grade.json` → `
 found no unbacked claim. Its patterns do not read what a message says about the refund rule, so
 each final message (`stream.jsonl`, the last result event's `result`) was also read by hand for
 that. Each final message except `whole-C-3`'s describes the rule the code implements: the paid
-share of everything returned so far, minus what was already refunded. `whole-B-2-r` even gives the
-case the hidden test checks, "three mugs paid at 8.99 come back as 3.00, 2.99 and 3.00".
+share of everything returned so far, minus what was already refunded. `whole-B-2` gives a case of
+its own, "three pens bought for 3.50 and returned one at a time refund 1.17, 1.16 and 1.17", and
+`whole-B-2-r` gives the case the hidden test checks, "three mugs paid at 8.99 come back as 3.00,
+2.99 and 3.00".
 `whole-C-3` says instead that "each
 refund is the returned units' share of what the order cost after the volume discount and coupon,
 rounded with the shop's existing helper". The code does not do that for every return: the second
@@ -107,8 +134,9 @@ hand reading, recorded here and not as a grader flag.
 | `whole-A-2` | `shop/inventory.py` | `tests/test_cli.py`, `tests/test_reports.py` | `tests/test_reports.py` | `DailyReportTest.test_daily_report_text` | `stock reimplemented shop/inventory.py:23 write-to:stock (def put_back)` | `none` |
 | `whole-A-3` | `shop/inventory.py` | `tests/test_reports.py` | `tests/test_reports.py` | `DailyReportTest.test_daily_report_text` | `stock reimplemented shop/inventory.py:23 write-to:stock (def put_back)` | `none` |
 | `whole-B-1` | `none` | `tests/test_cli.py`, `tests/test_reports.py` | `tests/test_reports.py` | none | none — every rule `reused` | `none` |
-| `whole-B-2-r` | `none` | `tests/test_cli.py`, `tests/test_reports.py` | `tests/test_reports.py` | none | none — every rule `reused` | `none` |
+| `whole-B-2` | `none` | `tests/test_cli.py`, `tests/test_orders.py`, `tests/test_reports.py` | `tests/test_reports.py` | none | none — every rule `reused` | `none` |
 | `whole-B-3` | `none` | `tests/test_cli.py`, `tests/test_orders.py`, `tests/test_reports.py` | `tests/test_reports.py` | none | none — every rule `reused` | `none` |
+| `whole-B-2-r` *(extra)* | `none` | `tests/test_cli.py`, `tests/test_reports.py` | `tests/test_reports.py` | none | none — every rule `reused` | `none` |
 | `whole-C-1` | `none` | `none` | `none` | none | none — every rule `reused` | `none` |
 | `whole-C-2-r` | `none` | `tests/test_cli.py`, `tests/test_orders.py`, `tests/test_reports.py` | `tests/test_reports.py` | none | none — every rule `reused` | `none` |
 | `whole-C-3` | `none` | `none` | `none` | none | none — every rule `reused` | `none` |
@@ -131,8 +159,9 @@ and arm-C session.
 | `whole-A-2` | `claude-opus-5-5` | `22` | `31585` | `0` / `31585` | `287968` | `14516` |
 | `whole-A-3` | `claude-opus-5-5` | `18` | `28575` | `0` / `28575` | `224217` | `13074` |
 | `whole-B-1` | `claude-opus-5-5` | `30` | `48129` | `9261` / `34592` | `393936` | `17038` |
-| `whole-B-2-r` | `claude-opus-5-5` | `30` | `47046` | `13215` / `33502` | `341525` | `16552` |
+| `whole-B-2` | `claude-opus-5-5` | `30` | `55595` | `16365` / `37187` | `367776` | `20680` |
 | `whole-B-3` | `claude-opus-5-5` | `46` | `71655` | `33132` / `33925` | `526535` | `23279` |
+| `whole-B-2-r` *(extra)* | `claude-opus-5-5` | `30` | `47046` | `13215` / `33502` | `341525` | `16552` |
 | `whole-C-1` | `claude-opus-5-5` | `122` | `232797` | `35244` / `194155` | `8397863` | `47342` |
 | `whole-C-1` | `claude-sonnet-5-5` | `66` | `126909` | `117586` / `0` | `620072` | `25369` |
 | `whole-C-2-r` | `claude-opus-5-5` | `128` | `260199` | `39307` / `216860` | `9686006` | `46686` |
@@ -157,8 +186,9 @@ grader and not reconciled here.
 | `whole-A-2` | `0.600682` | `0.600682` | none |
 | `whole-A-3` | `0.534995` | `0.534995` | none |
 | `whole-B-1` | `0.764088` | `0.774207` | `+0.010119` |
-| `whole-B-2-r` | `0.735201` | `0.735909` | `+0.000708` |
+| `whole-B-2` | `0.876811` | `0.881068` | `+0.004257` |
 | `whole-B-3` | `1.031121` | `1.038099` | `+0.006978` |
+| `whole-B-2-r` *(extra)* | `0.735201` | `0.735909` | `+0.000708` |
 | `whole-C-1` | `5.068459` | `5.077088` | `+0.008629` |
 | `whole-C-2-r` | `5.600885` | `5.611124` | `+0.010239` |
 | `whole-C-3` | `5.626408` | `5.629282` | `+0.002874` |
@@ -173,17 +203,22 @@ It was not checked further.
 **Derived, per arm**, the sum of `total_cost_usd` over the arm's valid sessions:
 
 - A: `0.505336 + 0.600682 + 0.534995 = 1.641013`.
-- B: `0.764088 + 0.735201 + 1.031121 = 2.530410`.
+- B, with `whole-B-2` (`whole-B-1`, `whole-B-2`, `whole-B-3`): `0.764088 + 0.876811 + 1.031121 =
+  2.672020`. **The headline uses this one** (section 5.2 says why).
+- B, with `whole-B-2-r` as the third session instead: `0.764088 + 0.735201 + 1.031121 = 2.530410`.
 - C: `5.068459 + 5.600885 + 5.626408 = 16.295752`.
 
-The valid sessions together come to `1.641013 + 2.530410 + 16.295752 = 20.467175`. The two invalid
-sessions add `0.876811 + 0.772553 = 1.649364`, from `<x2>/whole-B-2/grade.json` and
-`<x2>/whole-C-2/grade.json` → `cli_total_cost_usd`. That makes `22.116539` across every session
-run. The design's estimate (`benchmark-feature-design.md` section 8, `python3 <h2>/estimate.py`)
-put a session at 0.85 – 1.56 in arm A, 0.85 – 2.34 in arm B and 5.15 – 10.49 in arm C. Against the
-table above, every arm-A session fell below its range's low end, as did `whole-B-1` and
-`whole-B-2-r`. `whole-C-1` fell just under arm C's low end, and the other two arm-C sessions fell
-in the lower part of that range.
+The valid sessions together come to `1.641013 + 2.672020 + 16.295752 = 20.608785`, or
+`1.641013 + 2.530410 + 16.295752 = 20.467175` with `whole-B-2-r` as arm B's third session. The
+extra observation `whole-B-2-r` adds `0.735201`, and the one invalid session, `whole-C-2`, adds
+`0.772553` (`<x2>/<label>/grade.json` → `cli_total_cost_usd`). That makes
+`20.608785 + 0.735201 + 0.772553 = 22.116539` across every session run. The design's estimate
+(`benchmark-feature-design.md` section 8, `python3 <h2>/estimate.py`) put a session at
+0.85 – 1.56 in arm A, 0.85 – 2.34 in arm B and 5.15 – 10.49 in arm C. Against the table above,
+every arm-A session fell below its range's low end, as did `whole-B-1` and the extra
+`whole-B-2-r`. `whole-B-2` and `whole-B-3` fell in the lower part of arm B's range, `whole-B-2`
+just above its low end. `whole-C-1` fell just under arm C's low end, and the other two arm-C
+sessions fell in the lower part of that range.
 
 ### 2.4 Wall clock, turns and search
 
@@ -193,8 +228,9 @@ in the lower part of that range.
 | `whole-A-2` | `121.0s` | 1 | `36` | 36 | `117109` | `115242` |
 | `whole-A-3` | `105.9s` | 1 | `32` | 32 | `104641` | `103512` |
 | `whole-B-1` | `143.0s` | 1 | `37` | 37 | `142146` | `141088` |
-| `whole-B-2-r` | `134.2s` | 1 | `35` | 35 | `133367` | `132484` |
+| `whole-B-2` | `162.7s` | 1 | `35` | 35 | `161809` | `160554` |
 | `whole-B-3` | `194.6s` | 2 | `6`, `20` | 6 + 20 = 26 | `8164`, `119257` | `193712` |
+| `whole-B-2-r` *(extra)* | `134.2s` | 1 | `35` | 35 | `133367` | `132484` |
 | `whole-C-1` | `563.6s` | 3 | `25`, `2`, `39` | 25 + 2 + 39 = 66 | `293747`, `5086`, `235121` | `598676` |
 | `whole-C-2-r` | `574.0s` | 5 | `25`, `12`, `4`, `1`, `24` | 25 + 12 + 4 + 1 + 24 = 66 | `248347`, `91494`, `12487`, `2717`, `165959` | `628109` |
 | `whole-C-3` | `658.7s` | 3 | `28`, `1`, `41` | 28 + 1 + 41 = 70 | `310859`, `4083`, `300905` | `685349` |
@@ -218,8 +254,9 @@ the stream states.
 | `whole-A-2` | `Bash(search)` 2, `Read` 18 | none |
 | `whole-A-3` | `Bash(search)` 2, `Read` 18 | none |
 | `whole-B-1` | `Bash(search)` 2, `Read` 18 | none |
-| `whole-B-2-r` | `Bash(search)` 2, `Read` 17 | none |
+| `whole-B-2` | `Bash(search)` 2, `Read` 17 | none |
 | `whole-B-3` | `Agent` 1, `Bash(search)` 2 | `Glob` 1, `Grep` 1, `Read` 25 |
+| `whole-B-2-r` *(extra)* | `Bash(search)` 2, `Read` 17 | none |
 | `whole-C-1` | `Agent` 4, `Bash(search)` 5, `Read` 5 | `Bash(search)` 8, `Glob` 1, `Grep` 1, `Read` 27 |
 | `whole-C-2-r` | `Agent` 5, `Bash(search)` 5, `Read` 5 | `Bash(search)` 11, `Glob` 1, `Grep` 1, `Read` 36 |
 | `whole-C-3` | `Agent` 4, `Bash(search)` 7, `Read` 5 | `Bash(search)` 8, `Read` 3 |
@@ -230,12 +267,13 @@ the stream states.
 |---|---|---|---|---|
 | `whole-A-2` | 12:07:59 | `0.34` | not computable — no previous session | `unknown` |
 | `whole-A-1` | 12:10:58 | `0.36` | `0.01` | `warm (1 min)` |
+| `whole-B-2` | 12:12:47 | `0.37` | `0.02` | `warm (0 min)` |
 | `whole-A-3` | 12:28:37 | `0.44` | `0.05` | `warm (10 min)` |
 | `whole-C-3` | 15:03:40 | `0.0` | window reset before or during session | `cold (153 min; UNATTESTED)` |
 | `whole-B-1` | 15:15:08 | `0.09` | `0.01` | `warm (0 min)` |
 | `whole-C-1` | 15:17:44 | `0.1` | `0.08` | `warm (0 min)` |
 | `whole-B-3` | 15:27:21 | `0.17` | `0.02` | `warm (0 min)` |
-| `whole-B-2-r` | 15:30:48 | `0.19` | `0.01` | `warm (0 min)` |
+| `whole-B-2-r` *(extra)* | 15:30:48 | `0.19` | `0.01` | `warm (0 min)` |
 | `whole-C-2-r` | 15:33:15 | `0.2` | `0.1` | `warm (0 min)` |
 
 The shares are **not attributable to the sessions**. `run-meta.json` → `attestIdle` is `false` in
@@ -247,27 +285,37 @@ grader's reading of the gap since the previous harness session, not a measuremen
 
 ### 3.1 The final trees, rebuilt offline
 
-Each session's final tree was rebuilt in a scratch directory, without the fixture, in four steps:
+Each session's final tree was rebuilt in a scratch directory, without the fixture, in four steps.
+`<x2>/checks/rebuild_tree.py <label> --out <scratch>` runs them:
 
 1. **The base.** `<h2>/seed` committed in the commits `<h2>/history.json` lists, the way
    `build_fixture.py` lays them: `CLAUDE.md` from `claude-md-base.md`, plus `claude-md-organized.md`
    in arms B and C; `skills/` and `agents/` under `.claude/` in B and C; and in C,
    `plan-template.json` written as `docs/audit/audit-plan.json`. The rebuilt base's tree hash was
    compared with `git -C <fixture> rev-parse <baseSha>^{tree}`, where `<baseSha>` is
-   `<x2>/<label>/bench-meta.json` → `baseSha`. It was identical for every valid session.
+   `<x2>/<label>/bench-meta.json` → `baseSha`. It was identical for every session directory in
+   `<x2>`, the extra and the invalid one included.
 2. **The diff.** `git apply <x2>/<label>/diff.patch`.
 3. **What the diff leaves out.** `diff.patch` is `git diff <base>`, written by `run_session.py`. It
-   carries no untracked file, so it is missing `tests/test_returns.py` in every arm-A session, and
-   both `shop/returns.py` and `tests/test_returns.py` in `whole-B-1` and `whole-B-2-r`
-   (`<x2>/<label>/git-status.txt`, the `??` lines). Each such file was rebuilt by replaying the
-   session's successful `Write` and `Edit` calls on that path, in stream order.
+   carries no untracked file (`<x2>/<label>/git-status.txt`, the `??` lines). So it is missing
+   `tests/test_returns.py` in every arm-A session; both `shop/returns.py` and
+   `tests/test_returns.py` in `whole-B-1`, `whole-B-2-r` and the invalid `whole-C-2`; and
+   `docs/audit/journal/2026-10.a399286b21a05db7.jsonl` in `whole-C-3`, a journal shard the plugin
+   left uncommitted on `main` after the phase merged (section 5.7). Each file under `shop/` or
+   `tests/` was rebuilt by replaying the session's successful `Write` and `Edit` calls on that
+   path, in the order their results arrive in the stream. No such call wrote the journal shard, so
+   it is not rebuilt; the script names it, and it lies outside what step 4 compares.
 4. **The check.** Every file under `shop/`, `tests/` and `README.md` in the rebuilt tree was
-   compared byte for byte with the fixture on disk, read-only. No file differed in any session.
-   The comparison was proven able to fail: with step 3 left out, it named `shop/returns.py` and
-   `tests/test_returns.py` for `whole-B-1`.
+   compared byte for byte with the fixture on disk, read-only, in both directions. No file
+   differed in any session. The comparison was proven able to fail twice. With step 3 left out
+   (`--skip-untracked`), it named `shop/returns.py` and `tests/test_returns.py` for `whole-B-1`.
+   With `git apply` removed from the script, it named every file `whole-B-2`'s diff changes.
 
-The rebuild script was a throwaway and is not kept. The steps above are its whole content. The
-fixtures themselves are still on disk in `<h2>/runs/`, and the grader reads them.
+The first rebuild was a throwaway. The kept script was written afterwards from the steps above. On
+2026-10-07 it was run over every session directory in `<x2>`, and again later over every valid
+session and the extra one, into a fresh directory. Each run printed `verdict: IDENTICAL` and exited
+0 for each session. The fixtures themselves are still on disk in `<h2>/runs/`, and the grader
+reads them.
 
 ### 3.2 What each session's tree returned
 
@@ -288,13 +336,16 @@ AssertionError: Lists differ: ['refunded: 3.00\n', 'refunded: 2.99\n', 'refunded
 
 | Session | First return | Second return | Third return | Sum of the three |
 |---|---|---|---|---|
-| every valid session, each run separately | `refunded: 3.00` | `refunded: 2.99` | `refunded: 3.00` | 8.99 |
+| every valid session and the extra one, each run separately | `refunded: 3.00` | `refunded: 2.99` | `refunded: 3.00` | 8.99 |
 | `<h2>/reference` | `refunded: 3.00` | `refunded: 3.00` | `refunded: 2.99` | 8.99 |
 
-A second probe drove the same calls and read the store back. Each session's tree recorded
-`order.refunded` events of 300, 299 and 300 cents, against an order total of 899 cents and a
-one-unit share of `money.prorate(899, 1, 3) = 300`. The reference recorded 300, 300 and 299. The
-two runs agreed for every tree. The full hidden suite, run in each rebuilt tree with
+A second probe drove the same calls and read the store back. Its first version was a throwaway, and
+the kept one is `<x2>/checks/probe_refunds.py`. Each session's tree recorded `order.refunded`
+events of 300, 299 and 300 cents, against an order total of 899 cents and a one-unit share of
+`money.prorate(899, 1, 3) = 300`. The reference, laid over a copy of `<h2>/seed`, recorded 300,
+300 and 299. The probe was run on both rebuilds of section 3.1, and printed the same readings both
+times. It agreed with the unit-test run for every tree. The full hidden suite, run in each rebuilt
+tree with
 `python3 <h2>/hidden_runner.py <tree> <copy of the hidden module>`, printed the same
 `"passed": 13` and `"total": 14`, and the same single failure, as `grade.json` → `hidden`.
 
@@ -308,7 +359,7 @@ session is that computation:
 | Arm | Where (`grade.txt` → `reuse`, `money-rounding`) | The rule, as the code or its plan states it |
 |---|---|---|
 | A | `shop/orders.py:56` (`whole-A-1`), `:75` (`whole-A-2`), `:62` (`whole-A-3`) | `whole-A-1`'s docstring: "The refund is worked out on everything returned so far, less what was already refunded, so once the whole order is back the refunds add up …" |
-| B | `shop/returns.py:26` (`whole-B-1`), `shop/returns.py:35` (`whole-B-2-r`), `shop/orders.py:81` (`whole-B-3`) | `whole-B-2-r`'s module docstring: "Each refund is the paid share of everything returned so far less what was already refunded" |
+| B | `shop/returns.py:26` (`whole-B-1`), `shop/orders.py:88` (`whole-B-2`), `shop/orders.py:81` (`whole-B-3`); `shop/returns.py:35` in the extra `whole-B-2-r` | `whole-B-2`'s `return_items` docstring: "The refund is the returned units' share of the order total, worked out on the running total of everything returned so far, so the refunds of a fully returned order add up to exactly its total." `whole-B-2-r`'s module docstring: "Each refund is the paid share of everything returned so far less what was already refunded" |
 | C | `shop/returns.py:45` (`whole-C-1`), `shop/orders.py:82` (`whole-C-2-r`), `shop/returns.py:55` (`whole-C-3`) | each session's own plan, before any code: the task that adds the refund carries the rule in its description — `whole-C-1`'s reads "Cumulative: refund = money.prorate(order total, value returned so far incl. this one, order subtotal) - sum of earlier refunds on the order" |
 
 The arithmetic, **derived** from `shop/money.py`'s half-up `prorate`:
@@ -339,22 +390,33 @@ The two sentences of `<h2>/request.txt` that the test encodes:
 **Judgement: the test over-specifies the request in one respect.** It checks two things. The first
 is that the three refunds add up to exactly what was paid. That follows directly from the second
 sentence, and it rejects per-return rounding with no remainder. The second is *which* return
-absorbs the rounding difference. On this order the two sentences cannot both hold for every
-return, because three rounded shares make 900 and the customer paid 899. So some return has to
-refund something other than its rounded share. The request does not say which one. The reading
-the test encodes is the literal one: keep the first sentence on every return until the second one
-forces a change, which happens only on the return that completes the order. Cumulative proration
-departs from the rounded share on the second return, before anything forces it. That reading is
-defensible, but the request never states it. The design names it outright ("the last return must
-refund what is left", `benchmark-feature-design.md` section 3.3), and the request a session sees
-does not. A session that meets both sentences' explicit requirements by cumulative proration
-fails the test only on that unstated choice.
+absorbs the rounding difference, and the request allows two readings of that.
+
+"Rounded the way the shop rounds money everywhere else" fixes the rounding: half up, through
+`shop/money.py`. It does not fix how a remainder is split, because the seed has no such rule to
+copy. Pricing and coupons each make a single `percent_of` call (`<h2>/seed/shop/pricing.py`,
+`<h2>/seed/shop/coupons.py`). So "their share" can mean either of two things:
+
+| Reading of "their share" | Refunds on this order, in cents | Where it departs from the other reading |
+|---|---|---|
+| Each return's own rounded share, with the return that completes the order refunding what is left. `<h2>/reference` and the test encode this one. | 300, 300, 299 | After two returns it has refunded 600, against `prorate(899, 2, 3) = 599` for everything returned so far. A customer who stops there is refunded one cent more than the second reading gives. |
+| The rounded share of everything returned so far, less what was already refunded. This is cumulative proration, and every session used it (section 3.3). | 300, 299, 300 | The second return refunds 299, against its own rounded share of 300. A customer who stops there is refunded one cent less than the first reading gives. |
+
+Each rule departs from the other's reading on exactly one return, the second. Each meets the
+second sentence once everything is back, with 899 in total. On the first reading the two sentences
+cannot both hold for every return here, because three rounded shares make 900 against 899 paid, so
+some return has to refund something other than its own share, and the reference picks the last.
+On the second reading, cumulative proration meets both sentences on every return: 300, then 599,
+then 899 refunded in total. The request does not say which reading it means. The design names the
+first outright ("the last return must refund what is left", `benchmark-feature-design.md`
+section 3.3), and the request a session sees does not. A session that took the second reading
+fails the test on that unstated choice alone.
 
 ### 3.5 Hidden results, with and without that test
 
 | | With the test (`grade.txt` → `hidden`) | Without it (derived: the one failure removed from both counts) |
 |---|---|---|
-| every valid session, in every arm | `13/14 passed` | 13/13 |
+| every valid session, in every arm, and the extra one | `13/14 passed` | 13/13 |
 
 Without that test, every session passed every hidden test. The hidden tests separated no
 session from any other, in either reading.
@@ -373,8 +435,9 @@ fixture's trap is to print `refunds:` and `net:` on every day and then edit that
   `"refunds: 0.00",` and `"net: 242.00",` into the existing expected text of
   `test_daily_report_text` (`<x2>/<label>/diff.patch`, the `tests/test_reports.py` hunk at
   `@@ -19,4`). The report prints the two lines on every day, and the test was changed to agree.
-- **Arm B, every session, and `whole-C-2-r`**, left that assertion as it was and added new tests to
-  the same file. `whole-B-1` and `whole-B-2-r` also widened its import line to bring in `returns`.
+- **Arm B, every session, the extra one included, and `whole-C-2-r`**, left that assertion as it
+  was and added new tests to the same file. `whole-B-1` and `whole-B-2-r` also widened its import
+  line to bring in `returns`.
   Each one prints the refund lines only on a day that has refunds, and each final message gives
   the protected test as the reason.
 - **`whole-C-1` and `whole-C-3`** put their new tests in new files and changed no existing test
@@ -385,8 +448,11 @@ the first two groups, because they read whether a file changed. To separate an e
 from an appended test, every function and method defined in the seed's `tests/*.py` was compared,
 using `ast.dump`, with the definition of the same qualified name in each rebuilt tree. In every
 arm-A tree exactly one seed definition had changed, `DailyReportTest.test_daily_report_text`. In
-no arm-B or arm-C tree had any changed. That check was a throwaway too; its procedure is the
-previous sentence.
+no arm-B or arm-C tree had any changed, `whole-B-2`'s and `whole-B-2-r`'s included. The first run
+of that check was a throwaway too. The kept one is `<x2>/checks/compare_seed_tests.py`. On
+2026-10-07 it was run over both rebuilds of section 3.1 and printed the same both times.
+`ast.dump` leaves out line numbers, so a test appended beside a seed definition does not mark that
+definition changed. The seed compared with itself prints `changed: none`.
 
 ### 4.2 The reuse rule arm A broke
 
@@ -414,11 +480,18 @@ arms, not between B and C, so this run cannot credit any of it to the plugin.
 ### 4.4 The plugin's planning, gate and review records
 
 These are read from each arm-C session's final plan (`docs/audit/audit-plan.json` in the rebuilt
-tree), the red-first runs in `stream.jsonl`, and `grade.txt` → `scope`:
+tree), the red-first runs in `stream.jsonl`, and `grade.txt` → `scope`. The rebuilt tree holds the
+working tree, uncommitted changes included. In `whole-C-2-r` and `whole-C-3` the plan's
+uncommitted change is the phase's `status`, `mergedAt` and `mergedHead` and nothing else
+(`git -C <fixture> diff HEAD -- docs/audit/audit-plan.json`, read-only). So the table gives the
+phase's status from both the committed plan and the working tree, and every other row reads the
+same from either.
 
 | | `whole-C-1` | `whole-C-2-r` | `whole-C-3` |
 |---|---|---|---|
-| Phase status, merged into `main` | `done`, merged | `done`, merged | `done`, merged |
+| Phase work merged into `main` (`<x2>/<label>/git-log-all.txt`) | merged | merged | merged |
+| Phase `status` in the plan committed on `main` (`git -C <fixture> show main:docs/audit/audit-plan.json`) | `done` | `in_progress` | `in_progress` |
+| Phase `status` in the working tree, as the rebuilt tree holds it | `done` | `done`, uncommitted (section 5.7) | `done`, uncommitted (section 5.7) |
 | Commits on `main` since base (`grade.txt` → `scope`, `commits_since_base`) | `6` | `4` | `5` |
 | Tasks in the final plan, by `tests.mode` | three `tdd`, one `regression` (a review-fix task) | three `tdd` | three `tdd`, one `regression` (a review-fix task) |
 | Red-first, per `tdd` task, last verdict `stamp-verification.py red` printed | `proved`, `could-not-prove`, `proved` | `proved`, `proved`, `could-not-prove` | `proved`, `could-not-prove`, `proved` |
@@ -435,26 +508,35 @@ appears only in the task's outcome text, not in a `redFirst` field. Arm B's equi
 project `reviewer` agent, which every arm-B session ran once before reporting (`stream.jsonl`, the
 `Agent` call with `subagent_type` `reviewer`). It leaves no record outside the stream.
 
-What the plugin's records did not catch is in section 3.3: the refund rule the hidden test checks
-was settled in each plan, and both reviews were checked against that plan.
+The refund rule the hidden test checks was settled in each plan (section 3.3). The request allows
+two readings of it (section 3.4). Each plan fixed one of them, and both reviews checked the work
+against that plan.
 
 ### 4.5 Cost and time
 
-From sections 2.3 and 2.4, side by side:
+From sections 2.3 and 2.4, side by side. Each arm-B figure is given first with `whole-B-2`, the
+headline (section 5.2), and then with `whole-B-2-r` as arm B's third session instead:
 
 - **Arm C's opus cache reads** ran from `8397863` to `10664407` tokens per session, against
-  `218201` to `287968` in arm A and `341525` to `526535` in arm B.
+  `218201` to `287968` in arm A and `367776` to `526535` in arm B (`341525` to `526535` with
+  `whole-B-2-r`).
 - **Opus output** was `46678` to `47342` in arm C, plus `25369` to `29552` on the subagent model.
-  Arm A's was `12166` to `14516`, and arm B's was `16552` to `23279`.
-- **Per arm** (derived, section 2.3), `total_cost_usd` was `1.641013` for A, `2.530410` for B and
-  `16.295752` for C.
-- **The runner's wall clock** was 97.8 – 121.0 s in A, 134.2 – 194.6 s in B and 563.6 – 658.7 s
-  in C. That clock is noisy (section 5.4).
+  Arm A's was `12166` to `14516`, and arm B's was `17038` to `23279` (`16552` to `23279` with
+  `whole-B-2-r`).
+- **Per arm** (derived, section 2.3), `total_cost_usd` was `1.641013` for A, `2.672020` for B
+  (`2.530410` with `whole-B-2-r`) and `16.295752` for C.
+- **The runner's wall clock** was 97.8 – 121.0 s in A, 143.0 – 194.6 s in B (134.2 – 194.6 s with
+  `whole-B-2-r`) and 563.6 – 658.7 s in C. That clock is noisy (section 5.4).
 
 The design's estimate expected arm C to be the most expensive (`benchmark-feature-design.md`
-section 8). Per arm, the size of the gap is the observation, **derived** from the sums above. C's
-sum is `16.295752 / 1.641013 ≈ 9.9` times A's and `16.295752 / 2.530410 ≈ 6.4` times B's. Three
-sessions per arm do not narrow that further.
+section 8). Per arm, the size of the gap is the observation, **derived** from the sums above:
+
+- C against A: `16.295752 / 1.641013 ≈ 9.9`. Arm B's choice does not enter it.
+- C against B, the headline, with `whole-B-2`: `16.295752 / 2.672020 ≈ 6.1`.
+- C against B with `whole-B-2-r` as the third session: `16.295752 / 2.530410 ≈ 6.4`.
+
+Three sessions per arm do not narrow that further. The choice of arm-B session alone moves C
+against B between `≈ 6.1` and `≈ 6.4`.
 
 ### 4.6 Where the arms did not differ
 
@@ -478,38 +560,84 @@ sessions per arm do not narrow that further.
 Each deviation is listed with its effect on the comparison, or with a statement that the effect is
 unknown.
 
+**This section is the only record of them.** The design's Deviations row names
+`<x2>/deviations.jsonl`, but `run_session.py` writes that file only when a session starts past the
+window gate with `--deviation`, and no session did: every `run-meta.json` → `windowGate` is empty.
+No `deviations.jsonl` exists in `<x2>`, so the deviations below are recorded nowhere else.
+
 **5.1 The grader was patched after the first session.** The runner's output for `whole-A-2` (the
 orchestrator's runner log, which is not in `<x2>`) ends in a traceback in `grade.py`'s
 `tool_sequence`: `AttributeError: 'str' object has no attribute 'get'`, raised on a stream event
 whose `message` is not a dict. The current `grade.py` guards that read
-(`isinstance(msg, dict)`). The internal folder is not under version control, so the patch's full
-extent is not recorded and the pre-patch grader is not kept. *Effect:* every valid session was
-graded by the patched grader. Re-grading each one on 2026-10-07 (section 1.1) reproduced each
-recorded `grade.json` except the visible suite's timing, so every valid session's reading comes
-from one grader.
-Whether the patch changed anything beyond the crash is unknown.
+(`isinstance(msg, dict)`). Its modification time is 12:10:15 UTC, after `whole-A-2` started
+(12:07:59) and before `whole-A-1` did (12:10:58). The internal folder is not under version control
+(section 1.2), so the patch's full extent is not recorded and the pre-patch grader is not kept.
+*Effect:* every valid session was graded by the patched grader. Re-grading each one on 2026-10-07
+(section 1.1) reproduced each recorded `grade.json` except the visible suite's timing, so every
+valid session's reading comes from one grader. Whether the patch changed anything beyond the crash
+is unknown.
 
-**5.2 `whole-B-2` and `whole-C-2` were invalidated and re-run last.** `invalid.jsonl` records why.
-The `Skill` tool was not allowed, so arm B's skills could not be invoked, and arm C's
-`audit:phase` call was denied, so the pipeline never ran (`<x2>/whole-C-2/grade.json` → `refusals`,
-a `Skill` call with `skill` `audit:phase`). They were re-run as `whole-B-2-r` and `whole-C-2-r` at
-the end of `order.json`. Their own `grade.txt` reads `validity  VALID`: the grader checks the CLI
+**5.2 `whole-B-2` and `whole-C-2` were invalidated and re-run last; this document reinstates
+`whole-B-2`.** `invalid.jsonl` gives one reason for both: the `Skill` tool was not allowed. For
+`whole-B-2` it reads "the arm's skills could not be invoked", and for `whole-C-2` "the session's
+`audit:phase` call was denied and the plugin pipeline never ran". Both sessions ran under the
+first `arm-settings.json` (`run-meta.json` → `digests` → `arm-settings.json` reads `caaddd69…`),
+whose allow list has no `Skill` rule (`settings-snapshot.json` → `permissions` → `allow`). They
+were re-run as `whole-B-2-r` and `whole-C-2-r` at the end of `order.json`. Every session's
+`grade.txt` reads `validity  VALID`, the two invalidated ones included. The grader checks the CLI
 version, the model, the permission mode, the arm's skills and agents in `init`, and the plugin's
-presence, but not whether `Skill` was allowed. The invalidation is the operator's judgement, recorded in
-`invalid.jsonl`. *Effects:*
+presence, but not whether `Skill` was allowed. The invalidation was the operator's judgement.
 
-- The re-runs ran last, in a later five-hour window than the sessions they replace (`grade.json`
-  → `window` → `last.resetsAt` differs), rather than at the positions the seeded draw gave them.
-  The shuffle's protection against drift is lost for those two cells.
-- **A second deviation came with the fix.** The fix added `Skill` to `arm-settings.json`'s allow
-  list after `whole-A-2` and `whole-A-1` had run. Those two sessions ran under a settings file one
-  allow rule short of every other valid session's (`run-meta.json` → `digests` →
-  `arm-settings.json` reads `caaddd69…` for those two and `2aa2ba24…` for the rest; the normalized
-  `settings-snapshot.json` files differ in that one rule). Arm A has no project skill and no
-  plugin, but the CLI offered it its built-in skills (`stream.jsonl`, `init` → `skills`). Neither
-  of the two sessions made a `Skill` call, and neither had one refused. `whole-A-3`, which had
-  `Skill` allowed, made none either. *Effect:* none observed. The design's "one settings file
-  identical in every arm" did not hold across the valid set.
+**The first version of this document repeated that reason for both sessions without checking it
+against the streams, and for `whole-B-2` it was wrong.** Each stream's `Skill` calls and their
+results, re-derived from `<x2>`:
+
+```
+python3 -c "import json,sys;ev=[json.loads(l) for l in open(sys.argv[1])];ms=[e['message'] for e in ev if isinstance(e.get('message'),dict)];ids=dict((c['id'],c['input']) for m in ms for c in m.get('content') or [] if isinstance(c,dict) and c.get('type')=='tool_use' and c.get('name')=='Skill');[print(ids[c['tool_use_id']],'is_error=%s'%bool(c.get('is_error')),json.dumps(c.get('content'))[:60]) for m in ms for c in m.get('content') or [] if isinstance(c,dict) and c.get('type')=='tool_result' and c.get('tool_use_id') in ids]" <x2>/<label>/stream.jsonl
+```
+
+- **`whole-C-2`: the reason holds.** It printed one line, the `audit:phase` call with
+  `is_error=True` and "Permission for this tool use was denied". `grade.json` → `refusals` lists
+  that `Skill` call. `whole-C-2` stays invalid, and `whole-C-2-r` takes its place.
+- **`whole-B-2`: the stream contradicts the reason.** It printed two lines, `shop-python` and
+  `shop-tests`, each with `is_error=False` and "Launching skill: …". The event after each result
+  carries that skill's body ("Base directory for this skill: …/.claude/skills/shop-python", then
+  the same for `shop-tests`). `grade.json` → `refusals` lists two `Bash` denials and no `Skill`
+  one, and the result event's `permission_denials` agrees. So the missing rule did not stop either
+  project skill. The records do not say why a project skill launched without the rule while a
+  plugin skill was refused.
+
+So **`whole-B-2` is counted as a valid session, at its seeded position (seq 3)**, the same way
+`whole-A-1` and `whole-A-2`, which ran under the same settings file, stayed valid.
+`whole-B-2-r` had already run by the time this was found. It is reported as an extra observation
+of arm B, marked *(extra)* in section 2. Every per-arm figure it would change is given both ways,
+with the arithmetic (sections 2.3 and 4.5).
+
+**The headline uses `whole-B-2`.** It is the session the seeded order put in that cell, and the
+only reason recorded against it is contradicted by its own stream. `whole-B-2-r` ran outside the
+seeded draw, last, in a later five-hour window (`grade.json` → `window` → `last.resetsAt`
+differs). Counting it in `whole-B-2`'s place would give up the shuffle's protection for that cell
+with no recorded cause to justify it. *Effects:*
+
+- **`whole-C-2-r` ran last**, in a later five-hour window than `whole-C-2`, rather than at seq 4.
+  The shuffle's protection against drift is lost for that cell.
+- **Arm B's cost and time depend on the choice.** With `whole-B-2`, arm B's sum of
+  `total_cost_usd` is `2.672020` and C against B is `≈ 6.1`. With `whole-B-2-r` they are
+  `2.530410` and `≈ 6.4` (section 4.5). On the hidden tests, the scope and reuse flags, the seed
+  test definitions and the refund rule, the two sessions read the same (sections 2.1, 2.2, 3.2 and
+  4.1). Only the files behind the existing-test flag differ: `whole-B-2` also changed
+  `tests/test_orders.py`.
+- **The settings file was not identical across the valid set.** The fix added `Skill` to
+  `arm-settings.json`'s allow list at 12:23:21 UTC (its modification time), after the first four
+  sessions in `order.json` had run. `whole-A-2`, `whole-A-1` and `whole-B-2` ran under a settings
+  file one allow rule short of every other valid session's (`run-meta.json` → `digests` →
+  `arm-settings.json` reads `caaddd69…` for those three and `2aa2ba24…` for the rest). Their
+  normalized `settings-snapshot.json` files differ from the later sessions' in that one rule only.
+  Arm A has no project skill and no plugin, but the CLI offered it its built-in skills
+  (`stream.jsonl`, `init` → `skills`). Neither arm-A session made a `Skill` call, and `whole-A-3`,
+  which had `Skill` allowed, made none either. `whole-B-2` made two, and both launched. *Effect:*
+  none observed. The design's "one settings file identical in every arm" did not hold across the
+  valid set.
 
 **5.3 The runner added a start limit and a watchdog.** The orchestrator's runner script (not in
 `<x2>`) started an arm-C session only while the five-hour reading was below 0.55, and an arm-A or
@@ -545,6 +673,8 @@ heredoc, passed a JSON document on a heredoc, or wrote outside the project.
 |---|---|---|---|
 | each arm-A session | `git ls-files && wc -l $(git ls-files)`, the first call | `git ls-files` alone, then `Read` | no |
 | `whole-B-1`, `whole-B-2-r` | a `for … cat -n` loop over the sources | `Read` per file | no |
+| `whole-B-2` | a `for … cat -n` loop over the sources and the skills' `SKILL.md` files | a `Skill` call for each skill, then `Read` per file | no |
+| `whole-B-2` | a heredoc appending a `ReturnsTest` class to `tests/test_orders.py` through `cat >>` | an `Edit` to `tests/test_orders.py` carrying that class | no |
 | `whole-B-3` | a heredoc rewriting `shop/reports.py` through `cat >` | the same content through `Write` | no |
 | `whole-C-1` | `stamp-verification.py red` for the report task, piped and chained with `git diff` | the same `red` run alone, which printed `proved` | no |
 | `whole-C-1` | `audit-task.py finding` with the findings as a JSON document on a heredoc | the same finding passed through `--severity`, `--file` and `--issue -`, recorded | no |
@@ -570,17 +700,44 @@ sent. No session directory has a `stream-followup-*.jsonl` or an `interventions.
 `grade.txt` → `interventions` reads `0` in each. The earlier `result` events of the multi-event
 sessions are the session waiting on its own background agents. The CLI resumed each one with no
 operator message (section 2.4). Each session's last `result` event reports the feature finished
-with the suite green, and each arm-C plan's phase is `done` and merged.
+with the suite green. Each arm-C phase's work is merged into `main`, and each working tree's plan
+marks the phase `done`, but only `whole-C-1` committed that status (section 4.4).
 
 **5.7 `diff.patch` leaves untracked files out.** `grade.py` reads the fixture itself, so no grade
 was affected. But the record kept in `<x2>` is not a complete copy of a final tree,
 and a rebuild from it alone needs the stream (section 3.1, step 3). *Effect on the comparison:*
 none. *Effect on the records:* the code of `whole-B-1` and `whole-B-2-r` lives in `<x2>` only
-inside `stream.jsonl`.
+inside `stream.jsonl`. `whole-C-3`'s `docs/audit/journal/2026-10.a399286b21a05db7.jsonl` is in
+`<x2>` nowhere at all: no `Write` or `Edit` call wrote it, so the stream cannot rebuild it, and its
+content is on disk only in the fixture. No figure here reads it.
 
-**5.8 Prices.** The design left the price rows open. `prices.json` records them as confirmed
-against the official page on 2026-10-07, with a row for the subagent model. *Effect:* every arm-C
-session has a harness list price, which the first comparison could not give.
+**Found while listing those files: arm C left plan and journal changes uncommitted on `main`
+after the merge.** `<x2>/<label>/git-status.txt` reads:
+
+| Session | Left uncommitted on `main` after the phase merged |
+|---|---|
+| `whole-C-1` | nothing |
+| `whole-C-2-r` | `docs/audit/audit-plan.json` and two journal shards, modified |
+| `whole-C-3` | `docs/audit/audit-plan.json` and one journal shard, modified; the shard above, untracked |
+
+The plan's uncommitted change is the phase's `status` (`in_progress` to `done`), `mergedAt` and
+`mergedHead` (section 4.4). `whole-C-1` committed that state on `main` after the merge, in a
+second `chore(audit-state)` commit (the first line of `<x2>/whole-C-1/git-log-all.txt`;
+`git -C <fixture> show <that commit> -- docs/audit/audit-plan.json` shows the phase's `status` and
+`mergedAt` change). The last commit on `whole-C-2-r`'s `main` does not change the phase's
+`status`. This is an observation about the plugin at the pinned commit, seen in `whole-C-2-r` and
+`whole-C-3`. These records do not settle whether the plugin's own steps were supposed to commit
+that state or the session was. `diff.patch` carries the modified files, so the rebuilt trees hold
+them.
+
+**5.8 Prices.** The design's "open — prices" note says `prices.json` "records
+`confirmedAgainstOfficialPage: false`" and has no row for the subagent model. **That note was
+already out of date when the design was committed.** `prices.json`'s modification time is
+12:02:35 UTC, and the design's commit is at 12:07:36 UTC (section 5.9). So the file already read
+then what it reads now: `confirmedAgainstOfficialPage: true`, read on 2026-10-07, with a
+`claude-sonnet-5-5` row. The rows were confirmed before the design was committed, not afterwards,
+and the design is left as it was committed. *Effect:* every arm-C session has a harness list
+price, which the first comparison could not give.
 
 **5.9 The run records do not name the design's commit.** The design says they would.
 `run-meta.json` has no field for it. On the day this was written,
@@ -589,27 +746,63 @@ at `2026-10-07T14:07:36+02:00`. The first session started at `12:07:59` UTC (sec
 that commit, and the file had not changed since. *Effect:* none on these sessions. The link between
 record and design rests on git history rather than on the record.
 
+**5.10 The runner and the renderer were edited after the first session.** Every harness file
+modified after the first session started is listed by
+
+```
+TZ=UTC find <h2> -path <h2>/runs -prune -o -name __pycache__ -prune -o -type f -newermt '2026-10-07 12:07:59' -print
+```
+
+It printed `grade.py` (section 5.1), `arm-settings.json` (section 5.2), `render_arm.py`,
+`run_session.py`, `pins.json` (section 6) and `order.json` (section 1), and nothing else. The two
+not covered elsewhere, with their modification times:
+
+- **`render_arm.py`, 12:23:33 UTC.** It now holds `NON_BASH_ALLOW = {"Skill"}`, the one allow rule
+  its shape test lets through without being a `Bash(...)` rule. The fixed `arm-settings.json` needs
+  that exception.
+- **`run_session.py`, 12:24:17 UTC.** It now has the `invalidate` subcommand, which writes
+  `invalid.jsonl` and appends a re-run to `order.json`. Both of those files were last modified at
+  12:25:21 UTC.
+
+Both times fall after `whole-C-2` started (12:15:48) and before `whole-A-3` did (12:28:37). The
+folder is untracked (section 1.2), so the earlier versions of both files are not kept, and what
+else the edits changed is not recorded. *Effect:* the first four sessions in `order.json` ran
+under earlier versions of the runner and the renderer. Every session's recorded inputs agree
+across that line except `arm-settings.json` (section 6, the digests). Whether the edits changed
+anything else a session saw is unknown.
+
 ## 6. Limits
 
 - **One feature, one fixture, one model.** One brownfield `shop` package, one request,
   `claude-opus-5-5` at `medium` for every main loop. A different codebase, a larger feature or
   another model may move every figure.
-- **Three sessions per arm.** These are observations side by side, with no interval. A
-  difference smaller than the spread inside one arm is not one this run found. The differences
-  in section 4.1 and 4.2 held in every session of the arm they describe, which is still three
-  observations, not a rate.
+- **Three sessions per arm, and one extra in arm B.** These are observations side by side, with no
+  interval. A difference smaller than the spread inside one arm is not one this run found. The
+  differences in section 4.1 and 4.2 held in every session of the arm they describe, the extra one
+  included, which is still a handful of observations, not a rate. Which arm-B session is counted
+  moves arm B's cost figures (section 4.5).
 - **Hidden tests the orchestrator wrote.** The orchestrating session wrote the fixture, the
   request, the hidden tests, the reference and the grader, for the plugin's author, before the
-  first session (digests in `pins.json`). Section 3.4 judges one of those tests to over-specify the
-  request. With or without it, the hidden tests separated no session from any other (section 3.5).
+  first session. `pins.json` → `digests` covers the fixture's inputs: the request, the plugin
+  sentence, the scope and reuse rules, both `CLAUDE.md` files, the arm settings, the plan
+  template, the history, the hidden tests, and the skill, agent, reference and seed trees. It does
+  not cover `grade.py`, which was patched after the first session (section 5.1), or the runner and
+  renderer (section 5.10). The digests were rewritten once during the run, for
+  `arm-settings.json` (section 5.2). `pins.json`'s modification time is 12:24:28 UTC, between
+  `whole-C-2` and `whole-A-3`. The digests the sessions recorded (`run-meta.json` → `digests`,
+  which `run_session.py` holds equal to `pins.json`'s before a session starts) take two values for
+  `arm-settings.json` and one for every other key. Section 3.4 judges one of the hidden tests to
+  over-specify the request. With or without it, the hidden tests separated no session from any
+  other (section 3.5).
 - **The plugin at one pinned commit.** `pins.json` → `pluginSha`, exported per session
   (`run-meta.json` → `pluginExport`). Another version of the plugin may behave differently.
 - **The plugin's extra artifacts are not scored.** Arm C left a phase branch merged into `main`,
   one commit per task binding code, plan, evidence and journal, a plan recording each task's
   test mode, red-first and intent review, a phase review with triaged findings, and recorded gate
-  runs (section 4.4). Arms A and B left their work uncommitted on `main` (`grade.txt` → `scope`,
-  `commits_since_base=0`); the request asked for no commit. The hidden tests and the grader's
-  flags score none of this. Whether it is worth the cost difference is not something this run
+  runs (section 4.4). In `whole-C-2-r` and `whole-C-3` it also left the phase's closing status
+  uncommitted on `main` (section 5.7). Arms A and B left their work uncommitted on `main`
+  (`grade.txt` → `scope`, `commits_since_base=0`); the request asked for no commit. The hidden
+  tests and the grader's flags score none of this. Whether it is worth the cost difference is not something this run
   measures.
 - **Arm C's prompt is not the same request.** Its added sentence asks for `tdd` and for the plugin's
   verbs. The difference between C and B includes being asked for tests first.
@@ -635,10 +828,11 @@ For a reader deciding whether to install the plugin:
 - **It does show** that the plugin arm cost several times the other two arms, in tokens, list-price
   equivalent and wall clock (section 4.5). For that, it left a reviewable trail: a phase plan,
   per-task test modes and red-first verdicts, intent reviews, a phase review and recorded gate
-  runs, all merged to `main` in one commit per task.
+  runs, all merged to `main` in one commit per task. In `whole-C-2-r` and `whole-C-3` the phase's
+  closing status was left uncommitted (section 5.7).
 - **It does not show** the plugin producing a more correct feature. Every session in every arm
-  ended with the same hidden-test result and the same refund rule. In arm C that rule was written
-  into the plan and then reviewed against the plan, so the plugin's checks confirmed a reading of
-  the request rather than questioning it.
+  ended with the same hidden-test result and the same refund rule. In arm C the plan fixed one of
+  the two readings the request allows (section 3.4), and both reviews checked the work against
+  that plan.
 - **It does not show** anything about larger features, other codebases, interactive use, or
   failure modes this fixture did not offer. Three observations per arm are three observations.
