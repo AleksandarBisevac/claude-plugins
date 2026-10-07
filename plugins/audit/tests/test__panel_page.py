@@ -3225,7 +3225,13 @@ def _cases(check):
     check("the CSV ships raw numbers: a separator makes every sum over the "
           "column wrong, and silently",
           "toLocaleString" not in _csv
-          and "f[F.cost].toFixed(6)" in _csv and "f[F.tokens]," in _csv)
+          and "f[F.cost].toFixed(6)" in _csv and "f[F.tokens]]" in _csv)
+    check("the costUSD column is dropped, header and cells together, when "
+          "showCost is off - the same gate report/exports.js's usageCsv "
+          "already applies",
+          "const showCost=!USAGE||USAGE.showCost!==false" in _csv
+          and "concat(showCost?['costUSD']:[])" in _csv
+          and "concat(showCost?[f[F.cost].toFixed(6)]:[])" in _csv)
     check("and quotes per RFC 4180, so a comma in a title does not shift a column",
           '/[",\\r\\n]/.test(s)' in _csv
           and "'\"'+s.replace(/\"/g,'\"\"')+'\"'" in _csv

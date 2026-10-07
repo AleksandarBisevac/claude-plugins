@@ -84,6 +84,39 @@ describe('a /api/usage response that is JSON but not the usage payload', () => {
   });
 });
 
+describe('the panel CSV export honours showCost, the way report/exports.js\'s '
+  + 'usageCsv already does', () => {
+  // Mirrors the report's own rule rather than re-deriving one: the costUSD
+  // column leaves the file, header and cells together, whenever the tab is
+  // configured to withhold the figure on screen. `uCsvText` is called
+  // directly - it is the panel's half of the same quoting contract
+  // csv-quote.test.mjs already holds equal to the report's - with no USAGE
+  // payload beyond the one flag under test.
+  function csvFor(showCost) {
+    const { ctx } = loadPanel();
+    vm.runInContext('USAGE = ' + JSON.stringify({ showCost }) + ';', ctx);
+    const { uCsvText, F } = reach(ctx, ['uCsvText', 'F']);
+    const row = [];
+    row[F.ts] = '2026-01-01T00'; row[F.phase] = 'P1'; row[F.task] = 'P1.T1';
+    row[F.model] = 'claude-opus-5'; row[F.author] = 'a';
+    row[F.agent] = 'orchestrator'; row[F.attr] = 'task'; row[F.tokens] = 100;
+    row[F.cost] = 1.234567; row[F.msgs] = 2;
+    return uCsvText([row]);
+  }
+
+  it('drops costUSD, header and cell together, with showCost off', () => {
+    const text = csvFor(false);
+    expect(text.split('\r\n')[0].split(',')).not.toContain('costUSD');
+    expect(text).not.toContain('1.234567');
+  });
+
+  it('...and keeps costUSD, header and cell together, with showCost on', () => {
+    const text = csvFor(true);
+    expect(text.split('\r\n')[0].split(',')).toContain('costUSD');
+    expect(text).toContain('1.234567');
+  });
+});
+
 describe('the filters that are on, once the controls fold away', () => {
   // The controls sit behind a shut <details> now, so the chip row above it is the
   // only thing on screen saying the numbers below are a subset. That makes "which
@@ -203,7 +236,7 @@ describe('attribution coverage beside cost per task', () => {
   };
 
   it('counts the done-task denominator from the WHOLE plan, not the rows', () => {
-    const { ctx, run } = panel();
+    const { ctx } = panel();
     withTaskMeta(ctx, TASK_META);
     const { uUnit, F } = reach(ctx, ['uUnit', 'F']);
     // Only T1 ever appears in the rows handed to uUnit.

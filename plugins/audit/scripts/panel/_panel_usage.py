@@ -410,6 +410,13 @@ def usage_state(project):
     rolled = len(rows) > _MAX_FACTS
     facts, seen = _usage_facts(rows, ul.TOKEN_KEYS, rolled)
 
+    # `facts` carries costUSD regardless of `showCost` - unlike a CSV a reader
+    # saves to disk and hands around, this payload never leaves the page: it is
+    # read over a token-protected localhost connection by the same browser tab
+    # that is about to render it, so withholding the figure here would only
+    # cost the client a second round trip to learn what it is not allowed to
+    # show. `showCost` is honoured where it was always meant to be - by what
+    # the tab DRAWS and by what a save-to-disk export carries out of the page.
     payload = dict(declared)
     payload.update(_usage_derived(ul, manifest, rows, pricing["table"]))
     payload.update({

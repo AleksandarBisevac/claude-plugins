@@ -353,6 +353,31 @@ def _cases(check):
                   M.advise(ul, _ld(adv_led), band_man(5), {"showCost": True},
                            {"warnedTasks": "nonsense"}, [hot]) is not None)
 
+            # (ab) the ABSOLUTE basis has no completed-task sample at all - a
+            # configured threshold is an opinion the user already holds, and
+            # reads no task's history. So a kept row sitting on some OTHER
+            # task in the ledger must not inflate this advisory's count: only
+            # the warned task's own rows are in scope here, never the whole
+            # ledger's.
+            ab_led = str(adv_root / "absolute")
+            ab_hot = dict(cheap[0], taskId="HOT2", costUSD=60.0,
+                          ts="2026-08-08T10", **{"in": _in_for(60.0)})
+            ab_other_kept = {"ts": "2026-08-08T11", "taskId": "OTHER",
+                             "msgs": 1, "costUSD": 9.0}
+            ul.append_rows(ab_led, [ab_hot, ab_other_kept])
+            ab_man = {"phases": [{"id": "P1", "tasks": [
+                {"id": "HOT2", "status": "in_progress"},
+                {"id": "OTHER", "status": "in_progress"}]}]}
+            ab_cfg = {"showCost": True, "bands": {"highUSD": 10, "outlierUSD": 50}}
+            ab_msg = M.advise(ul, _ld(ab_led), ab_man, ab_cfg, {}, [ab_hot])
+            check("ab1 an absolute-band outlier is still called out",
+                  ab_msg and "HOT2" in ab_msg and "$60.00" in ab_msg, ab_msg)
+            check("ab2 a kept row on a DIFFERENT task does not inflate the "
+                  "count on the absolute basis - there is no completed-task "
+                  "sample for it to ride in on",
+                  ab_msg and "keep the cost stored when written" not in ab_msg,
+                  ab_msg)
+
             # An outlier task's cost has two causes with OPPOSITE repairs, and
             # the advisory has to say which: HOT above is dominated by NEW
             # tokens (in=1, cacheR=0 on every row), so it keeps the original
@@ -434,6 +459,19 @@ def _cases(check):
                   "stored when written, beside the priced row's 1.00: %r"
                   % (rt_kept,),
                   rt_kept and "~$4.00" in rt_kept)
+            # A kept row recorded under some OTHER session must not inflate
+            # THIS session's own kept-row count - `session_summary` already
+            # scopes to `mine` before counting, so this locks that in rather
+            # than fixing anything.
+            ul.append_rows(rt_led, [
+                {"ts": "2026-08-02T10", "sessionId": "ANOTHER", "taskId": "T0",
+                 "msgs": 1, "costUSD": 77.0}])
+            rt_scoped = M.session_summary(ul, _ld(rt_led), {"showCost": True},
+                                          "RT2")
+            check("rt4 a kept row under a DIFFERENT session does not inflate "
+                  "this session's own kept-row count: %r" % (rt_scoped,),
+                  rt_scoped
+                  and "1 row(s) at the cost stored when written" in rt_scoped)
             check("i5 the compact formatter matches the other surfaces",
                   M._compact(3_230_000) == "3.2M" and M._compact(942) == "942"
                   and M._compact(2_000_000_000) == "2.0B")

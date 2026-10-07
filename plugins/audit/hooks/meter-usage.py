@@ -163,6 +163,22 @@ def _priced_ledger(ul, ledger, table):
             "kept": kept}
 
 
+def _advisory_scope(ul, manifest, tid, bands):
+    """Task ids the outlier advisory's printed figure actually rests on: the
+    warned task itself, plus - only on the RELATIVE basis - the completed
+    tasks `cost_bands()` read to calibrate its percentiles. A ledger row for
+    some other in-flight task has no bearing on either number and must not be
+    counted into "kept rows" beside them; on the absolute basis there is no
+    sample to extend the scope with at all, since a configured threshold
+    reads no task's history."""
+    scope = {tid}
+    if bands.get("basis") == "relative":
+        tasks = ul.task_index(manifest)
+        scope.update(t for t, meta in tasks.items()
+                     if (meta or {}).get("status") == "done")
+    return scope
+
+
 def advise(ul, ledger_priced, manifest, ucfg, cursor, rows):
     """The one thing this hook ever says out loud: that the task in flight has
     crossed the project's own outlier threshold, while there is still time to act.
@@ -227,8 +243,14 @@ def advise(ul, ledger_priced, manifest, ucfg, cursor, rows):
                else "this project's p90 completed task")
         mult = spent / bands["outlier"] if bands.get("outlier") else 0
         head = "%s is running %.1fx past %s." % (tid, mult, why)
-    # Said in both branches: the multiple is a ratio of costs too.
-    kept = sum(1 for k in ledger["kept"] if k)
+    # Said in both branches: the multiple is a ratio of costs too. Scoped to
+    # the rows the printed figure above actually rests on - the task's own,
+    # plus (on the relative basis) the completed tasks the bands were read
+    # from - rather than every row the ledger happens to hold, most of which
+    # this message never sums.
+    scope = _advisory_scope(ul, manifest, tid, bands)
+    kept = sum(1 for r, k in zip(all_rows, ledger["kept"])
+               if k and r.get("taskId") in scope)
     if kept:
         head += (" %d ledger row(s) keep the cost stored when written, at no "
                  "recorded rate." % kept)

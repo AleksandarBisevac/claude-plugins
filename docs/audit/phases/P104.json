@@ -151,45 +151,92 @@
         "severity": "med",
         "file": "plugins/audit/scripts/ui/panel/browse-dialog.js:22-33,134-138,190",
         "issue": "With showCost off the Usage tab's 'browse all' dialog still prints per-task dollars: every column set includes cost and the cell renders uCost(r.cost) ungated, and for dim=task the band note prints dollar thresholds - while the task that gated the tab claims no per-task dollar figure anywhere, and the report withholds the same figures.",
-        "resolution": "Drop the cost column (header and cells) and the band note's dollar thresholds when showCost is off, keeping the band names; a vitest case opening the browse dialog for tasks with showCost off asserts no dollar figure, with its showCost-on twin."
+        "resolution": "fixed in P104.16-tog (ce3ede07): Drop the cost column (header and cells) and the band note's dollar thresholds when showCost is off, keeping the band names; a vitest case opening the browse dialog for tasks with showCost off asserts no dollar figure, with its showCost-on twin.",
+        "fixTask": "P104.16-tog",
+        "commit": "ce3ede07"
       },
       {
         "id": "P104-R15",
         "severity": "low",
         "file": "plugins/audit/scripts/ui/panel/usage-cards.js:17-52; tools/ui-tests/usage-edges.test.mjs:443-449",
         "issue": "uBudgets prints dollar amounts for each budgeted phase with no showCost gate (the report gates its budget block), and the 'no dollar figure anywhere on the tab' case passes only because its fixture declares no phaseBudgets.",
-        "resolution": "Gate the budget amounts on showCost as the report does, and give the case's fixture a phase budget so it can fail on that path."
+        "resolution": "fixed in P104.16-tog (ce3ede07): Gate the budget amounts on showCost as the report does, and give the case's fixture a phase budget so it can fail on that path.",
+        "fixTask": "P104.16-tog",
+        "commit": "ce3ede07"
       },
       {
         "id": "P104-R16",
         "severity": "low",
         "file": "plugins/audit/hooks/meter-usage.py:165-166,179,221-231",
         "issue": "The advisory's docstring states a measured figure that no longer describes the code (it now re-prices every row), and on SessionEnd advise and session_summary each read and re-price the whole ledger.",
-        "resolution": "Re-measure and carry the command, or drop the number and keep the reasoning; read and price the ledger once per meter() and hand the rows to both."
+        "resolution": "fixed in P104.17-tog (8f84edad): Re-measure and carry the command, or drop the number and keep the reasoning; read and price the ledger once per meter() and hand the rows to both.",
+        "fixTask": "P104.17-tog",
+        "commit": "8f84edad"
       },
       {
         "id": "P104-R17",
         "severity": "low",
         "file": "plugins/audit/hooks/meter-usage.py:179,221-231; CHANGELOG.md; plugins/audit/README.md",
         "issue": "The meter's session line and outlier advisory print dollars from re-priced rows but drop pricedWhenWritten and print no rate phrase, while the CHANGELOG and README say every surface's phrase counts the rows that kept their stored figure.",
-        "resolution": "Append the kept-row count when it is above zero, or narrow the CHANGELOG and README sentences to the surfaces that print a phrase."
+        "resolution": "fixed in P104.17-tog (8f84edad): Append the kept-row count when it is above zero, or narrow the CHANGELOG and README sentences to the surfaces that print a phrase.",
+        "fixTask": "P104.17-tog",
+        "commit": "8f84edad"
       },
       {
         "id": "P104-R18",
         "severity": "low",
         "file": "plugins/audit/scripts/panel/_panel_paths.py:124-137; panel/_panel_state.py:135; panel/panel-server.py:161; panel/_panel_usage.py:376-379; usage/audit-usage.py:326; status/audit-status.py:662",
         "issue": "_panel_paths._declared_as_of is now dead code reached only through two aliases and a test, its docstring is false, and three comments still name it, or a removed report trim, as where the date is trimmed.",
-        "resolution": "Delete the helper, its aliases and its test, or give it an honest docstring; point the comments at _usage_core._declared_as_of."
+        "resolution": "fixed in P104.17-tog (8f84edad): Delete the helper, its aliases and its test, or give it an honest docstring; point the comments at _usage_core._declared_as_of.",
+        "fixTask": "P104.17-tog",
+        "commit": "8f84edad"
       },
       {
         "id": "P104-R19",
         "severity": "low",
         "file": "plugins/audit/scripts/panel/_panel_usage.py:383-391",
         "issue": "The /api/usage payload still ships the merged config pricingAsOf beside pricingBasis.asOf; no panel script reads it and it can date a table that priced nothing.",
-        "resolution": "Drop the key and its pins, or name its reader and serve the resolver's asOf instead."
+        "resolution": "fixed in P104.17-tog (8f84edad): Drop the key and its pins, or name its reader and serve the resolver's asOf instead.",
+        "fixTask": "P104.17-tog",
+        "commit": "8f84edad"
+      },
+      {
+        "id": "P104-R20",
+        "severity": "med",
+        "file": "plugins/audit/scripts/ui/panel/usage-metrics.js uCsvText; plugins/audit/scripts/panel/_panel_usage.py usage_state",
+        "issue": "With showCost false the panel's Usage-tab Export CSV still writes a costUSD column with every row's dollar figure, while the report's CSV drops costUSD and its data layer zeroes costs under the same setting.",
+        "resolution": "Gate the costUSD column in uCsvText on showCost, header and cells together, as the report's usageCsv does, with an off/on twin in usage-edges.test.mjs. The /api/usage payload is the page's local token-protected data source rather than a shareable artifact; keep its cost data and record that as the decision."
+      },
+      {
+        "id": "P104-R21",
+        "severity": "med",
+        "file": "plugins/audit/scripts/panel/_panel_settings.py FIELD_HELP usage.pricingAsOf",
+        "issue": "The Settings help for usage.pricingAsOf still says that until it is set both surfaces say the rates are undated, but since the resolver change a project with no table is shown the shipped table's date and a pricingAsOf beside no usage.pricing dates nothing.",
+        "resolution": "Reword the help to match the README and rate_basis_phrase: it dates the config's own usage.pricing table, is printed only when that table priced the rows, and 'rates undated' is said only of a project table that carries no date; a case fails while the old sentence stands."
+      },
+      {
+        "id": "P104-R22",
+        "severity": "low",
+        "file": "plugins/audit/hooks/meter-usage.py advisory; CHANGELOG.md; plugins/audit/README.md",
+        "issue": "The advisory counts kept rows over the whole ledger while the CHANGELOG and README say the count is of the rows the printed figure rests on; for an absolute band an unrelated legacy row is counted.",
+        "resolution": "Count only the rows the advisory's figure rests on (the task's rows, plus on the relative basis the completed tasks' rows the bands were read from), with an mt case holding a kept row outside the task for an absolute band."
+      },
+      {
+        "id": "P104-R23",
+        "severity": "low",
+        "file": "CHANGELOG.md [Unreleased]",
+        "issue": "The changelog records that the panel payload drops pricingAsOfDeclared but not that /api/usage also drops the merged config's pricingAsOf.",
+        "resolution": "Extend the sentence: the panel's payload drops both pricingAsOf and pricingAsOfDeclared; the date beside a panel cost is pricingBasis.asOf."
+      },
+      {
+        "id": "P104-R24",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_meter_usage.py mt1-mt4",
+        "issue": "No case pins that the session line counts only this session's kept rows; a regression summing the whole ledger's kept flags would leave every case green.",
+        "resolution": "Add a kept row from another session to the fixture, assert the session line's count excludes it, and prove it red by counting over the whole ledger."
       }
     ],
-    "outcome": "[findings: 19 - 1 high, 6 med, 12 low; 13 with a recorded fix commit]"
+    "outcome": "[findings: 24 - 1 high, 8 med, 15 low; 19 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1331,7 +1378,7 @@
     {
       "id": "P104.17-tog",
       "title": "the meter prices once and says what it kept, and the dead date helper and key are gone",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P104-R16, P104-R17, P104-R18 and P104-R19.\n\n- The meter reads and re-prices the ledger once per run and hands the priced rows to both the band advisory and the session line.\n- Its advisory docstring either carries a figure re-measured with the command that produced it, or drops the number and keeps the reasoning.\n- The meter's two notes append the kept-row count when rows kept their stored figure. If a one-line note cannot carry it, the CHANGELOG and README sentences are narrowed to the surfaces that print the rate phrase.\n- _panel_paths._declared_as_of, its aliases and its test are removed. If something still needs the helper, it gets an honest docstring instead.\n- The comments in audit-usage.py, audit-status.py and _panel_usage.py name _usage_core._declared_as_of as the trim.\n- The /api/usage payload drops the merged config pricingAsOf, with its pins. If a reader exists, name it and serve the resolver's asOf instead.",
       "files": [
         "plugins/audit/hooks/meter-usage.py",
@@ -1371,18 +1418,113 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "8f84edad",
+      "outcome": {
+        "technical": "meter-usage.py reads the ledger once per run and prices it once (_priced_ledger); the band advisory and the session line both take those priced rows. Each of the two notes appends the count of rows that kept the cost stored when written, and says nothing about a stored figure when every row was priced again (mt1-mt4). The advisory docstring drops its unbased figure and keeps the reasoning. The trim comments in audit-usage.py, audit-status.py and _panel_usage.py name _usage_core._declared_as_of. _panel_paths._declared_as_of, its aliases, its case, its _moved entry and the guide mention are removed. /api/usage no longer carries the merged config's pricingAsOf; the date beside a cost is pricingBasis.asOf (pa4), and the pins that held the old key are gone. ck17 now pins usage.bands, which the panel reads through usage_cfg along with showCost; up1 takes its expected key count from _usage_shape() instead of a literal. Two _deps.py comments that named the panel's pricingAsOf read now describe the usage.bands and showCost reads, checked against config_key_reads(). CHANGELOG and README name the kept-row count on the meter's notes. Red-first: mt1-mt3 failed at HEAD and pass with the fix; pa4 and up3 failed at HEAD and pass with the fix.",
+        "descriptive": "The usage meter now reads and prices the ledger once per run and says how many rows kept the cost stored when they were written; a dead date helper and the panel's second pricing date are gone, so one date stands beside every cost."
+      },
+      "startedAt": "2026-10-07T05:03:30Z",
+      "completedAt": "2026-10-07T05:39:57Z",
+      "verifiedBy": [
+        "mt1",
+        "mt2",
+        "mt3",
+        "mt4",
+        "pa4",
+        "up1",
+        "up3",
+        "ck17"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T05:37:42Z.35ee5b",
+        "status": "passed",
+        "at": "2026-10-07T05:37:42Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8f84edad",
+        "at": "2026-10-07T05:39:57Z",
+        "basis": "orchestrator check: P104-R16..R19 fixed, one read and one pricing per meter run, kept-row count on both notes, dead helper and duplicate date removed with their pins, comments re-checked against config_key_reads, red-first proved for mt1-mt3, pa4, up3"
+      }
+    },
+    {
+      "id": "P104.18-tog",
+      "title": "the panel's CSV and Settings help honour showCost and the resolver, and the meter counts only the rows its figure rests on",
+      "status": "in_progress",
+      "description": "Fixes review findings P104-R20 to P104-R24.\n\n- When showCost is off, the panel's Usage-tab CSV export drops the costUSD column, header and cells together, the way the report's usage CSV already does. usage-edges.test.mjs gets an off/on twin for it. The /api/usage payload keeps its cost data: it is the page's local, token-protected data source, not a shareable artifact. Record that decision in a code comment beside the payload.\n- The Settings help for usage.pricingAsOf says what the resolver does now, matching the README and rate_basis_phrase:\n  - it dates the config's own usage.pricing table;\n  - it is printed only when that table priced the rows;\n  - 'rates undated' is said only of a project table that carries no date.\n  A case in test__panel_settings fails while the old sentence stands.\n- The meter's advisory counts only the kept rows its printed figure rests on: the task's rows, plus, on the relative basis, the completed tasks' rows the bands were read from. One mt case holds a kept row outside the task, for an absolute band.\n- Another mt case adds a kept row from another session and asserts that the session line's count excludes it. Prove it red by counting over the whole ledger.\n- The CHANGELOG [Unreleased] entry says the panel payload drops both pricingAsOf and pricingAsOfDeclared, and that the date beside a panel cost is pricingBasis.asOf. Its meter sentence and the README's matching sentence describe the narrowed count. It also notes that the panel's CSV honours showCost.\n\nThe orchestrator re-captures the screenshots if the help text appears in one.",
+      "files": [
+        "plugins/audit/scripts/ui/panel/usage-metrics.js",
+        "tools/ui-tests/usage-edges.test.mjs",
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/scripts/panel/_panel_settings.py",
+        "plugins/audit/tests/test__panel_settings.py",
+        "plugins/audit/hooks/meter-usage.py",
+        "plugins/audit/tests/test_meter_usage.py",
+        "CHANGELOG.md",
+        "plugins/audit/README.md",
+        "plugins/audit/tests/test__panel_page.py",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/mobile.png",
+        "docs/screenshots/overview.png",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-07T05:03:30Z",
+      "startedAt": "2026-10-07T05:47:36Z",
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-10-07T05:37:42Z.35ee5b",
+        "runId": "2026-10-07T06:14:38Z.890966",
         "status": "passed",
-        "at": "2026-10-07T05:37:42Z"
+        "at": "2026-10-07T06:14:38Z"
       }
     }
   ],

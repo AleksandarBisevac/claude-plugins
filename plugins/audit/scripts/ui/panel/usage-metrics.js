@@ -302,17 +302,25 @@ function uDelta(facts,days){
  * @returns {string} A header row plus one record per fact. Numbers go out RAW -
  *   no separators, no currency, no locale - because "3,230,000" lands in a
  *   spreadsheet as text and every sum over the column is then wrong, silently.
+ *   The `costUSD` column itself is dropped, header and cells together, when
+ *   `USAGE.showCost` is off - the same rule report/exports.js's `usageCsv`
+ *   already applies, so a file saved from either surface never carries a
+ *   dollar figure the screen was configured to withhold. `!USAGE` reads as
+ *   "on" (the default), which is what the suites that call this function
+ *   directly, with no payload loaded at all, already assume.
  */
 function uCsvText(facts){
- const head=['ts','phase','task','model','author','agent','attr','tokens',
-   'costUSD','msgs'];
+ const showCost=!USAGE||USAGE.showCost!==false;
+ const head=['ts','phase','task','model','author','agent','attr','tokens']
+   .concat(showCost?['costUSD']:[]).concat(['msgs']);
  // RFC 4180: quote anything containing a comma, a quote or a newline, and double
  // the quotes inside. A task title with a comma in it is not exotic.
  const q=v=>{const s=v==null?'':String(v);
   return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
  const out=[head.join(',')];
  for(const f of facts)out.push([f[F.ts],f[F.phase],f[F.task],f[F.model],
-   f[F.author],f[F.agent],f[F.attr],f[F.tokens],f[F.cost].toFixed(6),f[F.msgs]]
+   f[F.author],f[F.agent],f[F.attr],f[F.tokens]]
+  .concat(showCost?[f[F.cost].toFixed(6)]:[]).concat([f[F.msgs]])
   .map(q).join(','));
  return out.join('\r\n')+'\r\n';}
 /**

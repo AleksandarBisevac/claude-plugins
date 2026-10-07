@@ -213,10 +213,11 @@ FIELD_HELP = {
         "'/audit:usage --backfill' has no ceiling.",
     "usage.currency": "Currency label printed beside the rates. Default USD.",
     "usage.pricingAsOf":
-        "The date the rate table below was accurate. Surfaced in the report and the "
-        "Usage tab so a stale rate is visible rather than assumed — until you set it, "
-        "both say the rates are undated rather than showing you a date you never "
-        "chose.",
+        "The date THIS project's usage.pricing table above was accurate — it dates "
+        "that table and nothing else. Printed beside a cost only when that table is "
+        "the one that priced the rows; the shipped table carries its own date and "
+        "needs no help from this field. 'Rates undated' is said only of a project "
+        "table that carries no date here, never of the shipped table.",
     "usage.bands":
         "Absolute thresholds that sort each task's spend into typical / high / "
         "outlier. Leave both empty and the bands calibrate from this project's own "

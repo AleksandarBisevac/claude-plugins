@@ -59,7 +59,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
     table the resolver chose and names it in the same words as the cost line; a
     `meta.usage.pricingAsOf` beside no `meta.usage.pricing` no longer raises a notice about a
     table that priced nothing. The report's usage payload drops its separate `pricingAsOf` and
-    the panel's drops `pricingAsOfDeclared`, which no panel script read.
+    the panel's drops both `pricingAsOf` and `pricingAsOfDeclared`, neither of which any panel
+    script read — the date beside a panel cost is `pricingBasis.asOf`, the same resolved answer
+    the report and the meter hook already name theirs from.
 
   **Against `COMPATIBILITY.md`.** No precedence that document had written down changes: its list
   under *When two keys can express the same thing, which one wins is written down* named only
@@ -71,6 +73,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   release is therefore a major is the operator's call, and is not decided here.
 
 ### Fixed
+- **The meter's outlier advisory no longer counts a kept ledger row from outside the task
+  it is warning about.** It used to sum `ledger["kept"]` over every row the ledger holds, so a
+  row that kept its stored figure on some unrelated task inflated the "N ledger row(s) keep the
+  cost stored when written" clause beside a figure that never summed that row at all. It now
+  counts only the warned task's own rows, plus — on the relative basis — the completed tasks
+  `cost_bands()` read to calibrate its percentiles; the absolute basis reads no task's history
+  at all, so it extends no further than the task itself. The session line was already scoped to
+  the session's own rows and is unchanged; a case now locks that in.
+- **The panel's Usage-tab CSV export drops `costUSD`, header and cell together, when `showCost`
+  is off** — the same rule `report/exports.js`'s `usageCsv` already applies, so a file saved
+  from either surface never carries a dollar figure the screen was configured to withhold. The
+  `/api/usage` payload keeps its cost data regardless: it is the page's own, token-protected
+  data source read over localhost by the same tab about to render it, never a file a reader
+  saves and hands around.
+- **The Settings help for `usage.pricingAsOf` said an unset field leaves BOTH the report and
+  the Usage tab calling the rates undated, which is true only when the project's own
+  `usage.pricing` table is the one in force.** It now says what `rate_basis_phrase` actually
+  does: the field dates this project's own table and nothing else, it is printed only when that
+  table is the one that priced the rows, and "rates undated" is never said of the shipped
+  table, which already carries its own date.
+
 - **A stamp now goes stale when a sibling rewrites a file the task does not declare.**
   `stamp-verification.py compare` answered `current`, exit 0, after an already-dirty undeclared
   file was rewritten: the three identity fields record HEAD, the declared files' contents and
