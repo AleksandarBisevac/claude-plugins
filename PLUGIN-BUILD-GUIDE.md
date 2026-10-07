@@ -380,7 +380,7 @@ L7:
   audit-journal -> _evidence_io, _journal_io, _output
   audit-lock -> _locks, _output
   audit-logs -> _gate_feed, _output
-  audit-lookup -> _evidence_io, _journal_io, _manifest_io, _manifest_vocab, _output
+  audit-lookup -> _evidence_io, _journal_io, _loader, _manifest_io, _manifest_vocab, _output
   audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
   audit-task -> _areas, _branch, _commit_trail, _evidence_io, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme
@@ -2856,7 +2856,13 @@ the derivation exists to correct. `file <path>` is a
 LOOKUP over `fileIndex`, never a search: an exact key match only, and the last entry in
 `fileIndex[path]` is the answer by the index's own append-only convention (never remove
 another task's id). `brief <taskId>` is `file` folded over every path the task declares,
-one call at spawn time instead of one per path. `run <runId>` (or `run latest --phase <id>`
+one call at spawn time instead of one per path, and it ends with the `executor.runsGate`
+reading the spawn prompt hands the executor: `hooks/_config.executor_gate_policy`'s word,
+reached through `_loader` because a script may not import `hooks/`, with its basis — the key
+in `.claude/audit.config.json` that set it, or that it is the default because the file or the
+key is absent. A value outside `RUNS_GATE_MODES`, or a config file that does not parse, is a
+refusal on stderr with nothing on stdout and exit 3, never the default, so the orchestrator
+no longer reads the config for this itself. `run <runId>` (or `run latest --phase <id>`
 /`--task <id>`) reads the evidence ledger instead of the manifest or journal — the bounded
 render of one recorded row (`_evidence_io.row_by_run`/`latest_by_subject`, the latter keyed
 through `subject_aliases` so a moved task still answers under its live id), never raw runner
@@ -2866,9 +2872,10 @@ writer already bounded and redacted them, never re-cut here, and an unreadable l
 said rather than read as "no such run". Each returns a plain "no match" — never a
 nearest id or a similar path — when the manifest does not carry an answer; an id that exists but does not apply to
 the question (a task that was never cancelled) is a different, legitimate answer and not a
-miss. Read-only, exit 0 on a match, 1 on a miss, 2 a usage error. Layer 7 (an entry point
-reaching `_manifest_io`/`_journal_io` at layer 1 and `_evidence_io` at layer 2, for the
-project/config resolution `boundary_for` already shares). `--selftest`.
+miss. Read-only, exit 0 on a match, 1 on a miss, 2 a usage error, 3 a config `brief` refuses
+to read. Layer 7 (an entry point reaching `_manifest_io`/`_journal_io`/`_loader` at layer 1
+and `_evidence_io` at layer 2, for the project/config resolution `boundary_for` already
+shares). `--selftest`.
 
 ### `plugins/audit/scripts/governance/_locks.py`
 The lock library (layer 1): where a lock lives (`lock_dir`), what it may be called

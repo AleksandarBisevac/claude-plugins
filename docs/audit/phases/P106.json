@@ -29,7 +29,7 @@
     {
       "id": "P106.1",
       "title": "audit-task start refuses a task that is not ready unless --force, which journals the exception",
-      "status": "in_progress",
+      "status": "done",
       "description": "start reports what a task waits on but never refuses ('REPORTED, NEVER REFUSED' in _locked_start), so readiness is a rule the model only follows. Make start refuse a pending task with unmet references, unless --force with --reason, which the task.start row journals. It reads _status_facts.unmet_refs, with no second copy of the rule. Starting a task by hand for the plan gate keeps working through --force. Delete the prose the rule came from: the term list and the 'Satisfied' paragraph under orchestrator.md's '## Readiness rule'. Keep the heading, which _areas.py and _priority.py cite, and keep the priority and parallel-safety paragraphs. Point commands/next.md step 1 at the ready list and the refusal, document the flags in commands/task.md, and move README.md's Readiness row from the 'Followed' table to the enforced one. Record `wc -c` of commands/next.md and the reference files it requires, before and after. This phase waits for P101's pipeline pilot (P101.1), whose findings decide which prose rules move first.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -65,18 +65,31 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1e2412b9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py start now refuses a task whose own or phase references are unmet, unless the task is already in_progress (a retry). The check goes through _waiting_on, which reads _status_facts.unmet_refs, so the readiness rule exists in one place. The refusal exits 2, writes nothing, adds no journal row, names each unmet reference as /audit:status spells it (e.g. `P2 (phase)`), and points to --force --reason. New --force flag; VERB_FLAGS[\"start\"] = (\"force\", \"reason\"); _start_flags_refusal refuses --force without --reason and --reason without --force; --reason - reads stdin. A forced start writes mode: forced, reason and basis (\"unmet: ...\") on its task.start row (keys already in _journal_io.DETAILS_KEYS); its summary says FORCED past unmet ...; --json gains forced and forcedReason. An ordinary start writes none of these.\nDecisions: a blocked task with unmet references is refused too (the rule is about unmet references, not the status label); --force on a task that is already ready is accepted and records nothing extra.\nDocs: orchestrator.md's Readiness rule keeps its heading, priority and parallel-safety paragraphs; the term list and 'Satisfied' paragraph are replaced by a pointer to ready_tasks, unmet_refs and the start refusal. next.md step 1 takes the first READY NOW entry. task.md: argument hint, a --force example, the journal bullet, the refusal list, and the readiness paragraph. README: the Readiness row moves from Followed to the enforced table; the /audit:task row names --force. test__refs.py pf2 lists start among verbs whose hint carries flags (scope widened for exactly that).\nBytes (wc -c), this task's share: next.md 2453 -> 2456, orchestrator.md 57593 -> 57353.\nTests: test_audit_task pr10, pr10b, pr10c, pr11, pr11b replace the old report-only pr10/pr11; pr11c is the allow twin (a ready task starts with no mode on its row; a re-start of an in_progress task is not refused). Red-first proved through the helper at HEAD b6d9a4a3: 715/720 with exactly pr10-pr11b failing. Suites: test_audit_task 720/720, test__refs 304/304, test__areas, test__output, test__deps, test__priority green; ruff clean.",
+        "descriptive": "audit-task start now refuses a task that is not ready unless it is forced with a recorded reason, so readiness is enforced by the script instead of being a rule the model reads and follows."
       },
       "startedAt": "2026-10-06T22:17:03Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T00:23:56Z",
+      "verifiedBy": [
+        "pr10",
+        "pr10b",
+        "pr10c",
+        "pr11",
+        "pr11b",
+        "pr11c"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T00:21:34Z.7e9a9b",
         "status": "passed",
         "at": "2026-10-07T00:21:34Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "1e2412b9",
+        "at": "2026-10-07T00:23:56Z",
+        "basis": "orchestrator check: the refusal reads unmet_refs, writes nothing on refusal, a forced start records mode, reason and basis, the readiness term list left orchestrator.md, and red-first was proved with allow twins"
       }
     },
     {
