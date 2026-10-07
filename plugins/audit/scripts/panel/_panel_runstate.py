@@ -155,6 +155,43 @@ def _lock_info(lockdir):
     return out
 
 
+def _other_worktree_roots(project, config):
+    """`(this checkout's git root, [every other worktree root of the clone])`,
+    sorted, read off the shared git directory with no git call.
+
+    `<common dir>/worktrees/<name>/gitdir` holds the path of each linked
+    worktree's `.git` file - the record `git worktree list` itself reads - and
+    the main worktree is the directory holding a non-bare common dir. The
+    common dir comes from `_audit_lock_dir`, which is cached per git root, so
+    the poll asks git nothing new. A clone with no other worktree,
+    or a directory in no repository, answers an empty list.
+    """
+    git_root = os.path.realpath(os.path.join(
+        project, (config or {}).get("gitRoot") or "."))
+    lockdir = _audit_lock_dir(project, config)
+    if not lockdir:
+        return git_root, []
+    common = os.path.dirname(lockdir)
+    roots = set()
+    if os.path.basename(common) == ".git":
+        roots.add(os.path.dirname(common))
+    listing = os.path.join(common, "worktrees")
+    try:
+        names = os.listdir(listing)
+    except OSError:
+        names = []
+    for name in names:
+        try:
+            with open(os.path.join(listing, name, "gitdir"),
+                      encoding="utf-8") as fh:
+                dotgit = fh.read().strip()
+        except OSError:
+            continue
+        if dotgit:
+            roots.add(os.path.realpath(os.path.dirname(dotgit)))
+    return git_root, sorted(r for r in roots if r != git_root)
+
+
 def data_fingerprint(project, config):
     """A cheap change stamp over everything the panel renders from disk (lv).
 
@@ -177,6 +214,16 @@ def data_fingerprint(project, config):
     be stream-until-close over HTTP/1.0 (no chunked replies), a second send
     path beside _send, and one parked thread per open tab — for a localhost
     tool whose staleness budget the poll already meets.
+
+    THE SAME PLAN FILES IN EVERY OTHER WORKTREE OF THE CLONE ARE STAMPED TOO,
+    because the Overview shows a phase worked on in another worktree as that
+    worktree's file holds it (`_live_copy`), and a run there writes that file
+    and nothing of this checkout's. Each file is stamped at the path it has
+    under this checkout's git root, which is where `_live_copy` reads it - a
+    superset of what it reads, since only a worktree with a phase branch out
+    is read, at the cost of a refetch when an idle worktree's plan is edited.
+    Any other file of a worktree is not stamped, so a busy one does not
+    refetch on every save.
 
     A missing file stamps as "-", so a project with nothing on disk yields a
     STABLE sentinel rather than an error; this function never raises.
@@ -220,11 +267,25 @@ def data_fingerprint(project, config):
             idx = _read_json(mpath)
         except Exception:
             idx = None
+        plan_files = [mpath]
         if isinstance(idx, dict):
             base = os.path.dirname(os.path.abspath(mpath))
             for ph in idx.get("phases") or []:
                 if isinstance(ph, dict) and isinstance(ph.get("shard"), str):
-                    parts.append(stamp(os.path.join(base, ph["shard"])))
+                    plan_files.append(os.path.join(base, ph["shard"]))
+                    parts.append(stamp(plan_files[-1]))
+        try:
+            git_root, others = _other_worktree_roots(project, config)
+        except Exception:
+            git_root, others = None, []
+        for root in others:
+            for path in plan_files:
+                try:
+                    rel = os.path.relpath(os.path.realpath(path), git_root)
+                except ValueError:      # another drive: not under the git root
+                    continue
+                if not rel.startswith(".."):
+                    parts.append(stamp(os.path.join(root, rel)))
         try:
             parts.append(newest_jsonl(
                 str(_paths.hooks_config().ledger_dir(project, config))))

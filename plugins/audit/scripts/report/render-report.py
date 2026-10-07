@@ -106,6 +106,7 @@ import _manifest_vocab        # noqa: E402  (FULL_STATUS_UNKNOWN and the one led
 import _report_md             # noqa: E402  (the Markdown twin)
 import _report_page           # noqa: E402  (the whole document: vocab, table, render_html)
 import _areas                 # noqa: E402  (plan_skill_refs: which names this plan uses)
+import _live_copy             # noqa: E402  (which copy holds a phase in flight live, at layer 6)
 
 
 # --- module aliases (CSS/SCRIPT, page + fragment + usage re-exports) ------------
@@ -343,22 +344,32 @@ def stranded_marks(project, manifest, config):
 
 def render_html(manifest, summary, basename="audit-report", usage=None,
                 fragment=False, css=None, show_proposals=True, evidence=None,
-                portability=None):
+                portability=None, own=None, gate_summary=None):
     """The HTML report, with this file's gate verdict wired into it.
 
     The document itself is `_report_page.render_html`; the only thing added here
     is `_verdict`, which this file owns because the verdict is the CLI gate's own
     word rather than something a renderer composes (see the
     `# --- the gate verdict ---` note above). Keeping the injection in a wrapper
-    rather than at every call site is what lets this signature stay exactly what
-    it has always been.
+    rather than at every call site is what lets this signature stay what it has
+    always been, with two optional arguments for a phase in flight elsewhere.
+
+    `own` is this checkout's plan when `manifest` has a live copy laid over it,
+    and `gate_summary` is the rollup of `own` alone. The verdict is taken over
+    `gate_summary` when there is one: the gate certifies this checkout, as
+    `/audit:status --gate` does, never work sitting in another worktree.
     """
+    gate_of = gate_summary
+
+    def verdict(shown):
+        return _verdict(gate_of if gate_of is not None else shown)
+
     return _report_page.render_html(manifest, summary, basename, usage,
                                     fragment=fragment, css=css,
-                                    verdict=_verdict,
+                                    verdict=verdict,
                                     show_proposals=show_proposals,
                                     evidence=evidence,
-                                    portability=portability)
+                                    portability=portability, own=own)
 
 
 # --- cli ------------------------------------------------------------------------
@@ -440,14 +451,31 @@ def main(argv):
     # ledger twice, and a run recorded between them would excuse a subject in one
     # half of the page and not the other.
     boundary = boundary_for(manifest_path)
-    summary = lib.rollup(manifest, findings, warnings, boundary=boundary)
-    usage = load_usage(manifest, manifest_path)
-    # The project root every disk read below resolves against - the theme, the
-    # third place's own ledger read, and (a few lines down) the panel config.
-    # One read rather than a second guess of CLAUDE_PROJECT_DIR that could
-    # answer differently.
+    # The project root every disk read below resolves against - the in-flight
+    # reader, the theme, the third place's own ledger read, and (a few lines
+    # down) the panel config. One read rather than a second guess of
+    # CLAUDE_PROJECT_DIR that could answer differently.
     _proj = os.environ.get("CLAUDE_PROJECT_DIR") or os.path.dirname(
         os.path.abspath(manifest_path)) or "."
+    # A PHASE WORKED ON ELSEWHERE IS SHOWN AS ITS LIVE COPY HOLDS IT, read by
+    # the one reader `/audit:status` and the panel use and laid over the plan
+    # by the same `live_view`, so the three agree on what is ready. Every row
+    # read from another copy names it, in the HTML and in the Markdown twin
+    # the HTML embeds - this file is forwarded, and a forwarded report must
+    # not pass another worktree's uncommitted state off as this checkout's.
+    # What certifies stays on this checkout's own plan: the bug counts and the
+    # bug table (`own`), the gate verdict (`gate_summary`), the validator, the
+    # evidence and the usage ledger.
+    live = lib.live_view(manifest, _live_copy.flight_for(
+        manifest, manifest_path, _proj))
+    plan = live["plan"]
+    summary = lib.rollup(plan, findings, warnings, boundary=boundary,
+                         copies=live["copies"], own=live["own"])
+    if live["note"]:
+        summary["liveCopyError"] = live["note"]
+    gate_summary = (lib.rollup(manifest, findings, warnings, boundary=boundary)
+                    if live["own"] is not None else None)
+    usage = load_usage(manifest, manifest_path)
     full_run = _full_run_block(manifest, manifest_path, _proj)
     evidence = load_evidence(manifest, manifest_path, boundary=boundary,
                              full_run=full_run)
@@ -475,9 +503,10 @@ def main(argv):
     if fmt in ("html", "both"):
         p = os.path.join(out_dir, basename + ".html")
         with open(p, "w", encoding="utf-8") as fh:
-            fh.write(render_html(manifest, summary, basename, usage,
+            fh.write(render_html(plan, summary, basename, usage,
                                  css=_css, show_proposals=show_proposals,
-                                 evidence=evidence, portability=_port))
+                                 evidence=evidence, portability=_port,
+                                 own=live["own"], gate_summary=gate_summary))
         written.append(p)
     if fmt == "artifact":
         # A separate name, never the .html one. The standalone file is what people
@@ -485,15 +514,16 @@ def main(argv):
         # with a fragment would leave both looking fine and one of them broken.
         p = os.path.join(out_dir, basename + ".artifact.html")
         with open(p, "w", encoding="utf-8") as fh:
-            fh.write(render_html(manifest, summary, basename, usage,
+            fh.write(render_html(plan, summary, basename, usage,
                                  fragment=True, css=_css,
                                  show_proposals=show_proposals,
-                                 evidence=evidence, portability=_port))
+                                 evidence=evidence, portability=_port,
+                                 own=live["own"], gate_summary=gate_summary))
         written.append(p)
     if fmt in ("md", "both"):
         p = os.path.join(out_dir, basename + ".md")
         with open(p, "w", encoding="utf-8") as fh:
-            fh.write(render_md(manifest, summary, usage, evidence))
+            fh.write(render_md(plan, summary, usage, evidence, own=live["own"]))
         written.append(p)
     for p in written:
         print("wrote %s" % p)

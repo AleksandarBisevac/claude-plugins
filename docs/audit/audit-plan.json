@@ -726,7 +726,7 @@
     {
       "id": "P115",
       "title": "status shows every in-flight phase from the copy that holds it live",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P115.json"
     },
     {
@@ -1014,9 +1014,9 @@
       "P103.10",
       "P103.12",
       "P104.7",
+      "P104.11-tog",
       "P103.14-xi3",
       "P105.6",
-      "P104.11-tog",
       "P104.13-tog",
       "P112.1-uce",
       "P112.5-uce",
@@ -1155,23 +1155,24 @@
       "P106.3",
       "P107.1",
       "P107.4",
+      "P104.2",
       "P100.1",
       "P100.2",
       "P100.3-zxo",
       "P103.8",
-      "P102.6",
-      "P102.7",
       "P105.10-m32",
       "P110.4-exo",
       "P107.5-gwk",
-      "P106.4-b6f",
-      "P104.2",
       "P104.13-tog",
       "P104.17-tog",
       "P112.1-uce",
       "P112.3-uce",
       "P114.1",
       "P114.2-ffv",
+      "P115.3-4yc",
+      "P102.6",
+      "P102.7",
+      "P106.4-b6f",
       "P102.12-ptn",
       "P108.4",
       "P101.4-1cb",
@@ -1321,16 +1322,19 @@
       "P80.15-rtb",
       "P103.8",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
       "P105.8-m32",
-      "P104.11-tog",
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
       "P104.18-tog",
-      "P112.1-uce"
+      "P112.1-uce",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
@@ -1469,9 +1473,9 @@
       "P103.4",
       "P103.5",
       "P103.7",
+      "P104.10-tog",
       "P100.2",
       "P103.14-xi3",
-      "P104.10-tog",
       "P104.14-tog",
       "P104.17-tog",
       "P104.18-tog"
@@ -1709,15 +1713,16 @@
       "P80.17-rtb",
       "P81.12",
       "P103.5",
-      "P106.7-b6f",
-      "P106.9-b6f",
-      "P106.10-b6f",
-      "P106.11-b6f",
       "P112.2-uce",
       "P115.1",
       "P114.2-ffv",
       "P114.3-ffv",
-      "P114.4-ffv"
+      "P114.4-ffv",
+      "P115.2-4yc",
+      "P106.7-b6f",
+      "P106.9-b6f",
+      "P106.10-b6f",
+      "P106.11-b6f"
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1",
@@ -2298,7 +2303,8 @@
       "P100.2",
       "P107.7-gwk",
       "P104.14-tog",
-      "P104.17-tog"
+      "P104.17-tog",
+      "P115.3-4yc"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -2394,8 +2400,8 @@
       "P80.23-rtb",
       "P102.10",
       "P104.1",
-      "P106.2",
-      "P104.2"
+      "P104.2",
+      "P106.2"
     ],
     "plugins/audit/scripts/demo/gen-demo-usage.py": [
       "P10.3",
@@ -2856,9 +2862,9 @@
       "P76.3-6qa",
       "P107.4",
       "P103.6",
-      "P106.4-b6f",
       "P112.2-uce",
-      "P112.4-uce"
+      "P112.4-uce",
+      "P106.4-b6f"
     ],
     "plugins/audit/scripts/manifest/_manifest_merge.py": [
       "P60.1"
@@ -3118,7 +3124,8 @@
     ],
     "plugins/audit/scripts/panel/_panel_runstate.py": [
       "P49.3",
-      "P105.5"
+      "P105.5",
+      "P115.4-4yc"
     ],
     "plugins/audit/scripts/panel/_panel_settings.py": [
       "P12.1",
@@ -3135,7 +3142,9 @@
       "P80.8",
       "P80.15-rtb",
       "P105.1",
-      "P104.17-tog"
+      "P104.17-tog",
+      "P115.3-4yc",
+      "P115.4-4yc"
     ],
     "plugins/audit/scripts/panel/_panel_ui.py": [
       "P11.1",
@@ -3194,7 +3203,8 @@
       "P105.6",
       "P105.9-m32",
       "P105.8-m32",
-      "P104.17-tog"
+      "P104.17-tog",
+      "P115.3-4yc"
     ],
     "plugins/audit/scripts/report/_evidence_view.py": [
       "P32.7",
@@ -3231,11 +3241,15 @@
       "P63.6",
       "P80.7",
       "P86.2",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P115.3-4yc",
+      "P115.4-4yc"
     ],
     "plugins/audit/scripts/report/_report_page.py": [
       "P63.6",
-      "P85.2"
+      "P85.2",
+      "P115.3-4yc",
+      "P115.4-4yc"
     ],
     "plugins/audit/scripts/report/_report_ui.py": [
       "P11.2",
@@ -3265,7 +3279,9 @@
       "P86.2",
       "P80.14-rtb",
       "P80.15-rtb",
-      "P112.2-uce"
+      "P112.2-uce",
+      "P115.3-4yc",
+      "P115.4-4yc"
     ],
     "plugins/audit/scripts/status/_doctor_ado.py": [
       "P57.5"
@@ -3358,7 +3374,10 @@
       "P114.1",
       "P115.1",
       "P114.2-ffv",
-      "P114.3-ffv"
+      "P114.3-ffv",
+      "P115.2-4yc",
+      "P115.3-4yc",
+      "P115.4-4yc"
     ],
     "plugins/audit/scripts/status/audit-doctor.py": [
       "P10.3",
@@ -3426,7 +3445,9 @@
       "P115.1",
       "P114.2-ffv",
       "P114.3-ffv",
-      "P114.4-ffv"
+      "P114.4-ffv",
+      "P115.2-4yc",
+      "P115.3-4yc"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -3472,7 +3493,10 @@
       "P74.6-qq5",
       "P80.15-rtb",
       "P105.2",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "plugins/audit/scripts/ui/panel/write-confirmation.js": [
       "P18.7",
@@ -3517,9 +3541,9 @@
       "P102.10",
       "P107.3",
       "P104.5",
-      "P107.5-gwk",
       "P104.10-tog",
       "P104.11-tog",
+      "P107.5-gwk",
       "P104.13-tog",
       "P104.17-tog",
       "P112.2-uce",
@@ -3535,11 +3559,11 @@
       "P107.3",
       "P107.4",
       "P104.8",
-      "P107.5-gwk",
       "P104.2",
       "P104.9-tog",
       "P104.10-tog",
       "P104.11-tog",
+      "P107.5-gwk",
       "P104.13-tog"
     ],
     "plugins/audit/templates/audit-plan.starter.json": [
@@ -3877,9 +3901,9 @@
       "P69.3",
       "P69.4-j6r",
       "P71.3-zso",
-      "P106.4-b6f",
       "P112.2-uce",
-      "P112.4-uce"
+      "P112.4-uce",
+      "P106.4-b6f"
     ],
     "plugins/audit/tests/test__manifest_merge.py": [
       "P60.1"
@@ -3971,6 +3995,7 @@
       "P80.10",
       "P102.10",
       "P100.3-zxo",
+      "P115.3-4yc",
       "P102.3",
       "P102.13-ptn",
       "P102.14-ptn"
@@ -4002,11 +4027,14 @@
       "P105.2",
       "P105.3",
       "P105.7",
-      "P105.8-m32",
       "P104.11-tog",
+      "P105.8-m32",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "plugins/audit/tests/test__panel_policy.py": [
       "P59.10",
@@ -4015,7 +4043,8 @@
     "plugins/audit/tests/test__panel_runstate.py": [
       "P49.3",
       "P75.2-j5h",
-      "P105.5"
+      "P105.5",
+      "P115.4-4yc"
     ],
     "plugins/audit/tests/test__panel_state.py": [
       "P18.7",
@@ -4025,7 +4054,9 @@
       "P94.1",
       "P98.2-yie",
       "P105.1",
-      "P104.17-tog"
+      "P104.17-tog",
+      "P115.3-4yc",
+      "P115.4-4yc"
     ],
     "plugins/audit/tests/test__panel_write.py": [
       "P18.7",
@@ -4089,9 +4120,9 @@
       "P109.7",
       "P102.8",
       "P108.3",
-      "P106.1",
       "P112.2-uce",
       "P112.4-uce",
+      "P106.1",
       "P108.12-4gh"
     ],
     "plugins/audit/tests/test__report_html.py": [
@@ -4107,10 +4138,14 @@
     "plugins/audit/tests/test__report_md.py": [
       "P63.6",
       "P80.7",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P115.3-4yc",
+      "P115.4-4yc"
     ],
     "plugins/audit/tests/test__report_page.py": [
-      "P63.6"
+      "P63.6",
+      "P115.3-4yc",
+      "P115.4-4yc"
     ],
     "plugins/audit/tests/test__scoped_commit.py": [
       "P29.5",
@@ -4142,7 +4177,9 @@
       "P114.1",
       "P115.1",
       "P114.2-ffv",
-      "P114.3-ffv"
+      "P114.3-ffv",
+      "P115.2-4yc",
+      "P115.5-4yc"
     ],
     "plugins/audit/tests/test__status_facts.py: --fail-on failing-tests refuses a run whose record says the tree was mutated": [
       "P32.7"
@@ -4259,7 +4296,9 @@
       "P115.1",
       "P114.2-ffv",
       "P114.3-ffv",
-      "P114.4-ffv"
+      "P114.4-ffv",
+      "P115.2-4yc",
+      "P115.3-4yc"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -4354,9 +4393,9 @@
       "P53.7",
       "P107.3",
       "P104.5",
-      "P107.5-gwk",
       "P104.10-tog",
       "P104.11-tog",
+      "P107.5-gwk",
       "P104.13-tog",
       "P112.2-uce",
       "P112.4-uce",
@@ -4465,8 +4504,8 @@
       "P80.23-rtb",
       "P94.1",
       "P104.1",
-      "P106.2",
-      "P104.2"
+      "P104.2",
+      "P106.2"
     ],
     "plugins/audit/tests/test_guard_bash_writes.py": [
       "P20.1",
@@ -4618,7 +4657,8 @@
       "P84.8-791",
       "P94.1",
       "P105.6",
-      "P105.9-m32"
+      "P105.9-m32",
+      "P115.3-4yc"
     ],
     "plugins/audit/tests/test_py_launch.py": [
       "P41.6",
@@ -4643,7 +4683,9 @@
       "P80.7",
       "P80.14-rtb",
       "P80.15-rtb",
-      "P112.2-uce"
+      "P112.2-uce",
+      "P115.3-4yc",
+      "P115.4-4yc"
     ],
     "plugins/audit/tests/test_repair_commits.py": [
       "P59.13",
@@ -4779,9 +4821,9 @@
       "P61.2",
       "P107.4",
       "P104.8",
-      "P107.5-gwk",
       "P104.2",
       "P104.9-tog",
+      "P107.5-gwk",
       "P104.13-tog"
     ],
     "plugins/audit/tests/test_validate_config.py": [
@@ -4974,8 +5016,8 @@
       "P102.10",
       "P107.4",
       "P100.3-zxo",
-      "P106.2",
-      "P112.2-uce"
+      "P112.2-uce",
+      "P106.2"
     ],
     "tools/redfirst.sh": [
       "P55.13"
@@ -5193,7 +5235,10 @@
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/authors.png": [
       "P84.7-791",
@@ -5202,7 +5247,10 @@
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/dark.png": [
       "P84.7-791",
@@ -5211,7 +5259,10 @@
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/demo-gate.gif": [
       "P84.7-791",
@@ -5225,7 +5276,10 @@
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/filtered.png": [
       "P84.7-791",
@@ -5234,7 +5288,10 @@
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/filters.png": [
       "P84.7-791",
@@ -5243,7 +5300,10 @@
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/mobile.png": [
       "P84.7-791",
@@ -5252,7 +5312,10 @@
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/overview.png": [
       "P84.7-791",
@@ -5261,262 +5324,316 @@
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/panel-appearance.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
       "P105.8-m32",
-      "P104.11-tog",
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/panel-blocks.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
       "P105.8-m32",
-      "P104.11-tog",
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/panel-composition-expanded.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
       "P105.8-m32",
-      "P104.11-tog",
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/panel-composition.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
       "P105.8-m32",
-      "P104.11-tog",
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/panel-confirm.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
       "P105.8-m32",
-      "P104.11-tog",
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/panel-dark.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
       "P105.8-m32",
-      "P104.11-tog",
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/panel-gate.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
       "P105.8-m32",
-      "P104.11-tog",
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/panel-guards.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
       "P105.8-m32",
-      "P104.11-tog",
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/panel-help.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
       "P105.8-m32",
-      "P104.11-tog",
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/panel-mobile.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
       "P105.8-m32",
-      "P104.11-tog",
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/panel-monthly.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
       "P105.8-m32",
-      "P104.11-tog",
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/panel-overview.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
       "P105.8-m32",
-      "P104.11-tog",
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/panel-person.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
       "P105.8-m32",
-      "P104.11-tog",
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/panel-policy-expanded.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
       "P105.8-m32",
-      "P104.11-tog",
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/panel-policy.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
       "P105.8-m32",
-      "P104.11-tog",
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/panel-proposals.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
       "P105.8-m32",
-      "P104.11-tog",
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "docs/screenshots/panel-usage.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
       "P105.8-m32",
-      "P104.11-tog",
       "P104.12-tog",
       "P104.15-tog",
       "P104.16-tog",
-      "P104.18-tog"
+      "P104.18-tog",
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "tools/ui-tests/evidence-read-error.test.mjs": [
       "P80.15-rtb"
@@ -5769,21 +5886,6 @@
       "P104.16-tog",
       "P104.18-tog"
     ],
-    "plugins/audit/scripts/ui/panel/policy-state.js": [
-      "P105.8-m32"
-    ],
-    "plugins/audit/scripts/ui/panel/README.md": [
-      "P105.10-m32"
-    ],
-    "examples/panel.sh": [
-      "P105.9-m32"
-    ],
-    "tools/ui-tests/policy-shape.test.mjs": [
-      "P105.8-m32"
-    ],
-    "examples/acme-store/.claude/.gitignore": [
-      "P105.9-m32"
-    ],
     "plugins/audit/scripts/report/_usage_load.py": [
       "P104.1",
       "P104.10-tog",
@@ -5815,6 +5917,21 @@
     "plugins/audit/scripts/usage/_usage_bench.py": [
       "P104.11-tog"
     ],
+    "plugins/audit/scripts/ui/panel/policy-state.js": [
+      "P105.8-m32"
+    ],
+    "plugins/audit/scripts/ui/panel/README.md": [
+      "P105.10-m32"
+    ],
+    "examples/panel.sh": [
+      "P105.9-m32"
+    ],
+    "tools/ui-tests/policy-shape.test.mjs": [
+      "P105.8-m32"
+    ],
+    "examples/acme-store/.claude/.gitignore": [
+      "P105.9-m32"
+    ],
     "plugins/audit/scripts/ui/panel/browse-dialog.js": [
       "P104.16-tog"
     ],
@@ -5833,6 +5950,19 @@
     "tools/demo-gate.tape": [
       "P112.1-uce",
       "P112.5-uce"
+    ],
+    "plugins/audit/scripts/status/_live_copy.py": [
+      "P115.3-4yc",
+      "P115.4-4yc"
+    ],
+    "plugins/audit/tests/test__live_copy.py": [
+      "P115.3-4yc",
+      "P115.4-4yc"
+    ],
+    "tools/ui-tests/overview-outcome.test.mjs": [
+      "P115.3-4yc",
+      "P115.4-4yc",
+      "P115.5-4yc"
     ],
     "plugins/audit/scripts/manifest/materialize-proposal.py": [
       "P102.13-ptn"
@@ -6220,6 +6350,60 @@
       "notes": null
     },
     {
+      "id": "BUG-18-tog",
+      "title": "the usage ledger counts a message's streaming partial, undercounting output tokens",
+      "status": "fixed",
+      "severity": "med",
+      "reportedAt": "2026-10-06T21:29:24Z",
+      "reportedBy": null,
+      "description": "usage_ledger keeps the first transcript entry per message id; a transcript can write a streaming partial (stop_reason null) before the final entry under the same id, so output tokens are undercounted. Found by the native-cost pilot on 2026-10-06; fixed by task P104.9-tog.",
+      "repro": "a headless claude -p run that spawns one subagent; meter its transcript with meter-usage",
+      "expected": "each message id counted once at its final entry; the ledger sum matches Claude Code's total_cost_usd when the price table is current",
+      "actual": "the subagent's output was counted as 4 tokens against 289 final, and the ledger summed below the native total by exactly that shortfall",
+      "files": [],
+      "taskId": "P104.9-tog",
+      "fixedIn": "c38330bf",
+      "notes": null
+    },
+    {
+      "id": "BUG-19",
+      "title": "status's UNFINISHED line gives every locked phase the plan-wide ready count",
+      "status": "fixed",
+      "severity": "med",
+      "reportedAt": "2026-10-07T06:45:52Z",
+      "reportedBy": null,
+      "description": "The UNFINISHED section of /audit:status prints one line per held phase lock and says that phase has N tasks still ready. N is the ready list of the whole plan, not the phase's own count, so every locked phase shows the same number. A phase whose own tasks are all done therefore reads as having work left. Read on the development branch, the count also comes from that branch's copies of the phase shards. A phase whose work lives on its own branch is shown with tasks ready that are already done there, and the line does not say which copy it read. The maintainer read the line as remaining work in each phase.",
+      "repro": "Hold phase locks for several phases while the plan has ready tasks in other phases, then run /audit:status: every UNFINISHED line names the same count.",
+      "expected": "Each line counts the ready tasks of its own phase, read from the copy that holds that phase live, and says which copy it read; a phase with no ready task of its own gets no ready-work line.",
+      "actual": "Each line prints len(ready) over the whole plan; main reads its own stale shard copy for phases whose work is on a branch.",
+      "files": [
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-status.py"
+      ],
+      "taskId": "P114.1",
+      "fixedIn": "e04e7557",
+      "notes": null
+    },
+    {
+      "id": "BUG-20",
+      "title": "status's ready list and phase table show in-flight phases from the development branch's stale copy",
+      "status": "fixed",
+      "severity": "med",
+      "reportedAt": "2026-10-07T08:01:57Z",
+      "reportedBy": null,
+      "description": "On the development branch, /audit:status's READY NOW list, its phase table and its progress counts read each in-flight phase from the development branch's own copy of the shard. A phase whose work is happening on its own branch, in a linked worktree, is therefore shown with tasks ready or pending that are already done there. The status does not say which copy it read. Only the UNFINISHED block reads the live copy. The maintainer read the stale ready list as work left to do.",
+      "repro": "With a phase in flight in a linked worktree and some of its tasks done there, run /audit:status on the development branch: those tasks are listed as ready or pending.",
+      "expected": "Every surface counts an in-flight phase from the copy that holds it live, through the same reader the UNFINISHED block uses, and says which copy it read.",
+      "actual": "The ready list, table and counts read the development branch shard; only UNFINISHED reads the live copy.",
+      "files": [
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/status/_status_facts.py"
+      ],
+      "taskId": "P115.1",
+      "fixedIn": "fbcb3c46",
+      "notes": null
+    },
+    {
       "id": "BUG-18-4gh",
       "title": "a shell append to the audit journal passes every PreToolUse hook while Edit of the same journal is refused",
       "status": "fixed",
@@ -6286,60 +6470,6 @@
       ],
       "taskId": "P108.9-4gh",
       "fixedIn": "bd415c44",
-      "notes": null
-    },
-    {
-      "id": "BUG-18-tog",
-      "title": "the usage ledger counts a message's streaming partial, undercounting output tokens",
-      "status": "fixed",
-      "severity": "med",
-      "reportedAt": "2026-10-06T21:29:24Z",
-      "reportedBy": null,
-      "description": "usage_ledger keeps the first transcript entry per message id; a transcript can write a streaming partial (stop_reason null) before the final entry under the same id, so output tokens are undercounted. Found by the native-cost pilot on 2026-10-06; fixed by task P104.9-tog.",
-      "repro": "a headless claude -p run that spawns one subagent; meter its transcript with meter-usage",
-      "expected": "each message id counted once at its final entry; the ledger sum matches Claude Code's total_cost_usd when the price table is current",
-      "actual": "the subagent's output was counted as 4 tokens against 289 final, and the ledger summed below the native total by exactly that shortfall",
-      "files": [],
-      "taskId": "P104.9-tog",
-      "fixedIn": "c38330bf",
-      "notes": null
-    },
-    {
-      "id": "BUG-19",
-      "title": "status's UNFINISHED line gives every locked phase the plan-wide ready count",
-      "status": "fixed",
-      "severity": "med",
-      "reportedAt": "2026-10-07T06:45:52Z",
-      "reportedBy": null,
-      "description": "The UNFINISHED section of /audit:status prints one line per held phase lock and says that phase has N tasks still ready. N is the ready list of the whole plan, not the phase's own count, so every locked phase shows the same number. A phase whose own tasks are all done therefore reads as having work left. Read on the development branch, the count also comes from that branch's copies of the phase shards. A phase whose work lives on its own branch is shown with tasks ready that are already done there, and the line does not say which copy it read. The maintainer read the line as remaining work in each phase.",
-      "repro": "Hold phase locks for several phases while the plan has ready tasks in other phases, then run /audit:status: every UNFINISHED line names the same count.",
-      "expected": "Each line counts the ready tasks of its own phase, read from the copy that holds that phase live, and says which copy it read; a phase with no ready task of its own gets no ready-work line.",
-      "actual": "Each line prints len(ready) over the whole plan; main reads its own stale shard copy for phases whose work is on a branch.",
-      "files": [
-        "plugins/audit/scripts/status/_status_facts.py",
-        "plugins/audit/scripts/status/audit-status.py"
-      ],
-      "taskId": "P114.1",
-      "fixedIn": "e04e7557",
-      "notes": null
-    },
-    {
-      "id": "BUG-20",
-      "title": "status's ready list and phase table show in-flight phases from the development branch's stale copy",
-      "status": "in_progress",
-      "severity": "med",
-      "reportedAt": "2026-10-07T08:01:57Z",
-      "reportedBy": null,
-      "description": "On the development branch, /audit:status's READY NOW list, its phase table and its progress counts read each in-flight phase from the development branch's own copy of the shard. A phase whose work is happening on its own branch, in a linked worktree, is therefore shown with tasks ready or pending that are already done there. The status does not say which copy it read. Only the UNFINISHED block reads the live copy. The maintainer read the stale ready list as work left to do.",
-      "repro": "With a phase in flight in a linked worktree and some of its tasks done there, run /audit:status on the development branch: those tasks are listed as ready or pending.",
-      "expected": "Every surface counts an in-flight phase from the copy that holds it live, through the same reader the UNFINISHED block uses, and says which copy it read.",
-      "actual": "The ready list, table and counts read the development branch shard; only UNFINISHED reads the live copy.",
-      "files": [
-        "plugins/audit/scripts/status/audit-status.py",
-        "plugins/audit/scripts/status/_status_facts.py"
-      ],
-      "taskId": "P115.1",
-      "fixedIn": null,
       "notes": null
     }
   ],

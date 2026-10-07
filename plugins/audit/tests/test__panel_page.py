@@ -5164,6 +5164,25 @@ def _cases(check):
           "planted lines, not about the scan being generally trigger-happy",
           not _rollup_unaccounted(M.UI_HTML, _ov_start, _ov_end))
 
+    # A PROPERTY OF THE SOURCE, said as one: which data the Overview's task
+    # strip and Ready now card are drawn from. What each helper does is
+    # executed in tools/ui-tests/overview-outcome.test.mjs; what only the
+    # source can say is that the view calls them where it draws, once each.
+    _strip = M.UI_HTML[M.UI_HTML.index("// --- the two strips"):
+                       M.UI_HTML.index("// --- tools: search, sort")]
+    check("lc-ov1 the task strip's filter counts are `ovPhaseStatus(r)` - the "
+          "rollup's plan, the one its pills count - and no longer built from "
+          "the composition's tasks",
+          _strip.count("const pStatus=ovPhaseStatus(r);") == 1
+          and "tasks.forEach" not in _strip, _strip)
+    _rdy = M.UI_HTML[M.UI_HTML.index("// --- ready now"):
+                     M.UI_HTML.index("// --- bugs ---")]
+    check("lc-ov2 the Ready now card draws `ovReadyCopyNotes(r)` once, after "
+          "its list",
+          _rdy.count("ovReadyCopyNotes(r).forEach") == 1
+          and _rdy.index("ovReadyCopyNotes(r)") > _rdy.index("ready.slice(0,RSHOW)"),
+          _rdy)
+
 def _selftest():
     return _harness.run(_cases)
 

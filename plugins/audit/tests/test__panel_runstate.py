@@ -461,8 +461,53 @@ def _cases(check):
     shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _worktree_fingerprint_cases(check):
+    """The stamp moves when a linked worktree's copy of the plan changes.
+
+    The Overview shows a phase worked on in another worktree as that
+    worktree's file holds it, and a run there marks tasks done in that file
+    without touching anything of this checkout's. A stamp over this
+    checkout's files alone never moves for it, so the panel would keep
+    showing the run where it was when the page loaded."""
+    import shutil
+    import test__live_copy as LC
+    labels = ("wf1", "wf2")
+    if not shutil.which("git"):
+        for lbl in labels:
+            _harness.skip(check, lbl, "git is not on PATH, and the worktree "
+                          "lives in git", True)
+        return
+    root = _harness.fixture_root("panel-runstate-worktree-")
+    try:
+        fx = LC.worktree_fixture(os.path.join(root, "linked"), True)
+        cfg = M.read_config(fx["repo"])
+        before = M.data_fingerprint(fx["repo"], cfg)
+        # A run in the worktree finishing P1.2: uncommitted, in its own file,
+        # and a different size, so a coarse mtime cannot hide it.
+        LC._write_shard(fx["tree"], "P1", "fixer", "in_progress",
+                        [dict(t, status="done") for t in LC._p1_tasks("done")])
+        after = M.data_fingerprint(fx["repo"], cfg)
+        check("wf1 a linked worktree's run advancing its copy of a phase moves "
+              "the stamp, so the poll refetches the Overview",
+              before != "unavailable" and before != after,
+              "before=%r after=%r" % (before, after))
+        with open(os.path.join(fx["tree"], "README"), "a",
+                  encoding="utf-8") as fh:
+            fh.write("an edit no surface reads\n")
+        check("wf2 ...and its twin: a file of that worktree no surface reads "
+              "leaves the stamp where it was, so a busy worktree does not "
+              "refetch on every edit",
+              M.data_fingerprint(fx["repo"], cfg) == after,
+              "after=%r" % (after,))
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _harness.stage(check, "wf", _worktree_fingerprint_cases)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":
