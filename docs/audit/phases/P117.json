@@ -370,24 +370,30 @@
         "severity": "med",
         "file": "docs/research/pipeline-cost-design.md 5.2 'The key, read once per phase and kept by the task', T6 'The key, once per phase', T6 table block row",
         "issue": "Only start records the key, and a missing key reads always. done needs no start: _started is true for a blocked task, and block takes a pending task straight to blocked. So under a configured phase key, a never-started phase's task can be blocked, committed by hand and closed not-asked, and the property leaves it out. A blocked task moved into a never-started phase does the same.",
-        "resolution": "Record the key at every write that makes _started true, or have done record it from the phase or the live config when the task has none, so always only ever means a phase that started under always. Add the block and block-then-move T6 cases, and keep the always half."
+        "resolution": "fixed in P117.11-2sz (315e4808): Record the key at every write that makes _started true, or have done record it from the phase or the live config when the task has none, so always only ever means a phase that started under always. Add the block and block-then-move T6 cases, and keep the always half.",
+        "fixTask": "P117.11-2sz",
+        "commit": "315e4808"
       },
       {
         "id": "P117-R40",
         "severity": "low",
         "file": "docs/research/pipeline-cost-design.md T6 'Outside audit-task.py and close-phase.py'",
         "issue": "The claim that a commit repair-commits clears cannot land is false after a rebase: the rewritten changes are on the branch under a new SHA, and the task then records no commit.",
-        "resolution": "Restate it and add repair-commits --apply to section 5.2's followed item, next to reopen and the --no-change close."
+        "resolution": "fixed in P117.11-2sz (315e4808): Restate it and add repair-commits --apply to section 5.2's followed item, next to reopen and the --no-change close.",
+        "fixTask": "P117.11-2sz",
+        "commit": "315e4808"
       },
       {
         "id": "P117-R41",
         "severity": "low",
         "file": "docs/research/pipeline-cost-design.md 5.2 and T6 'The refusal', C3 COMPATIBILITY",
         "issue": "The property applies to signoff --verdict skipped as well, which is a new refusal of an existing verb form that neither the consequences nor the COMPATIBILITY entry names.",
-        "resolution": "State it, add a T6 case, and include it in the T3 COMPATIBILITY entry."
+        "resolution": "fixed in P117.11-2sz (315e4808): State it, add a T6 case, and include it in the T3 COMPATIBILITY entry.",
+        "fixTask": "P117.11-2sz",
+        "commit": "315e4808"
       }
     ],
-    "outcome": "[findings: 41 - 0 high, 13 med, 28 low; 38 with a recorded fix commit]"
+    "outcome": "[findings: 41 - 0 high, 13 med, 28 low; 41 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -937,7 +943,7 @@
     {
       "id": "P117.11-2sz",
       "title": "the G1 key is never read from a default",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P117-R39 to P117-R41 from the cost phase's seventh review round. Documents only. The G1 key is never read from a default. It is recorded at every write that makes a task count as started, or done records it from the phase or the live config when the task has none, so always means only a phase that really started under always. T6 adds the block and block-then-move cases. The repair-commits claim is restated, and that writer is listed as followed. signoff --verdict skipped is named as refused for a phase with a task owed an answer, with a T6 case and a COMPATIBILITY entry.",
       "files": [
         "docs/research/pipeline-cost-design.md"
@@ -965,18 +971,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "315e4808",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes P117-R39 to P117-R41. The G1 key has no default. A task with none takes its phase's recorded key, and a phase with none takes the live config's value at that moment. done and sign-off record what they took on the task and on the phase, and close-phase reads a missing key the same way. The block-from-pending path and the block-then-move path are named with citations and T6 cases. repair-commits --apply after a rebase is listed as followed, not held. signoff --verdict skipped is refused while a task is owed an answer, with a T6 case and a COMPATIBILITY entry that T6 adds. Figures are unchanged and the lints are clean; the orchestrator read the key paragraph before closing.",
+        "descriptive": "The design no longer lets a missing review setting count as the per-task default, so a task that was never started cannot skip its review."
       },
       "startedAt": "2026-10-07T20:52:02Z",
-      "completedAt": null,
+      "completedAt": "2026-10-07T21:08:50Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-07T21:08:49Z.e6ce4e",
         "status": "passed",
         "at": "2026-10-07T21:08:49Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "315e4808",
+        "at": "2026-10-07T21:08:50Z",
+        "basis": "orchestrator check: read the rewritten key paragraph; each finding maps to a change with line numbers; figures unchanged"
       }
     }
   ],
