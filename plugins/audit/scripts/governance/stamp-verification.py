@@ -316,6 +316,7 @@ import _proc_group  # noqa: E402  (a child tree stopped whole; a stop signal as 
 import _locks  # noqa: E402  (pid_alive: whether a leftover throwaway's owner still runs)
 import _worktrees  # noqa: E402  (git's worktree list read, and two spellings of one tree compared)
 import _runner_output  # noqa: E402  (every reading of what a test runner printed, shared with run-test-gate)
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 
 USAGE = ("usage: stamp-verification.py take|compare|red [--project DIR] ...\n")
 
@@ -2578,7 +2579,9 @@ def build_parser():
                              "directories are linked into the throwaway; `red` only "
                              "(default: --project)")
     parser.add_argument("--json", action="store_true", dest="as_json")
-    return parser
+    # An older cached copy asked for a newer action would otherwise answer with a
+    # bare "invalid choice" that reads as "this helper does not exist".
+    return _claude_home.attach_usage_hint(parser)
 
 
 def run_take(args, out):

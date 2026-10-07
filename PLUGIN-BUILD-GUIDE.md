@@ -416,7 +416,7 @@ L7:
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
   run-test-gate -> _evidence_io, _fmt, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _tree_stamp
   set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
-  stamp-verification -> _evidence_io, _locks, _manifest_io, _output, _proc_group, _runner_output, _tree_stamp, _worktrees
+  stamp-verification -> _claude_home, _evidence_io, _locks, _manifest_io, _output, _proc_group, _runner_output, _tree_stamp, _worktrees
   validate-config -> _config_rules, _output
   validate-manifest -> _evidence_io, _manifest_io, _manifest_rules, _output, _warning_groups
   verify-invariants -> _invariants, _manifest_io, _output
@@ -2837,8 +2837,13 @@ one exact install path - the marketplace and the `gitCommitSha` it was made from
 `marketplace_source` finds the clone `known_marketplaces.json` names and the plugin's directory
 inside it off the clone's own `marketplace.json`. Every reader is fail-open: a missing,
 malformed or differently shaped record is None beside the sentence saying why, and the caller
-says the basis is a file Claude Code does not document. Layer 1; its cases are in
-`plugins/audit/tests/test__claude_home.py`.
+says the basis is a file Claude Code does not document. `attach_usage_hint` patches a built
+parser's `error` so every usage error also names this copy's version and path and, through
+`applicable_copy`, the installed copy Claude Code would load for this project (project or
+local scope recorded for it before user scope, another project's never) when that copy is
+newer, with `/reload-plugins` as the way to it; an unreadable record is said to be unreadable.
+It sits here, at layer 1, so every entry point can reach the one hook; `stamp-verification.py`
+carries it. Layer 1; its cases are in `plugins/audit/tests/test__claude_home.py`.
 
 ### `plugins/audit/scripts/status/audit-lookup.py`
 One question, one answer, with the pointer that lets a reader check it — instead of the

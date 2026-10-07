@@ -447,7 +447,7 @@
     {
       "id": "P102.8",
       "title": "the docs name the runners red reads, derived from its table by a drift check",
-      "status": "in_progress",
+      "status": "done",
       "description": "'A run whose output carries no tally the helper reads' never said which runners the helper reads, so an operator who fixed dependencies learned nothing about the rest. Both documents name the runners red reads. A new `_drift` check in _refs.py derives that list from the table instead of letting it be written as prose. _refs.py and _runner_output.py are layer-mates, so the check reads the table from source by AST rather than importing it. The check gets a row in tools/prove-gates.py so a weakened check goes red.",
       "files": [
         "plugins/audit/scripts/_refs.py",
@@ -481,18 +481,30 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a5882254",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_refs.py gains RUNNER_LIST_SOURCE, RUNNER_LIST_TABLE, RUNNER_LIST_DOCS, RUNNER_LIST_TRIGGER ('The runners whose tally the helper reads are'), _tally_table_names(), _named_runners() and runner_list_drift(repo_root=None) -> {runners, problems}. _tally_table_names() parses governance/_runner_output.py with ast (no import: the two modules are layer-mates) and reads the first string of each TALLY_READERS pair; a table that is not literal, is assigned other than exactly once, or cannot be read is a finding, never an empty list. runner_list_drift() reads agents/audit-executor.md and reference/execute-task.md, which must each carry the trigger sentence exactly once; the list is the backticked words from the trigger to the next full stop; each finding names the document and the runner it names wrongly or omits. Both documents carry one list sentence (house, pytest, unittest, jest, vitest), say the output decides rather than the command (a wrapper counts when the runner it wraps prints its own tally; any other runner is could-not-prove), and name runner_list_drift() as the check; neither restates the dependency-link sentences beside them. tools/prove-gates.py gains a red row (execute-task.md's list loses vitest, rl1 must fail) and an allow row (the list runs to the end of the text, an over-fire, rl3 must fail). Decisions: the name ends in _drift so prove-gates reaches it by suffix; only TALLY_READERS is graded (CASE_READERS agreement is not checked); the list ends at the sentence's full stop; the live case rl1 compares the AST reading with the imported table, two readings from two places.\nTests: test__refs rl1-rl5. Red-first: in the shared tree before the implementation (AttributeError, 222/223) and proved through the helper with --introduces runner_list_drift at HEAD 212470e8. Both prove-gates rows mutated in scratch copies: red row -> rl1 FAIL (308/309); allow row over-fire -> rl1-rl4 FAIL (305/309). prove-gates --selftest 37/37; test__refs 309/309, test__output 182/182, test__deps 299/299; ruff and vermin clean.",
+        "descriptive": "The executor's instructions now say which test runners the red-first check can read, and a check fails the build if that list drifts from the table the check actually uses."
       },
       "startedAt": "2026-10-07T02:48:21Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T05:16:32Z",
+      "verifiedBy": [
+        "rl1",
+        "rl2",
+        "rl3",
+        "rl4",
+        "rl5"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T05:14:19Z.23fed3",
         "status": "passed",
         "at": "2026-10-07T05:14:19Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "a5882254",
+        "at": "2026-10-07T05:16:32Z",
+        "basis": "orchestrator check: both documents name the runners, the list is derived from TALLY_READERS by AST as the layer rule requires, prove-gates rows red in both directions"
       }
     },
     {
