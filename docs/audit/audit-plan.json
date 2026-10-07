@@ -708,7 +708,7 @@
     {
       "id": "P112",
       "title": "the README demo shows a user's Claude Code session, not the plugin's internals",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P112.json"
     }
   ],
