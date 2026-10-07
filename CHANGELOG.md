@@ -33,6 +33,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   and the routing advice's re-priced figures were printed regardless of the setting, unlike the
   totals beside them. With `showCost` off the band line names its basis and says the thresholds
   are withheld, and the routing advice states its saving as a share.
+- **`/audit:usage --json` keeps its cost fields beside `showCost`, which the payload now carries
+  at top level.** `showCost` is a render setting - the schema describes it as rendering
+  equivalent API cost alongside token counts - so a machine consumer deciding whether to print a
+  dollar figure needs the setting next to the data, not withheld with it.
 
 - **The first-contact commands no longer hand their script a `<manifestPath>` placeholder.**
   `/audit:status`, `/audit:usage`, `/audit:report` and `/audit:next` used to leave the model to
@@ -87,6 +91,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `--stop` removes any such file, warning on one it cannot. A pidfile an older build left at a
   wider mode is narrowed to owner-only when `--status` or a launch that finds a panel already
   running reads it, on POSIX; the docstring claiming owner-only now limits that claim to POSIX.
+
+- **The demo recorder's after-take report names both places it searched when nothing was left
+  behind, and states an isolated take's config removal only after checking it.** An empty report
+  used to name only the config directory, dropping the trust file entirely whenever
+  `CLAUDE_CONFIG_DIR` is unset and the two sit apart - the global config's trust entries live
+  beside `HOME`, everything else the take writes under `HOME/.claude`. It now names both. Under
+  an isolated take the report used to assert the kit's config was "removed" before the kit's own
+  cleanup ever ran; `tools/capture-demo-gif.py` now removes that take's own config directory and
+  checks it is gone before printing the line, and says so when a removal cannot complete instead
+  of claiming one happened.
 
 ## [3.1.0] - 2026-10-05
 

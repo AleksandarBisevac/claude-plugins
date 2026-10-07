@@ -432,6 +432,20 @@ def _cases(check):
               and any("those same tokens cost $" in ln
                       for ln in _out_on.splitlines()),
               repr((_rc_on, _err_on, _band_on)))
+        _rc_off_j, _out_off_j, _err_off_j = _usage_text(_off, ["--json"])
+        _payload_off = json.loads(_out_off_j)
+        check("mn3c the --json payload on the showCost-false plan still keeps "
+              "its cost fields, and carries showCost false at top level so a "
+              "consumer can honour the setting itself",
+              _rc_off_j == 0 and _payload_off.get("showCost") is False
+              and "costUSD" in _payload_off["totals"],
+              repr((_rc_off_j, _err_off_j, _payload_off.get("showCost"))))
+        _rc_on_j, _out_on_j, _err_on_j = _usage_text(_on, ["--json"])
+        _payload_on = json.loads(_out_on_j)
+        check("mn3d SECOND DIRECTION: the showCost-true twin's --json payload "
+              "carries showCost true",
+              _rc_on_j == 0 and _payload_on.get("showCost") is True,
+              repr((_rc_on_j, _err_on_j, _payload_on.get("showCost"))))
         with open(_off_cfg, "w", encoding="utf-8") as fh:
             fh.write("{ not json")
         _rc_bad, _out_bad, _err_bad = _usage_text(_off)
@@ -513,6 +527,9 @@ def _cases(check):
         check("json: exits 0", code == 0)
         check("json: totals match the ledger",
               payload["totals"]["out"] == 3500)
+        check("json: showCost true by default (no plan, no config) rides beside "
+              "the cost data --json never withholds",
+              payload.get("showCost") is True and "costUSD" in payload["totals"])
         check("json: every grouping present",
               all(k in payload for k in ("byPhase", "byTask", "byModel",
                                          "byAuthor", "byAgent", "byDay",

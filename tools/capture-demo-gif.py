@@ -837,14 +837,27 @@ _NOT_COMPLETE = ("this is what the tool knows to look for, not a complete list o
                  "what a session writes")
 
 
-def _isolated_lines(plan):
-    """The report after an isolated take. Its config directory is gone, but the
-    authentication page documents a macOS Keychain entry keyed to each config
-    directory; the entry's name is not documented, and whether a session
-    authenticated by the token alone writes one is not either."""
-    return ["the take's own config at %s was removed with the kit; the operator's "
-            "plugins, trust entries, transcripts and history were compared before "
-            "and after" % (plan["configDir"],),
+def remove_isolated_config(config_dir):
+    """Removes an isolated take's own config directory and reports whether it is
+    now gone - the OBSERVED result `leftover_lines()` prints, never a claim made
+    ahead of the check. `shutil.rmtree` cannot complete against a path that is not
+    a directory, or a file inside it a process still holds open; either leaves
+    the path on disk, which this reports rather than ignoring."""
+    shutil.rmtree(config_dir, ignore_errors=True)
+    return not os.path.exists(config_dir)
+
+
+def _isolated_lines(plan, removed):
+    """The report after an isolated take, once its own config directory has
+    already been removed and that removal checked. The authentication page
+    documents a macOS Keychain entry keyed to each config directory; the entry's
+    name is not documented, and whether a session authenticated by the token
+    alone writes one is not either."""
+    lead = (("the take's own config at %s was removed with the kit; checked and "
+             "confirmed gone" % (plan["configDir"],)) if removed else
+            ("the take's own config at %s could not be removed and is still on "
+             "disk - delete it by hand" % (plan["configDir"],)))
+    return [lead,
             "on macOS a Keychain entry Claude Code keys to %s may remain - its name is "
             "not documented and whether a token-only session writes one is not "
             "either; look in Keychain Access (login keychain) for a Claude Code item "
@@ -854,9 +867,11 @@ def _isolated_lines(plan):
 
 def leftover_lines(plan, before, after):
     """[line, ...] - what the take left in a config that outlives it, each with the
-    step that removes it where one is known, closed by `_NOT_COMPLETE`."""
+    step that removes it where one is known, closed by `_NOT_COMPLETE`. Under an
+    isolated plan this removes the take's own config directory first, and reports
+    only what that removal observed."""
     if plan["isolated"]:
-        return _isolated_lines(plan)
+        return _isolated_lines(plan, remove_isolated_config(plan["configDir"]))
     out = []
     if after.get("trustWhy"):
         out.append("%s could not be read (%s), so the trust entry for the demo folder "
@@ -890,10 +905,18 @@ def leftover_lines(plan, before, after):
         out.append("%s appeared during the take - any session open then could have "
                    "written it; if it was the take's: rm '%s'" % (path, path))
     if not out:
+        # The trust file and the config directory can sit apart: the global
+        # config's trust entries live beside HOME (or CLAUDE_CONFIG_DIR), while
+        # history, transcripts and everything else a take writes sit under
+        # `claude_dir()`. Naming only one left the other unsearched in a
+        # reader's eyes, so both places the search actually covered are named.
+        where = sorted(set(
+            p for p in (after.get("trustFile"),
+                       os.path.dirname(after.get("historyFile") or "") or None)
+            if p))
         out.append("no trust entry, transcript directory, history line or session "
                    "directory for the demo folder was found in %s"
-                   % (os.path.dirname(after.get("historyFile") or "")
-                      or after.get("trustFile"),))
+                   % " or ".join(where))
     out.append(_NOT_COMPLETE)
     return out
 
@@ -1652,6 +1675,8 @@ def _cases(check):
     _limit_cases(check)
     _tape_step_cases(check)
     _config_isolation_cases(check)
+    _isolated_removal_cases(check)
+    _empty_report_cases(check)
     _plugin_change_cases(check)
     _take_footprint_cases(check)
     _account_query_cases(check)
@@ -2361,6 +2386,62 @@ def _config_isolation_cases(check):
           "outside letters and digits turned into a dash, as the CLI names it",
           transcript_names(roots) == ["-private-tmp-acme-store-demo",
                                       "-tmp-acme-store-demo"])
+
+
+def _isolated_removal_cases(check):
+    """`leftover_lines()` removes an isolated take's own config directory and
+    checks it is gone BEFORE it reports anything - the report names only what
+    that check observed, never a claim written ahead of it."""
+    d = tempfile.mkdtemp(prefix="audit-demo-gif-selftest-")
+    try:
+        cfg = os.path.join(d, "claude-config")
+        os.makedirs(os.path.join(cfg, "projects"))
+        with open(os.path.join(cfg, "marker"), "w", encoding="utf-8") as fh:
+            fh.write("x")
+        plan = {"isolated": True, "configDir": cfg, "why": ""}
+        snap = {"trustFile": os.path.join(cfg, ".claude.json"), "trust": [],
+                "trustWhy": None, "transcripts": [], "transcriptsWhy": None}
+        report = leftover_lines(plan, snap, snap)
+        check("ir0 a take's own isolated config is removed and the removal is "
+              "CHECKED before the report names the result: %r" % (report,),
+              not os.path.exists(cfg) and cfg in report[0]
+              and "confirmed gone" in report[0])
+
+        locked_dir = os.path.join(d, "locked")
+        os.makedirs(locked_dir)
+        locked_cfg = os.path.join(locked_dir, "cfg-is-a-file")
+        with open(locked_cfg, "w", encoding="utf-8") as fh:
+            fh.write("not a directory")
+        plan2 = {"isolated": True, "configDir": locked_cfg, "why": ""}
+        report2 = leftover_lines(plan2, snap, snap)
+        check("ir1 THE TWIN: a config path `shutil.rmtree` cannot remove (a "
+              "plain file where a directory was expected) is reported as still "
+              "on disk, never claimed removed: %r" % (report2,),
+              os.path.exists(locked_cfg) and "still on disk" in report2[0]
+              and "confirmed gone" not in report2[0])
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def _empty_report_cases(check):
+    """When a take against the operator's own config leaves nothing behind, the
+    report names EVERY place the search covered. The trust file and the config
+    directory are not always the same path - the global config's trust entries
+    sit beside HOME, everything else a take writes sits under HOME/.claude - so
+    naming only one of them can drop the place a reader would actually need."""
+    trust_file = os.path.join(os.sep, "home", "op", ".claude.json")
+    history_file = os.path.join(os.sep, "home", "op", ".claude", "history.jsonl")
+    fallback = {"isolated": False, "configDir": None, "why": ""}
+    snap = {"plugins": [], "pluginsWhy": None, "trustFile": trust_file, "trust": [],
+            "trustWhy": None, "transcripts": [], "transcriptsWhy": None,
+            "historyFile": history_file, "history": 0, "historyWhy": None,
+            "historyRoots": [], "sessionDirs": [], "snapshotDir": "/x",
+            "snapshots": []}
+    report = leftover_lines(fallback, snap, snap)
+    check("er0 nothing left behind names BOTH places the search covered - the "
+          "trust file and the config directory, which sit apart here: %r"
+          % (report[0],),
+          trust_file in report[0] and os.path.dirname(history_file) in report[0])
 
 
 def _plugin_change_cases(check):

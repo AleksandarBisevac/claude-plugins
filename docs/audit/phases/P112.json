@@ -109,38 +109,69 @@
         "severity": "med",
         "file": "plugins/audit/scripts/usage/audit-usage.py:937-951,213-219; CHANGELOG.md [Unreleased]",
         "issue": "A configured plan that exists but does not parse (or whose shards are missing), and an explicit argument naming a missing file, make audit-status and render-report exit 2 while /audit:usage loads through load_manifest_safe, renders with an empty plan and prints dollars a plan turned off - so the CHANGELOG headline that the three refuse a manifest they cannot use is not true for usage.",
-        "resolution": "Load a resolved manifest with the non-safe loader in usage and exit 2 with the same 'cannot read/parse' text audit-status and render-report print; cases for an unparseable configured plan and an explicit missing argument, each exit 2 with no dollar figure, shown red first."
+        "resolution": "fixed in P112.6-uce (290a21da): Load a resolved manifest with the non-safe loader in usage and exit 2 with the same 'cannot read/parse' text audit-status and render-report print; cases for an unparseable configured plan and an explicit missing argument, each exit 2 with no dollar figure, shown red first.",
+        "fixTask": "P112.6-uce",
+        "commit": "290a21da"
       },
       {
         "id": "P112-R11",
         "severity": "med",
         "file": "CONTRIBUTING.md:90-92; tools/capture-demo-gif.py:655-669,716-747",
         "issue": "The fallback mode's printed list of what a take left behind is incomplete: a session also appends every typed prompt to the config's history.jsonl keyed by project path, and writes per-session state under file-history/, session-env/ and shell-snapshots/; none is named, none is caught as a leak in isolated mode, and the trust 'entry' is a whole project key carrying more than the trust answer.",
-        "resolution": "Report the history lines whose project is a fixture root (count and removal step), name the session directories as written-to, word the CONTRIBUTING sentence as not exhaustive, and describe the trust key accurately; a case with a history fixture line for the demo root."
+        "resolution": "fixed in P112.7-uce (cb8ad705): Report the history lines whose project is a fixture root (count and removal step), name the session directories as written-to, word the CONTRIBUTING sentence as not exhaustive, and describe the trust key accurately; a case with a history fixture line for the demo root.",
+        "fixTask": "P112.7-uce",
+        "commit": "cb8ad705"
       },
       {
         "id": "P112-R12",
         "severity": "low",
         "file": "tools/capture-demo-gif.py:716-722,157-174",
         "issue": "Isolated mode says the take leaves nothing of its own behind, but the documented per-config-dir Keychain entry is neither checked nor named, and the isolated path's preconditions (an account answer and a projectsDirectory under a token-only config) are unverified, so isolation may be unreachable rather than merely unproven.",
-        "resolution": "Name the possible Keychain item and where to look, drop 'leaves nothing behind', and record one read-only observation of `claude auth status --json` under a token-only scratch config before relying on the isolated path."
+        "resolution": "fixed in P112.7-uce (cb8ad705): Name the possible Keychain item and where to look, drop 'leaves nothing behind', and record one read-only observation of `claude auth status --json` under a token-only scratch config before relying on the isolated path.",
+        "fixTask": "P112.7-uce",
+        "commit": "cb8ad705"
       },
       {
         "id": "P112-R13",
         "severity": "low",
         "file": "tools/capture-demo-gif.py:562-571,540-541",
         "issue": "The plugin comparison runs `claude plugin list --json` from wherever the tool started; whether it lists local or project installs belonging to the fixture directory is unverified, so a local-scope install into the demo folder might escape the comparison.",
-        "resolution": "Also run the list with the fixture as cwd, or compare the config's installed-plugins records before and after, with a case for a fixture-local row."
+        "resolution": "fixed in P112.7-uce (cb8ad705): Also run the list with the fixture as cwd, or compare the config's installed-plugins records before and after, with a case for a fixture-local row.",
+        "fixTask": "P112.7-uce",
+        "commit": "cb8ad705"
       },
       {
         "id": "P112-R14",
         "severity": "low",
         "file": "plugins/audit/tests/test_audit_usage.py:378-381; plugins/audit/scripts/usage/audit-usage.py:579-582",
         "issue": "mn3 claims a showCost-false plan prints no dollar figure but passes only because its ledger is too small to calibrate bands; band_note prints its dollar thresholds whatever showCost says, and routing advice re-prices in dollars.",
-        "resolution": "Gate band_note's thresholds and the routing advice's figures on showCost, and give mn3 a calibrated ledger so it can fail on that path."
+        "resolution": "fixed in P112.6-uce (290a21da): Gate band_note's thresholds and the routing advice's figures on showCost, and give mn3 a calibrated ledger so it can fail on that path.",
+        "fixTask": "P112.6-uce",
+        "commit": "290a21da"
+      },
+      {
+        "id": "P112-R15",
+        "severity": "med",
+        "file": "CHANGELOG.md [Unreleased]; plugins/audit/scripts/usage/audit-usage.py --json",
+        "issue": "The [Unreleased] entry says without qualification that /audit:usage prints no dollar figure when showCost is false, but `--json` on a showCost-false plan still carries costUSD on totals and every row, the band thresholds, routing atFromRates/atToRates/saving and planCost dollar fields; only the rendered md and ascii output is dollar-free.",
+        "resolution": "showCost is a render setting (the schema: 'Render equivalent API cost alongside token counts'), so the machine-readable payload keeps its cost data and carries the plan's showCost so a consumer can honour it; the CHANGELOG entry and usage.md's --json line say exactly that, and a case pins that the rendered output is dollar-free while --json names showCost false."
+      },
+      {
+        "id": "P112-R16",
+        "severity": "low",
+        "file": "tools/capture-demo-gif.py after-take report",
+        "issue": "When a take against the operator's own config left nothing, the line names only the config directory as where the search ran, while the trust entry was looked for in the global config file outside it.",
+        "resolution": "Name both places the search covered: the trust file and the config directory."
+      },
+      {
+        "id": "P112-R17",
+        "severity": "low",
+        "file": "tools/capture-demo-gif.py isolated report",
+        "issue": "The isolated report says the take's own config was removed with the kit before the removal runs, and the removal swallows any failure, so the line states an unchecked future event as done.",
+        "resolution": "Remove the isolated config first, check it is gone, and report the observed result; or word the line as what will happen when the run ends."
       }
     ],
-    "outcome": "[findings: 14 - 0 high, 6 med, 8 low; 9 with a recorded fix commit]"
+    "outcome": "[findings: 17 - 0 high, 7 med, 10 low; 14 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -544,7 +575,7 @@
     {
       "id": "P112.7-uce",
       "title": "the demo recorder names everything a take writes and catches a fixture-local plugin install",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P112-R11, P112-R12 and P112-R13 in the demo recorder.\n\nThe after-take report names everything a take writes into the config it used:\n- the trust key for the fixture path, described as the whole project key it is;\n- the transcripts;\n- the history.jsonl lines whose project is a fixture root, counted, with the step that removes them;\n- the per-session directories (file-history, session-env, shell-snapshots), named as written to.\nCONTRIBUTING's sentence says the list is what the tool knows to look for, not that it is complete.\n\nIn isolated mode the report no longer says nothing was left behind. It names the documented per-config-dir macOS Keychain entry that may remain, and where to look for it.\n\nThe plugin comparison also reads the config's installed-plugins records, or runs the list with the fixture as cwd, so a local-scope install into the demo folder is caught.\n\nMake no claim that the isolated path works until it has been observed. Record that the token-only account query is unverified. Where the isolated path's preconditions depend on it, state that in the code.\n\nCases:\n- A history fixture line for the demo root is reported.\n- A fixture-local plugin row is caught.\n- The isolated report names the Keychain item.",
       "files": [
         "tools/capture-demo-gif.py",
@@ -569,18 +600,82 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "cb8ad705",
+      "outcome": {
+        "technical": "tools/capture-demo-gif.py: claude_dir(env) (CLAUDE_CONFIG_DIR, else the default config dir); history_lines(text, roots) counts history.jsonl lines whose project is a fixture root, with their session ids and a reason for any line that does not parse (never silently skipped); plugin_records(text) reads plugins/installed_plugins.json into the plugin-row shape (an absent file is no installs, an unparseable one a reason) and merged_plugins joins it with the CLI list, one row per install key, so an install in any scope and folder - a local-scope install into the demo folder included - is caught. config_footprint() returns the merged plugins (None with the failing source named when either is unreadable, which the preconditions and the after-take refusal both cover), the history count, the session directories that exist (file-history/<sid>, session-env/<sid>, for session ids from the demo's history lines and transcript names) and shell-snapshots files new during the take. leftover_lines() names each with its removal step (the snapshot line caveated as possibly another session's - snapshot names carry no session id) and always ends saying the list is what the tool knows to look for, not everything a session writes; the isolated report names the macOS Keychain entry Claude Code keys to the removed config dir (its name and whether a token-only session writes one are undocumented) and where to look. footprint_refusals() also refuses an isolated take that left demo history lines in the operator's config or could not read it. The isolated path is stated as not yet observed, its precondition (the token-only account query) unverified, in the section comment, config_plan's reason and at the account query's call site. CONTRIBUTING matches. Decisions: the install-records file rather than a cwd-pinned list (it holds every scope with its projectPath); the undocumented paths and keys come from a read-only check of key and file names on this machine (no values, no history text); the Keychain service name stays unnamed - reading it from the CLI binary was refused by the host's auto-mode classifier ('[Credential Exploration]') and was not retried another way.\nTests: tf0-tf10 in the recorder's selftest (tf4, tf6, tf8 the allow twins); ci4 widened to assert no line names an operator path. Red: the cases written before the implementation failed on assertions (99/107); the helper is could-not-prove because the suite and the code share one file. Selftest 107/107; --check, gate-parity, test__refs and the prose lints green.",
+        "descriptive": "After a demo recording, the tool now lists everything it knows the session left in the Claude Code config - including typed-prompt history and per-session folders - says the list may not be complete, and catches a plugin installed only into the demo folder."
+      },
+      "startedAt": "2026-10-07T05:04:59Z",
+      "completedAt": "2026-10-07T05:21:25Z",
+      "verifiedBy": [
+        "tf0",
+        "tf1",
+        "tf2",
+        "tf3",
+        "tf5",
+        "tf7",
+        "tf9",
+        "tf10"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T05:21:09Z.47b7f7",
+        "status": "passed",
+        "at": "2026-10-07T05:21:09Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "cb8ad705",
+        "at": "2026-10-07T05:21:25Z",
+        "basis": "orchestrator check: P112-R11, R12 and R13 addressed, the isolated path stated as unobserved rather than claimed, red seen before the implementation; the classifier refusal on the Keychain name was not routed around"
+      }
+    },
+    {
+      "id": "P112.8-uce",
+      "title": "usage --json carries showCost beside its cost data, and the recorder reports only what it observed",
+      "status": "in_progress",
+      "description": "Fixes review findings P112-R15, P112-R16 and P112-R17.\n\nshowCost is a render setting; the schema describes it as 'Render equivalent API cost alongside token counts'. /audit:usage --json therefore keeps its cost data, and the payload carries the plan's showCost at top level so that a consumer can honour it. If the payload already carries it, do not add a second copy.\n\nThe CHANGELOG [Unreleased] entry and commands/usage.md's --json line say exactly this: the rendered dashboard prints no dollar figure when showCost is false, and --json keeps the cost fields beside showCost.\n\nThe demo recorder's after-take report:\n- When nothing was left behind, it names both places the search covered: the trust file and the config directory.\n- In isolated mode, it removes the take's own config before reporting, checks that it is gone, and reports the observed result.\n\nCases:\n- On a showCost-false plan, the rendered usage output has no dollar figure, and --json carries showCost false.\n- Its showCost-true twin carries showCost true.\n- The empty-report line names the trust file.\n- The isolated report states the removal only after observing it.",
+      "files": [
+        "CHANGELOG.md",
+        "plugins/audit/commands/usage.md",
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/tests/test_audit_usage.py",
+        "tools/capture-demo-gif.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-07T05:04:59Z",
+      "startedAt": "2026-10-07T05:31:50Z",
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-10-07T05:21:09Z.47b7f7",
+        "runId": "2026-10-07T05:51:04Z.e35d44",
         "status": "passed",
-        "at": "2026-10-07T05:21:09Z"
+        "at": "2026-10-07T05:51:04Z"
       }
     }
   ],

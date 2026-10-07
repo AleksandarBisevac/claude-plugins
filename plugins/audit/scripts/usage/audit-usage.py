@@ -996,6 +996,14 @@ def main(argv):
 
     if args.as_json:
         payload = {
+            # A render setting, not derived data - the schema describes it as
+            # rendering equivalent cost alongside token counts. --json keeps the
+            # cost fields regardless, so a consumer honouring this itself needs
+            # the plan's own setting beside them rather than losing it to
+            # whatever --no-cost happened to do on this invocation.
+            "showCost": bool(
+                meta_usage.get("showCost", True) if isinstance(meta_usage, dict)
+                else True),
             "window": {"since": since, "until": args.until},
             "ledgerDir": ledger_dir,
             "pricingAsOf": rate_basis(meta_usage),
