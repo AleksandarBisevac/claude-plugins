@@ -2410,6 +2410,9 @@ NOT_AN_EXEMPTION = {
                                 "no cause rather than borrowing another class's "
                                 "sentence, which is a defect this repairs - so a "
                                 "row makes the check say more, never less",
+    "CLASS_MEANING": "what each content class of a recorded session's cost means, "
+                     "printed beside the class's figures - a legend for a reader, "
+                     "excusing nothing from any rule",
 }
 
 # The reason has to be a SENTENCE. A one-word value is a label - `{"P1": "done"}` -

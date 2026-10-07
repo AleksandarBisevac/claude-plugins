@@ -1,7 +1,7 @@
 {
   "id": "P117",
   "title": "a pipeline run's fixed cost is measured stage by stage and cut by infrastructure",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "the tokens and time a pipeline run spends are attributed to stages and to the files each stage reads, by offline tools with tests, and an infrastructure design that cuts the fixed part is chosen on that evidence with its saving predicted and a benchmark that will confirm or refute it",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "a73b836a9e8c79ff993ba7f371f9b749fe3349c1",
+  "branch": "audit/p117-a-pipeline-run-s-fixed-cost-is",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,7 +29,7 @@
     {
       "id": "P117.1",
       "title": "a pipeline run's tokens and time are attributed to stages and files by offline tools with tests",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Measures where a pipeline run spends its tokens and time, with offline tools that have tests and make no paid call. Requested by the user on 2026-10-07 after the feature benchmark showed that the plugin pipeline costs several times more than plain Claude Code on a task both solve.\n\n1. Static context measure. A tool computes what each command and agent loads before it does any work: the command file, every reference file the command instructs the model to read, the agent definition, auto-loaded skills, and the always-on cost (plugin listing, CLAUDE.md). It reports bytes and an estimated token count, labelled as an estimate with its rule. It is computed for the pipeline's real path (/audit:run, /audit:next, /audit:phase, sign-off, executor, reviewer), at the published tag and at local main.\n\n2. Stream attribution. A tool reads a recorded stream-json session and attributes every model request's tokens to a stage: the main loop before any dispatch, plan and manifest work, executor, reviewer, gate, close. It splits each stage into cache write, cache read, input and output, priced with the shipped table. It names the file reads that created the largest cache writes. Run it on the recorded plugin sessions: the pipeline pilot, and the plugin arm of the feature benchmark under the internal analysis directory's experiments. Report what each stage cost in each.\n\n3. Tests. Each tool has a selftest that meets the repository's contract, with fixtures. Attribution is proved on a hand-built stream whose answer is known, including a twin that must not move a token between stages.\n\n4. docs/research/pipeline-cost-analysis.md states, from these measurements:\n- which part of a run's cost is fixed per run, per task, and per file the work touches;\n- what the prompt cache already saves and what it cannot;\n- the largest single contributors.\nEvery figure sits beside the command that re-derives it.",
       "files": [
         "tools/measure-context.py",
@@ -61,16 +61,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T11:45:57Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T12:31:21Z.5e8d1b",
+        "status": "passed",
+        "at": "2026-10-07T12:31:21Z"
+      }
     },
     {
       "id": "P117.2",
@@ -115,5 +120,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-10-07T11:45:57Z"
 }
