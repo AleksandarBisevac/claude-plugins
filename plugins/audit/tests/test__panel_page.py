@@ -2055,19 +2055,24 @@ def _cases(check):
     check("usage tab is registered and has a view container",
           "data-t=usage" in M.UI_HTML and "<div id=usage" in M.UI_HTML
           and "'usage'" in M.UI_HTML)
-    # The rate basis behind every dollar in this tab. It reads the DECLARED flag,
-    # never `pricingAsOf` alone: usage_cfg() merges defaults, so that value is set
-    # even for a project that never chose it, and printing it unconditionally would
-    # present the default table's date as the project's own.
-    check("the usage tab names the rate table behind its costs",
-          "rates as of '+USAGE.pricingAsOf" in M.UI_HTML
-          and "'rates undated: date them in Settings','usage.pricingAsOf'" in M.UI_HTML)
-    check("and it decides on pricingAsOfDeclared, not on the merged value, so a "
-          "default date is never shown as the project's own",
-          "USAGE.pricingAsOfDeclared" in M.UI_HTML)
-    check("withheld with the dollars when showCost is off",
-          "if(USAGE.showCost&&USAGE.pricingAsOfDeclared)bits.push" in M.UI_HTML
-          and "if(USAGE.showCost&&!USAGE.pricingAsOfDeclared)ctx.append" in M.UI_HTML)
+    # The rate basis behind every dollar in this tab is the SERVER's phrase -
+    # `rate_basis_phrase` over the resolver's answer, shipped as `rateBasis` -
+    # shown as served. A label assembled here from `pricingAsOf` would be a
+    # second wording of one basis, and the merged config's date would read as
+    # the project's own; so the source must hold neither construct.
+    check("the usage tab shows the server's rate-basis phrase rather than "
+          "retyping it, withheld with the dollars when showCost is off",
+          "if(USAGE.showCost)bits.push(USAGE.rateBasis||" in M.UI_HTML
+          and "'rates as of '+" not in M.UI_HTML
+          and "rates undated" not in M.UI_HTML)
+    check("and only a config table with no date gets the way to date it, read "
+          "off the resolver's basis rather than off the merged config's value",
+          "pb.basis==='config'&&!pb.asOf" in M.UI_HTML
+          and "settingsLink('date them in Settings','usage.pricingAsOf')"
+          in M.UI_HTML)
+    check("and the projection carries the coverage sentence the cost-per-task "
+          "tile and the routing table already do",
+          "'data-ucov':'projection'},pcov" in M.UI_HTML)
     # Every one of these used to end with an instruction to go and edit a JSON file
     # by hand - printed on the surface whose whole job is editing that file.
     check("no notice in Usage tells you to set a config value without taking you "

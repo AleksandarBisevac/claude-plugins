@@ -39,6 +39,7 @@ import _report_usage as M                          # noqa: E402
 import _fmt                                        # noqa: E402  (as _report_usage imports it)
 import _loader                                     # noqa: E402
 import _ui_theme as _theme                         # noqa: E402
+import usage_ledger as _ul                         # noqa: E402  (rate_basis_phrase: the expected words)
 
 
 # --- cases --------------------------------------------------------------------
@@ -63,6 +64,8 @@ def _cases(check):
         "daily": {"2026-08-01": 900000, "2026-08-02": 600000},
         "heatmap": [[0] * 24 for _ in range(7)],
         "showCost": True, "pricingAsOf": "2026-08-06",
+        "pricingBasis": {"basis": "manifest", "asOf": "2026-08-06",
+                         "source": None},
         "counts": {"phases": 2, "people": 2, "models": 2, "sessions": 3,
                    "days": 2, "from": "2026-08-01", "to": "2026-08-02"},
         "monthly": {
@@ -103,8 +106,12 @@ def _cases(check):
     # printed it every time. Assert the PHRASE, which no timestamp can produce.
     # (The document-level half of that trap - that the date is not merely the
     # generation stamp - stays in render-report, where the stamp exists.)
-    check("u4 pricingAsOf surfaced in HTML, not only once the table has gone stale",
-          "rates as of 2026-08-06" in uh)
+    # The phrase is `rate_basis_phrase` over the payload's `pricingBasis`, so
+    # the expectation is that helper's answer, not a retyped literal.
+    _phrase = _ul.rate_basis_phrase(_u["pricingBasis"])
+    check("u4 the rate basis is surfaced in HTML, not only once the table has "
+          "gone stale - rate_basis_phrase's own words: %r" % (_phrase,),
+          M.e(_phrase) in uh and "rates as of 2026-08-06" in uh)
     # A sub-cent fixture: real spend, but under a cent. `_fmt_cost` delegates to
     # _fmt.fmt_cost for this rule — nothing above spends under $0.01, so a
     # broken delegation (e.g. a raw "$%.2f") would round this to "$0.00" and every
@@ -114,31 +121,60 @@ def _cases(check):
     _uc = dict(_u, totals=dict(_u["totals"], costUSD=0.004))
     check("u42 sub-cent spend renders as <$0.01 in the stat tile, never $0.00",
           "&lt;$0.01" in M._usage_tiles(_uc), M._usage_tiles(_uc))
-    check("u4b the Markdown twin says the same thing",
-          "rates as of 2026-08-06" in um)
+    check("u4b the Markdown twin says the same thing, in the same words",
+          _phrase in um)
     _uq = dict(_u, showCost=False)
     _hq, _mq = M._usage_section(_uq), M._usage_md(_uq)
     check("u4d withheld when showCost is off, in both renderers - with no dollars "
           "on screen it dates a table nothing visible came from",
-          "rates as of" not in _hq and "rates as of" not in _mq
+          "rate" not in M._usage_context(_uq) and _phrase not in _mq
           and "rates undated" not in _hq and "rates undated" not in _mq)
-    # Costs shown with no date declared. The default price table HAS a pricingAsOf,
-    # so a fallback would nearly always render a plausible date - which is why there
-    # is none. The ledger stores costUSD priced at write time and no rate vintage,
-    # so the report genuinely does not know it, and printing the default's date
-    # would manufacture a basis instead of stating one.
-    _un = dict(_u)
+    # The plan's own table with no date declared. The shipped table HAS a date,
+    # so borrowing it would nearly always render a plausible one - for a table
+    # that did not price these rows. So the phrase says undated, and names the
+    # key that dates it.
+    _pb_nd = {"basis": "manifest", "asOf": None, "source": None}
+    _un = dict(_u, pricingBasis=_pb_nd)
     _un.pop("pricingAsOf", None)
     _hn, _mn = M._usage_section(_un), M._usage_md(_un)
-    check("u4e costs with no declared rate date say so, rather than showing bare "
-          "dollars that look pinned to a table nobody named",
-          "rates undated" in _hn and "rates undated" in _mn)
-    check("u4f and it never invents one - the default table's date must not leak "
-          "in as though the manifest had declared it",
-          "rates as of" not in _hn and "rates as of" not in _mn)
-    check("u4g the undated notice names the cheap exit, since a reader who cannot "
-          "act on it will learn to scroll past it",
-          "usage.pricingAsOf" in _hn and "usage.pricingAsOf" in _mn)
+    check("u4e a plan's own table with no date says so, in rate_basis_phrase's "
+          "words, rather than showing bare dollars that look pinned to a table "
+          "nobody named",
+          M.e(_ul.rate_basis_phrase(_pb_nd)) in _hn
+          and _ul.rate_basis_phrase(_pb_nd) in _mn
+          and "rates undated" in _hn and "rates undated" in _mn)
+    check("u4f and it never borrows the shipped table's date for a table that "
+          "is not the shipped one",
+          "rates as of" not in _hn and "rates as of" not in _mn
+          and _ul.PRICING_AS_OF not in _mn)
+    check("u4g the undated notice names the key that dates it, since a reader "
+          "who cannot act on it will learn to scroll past it",
+          "meta.usage.pricingAsOf" in _hn and "meta.usage.pricingAsOf" in _mn)
+    # When the SHIPPED table priced the rows, that is a dated, sourced basis.
+    _pb_sh = {"basis": "shipped", "asOf": _ul.PRICING_AS_OF,
+              "source": _ul.PRICING_SOURCE_URL}
+    _us = dict(_u, pricingBasis=_pb_sh)
+    _us.pop("pricingAsOf", None)
+    _hs, _ms = M._usage_section(_us), M._usage_md(_us)
+    check("u4i the shipped table's basis names its date and source in both "
+          "renderers, never 'undated'",
+          M.e(_ul.rate_basis_phrase(_pb_sh)) in _hs
+          and _ul.rate_basis_phrase(_pb_sh) in _ms
+          and ("rates as of %s" % _ul.PRICING_AS_OF) in _ms
+          and _ul.PRICING_SOURCE_URL in _ms
+          and "undated" not in _hs and "undated" not in _ms)
+    # A payload with no resolver answer at all: stated as unrecorded, never
+    # filled with the shipped table's date.
+    _ux = dict(_u)
+    _ux.pop("pricingBasis", None)
+    _hx, _mx = M._usage_section(_ux), M._usage_md(_ux)
+    check("u4j a payload carrying no pricingBasis says 'rate basis not "
+          "recorded' in both renderers - rate_basis_phrase's answer for no "
+          "answer - and names no date",
+          _ul.rate_basis_phrase(None) == "rate basis not recorded"
+          and "rate basis not recorded" in _hx
+          and "rate basis not recorded" in _mx
+          and "rates as of" not in _hx and "rates as of" not in _mx)
     check("u4h silent when there is no spend to price at all - announcing a basis "
           "for a claim never made is the same noise this branch prevents",
           "rates" not in M._usage_context({})

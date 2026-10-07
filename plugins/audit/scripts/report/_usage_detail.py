@@ -59,7 +59,7 @@ _output.install_path()
 import _ui_theme as _theme  # noqa: E402  (the one place a machine value gets its words)
 
 import _usage_viz as _viz  # noqa: E402  (the section's number formatting and marks)
-from _usage_economics import _coverage_sentence  # noqa: E402  (the one coverage sentence)
+from _usage_economics import coverage_sentence  # noqa: E402  (the one coverage sentence)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `_report_usage.py` unchanged, and an alias keeps them reading the same names
@@ -220,7 +220,7 @@ def _routing_table(u):
                    cost_cell, c["meanAttempts"] or 0))
     # Gated too: a basis note for a cost cell that is not on the page would be
     # noise with no claim beside it.
-    note = (_coverage_sentence((u.get("unit") or {}).get("doneTaskCoverage"))
+    note = (coverage_sentence((u.get("unit") or {}).get("doneTaskCoverage"))
            if show_cost else None)
     note_html = ('<p class="muted small">%s</p>' % e(note)) if note else ""
     cost_th = "<th>cost/task</th>" if show_cost else ""
@@ -307,6 +307,11 @@ def _economics_block(u):
                 "<strong>%s&ndash;%s</strong> at the p25&ndash;p75 per-task rate.</p>"
                 % (unit["remaining"], e(_fmt_cost(unit["projection"]["low"])),
                    e(_fmt_cost(unit["projection"]["high"]))))
+            # The per-task rate this projects from rests on the done tasks the
+            # ledger priced, so the sentence that says how many sits beside it.
+            note = coverage_sentence(unit.get("doneTaskCoverage"))
+            if note:
+                out.append('<p class="muted small">%s</p>' % e(note))
     elif unit.get("completed") is not None:
         out.append(
             '<p class="muted small">Projection needs %d completed tasks to mean '
@@ -361,18 +366,23 @@ def _band_note(bands):
     the feature is waiting for a sample rather than silently showing nothing."""
     if not bands:
         return ""
+    # The band's sample is the done tasks the ledger priced, so the same
+    # coverage sentence the cost-per-task figures carry closes the note.
+    cov = coverage_sentence(bands.get("doneTaskCoverage"))
+    cov_html = (" %s" % e(cov)) if cov else ""
     if not bands.get("sufficient"):
         return ('<p class="muted small">No cost band yet — it calibrates from this '
                 "project's own completed tasks and needs %d, of which there are "
                 "%d. Set <code>usage.bands.highUSD</code> and "
                 "<code>usage.bands.outlierUSD</code> to band against a fixed "
-                "budget instead.</p>"
-                % (bands.get("gate", 5), bands.get("sample", 0)))
+                "budget instead.%s</p>"
+                % (bands.get("gate", 5), bands.get("sample", 0), cov_html))
     return ('<p class="muted small">Cost band from %s: typical &le; %s · high &le; '
-            "%s · outlier above.</p>"
+            "%s · outlier above.%s</p>"
             % ("configured thresholds" if bands.get("basis") == "absolute"
                else "this project's own completed tasks (median / p90)",
-               e(_fmt_cost(bands.get("high"))), e(_fmt_cost(bands.get("outlier")))))
+               e(_fmt_cost(bands.get("high"))), e(_fmt_cost(bands.get("outlier"))),
+               cov_html))
 
 
 def _phase_stacks(u, slots, models):

@@ -128,7 +128,9 @@ function uDoneCoverage(facts){const M=USAGE.taskMeta||{};
  * The wording MIRRORS `coverage_sentence()` in `_usage_economics.py` and MUST
  * change with it - the panel cannot import that module, so the counts are
  * this file's own (`uDoneCoverage`) but the sentence they are poured into is
- * typed to match, not phrased independently.
+ * typed to match, not phrased independently. `tools/ui-tests/usage-edges.test.mjs`
+ * asks Python for the sentence over the same counts and compares the two, so a
+ * change on one side alone fails there.
  * @param {{done: number, priced: number}|null} cov `uDoneCoverage()`'s reading.
  * @returns {string|null} `null` when there is no done task in the plan to cover.
  */

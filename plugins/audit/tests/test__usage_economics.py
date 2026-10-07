@@ -126,20 +126,52 @@ def _cases(check):
           % (cb_cov_abs.get("doneTaskCoverage"), ),
           cb_cov_abs.get("doneTaskCoverage") == {"done": 4, "priced": 2})
 
-    # _coverage_sentence: the one wording every caller that prints a per-task
+    # coverage_sentence: the one wording every caller that prints a per-task
     # cost figure states beside it - None in (nothing yet to cover) gives None
     # out, never an empty string, so a caller's own `if note:` guard reads the
     # same whether the coverage is missing or absent.
-    check("_coverage_sentence: None in (no done task in the plan) gives None "
+    check("coverage_sentence: None in (no done task in the plan) gives None "
           "out, not an empty string a caller's `if note:` guard would also "
           "treat as absent but that a stricter `is None` check would not",
-          M._coverage_sentence(None) is None)
-    check("_coverage_sentence: a known coverage renders the exact sentence, "
+          M.coverage_sentence(None) is None)
+    check("coverage_sentence: a known coverage renders the exact sentence, "
           "worded so 'of' never sits directly between the two numbers - the "
           "shape `_output._ratio_claim` refuses in a committed render",
-          M._coverage_sentence({"done": 4, "priced": 2})
+          M.coverage_sentence({"done": 4, "priced": 2})
           == "Of the plan's 4 done task(s), 2 are priced; main-loop spend is "
              "not attributed to a task.")
+
+    # rate_basis_phrase: the ONE phrase every surface prints beside a cost,
+    # built from `resolve_pricing`'s answer and nothing else.
+    _url = "https://example.invalid/pricing"
+    _rb_shipped = M.rate_basis_phrase(
+        {"basis": "shipped", "asOf": "2026-10-06", "source": _url})
+    check("rb1 the shipped table's basis names its date AND its source: %r"
+          % (_rb_shipped,),
+          "rates as of 2026-10-06" in _rb_shipped and _url in _rb_shipped
+          and "shipped" in _rb_shipped and "undated" not in _rb_shipped)
+    _rb_man = M.rate_basis_phrase(
+        {"basis": "manifest", "asOf": "2026-08-06", "source": None})
+    check("rb2 a plan's own table names its date and where it was declared: %r"
+          % (_rb_man,),
+          "rates as of 2026-08-06" in _rb_man
+          and "meta.usage.pricing" in _rb_man and "shipped" not in _rb_man)
+    _rb_cfg_nd = M.rate_basis_phrase(
+        {"basis": "config", "asOf": None, "source": None})
+    check("rb3 a project table declared with no date says so and names the "
+          "key that dates it: %r" % (_rb_cfg_nd,),
+          "rates undated" in _rb_cfg_nd and "usage.pricingAsOf" in _rb_cfg_nd
+          and "audit.config.json" in _rb_cfg_nd and "rates as of" not in _rb_cfg_nd)
+    _rb_blank = M.rate_basis_phrase(
+        {"basis": "manifest", "asOf": "   ", "source": None})
+    check("rb4 a whitespace-only date is no date, not 'rates as of' followed "
+          "by nothing: %r" % (_rb_blank,),
+          "rates undated" in _rb_blank and "rates as of" not in _rb_blank)
+    check("rb5 no resolver answer at all is stated as unrecorded, never "
+          "guessed into the shipped table's date: %r"
+          % ([M.rate_basis_phrase(None), M.rate_basis_phrase({"basis": "x"})],),
+          all(M.rate_basis_phrase(v) == "rate basis not recorded"
+              for v in (None, {}, {"basis": "x", "asOf": "2026-01-01"}, "shipped")))
 
     # cost_bands: the same sample gate, and a name that does not collide
     cb = M.cost_bands(man, ar)

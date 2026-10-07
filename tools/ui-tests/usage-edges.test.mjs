@@ -5,6 +5,7 @@
 // absent.
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
+import { pyCall } from './python-fmt.mjs';
 import { loadPanel, reach } from './sandbox.mjs';
 
 describe('the axis labels a one-bucket chart draws', () => {
@@ -253,6 +254,28 @@ describe('attribution coverage beside cost per task', () => {
     expect(uCoverageLine({ done: 3, priced: 2 })).toBe(
       'Of the plan\'s 3 done task(s), 2 are priced; main-loop spend is not '
       + 'attributed to a task.');
+  });
+
+  // The two cases above pin the panel against a sentence typed into this file,
+  // which proves only that two people agreed. This one asks Python: the
+  // expectation is `coverage_sentence()` itself, fetched through the
+  // `usage_ledger` re-export every other caller reaches it by, for the same
+  // counts. Fixtures where done and priced differ, so a swapped pair fails.
+  it('says exactly what Python coverage_sentence() says for the same done and '
+    + 'priced counts', () => {
+    const { ctx } = panel();
+    const { uCoverageLine } = reach(ctx, ['uCoverageLine']);
+    const covs = [{ done: 1, priced: 0 }, { done: 3, priced: 2 },
+      { done: 7, priced: 7 }, { done: 12, priced: 5 }];
+    const py = pyCall('usage_ledger', covs.map((c) => ['coverage_sentence', [c]]));
+    expect(py.length).toBe(covs.length);
+    covs.forEach((c, i) => {
+      expect(typeof py[i], JSON.stringify(c)).toBe('string');
+      expect(uCoverageLine(c), JSON.stringify(c)).toBe(py[i]);
+    });
+    // Both sides are silent for the same reason: no done task to cover.
+    expect(pyCall('usage_ledger', [['coverage_sentence', [null]]])[0]).toBe(null);
+    expect(uCoverageLine(null)).toBe(null);
   });
 
   it('the routing table cannot show a done task its own rows never mention, '

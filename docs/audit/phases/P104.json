@@ -629,7 +629,7 @@
     {
       "id": "P104.10-tog",
       "title": "one resolver chooses a project's price table for every surface",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P104-R2 and P104-R5. One function in the usage layer resolves the price table for a project - the manifest's meta.usage.pricing when declared, else the config's usage.pricing overlaid model by model on the shipped table (what usage_cfg does), else the shipped table - and returns which of the three priced it, so a surface can name its basis. The report loader, /audit:usage (its text advice, --json routing and --backfill), the panel's usage payload and the meter hook's live pricing all call it, so one project gets one table everywhere. The docstrings in _usage_load.py and gen-demo-usage.py, and the comment beside them, say what is now returned. The precedence, including the per-model overlay, is documented next to usage.pricing where the config keys are documented.",
       "files": [
         "plugins/audit/scripts/usage/_usage_core.py",
@@ -671,24 +671,42 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "59285dfe",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "RESOLVER: _usage_core.resolve_pricing(manifest, config) returns {table, basis, asOf, source}; PRICING_BASES = (manifest, config, shipped). Precedence: (1) the manifest's meta.usage.pricing used as written when it is a non-empty dict; (2) usage.pricing from the RAW config laid over DEFAULT_PRICING model by model (a named row replaces the shipped row whole, as usage_cfg merges); (3) the shipped table. asOf is the declaring place's own pricingAsOf or None; the shipped table gives PRICING_AS_OF and PRICING_SOURCE_URL. The returned table is always a copy. usage_ledger re-exports both names and adds project_pricing(manifest, manifest_path=None, project_dir=None), which finds .claude the way find_ledger_dir does and reads audit.config.json raw.\nSURFACES: report (_usage_load._project_pricing, plus load_usage's pricingBasis {basis, asOf, source} as data for the printed basis), /audit:usage (project_pricing/pricing_root following resolve_ledger's rule; main() resolves once and passes the table to --backfill, the --json routing and render()), the panel (_panel_usage._usage_pricing over the raw config it already reads), the meter hook (_pricing through the usage_ledger it already loads by path, no new import, bench-hooks --gate green), and gen-demo-usage (_load_pricing walks up from the manifest bounded by .git, as the report does). README's usage.pricing row states the precedence and that an omitted rate prices at zero.\nDECISIONS: the resolver takes the RAW config because the merged one always carries the shipped table and could not tell declared from nothing; the meter therefore re-reads .claude/audit.config.json once per Stop. Behaviour change: a project whose manifest declares meta.usage.pricing is now priced at it by the panel and the meter too (before, both used the config).\nMEASURED: on examples/acme-store the report's and the CLI's inputCostVsFreshPct are both 20.4 (config table, 2026-08-06); the shipped table, which the CLI used before, gives 20.5. The committed demo ledger reproduces byte for byte from gen-demo-usage.\nTESTS: test__usage_core rp-config-only, rp-manifest, rp-neither (each asserting all seven surfaces agree on table and basis), rp-overlay, rp-empty, rp-mutate; test_audit_usage cp1-cp5. Red-first proved through the helper (test_audit_usage 128/132 and test__usage_core 64/72 at HEAD c38330bf); scratch mutations (config-first precedence, shared DEFAULT_PRICING object) turned rp-manifest and rp-mutate red. Recorded gate green.",
+        "descriptive": "One project now gets one price table on every surface - the manifest's, else its config laid over the shipped table, else the shipped table - and each surface can say which one priced it."
       },
       "startedAt": "2026-10-06T22:20:15Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T00:17:42Z",
+      "verifiedBy": [
+        "rp-config-only",
+        "rp-manifest",
+        "rp-neither",
+        "rp-overlay",
+        "rp-empty",
+        "rp-mutate",
+        "cp1",
+        "cp2",
+        "cp3",
+        "cp4",
+        "cp5"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T00:16:56Z.a381f5",
         "status": "passed",
         "at": "2026-10-07T00:16:56Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "59285dfe",
+        "at": "2026-10-07T00:17:42Z",
+        "basis": "orchestrator check: all seven pricing surfaces call resolve_pricing; rp cases assert agreement across them for three project shapes; red-first proved on HEAD; acme-store report and CLI now agree"
       }
     },
     {
       "id": "P104.11-tog",
       "title": "every cost names its rate date and source, and every per-task figure its coverage",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes review findings P104-R1, P104-R3, P104-R4 and P104-R6. Every surface that prints a cost names its basis: the one rate-basis phrase the report, its Markdown twin, /audit:usage and /audit:status print becomes date and source, built by one Python helper from what the shared resolver reports (the shipped table's date and source URL, or the project's own declared table and its date), and the panel shows the same phrase from its payload rather than retyping it; when the shipped table priced the rows and the project declared no date, the shipped table's date is shown, never 'rates undated'. The HTML report's unit-economics projection and band note, and the panel's projection, carry the coverage sentence. The coverage sentence becomes a public coverage_sentence re-exported with its peers, its four importers updated, and one parity case compares Python's sentence with the panel's for the same inputs. CONTRIBUTING.md's native-cost pilot entry says the ledger miscount as history and points at _scan_file's provisional count. The panel screenshots are re-captured by the orchestrator.",
       "files": [
         "plugins/audit/scripts/report/_usage_overview.py",
@@ -708,7 +726,42 @@
         "plugins/audit/tests/test__usage_detail.py",
         "plugins/audit/tests/test_audit_usage.py",
         "plugins/audit/tests/test__usage_economics.py",
-        "plugins/audit/tests/test__panel_page.py"
+        "plugins/audit/tests/test__panel_page.py",
+        "plugins/audit/tests/test__panel_usage.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/tests/test__report_usage.py",
+        "examples/acme-store/acme-store-audit.html",
+        "examples/acme-store/acme-store-audit.md",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/mobile.png",
+        "docs/screenshots/overview.png",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png",
+        "plugins/audit/tests/test__usage_bench.py",
+        "plugins/audit/scripts/usage/_usage_bench.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -736,16 +789,21 @@
       "dependsOn": [
         "P104.10-tog"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T00:18:02Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T01:08:27Z.1ee158",
+        "status": "passed",
+        "at": "2026-10-07T01:08:27Z"
+      }
     }
   ],
   "startedAt": "2026-10-06T14:46:28Z"

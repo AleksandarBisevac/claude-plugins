@@ -173,8 +173,8 @@ def _cases(check):
             json.dump({"usage": {"pricingAsOf": "  2026-01-02  "}}, fh)
         _pad = M.usage_state(proj)
         check("pa1 a PADDED date is trimmed where the config becomes plugin "
-              "data. usage-view.js prints 'rates as of ' + this value verbatim, "
-              "so serving it as typed puts the padding on the tab: %r"
+              "data, so any reader of `pricingAsOf` gets the date and never "
+              "the padding around it: %r"
               % (_pad["pricingAsOf"],),
               _pad["pricingAsOf"] == "2026-01-02"
               and _pad["pricingAsOfDeclared"] is True)
@@ -305,8 +305,23 @@ def _cases(check):
           "hide behind a duplicate: %r"
           % (sorted(set(_up_empty) ^ set(_up_full)),),
           set(_up_empty) == set(_up_full)
-          and len(_up_empty) == len(_up_full) == 20
+          and len(_up_empty) == len(_up_full) == 22
+          and {"pricingBasis", "rateBasis"} <= set(_up_empty)
           and _up_full["facts"] and not _up_empty["facts"])
+    # The two rate-basis keys, by VALUE on both branches: the populated one
+    # carries the resolver's answer and the one phrase built from it, the
+    # no-ledger one None for both - no cost on screen, so no basis to state.
+    import usage_ledger as _ul
+    _pb = _up_full.get("pricingBasis")
+    check("up1a the populated payload carries the resolver's answer and the "
+          "phrase rate_basis_phrase builds from it, not a retyped one: %r"
+          % (_up_full.get("rateBasis"),),
+          isinstance(_pb, dict) and set(_pb) == {"basis", "asOf", "source"}
+          and _pb["basis"] in _ul.PRICING_BASES
+          and _up_full.get("rateBasis") == _ul.rate_basis_phrase(_pb))
+    check("up1b ...and the no-ledger payload carries None for both - a basis "
+          "with no cost beside it is noise",
+          _up_empty["pricingBasis"] is None and _up_empty["rateBasis"] is None)
     check("up2 ...and one level down, where `counts` was the second literal "
           "nobody was comparing either: %r"
           % (sorted(set(_up_empty["counts"]) ^ set(_up_full["counts"])),),

@@ -12,12 +12,14 @@ and each therefore gets **both** directions — the refusal, and the case that
 would fail if the refusal became unconditional.
 
 THE CONTEXT LINE IS WHERE THE BASIS LIVES. A cost is a claim, and the rate date
-behind every dollar on screen renders beside them or the dollars do not render.
-When costs are shown with no date declared it says *that* rather than falling
-back to the default table's date, because the ledger prices at write time and
-records no rate vintage — a fallback would manufacture a basis. And it is gated
-on there being spend to price at all: "rates undated" announced over an empty
-usage block is a basis for a claim nobody made.
+and source behind every dollar on screen render beside them. The phrase is
+`rate_basis_phrase` over the payload's `pricingBasis` - the shared resolver's
+answer - so the shipped table's own date and page are named when the shipped
+table priced the rows, and "rates undated" is said only of a project table
+that carries no date. A payload with no resolver answer says the basis is not
+recorded rather than guessing one. And it is gated on there being spend to
+price at all: a basis announced over an empty usage block is a basis for a
+claim nobody made.
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
@@ -48,24 +50,47 @@ def _u(**kw):
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     # --- the context line: the basis for every dollar below it ---
-    out = M._usage_context(_u())
-    check("uo1 the context line names the rate date, because every cost "
-          "figure below is derived from it", "rates as of 2026-06-01" in out,
+    import usage_ledger as _ul
+    _shipped = {"basis": "shipped", "asOf": _ul.PRICING_AS_OF,
+                "source": _ul.PRICING_SOURCE_URL}
+    out = M._usage_context(_u(pricingBasis={"basis": "manifest",
+                                            "asOf": "2026-06-01",
+                                            "source": None}))
+    check("uo1 the context line names the rate date and where the table was "
+          "declared, because every cost figure below is derived from it",
+          "rates as of 2026-06-01" in out and "meta.usage.pricing" in out,
           out)
-    out = M._usage_context(_u(pricingAsOf=None))
-    check("uo2 ...and when costs are shown with NO date declared it says so, "
-          "rather than falling back to the default table's date - the ledger "
-          "prices at write time and records no vintage, so a fallback would "
-          "manufacture a basis", "rates undated" in out, out)
-    out = M._usage_context(_u(showCost=False, pricingAsOf=None))
+    out = M._usage_context(_u(pricingAsOf=None, pricingBasis=_shipped))
+    check("uo1a ...and when the SHIPPED table priced the rows and the project "
+          "declared no date, it names the shipped table's own date and source "
+          "rather than calling the rates undated",
+          ("rates as of %s" % _ul.PRICING_AS_OF) in out
+          and _viz.e(_ul.PRICING_SOURCE_URL) in out
+          and "undated" not in out, out)
+    check("uo1b ...and the phrase is the one helper's, not a second wording "
+          "of it", _viz.e(_ul.rate_basis_phrase(_shipped)) in out, out)
+    out = M._usage_context(_u(pricingAsOf=None,
+                              pricingBasis={"basis": "manifest", "asOf": None,
+                                            "source": None}))
+    check("uo2 ...and when the plan's OWN table priced them with NO date "
+          "declared it says so, rather than borrowing the shipped table's "
+          "date for a table that is not the shipped one",
+          "rates undated" in out and "usage.pricingAsOf" in out
+          and _ul.PRICING_AS_OF not in out, out)
+    out = M._usage_context(_u())
+    check("uo2a ...and a payload that carries no resolver answer says the "
+          "basis is unrecorded rather than guessing one",
+          "rate basis not recorded" in out and "rates as of" not in out, out)
+    out = M._usage_context(_u(showCost=False, pricingAsOf=None,
+                              pricingBasis=_shipped))
     check("uo3 ...and it is withheld entirely when showCost is off: a basis "
           "with no claim beside it is noise",
-          "rates" not in out, out)
+          "rate" not in out, out)
     out = M._usage_context(_u(totals={"tokens": 0, "costUSD": 0.0, "msgs": 0},
-                              pricingAsOf=None))
+                              pricingAsOf=None, pricingBasis=_shipped))
     check("uo4 ...and it is gated on there being SPEND to price, not merely "
           "on showCost - 'rates undated' announced over an empty usage block "
-          "is a basis for a claim nobody made", "rates" not in out, out)
+          "is a basis for a claim nobody made", "rate" not in out, out)
     check("uo5 ...and a context with nothing to say renders as the empty "
           "string, not as an empty paragraph",
           M._usage_context({"showCost": False}) == "")

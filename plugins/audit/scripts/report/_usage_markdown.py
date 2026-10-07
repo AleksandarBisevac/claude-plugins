@@ -49,7 +49,8 @@ _output.install_path()
 import _ui_theme as _theme  # noqa: E402  (the one place a machine value gets its words)
 
 import _usage_viz as _viz  # noqa: E402  (the section's number formatting and marks)
-from _usage_economics import _coverage_sentence  # noqa: E402  (the one coverage sentence)
+from _usage_economics import (  # noqa: E402  (the one coverage sentence, the one rate basis)
+    coverage_sentence, rate_basis_phrase)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `_report_usage.py` unchanged, and an alias keeps them reading the same names
@@ -81,9 +82,8 @@ def _usage_md(u):
         head += " · ~%s equiv" % _fmt_cost(t["costUSD"])
     head += " · %s msgs · %d session(s) · cache hit %s" % (
         "{:,}".format(t["msgs"]), t["sessions"], _fmt_pct(t["cacheHitPct"]))
-    if show_cost:                       # see _usage_context for why there is no fallback
-        head += (" · rates as of %s" % u["pricingAsOf"] if u.get("pricingAsOf")
-                 else " · rates undated (set usage.pricingAsOf)")
+    if show_cost:                       # the same phrase _usage_context prints
+        head += " · %s" % rate_basis_phrase(u.get("pricingBasis"))
     lines += [head, ""]
 
     def block(title, data, key_label):
@@ -173,7 +173,7 @@ def _usage_md(u):
     if show_cost and unit.get("costPerTask") is not None:
         fact = ("- **Cost per completed task:** %s across %d task(s)."
                % (_fmt_cost(unit["costPerTask"]), unit.get("completed", 0)))
-        note = _coverage_sentence(unit.get("doneTaskCoverage"))
+        note = coverage_sentence(unit.get("doneTaskCoverage"))
         if note:
             fact += " %s" % note
         facts.append(fact)
@@ -220,7 +220,7 @@ def _usage_md(u):
         # half-dropped column would misalign every row, and the coverage note
         # is the basis for a cost cell that is not there to carry.
         if show_cost:
-            note = _coverage_sentence(unit.get("doneTaskCoverage"))
+            note = coverage_sentence(unit.get("doneTaskCoverage"))
             if note:
                 lines += [note, ""]
         lines += ["| risk | model | tasks | %smean attempts |"

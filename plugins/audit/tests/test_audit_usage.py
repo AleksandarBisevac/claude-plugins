@@ -27,6 +27,7 @@ import time
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
+import usage_ledger as _ul                         # noqa: E402  (the rate basis every surface prints)
 import _areas                                      # noqa: E402  (as audit-usage imports it)
 import _cli_fmt                                    # noqa: E402
 import _locks                                      # noqa: E402  (the one library the backfill lock comes from)
@@ -185,58 +186,82 @@ def _cases(check):
                       for c in text))
         check("render: cost shown by default", "equiv" in text)
 
-        # The rate basis, third surface of the gap the HTML report carried until
-        # 0.22.0: a cost printed with nothing saying what priced it.
-        _mp = json.loads(json.dumps(manifest))
-        _mp.setdefault("meta", {}).setdefault("usage", {})["pricingAsOf"] = "2026-08-06"
-        _dated = M.render(loaded, args, _mp, "all time", True)
-        check("render: a declared rate date is printed beside the costs",
-              "rates as of 2026-08-06" in _dated)
-        check("render: with none declared it says so and names the exit, rather "
-              "than printing dollars that look pinned to a table nobody named",
-              "undated rates" in text and "usage.pricingAsOf" in text)
-        check("render: it never falls back to the default table's date - that "
-              "would manufacture a basis instead of stating one",
-              "rates as of" not in text)
+        # The rate basis beside the costs: `rate_basis_phrase` over the
+        # resolver's answer, the same words the report and the status line
+        # print. Driven through manifests that DECLARE a table (so the basis is
+        # the plan's own and its date is the plan's) and through one that does
+        # not (so the shipped table priced the rows and its own date and page
+        # are named).
+        _rates = {"_default": {"in": 1.0, "out": 2.0, "cacheW5m": 1.0,
+                               "cacheW1h": 1.0, "cacheR": 0.1}}
+
+        def _with_table(as_of):
+            _m = json.loads(json.dumps(manifest))
+            _mu = _m.setdefault("meta", {}).setdefault("usage", {})
+            _mu["pricing"] = _rates
+            if as_of is not None:
+                _mu["pricingAsOf"] = as_of
+            else:
+                _mu.pop("pricingAsOf", None)
+            return M.render(loaded, args, _m, "all time", True)
+        _dated = _with_table("2026-08-06")
+        check("render: a plan's own dated table is printed beside the costs, "
+              "named as the plan's own",
+              "rates as of 2026-08-06" in _dated
+              and "meta.usage.pricing" in _dated)
+        _undated = _with_table(None)
+        check("render: a plan's own table with no date says so and names the "
+              "key that dates it, rather than printing dollars that look "
+              "pinned to a table nobody named",
+              "rates undated" in _undated
+              and "meta.usage.pricingAsOf" in _undated)
+        check("render: ...and never borrows the shipped table's date for a "
+              "table that is not the shipped one",
+              "rates as of" not in _undated
+              and _ul.PRICING_AS_OF not in _undated)
+        check("render: when NO table is declared the shipped one priced the "
+              "rows, so its own date and source are named rather than "
+              "'undated'",
+              ("rates as of %s" % _ul.PRICING_AS_OF) in text
+              and _ul.PRICING_SOURCE_URL in text and "undated" not in text)
+        _given = {"table": _rates, "basis": "config", "asOf": "2026-07-01",
+                  "source": None}
+        check("render: the line is the phrase of the resolver answer it was "
+              "HANDED - one resolution, never a second one inside the render",
+              ("costs priced at %s" % _ul.rate_basis_phrase(_given)) in M.render(
+                  loaded, args, manifest, "all time", True, pricing=_given))
 
         # --- the rate basis, trimmed at the door -----------------------------
         # The plan schema asks only `minLength: 1`, so a string of spaces
-        # VALIDATES and this line tested it for truth: "rates as of" followed by
-        # nothing. `rate_basis` is the one door both readers in this file go
-        # through, so the cases drive it directly AND through the render.
+        # VALIDATES. `rate_basis` is the --json payload's door; the printed
+        # line goes through the resolver, which trims the same way.
         def _basis(raw):
             return M.rate_basis({"pricingAsOf": raw})
 
-        def _rendered(raw):
-            _m = json.loads(json.dumps(manifest))
-            _m.setdefault("meta", {}).setdefault("usage", {})["pricingAsOf"] = raw
-            return M.render(loaded, args, _m, "all time", True)
         check("render: a whitespace-only rate date is NOT a declaration - it "
               "collapses to None and the line says the rates are undated, "
               "rather than trailing off after 'rates as of': %r"
               % (_basis("   "),),
               _basis("   ") is None
-              and "undated rates" in _rendered("   ")
-              and "rates as of" not in _rendered("   "))
+              and "rates undated" in _with_table("   ")
+              and "rates as of" not in _with_table("   "))
         check("render: ...and a PADDED date is trimmed rather than refused - "
               "the fixture that separates trimming from merely rejecting a "
               "blank, since a version carrying the raw value through would "
               "print the padding: %r" % (_basis(" 2026-08-06 "),),
               _basis(" 2026-08-06 ") == "2026-08-06"
-              and "rates as of 2026-08-06" in _rendered(" 2026-08-06 "))
+              and "rates as of 2026-08-06," in _with_table(" 2026-08-06 "))
         check("render: ...and a hand-edited number is None rather than a "
               "raise - a render that raises is a report that does not print: "
               "%r" % (_basis(20260806),),
               _basis(20260806) is None
-              and "undated rates" in _rendered(20260806))
+              and "rates undated" in _with_table(20260806))
         # THE OTHER-DIRECTION CASE, which looks vacuous and is the only one
         # that fails if the trim becomes an unconditional None.
         check("render: ...and a declared date is untouched, so the repair "
               "cannot have been 'never report a basis'",
               _basis("2026-08-06") == "2026-08-06")
-        check("render: both readers in this file go through ONE door, so the "
-              "terminal line and the --json payload cannot disagree about a "
-              "value's whitespace",
+        check("render: the payload door answers None for no block at all",
               M.rate_basis({}) is None and M.rate_basis(None) is None)
 
         no_cost = M.render(loaded, args, manifest, "all time", False)
@@ -418,6 +443,12 @@ def _cases(check):
                                          "byAttribution", "heatmap")))
         check("json: heatmap is 7x24",
               len(payload["heatmap"]) == 7 and len(payload["heatmap"][0]) == 24)
+        check("json: the resolver's answer travels as data AND as the one "
+              "phrase the terminal prints for it: %r"
+              % (payload.get("pricingBasis"), ),
+              set(payload.get("pricingBasis") or {}) == {"basis", "asOf", "source"}
+              and payload.get("rateBasis")
+              == _ul.rate_basis_phrase(payload.get("pricingBasis")))
         check("ac8 with no done task, the bands' doneTaskCoverage is None "
               "rather than a 0-of-0 that would read as complete coverage",
               payload.get("bands", {}).get("doneTaskCoverage") is None)

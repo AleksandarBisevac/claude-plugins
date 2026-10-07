@@ -54,6 +54,25 @@ import _usage_bench as M                           # noqa: E402
 # listed by hand - a pass added to any of them shows up without an edit.
 _PASS_MODULES = (_usage_spend, _usage_economics, _usage_routing, _usage_coverage)
 
+# The public names of those modules that are deliberately NOT timed, each with
+# the reason it is not. One table, read by bn5 for the set and the label and by
+# bn5b for the count, so a name added here changes all three at once and no
+# label carries a count a later exclusion would make stale.
+_UNTIMED = (
+    ("band_of", "a dict lookup"),
+    ("gate_catches", "folds a caller-supplied tally rather than a ledger read "
+                     "that scales with row count"),
+    ("gate_scope_comparison", "reads the EVIDENCE ledger rather than this "
+                              "fixture's rows"),
+    ("gate_reuse_comparison", "reads the EVIDENCE ledger rather than this "
+                              "fixture's rows"),
+    ("plan_cost_claim", "only calls the three comparisons"),
+    ("coverage_sentence", "formats one sentence from counts its caller already "
+                          "holds and reads no rows"),
+    ("rate_basis_phrase", "formats one phrase from the pricing answer its "
+                          "caller already holds and reads no rows"),
+)
+
 
 # --- cases --------------------------------------------------------------------
 def _cases(check):
@@ -124,25 +143,28 @@ def _cases(check):
     _own_public = set(n for mod in _PASS_MODULES for n, v in vars(mod).items()
                       if not n.startswith("_") and callable(v)
                       and getattr(v, "__module__", None) == mod.__name__)
+    _untimed = set(n for n, _why in _UNTIMED)
     check("bn5 every rows->dict pass DEFINED by the four analytics modules is "
-          "timed; the ones that are not are named on purpose (band_of is a "
-          "dict lookup, gate_catches folds a caller-supplied tally rather than "
-          "a ledger read that scales with row count, gate_scope_comparison and "
-          "gate_reuse_comparison read the EVIDENCE ledger rather than this "
-          "fixture's rows, plan_cost_claim only calls the three of them) - so "
-          "a pass added later and left unmeasured fails HERE rather than "
-          "quietly missing from the table",
-          _own_public - _timed == {"band_of", "gate_catches",
-                                   "gate_scope_comparison",
-                                   "gate_reuse_comparison", "plan_cost_claim"},
+          "timed; the ones that are not are named on purpose (%s) - so a pass "
+          "added later and left unmeasured fails HERE rather than quietly "
+          "missing from the table"
+          % "; ".join("%s %s" % (n, why) for n, why in _UNTIMED),
+          _own_public - _timed == _untimed,
           repr(sorted(_own_public - _timed)))
     # The filter above narrows, and a filter that narrowed to nothing would make
-    # bn5 pass by describing an empty room. Counted, not assumed.
+    # bn5 pass by describing an empty room. Counted, not assumed: some passes
+    # were found AND timed, and what is left over is exactly the table of
+    # exclusions - both sides derived, neither written here. (`aggregate` is
+    # timed but defined in `_usage_core`, outside this scan, so the
+    # intersection is what is compared.)
     check("bn5b ...and it found the passes at all: the four modules' public "
-          "passes, with exactly the five named exclusions left untimed",
-          len(_own_public) - len(_own_public & _timed) == 5
-          and len(_own_public & _timed) == 12,
-          "%d found, %d timed" % (len(_own_public), len(_own_public & _timed)))
+          "passes, some of them timed, with exactly the named exclusions left "
+          "untimed",
+          len(_own_public & _timed) > 0
+          and len(_own_public) - len(_own_public & _timed) == len(_UNTIMED)
+          == len(_untimed),
+          "%d found, %d timed, %d excluded"
+          % (len(_own_public), len(_own_public & _timed), len(_UNTIMED)))
     # A scripted clock, not sleeps: elapsed 4.0, 1.0, 3.0 over three runs. The
     # three candidate answers are far apart on purpose - minimum 1.0, mean 2.67,
     # last 3.0 - so the fixture can tell a correct harness from either wrong one.

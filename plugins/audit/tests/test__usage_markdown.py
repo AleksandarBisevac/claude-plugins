@@ -35,6 +35,8 @@ def _u(**kw):
     u = {"totals": {"tokens": 1000, "costUSD": 1.0, "msgs": 10, "sessions": 2,
                     "cacheHitPct": 50.0},
          "showCost": True, "pricingAsOf": "2026-06-01",
+         "pricingBasis": {"basis": "manifest", "asOf": "2026-06-01",
+                          "source": None},
          "byPhase": {"P0": {"tokens": 600, "costUSD": 0.6, "msgs": 6}},
          "byModel": {"opus": {"tokens": 1000, "costUSD": 1.0, "msgs": 10}},
          "byAuthor": {}, "monthly": {}, "unit": {}, "retry": {},
@@ -69,12 +71,29 @@ def _cases(check):
           "hit - the numbers the tiles show",
           "**Total:**" in out and "2 session(s)" in out
           and "cache hit 50%" in out, out.split("\n")[3])
-    check("um7 ...and the rate date, the same basis the HTML context line "
-          "states", "rates as of 2026-06-01" in out, "")
-    out_nd = M._usage_md(_u(pricingAsOf=None))
-    check("um8 ...and with costs shown but no date declared it says so, "
-          "rather than falling back to a date this project never chose",
-          "rates undated" in out_nd, "")
+    import usage_ledger as _ul
+    import _usage_overview as _UO
+    check("um7 ...and the rate basis, the SAME phrase the HTML context line "
+          "states - one helper's words over one resolver answer",
+          ("· %s" % _ul.rate_basis_phrase(_u()["pricingBasis"])) in out
+          and "rates as of 2026-06-01" in out
+          and _viz.e(_ul.rate_basis_phrase(_u()["pricingBasis"]))
+          in _UO._usage_context(_u()), out.split("\n")[3])
+    _shipped = {"basis": "shipped", "asOf": _ul.PRICING_AS_OF,
+                "source": _ul.PRICING_SOURCE_URL}
+    out_sh = M._usage_md(_u(pricingAsOf=None, pricingBasis=_shipped))
+    check("um8 ...and when the shipped table priced the rows with no project "
+          "date, it names the shipped table's date and source rather than "
+          "calling the rates undated",
+          ("rates as of %s" % _ul.PRICING_AS_OF) in out_sh
+          and _ul.PRICING_SOURCE_URL in out_sh and "undated" not in out_sh,
+          out_sh.split("\n")[3])
+    out_nd = M._usage_md(_u(pricingAsOf=None, pricingBasis={
+        "basis": "manifest", "asOf": None, "source": None}))
+    check("um8a ...while the plan's own table with no date says so, rather "
+          "than borrowing a date this project never chose",
+          "rates undated" in out_nd and _ul.PRICING_AS_OF not in out_nd,
+          out_nd.split("\n")[3])
     out_nc = M._usage_md(_u(showCost=False))
     check("um9 ...and with showCost off it carries neither the cost nor the "
           "rate basis: a basis with no claim beside it is noise here too",

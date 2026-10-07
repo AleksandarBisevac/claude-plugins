@@ -220,6 +220,41 @@ def _cases(check):
           "that fails if the two bases print the same sentence",
           "median / p90" in out, out)
 
+    # --- the coverage sentence beside the projection and the band note ---
+    # Done and priced differ in the fixture, so a sentence with the two counts
+    # swapped or dropped fails; the expectation is the one helper's own text.
+    import usage_ledger as _ul
+    _cov = {"done": 6, "priced": 4}
+    _sentence = M.e(_ul.coverage_sentence(_cov))
+    out = M._economics_block(_u(unit=dict(_proj_fixture,
+                                          doneTaskCoverage=_cov)))
+    check("ud19a the projection carries the coverage sentence: it projects "
+          "from the done tasks the ledger priced, and says how many of the "
+          "plan's done tasks that is",
+          out.count(_sentence) == 1 and out.index("project to")
+          < out.index(_sentence), out)
+    out_nc = M._economics_block(_u(showCost=False, unit=dict(
+        _proj_fixture, doneTaskCoverage=_cov)))
+    check("ud19b ...and leaves with the projection when showCost drops it - a "
+          "basis for a figure no longer on the page is noise",
+          "main-loop spend" not in out_nc, out_nc)
+    check("ud19c ...and a plan with no done task adds nothing beside it",
+          "main-loop spend" not in M._economics_block(_u(unit=dict(
+              _proj_fixture, doneTaskCoverage=None))))
+    for _label, _bands in (
+            ("calibrated", {"sufficient": True, "basis": "sample", "high": 1.0,
+                            "outlier": 5.0, "doneTaskCoverage": _cov}),
+            ("waiting", {"sufficient": False, "gate": 5, "sample": 2,
+                         "doneTaskCoverage": _cov})):
+        out = M._band_note(_bands)
+        check("ud19d the %s band note closes with the coverage sentence, "
+              "because its sample is the priced done tasks" % _label,
+              out.count(_sentence) == 1, out)
+    check("ud19e ...and a band note with no coverage reading carries none",
+          "main-loop spend" not in M._band_note(
+              {"sufficient": True, "basis": "sample", "high": 1.0,
+               "outlier": 5.0}))
+
     # --- phase composition ---
     check("ud20 no phase/model cross-tab renders nothing",
           M._phase_stacks(_u(), {}, []) == "")

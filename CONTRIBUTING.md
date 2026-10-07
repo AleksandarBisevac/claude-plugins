@@ -405,13 +405,17 @@ the windows leg proves the `python3` → `python` → `py` interpreter fallback
   example is cost: a dollar figure is a claim, and its basis is the rate table
   it was priced from, so all five surfaces that render one — HTML report,
   Markdown twin, `/audit:usage`, `/audit:status`, the panel's Usage tab —
-  print `rates as of <date>`, or `rates undated (set usage.pricingAsOf)`.
-  - **Never fall back to a default to fill the gap.** `usage_cfg()` merges a
-    default `pricingAsOf`, so a fallback would nearly always render a plausible
-    date the project never chose. That is the argument against it. Where the
-    merged value is all that is available (the panel), the server reports
-    *whether the project declared it* as a separate fact rather than letting the
-    client mistake a default for a declaration.
+  print one phrase, `rate_basis_phrase()` in `scripts/usage/_usage_economics.py`,
+  built from what `resolve_pricing()` answers: the shipped table's date and
+  source page when the shipped table priced the rows, or the project's own
+  table and its date, with `rates undated` and the key that dates it only when
+  a project's own table carries none. The panel shows the phrase from its
+  payload rather than retyping it.
+  - **Never fall back to a default to fill the gap.** The basis is the
+    resolver's answer about the table that actually priced the rows — never a
+    merged default's `pricingAsOf`, which would render a plausible date the
+    project never chose for a table it may not use. A payload that carries no
+    resolver answer says the basis is not recorded rather than guessing one.
   - **A basis with no claim is noise** — the same rule backwards. All five stay
     silent under `showCost: false` and when there is no spend to price. The
     first version of this shipped a bug of exactly that kind, caught by an
@@ -422,7 +426,7 @@ the windows leg proves the `python3` → `python` → `py` interpreter fallback
     report and run a command; a hook line arrives uninvited and already hedged,
     and growing it is how it becomes the message people learn to skip.
   - A new surface that renders a number someone acts on inherits all of this,
-    and the pattern to copy is `render-report._usage_context`.
+    and the pattern to copy is `_usage_overview._usage_context`.
 
 ### Adding a new script
 
@@ -1132,11 +1136,14 @@ the table's haiku rates applied to `modelUsage`'s token counts reproduce the nat
 figure to the microdollar. **The whole difference was output tokens the ledger did
 not count.** A subagent transcript writes each message twice under one message id —
 first a streaming partial with a near-zero `output_tokens` and no `stop_reason`, then
-the final entry — and the ledger keeps the first entry it sees per id
-(`scripts/usage/usage_ledger.py`, the `mid in seen` check in `scan_transcripts`).
+the final entry — and the ledger of that day kept the first entry it saw per id.
 The main transcript's duplicate entries carried equal counts, so only the subagent
-row lost tokens. That miscount is a ledger defect to be fixed in its own change, not
-a reason to adopt native cost: it was found *by* comparing against the native total.
+row lost tokens. That miscount was a ledger defect and is history now: a streaming
+partial's counts are held as provisional per message id, and the final entry adds
+whatever it carries beyond them (`_scan_file` in `scripts/usage/usage_ledger.py`,
+where `pending` holds the provisional count).
+It was never a reason to adopt native cost: it was found *by* comparing against the
+native total.
 
 **Decided:** keep the price table and the ledger's own arithmetic as the source of
 per-task cost. The native session total is a reconciliation check — the ledger's sum

@@ -101,7 +101,7 @@ def _done_task_coverage(tasks, rows):
             "priced": sum(1 for n in tokens.values() if n > 0)}
 
 
-def _coverage_sentence(cov):
+def coverage_sentence(cov):
     """`_done_task_coverage`'s reading, as the one sentence every caller that
     prints a per-task cost figure states beside it — the CLI, the report's HTML
     tile, its Markdown twin and the routing table all make the same "cost per
@@ -125,6 +125,43 @@ def _coverage_sentence(cov):
         return None
     return ("Of the plan's %d done task(s), %d are priced; main-loop spend is "
             "not attributed to a task." % (cov.get("done", 0), cov.get("priced", 0)))
+
+
+def rate_basis_phrase(pricing_basis):
+    """`resolve_pricing`'s `{basis, asOf, source}` as the one phrase every
+    surface prints beside a cost - the report, its Markdown twin,
+    `/audit:usage`, `/audit:status`, and the panel through its payload. The
+    caller hands in the answer it already resolved; this never resolves a
+    table itself, so no surface can name a basis other than the one that
+    priced its rows.
+
+    The date is the resolver's: the shipped table's own `PRICING_AS_OF` when
+    the shipped table priced the rows, so a project that declared nothing is
+    shown the date and page its rates came from rather than "rates undated".
+    "Undated" is said only of a project's own table that carries no date, with
+    the key that dates it. An answer that is missing, or names no basis
+    `PRICING_BASES` knows, is stated as unrecorded rather than filled in with
+    the shipped table's date - a basis guessed is a basis manufactured."""
+    pb = pricing_basis if isinstance(pricing_basis, dict) else {}
+    basis = pb.get("basis")
+    if basis not in _core.PRICING_BASES:
+        return "rate basis not recorded"
+    as_of = pb.get("asOf")
+    as_of = as_of.strip() if isinstance(as_of, str) else ""
+    source = pb.get("source")
+    source = source.strip() if isinstance(source, str) else ""
+    when = ("rates as of %s" % as_of) if as_of else "rates undated"
+    if basis == "shipped":
+        where = "the plugin's shipped table" + (
+            " (%s)" % source if source else "")
+        hint = ""
+    elif basis == "manifest":
+        where = "the plan's own table in meta.usage.pricing"
+        hint = " - set meta.usage.pricingAsOf"
+    else:
+        where = "the project's usage.pricing in .claude/audit.config.json"
+        hint = " - set usage.pricingAsOf"
+    return "%s, %s%s" % (when, where, "" if as_of else hint)
 
 
 def unit_economics(manifest, rows):

@@ -90,6 +90,12 @@ def _usage_shape(**overrides):
         "showCost": True,
         "pricingAsOf": None,
         "pricingAsOfDeclared": False,
+        # Which place priced the ledger's rows (`resolve_pricing`'s `{basis,
+        # asOf, source}`) and the phrase every other cost surface prints for
+        # it, so the tab shows those words rather than retyping them. None on
+        # the exits with no rows: there is no cost on screen to give a basis.
+        "pricingBasis": None,
+        "rateBasis": None,
         "facts": [],
         # Empty on the no-ledger path even though the populated branch ships the
         # ten column names: there are no rows to read against them. Same KEY,
@@ -414,8 +420,11 @@ def usage_state(project):
     titles, task_meta, budgets = _usage_manifest_slice(manifest)
 
     payload = dict(declared)
-    payload.update(_usage_derived(
-        ul, manifest, rows, _usage_pricing(ul, manifest, config)["table"]))
+    pricing = _usage_pricing(ul, manifest, config)
+    payload.update(_usage_derived(ul, manifest, rows, pricing["table"]))
+    payload.update({
+        "pricingBasis": {k: pricing[k] for k in ("basis", "asOf", "source")},
+        "rateBasis": ul.rate_basis_phrase(pricing)})
     payload.update({"fields": list(_FACT_FIELDS), "facts": facts,
                     "phaseTitles": titles, "taskMeta": task_meta,
                     "phaseBudgets": budgets, "counts": _ledger_counts(rows),

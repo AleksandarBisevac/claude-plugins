@@ -77,17 +77,18 @@ function renderUsage(){closeCombo();const c=$('#usage');
  // chart names its own period in its heading, so this says "ledger" out loud
  // rather than leaving two different resolutions on screen unlabelled.
  bits.push(USAGE.rolled?'daily ledger (rolled up)':'hourly ledger');
- // The rate table behind every dollar in this tab. `pricingAsOf` is served from the
- // MERGED config, so it is set even when this project never chose it — printing it
- // unconditionally would present the default table's date as the project's own.
- // `pricingAsOfDeclared` is the server saying which of the two it is.
- if(USAGE.showCost&&USAGE.pricingAsOfDeclared)bits.push('rates as of '+USAGE.pricingAsOf);
+ // The rate table behind every dollar in this tab: its date and source, in the
+ // words the server built from the one resolver every cost surface asks
+ // (`rateBasis`). Shown as served, never retyped here, so the tab and the report
+ // cannot word one basis two ways. A payload without it says so rather than
+ // leaving the dollars with nothing beside them.
+ if(USAGE.showCost)bits.push(USAGE.rateBasis||'rate basis not served');
  const ctx=el('div',{class:'uctx'},bits.join(' - '));
- // This used to end the sentence with "set usage.pricingAsOf" — an instruction to
- // go and edit a file, printed on the surface built to edit that file. Now it is
- // the way there.
- if(USAGE.showCost&&!USAGE.pricingAsOfDeclared)ctx.append(' - ',
-   settingsLink('rates undated: date them in Settings','usage.pricingAsOf'));
+ // A config table with no date is the one basis this surface can repair, so it
+ // carries the way there rather than an instruction to go and edit the file.
+ const pb=USAGE.pricingBasis||{};
+ if(USAGE.showCost&&pb.basis==='config'&&!pb.asOf)ctx.append(' - ',
+   settingsLink('date them in Settings','usage.pricingAsOf'));
  card.append(ctx);
 
  // Active filters FIRST, above the fold that holds the controls. This row is not
@@ -346,10 +347,14 @@ function renderUsage(){closeCombo();const c=$('#usage');
 
  // economics - the same honesty caveats the report carries
  card.append(el('h2',{},'Unit economics'));
- if(unit.proj)card.append(el('div',{class:'ufact'},'Remaining '
+ if(unit.proj){card.append(el('div',{class:'ufact'},'Remaining '
    +plural(unit.remaining,'task projects','tasks project')
    +' to '+uCost(unit.proj.low)+' to '+uCost(unit.proj.high)+
    ' at the p25-p75 per-task rate.'));
+  // The per-task rate rests on the done tasks the ledger priced; the sentence
+  // saying how many goes wherever the projection does.
+  const pcov=uCoverageLine(tcov);
+  if(pcov)card.append(el('div',{class:'mut small','data-ucov':'projection'},pcov));}
  else card.append(el('div',{class:'mut small'},'Projection needs '+unit.gate+
    ' completed tasks to mean anything; there are '+unit.completed+
    '. A forecast off a smaller sample would be noise.'));
