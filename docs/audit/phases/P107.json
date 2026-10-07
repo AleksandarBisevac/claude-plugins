@@ -1,7 +1,7 @@
 {
   "id": "P107",
   "title": "state writes never lose each other",
-  "status": "in_progress",
+  "status": "done",
   "description": "Tasks: (1) close-phase stamp_merged and record_merged_head under the index lock close-phase already takes for the stub mirror, rollback through atomic_write_json. (2) The stale journal lock is claimed by rename so only one waiter breaks it (no false tamper verdict). (3) Backfill re-reads the month file's tail after its replace, with no lock on the Stop hook's hot path. (4) A _deps rule: os.replace on plan or ledger paths only through sanctioned writers; reduce or justify the existing sites. Mechanisms reproduced by fixtures; not observed in 100 dogfood phases, hence after the higher-value phases.",
   "desiredOutcome": "two plugin writers running at once never silently drop each other's write: close-phase stamps under the index lock with an atomic rollback, a stale journal lock is broken by exactly one waiter, usage backfill keeps rows appended during its window, and the import-layer lint refuses a state write outside the sanctioned writers",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "6d0ef731b5ac60e6bef3c015cf9967583e3625f8",
   "branch": "audit/p107-state-writes-never-lose-each-o",
-  "mergedAt": null,
+  "mergedAt": "2026-10-07T00:40:54Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -570,5 +570,6 @@
     "runId": "2026-10-07T00:39:44Z.802b90",
     "status": "passed",
     "at": "2026-10-07T00:39:44Z"
-  }
+  },
+  "mergedHead": "816f9f0d8f66b1013942cc96fd228203a91096e6"
 }
