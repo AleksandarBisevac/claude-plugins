@@ -510,7 +510,7 @@
     {
       "id": "P102.9",
       "title": "a usage error names this copy's version and a newer installed copy for this project",
-      "status": "in_progress",
+      "status": "done",
       "description": "When an older cached copy is asked for a newer subcommand, it exits 2 with a bare argparse 'invalid choice', no version and no hint. Executors concluded the helper did not exist. Add one shared usage hook to _claude_home.py, which sits at layer 1 and is reachable from every entry point. The hook names _output.plugin_version() and asks installed_copies() for the copy that applies to this project, project scope before user scope. installed_plugins.json is undocumented, so the hook fails open and states that basis. Decide in the docstring how the hook attaches under the free-functions rule: an instance patch of parser.error rather than a subclass. Apply it to stamp-verification.py, the reported case, and regenerate the module map.",
       "files": [
         "plugins/audit/scripts/status/_claude_home.py",
@@ -541,18 +541,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "67f80e77",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_claude_home.py gains a '# --- usage hint ---' section: _version_key (dotted version to an int tuple, or None); _holds (resolved paths, requiring a separator after the root); applicable_copy(home, project) asks installed_copies() for every marketplace's audit@<market> record and picks a project- or local-scope copy whose projectPath contains this project before any user-scope copy, never another project's copy, the highest version within a scope; usage_hint(home, project, version, plugin_root) returns 'this copy: audit <version> at <path>' and then one of a newer applicable copy (with /reload-plugins), no newer copy, no installed copy, a version that cannot be ordered, or install records that could not be read - each line saying it was read off installed_plugins.json, which Claude Code writes and does not document, and failing open so an unexpected record costs the hint, never the usage error; attach_usage_hint(parser, ...) replaces parser.error on the instance (not a subclass - the docstring says why, and that a sub-parser has its own error to attach for the roll-out) and calls argparse's own error after the hint, so the exit stays 2 and a clean parse costs nothing. installed_copies rows gain an installPath key (added only). stamp-verification.py's build_parser returns attach_usage_hint(parser). PLUGIN-BUILD-GUIDE.md: module map regenerated (stamp-verification gains _claude_home) and the _claude_home section extended. Decisions: local scope counts as project-tied beside project; the project is the given directory or any directory below the recorded projectPath; an unparseable version is never called newer.\nTests: test__claude_home ch9-ch16, every case on its own installed_plugins.json under a fixture root, never the operator's; ch13 is the over-fire twin (no newer copy, no /reload-plugins). Red-first proved through the helper at HEAD 212470e8 (8/16, ch9-ch16 failing). In-process mutations each red: _holds always true, prefix without separator, user scope first, versions never comparable. Suites test__claude_home 16/16, test_audit_version 32/32, test_stamp_verification 195/195, test__deps 299/299, test__output 182/182; ruff and vermin clean.",
+        "descriptive": "When an older cached copy of the plugin is asked for something it does not know, its error now says which version it is and where, and points at a newer installed copy that applies to this project and how to load it, instead of a bare 'invalid choice'."
       },
       "startedAt": "2026-10-07T02:48:22Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T05:16:33Z",
+      "verifiedBy": [
+        "ch9",
+        "ch10",
+        "ch11",
+        "ch12",
+        "ch13",
+        "ch14",
+        "ch15",
+        "ch16"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T05:16:13Z.80a45a",
         "status": "passed",
         "at": "2026-10-07T05:16:13Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "67f80e77",
+        "at": "2026-10-07T05:16:33Z",
+        "basis": "orchestrator check: one shared usage hook at layer 1, project scope before user scope, fails open with its basis stated, attached by an instance patch as the description asked, applied to stamp-verification; red-first proved"
       }
     },
     {
