@@ -176,8 +176,8 @@ def _change_magnitude(tool, ti):
     if tool == "Write":
         return measure(ti.get("content", ""))
     if tool == "Edit":
-        new, old = ti.get("new_string", ""), ti.get("old_string", "")
-        return max(measure(new), lines(old))
+        return _config.change_magnitude(ti.get("new_string", ""),
+                                        ti.get("old_string", ""))
     if tool == "MultiEdit":
         new_l = new_c = old_l = 0
         for e in ti.get("edits", []) or []:

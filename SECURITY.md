@@ -396,8 +396,10 @@ free-file slot (`trivialLineThreshold`), which both hooks read and take through 
 one writer in `_config.py`. So the same file gets the same verdict whether it is edited through
 a tool, through `sed -i` or through `python3 -c` - except a shell write whose command does not
 state its content (it computes or fetches it), which cannot be measured before it runs and
-takes the slot unmeasured. Nothing reports an oversized one of those yet; a post-write report
-is follow-up work. And when the slot cannot be written at all (an unwritable state directory),
+takes the slot unmeasured. Once it has landed, `guard-bash-writes` measures the change with the
+same formula an Edit is sized by and reports one over `trivialLineThreshold` - with the file,
+the magnitude and the threshold - as a non-blocking notice; it cannot be refused, because by
+then it has happened. And when the slot cannot be written at all (an unwritable state directory),
 every uncovered file of the session is taken as its first free file and allowed - at the deny
 tier too, through either tool: a hook will not stop all work for want of its own scratch space,
 so that door is named rather than closed. A volume that only refuses hard links (FAT/exFAT,

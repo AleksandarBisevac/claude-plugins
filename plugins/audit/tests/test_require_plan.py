@@ -1780,6 +1780,22 @@ def _cases(check):
                               {"path": _mcp_src, "content": big})
           == M._change_magnitude("Write", {"content": big}) > 0,
           repr(M._change_magnitude("mcp__fs__write_file", {"content": big})))
+    # One formula sizes an Edit here and the diff a shell write left behind in
+    # guard-bash-writes, so the free-file limit means the same thing before and
+    # after a write. Each pair is decided by a different term - new lines, the
+    # new text's 200-character lines, the removed lines - so a copy that drops
+    # or reweights one term disagrees on at least one of them.
+    _cm_pairs = (("a\nb\nc\n", "x\n"),
+                 ("y" * 1200, "x\n"),
+                 ("z\n", "".join("old %d\n" % i for i in range(9))))
+    _cm_got = [(M._change_magnitude("Edit", {"new_string": n,
+                                             "old_string": o}),
+                _config.change_magnitude(n, o)) for n, o in _cm_pairs]
+    check("m10 an Edit's magnitude is `_config.change_magnitude` of its new and "
+          "old text, the one formula guard-bash-writes sizes a shell write's "
+          "diff with",
+          all(a == b for a, b in _cm_got)
+          and len(set(b for _, b in _cm_got)) == len(_cm_pairs), repr(_cm_got))
     clear_manifest()
 
     # (u) THE SENTENCES ARE PUBLISHED, AND THE PUBLICATION IS FLOORED BOTH WAYS.

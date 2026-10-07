@@ -2143,6 +2143,7 @@ def _cases(check):
         _sh_shape.rmtree(str(shape_dir), ignore_errors=True)
 
     _journal_origin_cases(check)
+    _slot_size_cases(check)
 
 
 def _journal_origin_cases(check):
@@ -2354,6 +2355,133 @@ def _journal_origin_cases(check):
               v == "warn" and "append-only audit journal" in why
               and "brought in by the merge" not in why, repr((v, why[:300])))
         run_git("checkout", "--", ".")
+    finally:
+        if prev_env is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = prev_env
+        shutil.rmtree(str(root), ignore_errors=True)
+
+
+def _slot_size_cases(check):
+    """(sz) A SHELL WRITE THAT TOOK THE FREE-FILE SLOT IS MEASURED AFTER IT LANDS.
+
+    PreToolUse sees a command, not the change it makes, so a shell write whose
+    command does not state its content takes the session's free-file slot
+    unmeasured. This pass is where the change is visible: the slot's file is
+    measured with `_config.text_magnitude`, the formula require-plan applies to
+    an Edit, and over `trivialLineThreshold` it is reported with the file, the
+    magnitude and the threshold. Within the threshold it is the session's free
+    file and says nothing - which is the allow twin, and the case that goes red
+    if the report fires on every slot file. Real git throughout: the magnitude
+    of a tracked file is read off its diff, so an injected dirty list could not
+    exercise it.
+    """
+    import shutil
+    root = Path(_harness.fixture_root("bash-writes-slot-size-"))
+    repo = root / "repo"
+    (repo / "src").mkdir(parents=True)
+    (repo / "docs" / "audit").mkdir(parents=True)
+    # Nothing running: the warn tier, so the plan-coverage class is graded and
+    # a silence below is the slot's doing rather than the observe rung's.
+    (repo / "docs" / "audit" / "audit-plan.json").write_text(json.dumps({
+        "meta": {"version": 2},
+        "phases": [{"id": "P0", "title": "p", "status": "done", "tasks": [
+            {"id": "P0.1", "title": "t", "status": "done"}]}],
+    }), encoding="utf-8")
+    (repo / ".gitignore").write_text(".claude/\n", encoding="utf-8")
+    tracked = "".join("line %d\n" % i for i in range(10))
+    (repo / "src" / "grown.py").write_text(tracked, encoding="utf-8")
+    (repo / "src" / "cut.py").write_text(tracked, encoding="utf-8")
+    (repo / "src" / "tweak.py").write_text(tracked, encoding="utf-8")
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+           "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+
+    def run_git(*argv):
+        return subprocess.run(git + list(argv), cwd=str(repo),
+                              capture_output=True, text=True, timeout=30)
+    run_git("init", "-q")
+    run_git("add", "-A")
+    run_git("commit", "-qm", "init")
+    # A threshold small enough that every fixture is a few lines, and distinct
+    # from every magnitude below so a report naming the wrong number is seen.
+    zcfg = _config._deep_merge(_config.DEFAULTS, {"trivialLineThreshold": 5})
+    zsd = repo / ".claude" / "state"
+    prev_env = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(repo)
+
+    def shell_write(sid, rel, body, take=True):
+        """Baseline the session, take the slot for `rel` the way the
+        PreToolUse arm does, land `body` there, and return the Post verdict."""
+        look = {"tool_name": "Bash", "session_id": sid, "cwd": str(repo),
+                "tool_input": {"command": "ps"}}
+        M.decide(look, cfg=zcfg, state_dir=zsd)
+        if take:
+            _config.take_trivial_slot(zsd, sid, [rel])
+        (repo / rel).write_text(body, encoding="utf-8")
+        ok, got = _harness.attempt(
+            M.decide, {"tool_name": "Bash", "session_id": sid, "cwd": str(repo),
+                       "tool_input": {"command": "python3 gen.py"}},
+            cfg=zcfg, state_dir=zsd)
+        return got if ok else ("EXC", repr(got))
+
+    try:
+        v, d = shell_write("sz-new-big", "src/big.py",
+                           "".join("x%d = 1\n" % i for i in range(12)))
+        check("sz1 an untracked file the slot took, written at 12 lines over a "
+              "threshold of 5, is reported naming the file, the magnitude and "
+              "the threshold", v == "warn" and "src/big.py" in d
+              and "change magnitude 12 > trivialLineThreshold 5" in d, d)
+        check("sz2 ...and the report names the remedy - an in_progress task or "
+              "the operator - and no edit tool",
+              "/audit:task scope" in d and "ask the operator" in d
+              and "Edit/Write" not in d, d)
+        v, d = shell_write("sz-new-small", "src/small.py", "a = 1\nb = 2\n")
+        check("sz3 the allow twin: a file the slot took, written within the "
+              "threshold, is the session's free file and is not reported at "
+              "all - not as oversized and not as uncovered",
+              v == "silent", "%s: %s" % (v, d))
+        v, d = shell_write("sz-blob", "src/blob.py", "x = '%s'\n" % ("y" * 1200))
+        check("sz4 one long line is measured as require-plan measures an edit's "
+              "text - its 200-character lines - so a one-line blob is not small",
+              v == "warn" and "change magnitude 7 > trivialLineThreshold 5" in d,
+              d)
+        v, d = shell_write("sz-grown", "src/grown.py",
+                           tracked + "".join("y%d = 2\n" % i for i in range(8)))
+        check("sz5 a TRACKED file the slot took is measured by what its diff "
+              "adds, not by its whole length: 8 added lines to a committed file "
+              "of 10", v == "warn"
+              and "change magnitude 8 > trivialLineThreshold 5" in d, d)
+        v, d = shell_write("sz-cut", "src/cut.py", "line 0\nline 1\nline 2\n")
+        check("sz6 removed lines count, as an Edit's old text does: 7 lines "
+              "deleted from a tracked file is reported", v == "warn"
+              and "change magnitude 7 > trivialLineThreshold 5" in d, d)
+        v, d = shell_write("sz-tweak", "src/tweak.py",
+                           tracked.replace("line 3\n", "line three\n"))
+        check("sz7 ...and its twin: one line changed in a tracked file is "
+              "within the threshold and is not reported", v == "silent",
+              "%s: %s" % (v, d))
+        v, d = shell_write("sz-noslot", "src/other.py",
+                           "".join("z%d = 3\n" % i for i in range(12)),
+                           take=False)
+        check("sz8 a file the slot does NOT hold keeps the plan-coverage notice "
+              "and gets no size report - the slot excuses its own file only",
+              v == "warn" and "src/other.py" in d
+              and "trivialLineThreshold" not in d, d)
+        # A size nobody could measure is said as unmeasured, never filled in
+        # with a number and never read as "within the limit".
+        real_measure = M.slot_write_magnitude
+        M.slot_write_magnitude = lambda *a: (None, "git could not diff the "
+                                             "file against HEAD")
+        try:
+            v, d = shell_write("sz-unmeasured", "src/dark.py", "a = 1\n")
+        finally:
+            M.slot_write_magnitude = real_measure
+        check("sz9 a slot file whose change could not be measured is reported "
+              "as unmeasured, with the reason and the threshold, not as free",
+              v == "warn" and "src/dark.py (change magnitude unmeasured: git "
+              "could not diff the file against HEAD; trivialLineThreshold 5)"
+              in d, d)
     finally:
         if prev_env is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)

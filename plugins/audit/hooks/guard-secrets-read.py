@@ -1750,10 +1750,11 @@ def _slot_write_verdict(data, project, cfg, hits, magnitude):
     content the command computes or fetches: a write whose size the command
     does not state takes the slot as an `Edit` within the threshold would
     (decided 2026-10-06), because PreToolUse sees the command and not the
-    change. The PostToolUse arm is where that change is visible, and NOTHING
-    THERE GRADES ITS SIZE YET: `guard-bash-writes.py` does not read
-    `trivialLineThreshold`, so an unstated oversized write that took the slot
-    is reported by nothing today.
+    change. The PostToolUse arm is where that change is visible, and it is
+    measured there: `guard-bash-writes.py` reads the slot, sizes the diff the
+    write left with `_config.change_magnitude`, and reports a slot file over
+    `trivialLineThreshold` with its magnitude and the threshold - a report
+    after the write has landed, never a refusal.
 
     TAKEN AT PRE, by both hooks: this one has no Post pass for Bash, and
     require-plan takes the same slot at its own Pre (its Post confirms, and

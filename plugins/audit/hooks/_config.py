@@ -41,7 +41,8 @@ Config keys (all optional; defaults in DEFAULTS below):
                                   (trivial_slot), so one file gets one verdict
                                   whichever way it is written — except a shell
                                   write whose size its command does not state,
-                                  which takes the slot unmeasured; see that
+                                  which takes the slot unmeasured and is sized
+                                  by guard-bash-writes once it lands; see that
                                   function's own docstring.
                                   The secret guards are never graded and
                                   deny at every tier, because reading .env is
@@ -936,11 +937,12 @@ def logs_dir(root, cfg):
 
 # --- the session's free-file slot ----------------------------------------------
 # `trivialLineThreshold`'s allowance is ONE file per session, whichever tool
-# writes it. `require-plan.py` grades Edit/Write against it and
-# `guard-secrets-read.py` grades a shell write against it, and the slot has one
-# reader and one writer here so the two cannot disagree about which file a
-# session has already spent it on - which is what they did while the shell half
-# never read the slot at all.
+# writes it. `require-plan.py` grades Edit/Write against it,
+# `guard-secrets-read.py` grades a shell write against it and
+# `guard-bash-writes.py` measures that shell write once it has landed, and the
+# slot has one reader and one writer here so the hooks cannot disagree about
+# which file a session has already spent it on - which is what they did while
+# the shell half never read the slot at all.
 TRIVIAL_SLOT = "plan-gate-%s.json"
 _SLOT_UNSAFE = re.compile(r"[^A-Za-z0-9_.-]")
 _SLOT_ID_MAX = 96
@@ -972,6 +974,16 @@ def text_magnitude(text):
     guard-secrets-read measures the content a shell write states - so a
     one-line blob and a long file count the same through either tool."""
     return max(text_lines(text), text_char_lines(text))
+
+
+def change_magnitude(new, old):
+    """The size of a change that replaces `old` text with `new`: the new
+    text's `text_magnitude`, or the removed text's lines when more were taken
+    away than put in - so a large deletion is not trivial either. require-plan
+    sizes an Edit this way, and guard-bash-writes sizes the diff a shell write
+    left behind this way, so the free-file limit means one thing after the
+    fact as well as before it."""
+    return max(text_magnitude(new), text_lines(old))
 
 
 # What `trivial_slot` answers for a slot file that exists but names no file it
@@ -2881,9 +2893,12 @@ def plan_gate_mode(cfg, state):
     open: a shell write whose command does not state its content (it
     computes or fetches it) cannot be measured before it runs, and takes the
     slot exactly as an Edit within the threshold would (decided 2026-10-06).
-    Measuring it afterwards is the PostToolUse arm's to do, and
-    `guard-bash-writes.py` does not do it yet: an unstated oversized shell
-    write that took the slot is reported by nothing today."""
+    It is measured afterwards, by the PostToolUse arm: `guard-bash-writes.py`
+    reads the slot, sizes the diff the write left with `change_magnitude`,
+    and reports a slot file over `trivialLineThreshold` with its magnitude and
+    the threshold. That is a report and not a refusal - the write has
+    already landed - so at the deny tier an oversized unstated shell write
+    still lands where an Edit of the same size would have been refused."""
     try:
         knob = plan_gate_knob(cfg)
         if knob:

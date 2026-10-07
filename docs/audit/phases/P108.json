@@ -306,7 +306,7 @@
     {
       "id": "P108.5-4gh",
       "title": "a shell append to the journal is refused like an Edit of it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix BUG-18-4gh: a shell append to the audit journal (echo '{}' >> docs/audit/journal/<file>.jsonl) passes every PreToolUse hook while Edit of the same journal is refused by guard-edits. Decided 2026-10-06: the shell write is deny at every tier, one operation one verdict. The shell-write arm that grades plan coverage (guard-secrets-read's write arm) refuses a shell write whose resolved target is a journal file, with a refusal that names the journal and the sanctioned writer, the same way guard-edits refuses the edit tools; the plugin's own journal writer, which runs as a script rather than a shell redirect, is unaffected. test_hooks.py's b10 loses its known-divergence mark.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -341,19 +341,36 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "25dd7c0d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "guard-secrets-read.py: new _journal_write_hit(cmd, root, cfg, cwd) finds a journal target the way the manifest arm finds a manifest target - the same shell write targets (>/>>, tee, sed -i) and placement steps - then asks _config.in_journal, the check guard-edits uses, so a journal moved with journal.dir is covered. In _decide_core it sits right after the manifest refusal and before _source_write_hit and _slot_write_verdict, so a journal append is refused before any slot logic and never takes or spends the free-file slot. The refusal (_SHELL_JOURNAL) names the journal file, says it is append-only, and names `audit-journal.py append` as the sanctioned writer; the plugin's own journal writer runs as a script and is unaffected. The module docstring gains the journal arm and states the remaining gap: a journal write through an interpreter call (python3 -c open(...,'a')) is not seen, because the interpreter arm reads only source-extension paths.\ntest_hooks.py: b10 loses its today/contradicts marks and keeps decided; KNOWN_DIVERGENCE is now (g06,). Existing case sm12, which asserted a shell write to a journal file was allowed, now points at docs/audit/notes/2026-09.md, keeping its purpose (an exempt non-manifest path stays writable when the manifest check runs first).\nTests: stage sj in test_guard_secrets_read.py - deny sj1 (every tier, message names the journal, append-only and the sanctioned writer), sj2 (no manifest: observe tier), sj3 (tee -a, sed -i), sj4 (subagent), sj5 (journal append chained with a source write: refused, slot untouched), sj6 (journal.dir moved); allow twins sj7 (cat), sj8 (wc -l <), sj9 (copy rows out), sj10 (docs/audit/notes.md), sj11 (audit-journal.py append), sj12 (old default path after the journal moved). Red-first proved through the helper at HEAD 51032cbc: test_guard_secrets_read 10 of 441 failing (sj deny cases), test_hooks 3 of 130 (hk1 b10, hk2 journal-write, hk4 b10). Over-fire mutation in a scratch copy turned sj9, sj10, sj12 red. Suites 441/441 and 130/130; ruff and house lints clean.",
+        "descriptive": "Appending to the audit journal from a shell command is now refused at every tier, the same way editing it is, with a message naming the journal's own writer, and such a command never uses up the session's one free file."
       },
       "startedAt": "2026-10-07T01:08:51Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T01:32:48Z",
+      "verifiedBy": [
+        "sj1",
+        "sj2",
+        "sj3",
+        "sj4",
+        "sj5",
+        "sj6",
+        "sj7",
+        "sj9",
+        "sj11",
+        "sj12"
+      ],
       "bugId": "BUG-18-4gh",
       "testEvidence": {
         "runId": "2026-10-07T01:32:28Z.ed1ee1",
         "status": "passed",
         "at": "2026-10-07T01:32:28Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "25dd7c0d",
+        "at": "2026-10-07T01:32:48Z",
+        "basis": "orchestrator check: BUG-18-4gh's expected behaviour holds at every tier, b10's divergence mark removed, the refusal precedes the slot logic, red-first proved with allow twins; the interpreter-call gap is stated, not hidden"
       }
     },
     {
@@ -412,7 +429,11 @@
       "files": [
         "plugins/audit/hooks/guard-bash-writes.py",
         "plugins/audit/tests/test_guard_bash_writes.py",
-        "plugins/audit/hooks/_config.py"
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "SECURITY.md",
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/tests/test_require_plan.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -448,7 +469,12 @@
       },
       "startedAt": "2026-10-07T01:08:51Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T01:43:55Z.b34c60",
+        "status": "passed",
+        "at": "2026-10-07T01:43:55Z"
+      }
     },
     {
       "id": "P108.8-4gh",
