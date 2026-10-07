@@ -1,7 +1,7 @@
 {
   "id": "P114",
   "title": "status names each locked phase's own remaining work and the copy it read",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "every UNFINISHED line in /audit:status counts the ready tasks of its own phase, read from the copy that holds that phase live, says which copy that was, and is silent for a phase with no ready task of its own",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "fe76a5557946f6095033af04d6978eabc598449d",
   "branch": "audit/p114-status-names-each-locked-phase",
-  "mergedAt": null,
+  "mergedAt": "2026-10-07T08:30:09Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -390,5 +390,6 @@
     "runId": "2026-10-07T08:28:53Z.02456b",
     "status": "passed",
     "at": "2026-10-07T08:28:53Z"
-  }
+  },
+  "mergedHead": "b9b3ac8a4f18fcb0e6e18c39cabd4af7b8354a35"
 }
