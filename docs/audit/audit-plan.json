@@ -684,7 +684,7 @@
     {
       "id": "P108",
       "title": "the same operation gets the same verdict, and a refusal says what to do",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P108.json"
     },
     {
