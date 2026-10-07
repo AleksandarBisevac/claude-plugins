@@ -57,3 +57,9 @@ TODO.local.md
 
 # skill-creator eval workspaces: agents' outputs and benchmarks, not repo content
 .claude/skills/before-you-claim-workspace/
+
+# `claude plugin eval` writes each run's aggregate result, transcripts and report under
+# <plugin>/evals/results/<timestamp>/. A run is a measurement taken on one machine with one
+# account; the published figures and the commands that re-derive them live in
+# docs/research/, and the raw records in the private repository.
+plugins/audit/evals/results/
