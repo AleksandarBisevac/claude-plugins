@@ -125,6 +125,91 @@ def _vitest_cases(check):
           and (none or {}).get("failed") == 0)
 
 
+# What jest 30.5.2 printed (node v22, `jest --ci`, 2026-10-07) for one failing
+# `node:assert` call of each shape, an `expect` and a body that threw - each
+# bullet's first line verbatim, the code frames dropped. jest formats a
+# `node:assert` failure the way it formats a matcher: a hint naming the call,
+# never an `AssertionError` line.
+_JEST_NODE_ASSERT = (
+    "FAIL ./a.test.js\n"
+    "  ● m › eq\n\n    assert.equal(received, expected)\n\n"
+    "    Expected value to be equal to:\n      2\n    Received:\n      1\n\n"
+    "  ● m › ok\n\n    assert(received)\n\n"
+    "  ● m › deep\n\n    assert.deepStrictEqual(received, expected)\n\n"
+    "  ● m › strict\n\n    assert.strictEqual(received, expected)\n\n"
+    "  ● m › fail\n\n    assert.fail(received, expected)\n\n"
+    "  ● m › throws\n\n    assert.throws(function)\n\n"
+    "  ● m › exp\n\n    expect(received).toBe(expected) // Object.is equality\n\n"
+    "  ● m › boom\n\n    TypeError: boom\n\n"
+    "Test Suites: 1 failed, 1 total\n"
+    "Tests:       8 failed, 8 total\n"
+    "Snapshots:   0 total\n")
+
+
+def _node_assert_cases(check):
+    flags = dict((c.get("id"), c.get("assertion"))
+                 for c in M.failing_cases(_JEST_NODE_ASSERT))
+    calls = ("eq", "ok", "deep", "strict", "fail", "throws")
+    check("ru11 every `node:assert` hint jest prints - `assert(received)` and "
+          "`assert.<call>(...)` - sets the assertion flag, as the matcher hint "
+          "does, and the tally counts each: %r %r"
+          % (flags, M.read_tally(_JEST_NODE_ASSERT)),
+          all(flags.get(c) is True for c in calls) and flags.get("exp") is True
+          and (M.read_tally(_JEST_NODE_ASSERT) or {}).get("assertions") == 7)
+    # The over-fire direction: a reader that took any bullet as an assertion
+    # passes ru11 and fails here.
+    check("ru12 THE ALLOW CASE for ru11: the body that threw (`TypeError: "
+          "boom`) is still not an assertion, and neither is a line that merely "
+          "opens with the word: %r %r"
+          % (flags.get("boom"), M._JEST_ASSERTION.match("assertion failed")),
+          flags.get("boom") is False
+          and M._JEST_ASSERTION.match("assertion failed") is None
+          and M._JEST_ASSERTION.match("asserted(x)") is None)
+
+
+# What jest 30.5.2 printed under FORCE_COLOR=1 (2026-10-07) for one failing
+# `expect`, and for a file whose one test passed, blank lines and code frames
+# dropped - every escape verbatim.
+_JEST_COLOUR_RED = (
+    "\x1b[0m\x1b[7m\x1b[1m\x1b[31m FAIL \x1b[39m\x1b[22m\x1b[27m\x1b[0m "
+    "\x1b[2m./\x1b[22m\x1b[1md.test.js\x1b[22m\n"
+    "\x1b[1m\x1b[31m  \x1b[1m● \x1b[22m\x1b[1mm › adds\x1b[39m\x1b[22m\n\n"
+    "    \x1b[2mexpect(\x1b[22m\x1b[31mreceived\x1b[39m\x1b[2m).\x1b[22mtoBe"
+    "\x1b[2m(\x1b[22m\x1b[32mexpected\x1b[39m\x1b[2m) // Object.is equality"
+    "\x1b[22m\n\n"
+    "\x1b[1mTest Suites: \x1b[22m\x1b[1m\x1b[31m1 failed\x1b[39m\x1b[22m, 1 total\n"
+    "\x1b[1mTests:       \x1b[22m\x1b[1m\x1b[31m1 failed\x1b[39m\x1b[22m, 1 total\n"
+    "\x1b[1mSnapshots:   \x1b[22m0 total\n")
+_JEST_COLOUR_GREEN = (
+    "\x1b[1mTest Suites: \x1b[22m\x1b[1m\x1b[32m1 passed\x1b[39m\x1b[22m, 1 total\n"
+    "\x1b[1mTests:       \x1b[22m\x1b[1m\x1b[32m1 passed\x1b[39m\x1b[22m, 1 total\n"
+    "\x1b[1mSnapshots:   \x1b[22m0 total\n")
+
+
+def _colour_cases(check):
+    red, green = M.read_tally(_JEST_COLOUR_RED), M.read_tally(_JEST_COLOUR_GREEN)
+    cases = [(c.get("suite"), c.get("label"), c.get("assertion"))
+             for c in M.failing_cases(_JEST_COLOUR_RED)]
+    check("ru13 jest's coloured summary line is read: a failing `expect` is a "
+          "jest tally counting one case and one assertion, its case named under "
+          "its suite, and a passing file's coloured line counts its case - "
+          "neither reads as no tally: %r %r %r" % (red, green, cases),
+          (red or {}).get("runner") == "jest" and red.get("collected") == 1
+          and red.get("assertions") == 1
+          and (green or {}).get("runner") == "jest"
+          and green.get("collected") == 1 and green.get("failed") == 0
+          and cases == [("./d.test.js", "m › adds", True)])
+    plain = M.plain_text(_JEST_COLOUR_RED) if hasattr(M, "plain_text") else None
+    check("ru14 THE ALLOW CASE for ru13: the same output without its escapes "
+          "reads identically, and stripping leaves no escape and no other "
+          "character behind: %r" % (plain,),
+          plain is not None and "\x1b" not in plain
+          and M.read_tally(plain) == red
+          and M.failing_cases(plain) == M.failing_cases(_JEST_COLOUR_RED)
+          and "Tests:       1 failed, 1 total" in plain
+          and " FAIL  ./d.test.js" in plain)
+
+
 def _layer_cases(check):
     with open(M.__file__, encoding="utf-8") as fh:
         tree = ast.parse(fh.read())
@@ -144,6 +229,8 @@ def _cases(check):
     _summary_cases(check)
     _jest_cases(check)
     _vitest_cases(check)
+    _node_assert_cases(check)
+    _colour_cases(check)
     _layer_cases(check)
 
 

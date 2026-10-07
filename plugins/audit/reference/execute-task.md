@@ -144,8 +144,9 @@ not need to.
      dependency directories (`node_modules` at any depth, `.venv`) entry by entry, named
      on the output's `dependencies:` line. Its leaks are named, not closed: a link landing
      in the shared tree outside every dependency directory (a workspace package, an
-     editable install) is refused by name by `workspace_links()` with no run made, so
-     the answer is `could-not-prove`; a runner's write into a linked entry lands in the
+     editable install) is found by `workspace_links()`, the directory holding it is
+     skipped and named on the `dependencies:` line, and the run goes ahead without it;
+     a runner's write into a linked entry lands in the
      source checkout unwatched; the user's `~/.npmrc` and an untracked project one never
      reach the fresh home. Any other untracked dependency still comes back
      `could-not-prove`. The runners whose tally the helper reads are `house`, `pytest`,

@@ -17,9 +17,10 @@ limits, and that module sits above layer 1, so they are still the gate's.
 AND WHAT `red` READS. `red` asks a narrower question than the gate - did a NAMED
 case fail an ASSERTION - so its tally and case readers (`TALLY_READERS`,
 `CASE_READERS`, `read_tally`, `failing_cases`) are a section of their own. The
-house harness, pytest and unittest are read by the patterns `red` always used;
-jest and vitest are read through this module's own summary and failure readers,
-each case carrying the per-case `assertion` flag. Mocha and playwright have no
+house harness, pytest and unittest have readers of their own in that section,
+and pytest's is not the summary row the gate counts by; jest and vitest are
+read through this module's own summary and failure readers, each case carrying
+the per-case `assertion` flag. Mocha and playwright have no
 row there: what each prints under a failure has not been recorded, so which
 of their failures is an assertion cannot be read.
 
@@ -66,8 +67,20 @@ _output.install_path()
 _SUMMARY_PAIR = re.compile(r"(\d+) ([a-z]+)")
 # One terminal control sequence of any kind - a colour, and also the cursor
 # moves a live reporter prints before it rewrites a line. `_ANSI` further down
-# is the narrower colour-only reading jest's header needs.
+# is the narrower colour-only reading `run-test-gate` strips its own text with.
 _CSI_TEXT = "\x1b\\[[0-9;]*[A-Za-z]"
+_CSI = re.compile(_CSI_TEXT)
+
+
+def plain_text(text):
+    """`text` with every terminal control sequence removed, None read as "".
+
+    A runner forced into colour through a pipe (FORCE_COLOR) wraps its summary
+    words and its failure bullets in escapes, and every reader below is written
+    against the plain text. So the entry points `red` reads through -
+    `read_tally`, `failing_cases` and `jest_failures` - strip once, here, and
+    the readers they call never strip again."""
+    return _CSI.sub("", text or "")
 # The phrasing both vitest and pytest use for "there were none", which carries no
 # `N word` pair at all and would otherwise read as a runner this cannot count.
 _NO_TESTS = re.compile(r"\bno tests\b")
@@ -200,7 +213,7 @@ _FAILURE_READERS = {
 JEST_EXEC_ERROR = "Test suite failed to run"
 # The header jest prints per suite. Colour, where a caller forces it through a
 # pipe, wraps both the word and the path's two halves in escapes, which is why
-# the text is stripped of them before this reads it.
+# the text is stripped of them (`plain_text`) before this reads it.
 _JEST_SUITE_HEADER = re.compile(r"^[ \t]*(?:PASS|FAIL)[ \t]+(\S+)")
 _ANSI = re.compile("\x1b\\[[0-9;]*m")
 
@@ -214,14 +227,14 @@ def jest_failures(text):
     ordinary assertion bullet, whose title already names the check.
     """
     return [(title, suite, first if title == JEST_EXEC_ERROR else None)
-            for title, suite, first in _jest_blocks(text)]
+            for title, suite, first in _jest_blocks(plain_text(text))]
 
 
 def _jest_blocks(text):
     """`[(title, suite, first)]` - each jest failure bullet, the path on the
     nearest `PASS`/`FAIL` header above it (None when none was printed), and
-    the first non-blank line under it, stripped."""
-    lines = _ANSI.sub("", text or "").splitlines()
+    the first non-blank line under it, stripped. `text` is already plain."""
+    lines = text.splitlines()
     out, suite = [], None
     for i, line in enumerate(lines):
         header = _JEST_SUITE_HEADER.match(line)
@@ -338,11 +351,14 @@ def _unittest_cases(text):
 # A suite that never ran a test is named with an EMPTY chain and no id: the tally
 # counts it as a failure no case ran, and it never sets the assertion flag.
 #
-# The first line under a jest bullet says what failed: the matcher hint
-# (`expect(received).toBe(expected)`) for an `expect`, an `AssertionError` line
-# for `node:assert`, and the exception itself for a body that threw - which is
-# the one of the three that is not an assertion.
-_JEST_ASSERTION = re.compile(r"^(?:expect[.(]|AssertionError\b)")
+# The first line under a jest bullet says what failed: a matcher hint
+# (`expect(received).toBe(expected)`) for an `expect`, a hint naming the call
+# (`assert(received)`, `assert.equal(received, expected)`,
+# `assert.throws(function)`) for `node:assert`, and the exception itself
+# (`TypeError: boom`) for a body that threw - which is the one of the three
+# that is not an assertion. jest prints no `AssertionError` line for a
+# `node:assert` failure; it formats one as it formats a matcher.
+_JEST_ASSERTION = re.compile(r"^(?:expect[.(]|assert(?:\.\w+)?\()")
 _JEST_CHAIN = " › "
 # vitest prints chai's `AssertionError` for an `expect` failure and for
 # `node:assert` alike, on the line under the case's `FAIL`, and the exception
@@ -384,7 +400,7 @@ def _jest_cases(text):
 
 
 def _vitest_cases(text):
-    lines = _ANSI.sub("", text or "").splitlines()
+    lines = text.splitlines()
     out = []
     for i, line in enumerate(lines):
         hit = _VITEST_CASE_LINE.match(line)
@@ -423,10 +439,11 @@ def failing_cases(text, runner=None):
     `assertion` is True only where the runner says the case failed an assertion:
     a house `FAIL` line that is not an escape, a pytest `FAILED` whose reason is
     an `assert` or an `AssertionError`, a unittest `FAIL:`, a jest bullet whose
-    first line is a matcher hint or an `AssertionError`, a vitest `FAIL` line
+    first line is a matcher hint or a `node:assert` hint, a vitest `FAIL` line
     whose next line is an `AssertionError`. A pytest `ERROR`, a pytest body
     exception, a unittest `ERROR:`, a jest or vitest body that threw and a jest
     or vitest suite that failed to run are named with it False."""
+    text = plain_text(text)
     if runner is None:
         tally = read_tally(text)
         runner = tally["runner"] if tally is not None else None
@@ -543,7 +560,9 @@ def read_tally(text, cmd=None):
     between runners says which ran: a merged pipe puts a test's buffered
     stdout after the runner's own stderr. So the command decides when it names
     a runner (`command_runner`), and otherwise the answer is
-    `{"runner": None, "mixed": [...]}`, which no reader reads cases from."""
+    `{"runner": None, "mixed": [...]}`, which no reader reads cases from.
+    The text is read without its terminal escapes (`plain_text`)."""
+    text = plain_text(text)
     tallies = [t for t in (reader(text) for _name, reader in TALLY_READERS)
                if t is not None]
     if not tallies:

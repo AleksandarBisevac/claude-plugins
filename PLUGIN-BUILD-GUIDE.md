@@ -400,7 +400,7 @@ L7:
   gen-demo-usage -> _claude_home, _demo_cast, _loader, _output
   import-evidence -> _claude_home, _evidence_io, _journal_io, _loader, _manifest_io, _output, _panel_write
   manage-worktrees -> _branch, _claude_home, _manifest_io, _output, _worktrees
-  materialize-proposal -> _manifest_io, _output, _proposals, _warning_groups
+  materialize-proposal -> _claude_home, _manifest_io, _output, _proposals, _warning_groups
   merge-manifest -> _claude_home, _id_refs, _id_shape, _locks, _manifest_io, _manifest_merge, _manifest_rules, _merge_install, _output
   migrate-json-encoding -> _claude_home, _manifest_io, _manifest_rules, _output, _panel_write
   migrate-manifest -> _id_shape, _manifest_io, _manifest_rules, _output
@@ -4083,10 +4083,15 @@ module's objects.
 
 **It also holds what `red` reads** — `TALLY_READERS`, `CASE_READERS`, `read_tally` and
 `failing_cases`, the narrower question of whether a NAMED case failed an ASSERTION. The house
-harness, pytest and unittest are read by the patterns `red` always used, moved unchanged; jest and
-vitest are read through this module's own summary and failure readers, each case carrying its
-`suite` path, its title `chain` and an `assertion` flag that a matcher hint or an `AssertionError`
-sets and a thrown exception or a suite that failed to run never does. A suite that failed to run
+harness, pytest and unittest have tally and case readers of their own there - pytest's is not the
+gate's summary row; jest and vitest are read through this module's own summary and failure
+readers, each case carrying its `suite` path, its title `chain` and an `assertion` flag. Under
+jest the flag is set by the first line under the bullet: a matcher hint
+(`expect(received).toBe(expected)`) or the hint jest prints for a `node:assert` call
+(`assert(received)`, `assert.strictEqual(received, expected)`), never an `AssertionError` line;
+under vitest by chai's `AssertionError`. A thrown exception or a suite that failed to run never
+sets it. `read_tally`, `failing_cases` and `jest_failures` strip every terminal escape once, on
+entry (`plain_text`), so a run forced into colour (`FORCE_COLOR`) reads as it does without. A suite that failed to run
 counts as a failure no case ran, so a run whose only failure is one is a collection error, never a
 red. Mocha and playwright have no row: what they print under a failure has not been recorded.
 The names `stamp-verification.py` keeps for them are this module's objects.
@@ -4154,13 +4159,18 @@ the root - an option string such as `NODE_OPTIONS=--require …/setup.js` - is k
 not a path to rewrite, and named in the basis as `kept, naming the shared root`, because a runner
 reads the path inside it. The throwaway holds only tracked files, so `dependency_plan` asks git
 for the ignored directories of `--deps-from` (`--project` by default) and `link_dependencies`
-links each `node_modules`, at any depth, and each `.venv` whose parent exists at HEAD into it
+links each `node_modules`, at any depth, and each `.venv` whose parent exists at HEAD and which
+holds no link into the tree into it
 entry by entry, again after every reset; a real directory of links rather than one link to the
 whole directory, so a new entry a runner makes there stays in the throwaway, and `.cache`, `.vite`
 and `.vite-temp` are never linked. The leaks that link opens are named, not closed: a link or
 editable-install path landing in the shared tree outside every dependency directory (a workspace
-package) would let HEAD's run read the fix, so `workspace_links()` refuses it by name, no run is
-made and the answer is `could-not-prove`; a write a runner makes INTO a linked entry lands in the
+package) would let HEAD's run read the fix, so the directory holding it is not linked - its reason,
+naming the entry `workspace_links()` found, joins the skipped list the basis prints - and the run
+is made without it: a command that never needed that directory (a unittest run by the system
+python beside an in-repo `.venv`) still proves, and one that did fails for want of it. The scan
+lists only top-level and `@scope` entries and the `.pth` and `__editable__` files directly under a
+site-packages directory, and stops at the deadline; a write a runner makes INTO a linked entry lands in the
 source checkout and nothing watches it; and the user's `~/.npmrc` and an untracked project one
 never reach the run's fresh home (a tracked one arrives with HEAD), with `NPM_CONFIG_USERCONFIG`
 dropped from the environment. Every basis names what was linked, from where, what was skipped and

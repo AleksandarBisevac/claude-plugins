@@ -89,20 +89,22 @@ own; a case of the implementing work is what makes each paragraph true, and
 until one exists the paragraph is a plan. Nothing enforces that order; whoever
 builds a part rewrites its paragraph into the present tense in the same change.
 
-(1) ONE READER OF RUNNER OUTPUT, AT LAYER 1. `scripts/governance/_runner_output.py`
-will own every reading of what a test runner printed, imported by both entry
-points and by nothing below them; it reaches nothing but `_output`, which is
-what puts it at layer 1. MOVED, NOT COPIED, from `run-test-gate.py`:
-`_SUMMARY_READERS`, `_SUMMARY_PAIR`, `_NO_TESTS`, `summary_reader`,
-`summary_readers`, `summary_count`, `_FAILURE_READERS`, `_ANSI`,
-`_JEST_SUITE_HEADER`, `JEST_EXEC_ERROR`, `jest_failures` and `_VITEST_FAIL_LINE`;
-and from here the tally and case readers (`TALLY_READERS`, `CASE_READERS` and
-their regexes). `failing_suites` and its path filters stay in `run-test-gate`,
-because they read `_evidence_io`'s limits and that module sits above layer 1.
-The two pytest summary patterns become one: the gate's accepts a duration in
-`ms` and this file's did not, and the union is taken, since a line spelled
-either way is the same runner's summary. Moving a reader changes no verdict
-of the gate; its existing cases are what show that.
+(1) ONE READER OF RUNNER OUTPUT, AT LAYER 1 - BUILT.
+`scripts/governance/_runner_output.py` owns every reading of what a test runner
+printed, imported by both entry points and by nothing below them; it reaches
+nothing but `_output`, which is what puts it at layer 1. Moved there, not
+copied, from `run-test-gate.py`: `_SUMMARY_READERS`, `_SUMMARY_PAIR`,
+`_NO_TESTS`, `summary_reader`, `summary_readers`, `summary_count`,
+`_FAILURE_READERS`, `_ANSI`, `_JEST_SUITE_HEADER`, `JEST_EXEC_ERROR`,
+`jest_failures` and `_VITEST_FAIL_LINE`; and from here the tally and case
+readers (`TALLY_READERS`, `CASE_READERS` and their regexes). `failing_suites`
+and its path filters are still `run-test-gate`'s, because they read
+`_evidence_io`'s limits and that module sits above layer 1. The gate's pytest
+summary row and `red`'s pytest tally are two patterns, not one (the end of the
+next paragraph says why). `read_tally`, `failing_cases` and `jest_failures`
+strip every terminal escape from the text once, on entry (`plain_text`), so a
+runner forced into colour through a pipe (`FORCE_COLOR`) reads as it does
+without it.
 
 THE PER-CASE ASSERTION FLAG - BUILT. `_runner_output` now holds the tally and
 case readers, and each jest or vitest case it reads carries `assertion`, true
@@ -111,10 +113,13 @@ does for the other runners. Read off this output, observed on 2026-10-06 (the
 versions are in the history below):
   jest   - a bullet `● outer › inner › adds` under a `FAIL <path>` header. The
            first non-blank line under it is the matcher hint
-           (`expect(received).toBe(expected)`) for an `expect` failure, an
-           `AssertionError` line for `node:assert`, and the exception
-           (`TypeError: boom`) for a body that threw. Only the first two set
-           the flag. `● Test suite failed to run` never sets it: the suite
+           (`expect(received).toBe(expected)`) for an `expect` failure, a hint
+           naming the call (`assert(received)`,
+           `assert.strictEqual(received, expected)`,
+           `assert.throws(function)`; jest 30.5.2 on 2026-10-07) for
+           `node:assert` - never an `AssertionError` line - and the
+           exception (`TypeError: boom`) for a body that threw. Only the
+           first two set the flag. `● Test suite failed to run` never sets it: the suite
            did not load, and its cause is the line under the heading.
   vitest - a `FAIL  <path> > outer > inner > adds` line under `Failed Tests`,
            followed by the error line: `AssertionError: ...` for an `expect`
@@ -215,7 +220,8 @@ throwaway holds tracked files only, so a suite that imports from
 git, in `--deps-from`, for its ignored directories
 (`ls-files --others --ignored --exclude-standard --directory`) and takes each
 named `node_modules` or `.venv`, at any depth, whose parent directory exists
-at HEAD (`dependency_plan`). A dependency directory is reproduced in the
+at HEAD and holds no link into the tree (`dependency_plan`). A dependency
+directory is reproduced in the
 throwaway as a real directory of per-entry symlinks into the source, rebuilt
 after each reset, and never as one link to the whole directory: the cache
 entries a runner writes (`.cache`; `.vite`, where vitest 4.1.10 was seen on
@@ -230,10 +236,19 @@ THE LEAKS A LINK OPENS, each named and none left implicit:
     the project but outside every dependency directory (an npm or pnpm
     workspace package, a `pip install -e` path in a `.pth` file or an
     editable finder) - would load the SHARED tree's implementation into a
-    run that is meant to see HEAD's. It is refused by name before any run is
-    made (`workspace_links`), and the run is `could-not-prove`. It is not re-pointed at the throwaway's own copy of the
-    package, because that copy lacks the package's own ignored build output,
-    and the run would then fail for a reason that is not the test's.
+    run that is meant to see HEAD's. The directory holding one is not linked
+    (`workspace_links`): its reason, naming the entry, goes into the plan's
+    skipped list, which the basis prints, and the run is made without it. A
+    command that never needed the directory - a unittest run by the system
+    python beside an in-repo `.venv` - still proves; one that did fails for
+    want of it, and the basis says which directory was left out and why. The
+    scan reads only the entries that can be such a link - each top-level
+    entry and each entry of a top-level `@scope` directory, and the `.pth` and
+    `__editable__` files directly under a site-packages directory - never a
+    walk of every installed file, and it stops at the deadline. The
+    directory is not re-pointed at the throwaway's own copy of the package,
+    because that copy lacks the package's own ignored build output, and the
+    run would then fail for a reason that is not the test's.
   - CACHES WRITTEN BACK THROUGH A LINK. The cache directories above stay in
     the throwaway; jest's `cacheDirectory` follows `TMPDIR` (its
     `--showConfig` said so on 2026-10-06), which is the per-run directory
@@ -760,7 +775,7 @@ def _js_none_found(head, tally):
     matched" the expected answer rather than a misnamed path."""
     if head["code"] != 1 or not head.get("absent"):
         return False
-    if not _JS_NO_TESTS.search(_runner_output._ANSI.sub("", head["text"])):
+    if not _JS_NO_TESTS.search(_runner_output.plain_text(head["text"])):
         return False
     return tally is None or (tally["runner"] is not None and not tally["collected"]
                              and not tally["failed"])
@@ -1742,11 +1757,61 @@ def _editable_paths(path):
     return [p for p in found if os.path.isabs(p)]
 
 
-def workspace_links(source, rels, roots):
-    """`[(entry, target)]` - every link, and every editable-install path, under
-    the dependency directories `rels` of `source` that lands inside `roots` but
-    outside every one of those directories: a workspace package, which would
-    load the shared tree's implementation into a run meant to see HEAD's."""
+def _listing(path):
+    """The sorted entry names of directory `path`, or [] when it is none."""
+    try:
+        return sorted(os.listdir(path))
+    except OSError:
+        return []
+
+
+def _site_packages(top):
+    """Every site-packages directory a virtualenv at `top` can hold:
+    `lib/python<X.Y>/site-packages` (and `lib64`) on POSIX,
+    `Lib/site-packages` on Windows. Each directory once: on a filesystem that
+    ignores case, `lib` and `Lib` are one directory."""
+    out, seen = [], set()
+    for lib in ("lib", "lib64", "Lib"):
+        base = os.path.join(top, lib)
+        for site in [os.path.join(base, v, "site-packages") for v in _listing(base)
+                     if v.startswith("python")] + [os.path.join(base, "site-packages")]:
+            if not os.path.isdir(site) or os.path.islink(site):
+                continue
+            st = os.stat(site)
+            if (st.st_dev, st.st_ino) not in seen:
+                seen.add((st.st_dev, st.st_ino))
+                out.append(site)
+    return out
+
+
+def _link_candidates(top):
+    """`[(path, kind)]` - the only entries under the dependency directory `top`
+    that can carry a link into the tree: each top-level entry and each entry of
+    a top-level `@scope` directory (where npm, pnpm and yarn put a workspace
+    package's link), as `link`; and each `.pth` or `__editable__` file directly
+    under a site-packages directory (where `pip install -e` leaves its path),
+    as `editable`. Nothing inside a package is opened, which is what keeps the
+    scan to a listing per directory rather than a walk of every installed file."""
+    out = []
+    for name in _listing(top):
+        full = os.path.join(top, name)
+        out.append((full, "link"))
+        if name.startswith("@") and os.path.isdir(full) and not os.path.islink(full):
+            out.extend((os.path.join(full, n), "link") for n in _listing(full))
+    for site in _site_packages(top):
+        out.extend((os.path.join(site, n), "editable") for n in _listing(site)
+                   if n.endswith(".pth") or n.startswith("__editable__"))
+    return out
+
+
+def workspace_links(source, rels, roots, deadline):
+    """`(links, problem)` - `links` is `[(entry, target)]`, every link and every
+    editable-install path among `_link_candidates` of the dependency
+    directories `rels` of `source` that lands inside `roots` but outside every
+    one of those directories: a workspace package, which would load the shared
+    tree's implementation into a run meant to see HEAD's. The scan stops when
+    `deadline` passes, and the answer is then `(None, problem)`, never a
+    partial list read as complete."""
     deps = [os.path.realpath(os.path.join(source, *r.split("/"))) for r in rels]
 
     def into_tree(target):
@@ -1756,17 +1821,17 @@ def workspace_links(source, rels, roots):
     out = []
     for rel in rels:
         top = os.path.join(source, *rel.split("/"))
-        for base, dirs, files in os.walk(top):
-            for name in sorted(dirs + files):
-                full = os.path.join(base, name)
-                shown = "%s/%s" % (rel, os.path.relpath(full, top).replace(os.sep, "/"))
-                if os.path.islink(full):
-                    if into_tree(full):
-                        out.append((shown, os.path.realpath(full)))
-                elif name.endswith(".pth") or name.startswith("__editable__"):
-                    out.extend((shown, p) for p in _editable_paths(full)
-                               if into_tree(p))
-    return out
+        for full, kind in _link_candidates(top):
+            if _left(deadline) < 1:
+                return None, ("the run timed out: no time was left of the deadline "
+                              "to scan %s for links into the tree" % (rel,))
+            shown = "%s/%s" % (rel, os.path.relpath(full, top).replace(os.sep, "/"))
+            if os.path.islink(full):
+                if into_tree(full):
+                    out.append((shown, os.path.realpath(full)))
+            elif kind == "editable" and os.path.isfile(full):
+                out.extend((shown, p) for p in _editable_paths(full) if into_tree(p))
+    return out, None
 
 
 def _npmrc_state(root, deadline):
@@ -1786,9 +1851,12 @@ def _npmrc_state(root, deadline):
 
 def dependency_plan(source, root, deadline):
     """`(plan, problem)` - which ignored dependency directories of `source` are
-    linked into a throwaway of `root`, which are skipped and why, which
-    workspace links refuse the run, and what becomes of each `.npmrc`. A
-    directory is linked only where its parent exists at `root`'s HEAD."""
+    linked into a throwaway of `root`, which are skipped and why, and what
+    becomes of each `.npmrc`. A directory is linked only where its parent
+    exists at `root`'s HEAD and no entry of it links into the tree
+    (`workspace_links`): such a directory is skipped, the entry named as its
+    reason, and the run proceeds without it - a command that never needed it
+    still proves, and one that did fails for want of it, which the basis says."""
     code, top = _git(source, ["rev-parse", "--show-toplevel"],
                      timeout=max(1, _left(deadline)))
     if code != 0:
@@ -1806,13 +1874,22 @@ def dependency_plan(source, root, deadline):
         code, text = _git(root, ["ls-tree", "-z", "--name-only", "HEAD", "--"]
                           + parents, timeout=max(1, _left(deadline)), strip=False)
         at_head = set(p for p in text.split("\0") if p) if code == 0 else set()
-    linked = [r for r in rels if posixpath.dirname(r) in at_head | set([""])]
+    placed = [r for r in rels if posixpath.dirname(r) in at_head | set([""])]
+    skipped = [(r, "its parent directory is not at HEAD")
+               for r in rels if r not in placed]
     roots = sorted(set((top, os.path.realpath(top), root, os.path.realpath(root))))
-    return {"source": top, "linked": linked,
-            "skipped": [(r, "its parent directory is not at HEAD")
-                        for r in rels if r not in linked],
-            "refused": workspace_links(top, linked, roots),
-            "npmrc": _npmrc_state(root, deadline)}, None
+    links, problem = workspace_links(top, placed, roots, deadline)
+    if problem is not None:
+        return None, problem
+    into = {}
+    for entry, target in links:
+        owner = max((r for r in placed if entry.startswith(r + "/")), key=len)
+        into.setdefault(owner, []).append("%s -> %s" % (entry, target))
+    skipped += [(r, "it holds a link into the shared tree, through which HEAD's "
+                    "run would read the working tree's implementation: %s"
+                    % ("; ".join(into[r]),)) for r in placed if r in into]
+    return {"source": top, "linked": [r for r in placed if r not in into],
+            "skipped": skipped, "npmrc": _npmrc_state(root, deadline)}, None
 
 
 def link_dependencies(path, plan):
@@ -1834,16 +1911,6 @@ def link_dependencies(path, plan):
         except OSError as exc:
             return "could not link %s into the throwaway: %s" % (rel, exc)
     return None
-
-
-def refused_links_problem(plan):
-    """The run's problem when a workspace link refuses it, or None."""
-    if not plan or not plan["refused"]:
-        return None
-    return ("a dependency link lands in the shared tree outside every dependency "
-            "directory - a workspace package, through which HEAD's run would read "
-            "the working tree's implementation - so it is refused and no run is "
-            "made: %s" % ("; ".join("%s -> %s" % pair for pair in plan["refused"]),))
 
 
 def deps_clause(plan):
@@ -2431,10 +2498,7 @@ def run_red(args, cmd, out):
     previous = _arm()
     try:
         try:
-            run["problem"] = refused_links_problem(deps)
-            present = set()
-            if run["problem"] is None:
-                present, run["problem"] = _at_head(root, scope["declared"], deadline)
+            present, run["problem"] = _at_head(root, scope["declared"], deadline)
             if run["problem"] is None:
                 state["new"] = sorted(set(scope["tests"]) - present)
                 # jest and vitest fail an empty suite, so a new file of theirs
@@ -2497,7 +2561,6 @@ def run_red(args, cmd, out):
                "leftovers": leftovers,
                "dependencies": {"source": deps["source"], "linked": deps["linked"],
                                 "skipped": [list(s) for s in deps["skipped"]],
-                                "refused": [list(r) for r in deps["refused"]],
                                 "npmrc": deps["npmrc"]},
                "baseline": {"stubbed": [rel for rel in state["new"]
                                         if rel not in state["absent"]],

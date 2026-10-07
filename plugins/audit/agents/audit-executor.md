@@ -117,8 +117,9 @@ Hard rules (non-negotiable):
   linked or skipped and what became of each `.npmrc`. Each leak that link opens is
   named, not closed: a link landing in the shared tree outside every dependency
   directory (a workspace package, an editable install) would let HEAD's run read the
-  fix, so `workspace_links()` in `stamp-verification.py` refuses it by name, no run is
-  made and the answer is `could-not-prove`; a write a runner makes INTO a linked entry
+  fix, so `workspace_links()` in `stamp-verification.py` finds it, the directory holding
+  it is skipped and named with its reason on the `dependencies:` line, and the run goes
+  ahead without that directory; a write a runner makes INTO a linked entry
   lands in the source checkout and nothing watches it; the user's `~/.npmrc` and an
   untracked project one never reach the run's fresh home, so a wrapper that needs a
   private registry fails there. Anything else untracked — generated files — still

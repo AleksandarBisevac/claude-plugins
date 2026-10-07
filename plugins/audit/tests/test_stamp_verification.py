@@ -3485,13 +3485,20 @@ def _deps_cases(check):
     code_w, payload_w = _red(root_w, man_w, cmd_w)
     basis_w = _deps_basis(payload_w)
     run_w = payload_w.get("run") or {}
-    check("sd2 a node_modules entry linking into the shared working tree (a "
-          "workspace package) is refused BY NAME and no run is made - HEAD's run "
-          "would read the fix through it: exit=%r head=%r exit-of-run=%r %s"
-          % (code_w, run_w.get("head"), run_w.get("exit"), basis_w[:600]),
-          code_w == M.E_CANNOT_PROVE and "node_modules/ws" in basis_w
-          and "workspace" in basis_w and run_w.get("head") is None
-          and run_w.get("exit") is None and run_w.get("fix") is None)
+    skipped_w = (payload_w.get("dependencies") or {}).get("skipped") or []
+    check("sd2 a node_modules holding an entry that links into the shared working "
+          "tree (a workspace package) is NOT LINKED, its reason naming the entry "
+          "in the skipped list the basis prints, and the run is still made - "
+          "here the runner lived in that node_modules, so the throwaway lacks it "
+          "and the answer is could-not-prove for that reason, not a refusal: "
+          "exit=%r skipped=%r head=%r %s"
+          % (code_w, skipped_w, run_w.get("head"), basis_w[:600]),
+          code_w == M.E_CANNOT_PROVE
+          and [s[0] for s in skipped_w] == ["node_modules"]
+          and "node_modules/ws" in skipped_w[0][1]
+          and "not linked: node_modules (" in basis_w
+          and run_w.get("head") is not None
+          and (payload_w.get("dependencies") or {}).get("linked") == [])
 
     root_s, man_s, cmd_s = _deps_repo("stamp-red-deps-st-", [("v is two", "v()", "2")])
     os.symlink(outside, os.path.join(root_s, "node_modules", "stored"))
@@ -3546,8 +3553,118 @@ def _deps_cases(check):
                   for s in (source, os.path.realpath(source))))
 
 
+# A unittest suite and an in-repo `.venv` git ignores, whose site-packages
+# holds an editable install's `.pth` - the shape `pip install -e .` leaves.
+_UNIT_HEAD = ("import os, sys, unittest\n"
+              "sys.path.insert(0, os.path.join(os.path.dirname("
+              "os.path.abspath(__file__)), '..', 'src'))\n"
+              "import mine\n\n\n"
+              "class Mine(unittest.TestCase):\n"
+              "    def test_v_is_set(self):\n"
+              "        self.assertTrue(mine.v >= 1)\n")
+_UNIT_NEW = _UNIT_HEAD + ("\n    def test_v_is_two(self):\n"
+                          "        self.assertEqual(mine.v, 2)\n")
+
+
+def _venv_repo(prefix, pth_target):
+    """`(root, man, cmd)` - HEAD at `v = 1` with a green unittest file, the
+    working tree at `v = 2` with a new case, and an ignored `.venv` whose
+    site-packages holds an editable `.pth` naming `pth_target`, which is
+    "<root>" for the repository itself."""
+    root = _seeded_repo(prefix)
+    os.makedirs(os.path.join(root, "tests"))
+    _write(os.path.join(root, ".gitignore"), ".venv/\n")
+    _write(os.path.join(root, "tests", "test_mine.py"), _UNIT_HEAD)
+    _git(root, "add", ".gitignore", "tests/test_mine.py")
+    _git(root, "commit", "-q", "-m", "tests")
+    _write(os.path.join(root, "src", "mine.py"), "v = 2\n")
+    _write(os.path.join(root, "tests", "test_mine.py"), _UNIT_NEW)
+    site = os.path.join(root, ".venv", "lib", "python3.12", "site-packages")
+    os.makedirs(site)
+    _write(os.path.join(site, "__editable__.proj-0.1.pth"),
+           pth_target.replace("<root>", root) + "\n")
+    manifest = json.loads(json.dumps(MANIFEST))
+    task = manifest["phases"][0]["tasks"][0]
+    task["files"] = ["src/mine.py", "tests/test_mine.py"]
+    task["tests"] = {"mode": "tdd", "add": ["tests/test_mine.py: test_v_is_two"]}
+    man = os.path.join(_harness.fixture_root(prefix + "man-"), "audit-plan.json")
+    _write(man, json.dumps(manifest))
+    return root, man, [sys.executable, "-m", "unittest", "-v", "tests.test_mine"]
+
+
+def _venv_cases(check):
+    root, man, cmd = _venv_repo("stamp-red-venv-in-", "<root>")
+    code, payload = _red(root, man, cmd)
+    deps = payload.get("dependencies") or {}
+    basis = _deps_basis(payload)
+    check("sd6 an in-repo .venv whose site-packages holds an editable `.pth` "
+          "naming the project, under a unittest command run by the system "
+          "python, still proves: the .venv is not linked, its reason naming the "
+          "`.pth`, and the run the command never needed it for is made: "
+          "exit=%r deps=%r %s" % (code, deps, basis[:600]),
+          code == M.E_PROVED and deps.get("linked") == []
+          and [s[0] for s in deps.get("skipped") or []] == [".venv"]
+          and "__editable__.proj-0.1.pth" in (deps.get("skipped") or [["", ""]])[0][1]
+          and "not linked: .venv (" in basis)
+    outside = _harness.fixture_root("stamp-red-venv-elsewhere-")
+    root_o, man_o, cmd_o = _venv_repo("stamp-red-venv-out-", outside)
+    code_o, payload_o = _red(root_o, man_o, cmd_o)
+    deps_o = payload_o.get("dependencies") or {}
+    check("sd7 THE ALLOW CASE for sd6: a .venv whose `.pth` names a path outside "
+          "the project is linked as before - the skip reads where an entry "
+          "lands, not that a `.pth` exists - and the red still proves: "
+          "exit=%r deps=%r" % (code_o, deps_o),
+          code_o == M.E_PROVED and deps_o.get("linked") == [".venv"]
+          and deps_o.get("skipped") == [])
+
+
+def _scan(source, rels, roots, deadline):
+    """`workspace_links` under the deadline, or the exception it raised named."""
+    try:
+        return M.workspace_links(source, rels, roots, deadline)
+    except Exception as exc:
+        return "raised %r" % (exc,)
+
+
+def _scan_cases(check):
+    root = _harness.fixture_root("stamp-scan-")
+    os.makedirs(os.path.join(root, "packages", "ws"))
+    nm = os.path.join(root, "node_modules")
+    os.makedirs(os.path.join(nm, "@scope"))
+    os.makedirs(os.path.join(nm, "pkg", "deep", "deeper"))
+    pkg = os.path.join(root, "packages", "ws")
+    os.symlink(pkg, os.path.join(nm, "ws"))
+    os.symlink(pkg, os.path.join(nm, "@scope", "ws"))
+    # Neither of these is an entry shape a workspace or an editable install
+    # leaves, so a scan bounded to those shapes does not open them.
+    os.symlink(pkg, os.path.join(nm, "pkg", "deep", "deeper", "inner"))
+    _write(os.path.join(nm, "pkg", "deep", "stray.pth"), pkg + "\n")
+    site = os.path.join(root, ".venv", "lib", "python3.12", "site-packages")
+    os.makedirs(os.path.join(site, "lib"))
+    _write(os.path.join(site, "__editable__.x-1.pth"), pkg + "\n")
+    _write(os.path.join(site, "lib", "nested.pth"), pkg + "\n")
+    roots = [root, os.path.realpath(root)]
+    got = _scan(root, ["node_modules", ".venv"], roots, time.time() + 60)
+    found = sorted(e for e, _t in got[0]) if isinstance(got, tuple) else got
+    check("sd8 the workspace-link scan reads only the entry shapes that can be "
+          "links: top-level and scoped entries, and `.pth` or `__editable__` "
+          "files directly under site-packages - a link deep inside a package and "
+          "a `.pth` outside site-packages are never opened: %r" % (found,),
+          found == [".venv/lib/python3.12/site-packages/__editable__.x-1.pth",
+                    "node_modules/@scope/ws", "node_modules/ws"]
+          and got[1] is None)
+    late = _scan(root, ["node_modules", ".venv"], roots, time.time() - 1)
+    check("sd9 THE ALLOW CASE for sd8, the bound in time: a scan started past "
+          "the deadline answers with a timeout problem and no list, and one "
+          "with time left (sd8) answers with no problem: %r" % (late,),
+          isinstance(late, tuple) and late[0] is None
+          and "timed out" in (late[1] or ""))
+
+
 def _cases(check):
     _harness.stage(check, "sd-deps", _deps_cases)
+    _harness.stage(check, "sd-venv", _venv_cases)
+    _harness.stage(check, "sd-scan", _scan_cases)
     _harness.stage(check, "sb-new-file", _new_file_cases)
     _harness.stage(check, "sb-none-found", _none_found_cases)
     _harness.stage(check, "sr-decisive", _decisive_cases)

@@ -22,7 +22,51 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P102-R1",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py dependency_plan, workspace_links, refused_links_problem",
+        "issue": "--deps-from now defaults to the project, so an editable install of the project in an in-repo virtualenv is read as a workspace link and the whole red run is refused before anything executes, even for a unittest command that never uses that environment; a run that proved before this phase now cannot prove.",
+        "resolution": "Skip a dependency directory that holds a link into the tree, recording the reason in the plan's skipped list that the deps clause prints, and run without it; a case with an editable install in an in-repo virtualenv and a system-python unittest command that still proves."
+      },
+      {
+        "id": "P102-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_runner_output.py jest assertion check; stamp-verification.py design note; PLUGIN-BUILD-GUIDE.md",
+        "issue": "Jest prints a hint line for each node:assert failure rather than an AssertionError line, so the assertion check misses every node:assert failure and a genuine failure reads as a collection error, while the design note, a docstring and the guide state the opposite.",
+        "resolution": "Accept jest's node:assert hint line as an assertion, with a case from jest's real text, and correct the note, docstring, comment and guide."
+      },
+      {
+        "id": "P102-R3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_runner_output.py summary readers",
+        "issue": "Jest's summary line is not read when its output is coloured (FORCE_COLOR inherited or --colors), so a proved failure and a new test file read as no tally and the basis says the output carries no tally while it does.",
+        "resolution": "Strip terminal escapes once before the tally and failing-case readers; a case with jest's coloured summary line."
+      },
+      {
+        "id": "P102-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py design note",
+        "issue": "The note says each part is built while part one is written as future plans, and says the two pytest patterns become one while the next paragraph and the code keep two.",
+        "resolution": "Rewrite part one in the present tense and delete the sentence about one pattern."
+      },
+      {
+        "id": "P102-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/materialize-proposal.py and other hand-parsed verb dispatchers",
+        "issue": "Entry points that dispatch on a verb by hand get no usage hint, so an older cached copy asked for a newer verb names no newer copy, the case the phase outcome names.",
+        "resolution": "Print the shared hint lines on an unknown verb in every hand-parsed verb dispatcher, held by the same lint widened to them."
+      },
+      {
+        "id": "P102-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py workspace_links",
+        "issue": "The workspace-link walk lstats every entry of each dependency directory on every red, unbounded by the run's deadline.",
+        "resolution": "Limit the scan to entry shapes that can be workspace links, and check the deadline inside it."
+      }
+    ],
+    "outcome": "[findings: 6 - 1 high, 2 med, 3 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -573,7 +617,7 @@
     {
       "id": "P102.10",
       "title": "every entry point's parser goes through the one usage hook, held by a lint",
-      "status": "in_progress",
+      "status": "done",
       "description": "Apply the hook from the previous task to every other entry point that builds an ArgumentParser (`grep -rln 'ArgumentParser(' plugins/audit/scripts`). Each gets one call to the shared hook, never its own copy, which would be the DRY failure. A new lint beside the safe_stdio check in _output.py holds the rule, and it gets a row in tools/prove-gates.py. Regenerate the module map for the new edges (`python3 plugins/audit/scripts/_deps.py --render`). Entry points that parse argv by hand are listed in the outcome, not converted here. This touches files that P100, P106 and P107 also edit, so it is blocked by P106 and P107 and runs after them.",
       "files": [
         "plugins/audit/scripts/_output.py",
@@ -634,18 +678,33 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b55778c8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_output.py gains a usage-hint check. parser_sites(files) lists every ArgumentParser call under scripts/ and whether it is hooked. usage_hint_violations(dirs) returns the unhooked ones. A parser is hooked when, in the scope that built it, its name is passed to _claude_home.attach_usage_hint before any parse call, or when it is built inside that call. A parents= template is not reported. A parser held by no name, and a file that does not parse, are reported. Every argparse entry point now makes exactly one call to the shared hook, either in its builder (return _claude_home.attach_usage_hint(p)) or in main() before it parses, with the import placed after the pinned preamble. A usage error from an older copy therefore names this copy's version and any newer installed copy; this was checked live on audit-lock and audit-lookup. test__output.py adds uh1-uh8: red fixtures, an exact over-fire twin, a reason on every finding, a clean real tree, and a scan tied to a constructor grep. tools/prove-gates.py gains a red row (drop the hook in one entry point) and an allow row (remove the narrowing). PLUGIN-BUILD-GUIDE's module map is regenerated, with a paragraph on the lint. Sub-parsers and the entry points that parse argv by hand, without argparse, are out of scope and listed in the guide. Red-first proved through the helper (--introduces usage_hint_violations). The prove-gates rows were run on a scratch copy, because prove-gates refuses a dirty tree. A real prove-gates run is owed once the work is committed.",
+        "descriptive": "Every command's usage error now says which copy of the plugin answered and whether a newer one is installed, and a lint keeps every future command on that path."
       },
       "startedAt": "2026-10-07T08:45:42Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T09:04:57Z",
+      "verifiedBy": [
+        "uh1",
+        "uh2",
+        "uh3",
+        "uh4",
+        "uh5",
+        "uh6",
+        "uh7",
+        "uh8"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T09:04:29Z.8719d0",
         "status": "passed",
         "at": "2026-10-07T09:04:29Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b55778c8",
+        "at": "2026-10-07T09:04:57Z",
+        "basis": "orchestrator check: entry points re-derived from the tree, one shared hook call each, AST lint with red and allow rows, live usage errors observed, hand-parsing entry points named as out of scope"
       }
     },
     {
@@ -693,6 +752,105 @@
         "commit": "8386fb2e",
         "at": "2026-10-06T21:42:06Z",
         "basis": "orchestrator check: both reference files carry the rule; the doctor row it points at exists in _doctor_trail.py"
+      }
+    },
+    {
+      "id": "P102.12-ptn",
+      "title": "red proves on every runner it reads without refusing a run over a directory it does not need",
+      "status": "in_progress",
+      "description": "Fixes review findings P102-R1 to P102-R4 and P102-R6. red proves on every runner it reads without refusing a run over a directory it does not need.\n\n- A dependency directory that holds a link into the tree, such as a workspace link or an editable install's .pth, is skipped. Its reason goes into the plan's skipped list, which the deps clause prints, and the run proceeds without it.\n- jest's node:assert hint line counts as an assertion.\n- Terminal escapes are stripped once, before the tally and failing-case readers.\n- The design note is in the present tense, and it no longer says the pytest patterns became one.\n- The workspace-link scan looks only at entry shapes that can be links: top-level and scoped symlinks, and .pth or __editable__ files under site-packages. It checks the deadline.\n- The docstring, comment and PLUGIN-BUILD-GUIDE describe what jest prints for node:assert.\n\nCases, each with a twin:\n- an editable .pth in an in-repo virtualenv with a system-python unittest command still proves;\n- jest's real node:assert text proves;\n- jest's coloured summary line is read;\n- the scan is bounded.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/governance/_runner_output.py",
+        "plugins/audit/tests/test_stamp_verification.py",
+        "plugins/audit/tests/test__runner_output.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/reference/execute-task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-07T09:13:28Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T10:16:56Z.430909",
+        "status": "passed",
+        "at": "2026-10-07T10:16:56Z"
+      }
+    },
+    {
+      "id": "P102.13-ptn",
+      "title": "every hand-parsed verb dispatcher names the newer installed copy on an unknown verb",
+      "status": "in_progress",
+      "description": "Fixes review finding P102-R5. Every entry point that dispatches on a verb by hand prints the shared usage hint lines (_claude_home) on an unknown verb, so an older cached copy that is asked for a newer verb names the newer installed copy. materialize-proposal.py is the one the review drove, and every other hand-parsed verb dispatcher is found from the tree. The usage-hint lint is widened to hold these dispatchers: an unknown-verb branch that prints usage without the hint is reported.\n\nCases:\n- materialize-proposal.py with an unknown verb prints the hint;\n- the lint reports a fixture dispatcher without the hint, with an allow twin;\n- the real tree is clean.",
+      "files": [
+        "plugins/audit/scripts/manifest/materialize-proposal.py",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/tests/test_materialize_proposal.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-07T09:13:29Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T10:23:57Z.cc05af",
+        "status": "passed",
+        "at": "2026-10-07T10:23:57Z"
       }
     }
   ],
