@@ -965,7 +965,7 @@
     {
       "id": "P104.13-tog",
       "title": "every printed cost is priced at read time by the table its phrase names",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P104-R7 (high) and P104-R11. Every cost a surface prints must be what the resolved table says those tokens cost, because the rate-basis phrase beside it names that table. Today the totals, cost per task, projection, bands and the most-expensive table sum each row's stored costUSD, which was priced when the row was written, with no recorded rate. Price each row's token counts at read time with resolve_pricing's table, in the one place the aggregates are computed (_usage_core), so every surface (report, Markdown twin, /audit:usage text and JSON, /audit:status, panel) inherits it. The ledger is never rewritten: the stored costUSD stays as written. A row whose token counts cannot be priced (fields absent) keeps its stored figure, and the surfaces say how many rows were priced when written with no recorded rate, in the same rate-basis phrase, never silently. Overlay a manifest table on the shipped table model by model, the way a config table already is, so an unnamed model is priced at its shipped row and not at _default. Correct CONTRIBUTING.md's statement of the rule. Cases: a ledger whose stored costUSD came from a different table than the current one prints the current table's figure beside the current table's phrase (red first); a row with no token fields keeps its stored figure and is counted in the phrase; a manifest table naming one model prices another at its shipped row.",
       "files": [
         "plugins/audit/scripts/usage/_usage_core.py",
@@ -1014,24 +1014,38 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "553d6c57",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_usage_core.priced_at_read(rows, table) returns copies of the rows plus pricedWhenWritten: a row whose five token fields are all numbers is priced again with the resolved table, rounded as the writer rounds (round(..., 6)), so a ledger written at that table sums exactly as before; any other row keeps its stored figure and is counted (pricing a missing field at zero would print less than the row ever cost). The rows passed in are never changed and the ledger is never rewritten. resolve_pricing lays a manifest table over the shipped table model by model, as it already did for a config table. rate_basis_phrase adds '; N row(s) keep the cost stored when written, at no recorded rate' when the count is above zero. usage_ledger re-exports priced_at_read.\nEvery surface prices at read time: audit-usage main (after filtering, so the count covers the rows shown), _usage_load.load_usage (the report and its Markdown twin, before every pass; the count travels in pricingBasis), audit-status usage_summary, _panel_usage usage_state (the facts the browser sums are built from the priced copies), and meter-usage's band advisory and session line (advise and session_summary take the resolved table as a required argument, resolved once per Stop). gen-demo-usage's own-run totals are left: they add rows the same run just priced with the same table and rounding, and reach only the generator's stdout. CONTRIBUTING.md states the read-time rule; PLUGIN-BUILD-GUIDE.md's reason for the phrase and the _usage_core section are restated. Committed renders did not move (check-rendered-artifacts --before-commit OK).\nTests: test__usage_core rt1-rt9; test__usage_economics rb6, rb7; test_audit_usage ua1-ua4; test__panel_usage rt1, rt2; test_audit_status rt1, rt2; test_meter_usage rt1-rt3; ul1b's fixture made consistent with the table; key-set pins include pricedWhenWritten. Red-first proved through the helper at HEAD 209e5937 for core (71/81), audit-usage (147/152), economics (58/59), panel (38/41) and status (321/324); test_meter_usage was could-not-prove (HEAD's advise/session_summary take no table, so the suite raises before its cases). Suites green; ruff, vermin, bench-hooks --gate (3.11 not measured) clean.",
+        "descriptive": "Every cost the plugin shows - in the report, /audit:usage, /audit:status, the panel and the end-of-turn usage notes - is now what the price table named beside it charges for those tokens, and any old row that cannot be re-priced is counted and said so; the recorded history itself is never changed."
       },
       "startedAt": "2026-10-07T01:24:22Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T02:01:52Z",
+      "verifiedBy": [
+        "rt1",
+        "rt3",
+        "rt5",
+        "rt8",
+        "rb6",
+        "ua1",
+        "ua3"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T02:01:41Z.850757",
         "status": "passed",
         "at": "2026-10-07T02:01:41Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "553d6c57",
+        "at": "2026-10-07T02:01:52Z",
+        "basis": "orchestrator check: P104-R7 and R11 fixed on every surface through one priced_at_read, the phrase now true of the figure beside it, red-first proved on five suites (meter could-not-prove, stated)"
       }
     },
     {
       "id": "P104.14-tog",
       "title": "one date for the price table on a page, and the precedence change recorded for users",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes review findings P104-R8, P104-R10, P104-R12 and P104-R13. (R8) The report's stale-price notice computes staleness from the resolver's asOf and names the same place rate_basis_phrase names, so a page never carries two dates for the price table; a manifest pricingAsOf with no manifest table no longer triggers a notice about a table that priced nothing. (R10) CHANGELOG.md [Unreleased] gains a Changed entry: one precedence for every surface (the manifest's meta.usage.pricing, else the config's usage.pricing laid over the shipped table, else the shipped table), naming that the meter and the panel previously read only the config, plus the shipped-rate change and the read-time pricing of printed costs; COMPATIBILITY.md records the precedence in its written-down list, and the CHANGELOG entry says whether the change alters a written promise, stating the basis. Whether the release needs a major bump is recorded for the operator, not decided here. (R12) README's usage.currency / pricingAsOf row matches rate_basis_phrase. (R13) the panel payload's pricingAsOfDeclared, which no panel script reads, is dropped with its pinned cases, unless a reader is found and named.",
       "files": [
         "plugins/audit/scripts/report/_usage_load.py",
@@ -1064,14 +1078,14 @@
       "dependsOn": [
         "P104.13-tog"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T02:01:53Z",
       "completedAt": null,
       "verifiedBy": []
     },
@@ -1139,7 +1153,12 @@
       },
       "startedAt": "2026-10-07T01:24:22Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T02:18:58Z.d00071",
+        "status": "passed",
+        "at": "2026-10-07T02:18:58Z"
+      }
     }
   ],
   "startedAt": "2026-10-06T14:46:28Z"

@@ -2936,8 +2936,10 @@ def _cases(check):
     check("the caveat travels with the number, not just in the docs",
           "An upper bound, not a forecast" in M.UI_HTML
           and "would not emit " in M.UI_HTML)
-    check("no advice renders nothing at all",
-          "if(adv.length){" in M.UI_HTML)
+    # A construct pin: what the tab renders with showCost off is driven through
+    # renderUsage in tools/ui-tests/usage-edges.test.mjs.
+    check("no advice, or advice with dollars switched off, renders nothing at all",
+          "if(USAGE.showCost&&adv.length){" in M.UI_HTML)
 
     # --- contrast pairs, substituted rather than restated -------------------------
     # The Appearance tab's live preview graded FOUR pairs while _ui_theme graded

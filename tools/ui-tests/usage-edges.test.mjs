@@ -8,6 +8,8 @@ import { describe, expect, it } from 'vitest';
 import { pyCall } from './python-fmt.mjs';
 import { loadPanel, reach } from './sandbox.mjs';
 
+// --- the chart, the payload and the filter chips --------------------------
+
 describe('the axis labels a one-bucket chart draws', () => {
   // The guard read `if (n < 2 && i) return`, over `[0, n-1]`. With one bucket
   // that array is [0, 0], so `i` is the VALUE 0 on both passes and the guard
@@ -158,6 +160,8 @@ describe('the filters that are on, once the controls fold away', () => {
   // one home.
 });
 
+// --- coverage beside cost per task ------------------------------------------
+
 describe('attribution coverage beside cost per task', () => {
   // uUnit/uRouting/uCoverageLine are pure (no DOM), so they are exercised
   // directly rather than through renderUsage — which, per the note just above,
@@ -293,5 +297,161 @@ describe('attribution coverage beside cost per task', () => {
     expect(uCoverageLine(cov)).toBe(
       'Of the plan\'s 3 done task(s), 2 are priced; main-loop spend is not '
       + 'attributed to a task.');
+  });
+});
+
+// --- the showCost gate, driven through renderUsage -------------------------
+
+describe('with showCost off the tab prints no per-task dollar figure', () => {
+  // Driven through renderUsage itself, not through a helper the render is
+  // believed to call: the defect was a render that skipped the gate its
+  // neighbours keep, and only the render can show that. The note above about
+  // renderUsage dying in the chart is about the shared stub, whose append()
+  // keeps nothing and which has no createElementNS. This block swaps in a
+  // recording builder for its own context only, so the tree the tab builds can
+  // be read back as text.
+  function recordingPanel() {
+    const { ctx } = loadPanel();
+    const doc = vm.runInContext('document', ctx);
+    const make = doc.createElement.bind(doc);
+    const keep = (e) => {
+      e.kids = [];
+      e.append = (...k) => { e.kids.push(...k); };
+      e.appendChild = (c) => { e.kids.push(c); return c; };
+      e.prepend = (...k) => { e.kids.unshift(...k); };
+      e.replaceChildren = (...k) => { e.kids = [...k]; };
+      return e;
+    };
+    doc.createElement = (t) => keep(make(t));
+    doc.createElementNS = (_ns, t) => keep(make(t));
+    const root = keep(make('div'));
+    doc.querySelector = (s) => (s === '#usage' ? root : keep(make('div')));
+    return { ctx, root };
+  }
+
+  const text = (n) => {
+    if (n == null) return '';
+    if (typeof n === 'string') return n;
+    if (n.nodeType === 3) return n.textContent;
+    return (n.textContent || '') + (n.kids || []).map(text).join('');
+  };
+  const all = (n, pred, out = []) => {
+    if (n && typeof n === 'object' && n.nodeType === 1) {
+      if (pred(n)) out.push(n);
+      (n.kids || []).forEach((k) => all(k, pred, out));
+    }
+    return out;
+  };
+  const hasClass = (c) => (n) => String(n.className || '').split(/\s+/).includes(c);
+  const DOLLAR = /\$\d|<\$0\.01/;
+
+  // Six done tasks: past the projection's sample gate, so the projection fact
+  // is drawn rather than the sample-size notice. One retried task, so the
+  // retry fact has spend to state, and one advice row, so the recommendation
+  // has dollars to state. Every one of those is a dollar figure the report
+  // withholds with showCost off.
+  function render(showCost) {
+    const { ctx, root } = recordingPanel();
+    const { F } = reach(ctx, ['F']);
+    const fact = (task, cost, day) => {
+      const r = [];
+      r[F.ts] = '2026-01-0' + day + 'T00:00:00Z';
+      r[F.phase] = 'P1'; r[F.task] = task; r[F.model] = 'opus';
+      r[F.author] = 'me'; r[F.agent] = 'ag'; r[F.attr] = 'task';
+      r[F.tokens] = 1000; r[F.cost] = cost; r[F.msgs] = 1;
+      return r;
+    };
+    const taskMeta = { T9: { status: 'pending', risk: 'low' } };
+    const facts = [];
+    for (let i = 1; i <= 6; i++) {
+      taskMeta['T' + i] = { status: 'done', risk: 'high', attempts: i === 1 ? 2 : 1 };
+      facts.push(fact('T' + i, i * 1.25, (i % 5) + 1));
+    }
+    const usage = {
+      facts, enabled: true, counts: { phases: 1 }, taskMeta, showCost,
+      routingAdvice: [{ risk: 'high', from: 'opus', to: 'sonnet', tasks: 6,
+        fromMeanAttempts: 1.2, atToRates: 5, atFromRates: 26.25, saving: 21.25,
+        savingPct: 81, evidenceTasks: 3, evidenceAttempts: 1 }],
+    };
+    vm.runInContext('USAGE = ' + JSON.stringify(usage) + ';', ctx);
+    vm.runInContext('renderUsage();', ctx);
+    const { uCoverageLine, uUnit } = reach(ctx, ['uCoverageLine', 'uUnit']);
+    const covLine = uCoverageLine(uUnit(facts).doneTaskCoverage);
+    const tiles = all(root, hasClass('utile'));
+    const costTile = tiles.filter((t) => all(t, hasClass('k'))
+      .some((k) => text(k) === 'cost per task'));
+    const facts_ = all(root, hasClass('ufact')).map(text);
+    const projection = facts_.filter((s) => s.startsWith('Remaining '));
+    const projCov = all(root, (n) => n.getAttribute('data-ucov') === 'projection');
+    const table = all(root, hasClass('utbl'));
+    const heads = table.flatMap((t) => all(t, (n) => n.tagName === 'TH').map(text));
+    const cells = table.flatMap((t) => all(t, (n) => n.tagName === 'TD').map(text));
+    return { root, covLine, costTile, projection, projCov, heads, cells,
+      whole: text(root) };
+  }
+
+  it('the cost-per-task tile is not drawn at all', () => {
+    const r = render(false);
+    expect(r.costTile.length).toBe(0);
+  });
+
+  it('...and with showCost on it is drawn once, with its figure and its '
+    + 'coverage line [the twin: a gate that always fires fails here]', () => {
+    const r = render(true);
+    expect(r.covLine).toMatch(/^Of the plan's 6 done task/);
+    expect(r.costTile.length).toBe(1);
+    expect(text(r.costTile[0])).toMatch(DOLLAR);
+    expect(text(r.costTile[0])).toContain(r.covLine);
+  });
+
+  it('the projection fact and its coverage line are withheld, and the '
+    + 'sample-size notice does not stand in for them', () => {
+    const r = render(false);
+    expect(r.projection).toEqual([]);
+    expect(r.projCov.length).toBe(0);
+    // The projection was suppressed by showCost, not by sample size, so a
+    // notice blaming the sample would be a false claim about why.
+    expect(r.whole).not.toContain('Projection needs');
+  });
+
+  it('...and with showCost on the projection states its range and its '
+    + 'coverage line once', () => {
+    const r = render(true);
+    expect(r.projection.length).toBe(1);
+    expect(r.projection[0]).toMatch(DOLLAR);
+    expect(r.projCov.map(text)).toEqual([r.covLine]);
+  });
+
+  it('the routing table drops its cost/task column, header and cells '
+    + 'together, and the coverage line beside it', () => {
+    const r = render(false);
+    expect(r.heads).toEqual(['risk', 'model', 'tasks', 'mean attempts']);
+    expect(r.cells.length).toBe(4);
+    expect(r.cells.filter((c) => DOLLAR.test(c))).toEqual([]);
+  });
+
+  it('...and with showCost on the column is there, one dollar cell per row', () => {
+    const r = render(true);
+    expect(r.heads).toEqual(['risk', 'model', 'tasks', 'cost/task', 'mean attempts']);
+    expect(r.cells.length).toBe(5);
+    expect(r.cells.filter((c) => DOLLAR.test(c)).length).toBe(1);
+    // The table's own coverage line: one in the tile, one for the projection,
+    // one beside the table.
+    expect(r.whole.split(r.covLine).length - 1).toBe(3);
+  });
+
+  it('no dollar figure anywhere on the tab, retry spend and the routing '
+    + 'recommendation included', () => {
+    const r = render(false);
+    expect(r.whole.match(/\$[\d.,]+|<\$0\.01/g)).toBe(null);
+    expect(r.whole).not.toContain(r.covLine);
+    expect(r.whole).not.toContain('What the evidence supports');
+  });
+
+  it('...while with showCost on the retry spend and the recommendation are '
+    + 'there [the twin of the case above]', () => {
+    const r = render(true);
+    expect(r.whole).toMatch(/\$1\.25 on tasks that needed more than one attempt/);
+    expect(r.whole).toContain('What the evidence supports');
   });
 });

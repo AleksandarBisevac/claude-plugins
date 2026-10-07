@@ -290,8 +290,11 @@ function renderUsage(){closeCombo();const c=$('#usage');
  // empty check. Named apart from `cov` (uCoverage(), attribution by tokens)
  // two lines up - same card, two different questions.
  const tcov=unit.doneTaskCoverage;
- if(unit.perTask!=null)tiles.push(tile('cost per task',uCost(unit.perTask),
-   {sub:USAGE.showCost?uCoverageLine(tcov):null,
+ // The whole tile is gated, not only its sub-line: with dollars off its value
+ // would be the one dollar figure left on the card, and the report drops the
+ // same tile under the same switch.
+ if(USAGE.showCost&&unit.perTask!=null)tiles.push(tile('cost per task',
+   uCost(unit.perTask),{sub:uCoverageLine(tcov),
     why:'no daily trend: a task’s cost accrues over every day it ran and is only '
      +'complete when the task is, so there is no per-day cost-per-task to plot'}));
  tiles.push(tile('attributed',uPct(cov.attributed),
@@ -347,18 +350,21 @@ function renderUsage(){closeCombo();const c=$('#usage');
 
  // economics - the same honesty caveats the report carries
  card.append(el('h2',{},'Unit economics'));
- if(unit.proj){card.append(el('div',{class:'ufact'},'Remaining '
+ // The dollar gate sits INSIDE the projection branch rather than widening its
+ // condition: widened, a sufficient sample would fall through to the notice
+ // below and blame the sample size for a forecast that showCost withheld.
+ if(unit.proj){if(USAGE.showCost){card.append(el('div',{class:'ufact'},'Remaining '
    +plural(unit.remaining,'task projects','tasks project')
    +' to '+uCost(unit.proj.low)+' to '+uCost(unit.proj.high)+
    ' at the p25-p75 per-task rate.'));
   // The per-task rate rests on the done tasks the ledger priced; the sentence
   // saying how many goes wherever the projection does.
   const pcov=uCoverageLine(tcov);
-  if(pcov)card.append(el('div',{class:'mut small','data-ucov':'projection'},pcov));}
+  if(pcov)card.append(el('div',{class:'mut small','data-ucov':'projection'},pcov));}}
  else card.append(el('div',{class:'mut small'},'Projection needs '+unit.gate+
    ' completed tasks to mean anything; there are '+unit.completed+
    '. A forecast off a smaller sample would be noise.'));
- if(rt.tot)card.append(el('div',{class:'ufact'},uCost(rt.re)+' on tasks that needed '+
+ if(USAGE.showCost&&rt.tot)card.append(el('div',{class:'ufact'},uCost(rt.re)+' on tasks that needed '+
    'more than one attempt ('+plural(rt.rn,'task')+') - '+uCost(rt.bl)+
    ' on tasks that ended blocked ('+plural(rt.bn,'task')+').'),
   el('div',{class:'mut small'},'Retried spend is not wasted spend: the ledger '+
@@ -377,8 +383,11 @@ function renderUsage(){closeCombo();const c=$('#usage');
   // computed from all of them.
   if(USAGE.showCost&&uCoverageLine(tcov))card.append(el('div',{class:'mut small'},
    uCoverageLine(tcov)));
+  // The cost/task column goes with showCost, header and cells together: a
+  // header kept over dropped cells would shift every figure one column left.
   const tbl=el('table',{class:'utbl'},
-    tableHead(['risk','model','tasks','cost/task','mean attempts']));
+    tableHead(['risk','model','tasks'].concat(USAGE.showCost?['cost/task']:[],
+      ['mean attempts'])));
   const tb=el('tbody',{});let last='';
   rows.forEach(r=>{tb.append(el('tr',{},el('td',{},r.risk===last?'':r.risk),
     el('td',{class:'mono'},r.model),el('td',{},String(r.tasks)),
@@ -386,7 +395,7 @@ function renderUsage(){closeCombo();const c=$('#usage');
     // share of nothing. `r.att.toFixed(1)` on a null is a TypeError and on a NaN
     // prints the word NaN into the table - a figure nobody could compute, shown as
     // though somebody had.
-    el('td',{},uCost(r.perTask)),
+    USAGE.showCost?el('td',{},uCost(r.perTask)):null,
     el('td',{},r.att==null?'—':r.att.toFixed(1))));last=r.risk;});
   // Framed like its monthly twin above. Unframed it was the panel's widest
   // offender: 332px intrinsic in a card with no scroll frame, so the DOCUMENT
@@ -397,8 +406,9 @@ function renderUsage(){closeCombo();const c=$('#usage');
  // The one recommendation in the tab. Computed server-side over the whole ledger
  // (see routingAdvice in usage_state), so it is a statement about the project and
  // says so whenever a filter is narrowing everything else on screen.
+ // A recommendation priced in dollars, so it goes with them.
  const adv=USAGE.routingAdvice||[];
- if(adv.length){
+ if(USAGE.showCost&&adv.length){
   card.append(el('h2',{},'What the evidence supports'));
   if(UORDER.length)card.append(el('div',{class:'ucrumb mut'},
     'Across the whole ledger - this one does not follow the filters above.'));
