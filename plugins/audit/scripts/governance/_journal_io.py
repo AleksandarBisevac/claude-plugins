@@ -1414,6 +1414,11 @@ _SLUG_START = r"(?<![A-Za-z0-9._~$+-])"
 # word at a token start - an option named `-home-<word>`, a `-Users-<name>` in
 # prose - matched, and the writer replaced a whole sentence for it.
 _SLUG_USER = r"-(?:Users|home)-[A-Za-z0-9._]+"
+# Where a LONE user segment still names a home: led by the start of the text
+# or of a line, a separator, a quote, a key's `=` or `:`, or a parenthesis -
+# the places a value stands rather than a word in a sentence. Whitespace and a
+# backtick are left out, so `-home-dir` in prose or a code span is no slug.
+_SLUG_LONE_LEAD = r"(?<![^\n/\\\"'=:(])"
 _MACHINE_PATH_SHAPES = (
     ("posix-home", re.compile(MACHINE_PATH_TOKEN_START
                               + r"[/\\]?(?:Users|home)/[A-Za-z0-9._-]+")),
@@ -1424,12 +1429,14 @@ _MACHINE_PATH_SHAPES = (
     # a whole path segment, so its leading dash stands at a token start - or
     # behind a drive letter's own dash, the Windows spelling - and a kebab
     # word holding `-home-` mid-word is prose, not a slug. A real slug
-    # carries more than the user segment, or stands between separators; the
-    # lone segment is taken only where a separator sits before or after it.
+    # carries more than the user segment, or stands where a value does; the
+    # lone segment is taken after a drive letter's dash, before a separator,
+    # or behind `_SLUG_LONE_LEAD`, and never behind whitespace alone.
     ("session-slug", re.compile(
         _SLUG_START + r"(?:[A-Za-z]-)?" + _SLUG_USER
         + r"(?:-[A-Za-z0-9._]|(?=[/\\]))"
-        r"|(?<=[/\\])(?:[A-Za-z]-)?" + _SLUG_USER
+        r"|" + _SLUG_START + r"[A-Za-z]-" + _SLUG_USER
+        + r"|" + _SLUG_LONE_LEAD + r"(?:[A-Za-z]-)?" + _SLUG_USER
         + r"|" + _SLUG_START + r"-private-tmp-")),
     ("escaped-path", re.compile(r"%2F(?:Users|home)%2F|%5CUsers%5C", re.I)),
     ("tempdir-session", re.compile(

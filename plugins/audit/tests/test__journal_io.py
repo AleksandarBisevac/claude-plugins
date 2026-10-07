@@ -3897,26 +3897,51 @@ def _shape_parity_cases(check):
         # leaves open: an option name or a bare user name in prose, no second
         # segment and no separator beside it. Mixed with a kebab word, because
         # the redactor's fallback replaced such a whole sentence at once.
-        prose = ("fix the go-home-now button; rename " + "-home-dir"
-                 + " option, abc " + "-Users-bob" + " here")
+        # Each placement sp10 takes has its whitespace-led twin here: the same
+        # lone segment inside a quoted value, after a key and `=`, inside
+        # parentheses and on an indented line, but with a space before it -
+        # plus a single-dash drive spelling and a markdown code span.
+        lone_u = "-".join(("", "Users", "bob"))
+        lone_h = "-".join(("", "home", "dir"))
+        proses = (
+            "fix the go-home-now button; rename " + lone_h
+            + " option, abc " + lone_u + " here",
+            '{"b":"see %s here"}' % (lone_u,),
+            "set HOME = " + lone_h + " for it",
+            "( see " + lone_u + " )",
+            "first line\n  " + lone_h + " is an option",
+            "the C" + lone_u + " page",
+            "an option named `" + lone_h + "`",
+        )
+        got_prose = [(p, M.machine_path_shape(p),
+                      M.check_free_text(proj, "--text", p),
+                      M.redacted_free_text(proj, p) == p,
+                      tool.scan_text("x.md", p, "plan")) for p in proses]
         check("sp9 ALLOW: prose naming a -home-<word> option and a -Users-<name> "
-              "with nothing after it is neither named, refused, rewritten nor "
-              "flagged - the mutation this catches is a slug shape that takes "
-              "the user segment alone: %r"
-              % ((M.machine_path_shape(prose),
-                  M.redacted_free_text(proj, prose),
-                  tool.scan_text("x.md", prose, "plan")),),
-              M.machine_path_shape(prose) is None
-              and M.check_free_text(proj, "--text", prose) is None
-              and M.redacted_free_text(proj, prose) == prose
-              and tool.scan_text("x.md", prose, "plan") == [])
-        lone = ("/projects/" + "-Users-bob",
+              "led by whitespace, at every placement sp10 convicts, is neither "
+              "named, refused, rewritten nor flagged - the mutation this "
+              "catches is a slug shape that takes the user segment alone "
+              "wherever it stands: %r"
+              % ([g for g in got_prose
+                  if not (g[1] is None and g[2] is None and g[3]
+                          and g[4] == [])],),
+              all(g[1] is None and g[2] is None and g[3] and g[4] == []
+                  for g in got_prose))
+        lone = ("/projects/" + lone_u,
                 "-".join(("", "home", "bob")) + "/s.jsonl",
-                "\\".join(("D:", "p", "C-" + "-Users-bob")))
+                "\\".join(("D:", "p", "C-" + lone_u)),
+                '{"b":"%s"}' % (lone_u,),
+                "HOME=" + lone_u,
+                "cwd (" + lone_u + ")",
+                "first line\n" + lone_u + " here",
+                "dir C-" + lone_u + " here",
+                "path:" + lone_u)
         got_lone = [(p, M.machine_path_shape(p)) for p in lone]
-        check("sp10 ...and the same lone user segment beside a path separator "
-              "IS a slug - the mutation this catches is a narrowing that "
-              "demands a second segment everywhere: %r" % (got_lone,),
+        check("sp10 ...and the same lone user segment bounded by a separator, "
+              "a quote, a key's `=`, a colon, a parenthesis, a line start or "
+              "a drive letter IS a slug - the mutation this catches is a "
+              "narrowing that demands a second segment or a separator: %r"
+              % ([g for g in got_lone if g[1] != "session-slug"],),
               all(g[1] == "session-slug" for g in got_lone))
         tilde = "use " + "~" + "/.config"
         check("sp11 a home tilde in prose stays refused at the door, because "

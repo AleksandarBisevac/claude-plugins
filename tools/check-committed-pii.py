@@ -1348,16 +1348,34 @@ def _cases(check):
     # A dash-led word at a token start with nothing after it - an option name,
     # a bare user name in prose - is not a slug either; beside a separator the
     # same lone segment is.
-    _prose = "rename -home-dir option, abc -Users-%s here" % _user
-    _prose_hits = scan_text("f.md", _prose, "report")
+    # Each placement q2f takes has its whitespace-led twin here.
+    _lone_u = "-".join(("", "Users", _user))
+    _lone_h = "-".join(("", "home", "dir"))
+    _proses = (
+        "rename %s option, abc %s here" % (_lone_h, _lone_u),
+        '{"b":"see %s here"}' % (_lone_u,),
+        "set HOME = %s for it" % (_lone_h,),
+        "( see %s )" % (_lone_u,),
+        "first line\n  %s is an option" % (_lone_h,),
+        "the C%s page" % (_lone_u,),
+        "an option named `%s`" % (_lone_h,),
+    )
+    _prose_hits = [(p, scan_text("f.md", p, "report")) for p in _proses
+                   if scan_text("f.md", p, "report")]
     check("q2e ALLOW: prose naming a -home-<word> option and a lone "
-          "-Users-<name> trips nothing: %r" % (_prose_hits,), _prose_hits == [])
-    _lone = ("/projects/-Users-%s" % _user, "-home-%s/s.jsonl" % _user)
+          "-Users-<name> led by whitespace, at every placement q2f convicts, "
+          "trips nothing: %r" % (_prose_hits,), _prose_hits == [])
+    _lone = ("/projects/%s" % (_lone_u,), "-home-%s/s.jsonl" % _user,
+             '{"b":"%s"}' % (_lone_u,), "HOME=%s" % (_lone_u,),
+             "cwd (%s)" % (_lone_u,), "first line\n%s here" % (_lone_u,),
+             "dir C-%s here" % (_lone_u,), "path:%s" % (_lone_u,))
     _lone_unseen = [line for line in _lone
                     if "session-slug" not in set(h[2] for h in
                                                  scan_text("f.md", line,
                                                            "report"))]
-    check("q2f ...and the same lone segment beside a path separator is found: "
+    check("q2f ...and the same lone segment bounded by a separator, a quote, "
+          "a key's `=`, a parenthesis, a line start, a colon or a drive "
+          "letter is found: "
           "%r" % (_lone_unseen,), _lone_unseen == [])
     # A file URL may name a host before its path; an https URL with the same
     # host and path names a web page.

@@ -1442,7 +1442,7 @@
     {
       "id": "P108.18-4gh",
       "title": "the shell arm costs ordinary work no time or false refusals, and states where its grammar stops",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P108-R24 to P108-R27, P108-R29 and P108-R30. The shell arm stops costing ordinary work time or false refusals. Where the grammar stops, it says so instead of chasing more spellings.\n\n- Copies: resolve the tree once per destination root, memoized by directory. Do not expand a recursive copy or directory move whose destination root lies outside the project. A case asserts that the number of git calls is bounded by destination roots, not by files, for a large out-of-project cp -r and mv. Count calls; do not time them.\n- Assignments: only the NAME=value words of an assignment prefix are live. The program's own arguments stay under the data-program rule, so an env-prefixed commit message or grep pattern that mentions a redirect is allowed. The git spellings whose redirect sits inside the assignment word stay refused. Add allow twins for both.\n- git grep: a short-option cluster is scanned only up to its first value-taking option (-e, -f, -A, -B, -C, -m), so a pattern stuck to -e is not read as the pager option.\n- SECURITY.md:\n  - Narrow the journal bullet to what the code reads.\n  - Name as residuals an interpreter journal append handed to a shell, and a journal redirect two or more levels past the bound. The hash-chained journal detects either write after the fact.\n  - Record the writer/detector posix-home separator difference as an open class.\n  - test_hooks.py's contract rows record the per-tier verdict of each residual shape as a reasoned KNOWN_DIVERGENCE row, so the verdict is written down per tier.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -1475,18 +1475,39 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "302a6006",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_config.py: _memo_rev_parse(cache, cwd, fields) lets path_tree and tree_for ask git once per watched tree and once per nearest existing directory when given a cache. Without a cache, behaviour is unchanged. guard-secrets-read.py: _tree_placer(root, cfg) returns a cached place function and an expands predicate, used by the source, manifest and journal arms. A whole-directory copy or move is not expanded when its placed destination root is neither in the project nor in a linked worktree; a root nobody can place is still expanded. An out-of-project recursive copy therefore costs git calls per destination directory, not per file (lw10, lw10a, lw11, tm1, tm2). Assignments: _program_offset finds where the program's words begin after the assignment prefix, and _quoted_text_skipper never skips a quoted position before it. The assignment values are therefore live while the program's own quoted arguments stay under the data-program rule; an unlocatable offset or a line continuation keeps the whole span live. git grep: a short-option cluster is read only up to its first value-taking option, and such an option standing alone takes the next word. test_hooks.py records the residuals' verdicts at each tier as reasoned KNOWN_DIVERGENCE rows: an interpreter journal append handed to a shell, a journal redirect two levels past the bound, and an editor or pager variable set to a bare shell. SECURITY.md narrows the journal bullet to what the code reads, names those residuals and points at their rows. It says verify and guard-bash-writes detect such a write afterwards, describes the assignment-word and git grep cluster rules, records the writer/detector posix-home separator difference as an open class, and restates the session-slug rule in words. Red-first proved on test__config (tm1, tm2) and test_guard_secrets_read (lq9, lq3 twins, lq10 and more) at HEAD. Mutations M1-M8 on a scratch copy turned the named cases red in both directions. The sweep is green.",
+        "descriptive": "Recursive copies no longer slow the guard past its time limit, environment-prefixed commit messages and search patterns are no longer refused by mistake, and the shapes the guard does not read are written down with their verdict at each tier."
       },
       "startedAt": "2026-10-07T08:18:39Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T08:53:58Z",
+      "verifiedBy": [
+        "lw10",
+        "lw10a",
+        "lw11",
+        "tm1",
+        "tm2",
+        "lq3",
+        "lq9",
+        "lq10",
+        "lq11",
+        "lq11a",
+        "lq12",
+        "r01",
+        "r02",
+        "r03"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T08:46:43Z.e5e13f",
         "status": "passed",
         "at": "2026-10-07T08:46:43Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "302a6006",
+        "at": "2026-10-07T08:53:58Z",
+        "basis": "orchestrator check: P108-R24..R27, R29, R30 fixed; regressions reproduced and fixed with call-count cases; residuals named in SECURITY.md and recorded per tier as reasoned known divergences instead of more grammar"
       }
     },
     {
