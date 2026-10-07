@@ -398,6 +398,10 @@ driven through the verbs never got a branch; the verb performs it now, before it
   not record. On a refusal, **STOP and ask the human** — do not branch by hand to get past it.
 - Outside a git repository the phase runs with no branch, and the verb says so. `/audit:doctor`
   names any running phase that has no branch.
+- **The same write also claims the phase (sharded layout) and checks readiness, and both refusals
+  are `start`'s**: on either, stop and relay the refusal verbatim — `--force --reason` only on the
+  human's own instruction, their words as the reason (`reference/manifest-conventions.md` → *The
+  operator's words go in unchanged*).
 
 **During task execution:** all edits and commits happen on the phase branch. **Push remains FORBIDDEN** — local only.
 
@@ -683,7 +687,8 @@ green without a tracked bug behind it.
      gates pass, finish + commit; if partial, **ask the human** whether to discard (`git checkout -- <files>`) and re-run.
      Never discard without confirmation.
    - `status == "pending"` → resume normally: read `reference/execute-task.md` and follow
-     **Execute the task**.
+     **Execute the task** — whose step 1/2 cover what to do on a readiness or claim refusal from
+     `start`.
 4. Continue normal execution from the resume point — reading `reference/execute-task.md` and, once
    every task in the phase is `done`, `reference/phase-signoff.md` when you reach them, rather than
    up front: a run that resumes into a `done`-but-uncommitted phase or a fully-blocked one may need

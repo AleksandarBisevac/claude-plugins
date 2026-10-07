@@ -8,9 +8,12 @@ not need to.
 
 ## Execute the task
 
-1. **Phase entry** (first started task of the phase, or after an interruption) is the verb's in
+1. a. **Phase entry** (first started task of the phase, or after an interruption) is the verb's in
    step 2: `audit-task start` sets `phase.status`, and on the sharded layout writes
-   `phase.claim`, in the same write as the task. It refuses a phase another session has claimed.
+   `phase.claim`, in the same write as the task. **On a claim refusal, stop and relay `start`'s
+   refusal verbatim** — it refuses only while another session's claim may still be live or
+   unaskable; `--force --reason` only on the human's own instruction, their words as the reason
+   (`reference/manifest-conventions.md` → *The operator's words go in unchanged*).
    b.–c. **The branch and `phase.baseRef` are the verb's in step 2.** `audit-task start` cuts
       the phase branch from its resolved parent on the phase's first task (or records the one
       `/audit:worktree add` checked out), writes `baseRef`, and refuses — naming why — when HEAD
@@ -20,7 +23,9 @@ not need to.
    ```
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" start <taskId>
    ```
-   It sets `task.status = "in_progress"`, stamps `startedAt`, and does `task.attempts += 1` — in
+   **On a readiness refusal, stop and relay `start`'s refusal verbatim** — `--force --reason`
+   only on the human's own instruction, their words as the reason (same rule, same section as
+   above). It sets `task.status = "in_progress"`, stamps `startedAt`, and does `task.attempts += 1` — in
    the phase's manifest file (the shard when sharded), under the lock, revalidated and journaled.
    **If the increment would take `attempts` past `maxAttempts` (default 3), it REFUSES rather than
    spawn** — that transition still owes an ADO echo and a human, neither of which the verb can

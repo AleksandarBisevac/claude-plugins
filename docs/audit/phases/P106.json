@@ -28,7 +28,9 @@
         "severity": "high",
         "file": "plugins/audit/scripts/manifest/audit-task.py:3226-3261,3632-3643",
         "issue": "A phase claim has no liveness: _claim_plan returns contested for any claim whose sessionId differs from the current one, and only sign-off or cancel clears it, so ordinary multi-session use of a sharded plan is refused - the next /audit:next session continuing a phase, every /audit:resume after a crash or lost session, a session id change across a resume, and (with no session id) a held claim even --force cannot replace - making --force the normal way to continue a phase and a forced row no longer an exception.",
-        "resolution": "Refuse only when the holder may still be live: when no live run holds the phase-<id> lock (the _locks liveness answer audit-lock status gives), take the claim over without --force and record it on the task.start row as a takeover with that basis; refuse, with --force as the way past, only when a live holder exists or liveness cannot be asked; decide and test the no-session path explicitly; cases for a sequential second session (takeover) and a live holder (refused)."
+        "resolution": "fixed in P106.4-b6f (fca3219f): Refuse only when the holder may still be live: when no live run holds the phase-<id> lock (the _locks liveness answer audit-lock status gives), take the claim over without --force and record it on the task.start row as a takeover with that basis; refuse, with --force as the way past, only when a live holder exists or liveness cannot be asked; decide and test the no-session path explicitly; cases for a sequential second session (takeover) and a live holder (refused).",
+        "fixTask": "P106.4-b6f",
+        "commit": "fca3219f"
       },
       {
         "id": "P106-R2",
@@ -42,14 +44,18 @@
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:3641-3643,3740",
         "issue": "With no session id and another session's claim held, a forced start keeps the claim but still reports claimReplaced and writes 'FORCED past ... claim of session X' as if it had been replaced.",
-        "resolution": "Set replaced only when a claim was written in its place, word the no-session force as kept, and pin claimReplaced None with the claim byte-identical."
+        "resolution": "fixed in P106.4-b6f (fca3219f): Set replaced only when a claim was written in its place, word the no-session force as kept, and pin claimReplaced None with the claim byte-identical.",
+        "fixTask": "P106.4-b6f",
+        "commit": "fca3219f"
       },
       {
         "id": "P106-R4",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:3632",
         "issue": "The claim's sessionId is the raw CLAUDE_CODE_SESSION_ID, unsanitised and unbounded, written into a committed shard and the task.start row, while _journal_io.env_session_id() exists to bound exactly this value; the journal actor and the claim can spell one session two ways.",
-        "resolution": "Use _journal_io.env_session_id() for the claim write and the holder comparison, with a case for an over-long or unsafe value."
+        "resolution": "fixed in P106.4-b6f (fca3219f): Use _journal_io.env_session_id() for the claim write and the holder comparison, with a case for an over-long or unsafe value.",
+        "fixTask": "P106.4-b6f",
+        "commit": "fca3219f"
       },
       {
         "id": "P106-R5",
@@ -70,10 +76,12 @@
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/_manifest_io.py:176-177",
         "issue": "On the sharded layout a claim on an index stub is a fallback when the shard has none; start writes the shard and sign-off pops the assembled claim, so a legacy stub claim survives sign-off and reappears as another session's claim.",
-        "resolution": "Have sign-off and cancel also drop a stub claim on the index under the index lock, or stop reading stub claims once a shard exists."
+        "resolution": "fixed in P106.4-b6f (fca3219f): Have sign-off and cancel also drop a stub claim on the index under the index lock, or stop reading stub claims once a shard exists.",
+        "fixTask": "P106.4-b6f",
+        "commit": "fca3219f"
       }
     ],
-    "outcome": "[findings: 7 - 1 high, 1 med, 5 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 7 - 1 high, 1 med, 5 low; 4 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -288,7 +296,7 @@
     {
       "id": "P106.4-b6f",
       "title": "a phase claim yields to a new session when its holder is gone, and refuses only a live one",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P106-R1 (high), P106-R3, P106-R4 and P106-R7. A phase claim refuses a start only while its holder may still be live. When the claim's session holds no live run of the phase - asked through the same lock liveness `audit-lock.py status` answers for `phase-<id>` - a start by another session takes the claim over without --force and records it on the task.start row as a takeover, with the liveness basis and the replaced session in its changes rows. A start is refused, with --force --reason as the operator's way past, only when a live holder exists or liveness cannot be asked; the refusal text names that decision as the operator's before it names the flag. The no-session path (no CLAUDE_CODE_SESSION_ID) is decided and tested: a forced start with no session id keeps the held claim and reports it as kept, never as replaced (R3). The claim's sessionId and the holder comparison use _journal_io.env_session_id(), which bounds and sanitises the value that lands in a committed row (R4). Sign-off and cancel also drop a legacy claim on the index stub under the index lock, so a stub claim cannot reappear after sign-off (R7). Cases: a sequential second session starting the next task of a phase whose previous session left no live lock is a recorded takeover; the same with a live phase lock is refused; the no-session force keeps the claim and reports claimReplaced None; an over-long or unsafe session id is written bounded; a stub claim is gone after sign-off.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -318,24 +326,41 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fca3219f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Liveness comes from the existing reader: audit-task.py imports _locks (a downward L7 -> L1 edge) and the new _phase_holder(git_root, phase_id) asks about phase-<id> exactly as `audit-lock.py status` does - _locks.lock_dir, the directory listing _locks.collect walks, _locks.read_lock, _locks.judge for the verdict and basis (every uncertainty judge resolves to live stays live), the name from _status_facts.PHASE_LOCK_PREFIX, and _locks.held_by_us to tell whose live lock it is. 'Liveness cannot be asked' is state unaskable: no lock dir (no git common dir), an id _locks.valid_name refuses, or a listing that raises; a lock dir that does not exist is state none, as status answers.\n_claim_plan: a claim whose holder has no live phase lock is taken over by a later session without --force (state none or not live, or a live lock this run holds - the lock the orchestrator takes before start); a live lock held by any other session, or unaskable liveness, refuses, with the refusal giving the holder basis first, then 'the operator's decision, not this verb's', then --force. The takeover is not a forced start (no mode key); it adds a claim.takeover changes row (from the replaced session, to the liveness basis) beside the claim.sessionId/branch/at rows, and the summary says 'taken over from session X (basis)'. With no session id, an unforced start whose holder is not live runs and keeps the claim it cannot replace; with a blocking holder it is contested, and a forced start keeps the claim, reported as kept ('kept: no session id to replace it with'), never as replaced. JSON gains claimReplaced (only when a new claim was written over the held one), claimKept and claimHolder {state, basis}. The session id comes from _journal_io.env_session_id(), bounded and sanitised, for the written claim and the keep comparison. Sign-off, group sign-off and phase cancel also clear a legacy claim on the index stub under the index lock they already hold, through _manifest_io.index_without_stub_claim (non-mutating; a null claim reads as {}); single-file plans are a no-op. The --force help says 'while that session may still hold a live run of it'.\nTests: test_audit_task tk1-tk11 (tk1 no lock, tk2 dead pid, tk4 own lock are takeovers; tk3, tk5 refuse a live other holder; the no-session paths; bounded ids) with pc4/pc5 now planting a live phase lock; test__manifest_io sc1-sc3 (the stub claim is dropped, the other stub left). Red-first proved through the helper at HEAD a5f8d462: test_audit_task 728/739 (11 failing), test__manifest_io via --introduces index_without_stub_claim. Suites 739/739 and 159/159; ruff and house lints clean. commands/task.md still states the old claim rule; the docs task that owns it rewrites it.\nGuide: the module map fence regenerated from _deps.py --render (the audit-task edge gains _locks).",
+        "descriptive": "A new session can now continue a phase whose previous session has ended - the hand-over is recorded with the reason it was safe - and a start is refused only while another session is actually still running that phase."
       },
       "startedAt": "2026-10-07T01:41:53Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T02:22:43Z",
+      "verifiedBy": [
+        "tk1",
+        "tk2",
+        "tk3",
+        "tk4",
+        "tk5",
+        "tk6",
+        "tk9",
+        "sc1",
+        "sc2",
+        "sc3"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T02:22:33Z.0d7d0d",
         "status": "passed",
         "at": "2026-10-07T02:22:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "fca3219f",
+        "at": "2026-10-07T02:22:43Z",
+        "basis": "orchestrator check: P106-R1, R3, R4 and R7 fixed using the existing lock-liveness reader, takeover recorded not forced, refusal names the operator's decision first, red-first proved with allow twins"
       }
     },
     {
       "id": "P106.5-b6f",
       "title": "the orchestrator relays start's refusals and leaves --force to the operator",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes review findings P106-R2, P106-R5 and P106-R6. The orchestrator flow says what to do on start's readiness and claim refusals: stop and relay the refusal verbatim; pass --force only on the human's instruction, with the human's words as --reason (the operator's-words rule in manifest-conventions). execute-task.md step 1/2, orchestrator.md's Phase entry and its Resume steps carry that one sentence each, pointing at the verb rather than restating the rule. commands/task.md describes --force as the operator's exception, not a route for promoting a task by hand. commands/run.md step 4 stops restating the readiness rule and points at start's refusal. execute-task.md's step 1 no longer carries an orphaned 'b.-c.' sub-item; every citation of it (README, _invariants) stays true. Record the bytes /audit:next must read before and after.",
       "files": [
         "plugins/audit/reference/execute-task.md",
@@ -360,16 +385,21 @@
       "dependsOn": [
         "P106.4-b6f"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T02:22:44Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T02:31:46Z.4d331b",
+        "status": "passed",
+        "at": "2026-10-07T02:31:46Z"
+      }
     }
   ],
   "startedAt": "2026-10-06T22:17:03Z"

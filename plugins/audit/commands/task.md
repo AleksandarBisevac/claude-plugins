@@ -476,21 +476,29 @@ ceiling so the caller can make it.
 `in_progress` and still waits on an unmet reference — its own `blockedBy` or `dependsOn`, or
 its phase's `blockedBy` — is refused with exit 2 and nothing written, and the refusal names
 each reference the way `/audit:status` does (`_status_facts.unmet_refs` is the one answer both
-read; a phase-level blocker reads `<id> (phase)`). `--force --reason "<why>"` starts it anyway:
-that is the route for promoting a task by hand so the plan gate resolves its files, and the
-`task.start` row records the exception. The door refuses `--force` without `--reason`, and
-`--reason` without `--force`; `--reason -` reads the text off stdin like every prose flag. A
-re-start of a task already `in_progress` is the retry above and is never refused for
-readiness — it prints a `NOTE:` naming what is still unmet. Under `--json` the result carries
-`ready`, `waitingOn`, `forced` and `forcedReason`.
+read; a phase-level blocker reads `<id> (phase)`). `--force --reason "<why>"` is the
+operator's exception, never a route for promoting a task by hand on its own say-so: pass it
+only on the human's own instruction, their words verbatim as `--reason`
+(`reference/manifest-conventions.md` → *The operator's words go in unchanged*), and the
+`task.start` row records it. The door refuses `--force` without `--reason`, and `--reason`
+without `--force`; `--reason -` reads the text off stdin like every prose flag. A re-start of
+a task already `in_progress`
+is the retry above and is never refused for readiness — it prints a `NOTE:` naming what is
+still unmet. Under `--json` the result carries `ready`, `waitingOn`, `forced` and
+`forcedReason`.
 
-**Another session's claim is refused the same way.** On the sharded layout, a phase whose
-`claim.sessionId` is not this session's is refused with exit 2 and nothing written, and the
-refusal names the claim's session, branch and moment. `--force --reason "<why>"` is the
-one way past: it replaces the claim with this session's, and the `task.start` row keeps the
-replaced session as the `from` of its `claim.sessionId` row and in its `basis`. Under `--json`
-the result carries `claim`, `claimAction` (`none`, `keep`, `take`, `contested` or
-`no-session`) and `claimReplaced`.
+**A claim is refused only while its holder may still be live.** On the sharded layout, a phase
+whose `claim.sessionId` is not this session's is refused with exit 2 and nothing written only
+when that other session still runs a live `phase-<id>` lock, or when liveness could not be
+asked about at all — the refusal names the claim's session, branch, moment and which of those
+it is. Otherwise (the holder's lock is not live) this start **takes the claim over** on its
+own and records the takeover; there is nothing here for `--force` to replace. On a refusal,
+`--force --reason "<why>"` is the same operator's exception as above: pass it only on the
+human's own instruction, their words as the reason, and it replaces the claim with this
+session's, with the `task.start` row keeping the replaced session as the `from` of its
+`claim.sessionId` row and in its `basis`. Under `--json` the result carries `claim`,
+`claimAction` (`none`, `keep`, `take`, `takeover`, `contested` or `no-session`) and
+`claimReplaced`.
 
 **The start that enters a phase warns about what sign-off will ask for** — an empty
 `testGate` (sign-off then rests on review alone) and a missing `desiredOutcome` — as

@@ -53,7 +53,10 @@ Execute exactly `<taskId>`, with status guards:
    that execution begins with clears it too, recording the old reason in its `task.start` row.
 3. `status == "in_progress"` → warn: likely an interrupted run — point to `/audit:resume`.
    Proceed only if the human explicitly confirms re-execution.
-4. Unmet blockers → refuse and list them.
+4. Unmet blockers, or a phase claimed by a session that may still be live → relay `audit-task.py
+   start`'s refusal verbatim and stop; `--force --reason` only on the human's own instruction,
+   their words as the reason (`reference/manifest-conventions.md` → *The operator's words go in
+   unchanged*).
 5. Otherwise run **Execute the task** (orchestrator).
 
 Then follow **Reporting** and release the lock.
