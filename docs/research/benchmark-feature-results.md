@@ -60,7 +60,8 @@ that folder.
   counted valid. Each regenerated `grade.json` was identical to the recorded one except for
   `visible.ran`, whose `Ran N tests in <seconds>` timing differs run to run. It was run once more
   for `whole-B-2` when section 5.2 reinstated it, and that regenerated `grade.json` was identical
-  to the recorded one, `visible.ran` included.
+  to the recorded one, except for `visible.ran`, which happened to match on that run and differs
+  from run to run, as it does for the others.
 - **Stream metrics.** `python3 <h2>/extract_metrics.py <x2>/<label>/stream.jsonl`.
 - **The per-result-event figures** in section 2.4:
 
@@ -122,9 +123,11 @@ its own, "three pens bought for 3.50 and returned one at a time refund 1.17, 1.1
 2.99 and 3.00".
 `whole-C-3` says instead that "each
 refund is the returned units' share of what the order cost after the volume discount and coupon,
-rounded with the shop's existing helper". The code does not do that for every return: the second
-of three one-unit returns refunds 2.99 against a rounded share of 3.00 (section 3.2). That is one
-hand reading, recorded here and not as a grader flag.
+rounded with the shop's existing helper" — the request's own wording (section 3.4), so it carries
+the same two readings. On the first reading it misdescribes the second of three one-unit returns,
+which refunds 2.99 against a rounded share of 3.00 (section 3.2); on the second it describes the
+code. Unlike the other final messages, it does not say the refund is cumulative. That is one hand
+reading, recorded here and not as a grader flag.
 
 ### 2.2 Scope, existing tests and reuse
 
@@ -546,7 +549,8 @@ against B between `≈ 6.1` and `≈ 6.4`.
 - **Visible suite**: green in every session (`grade.txt` → `visible`).
 - **Invented APIs or files**: none flagged in any session (`grade.txt` → `halluc`).
 - **Unbacked claims**: none flagged by the grader in any session (`grade.txt` → `claims`); the hand
-  reading in section 2.1 adds one inaccurate description of the refund rule, in arm C.
+  reading in section 2.1 adds one description that states the rule only in the request's own,
+  two-way wording, in arm C.
 - **Interventions**: `0` in every session, and no follow-up was sent (section 5.6).
 - **The deprecated module**: untouched in every session (`grade.txt` → `scope`, `deprecated`).
 - **Reuse, outside the stock rule**: every other rule `reused` in every session, the
@@ -615,7 +619,7 @@ with the arithmetic (sections 2.3 and 4.5).
 
 **The headline uses `whole-B-2`.** It is the session the seeded order put in that cell, and the
 only reason recorded against it is contradicted by its own stream. `whole-B-2-r` ran outside the
-seeded draw, last, in a later five-hour window (`grade.json` → `window` → `last.resetsAt`
+seeded draw, second to last, in a later five-hour window (`grade.json` → `window` → `last.resetsAt`
 differs). Counting it in `whole-B-2`'s place would give up the shuffle's protection for that cell
 with no recorded cause to justify it. *Effects:*
 
