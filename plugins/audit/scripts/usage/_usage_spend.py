@@ -133,14 +133,18 @@ def compare(rows, since, until):
     return out
 
 
-def cache_profile(rows):
+def cache_profile(rows, pricing=None):
     """Cache economics, stated as RATES rather than an invented saving.
 
     Deliberately returns no "you saved $N": without caching you would not have made
     the same calls at the same volume, so that number is a fabricated counterfactual.
     `inputCostVsFreshPct` is a real rate comparison — what the input side actually
     bills as a share of what the identical token volume would bill at fresh-input
-    rates — and is safe to show."""
+    rates — and is safe to show.
+
+    `pricing` is the table to compare AT, in the shape `rates_for()` accepts;
+    `None` compares at the shipped `DEFAULT_PRICING` exactly as before this
+    parameter existed."""
     slot = {k: 0 for k in TOKEN_KEYS}
     per_phase = {}
     for row in rows:
@@ -160,7 +164,7 @@ def cache_profile(rows):
     # Rate comparison against the fresh-input price of the SAME volume.
     actual = fresh = 0.0
     for row in rows:
-        r = rates_for(row.get("model"))
+        r = rates_for(row.get("model"), pricing)
         vol = (int(row.get("in") or 0) + int(row.get("cacheW5m") or 0)
                + int(row.get("cacheW1h") or 0) + int(row.get("cacheR") or 0))
         actual += (int(row.get("in") or 0) * r["in"]

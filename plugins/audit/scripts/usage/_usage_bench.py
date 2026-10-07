@@ -234,6 +234,9 @@ def _bench_cases(manifest, rows):
     three above it — one of which is timed here and two of which are not — so a
     fourth number for it would restate `sibling_spend_comparison`'s own cost under
     a different label plus two calls an empty evidence list makes free.
+    `coverage_sentence` and `rate_basis_phrase` are absent because they read no
+    rows at all: each formats one sentence from values its caller already holds,
+    so its cost has nothing to scale with.
     """
     return (
         ("aggregate", lambda: aggregate(rows, "day")),

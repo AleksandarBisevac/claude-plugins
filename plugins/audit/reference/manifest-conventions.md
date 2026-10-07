@@ -374,6 +374,11 @@ by rewriting theirs.** And where the wording is genuinely unusable as a flag val
 empty, or it would break the shell — **ask again**. Improving it is not an option that
 exists.
 
+**A refusal from a writer script is relayed the same way: stop and relay it verbatim;
+`--force --reason "<why>"` only on the human's own instruction, their words as the reason.**
+No script can tell an operator's `--reason` from the model's, so this is a rule the model
+follows, not one a script enforces.
+
 ## Tamper evidence and completion records
 
 Absolute immutability of local files does not exist — the user owns the disk. The

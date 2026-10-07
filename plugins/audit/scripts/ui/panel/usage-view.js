@@ -77,17 +77,18 @@ function renderUsage(){closeCombo();const c=$('#usage');
  // chart names its own period in its heading, so this says "ledger" out loud
  // rather than leaving two different resolutions on screen unlabelled.
  bits.push(USAGE.rolled?'daily ledger (rolled up)':'hourly ledger');
- // The rate table behind every dollar in this tab. `pricingAsOf` is served from the
- // MERGED config, so it is set even when this project never chose it — printing it
- // unconditionally would present the default table's date as the project's own.
- // `pricingAsOfDeclared` is the server saying which of the two it is.
- if(USAGE.showCost&&USAGE.pricingAsOfDeclared)bits.push('rates as of '+USAGE.pricingAsOf);
+ // The rate table behind every dollar in this tab: its date and source, in the
+ // words the server built from the one resolver every cost surface asks
+ // (`rateBasis`). Shown as served, never retyped here, so the tab and the report
+ // cannot word one basis two ways. A payload without it says so rather than
+ // leaving the dollars with nothing beside them.
+ if(USAGE.showCost)bits.push(USAGE.rateBasis||'rate basis not served');
  const ctx=el('div',{class:'uctx'},bits.join(' - '));
- // This used to end the sentence with "set usage.pricingAsOf" — an instruction to
- // go and edit a file, printed on the surface built to edit that file. Now it is
- // the way there.
- if(USAGE.showCost&&!USAGE.pricingAsOfDeclared)ctx.append(' - ',
-   settingsLink('rates undated: date them in Settings','usage.pricingAsOf'));
+ // A config table with no date is the one basis this surface can repair, so it
+ // carries the way there rather than an instruction to go and edit the file.
+ const pb=USAGE.pricingBasis||{};
+ if(USAGE.showCost&&pb.basis==='config'&&!pb.asOf)ctx.append(' - ',
+   settingsLink('date them in Settings','usage.pricingAsOf'));
  card.append(ctx);
 
  // Active filters FIRST, above the fold that holds the controls. This row is not
@@ -273,6 +274,9 @@ function renderUsage(){closeCombo();const c=$('#usage');
     // enough to carry. Dropping the row instead would also shorten the card and
     // pull the tile grid out of line.
     : el('div',{class:'utrend',title:o.why||'no daily series for this metric'},'—'));
+  // Under the box, not inside .utrend: the coverage line is a second fact about
+  // the same number, not a substitute for the trend slot.
+  if(o.sub)box.append(el('div',{class:'mut small'},o.sub));
   return box;};
  const tiles=[tile('tokens',uTok(tot[0]),
    {key:'tokens',delta:dl&&dl.tokens,series:sp.series.tokens})];
@@ -280,8 +284,18 @@ function renderUsage(){closeCombo();const c=$('#usage');
    {key:'cost',delta:dl&&dl.cost,series:sp.series.cost}));
  tiles.push(tile('messages',tot[2].toLocaleString(),
    {key:'msgs',delta:dl&&dl.msgs,series:sp.series.msgs}));
- if(unit.perTask!=null)tiles.push(tile('cost per task',uCost(unit.perTask),
-   {why:'no daily trend: a task’s cost accrues over every day it ran and is only '
+ // `tcov` (done-task coverage) is null over an empty ledger (no done task in
+ // the plan at all) - the same silence `unit.perTask` already keeps for the
+ // tile itself, so the sub-line inherits it rather than re-deriving a second
+ // empty check. Named apart from `cov` (uCoverage(), attribution by tokens)
+ // two lines up - same card, two different questions.
+ const tcov=unit.doneTaskCoverage;
+ // The whole tile is gated, not only its sub-line: with dollars off its value
+ // would be the one dollar figure left on the card, and the report drops the
+ // same tile under the same switch.
+ if(USAGE.showCost&&unit.perTask!=null)tiles.push(tile('cost per task',
+   uCost(unit.perTask),{sub:uCoverageLine(tcov),
+    why:'no daily trend: a task’s cost accrues over every day it ran and is only '
      +'complete when the task is, so there is no per-day cost-per-task to plot'}));
  tiles.push(tile('attributed',uPct(cov.attributed),
    {key:'attributed',delta:dl&&dl.attributed,pp:true,pol:1,
@@ -336,14 +350,21 @@ function renderUsage(){closeCombo();const c=$('#usage');
 
  // economics - the same honesty caveats the report carries
  card.append(el('h2',{},'Unit economics'));
- if(unit.proj)card.append(el('div',{class:'ufact'},'Remaining '
+ // The dollar gate sits INSIDE the projection branch rather than widening its
+ // condition: widened, a sufficient sample would fall through to the notice
+ // below and blame the sample size for a forecast that showCost withheld.
+ if(unit.proj){if(USAGE.showCost){card.append(el('div',{class:'ufact'},'Remaining '
    +plural(unit.remaining,'task projects','tasks project')
    +' to '+uCost(unit.proj.low)+' to '+uCost(unit.proj.high)+
    ' at the p25-p75 per-task rate.'));
+  // The per-task rate rests on the done tasks the ledger priced; the sentence
+  // saying how many goes wherever the projection does.
+  const pcov=uCoverageLine(tcov);
+  if(pcov)card.append(el('div',{class:'mut small','data-ucov':'projection'},pcov));}}
  else card.append(el('div',{class:'mut small'},'Projection needs '+unit.gate+
    ' completed tasks to mean anything; there are '+unit.completed+
    '. A forecast off a smaller sample would be noise.'));
- if(rt.tot)card.append(el('div',{class:'ufact'},uCost(rt.re)+' on tasks that needed '+
+ if(USAGE.showCost&&rt.tot)card.append(el('div',{class:'ufact'},uCost(rt.re)+' on tasks that needed '+
    'more than one attempt ('+plural(rt.rn,'task')+') - '+uCost(rt.bl)+
    ' on tasks that ended blocked ('+plural(rt.bn,'task')+').'),
   el('div',{class:'mut small'},'Retried spend is not wasted spend: the ledger '+
@@ -356,8 +377,17 @@ function renderUsage(){closeCombo();const c=$('#usage');
   el('div',{class:'mut small'},'Compared inside a band on purpose: hard work is '+
    'routed to the stronger model deliberately, so a raw spend-per-task comparison '+
    'across bands would flag that working system as a fault.'));
+  // Same coverage reading as the cost-per-task tile above, printed once for the
+  // whole table rather than per cell: a `cost/task` column computed from a
+  // narrower slice of done tasks than the plan has would look exactly like one
+  // computed from all of them.
+  if(USAGE.showCost&&uCoverageLine(tcov))card.append(el('div',{class:'mut small'},
+   uCoverageLine(tcov)));
+  // The cost/task column goes with showCost, header and cells together: a
+  // header kept over dropped cells would shift every figure one column left.
   const tbl=el('table',{class:'utbl'},
-    tableHead(['risk','model','tasks','cost/task','mean attempts']));
+    tableHead(['risk','model','tasks'].concat(USAGE.showCost?['cost/task']:[],
+      ['mean attempts'])));
   const tb=el('tbody',{});let last='';
   rows.forEach(r=>{tb.append(el('tr',{},el('td',{},r.risk===last?'':r.risk),
     el('td',{class:'mono'},r.model),el('td',{},String(r.tasks)),
@@ -365,7 +395,7 @@ function renderUsage(){closeCombo();const c=$('#usage');
     // share of nothing. `r.att.toFixed(1)` on a null is a TypeError and on a NaN
     // prints the word NaN into the table - a figure nobody could compute, shown as
     // though somebody had.
-    el('td',{},uCost(r.perTask)),
+    USAGE.showCost?el('td',{},uCost(r.perTask)):null,
     el('td',{},r.att==null?'—':r.att.toFixed(1))));last=r.risk;});
   // Framed like its monthly twin above. Unframed it was the panel's widest
   // offender: 332px intrinsic in a card with no scroll frame, so the DOCUMENT
@@ -376,8 +406,9 @@ function renderUsage(){closeCombo();const c=$('#usage');
  // The one recommendation in the tab. Computed server-side over the whole ledger
  // (see routingAdvice in usage_state), so it is a statement about the project and
  // says so whenever a filter is narrowing everything else on screen.
+ // A recommendation priced in dollars, so it goes with them.
  const adv=USAGE.routingAdvice||[];
- if(adv.length){
+ if(USAGE.showCost&&adv.length){
   card.append(el('h2',{},'What the evidence supports'));
   if(UORDER.length)card.append(el('div',{class:'ucrumb mut'},
     'Across the whole ledger - this one does not follow the filters above.'));

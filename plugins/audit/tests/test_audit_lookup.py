@@ -413,6 +413,98 @@ def _cases(check):
               rc == M.E_OK and payload["found"] is True
               and payload["answer"]["files"][0]["last"] == "P1.2")
 
+        # --- CLI: brief also carries `executor.runsGate`, resolved ----------
+        # A project of its own beside the manifest, so a config written here
+        # never reaches the `run` cases below, which resolve `tmp` as theirs.
+        proj = os.path.join(tmp, "proj")
+        cfg_dir = os.path.join(proj, ".claude")
+        os.makedirs(cfg_dir)
+        cfg_path = os.path.join(cfg_dir, "audit.config.json")
+
+        def _write_cfg(text):
+            with open(cfg_path, "w", encoding="utf-8") as fh:
+                fh.write(text)
+
+        def _brief(*extra):
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = M.main([mpath, "brief", "P1.1", "--project", proj]
+                            + list(extra))
+            return rc, out.getvalue(), err.getvalue()
+
+        _write_cfg(json.dumps({"executor": {"runsGate": "full"}}))
+        rc, text, _err = _brief()
+        check("rg1 a config setting executor.runsGate to `full` puts that "
+              "reading in brief's text, with the key and the file as its "
+              "basis, beside the file answers it already printed: %r" % (text,),
+              rc == M.E_OK
+              and "executor.runsGate: full" in text
+              and "set by executor.runsGate in .claude/audit.config.json" in text
+              and "default" not in text
+              and "last declared by P1.2" in text)
+        rc, text, _err = _brief("--json")
+        gate = json.loads(text)["answer"].get("runsGate") if rc == M.E_OK else None
+        check("rg2 the same reading in --json: `runsGate` carries the word, "
+              "default false, and the key as its basis: %r" % (gate,),
+              gate is not None and gate.get("reading") == "full"
+              and gate.get("default") is False
+              and "executor.runsGate" in (gate.get("basis") or ""))
+
+        os.remove(cfg_path)
+        rc, text, _err = _brief()
+        rc_j, text_j, _err = _brief("--json")
+        gate = json.loads(text_j)["answer"].get("runsGate") if rc_j == M.E_OK else None
+        check("rg3 with NO config file, brief prints own-tests and says it is "
+              "the default because the file is absent - in text and in "
+              "--json: %r / %r" % (text, gate),
+              rc == M.E_OK
+              and "executor.runsGate: own-tests (the default" in text
+              and "no .claude/audit.config.json" in text
+              and gate is not None and gate.get("reading") == "own-tests"
+              and gate.get("default") is True)
+
+        _write_cfg(json.dumps({"executor": {"maxHours": 2}}))
+        rc, text, _err = _brief()
+        check("rg4 a config file WITHOUT the key reads the same default, and "
+              "the basis says the key is what is absent, not the file: %r"
+              % (text,),
+              rc == M.E_OK
+              and "executor.runsGate: own-tests (the default" in text
+              and "not set in .claude/audit.config.json" in text)
+
+        # The allow twin of rg5: own-tests WRITTEN in the file is a setting,
+        # not the default - catches a refusal or a basis that keys on the
+        # word rather than on whether the key was present.
+        _write_cfg(json.dumps({"executor": {"runsGate": "own-tests"}}))
+        rc, text, _err = _brief()
+        check("rg6 own-tests set explicitly is reported as SET, not as the "
+              "default it happens to equal: %r" % (text,),
+              rc == M.E_OK
+              and "executor.runsGate: own-tests (set by executor.runsGate" in text
+              and "default" not in text)
+
+        _write_cfg(json.dumps({"executor": {"runsGate": "fast"}}))
+        rc, text, err = _brief()
+        rc_j, text_j, err_j = _brief("--json")
+        check("rg5 an unrecognised value is a refusal: non-zero exit, the "
+              "value named, and NO reading printed - never the default it "
+              "might have been folded into - in text and in --json: "
+              "%r %r %r / %r %r %r" % (rc, text, err, rc_j, text_j, err_j),
+              rc not in (M.E_OK, M.E_NOMATCH) and rc_j == rc
+              and "'fast'" in err and "'fast'" in err_j
+              and text == "" and text_j == ""
+              and "own-tests" not in err.split("one of")[0])
+
+        _write_cfg("{not json")
+        rc, text, err = _brief()
+        check("rg7 a config file that does not parse is refused too, with "
+              "the parse error named - the reading cannot be known, so "
+              "printing the default would be a guess: %r %r %r"
+              % (rc, text, err),
+              rc not in (M.E_OK, M.E_NOMATCH) and text == ""
+              and "audit.config.json" in err)
+        os.remove(cfg_path)
+
         # --- CLI: run, through a real evidence ledger on disk -----------------
         # `mpath` already sits at the DEFAULT `docs/audit/audit-plan.json`
         # location, so the ledger's own default resolution finds it with no

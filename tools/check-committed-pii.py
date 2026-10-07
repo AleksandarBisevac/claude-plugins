@@ -297,6 +297,63 @@ def journal_row_problems(row):
     return out
 
 
+# A phase's `claim` is written into the shard the plugin commits, so a `host` in it
+# is the same machine name the journal stopped storing. `audit-task start` writes a
+# claim with no host; this is the backstop that reads the committed bytes for one a
+# hand edit, an older writer or another tool put there. A shape check like the
+# journal's: the key is the finding, whatever it holds.
+_CLAIM_KEY = re.compile(r'^(\s*)"claim"\s*:\s*\{')
+_HOST_KEY = re.compile(r'"host"\s*:')
+
+
+def _claim_hosts(node):
+    """How many `claim` objects under `node` carry a `host` key."""
+    if isinstance(node, list):
+        return sum(_claim_hosts(item) for item in node)
+    if not isinstance(node, dict):
+        return 0
+    claim = node.get("claim")
+    own = 1 if isinstance(claim, dict) and "host" in claim else 0
+    return own + sum(_claim_hosts(v) for k, v in node.items() if k != "claim")
+
+
+def plan_claim_host_lines(text):
+    """The line of each `host` key inside a phase `claim`, in one plan file.
+
+    THE PARSE DECIDES, THE TEXT LOCATES. Whether a claim carries a host is asked
+    of the parsed document, so a `host` anywhere else in the plan is not a
+    finding; the line is then read off the text, because a finding names the line
+    a person opening the file lands on. A claim the parse found and the text walk
+    could not place is still reported, at line 0, rather than dropped. A file that
+    does not parse answers nothing here: the index's own unparseable row is
+    `plan_files`' to report.
+    """
+    try:
+        want = _claim_hosts(json.loads(text))
+    except ValueError:
+        return []
+    if not want:
+        return []
+    lines, found = text.split("\n"), []
+    for i, line in enumerate(lines):
+        m = _CLAIM_KEY.match(line)
+        if not m:
+            continue
+        rest = line[m.end():]
+        if "}" in rest:
+            # The whole claim on one line.
+            if _HOST_KEY.search(rest):
+                found.append(i + 1)
+            continue
+        for j in range(i + 1, len(lines)):
+            if lines[j].strip().startswith("}"):
+                break
+            if _HOST_KEY.search(lines[j]):
+                found.append(j + 1)
+                break
+    return found[:want] + [0] * max(0, want - len(found))
+
+
 # --- scanning -----------------------------------------------------------------
 def scan_text(rel, text, surface):
     """[(rel, line, detector, column)] for one file's contents."""
@@ -321,6 +378,9 @@ def scan_text(rel, text, surface):
             continue
         if isinstance(row, dict):
             out.extend((rel, n, name, 1) for name in journal_row_problems(row))
+    if surface == "plan":
+        out.extend((rel, n, "plan-claim-host", 1)
+                   for n in plan_claim_host_lines(text))
     return out
 
 
@@ -1042,15 +1102,18 @@ def _plan_fixture():
     scratch = "/".join(["", "priv" + "ate", "t" + "mp", "claude-" + "7",
                         "s", "probe.json"])
 
-    def shard(pid, text):
-        return json.dumps({"id": pid, "tasks": [{"id": pid + ".1",
-                                                 "description": text}]},
-                          indent=2) + "\n"
+    def shard(pid, text, claim=None):
+        body = {"id": pid, "tasks": [{"id": pid + ".1", "description": text}]}
+        if claim is not None:
+            body["claim"] = claim
+        return json.dumps(body, indent=2) + "\n"
+    claim = {"sessionId": "s-1", "branch": "audit/p", "at": "2026-01-01T00:00:00Z"}
     index = json.dumps({"meta": {"version": 2}, "phases": [
         {"id": "P1", "shard": "shards/P1.json"},
         {"id": "P2", "shard": "shards/P2.json"},
         {"id": "P3", "shard": "shards/P3.json"},
-        {"id": "P4", "shard": "P4.json"}]}, indent=2) + "\n"
+        {"id": "P4", "shard": "P4.json"},
+        {"id": "P5", "shard": "shards/P5.json"}]}, indent=2) + "\n"
     files = [
         (".claude/audit.config.json",
          json.dumps({"manifestPath": "plan/roadmap.json"}) + "\n"),
@@ -1060,8 +1123,15 @@ def _plan_fixture():
         # THE ALLOW CASE: repo-relative paths and bare base names are what an
         # honest shard carries, and a plan surface that flagged them would be
         # muted the first day.
+        # ...and its claim is the allow twin of P5's below: session, branch and
+        # moment, no machine name.
         ("plan/shards/P3.json", shard("P3", "edit tools/check-committed-pii.py "
-                                            "and docs/home/notes.md; see probe.sh")),
+                                            "and docs/home/notes.md; see probe.sh",
+                                      claim)),
+        # A claim carrying a `host`: a machine name in a committed shard, which no
+        # detector's vocabulary would see because the value is just a word.
+        ("plan/shards/P5.json", shard("P5", "nothing to see",
+                                      dict(claim, host="a-laptop"))),
         # A shard pointed at BESIDE the index is taken, and the directory it
         # sits in is not swept: that directory is also where the human's note
         # below lives. The domain grew by the plan, not by every JSON file near
@@ -1078,12 +1148,14 @@ def _plan_fixture():
     # expected answer is the line a person opening the file would land on.
     body = dict(files)
 
-    def line_of(rel):
+    def line_of(rel, key='"description"'):
         return [n for n, text in enumerate(body[rel].split("\n"), 1)
-                if '"description"' in text][0]
+                if key in text][0]
     leaks = {"plan/shards/P1.json": (line_of("plan/shards/P1.json"), "posix-home"),
              "plan/shards/P2.json": (line_of("plan/shards/P2.json"),
-                                     "tempdir-session")}
+                                     "tempdir-session"),
+             "plan/shards/P5.json": (line_of("plan/shards/P5.json", '"host"'),
+                                     "plan-claim-host")}
     return _fixture_tree(files), leaks
 
 
@@ -1102,12 +1174,13 @@ def _plan_cases(check, plan, leaks):
           and prun["surfaces"] == ["plan"]
           and sorted(prun["files"]) == ["plan/P4.json", "plan/roadmap.json",
                                         "plan/shards/P1.json",
-                                        "plan/shards/P2.json", "plan/shards/P3.json"])
+                                        "plan/shards/P2.json", "plan/shards/P3.json",
+                                        "plan/shards/P5.json"])
 
     code, text = _captured(["--repo", plan])
     _echo = dict((frag, text.count(frag))
                  for frag in ("some" + "one", "claude-" + "7", "probe.json",
-                              "scratch"))
+                              "scratch", "a-laptop"))
     check("q25 ...and the run names each such shard by file and line and echoes "
           "NOTHING it matched, while the shard carrying only repo-relative paths "
           "and base names is not a finding: exit %d, %r" % (code, _echo),
@@ -1470,6 +1543,36 @@ def _cases(check):
           == ["journal-actor-host", "journal-details-command"]
           and journal_row_problems({"actor": {"via": "hook"},
                                     "details": {"commandSha256": "0" * 64}}) == [])
+
+    # A PHASE CLAIM'S `host`, in both layouts and both spellings. The parse
+    # decides and the text only locates, so the allow cases are a claim with no
+    # host and a `host` key that is not under a claim at all.
+    _cl = {"sessionId": "s", "branch": "b", "at": "t"}
+    _shard = json.dumps({"id": "P1", "claim": dict(_cl, host="a-laptop")},
+                        indent=2)
+    _single = json.dumps({"phases": [{"id": "P1", "claim": dict(_cl, host="x")},
+                                     {"id": "P2", "claim": _cl}]}, indent=2)
+    _compact = '{"id": "P1",\n "claim": {"sessionId": "s", "host": "x"}}'
+    _hostless = json.dumps({"id": "P1", "claim": _cl,
+                            "tasks": [{"id": "P1.1", "host": "a-laptop"}]},
+                           indent=2)
+
+    def _host_line(text):
+        return [n for n, line in enumerate(text.split("\n"), 1)
+                if '"host"' in line]
+    _got = dict((name, [(r[1], r[2]) for r in scan_text("f.json", text, "plan")])
+                for name, text in (("shard", _shard), ("single", _single),
+                                   ("compact", _compact),
+                                   ("hostless", _hostless)))
+    check("q32 a `host` under a phase `claim` in a plan file is a finding at the "
+          "line of the key - a shard and a single-file manifest alike, the claim "
+          "spread over lines or on one - while a claim with no host, and a "
+          "`host` key outside any claim, are clean: %r" % (_got,),
+          _got["shard"] == [(_host_line(_shard)[0], "plan-claim-host")]
+          and _got["single"] == [(_host_line(_single)[0], "plan-claim-host")]
+          and _got["compact"] == [(2, "plan-claim-host")]
+          and _got["hostless"] == []
+          and [r[2] for r in scan_text("f.json", _shard, "report")] == [])
 
     check("q11 a journal file's WRITER ID is checked too - it is the one field "
           "with no repair path, because `genesis_prev` seeds the chain from these "

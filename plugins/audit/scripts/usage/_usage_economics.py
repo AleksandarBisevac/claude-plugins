@@ -80,12 +80,112 @@ def _percentile(values, p):
     return s[idx]
 
 
+def _done_task_coverage(tasks, rows):
+    """How many of the plan's done tasks the ledger attributed any tokens to.
+
+    `completed` and a band `sample` count only done tasks that carry rows, so a
+    per-task figure read alone looks as if it covered every done task. This is
+    the denominator beside it: `done` is every done task in the plan, `priced`
+    those whose own rows sum to more than zero tokens - a row with no tokens
+    attributes no work. `None` when the plan has no done task, because a
+    zero-of-zero would read as complete coverage of nothing."""
+    done_ids = set(tid for tid, t in tasks.items() if t.get("status") == "done")
+    if not done_ids:
+        return None
+    tokens = {}
+    for row in rows:
+        tid = row.get("taskId")
+        if tid in done_ids:
+            tokens[tid] = tokens.get(tid, 0) + _core._tokens(row)
+    return {"done": len(done_ids),
+            "priced": sum(1 for n in tokens.values() if n > 0)}
+
+
+def coverage_sentence(cov):
+    """`_done_task_coverage`'s reading, as the one sentence every caller that
+    prints a per-task cost figure states beside it — the CLI, the report's HTML
+    tile, its Markdown twin and the routing table all make the same "cost per
+    task" claim, and each needs the same basis. `cov` is `_done_task_coverage`'s
+    `doneTaskCoverage` value; `None` in (no done task in the plan — nothing yet
+    to cover) gives `None` out, never an empty string, so a caller's own `if
+    note:` guard reads the same whether the value is missing or absent.
+
+    WORDED TO NOT FORM "N of M <noun>" ON PURPOSE. The natural phrasing — "N of
+    M done task(s) priced" — is exactly the ratio shape `_output._ratio_claim`
+    refuses in a committed document with no command beside it, and this
+    sentence IS committed: it renders into `examples/acme-store/acme-store-
+    audit.md`, a tracked file `_deps.doc_prose_numbers()` scans. "Of the plan's
+    N done task(s), M are priced" says the same thing with the two numbers in
+    the opposite order, which keeps a reader beside `of` with no numeral
+    immediately before it — confirmed empirically against `_output.
+    _prose_number_claim()`, not merely asserted, and `test__deps.py`'s own
+    fixtures are the reason this stays testable rather than a belief about the
+    pattern."""
+    if not cov:
+        return None
+    return ("Of the plan's %d done task(s), %d are priced; main-loop spend is "
+            "not attributed to a task." % (cov.get("done", 0), cov.get("priced", 0)))
+
+
+def rate_basis_phrase(pricing_basis):
+    """`resolve_pricing`'s `{basis, asOf, source}` as the one phrase every
+    surface prints beside a cost - the report, its Markdown twin,
+    `/audit:usage`, `/audit:status`, and the panel through its payload. The
+    caller hands in the answer it already resolved; this never resolves a
+    table itself, so no surface can name a basis other than the one that
+    priced its rows.
+
+    The date is the resolver's: the shipped table's own `PRICING_AS_OF` when
+    the shipped table priced the rows, so a project that declared nothing is
+    shown the date and page its rates came from rather than "rates undated".
+    "Undated" is said only of a project's own table that carries no date, with
+    the key that dates it. An answer that is missing, or names no basis
+    `PRICING_BASES` knows, is stated as unrecorded rather than filled in with
+    the shipped table's date - a basis guessed is a basis manufactured.
+
+    `pricedWhenWritten`, when the caller carries `_usage_core.priced_at_read`'s
+    count beside the answer, names the rows whose figure is the one stored
+    when they were written rather than this table's: the phrase would
+    otherwise claim one table for a sum of two."""
+    pb = pricing_basis if isinstance(pricing_basis, dict) else {}
+    basis = pb.get("basis")
+    if basis not in _core.PRICING_BASES:
+        return "rate basis not recorded" + _kept_clause(pb.get("pricedWhenWritten"))
+    as_of = pb.get("asOf")
+    as_of = as_of.strip() if isinstance(as_of, str) else ""
+    source = pb.get("source")
+    source = source.strip() if isinstance(source, str) else ""
+    when = ("rates as of %s" % as_of) if as_of else "rates undated"
+    if basis == "shipped":
+        where = "the plugin's shipped table" + (
+            " (%s)" % source if source else "")
+        hint = ""
+    elif basis == "manifest":
+        where = "the plan's own table in meta.usage.pricing"
+        hint = " - set meta.usage.pricingAsOf"
+    else:
+        where = "the project's usage.pricing in .claude/audit.config.json"
+        hint = " - set usage.pricingAsOf"
+    return "%s, %s%s%s" % (when, where, "" if as_of else hint,
+                           _kept_clause(pb.get("pricedWhenWritten")))
+
+
+def _kept_clause(kept):
+    """The rate phrase's tail for rows priced when written; "" for none, or
+    for a count that is not a positive int."""
+    if not isinstance(kept, int) or isinstance(kept, bool) or kept <= 0:
+        return ""
+    return ("; %d row(s) keep the cost stored when written, at no recorded "
+            "rate" % kept)
+
+
 def unit_economics(manifest, rows):
     """Cost per completed task, and what the remaining work would cost at that rate.
 
     The projection is SUPPRESSED below `MIN_TASKS_FOR_PROJECTION` completed tasks and
     is always a p25-p75 RANGE rather than a point estimate. A confident forecast off
-    three samples is worse than no forecast."""
+    three samples is worse than no forecast. `doneTaskCoverage` is `_done_task_coverage`'s
+    reading: how much of the plan's finished work `costPerTask` actually rests on."""
     tasks = task_index(manifest)
     cost_by_task = {}
     for row in rows:
@@ -100,6 +200,7 @@ def unit_economics(manifest, rows):
         "completed": len(done), "remaining": remaining,
         "gate": MIN_TASKS_FOR_PROJECTION, "sufficient": len(done) >= MIN_TASKS_FOR_PROJECTION,
         "costPerTask": round(sum(done) / len(done), 4) if done else None,
+        "doneTaskCoverage": _done_task_coverage(tasks, rows),
         "p25": None, "p75": None, "projection": None,
         "mostExpensive": sorted(
             ((tid, round(c, 4), (tasks.get(tid) or {}).get("attempts"))
@@ -165,6 +266,7 @@ def cost_bands(manifest, rows, cfg=None):
 
     out = {"basis": None, "high": None, "outlier": None, "byTask": {},
            "counts": {b: 0 for b in BAND_ORDER}, "sample": 0,
+           "doneTaskCoverage": _done_task_coverage(tasks, rows),
            "gate": COST_BAND_PARAMS["gate"], "sufficient": False}
 
     hi, out_ = band_cfg.get("highUSD"), band_cfg.get("outlierUSD")

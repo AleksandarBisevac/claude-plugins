@@ -12,20 +12,31 @@ and each therefore gets **both** directions — the refusal, and the case that
 would fail if the refusal became unconditional.
 
 THE CONTEXT LINE IS WHERE THE BASIS LIVES. A cost is a claim, and the rate date
-behind every dollar on screen renders beside them or the dollars do not render.
-When costs are shown with no date declared it says *that* rather than falling
-back to the default table's date, because the ledger prices at write time and
-records no rate vintage — a fallback would manufacture a basis. And it is gated
-on there being spend to price at all: "rates undated" announced over an empty
-usage block is a basis for a claim nobody made.
+and source behind every dollar on screen render beside them. The phrase is
+`rate_basis_phrase` over the payload's `pricingBasis` - the shared resolver's
+answer - so the shipped table's own date and page are named when the shipped
+table priced the rows, and "rates undated" is said only of a project table
+that carries no date. A payload with no resolver answer says the basis is not
+recorded rather than guessing one. And it is gated on there being spend to
+price at all: a basis announced over an empty usage block is a basis for a
+claim nobody made.
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import calendar
+import io
+import json
+import os
+import re
+import shutil
 import sys
+import tempfile
+import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
+import _usage_load as _load                        # noqa: E402
 import _usage_overview as M                        # noqa: E402
 import _usage_viz as _viz                          # noqa: E402
 import _report_usage as _RU                        # noqa: E402
@@ -36,7 +47,7 @@ def _u(**kw):
                     "cacheHitPct": 50.0},
          "counts": {"phases": 1, "people": 1, "models": 1, "sessions": 1,
                     "days": 2, "from": "2026-07-01", "to": "2026-07-02"},
-         "showCost": True, "pricingAsOf": "2026-06-01", "pricingStale": False,
+         "showCost": True, "pricingStale": False,
          "cache": {"hitPct": 50.0, "inputCostVsFreshPct": 20.0},
          "coverage": {"attributedPct": 90.0, "taskLevelPct": 80.0},
          "unit": {}, "byAuthor": {}, "byPhase": {}, "byModel": {},
@@ -45,27 +56,87 @@ def _u(**kw):
     return u
 
 
+def _day_after(day, n):
+    """`day` (YYYY-MM-DD) moved `n` days on, as YYYY-MM-DD."""
+    t = calendar.timegm(time.strptime(day, "%Y-%m-%d")) + n * 86400
+    return time.strftime("%Y-%m-%d", time.gmtime(t))
+
+
+def _loaded_page(root, name, meta_usage, ledger_day):
+    """The context line and the notices for a project on disk: a manifest
+    carrying `meta_usage`, and a one-row ledger on `ledger_day`. Loaded through
+    `_usage_load.load_usage`, so the staleness and the basis are the ones a
+    real render computes, not ones a fixture dict asserts."""
+    proj = os.path.join(root, name)
+    mdir = os.path.join(proj, "docs", "audit")
+    ldir = os.path.join(proj, ".claude", "usage")
+    os.makedirs(mdir)
+    os.makedirs(ldir)
+    manifest = {"meta": {"version": 2, "repo": "x", "usage": meta_usage},
+                "phases": [{"id": "P0", "title": "P", "status": "pending",
+                            "tasks": [{"id": "P0.1", "title": "T",
+                                       "status": "done"}]}]}
+    mpath = os.path.join(mdir, "audit-plan.json")
+    with io.open(mpath, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(json.dumps(manifest))
+    row = {"ts": ledger_day + "T03", "model": "claude-opus-5",
+           "author": "a@x.example", "phaseId": "P0", "taskId": "P0.1",
+           "msgs": 1, "in": 1000, "out": 1000, "costUSD": 0.01}
+    with io.open(os.path.join(ldir, ledger_day[:7] + ".jsonl"), "w",
+                 encoding="utf-8", newline="\n") as fh:
+        fh.write(json.dumps(row) + "\n")
+    u = _load.load_usage(manifest, mpath, proj)
+    return u, M._usage_context(u), M._usage_notices(u)
+
+
+def _dates(html):
+    return set(re.findall(r"\b\d{4}-\d{2}-\d{2}\b", html))
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     # --- the context line: the basis for every dollar below it ---
-    out = M._usage_context(_u())
-    check("uo1 the context line names the rate date, because every cost "
-          "figure below is derived from it", "rates as of 2026-06-01" in out,
+    import usage_ledger as _ul
+    _shipped = {"basis": "shipped", "asOf": _ul.PRICING_AS_OF,
+                "source": _ul.PRICING_SOURCE_URL}
+    out = M._usage_context(_u(pricingBasis={"basis": "manifest",
+                                            "asOf": "2026-06-01",
+                                            "source": None}))
+    check("uo1 the context line names the rate date and where the table was "
+          "declared, because every cost figure below is derived from it",
+          "rates as of 2026-06-01" in out and "meta.usage.pricing" in out,
           out)
-    out = M._usage_context(_u(pricingAsOf=None))
-    check("uo2 ...and when costs are shown with NO date declared it says so, "
-          "rather than falling back to the default table's date - the ledger "
-          "prices at write time and records no vintage, so a fallback would "
-          "manufacture a basis", "rates undated" in out, out)
-    out = M._usage_context(_u(showCost=False, pricingAsOf=None))
+    out = M._usage_context(_u(pricingAsOf=None, pricingBasis=_shipped))
+    check("uo1a ...and when the SHIPPED table priced the rows and the project "
+          "declared no date, it names the shipped table's own date and source "
+          "rather than calling the rates undated",
+          ("rates as of %s" % _ul.PRICING_AS_OF) in out
+          and _viz.e(_ul.PRICING_SOURCE_URL) in out
+          and "undated" not in out, out)
+    check("uo1b ...and the phrase is the one helper's, not a second wording "
+          "of it", _viz.e(_ul.rate_basis_phrase(_shipped)) in out, out)
+    out = M._usage_context(_u(pricingAsOf=None,
+                              pricingBasis={"basis": "manifest", "asOf": None,
+                                            "source": None}))
+    check("uo2 ...and when the plan's OWN table priced them with NO date "
+          "declared it says so, rather than borrowing the shipped table's "
+          "date for a table that is not the shipped one",
+          "rates undated" in out and "usage.pricingAsOf" in out
+          and _ul.PRICING_AS_OF not in out, out)
+    out = M._usage_context(_u())
+    check("uo2a ...and a payload that carries no resolver answer says the "
+          "basis is unrecorded rather than guessing one",
+          "rate basis not recorded" in out and "rates as of" not in out, out)
+    out = M._usage_context(_u(showCost=False, pricingAsOf=None,
+                              pricingBasis=_shipped))
     check("uo3 ...and it is withheld entirely when showCost is off: a basis "
           "with no claim beside it is noise",
-          "rates" not in out, out)
+          "rate" not in out, out)
     out = M._usage_context(_u(totals={"tokens": 0, "costUSD": 0.0, "msgs": 0},
-                              pricingAsOf=None))
+                              pricingAsOf=None, pricingBasis=_shipped))
     check("uo4 ...and it is gated on there being SPEND to price, not merely "
           "on showCost - 'rates undated' announced over an empty usage block "
-          "is a basis for a claim nobody made", "rates" not in out, out)
+          "is a basis for a claim nobody made", "rate" not in out, out)
     check("uo5 ...and a context with nothing to say renders as the empty "
           "string, not as an empty paragraph",
           M._usage_context({"showCost": False}) == "")
@@ -88,10 +159,59 @@ def _cases(check):
     # --- notices ---
     check("uo9 a healthy report has no notices at all",
           M._usage_notices(_u()) == "")
-    out = M._usage_notices(_u(pricingStale=True))
-    check("uo10 ...and a stale price table is named with its date, because "
-          "every cost figure below is derived from it",
-          "more than 90 days older" in out and "2026-06-01" in out, out)
+    _stale_pb = {"basis": "manifest", "asOf": "2026-06-01", "source": None}
+    out = M._usage_notices(_u(pricingStale=True, pricingBasis=_stale_pb))
+    check("uo10 ...and a stale price table is named with its date and its "
+          "place in `rate_basis_phrase`'s own words, because every cost "
+          "figure below is derived from it",
+          "more than 90 days older" in out
+          and _viz.e(_ul.rate_basis_phrase(_stale_pb)) in out, out)
+
+    # --- the stale notice and the context line date ONE table ---
+    # Loaded from disk rather than handed a dict, because the defect lived
+    # between the two halves: the load dated the notice from the manifest's
+    # `pricingAsOf` while the context line dated the table the resolver chose,
+    # so a plan carrying a date and no table printed two dates for one table
+    # and warned about a table that priced nothing.
+    _root = tempfile.mkdtemp(prefix="audit-usage-overview-stale-")
+    try:
+        _near = _day_after(_ul.PRICING_AS_OF, 10)
+        _u32, _ctx32, _nt32 = _loaded_page(
+            _root, "dated-no-table", {"pricingAsOf": "2025-01-01"}, _near)
+        check("uo32 a manifest `pricingAsOf` with NO manifest table dates "
+              "nothing: the page names one date for the price table - the "
+              "table that priced the rows - and raises no stale notice about "
+              "a table that priced nothing: dates %r, notices %r"
+              % (sorted(_dates(_ctx32 + _nt32) - {_near}), _nt32),
+              _u32 is not None and _u32["pricingBasis"]["basis"] == "shipped"
+              and _dates(_ctx32 + _nt32) - {_near} == {_ul.PRICING_AS_OF}
+              and "more than 90 days older" not in _nt32)
+        _old_table = {"claude-opus-5": {"in": 1.0, "out": 2.0, "cacheW5m": 1.0,
+                                        "cacheW1h": 1.0, "cacheR": 0.1}}
+        _u33, _ctx33, _nt33 = _loaded_page(
+            _root, "old-own-table",
+            {"pricing": _old_table, "pricingAsOf": "2025-01-01"}, _near)
+        check("uo33 ...while an old DATED table the resolver chose still "
+              "raises the notice, once, naming the same date and the same "
+              "place as the context line - one date for the table across "
+              "the page: dates %r, notices %r"
+              % (sorted(_dates(_ctx33 + _nt33) - {_near}), _nt33),
+              _u33 is not None and _u33["pricingBasis"]["basis"] == "manifest"
+              and _nt33.count("more than 90 days older") == 1
+              and _viz.e(_ul.rate_basis_phrase(_u33["pricingBasis"])) in _nt33
+              and _dates(_ctx33 + _nt33) - {_near} == {"2025-01-01"})
+        _far = _day_after(_ul.PRICING_AS_OF, 200)
+        _u34, _ctx34, _nt34 = _loaded_page(_root, "old-shipped", {}, _far)
+        check("uo34 ...and so does the SHIPPED table, when it is the one that "
+              "priced the rows and the ledger has outrun it - the notice "
+              "follows the resolver's date, not a manifest key: notices %r"
+              % (_nt34,),
+              _u34 is not None and _u34["pricingBasis"]["basis"] == "shipped"
+              and _nt34.count("more than 90 days older") == 1
+              and _viz.e(_ul.rate_basis_phrase(_u34["pricingBasis"])) in _nt34
+              and _dates(_ctx34 + _nt34) - {_far} == {_ul.PRICING_AS_OF})
+    finally:
+        shutil.rmtree(_root, ignore_errors=True)
     out = M._usage_notices(_u(coverage={"attributedPct": 0.4,
                                         "taskLevelPct": 0.0, "warn": True}))
     check("uo11 ...and the low-coverage notice floors its share: it fires "
@@ -145,6 +265,18 @@ def _cases(check):
           "footnote, never drawn as a 0% bar: an unbudgeted phase is not a "
           "phase at zero",
           "1 phase(s) have no" in out and out.count('class="nm"') == 1, out[-260:])
+    _budget_fixture = {"phases": [{"id": "P0", "title": "t", "budget": 40.0,
+                                   "pct": 130.0, "over": True, "spent": 52.0}]}
+    out_nc = M._budget_block(_u(showCost=False, budgets=_budget_fixture))
+    check("uo19b ...and the WHOLE block is DROPPED ENTIRELY with showCost "
+          "off, gated INSIDE this function because its caller "
+          "(_report_usage.py) calls it unconditionally: a budget bar IS a "
+          "spend-versus-budget comparison, so with no dollars to compare "
+          "there is no claim left to make, not a dollar-free reword",
+          out_nc == "", out_nc)
+    check("uo19c ...and with showCost on the SAME fixture the block still "
+          "draws - the twin that fails if the gate becomes unconditional",
+          M._budget_block(_u(budgets=_budget_fixture)) != "", "")
 
     # --- author chips ---
     check("uo20 one author renders no chips: a set of one has nothing to "
@@ -194,6 +326,24 @@ def _cases(check):
     check("uo27 ...and a real-but-tiny row is floored to a visible 0.8% "
           "track: a row at 0.08% of the peak paints an empty bar, which reads "
           "as 'no data' rather than 'a little'", "width:0.8%" in out, out[:400])
+
+    # --- the cost-per-task tile's coverage note ---
+    out = M._usage_tiles(_u(unit={"costPerTask": 0.5, "completed": 3,
+                                  "doneTaskCoverage": {"done": 5, "priced": 3}}))
+    check("uo30 the cost-per-task tile's sub-line names priced versus done "
+          "tasks, and says main-loop spend is never attributed to a task - "
+          "the basis for a figure that could otherwise be read as covering "
+          "every finished task",
+          "5 done task(s), 3 are priced" in out
+          and "main-loop spend is not attributed to a task" in out, out)
+    out_nc = M._usage_tiles(_u(showCost=False,
+                               unit={"costPerTask": 0.5, "completed": 3,
+                                     "doneTaskCoverage": {"done": 5,
+                                                          "priced": 3}}))
+    check("uo31 ...and with showCost off the tile AND its coverage basis are "
+          "both absent - a basis with no claim beside it is noise",
+          "cost per task" not in out_nc and "done task(s) priced" not in out_nc,
+          out_nc)
 
     # --- the aliases ---
     _names = ("_usage_context", "_usage_tiles", "_usage_notices",

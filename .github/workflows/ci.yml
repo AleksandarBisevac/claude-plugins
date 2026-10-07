@@ -735,17 +735,16 @@ jobs:
         shell: bash
         run: |
           set -e
-          # The README's headline image is a recording of the plan gate denying an
-          # edit. Two things are asserted. The BEHAVIOUR the recording depends on:
-          # the in-plan edit allowed, the out-of-plan edit denied, the refusal still
-          # naming the file and the way out. And the TEXT: a recording writes the
-          # GIF's sha256 and a digest of the text it shows into
-          # docs/screenshots/captured-at.json, and this recomputes both - the text
-          # from a fresh capture, the hash from the committed file - failing by the
-          # GIF's name when either moved or no record exists. Behaviour alone once
-          # stayed green over a GIF showing a bypass line the gate no longer
-          # printed. The pixels are not compared (font rasterisation differs by
-          # host). --check writes no file and needs no font.
+          # The README's headline image is a recorded Claude Code session in which
+          # the plan gate refuses an edit. No session runs here. The recording wrote
+          # the GIF's sha256, the out-of-plan edit Claude sent and the gate's refusal
+          # into docs/screenshots/captured-at.json; this rebuilds the demo project,
+          # feeds require-plan that same edit, and fails naming the GIF when the
+          # refusal differs from the recorded one, the committed bytes differ from
+          # the recorded sha256, or no record exists. It also asserts the in-plan
+          # edit is still allowed. Behaviour alone once stayed green over a GIF
+          # showing a bypass line the gate no longer printed. The pixels are not
+          # compared. --check writes no file.
           python tools/capture-demo-gif.py --check
 
       - name: Screenshot preconditions (the report actually paints what it claims)

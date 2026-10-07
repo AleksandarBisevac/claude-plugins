@@ -100,6 +100,43 @@ def _cases(check):
     check("ud10 ...and both figures are stated so the reader has the whole "
           "divide beside the percentage - which is why savingPct is not "
           "floored", "60%" in out2 and "$0.20" in out2 and "$0.50" in out2, "")
+    out2_nc = M._routing_table(_u(showCost=False, routing=rt2))
+    check("ud9b ...and the advice block is DROPPED ENTIRELY with showCost "
+          "off, not reworded: savingPct's only stated basis is the two "
+          "dollar figures in the same sentence, so hiding them would leave "
+          "the percent with nothing beside it to show it is true",
+          "What the evidence supports" not in out2_nc
+          and "$0.20" not in out2_nc and "60%" not in out2_nc, out2_nc)
+    check("ud9c ...and with showCost on the SAME fixture the advice still "
+          "renders - the twin that fails if the gate becomes unconditional",
+          "What the evidence supports" in out2, "")
+    out3 = M._routing_table(_u(routing=rt,
+                               unit={"doneTaskCoverage": {"done": 5,
+                                                          "priced": 3}}))
+    check("ud10b ...and the table states the coverage beside its cost/task "
+          "column, the same basis note the first-paint tile and the "
+          "Markdown twin carry for the same figure",
+          "5 done task(s), 3 are priced" in out3
+          and "main-loop spend is not attributed to a task" in out3, out3)
+    out4 = M._routing_table(_u(routing=rt, unit={}))
+    check("ud10c ...and with no doneTaskCoverage recorded there is nothing "
+          "to state, so no coverage sentence renders at all",
+          "main-loop spend" not in out4, out4)
+    out_nc = M._routing_table(_u(showCost=False, routing=rt,
+                                 unit={"doneTaskCoverage": {"done": 5,
+                                                            "priced": 3}}))
+    check("ud10d ...and the cost/task COLUMN is a dollar figure derived from "
+          "costPerTask, so it is withheld with showCost off, header and cells "
+          "together, the same rule the monthly table already follows",
+          "<th>cost/task</th>" not in out_nc and "$0.50" not in out_nc
+          and "<tr><td>high</td>" in out_nc, out_nc)
+    check("ud10e ...and its coverage note goes with it: a basis for a cost "
+          "cell that is not on the page would be noise",
+          "main-loop spend" not in out_nc, out_nc)
+    check("ud10f ...and with showCost on the SAME fixture carries the column "
+          "and its basis - the twin that fails if the gate becomes "
+          "unconditional",
+          "<th>cost/task</th>" in out3 and "main-loop spend" in out3, out3)
 
     # --- economics + the band note ---
     check("ud11 no unit economics and no retry data renders nothing",
@@ -116,15 +153,26 @@ def _cases(check):
           "off a sample too small to mean anything",
           "needs 5 completed tasks" in out and "there are 2" in out
           and "$1.00" not in out, out)
-    out = M._economics_block(_u(unit={"completed": 9, "gate": 5,
-                                      "sufficient": True, "remaining": 3,
-                                      "projection": {"low": 1.0, "high": 3.0}}))
+    _proj_fixture = {"completed": 9, "gate": 5, "sufficient": True,
+                     "remaining": 3, "projection": {"low": 1.0, "high": 3.0}}
+    out = M._economics_block(_u(unit=_proj_fixture))
     check("ud13 ...and past the gate it projects a RANGE from the p25-p75 "
           "per-task rate, never a single number",
           "$1.00" in out and "$3.00" in out and "p25" in out, out[:200])
-    out = M._economics_block(_u(retry={"totalCost": 1.0, "retriedCost": 0.4,
-                                       "retriedTasks": 2, "retriedPct": 0.4,
-                                       "blockedCost": 0.1, "blockedTasks": 1}))
+    out_nc = M._economics_block(_u(showCost=False, unit=_proj_fixture))
+    check("ud13b ...and the projection is DROPPED ENTIRELY with showCost "
+          "off, not reworded as a dollar-free range AND not misreported as "
+          "sample-suppressed (this fixture IS sufficient - a widened `if` "
+          "would have sent it into the sample-gate `elif` instead, claiming "
+          "'needs 5, has 9' for a reason that is not why it is hidden)",
+          "$1.00" not in out_nc and "project to" not in out_nc
+          and "needs 5 completed tasks" not in out_nc, out_nc)
+    check("ud13c ...and with showCost on the SAME fixture the projection "
+          "still renders - the twin that fails if the gate becomes "
+          "unconditional", "project to" in out, "")
+    _retry_fixture = {"totalCost": 1.0, "retriedCost": 0.4, "retriedTasks": 2,
+                      "retriedPct": 0.4, "blockedCost": 0.1, "blockedTasks": 1}
+    out = M._economics_block(_u(retry=_retry_fixture))
     check("ud14 ...and the retry paragraph says retried spend is NOT wasted "
           "spend - the ledger buckets by hour, not by attempt - while naming "
           "the blocked figure as the one with no outcome",
@@ -133,6 +181,27 @@ def _cases(check):
     check("ud15 ...and its share is floored, because the total it is a share "
           "OF sits in the tiles far above rather than in this sentence",
           "&lt;1% of spend" in out, out[-400:])
+    out_nc = M._economics_block(_u(showCost=False, retry=_retry_fixture))
+    check("ud15b ...and BOTH retry facts are DROPPED ENTIRELY with showCost "
+          "off, the caveat paragraph included: it caveats a dollar figure "
+          "that is no longer on the page",
+          "$0.40" not in out_nc and "not the same as wasted spend" not in out_nc
+          and "spend with no outcome" not in out_nc, out_nc)
+    check("ud15c ...and with showCost on the SAME fixture both facts still "
+          "render - the twin that fails if the gate becomes unconditional",
+          "not the same as wasted spend" in out, "")
+    _me_fixture = {
+        "unit": {"mostExpensive": [("P1.1", 5.0, 2)]},
+        "bands": {"byTask": {"P1.1": "high"}, "sufficient": True}}
+    out = M._economics_block(_u(**_me_fixture))
+    check("ud15d the 'Most expensive tasks' table renders with its cost "
+          "column", "Most expensive tasks" in out and "$5.00" in out, out)
+    out_nc = M._economics_block(_u(showCost=False, **_me_fixture))
+    check("ud15e ...and it is DROPPED ENTIRELY with showCost off: its own "
+          "ranking criterion is dollar cost, so with no dollars there is no "
+          "table left to show",
+          "Most expensive tasks" not in out_nc and "$5.00" not in out_nc,
+          out_nc)
 
     check("ud16 an absent bands block renders no note at all",
           M._band_note({}) == "")
@@ -150,6 +219,41 @@ def _cases(check):
     check("ud19 ...and the sample basis names itself differently - the case "
           "that fails if the two bases print the same sentence",
           "median / p90" in out, out)
+
+    # --- the coverage sentence beside the projection and the band note ---
+    # Done and priced differ in the fixture, so a sentence with the two counts
+    # swapped or dropped fails; the expectation is the one helper's own text.
+    import usage_ledger as _ul
+    _cov = {"done": 6, "priced": 4}
+    _sentence = M.e(_ul.coverage_sentence(_cov))
+    out = M._economics_block(_u(unit=dict(_proj_fixture,
+                                          doneTaskCoverage=_cov)))
+    check("ud19a the projection carries the coverage sentence: it projects "
+          "from the done tasks the ledger priced, and says how many of the "
+          "plan's done tasks that is",
+          out.count(_sentence) == 1 and out.index("project to")
+          < out.index(_sentence), out)
+    out_nc = M._economics_block(_u(showCost=False, unit=dict(
+        _proj_fixture, doneTaskCoverage=_cov)))
+    check("ud19b ...and leaves with the projection when showCost drops it - a "
+          "basis for a figure no longer on the page is noise",
+          "main-loop spend" not in out_nc, out_nc)
+    check("ud19c ...and a plan with no done task adds nothing beside it",
+          "main-loop spend" not in M._economics_block(_u(unit=dict(
+              _proj_fixture, doneTaskCoverage=None))))
+    for _label, _bands in (
+            ("calibrated", {"sufficient": True, "basis": "sample", "high": 1.0,
+                            "outlier": 5.0, "doneTaskCoverage": _cov}),
+            ("waiting", {"sufficient": False, "gate": 5, "sample": 2,
+                         "doneTaskCoverage": _cov})):
+        out = M._band_note(_bands)
+        check("ud19d the %s band note closes with the coverage sentence, "
+              "because its sample is the priced done tasks" % _label,
+              out.count(_sentence) == 1, out)
+    check("ud19e ...and a band note with no coverage reading carries none",
+          "main-loop spend" not in M._band_note(
+              {"sufficient": True, "basis": "sample", "high": 1.0,
+               "outlier": 5.0}))
 
     # --- phase composition ---
     check("ud20 no phase/model cross-tab renders nothing",

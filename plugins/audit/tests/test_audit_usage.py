@@ -27,6 +27,7 @@ import time
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
+import usage_ledger as _ul                         # noqa: E402  (the rate basis every surface prints)
 import _areas                                      # noqa: E402  (as audit-usage imports it)
 import _cli_fmt                                    # noqa: E402
 import _locks                                      # noqa: E402  (the one library the backfill lock comes from)
@@ -185,58 +186,82 @@ def _cases(check):
                       for c in text))
         check("render: cost shown by default", "equiv" in text)
 
-        # The rate basis, third surface of the gap the HTML report carried until
-        # 0.22.0: a cost printed with nothing saying what priced it.
-        _mp = json.loads(json.dumps(manifest))
-        _mp.setdefault("meta", {}).setdefault("usage", {})["pricingAsOf"] = "2026-08-06"
-        _dated = M.render(loaded, args, _mp, "all time", True)
-        check("render: a declared rate date is printed beside the costs",
-              "rates as of 2026-08-06" in _dated)
-        check("render: with none declared it says so and names the exit, rather "
-              "than printing dollars that look pinned to a table nobody named",
-              "undated rates" in text and "usage.pricingAsOf" in text)
-        check("render: it never falls back to the default table's date - that "
-              "would manufacture a basis instead of stating one",
-              "rates as of" not in text)
+        # The rate basis beside the costs: `rate_basis_phrase` over the
+        # resolver's answer, the same words the report and the status line
+        # print. Driven through manifests that DECLARE a table (so the basis is
+        # the plan's own and its date is the plan's) and through one that does
+        # not (so the shipped table priced the rows and its own date and page
+        # are named).
+        _rates = {"_default": {"in": 1.0, "out": 2.0, "cacheW5m": 1.0,
+                               "cacheW1h": 1.0, "cacheR": 0.1}}
+
+        def _with_table(as_of):
+            _m = json.loads(json.dumps(manifest))
+            _mu = _m.setdefault("meta", {}).setdefault("usage", {})
+            _mu["pricing"] = _rates
+            if as_of is not None:
+                _mu["pricingAsOf"] = as_of
+            else:
+                _mu.pop("pricingAsOf", None)
+            return M.render(loaded, args, _m, "all time", True)
+        _dated = _with_table("2026-08-06")
+        check("render: a plan's own dated table is printed beside the costs, "
+              "named as the plan's own",
+              "rates as of 2026-08-06" in _dated
+              and "meta.usage.pricing" in _dated)
+        _undated = _with_table(None)
+        check("render: a plan's own table with no date says so and names the "
+              "key that dates it, rather than printing dollars that look "
+              "pinned to a table nobody named",
+              "rates undated" in _undated
+              and "meta.usage.pricingAsOf" in _undated)
+        check("render: ...and never borrows the shipped table's date for a "
+              "table that is not the shipped one",
+              "rates as of" not in _undated
+              and _ul.PRICING_AS_OF not in _undated)
+        check("render: when NO table is declared the shipped one priced the "
+              "rows, so its own date and source are named rather than "
+              "'undated'",
+              ("rates as of %s" % _ul.PRICING_AS_OF) in text
+              and _ul.PRICING_SOURCE_URL in text and "undated" not in text)
+        _given = {"table": _rates, "basis": "config", "asOf": "2026-07-01",
+                  "source": None}
+        check("render: the line is the phrase of the resolver answer it was "
+              "HANDED - one resolution, never a second one inside the render",
+              ("costs priced at %s" % _ul.rate_basis_phrase(_given)) in M.render(
+                  loaded, args, manifest, "all time", True, pricing=_given))
 
         # --- the rate basis, trimmed at the door -----------------------------
         # The plan schema asks only `minLength: 1`, so a string of spaces
-        # VALIDATES and this line tested it for truth: "rates as of" followed by
-        # nothing. `rate_basis` is the one door both readers in this file go
-        # through, so the cases drive it directly AND through the render.
+        # VALIDATES. `rate_basis` is the --json payload's door; the printed
+        # line goes through the resolver, which trims the same way.
         def _basis(raw):
             return M.rate_basis({"pricingAsOf": raw})
 
-        def _rendered(raw):
-            _m = json.loads(json.dumps(manifest))
-            _m.setdefault("meta", {}).setdefault("usage", {})["pricingAsOf"] = raw
-            return M.render(loaded, args, _m, "all time", True)
         check("render: a whitespace-only rate date is NOT a declaration - it "
               "collapses to None and the line says the rates are undated, "
               "rather than trailing off after 'rates as of': %r"
               % (_basis("   "),),
               _basis("   ") is None
-              and "undated rates" in _rendered("   ")
-              and "rates as of" not in _rendered("   "))
+              and "rates undated" in _with_table("   ")
+              and "rates as of" not in _with_table("   "))
         check("render: ...and a PADDED date is trimmed rather than refused - "
               "the fixture that separates trimming from merely rejecting a "
               "blank, since a version carrying the raw value through would "
               "print the padding: %r" % (_basis(" 2026-08-06 "),),
               _basis(" 2026-08-06 ") == "2026-08-06"
-              and "rates as of 2026-08-06" in _rendered(" 2026-08-06 "))
+              and "rates as of 2026-08-06," in _with_table(" 2026-08-06 "))
         check("render: ...and a hand-edited number is None rather than a "
               "raise - a render that raises is a report that does not print: "
               "%r" % (_basis(20260806),),
               _basis(20260806) is None
-              and "undated rates" in _rendered(20260806))
+              and "rates undated" in _with_table(20260806))
         # THE OTHER-DIRECTION CASE, which looks vacuous and is the only one
         # that fails if the trim becomes an unconditional None.
         check("render: ...and a declared date is untouched, so the repair "
               "cannot have been 'never report a basis'",
               _basis("2026-08-06") == "2026-08-06")
-        check("render: both readers in this file go through ONE door, so the "
-              "terminal line and the --json payload cannot disagree about a "
-              "value's whitespace",
+        check("render: the payload door answers None for no block at all",
               M.rate_basis({}) is None and M.rate_basis(None) is None)
 
         no_cost = M.render(loaded, args, manifest, "all time", False)
@@ -257,6 +282,85 @@ def _cases(check):
         one = M.render(loaded, args_by, manifest, "all time", True)
         check("render: --by renders one focused table",
               "MODEL" in one and "BY PHASE" not in one)
+
+        # --- attribution coverage (ac): how much of the plan's done work a ---
+        # --- per-task figure actually rests on -------------------------------
+        # Four done tasks, three of which carry a priced row (P2.2 is done but
+        # the ledger never attributed it any tokens) - a 3-of-4 fixture, not a
+        # trivial 100%, so the count in the line is the thing under test and
+        # not an accident of every done task having a row.
+        _man_cov = json.loads(json.dumps(manifest))
+        _man_cov["phases"][0]["tasks"][0]["status"] = "done"
+        _man_cov["phases"][0]["tasks"][1]["status"] = "done"
+        _man_cov["phases"][1]["tasks"][0]["status"] = "done"
+        _man_cov["phases"][1]["tasks"].append(
+            {"id": "P2.2", "title": "four", "status": "done"})
+        # The shared sentence (`_usage_economics._coverage_sentence`, the same
+        # one the report's HTML tile and Markdown twin already print): one
+        # home for the wording, so the CLI cannot drift from the other two
+        # surfaces that make the same "cost per task" claim.
+        _cov_sentence = ("Of the plan's 4 done task(s), 3 are priced; "
+                         "main-loop spend is not attributed to a task.")
+        _cov_text = M.render(loaded, args, _man_cov, "all time", True)
+        check("ac1 the dashboard prints the shared attribution-coverage "
+              "sentence beside the band note under TOP TASKS, with the "
+              "real 3-of-4 fraction",
+              _cov_sentence in _cov_text)
+        check("ac2 a plan with no done task at all stays silent - a 0-of-0 "
+              "would read as complete coverage of nothing",
+              "main-loop spend is not attributed" not in text)
+        check("ac3 --no-cost drops the coverage line too",
+              "main-loop spend is not attributed" not in M.render(
+                  loaded, args, _man_cov, "all time", False))
+        args_by_task = M.build_parser().parse_args(["--by", "task"])
+        args_by_task.ledger_dir = ledger
+        _cov_by_task = M.render(loaded, args_by_task, _man_cov,
+                                "all time", True)
+        check("ac4 --by task prints the same shared coverage sentence "
+              "under its own table",
+              "TASK" in _cov_by_task and _cov_sentence in _cov_by_task)
+        check("ac5 --by task says nothing when there is no done task",
+              "main-loop spend is not attributed" not in M.render(
+                  loaded, args_by_task, manifest, "all time", True))
+        check("ac6 --by task under --no-cost stays silent too",
+              "main-loop spend is not attributed" not in M.render(
+                  loaded, args_by_task, _man_cov, "all time", False))
+
+        # md7b/md7c: the twin this low finding asked for - no case anywhere
+        # rendered the coverage sentence through the md format before this.
+        args_by_task_md = M.build_parser().parse_args(["--by", "task",
+                                                       "--format", "md"])
+        args_by_task_md.ledger_dir = ledger
+        check("ac9 the md format carries the same sentence (--by task)",
+              _cov_sentence in M.render(loaded, args_by_task_md, _man_cov,
+                                        "all time", True))
+        args_md_cov = M.build_parser().parse_args(["--format", "md"])
+        args_md_cov.ledger_dir = ledger
+        check("ac10 ...and in the full md dashboard under TOP TASKS",
+              _cov_sentence in M.render(loaded, args_md_cov, _man_cov,
+                                        "all time", True))
+        check("ac11 ...its twin: --no-cost silences it in md too, rather "
+              "than only in ascii",
+              "main-loop spend is not attributed" not in M.render(
+                  loaded, args_md_cov, _man_cov, "all time", False))
+
+        _map_cov = os.path.join(tmp, "cov-plan.json")
+        with open(_map_cov, "w", encoding="utf-8") as fh:
+            json.dump(_man_cov, fh)
+        import io as _io_cov
+        _buf_cov, _real_cov = _io_cov.StringIO(), sys.stdout
+        sys.stdout = _buf_cov
+        try:
+            _code_cov = M.main([_map_cov, "--ledger-dir", ledger,
+                               "--project-dir", tmp, "--json"])
+        finally:
+            sys.stdout = _real_cov
+        _payload_cov = json.loads(_buf_cov.getvalue())
+        check("ac7 the json payload carries the denominator beside the "
+              "bands, not just the per-task figure",
+              _code_cov == 0
+              and _payload_cov["bands"]["doneTaskCoverage"]
+              == {"done": 4, "priced": 3})
 
         args_f = M.build_parser().parse_args(["--phase", "P1"])
         check("filter: --phase narrows rows",
@@ -289,36 +393,230 @@ def _cases(check):
         _cfgp = os.path.join(_mr, ".claude", "audit.config.json")
         _noargs = M.build_parser().parse_args([])
 
+        def _rpath(args, project):
+            return M.resolve_manifest(args, project)["path"]
+
         with open(_cfgp, "w", encoding="utf-8") as fh:
             json.dump({"manifestPath": "audit-plan.json"}, fh)
         check("manifest: a configured manifestPath is honoured, not just the "
               "default location",
-              M.resolve_manifest_path(_noargs, _mr) == os.path.normpath(_elsewhere))
+              _rpath(_noargs, _mr) == os.path.normpath(_elsewhere))
         check("manifest: an explicit argument still outranks the config",
-              M.resolve_manifest_path(
-                  M.build_parser().parse_args(["some/other.json"]), _mr)
+              _rpath(M.build_parser().parse_args(["some/other.json"]), _mr)
               == "some/other.json")
+        check("manifest: the rule is the shared one, not a copy - the resolver "
+              "here IS _manifest_io's answer, field for field",
+              M.resolve_manifest(_noargs, _mr)
+              == M.mio.resolve_manifest(_mr, None))
 
+        # A malformed config, or one naming a file that is gone, resolves to NO
+        # plan rather than to the default: the default is some other plan than
+        # the one the project points at, and its meta.usage is not this one's.
         with open(_cfgp, "w", encoding="utf-8") as fh:
             fh.write("{ not json")
-        check("manifest: a malformed config falls back instead of raising - the "
-              "usage view is read-only and must not die on someone else's typo",
-              M.resolve_manifest_path(_noargs, _mr)
-              == os.path.normpath(os.path.join(_mr, M.DEFAULT_MANIFEST_REL)))
+        check("manifest: a malformed config resolves to no plan, with the config "
+              "named as the problem, rather than raising or reading the default",
+              _rpath(_noargs, _mr) is None
+              and _cfgp in (M.resolve_manifest(_noargs, _mr)["problem"] or ""))
         os.remove(_cfgp)
+        _default = os.path.normpath(
+            os.path.join(_mr, *M.mio.DEFAULT_MANIFEST_REL.split("/")))
         check("manifest: no config at all still finds the default location",
-              M.resolve_manifest_path(_noargs, _mr)
-              == os.path.normpath(os.path.join(_mr, M.DEFAULT_MANIFEST_REL)))
+              _rpath(_noargs, _mr) == _default)
 
         with open(_cfgp, "w", encoding="utf-8") as fh:
             json.dump({"manifestPath": "nowhere/absent.json"}, fh)
-        check("manifest: a configured path that does not exist falls back rather "
-              "than reporting a file that is not there",
-              M.resolve_manifest_path(_noargs, _mr)
-              == os.path.normpath(os.path.join(_mr, M.DEFAULT_MANIFEST_REL)))
+        check("manifest: a configured path that does not exist resolves to no "
+              "plan rather than the default one beside it",
+              _rpath(_noargs, _mr) is None)
         check("manifest: nothing anywhere -> None, and the caller renders without "
               "project values rather than crashing",
-              M.resolve_manifest_path(_noargs, os.path.join(tmp, "empty-proj")) is None)
+              _rpath(_noargs, os.path.join(tmp, "empty-proj")) is None)
+        os.remove(_cfgp)
+
+        def _usage_stderr(project):
+            import contextlib
+            import io
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = M.main(["--ledger-dir", ledger, "--project-dir", project,
+                             "--json"])
+            return rc, err.getvalue()
+
+        _empty = os.path.join(tmp, "empty-proj")
+        os.makedirs(_empty, exist_ok=True)
+        _rc_n, _err_n = _usage_stderr(_empty)
+        check("mn1 with no plan to find, the render still exits 0 and SAYS it is "
+              "rendering without the plan, naming where it looked",
+              _rc_n == 0 and "rendering without the plan" in _err_n
+              and os.path.join(_empty, *M.mio.DEFAULT_MANIFEST_REL.split("/"))
+              in _err_n, repr(_err_n))
+        _rc_f, _err_f = _usage_stderr(_mr)
+        check("mn2 SECOND DIRECTION: a plan that resolves carries no note - the "
+              "case that fails if the note is written unconditionally",
+              _rc_f == 0 and _err_f == "", repr(_err_f))
+
+        # A plan at the default location turns dollars off; a config the user
+        # wrote is malformed. Rendering with no plan would read showCost off {}
+        # and print the dollars that plan exists to keep off the screen, so the
+        # command refuses the way /audit:status and /audit:report do.
+        #
+        # The ledger here is large enough to calibrate the cost bands and to
+        # clear every gate of the routing advice: six completed tasks in one
+        # risk band, three on each of two priced models, the expensive one far
+        # enough above the cheap one to clear the saving floors. A smaller one
+        # never reaches the band thresholds or the re-priced advice, which are
+        # exactly the two places a dollar figure could leak past showCost.
+        _cal_ledger = os.path.join(tmp, "usage-calibrated")
+        _cal_tasks, _cal_rows = [], []
+        for _i, _model, _out_tok in (
+                (1, "claude-opus-5", 400000), (2, "claude-opus-5", 420000),
+                (3, "claude-opus-5", 440000), (4, "claude-haiku-4-5", 60000),
+                (5, "claude-haiku-4-5", 70000), (6, "claude-haiku-4-5", 80000)):
+            _tid = "P9.%d" % _i
+            _cal_tasks.append({"id": _tid, "title": "cal %d" % _i,
+                               "status": "done", "risk": "low", "attempts": 1})
+            _counts = {"in": 10, "out": _out_tok, "cacheW5m": 0, "cacheW1h": 0,
+                       "cacheR": 100}
+            _row = {"ts": "2026-08-03T1%d" % _i, "author": "a@x.io",
+                    "sessionId": "s-" + _tid, "agentId": None,
+                    "agentType": "audit-executor", "phaseId": "P9",
+                    "taskId": _tid, "attr": "task", "model": _model,
+                    "branch": "audit/x", "repo": "demo", "msgs": 1}
+            _row.update(_counts)
+            _row["costUSD"] = round(M.ul.price(_counts, _model), 6)
+            _cal_rows.append(_row)
+        M.ul.append_rows(_cal_ledger, _cal_rows)
+
+        def _cal_plan(project, show_cost):
+            os.makedirs(os.path.join(project, ".claude"), exist_ok=True)
+            os.makedirs(os.path.join(project, "docs", "audit"), exist_ok=True)
+            with open(os.path.join(project, "docs", "audit", "audit-plan.json"),
+                      "w", encoding="utf-8") as fh:
+                json.dump({"meta": {"usage": {"showCost": show_cost}},
+                           "phases": [{"id": "P9", "title": "Calibrated",
+                                       "tasks": _cal_tasks}],
+                           "bugs": []}, fh)
+
+        _off = os.path.join(tmp, "cost-off")
+        _cal_plan(_off, False)
+        _off_cfg = os.path.join(_off, ".claude", "audit.config.json")
+
+        def _usage_text(project, extra=None):
+            import contextlib
+            import io
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = M.main(["--ledger-dir", _cal_ledger, "--project-dir", project,
+                             "--color", "never"] + list(extra or []))
+            return rc, out.getvalue(), err.getvalue()
+
+        def _dollar_lines(text):
+            return [ln for ln in text.splitlines() if "$" in ln]
+
+        _rc_ok, _out_ok, _err_ok = _usage_text(_off)
+        check("mn3 ALLOW: the showCost-false plan, with no config, renders "
+              "(exit 0) on a calibrated ledger - the band note and the routing "
+              "advice both reached - and prints no dollar figure anywhere",
+              _rc_ok == 0 and "band: this project's completed tasks" in _out_ok
+              and "WHAT THE EVIDENCE SUPPORTS" in _out_ok
+              and _dollar_lines(_out_ok) == [],
+              repr((_rc_ok, _err_ok, _dollar_lines(_out_ok))))
+        # The twin that fails if the gate is applied unconditionally: the same
+        # plan with showCost on still prints the band thresholds and the
+        # re-priced advice in dollars.
+        _on = os.path.join(tmp, "cost-on")
+        _cal_plan(_on, True)
+        _rc_on, _out_on, _err_on = _usage_text(_on)
+        _band_on = [ln for ln in _out_on.splitlines() if "band: " in ln]
+        check("mn3b SECOND DIRECTION: the showCost-true twin prints the band "
+              "thresholds and the routing advice's re-priced figures in dollars",
+              _rc_on == 0 and len(_band_on) == 1 and "$" in _band_on[0]
+              and "less (" in _out_on
+              and any("those same tokens cost $" in ln
+                      for ln in _out_on.splitlines()),
+              repr((_rc_on, _err_on, _band_on)))
+        _rc_off_j, _out_off_j, _err_off_j = _usage_text(_off, ["--json"])
+        _payload_off = json.loads(_out_off_j)
+        check("mn3c the --json payload on the showCost-false plan still keeps "
+              "its cost fields, and carries showCost false at top level so a "
+              "consumer can honour the setting itself",
+              _rc_off_j == 0 and _payload_off.get("showCost") is False
+              and "costUSD" in _payload_off["totals"],
+              repr((_rc_off_j, _err_off_j, _payload_off.get("showCost"))))
+        _rc_on_j, _out_on_j, _err_on_j = _usage_text(_on, ["--json"])
+        _payload_on = json.loads(_out_on_j)
+        check("mn3d SECOND DIRECTION: the showCost-true twin's --json payload "
+              "carries showCost true",
+              _rc_on_j == 0 and _payload_on.get("showCost") is True,
+              repr((_rc_on_j, _err_on_j, _payload_on.get("showCost"))))
+        with open(_off_cfg, "w", encoding="utf-8") as fh:
+            fh.write("{ not json")
+        _rc_bad, _out_bad, _err_bad = _usage_text(_off)
+        check("mn4 RED: the same plan plus a malformed config exits 2, prints "
+              "no dollar figure, and names the config as the problem",
+              _rc_bad == 2 and "$" not in _out_bad and "$" not in _err_bad
+              and _off_cfg in _err_bad
+              and "rendering without the plan" not in _err_bad,
+              repr((_rc_bad, _out_bad[:200], _err_bad)))
+        check("mn5 the refusal is the shared wording, not a third one",
+              _err_bad == M.mio.describe_unresolved(
+                  M.mio.resolve_manifest(_off, None)) + "\n", repr(_err_bad))
+        with open(_off_cfg, "w", encoding="utf-8") as fh:
+            json.dump({"manifestPath": "moved/audit-plan.json"}, fh)
+        _gone = os.path.normpath(os.path.join(_off, "moved", "audit-plan.json"))
+        _rc_gone, _out_gone, _err_gone = _usage_text(_off)
+        check("mn6 RED: a config naming a missing manifest is refused (exit 2), "
+              "naming where it looked, and the default plan is not read instead",
+              _rc_gone == 2 and _gone in _err_gone and _out_gone == "",
+              repr((_rc_gone, _err_gone)))
+        os.remove(_off_cfg)
+
+        # A plan that RESOLVES but cannot be used: the configured file does not
+        # parse, or a sharded index names a shard that is gone, or an explicit
+        # argument names nothing. Each used to fall through to an empty plan,
+        # whose showCost defaults to on. The refusal is the wording
+        # /audit:status and /audit:report already print for the same load.
+        _cfg_broken = os.path.join(_off, "broken-plan.json")
+        with open(_cfg_broken, "w", encoding="utf-8") as fh:
+            fh.write('{"meta": {"usage": {"showCost": false}}, "phases": [')
+        with open(_off_cfg, "w", encoding="utf-8") as fh:
+            json.dump({"manifestPath": "broken-plan.json"}, fh)
+        _rc_up, _out_up, _err_up = _usage_text(_off)
+        check("mn7 RED: a configured plan that does not parse exits 2 with "
+              "'cannot read/parse <path>' and no dollar figure",
+              _rc_up == 2 and _out_up == "" and "$" not in _err_up
+              and ("cannot read/parse %s" % os.path.normpath(_cfg_broken))
+              in _err_up,
+              repr((_rc_up, _out_up[:200], _err_up)))
+        _idx = os.path.join(_off, "sharded-plan.json")
+        with open(_idx, "w", encoding="utf-8") as fh:
+            json.dump({"meta": {"version": 2, "usage": {"showCost": False}},
+                       "phases": [{"id": "P9", "shard": "phases/P9.json"}],
+                       "bugs": []}, fh)
+        with open(_off_cfg, "w", encoding="utf-8") as fh:
+            json.dump({"manifestPath": "sharded-plan.json"}, fh)
+        _rc_sh, _out_sh, _err_sh = _usage_text(_off)
+        check("mn8 RED: a sharded plan whose shard is missing exits 2 with "
+              "'cannot read/parse <index>' and no dollar figure",
+              _rc_sh == 2 and _out_sh == "" and "$" not in _err_sh
+              and ("cannot read/parse %s" % os.path.normpath(_idx)) in _err_sh,
+              repr((_rc_sh, _out_sh[:200], _err_sh)))
+        os.remove(_off_cfg)
+        _absent_arg = os.path.join(_off, "no-such-plan.json")
+        _rc_ma, _out_ma, _err_ma = _usage_text(_off, [_absent_arg])
+        check("mn9 RED: an explicit argument naming a missing file exits 2 with "
+              "'cannot read/parse <path>' and no dollar figure",
+              _rc_ma == 2 and _out_ma == "" and "$" not in _err_ma
+              and ("cannot read/parse %s" % _absent_arg) in _err_ma,
+              repr((_rc_ma, _out_ma[:200], _err_ma)))
+        _rc_ea, _out_ea, _err_ea = _usage_text(
+            _on, [os.path.join(_on, "docs", "audit", "audit-plan.json")])
+        check("mn10 ALLOW: an explicit argument naming a plan that loads renders "
+              "(exit 0) with no refusal - the case that fails if the load "
+              "refuses every explicit argument",
+              _rc_ea == 0 and _err_ea == "" and "BY PHASE" in _out_ea,
+              repr((_rc_ea, _err_ea)))
 
         # --json path
         argv = ["--ledger-dir", ledger, "--project-dir", tmp, "--json"]
@@ -333,12 +631,25 @@ def _cases(check):
         check("json: exits 0", code == 0)
         check("json: totals match the ledger",
               payload["totals"]["out"] == 3500)
+        check("json: showCost true by default (no plan, no config) rides beside "
+              "the cost data --json never withholds",
+              payload.get("showCost") is True and "costUSD" in payload["totals"])
         check("json: every grouping present",
               all(k in payload for k in ("byPhase", "byTask", "byModel",
                                          "byAuthor", "byAgent", "byDay",
                                          "byAttribution", "heatmap")))
         check("json: heatmap is 7x24",
               len(payload["heatmap"]) == 7 and len(payload["heatmap"][0]) == 24)
+        check("json: the resolver's answer travels as data AND as the one "
+              "phrase the terminal prints for it: %r"
+              % (payload.get("pricingBasis"), ),
+              set(payload.get("pricingBasis") or {})
+              == {"basis", "asOf", "source", "pricedWhenWritten"}
+              and payload.get("rateBasis")
+              == _ul.rate_basis_phrase(payload.get("pricingBasis")))
+        check("ac8 with no done task, the bands' doneTaskCoverage is None "
+              "rather than a 0-of-0 that would read as complete coverage",
+              payload.get("bands", {}).get("doneTaskCoverage") is None)
 
         # --- month bucket (mo) ----------------------------------------------
         check("mo1 --by month is a legal choice, derived from GROUP_KEYS",
@@ -1191,6 +1502,224 @@ def _bw_spanning_cases(check, root):
           waiting == 0 and code2 == 0
           and _bw_month_out(ledger, _BW_SID, _BW_PRIOR) == prior
           and _bw_month_out(ledger, _BW_SID, _BW_MONTH) == _BW_ENTRIES)
+
+    _config_only_pricing_cases(check)
+    _read_time_pricing_cases(check)
+
+
+# --- every printed cost is priced at read time (ua) -----------------------------
+def _read_time_pricing_cases(check):
+    """/audit:usage over a ledger whose stored costUSD came from another table:
+    the totals and cost per task are what the resolved table says those tokens
+    cost, since the phrase beside them names that table, and a row that cannot
+    be priced again keeps its stored figure and is counted in the phrase."""
+    import shutil
+    import tempfile
+    zero = dict((k, 0) for k in _ul.TOKEN_KEYS)
+
+    def _row(task, model, stored, key=None):
+        row = {"ts": "2026-09-01T10", "sessionId": "s1", "model": model,
+               "taskId": task, "phaseId": "P1", "attr": "task", "msgs": 1,
+               "costUSD": stored}
+        if key:
+            row.update(zero)
+            row[key] = 1000000
+        return row
+
+    # Stored at $15 and $75 per million; the shipped table says $5 and $10.
+    rows = [_row("T1", "claude-opus-5", 15.0, "in"),
+            _row("T2", "claude-sonnet-5", 75.0, "out"),
+            _row("T1", "claude-opus-5", 2.5)]
+    root = tempfile.mkdtemp(prefix="audit-usage-read-pricing-")
+    try:
+        proj = os.path.join(root, "proj")
+        for d in (".git", os.path.join(".claude", "usage"),
+                  os.path.join("docs", "audit")):
+            os.makedirs(os.path.join(proj, d))
+        manifest = {"meta": {"version": 2, "repo": "x"},
+                    "phases": [{"id": "P1", "title": "P", "status": "pending",
+                                "tasks": [{"id": t, "title": t, "status": "done"}
+                                          for t in ("T1", "T2")]}]}
+        with open(os.path.join(proj, "docs", "audit", "audit-plan.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump(manifest, fh)
+        with open(os.path.join(proj, ".claude", "usage", "2026-09.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            for r in rows:
+                fh.write(json.dumps(r) + "\n")
+
+        code, out, err = _cp_run_main(["--json", "--project-dir", proj])
+        try:
+            payload = json.loads(out)
+        except ValueError:
+            payload = {}
+        total = (payload.get("totals") or {}).get("costUSD")
+        by_task = dict((k, v.get("costUSD"))
+                       for k, v in (payload.get("byTask") or {}).items())
+        check("ua1 /audit:usage --json totals over a ledger priced at write by "
+              "another table are the resolved table's figure (17.5), not the "
+              "stored 92.5: code=%r total=%r err=%r" % (code, total, err[-300:]),
+              code == 0 and isinstance(total, float)
+              and abs(total - 17.5) < 1e-9)
+        check("ua2 ...and so is its cost per task: %r" % (by_task,),
+              set(by_task) == {"T1", "T2"}
+              and abs(by_task["T1"] - 7.5) < 1e-9
+              and abs(by_task["T2"] - 10.0) < 1e-9)
+        phrase = payload.get("rateBasis") or ""
+        check("ua3 ...and its rate phrase counts the row priced when written, "
+              "with the count as data beside it: %r %r"
+              % (phrase, payload.get("pricingBasis")),
+              "1 row(s) keep the cost stored when written" in phrase
+              and (payload.get("pricingBasis") or {}).get("pricedWhenWritten")
+              == 1)
+
+        code_t, text, err_t = _cp_run_main(["--project-dir", proj,
+                                            "--color", "never"])
+        line = [ln for ln in text.splitlines() if "costs priced at" in ln]
+        check("ua4 the text dashboard prints the same total and the same "
+              "count: code=%r head=%r basis=%r err=%r"
+              % (code_t, text.splitlines()[2:3], line, err_t[-300:]),
+              code_t == 0 and ("~%s equiv" % M.fmt_cost(17.5)) in text
+              and ("~%s equiv" % M.fmt_cost(92.5)) not in text
+              and len(line) == 1
+              and "1 row(s) keep the cost stored when written" in line[0])
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+# --- one price table per project, whichever surface asks (cp) ------------------
+def _cp_run_main(argv):
+    """`main(argv)` -> (exit code, stdout text, stderr text). An exception is
+    returned as the code so a case reads it as a failure rather than aborting."""
+    import contextlib
+    import io as _io
+    out, err = _io.StringIO(), _io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = M.main(argv)
+    except Exception as exc:  # noqa: BLE001 - surfaced as the case's detail
+        code = "raised %r" % (exc,)
+    return code, out.getvalue(), err.getvalue()
+
+
+def _config_only_pricing_cases(check):
+    """/audit:usage prices a project whose only table is in its config file the
+    way the report prices it: the config's rows laid over the shipped table.
+
+    Sonnet is the cheaper model in the shipped table and the costlier one in this
+    fixture's config, so the direction of the routing advice says which table
+    priced it - a CLI still reading the shipped table recommends the opposite
+    move, and a backfill still reading it writes a different costUSD."""
+    import shutil
+    import tempfile
+    rl = _loader.load_script("_usage_load.py", modname="cp_usage_load")
+    expensive_sonnet = {"in": 300.0, "out": 1500.0, "cacheW5m": 375.0,
+                        "cacheW1h": 600.0, "cacheR": 30.0}
+    root = tempfile.mkdtemp(prefix="audit-usage-config-pricing-")
+    try:
+        proj = os.path.join(root, "proj")
+        for d in (".git", os.path.join(".claude", "usage"),
+                  os.path.join("docs", "audit")):
+            os.makedirs(os.path.join(proj, d))
+        tasks, rows = [], []
+        for i in range(3):
+            for model, tid in (("claude-opus-5", "O%d" % i),
+                               ("claude-sonnet-5", "S%d" % i)):
+                tasks.append({"id": tid, "title": tid, "status": "done",
+                              "risk": "high", "attempts": 1})
+                rows.append({"ts": "2026-07-01T03", "sessionId": "s1",
+                             "model": model, "taskId": tid, "phaseId": "P9",
+                             "attr": "task", "msgs": 1, "in": 10000,
+                             "out": 200000, "cacheW5m": 0, "cacheW1h": 0,
+                             "cacheR": 0, "costUSD": 1.0})
+        manifest = {"meta": {"version": 2, "repo": "x",
+                             "usage": {"pricingAsOf": "2026-07-01"}},
+                    "phases": [{"id": "P9", "title": "P", "status": "pending",
+                                "tasks": tasks}]}
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh)
+        with open(os.path.join(proj, ".claude", "usage", "2026-07.jsonl"),
+                  "w", encoding="utf-8") as fh:
+            for r in rows:
+                fh.write(json.dumps(r) + "\n")
+        with open(os.path.join(proj, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"usage": {"pricing":
+                                 {"claude-sonnet-5": expensive_sonnet}}}, fh)
+
+        report = rl.load_usage(manifest, mpath, proj) or {}
+        code, out, err = _cp_run_main(["--json", "--project-dir", proj])
+        try:
+            payload = json.loads(out)
+        except ValueError:
+            payload = {}
+        cli_routing = payload.get("routing") or {}
+        advice = cli_routing.get("advice") or [{}]
+        check("cp1 /audit:usage --json routing on a project whose only table is "
+              "its config's prices sonnet at the CONFIG's rate - the advice "
+              "moves off sonnet, which the shipped table (sonnet cheaper) "
+              "cannot produce: code=%r advice=%r err=%r"
+              % (code, advice[:1], err[-300:]),
+              code == 0 and advice[0].get("from") == "claude-sonnet-5"
+              and advice[0].get("to") == "claude-opus-5")
+        check("cp2 ...and it is the report's routing, figure for figure, for "
+              "the same project: cli=%r report=%r"
+              % (cli_routing.get("advice"),
+                 (report.get("routing") or {}).get("advice")),
+              bool(cli_routing) and cli_routing == report.get("routing"))
+        # The allow twin: a project with no config table still gets the shipped
+        # table's advice, so cp1 is not passing on a CLI that always inverts.
+        os.remove(os.path.join(proj, ".claude", "audit.config.json"))
+        code_s, out_s, _err_s = _cp_run_main(["--json", "--project-dir", proj])
+        try:
+            shipped = (json.loads(out_s).get("routing") or {}).get("advice")
+        except ValueError:
+            shipped = None
+        check("cp3 ...while the same project with no config table is priced "
+              "at the shipped table and is advised the other way: %r"
+              % (shipped,),
+              code_s == 0 and bool(shipped)
+              and shipped[0].get("from") == "claude-opus-5")
+        with open(os.path.join(proj, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"usage": {"pricing":
+                                 {"claude-sonnet-5": expensive_sonnet}}}, fh)
+
+        code_t, text, err_t = _cp_run_main(["--project-dir", proj,
+                                            "--color", "never"])
+        check("cp4 the text dashboard's advice is priced the same way: %r"
+              % ((text.split("WHAT THE EVIDENCE SUPPORTS") + [""])[1][:160],),
+              code_t == 0
+              and "high work is running on claude-sonnet-5" in text
+              and "high work is running on claude-opus-5" not in text)
+
+        # --backfill writes costUSD at write time, and that stored figure is
+        # what a row the read-time pricing cannot price again falls back on.
+        tdir = os.path.join(root, "transcripts")
+        os.makedirs(tdir)
+        with open(os.path.join(tdir, "sess-bf.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(json.dumps({
+                "type": "assistant", "timestamp": "2026-08-06T07:20:10Z",
+                "message": {"id": "msg-bf", "model": "claude-sonnet-5",
+                            "usage": {"input_tokens": 1000,
+                                      "output_tokens": 2000,
+                                      "cache_creation_input_tokens": 0,
+                                      "cache_read_input_tokens": 0}}}) + "\n")
+        code_b, _out_b, err_b = _cp_run_main([
+            "--backfill", "--project-dir", proj, "--transcript-dir", tdir,
+            "--author-mode", "none"])
+        bf = [r for r in M.ul.read_ledger(os.path.join(proj, ".claude", "usage"))
+              if r.get("sessionId") == "sess-bf"]
+        want = round((1000 * 300.0 + 2000 * 1500.0) / 1000000.0, 6)
+        got = [r.get("costUSD") for r in bf]
+        check("cp5 --backfill prices a config-only project's rows at the "
+              "config's rate (%r), not the shipped one: code=%r got=%r err=%r"
+              % (want, code_b, got, err_b[-300:]),
+              code_b == 0 and got == [want])
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 def _selftest():

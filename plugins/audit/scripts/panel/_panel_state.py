@@ -123,8 +123,8 @@ discover = _panel_discovery.discover
 CONFIG_REL = _paths.CONFIG_REL
 
 # --- the names that moved, re-bound so every caller keeps working ----------------
-# `panel-server` aliases 35 names off this module and `_panel_write` 14 of them;
-# `tests/test__panel_state.py` checks all 35 by name, both that panel-server
+# `panel-server` aliases the names it took off this module and `_panel_write` some
+# of them; `tests/test__panel_state.py` checks each one by name, both that panel-server
 # aliases each one AND that it resolves here. A re-export is what makes the
 # split invisible to every one of those call sites.
 
@@ -132,7 +132,6 @@ _load = _paths._load
 _defaults = _paths._defaults
 _within = _paths._within
 _config_path = _paths._config_path
-_declared_as_of = _paths._declared_as_of
 _manifest_path = _paths._manifest_path
 _read_json = _paths._read_json
 read_config = _paths.read_config

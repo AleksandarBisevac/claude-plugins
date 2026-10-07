@@ -354,7 +354,7 @@ def _cases(check):
     _panel_src = open(_loader.script_path("panel-server.py"),
                       encoding="utf-8").read()
     _moved = ["_load", "_cores", "_defaults", "_within", "_config_path",
-              "_declared_as_of", "_manifest_path", "_viewer", "_read_json",
+              "_manifest_path", "_viewer", "_read_json",
               "read_config", "_areas_of", "_bugs_view", "_skills_of",
               "_composition_view", "areas_state", "_JOURNAL", "_journalmod",
               "JOURNAL_PAGE", "journal_state", "help_state", "help_field",

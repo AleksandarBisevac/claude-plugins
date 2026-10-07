@@ -1575,7 +1575,7 @@
     },
     "claim": {
       "type": "object",
-      "description": "v3 optimistic parallel-run claim: which session/host/branch is running this phase. Lives in the phase shard body so a same-phase double-claim across branches shows up as a shard merge conflict. Optional; released (removed) when the phase finishes.",
+      "description": "v3 optimistic parallel-run claim: which session/branch is running this phase. `host` stays an accepted key, but the plugin writes none: the shard a claim lives in is committed, so a machine name there would be published. Lives in the phase shard body so a same-phase double-claim across branches shows up as a shard merge conflict. Optional; released (removed) when the phase finishes.",
       "additionalProperties": true,
       "properties": {
         "sessionId": {
