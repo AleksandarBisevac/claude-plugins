@@ -492,8 +492,9 @@ def session_env(environ, config_dir=None):
 
 
 # --- which Claude Code config the take writes into ------------------------------
-# A session writes into its config: the folder-trust answer, its transcript, a
-# plugin a recommendation dialog installed on a stray key. So the take gets a config
+# A session writes into its config: the folder-trust answer, its transcript, its
+# history lines and per-session directories, a plugin a recommendation dialog
+# installed on a stray key. So the take gets a config
 # of its own under the kit's scratch directory, removed with the kit, whenever it can
 # authenticate there without an interactive login - which a CLAUDE_CODE_OAUTH_TOKEN
 # in the environment provides. Claude Code's authentication page documents both
@@ -503,6 +504,10 @@ def session_env(environ, config_dir=None):
 # has its own settings, session history, and claude.ai login or API key" - the
 # macOS Keychain entry included, keyed to that directory. Whether a session
 # authenticated by the token alone writes a Keychain entry is not documented there.
+# NO ISOLATED TAKE HAS BEEN OBSERVED. Its precondition is that `claude auth status
+# --json`, asked under the token and an empty config directory, names the account's
+# email or organisation (`account_markers()`); that query is unverified, and if it
+# names neither the isolated take is refused before it starts.
 # Without a token the take runs against the
 # operator's own config, and `footprint_refusals()` and `leftover_lines()` say what
 # it did there. Either way the operator's config is read before and after, so an
@@ -515,8 +520,9 @@ def config_plan(environ):
     """{"isolated", "configDir", "why"} - which config the take is handed."""
     if (environ.get(_TOKEN_VAR) or "").strip():
         return {"isolated": True, "configDir": ISOLATED_CONFIG,
-                "why": "%s is set, so the take runs against its own config at %s, "
-                       "removed afterwards" % (_TOKEN_VAR, ISOLATED_CONFIG)}
+                "why": "%s is set, so the take is handed its own config at %s, "
+                       "removed afterwards - a path no take has yet been observed "
+                       "to complete" % (_TOKEN_VAR, ISOLATED_CONFIG)}
     return {"isolated": False, "configDir": None,
             "why": "%s is not set, so the take can authenticate only through your "
                    "own Claude Code config and runs against it; what it leaves "
@@ -652,11 +658,98 @@ def _projects_dir(env, run):
     return where, None
 
 
+def claude_dir(env):
+    """The directory Claude Code keeps its per-user state in: CLAUDE_CONFIG_DIR when
+    set, else `.claude` in the home directory."""
+    home = env.get("HOME") or os.path.expanduser("~")
+    return env.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude")
+
+
+# The paths below are not documented. They were read off a 2.1.292 config by key
+# and file name only: `history.jsonl` holds one JSON object per prompt, carrying
+# `project` and `sessionId`; `file-history/` and `session-env/` hold one entry per
+# session id; `shell-snapshots/` holds files named by time, tied to no session; and
+# `plugins/installed_plugins.json` maps each plugin id to its installs, each with
+# `scope`, `version` and, for a project or local install, `projectPath`.
+_HISTORY = "history.jsonl"
+_SESSION_DIRS = ("file-history", "session-env")
+_SNAPSHOT_DIR = "shell-snapshots"
+_PLUGIN_RECORDS = os.path.join("plugins", "installed_plugins.json")
+
+
+def history_lines(text, roots):
+    """(count, session ids, projects, why) - the history lines whose project is a
+    demo root, and which spelling of it each named. A line that will not parse is a
+    reason, never skipped as another project's."""
+    if text is None:
+        return 0, [], [], None
+    count, sessions, projects, bad = 0, set(), set(), 0
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            bad += 1
+            continue
+        if isinstance(row, dict) and row.get("project") in roots:
+            count += 1
+            projects.add(row["project"])
+            if isinstance(row.get("sessionId"), str) and row["sessionId"]:
+                sessions.add(row["sessionId"])
+    why = ("%d line(s) did not parse, so a demo line among them would be missed"
+           % bad) if bad else None
+    return count, sorted(sessions), sorted(projects), why
+
+
+def plugin_records(text):
+    """(rows, why) - the installs the config's own records hold, in `plugin_rows()`'s
+    shape with `enabled` unknown. They name every scope with its project path, so a
+    local install into the demo folder is seen though `claude plugin list` run from
+    another folder does not list it. An absent file is no installs."""
+    if text is None:
+        return [], None
+    try:
+        body = json.loads(text)
+    except ValueError as exc:
+        return None, "%s does not parse: %s" % (_PLUGIN_RECORDS, exc)
+    plugins = body.get("plugins") if isinstance(body, dict) else None
+    if not isinstance(plugins, dict) or not all(
+            isinstance(v, list) and all(isinstance(r, dict)
+                                        and isinstance(r.get("scope"), str) for r in v)
+            for v in plugins.values()):
+        return None, "%s does not hold a map of plugin installs" % (_PLUGIN_RECORDS,)
+    rows = [{"id": pid, "scope": r["scope"], "projectPath": r.get("projectPath") or "",
+             "version": r.get("version"), "enabled": None}
+            for pid, installs in plugins.items() for r in installs]
+    return sorted(rows, key=_row_key), None
+
+
+def merged_plugins(listed, recorded):
+    """`listed` rows plus every recorded install the list did not show, sorted - one
+    row per install, so a change both sources see is reported once."""
+    seen = set(_row_key(r) for r in listed)
+    return sorted(list(listed) + [r for r in recorded if _row_key(r) not in seen],
+                  key=_row_key)
+
+
+def _entries(path):
+    return sorted(os.listdir(path)) if os.path.isdir(path) else []
+
+
 def config_footprint(env, roots, run=subprocess.run):
     """What the config `env` names holds that a take could have put there: its
-    installed plugins, its trust entries for the demo folder, and the demo folder's
-    transcript directories. Every part that could not be read carries its reason."""
-    plugins, plugins_why = installed_plugins(env, run)
+    installed plugins (listed, and recorded), its trust entries for the demo folder,
+    the demo folder's transcript directories, its history lines and the per-session
+    directories of the sessions those name, and its shell snapshots. Every part that
+    could not be read carries its reason."""
+    listed, listed_why = installed_plugins(env, run)
+    cdir = claude_dir(env)
+    recorded, recorded_why = plugin_records(
+        _read_text(os.path.join(cdir, _PLUGIN_RECORDS)))
+    plugins = None
+    if listed is not None and recorded is not None:
+        plugins = merged_plugins(listed, recorded)
     trust_file = global_config_file(env)
     trust, trust_why = trust_entries(_read_text(trust_file), roots)
     projects, projects_why = _projects_dir(env, run)
@@ -664,9 +757,23 @@ def config_footprint(env, roots, run=subprocess.run):
     if projects:
         transcripts = [os.path.join(projects, n) for n in transcript_names(roots)
                        if os.path.isdir(os.path.join(projects, n))]
-    return {"plugins": plugins, "pluginsWhy": plugins_why,
+    history_file = os.path.join(cdir, _HISTORY)
+    count, sessions, history_roots, history_why = history_lines(_read_text(history_file), roots)
+    # A transcript is named by its session id, so a session that wrote no history
+    # line still has its directories found.
+    sessions = sorted(set(sessions) | set(
+        n[:-len(".jsonl")] for t in transcripts for n in _entries(t)
+        if n.endswith(".jsonl")))
+    session_dirs = [os.path.join(cdir, sub, s) for sub in _SESSION_DIRS
+                    for s in sessions if os.path.exists(os.path.join(cdir, sub, s))]
+    return {"plugins": plugins, "pluginsWhy": listed_why or recorded_why,
             "trustFile": trust_file, "trust": trust, "trustWhy": trust_why,
-            "transcripts": transcripts, "transcriptsWhy": projects_why}
+            "transcripts": transcripts, "transcriptsWhy": projects_why,
+            "historyFile": history_file, "history": count, "historyWhy": history_why,
+            "historyRoots": history_roots,
+            "sessionDirs": session_dirs,
+            "snapshotDir": os.path.join(cdir, _SNAPSHOT_DIR),
+            "snapshots": _entries(os.path.join(cdir, _SNAPSHOT_DIR))}
 
 
 def take_preconditions(account_why, plugins_why):
@@ -684,10 +791,11 @@ def take_preconditions(account_why, plugins_why):
 def footprint_refusals(plan, before, after):
     """[refusal, ...] about what a take did to the operator's config.
 
-    A changed plugin list refuses the take in either mode - against the operator's
-    config it is a stray dialog answer, against an isolated one a leak. A trust entry
-    or transcript directory that appeared refuses an ISOLATED take only: against the
-    operator's own config they are expected, and `leftover_lines()` names them."""
+    A changed plugin list - listed, or in the config's install records - refuses
+    the take in either mode: against the operator's config it is a stray dialog
+    answer, against an isolated one a leak. A trust entry, transcript directory or
+    history line that appeared refuses an ISOLATED take only: against the operator's
+    own config they are expected, and `leftover_lines()` names them."""
     out = []
     if after.get("plugins") is None:
         out.append("the installed plugins could not be read after the take (%s), so "
@@ -710,16 +818,45 @@ def footprint_refusals(plan, before, after):
                        - set(before.get("transcripts") or [])):
         out.append("the take ran against an isolated config, yet a transcript "
                    "directory appeared in the operator's: %s" % (path,))
+    if after.get("historyWhy"):
+        out.append("%s could not be read whole after the take (%s), so whether the "
+                   "isolation held is unknown"
+                   % (after.get("historyFile"), after["historyWhy"]))
+    elif (after.get("history") or 0) > (before.get("history") or 0):
+        out.append("the take ran against an isolated config, yet %s gained %d line(s) "
+                   "for the demo folder" % (after.get("historyFile"),
+                                            after["history"] - (before.get("history")
+                                                                or 0)))
     return out
+
+
+# What the tool knows to look for is not everything a session writes: the lines a
+# take leaves are closed with this, so an empty-looking report is never read as a
+# clean config.
+_NOT_COMPLETE = ("this is what the tool knows to look for, not a complete list of "
+                 "what a session writes")
+
+
+def _isolated_lines(plan):
+    """The report after an isolated take. Its config directory is gone, but the
+    authentication page documents a macOS Keychain entry keyed to each config
+    directory; the entry's name is not documented, and whether a session
+    authenticated by the token alone writes one is not either."""
+    return ["the take's own config at %s was removed with the kit; the operator's "
+            "plugins, trust entries, transcripts and history were compared before "
+            "and after" % (plan["configDir"],),
+            "on macOS a Keychain entry Claude Code keys to %s may remain - its name is "
+            "not documented and whether a token-only session writes one is not "
+            "either; look in Keychain Access (login keychain) for a Claude Code item "
+            "created at the time of the take" % (plan["configDir"],),
+            _NOT_COMPLETE]
 
 
 def leftover_lines(plan, before, after):
     """[line, ...] - what the take left in a config that outlives it, each with the
-    step that removes it. An isolated take leaves nothing of its own behind."""
+    step that removes it where one is known, closed by `_NOT_COMPLETE`."""
     if plan["isolated"]:
-        return ["the take's own config at %s was removed with the kit; the operator's "
-                "plugins, trust entries and transcripts were compared before and "
-                "after" % (plan["configDir"],)]
+        return _isolated_lines(plan)
     out = []
     if after.get("trustWhy"):
         out.append("%s could not be read (%s), so the trust entry for the demo folder "
@@ -736,9 +873,28 @@ def leftover_lines(plan, before, after):
                    % (after["transcriptsWhy"],))
     for path in after.get("transcripts") or []:
         out.append("transcripts in %s - to remove them: rm -rf '%s'" % (path, path))
+    if after.get("historyWhy"):
+        out.append("%s could not be read whole (%s)"
+                   % (after.get("historyFile"), after["historyWhy"]))
+    if after.get("history"):
+        out.append("%d line(s) in %s whose \"project\" is %s - to remove them, with no "
+                   "Claude Code session open, delete those lines from the file"
+                   % (after["history"], after["historyFile"],
+                      " or ".join(after.get("historyRoots") or [])))
+    for path in after.get("sessionDirs") or []:
+        out.append("the take's session wrote to %s - to remove it: rm -rf '%s'"
+                   % (path, path))
+    for name in sorted(set(after.get("snapshots") or [])
+                       - set(before.get("snapshots") or [])):
+        path = os.path.join(after["snapshotDir"], name)
+        out.append("%s appeared during the take - any session open then could have "
+                   "written it; if it was the take's: rm '%s'" % (path, path))
     if not out:
-        out.append("no trust entry and no transcript directory for the demo folder "
-                   "were found in %s" % (after.get("trustFile"),))
+        out.append("no trust entry, transcript directory, history line or session "
+                   "directory for the demo folder was found in %s"
+                   % (os.path.dirname(after.get("historyFile") or "")
+                      or after.get("trustFile"),))
+    out.append(_NOT_COMPLETE)
     return out
 
 
@@ -1358,6 +1514,9 @@ def run_record(out_path, dry_run):
         operator_env = session_env(os.environ)
         roots = fixture_roots(FIXTURE_DIR)
         before = config_footprint(operator_env, roots)
+        # Under an isolated config this asks a fresh config directory holding only
+        # the token; whether the CLI names the account from that is unverified, and
+        # the take is refused below when it does not.
         account, why = account_markers(take_env)
         blocked = take_preconditions(why, before["pluginsWhy"])
         for p in blocked:
@@ -1494,6 +1653,7 @@ def _cases(check):
     _tape_step_cases(check)
     _config_isolation_cases(check)
     _plugin_change_cases(check)
+    _take_footprint_cases(check)
     _account_query_cases(check)
 
 
@@ -2164,8 +2324,8 @@ def _config_isolation_cases(check):
         report = leftover_lines(isolated, before, after)
         check("ci4 ...and the report after such a take names the scratch config as "
               "removed and no path of the operator's: %r" % (report,),
-              len(report) == 1 and scratch in report[0]
-              and operator not in report[0])
+              scratch in report[0] and "removed" in report[0]
+              and not any(operator in ln for ln in report))
         # The leak the comparison exists for: the same take, writing into the
         # operator's config after all.
         with open(os.path.join(operator, ".claude.json"), "w", encoding="utf-8") as fh:
@@ -2248,6 +2408,129 @@ def _plugin_change_cases(check):
     check("pc6 a plugin list that could not be read after the take is a refusal of "
           "its own - an unreadable answer is never 'unchanged': %r" % (blind,),
           len(blind) == 1 and "exit 1" in blind[0])
+
+
+def _write_json(path, body, lines=False):
+    parent = os.path.dirname(path)
+    if not os.path.isdir(parent):
+        os.makedirs(parent)
+    with open(path, "w", encoding="utf-8") as fh:
+        if lines:
+            fh.write("".join(json.dumps(b) + "\n" for b in body))
+        else:
+            json.dump(body, fh)
+
+
+def _take_footprint_cases(check):
+    """What a take writes beyond trust and transcripts: its history lines, its
+    per-session directories, and a plugin installed into the demo folder's own scope,
+    which `claude plugin list` run from another folder does not show."""
+    roots = ["/private/tmp/acme-store-demo", "/tmp/acme-store-demo"]
+    sid, other = "0d3e-demo-session", "7f1a-other-session"
+    d = tempfile.mkdtemp(prefix="audit-demo-gif-selftest-")
+    try:
+        operator = os.path.join(d, "operator")
+        os.makedirs(operator)
+        op_env = {"HOME": d, "CLAUDE_CONFIG_DIR": operator}
+        status = json.dumps({"loggedIn": True,
+                             "projectsDirectory": os.path.join(operator, "projects")})
+        cli = _fake_cli(json.dumps([_KEPT_ROW]), status)
+        records = os.path.join(operator, "plugins", "installed_plugins.json")
+        _write_json(records, {"version": 2, "plugins": {}})
+        history = os.path.join(operator, "history.jsonl")
+        _write_json(history, [{"project": "/srv/work/shop", "sessionId": other,
+                               "display": "x", "timestamp": 1}], lines=True)
+        os.makedirs(os.path.join(operator, "session-env", other))
+        os.makedirs(os.path.join(operator, "shell-snapshots"))
+        before = config_footprint(op_env, roots, run=cli)
+        # What a take against this config writes: a history line for the demo root,
+        # its per-session directories, a shell snapshot.
+        _write_json(history, [{"project": "/srv/work/shop", "sessionId": other,
+                               "display": "x", "timestamp": 1},
+                              {"project": roots[1], "sessionId": sid,
+                               "display": "y", "timestamp": 2}], lines=True)
+        for sub in ("file-history", "session-env"):
+            os.makedirs(os.path.join(operator, sub, sid))
+        snap = "snapshot-zsh-1-demo.sh"
+        _write_json(os.path.join(operator, "shell-snapshots", snap), {})
+        after = config_footprint(op_env, roots, run=cli)
+        fallback = {"isolated": False, "configDir": None, "why": ""}
+        left = leftover_lines(fallback, before, after)
+        hist = [ln for ln in left if "history.jsonl" in ln]
+        check("tf0 the report after a take against the operator's config counts the "
+              "history lines whose project is a demo root - the other project's line "
+              "is not counted - and names the step that removes them: %r" % (hist,),
+              len(hist) == 1 and "1 line" in hist[0] and roots[1] in hist[0]
+              and "delete" in hist[0] and "/srv/work/shop" not in hist[0])
+        named = [ln for ln in left if os.sep + sid in ln]
+        check("tf1 ...and names each per-session directory the take wrote to, by the "
+              "session the history line recorded - never the other session's: %r"
+              % (named,),
+              any(os.path.join("file-history", sid) in ln for ln in named)
+              and any(os.path.join("session-env", sid) in ln for ln in named)
+              and not any(other in ln for ln in left))
+        check("tf2 ...and the shell snapshot that appeared during the take: %r"
+              % ([ln for ln in left if "shell-snapshots" in ln],),
+              any(snap in ln and "shell-snapshots" in ln for ln in left))
+        check("tf3 ...and says the list is what the tool knows to look for, not that "
+              "it is complete: %r" % (left[-1:],),
+              any("knows to look for" in ln for ln in left))
+        same = leftover_lines(fallback, before, before)
+        check("tf4 THE ALLOW TWIN: a config holding only another project's history "
+              "line and session directory is reported with no history line and no "
+              "session directory: %r" % (same,),
+              not any("history.jsonl" in ln and "line" in ln and "delete" in ln
+                      for ln in same)
+              and not any(other in ln for ln in same))
+
+        isolated = {"isolated": True, "configDir": "/tmp/acme-store-demo-kit/cfg",
+                    "why": ""}
+        leaked = footprint_refusals(isolated, before, after)
+        check("tf5 an isolated take whose history line reached the operator's "
+              "history is REFUSED as a leak: %r" % (leaked,),
+              any("history.jsonl" in r for r in leaked))
+        check("tf6 THE TWIN: an isolated take that left the operator's history alone "
+              "is not refused on it: %r" % (footprint_refusals(isolated, before,
+                                                               before),),
+              footprint_refusals(isolated, before, before) == [])
+
+        # A plugin installed into the demo folder's own scope: the list run from
+        # elsewhere answers exactly what it did before, the records do not.
+        local = {"scope": "local", "projectPath": roots[1], "version": "1.0.0",
+                 "installPath": "/x", "installedAt": "t", "lastUpdated": "t"}
+        _write_json(records, {"version": 2, "plugins": {
+            "typescript-lsp@claude-plugins-official": [local]}})
+        now = config_footprint(op_env, roots, run=cli)
+        refused = footprint_refusals(fallback, before, now)
+        check("tf7 a plugin installed into the demo folder's local scope is CAUGHT "
+              "from the config's installed-plugins records although `claude plugin "
+              "list` answered the same, naming the scope, the folder and the undo: %r"
+              % (refused,),
+              len(refused) == 1 and "typescript-lsp" in refused[0]
+              and "local scope" in refused[0] and roots[1] in refused[0]
+              and "uninstall" in refused[0])
+        unchanged = config_footprint(op_env, roots, run=cli)
+        check("tf8 THE ALLOW TWIN: unchanged records and an unchanged list are no "
+              "change: %r" % (footprint_refusals(fallback, now, unchanged),),
+              footprint_refusals(fallback, now, unchanged) == [])
+        with open(records, "w", encoding="utf-8") as fh:
+            fh.write("{ not json")
+        blind = footprint_refusals(fallback, now,
+                                   config_footprint(op_env, roots, run=cli))
+        check("tf9 records that will not parse after the take are a refusal, never "
+              "read as 'no plugins installed': %r" % (blind,),
+              len(blind) == 1 and "installed_plugins.json" in blind[0])
+
+        report = leftover_lines(isolated, before, after)
+        check("tf10 the isolated report does not say nothing was left behind: it "
+              "names the macOS Keychain entry Claude Code keys to the take's config "
+              "directory, and where to look for it: %r" % (report,),
+              any("Keychain" in ln and isolated["configDir"] in ln
+                  and "Keychain Access" in ln for ln in report)
+              and not any("nothing" in ln for ln in report))
+    finally:
+        # Plain files only, no repository.
+        shutil.rmtree(d, ignore_errors=True)
 
 
 def _account_query_cases(check):

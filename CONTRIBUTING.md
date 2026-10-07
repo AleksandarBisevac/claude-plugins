@@ -102,18 +102,30 @@ without it and answers "Yes, I trust this folder".
   `/tmp/acme-store-demo-kit`, removed with the kit. Trust, transcripts and plugin
   installs stay in it; that page documents that each config directory has its own
   settings, session history and login, with its own macOS Keychain entry. Whether a
-  session authenticated by the token alone writes a Keychain entry is not documented.
+  session authenticated by the token alone writes a Keychain entry is not documented,
+  and neither is that entry's name, so after the take the tool does not say nothing
+  was left: it names the Keychain entry that may remain for the removed config
+  directory and says to look for it in Keychain Access. **No isolated take has been
+  observed yet.** It also depends on `claude auth status --json`, asked under the
+  token alone, naming the account; that is unverified, and when it names nobody the
+  take is refused before it starts.
 - **Without it**, the take runs against your own config, because that is where it can
   log in. The tool then prints what the take left there - the trust entry for
-  `/tmp/acme-store-demo` and the file it sits in, and the transcript directory - each
-  with the step that removes it.
+  `/tmp/acme-store-demo` (a whole project key) and the file it sits in, the transcript
+  directory, the count of `history.jsonl` lines whose project is the demo folder, the
+  per-session directories under `file-history/` and `session-env/` that the take's
+  sessions wrote to, and any file that appeared in `shell-snapshots/` during the take -
+  each with the step that removes it. That list is what the tool knows to look for,
+  not everything a session writes, and the report says so.
 
-Either way it reads your installed plugins (`claude plugin list --json`) before and
-after the take and refuses a take that changed them, naming each change and the
-command that undoes it. Under the isolated config it also refuses a take that left a
-trust entry or a transcript directory in your own config, since that means the
-isolation leaked. A plugin list it cannot read, before or after, refuses the take
-as well.
+Either way it reads your installed plugins before and after the take - `claude plugin
+list --json`, and the install records in the config's `plugins/installed_plugins.json`,
+which also hold a local-scope install into the demo folder that a list run from
+another folder does not show - and refuses a take that changed them, naming each
+change and the command that undoes it. Under the isolated config it also refuses a
+take that left a trust entry, a transcript directory or a history line for the demo
+folder in your own config, since that means the isolation leaked. A plugin list or
+install record it cannot read, before or after, refuses the take as well.
 
 **The LSP-recommendation dialog.** When a session reads a file in a language with a
 language-server plugin in a known marketplace (the demo's `.ts` files do), Claude Code

@@ -488,7 +488,7 @@
     {
       "id": "P112.6-uce",
       "title": "usage refuses a plan it resolved but cannot use, and prints no band or routing dollars a plan turned off",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P112-R10 and P112-R14.\n\n/audit:usage refuses a manifest it resolved but cannot use, the same way /audit:status and /audit:report do. This covers a configured plan that does not parse, a sharded plan whose shards are missing, and an explicit argument naming a missing file. In each case usage exits 2 with the same 'cannot read/parse <path>' text those two print, and never renders with an empty plan whose showCost would default to on.\n\nWith showCost false, usage prints no dollar figure anywhere: the cost-band thresholds and the routing advice's re-priced figures are gated on showCost, as the totals already are. mn3 gets a ledger large enough to calibrate the bands, so it can fail on that path.\n\nThe CHANGELOG [Unreleased] entry is made true of all three commands.\n\nCases:\n- An unparseable configured plan: exit 2, no dollar figure.\n- An explicit missing argument: exit 2, no dollar figure.\n- A calibrated showCost-false project prints no band or routing dollars.\n- A calibrated showCost-true twin does print them.",
       "files": [
         "plugins/audit/scripts/usage/audit-usage.py",
@@ -514,18 +514,31 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "290a21da",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-usage.py: load_manifest(path) returns (manifest, refusal) through mio.load_manifest instead of the safe loader that turned any error into {}; a load error gives 'ERROR: cannot read/parse <path>: <exc>' and a non-object 'ERROR: <path> is not a JSON object (got <type>)', byte-identical to audit-status and render-report; main prints the refusal and exits 2 for an unparseable configured plan, a missing shard and an explicit argument naming a missing file (no path at all still renders with the existing note). band_note(bands, show_cost) keeps its basis and says the thresholds are withheld when showCost is off; routing_advice_lines(..., show_cost) keeps the saving as a percentage and withholds the dollar figures; render passes show_cost to both; pricing untouched. CHANGELOG [Unreleased]: the refuse entry covers a plan found but not loadable for all three commands, and a bullet records the showCost gate on band thresholds and routing advice. Decisions: with showCost off the lines keep their basis and say the dollars are withheld rather than vanishing; the load refusal applies to every resolved path, the default location and --backfill included.\nTests: test_audit_usage mn3 (a calibrated ledger, so the band note and routing advice are reached, with no dollar on any line), mn3b (its showCost-true twin), mn4-mn6 on the same ledger, mn7 (unparseable configured plan), mn8 (missing shard), mn9 (explicit missing argument) - each exit 2, empty stdout, no dollar, the shared text - and mn10 (an explicit argument that loads still renders). Red-first proved through the helper at HEAD 3fce7f02 (mn3, mn7, mn8, mn9; 137/141). Suite 141/141; ruff, vermin and the prose lints clean. The report's band note and economics block may share the showCost gap (read, not run) - left for the phase that owns report pricing.",
+        "descriptive": "/audit:usage now refuses with the same message as /audit:status and /audit:report when it finds a plan it cannot load, and with dollar figures turned off it shows no band thresholds or routing dollars either."
       },
       "startedAt": "2026-10-07T05:04:59Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T05:21:24Z",
+      "verifiedBy": [
+        "mn3",
+        "mn3b",
+        "mn7",
+        "mn8",
+        "mn9",
+        "mn10"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T05:19:20Z.c11b2a",
         "status": "passed",
         "at": "2026-10-07T05:19:20Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "290a21da",
+        "at": "2026-10-07T05:21:24Z",
+        "basis": "orchestrator check: P112-R10 and R14 fixed with the shared wording, mn3 now reaches the paths it guards, red-first proved"
       }
     },
     {
