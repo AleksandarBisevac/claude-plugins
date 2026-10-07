@@ -226,38 +226,90 @@
         "severity": "med",
         "file": "docs/research/pipeline-cost-design.md:130-135, 1657-1669, 1730-1733, 1774-1777, 2394, 2449-2450",
         "issue": "The per-task ratio favours the plugin, and the document never says so. The top of the ratio is the task cycle, which leaves out the plugin's session-level work: the session-start write is in planning, and the report is in the run's close. The bottom is arm A's whole session, which keeps plain's session-level work. Measured with the result-reading commit's `analyse()` costs, arm A's first request (session-start write plus the file listing) and its last (the closing summary) cost 0.0793, 0.0955 and 0.0877. That is 15.7, 15.9 and 16.4 percent of whole-A-1, -2 and -3. With those two requests taken out of the bottom (mean 0.459507 instead of 0.547004), the predicted ratios change. Rung 1 becomes 2.05 / 1.95 / 2.18, mean 2.06, not 1.72 / 1.64 / 1.83. G2 becomes 1.60 / 1.50 / 1.75. G1 becomes 1.40 / 1.29 / 1.55, mean 1.41, not 1.17 / 1.09 / 1.30, mean 1.19. Section 5.1's single-task shape compares a whole plugin session with a whole plain session, so it treats both sides alike. It gives 2.16 at rung 1, which agrees with the fairer reading. The document's 0.2 says only that 'the description leaves the plain side open'. The gap matters because it is larger than both margins the headlines rest on. Rung 1's 'meets the ceiling in every session' and G1's 'meets the ideal on the arm's mean' both reverse under the fairer reading, and the user chose G1 partly on the second.",
-        "resolution": "Next to the definition in 0.2, say that the bottom holds plain's session-level open and close and the top does not, and give the size. Print the per-task ratio both ways in 5.1's ladder: against whole arm A, and against arm A less its first and last main-loop requests (or add the plugin's equivalent session-start write to the cycle). Restate the rung 1 and G1 claims in 5.2 and section 8 for each reading, and say which one the target means. Put that same quantity in section 7's per-task row, so the after-study measures what the decision used."
+        "resolution": "fixed in P117.8-2sz (68f43cac): Next to the definition in 0.2, say that the bottom holds plain's session-level open and close and the top does not, and give the size. Print the per-task ratio both ways in 5.1's ladder: against whole arm A, and against arm A less its first and last main-loop requests (or add the plugin's equivalent session-start write to the cycle). Restate the rung 1 and G1 claims in 5.2 and section 8 for each reading, and say which one the target means. Put that same quantity in section 7's per-task row, so the after-study measures what the decision used.",
+        "fixTask": "P117.8-2sz",
+        "commit": "68f43cac"
       },
       {
         "id": "P117-R24",
         "severity": "med",
         "file": "docs/research/pipeline-cost-design.md:1475-1478, 1566, 1786-1796, 2228-2247, 2447-2450 (against plugins/audit/reference/execute-task.md:304-377 and plugins/audit/agents/audit-reviewer.md:34, 114-147)",
         "issue": "G1's guarantee change is stated as 'the per-task intent check moves', but G1 removes more than that, and the way it is held may never fire. (a) The per-task review returns two more answers. One is a red-first grade: a `not-proved` on a `tdd` task becomes a human action item (execute-task.md:352). The other is the inherited-test question. That question is bounded by `tests.gate`, which only a task-mode review receives. Under G1 the phase review is not handed any task's `tests.gate`, so the inherited-test question comes back `not-asked` by construction, and phase mode grades red-first as `not-attempted`. Neither is listed as given up or moved. (In these sessions neither caught anything: all nine per-task reviews returned `inheritedTests: not-asked`, and their red-first words echoed the executor's: `proved` six times, `could-not-prove` three times. So the decision may well stand, but the statement is not exact.) (b) Under 'held by', the phase brief carries each task's return and description but not its commit or diff. The reviewer definition's stated reason for asking per task is exactly that the phase diff 'has no way back to the task that produced each line'. (c) With no per-task reviewer filing a return, T3's `done --from-return` forces every G1 task to close `--intent not-asked` with a basis. T6's sign-off refusal accepts 'a `not-asked` with its basis', and today's sign-off already counts a deliberate `not-asked` as answered (execute-task.md:373-377). Read literally, every G1 task meets the refusal at its own close, so the refusal never fires. T6's micro-test would only catch this if its fixture closes tasks the G1 way, and T6 does not say it does.",
-        "resolution": "In C14, the section 4 table, 5.2 and section 8 decision 1, name everything G1 removes per task: the intent binding before commit, the red-first grade, and the inherited-test question. Then either carry each into the phase review or list it as given up. Have the phase reviewer's computed brief (T3/T6) carry each task's commit SHA and its `tests.gate` commands, and ask the binding, red-first and inherited-test questions per task. Give a G1 task a close state that is not `not-asked`, such as one recording that its intent is deferred to the phase review, and make the sign-off verb refuse unless the phase review answered for that task. Pin it with a T6 case: a fixture whose tasks closed the G1 way must be refused at sign-off when one binding is missing."
+        "resolution": "fixed in P117.8-2sz (68f43cac): In C14, the section 4 table, 5.2 and section 8 decision 1, name everything G1 removes per task: the intent binding before commit, the red-first grade, and the inherited-test question. Then either carry each into the phase review or list it as given up. Have the phase reviewer's computed brief (T3/T6) carry each task's commit SHA and its `tests.gate` commands, and ask the binding, red-first and inherited-test questions per task. Give a G1 task a close state that is not `not-asked`, such as one recording that its intent is deferred to the phase review, and make the sign-off verb refuse unless the phase review answered for that task. Pin it with a T6 case: a fixture whose tasks closed the G1 way must be refused at sign-off when one binding is missing.",
+        "fixTask": "P117.8-2sz",
+        "commit": "68f43cac"
       },
       {
         "id": "P117-R25",
         "severity": "low",
         "file": "docs/research/pipeline-cost-design.md:1604-1611, 1798-1814, 2366",
         "issue": "Section 5.3 says 'Any one of them can double and the worst session stays under the ceiling'. Two rows do not support that. (a) The requests row uses C7's 5 per task instead of 4, a 25 percent rise. Doubling it to 8 per task adds 12 × (37755 × 0.2e-6 + 250 × 20e-6) = 0.1506, which puts whole-C-2-r at 2.10. (b) Output and writes are treated as independent, but the main loop's output is written back into its own cache at the next request. In whole-A-1, 10016 of 12166 output tokens came back as main-loop cache writes (0.82, from the tool's `items`). Rung 1 sets W = 3000 below O = 3500. Doubling output together with its write-back (about 2870 × 9.3e-6 ≈ 0.027 on top of 0.0700) puts whole-C-2-r at about 2.00. There is also no sensitivity check for G1, the chosen rung. Its mean margin to 1.25 is about 0.035 per session, less than doubling output alone (0.04 before write-back). T11's probe threshold of 500 output tokens per request is taken from this table.",
-        "resolution": "Double every row, or rename the column to say what each row actually varies. Tie W to O (W ≥ 0.82 × O plus the tool results). Add a G1 table against the 1.25 ideal. Set the probe's output threshold from the tied model."
+        "resolution": "fixed in P117.8-2sz (68f43cac): Double every row, or rename the column to say what each row actually varies. Tie W to O (W ≥ 0.82 × O plus the tool results). Add a G1 table against the 1.25 ideal. Set the probe's output threshold from the tied model.",
+        "fixTask": "P117.8-2sz",
+        "commit": "68f43cac"
       },
       {
         "id": "P117-R26",
         "severity": "low",
         "file": "docs/research/pipeline-cost-design.md:2061-2063, 2089-2094",
         "issue": "T1's target says 'the `unattributed` row is gone' on all three arm C records. The stated mechanism, which skips the rebuild for a dispatch whose tool result is the async-launch notice, does not get there on whole-C-2-r. Its two async dispatches are RKf8vq (cacheR 33634) and MMJ2sv (32179), 65813 together, against a row of −70856. That leaves −5043 (dispatch command, and the `dispatch` lines at 9e4ab790). The document itself says that row 'is not yet explained'.",
-        "resolution": "Limit the target to whole-C-3 and whole-C-1 and keep whole-C-2-r as an open reading. Or add an investigation step to T1 that names the second cause before the target is set."
+        "resolution": "fixed in P117.8-2sz (68f43cac): Limit the target to whole-C-3 and whole-C-1 and keep whole-C-2-r as an open reading. Or add an investigation step to T1 that names the second cause before the target is set.",
+        "fixTask": "P117.8-2sz",
+        "commit": "68f43cac"
       },
       {
         "id": "P117-R27",
         "severity": "low",
         "file": "docs/research/pipeline-cost-design.md:1624-1627, 1477-1478",
         "issue": "Several estimates carry the 'estimate' label but no stated judgement, which section 0's label definition requires. In sign-off: each request reads P′ + 4000, writes 600, the final report emits 1000, and the filing request costs 0.005. In G1: 1500 tokens per return in the phase review. They are small. The sign-off ones are about 0.06 of the predicted 0.25–0.27, against a budget margin of 0.07–0.12.",
-        "resolution": "Base each one on a reading, for example whole-C-3's sign-off requests 45–57 with the span and billed-span commands, or the filed-return size implied by feature-C-1's hand-backs (6142 and 3550 bytes). Or add them to a sensitivity row for the phase-overhead budget."
+        "resolution": "fixed in P117.8-2sz (68f43cac): Base each one on a reading, for example whole-C-3's sign-off requests 45–57 with the span and billed-span commands, or the filed-return size implied by feature-C-1's hand-backs (6142 and 3550 bytes). Or add them to a sensitivity row for the phase-overhead budget.",
+        "fixTask": "P117.8-2sz",
+        "commit": "68f43cac"
+      },
+      {
+        "id": "P117-R28",
+        "severity": "med",
+        "file": "docs/research/pipeline-cost-design.md:1982-1990, 2535-2539, 2548-2551 (against plugins/audit/scripts/manifest/audit-task.py:7010-7060)",
+        "issue": "The deferred close can be bypassed. The rule is attached to `done --from-return` alone: under `phase`, that form records `deferred` and refuses an `--intent` flag. The plain close is untouched: `done <id> --commit <sha> --intent not-asked --intent-basis \"...\"`. `_done_flags_refusal` accepts it today, and the design never retires it. The same goes for `--intent matches` typed by the main loop. Either way, a task with a diff can still close with a word other than `deferred`. The sign-off refusal reads only tasks closed `deferred`, and its allow case lets a phase with no `deferred` task sign off as today. So a task closed the plain way never meets the refusal. Section 5.2 says the refusal 'cannot be met at the task's own close'. That is true only of the `--from-return` form. T6's only close-side case is `done --from-return --intent not-asked`, so an implementation that checks inside `--from-return` alone passes every case. Separately, `--no-change` has no diff for 'a task with a diff' to be judged against. A task whose work landed can still close that way as `not-asked`. That escape also exists today, so it is not new, but it is now the one the design leaves unnamed.",
+        "resolution": "Put the rule on `done` itself under `review.perTask: phase`. Every close that passes `--commit` records `deferred`, with or without `--from-return`, and any `--intent` word is refused. Add T6 cases: under `phase`, plain `done --commit <sha> --intent not-asked --intent-basis ...` and `done --commit <sha> --intent matches` are each refused and write nothing. Under `always`, the same flags close as today; that is the allow half. In section 5.2's 'Held by', list the `--no-change` close of a task whose files changed as a rule that is followed but not enforced."
+      },
+      {
+        "id": "P117-R29",
+        "severity": "med",
+        "file": "docs/research/pipeline-cost-design.md:1536-1540, 2424-2430, 2460-2471, 2529-2531 (against plugins/audit/agents/audit-reviewer.md:55-57 and its return format at :231, at 7b489337)",
+        "issue": "C14 says 'A phase-mode review as written answers none of the three per task' and fixes this through the brief alone. But the reviewer's own definition is what says so. In `mode: phase`, '`redFirst` is `not-attempted`', and its return format holds one `intent` object, not one per task. T3 lists `audit-reviewer.md` only for the filing line. Neither T3's nor T6's files name three things: the definition's phase-mode rule, its return format, or the filing verb's shape for a phase return. T6's refusal reads per-task answers from that return. T6's cases run offline on hand-made fixtures of the return. Under G1 the probe runs no phase review (T11, step 2). So the first time a real phase reviewer is asked the per-task questions is the full benchmark, the paid step. A reviewer following its definition there files one phase intent and `not-attempted`. The refusal would then correctly hold every task, which stalls step 3's sign-off.",
+        "resolution": "Add to T6's files (or T3's) the phase-mode paragraph and return format of `agents/audit-reviewer.md`. Under `review.perTask: phase`, the return carries a `tasks` array: per task id, the intent answer and note, the red-first grade and basis, and the inherited-test answer and basis. Define the filing verb's shape for that return. Add a case in which a phase return missing one task's entry is refused at filing. Add an offline check that the prompt's return format and the verb's shape name the same keys, after the model of `red_first_vocabulary_drift`."
+      },
+      {
+        "id": "P117-R30",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:1986-1990, 2537-2539 (against 1742-1746)",
+        "issue": "`not-asked` 'stays for ... a fix task sign-off creates from a finding'. The same paragraph refuses an `--intent` flag on any task with a diff under `phase`, and a fix task has a diff. Nothing says how `done` tells a fix task apart, and no T6 case closes one. If the exemption keys on something the caller sets, it is a second way past `deferred`. If there is no exemption, a G1 fix task closes `deferred`, and sign-off refuses until a second phase review answers for it. Section 5.1's sign-off model leaves that cost out: there a fix task is `next`, the executor and `next`, closed `not-asked`.",
+        "resolution": "Key the exemption on the plan's own record: the task is the `fixTask` of a finding in `phase.review.findings`. Add a T6 case. Under `phase`, a task recorded that way closes `not-asked` with its basis, and a task not recorded that way is refused with the same flags."
+      },
+      {
+        "id": "P117-R31",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:~2680-2684 (T11 step 2), against 2052-2063 (5.3) and 1792 (G1's T)",
+        "issue": "Two stops in the probe do not follow the document's own choices. (a) The output stops of 320 and 390 tokens are set on the whole-A reading, which section 0.2 says the target does not mean. Like for like, G1's binding limit is the 2.0 ceiling. In whole-C-2-r that leaves (2 × 0.459507 − 0.7296) / 230e-6 ≈ 825 tokens over 250. (b) The writes check reads 'output plus 400 tokens of tool results a task, against the 388 assumed'. 388 is rung 1's T. G1's, the rung the user chose, is 194, so this check passes at twice G1's assumption. Neither changes a decision: a stop only triggers a re-derivation, and doubling G1's tool results moves its mean by 0.0051.",
+        "resolution": "Say which reading each stop protects: it is stricter than the target on purpose, or give its like-for-like figure as well. Give the writes check per rung, with 194 under G1."
+      },
+      {
+        "id": "P117-R32",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:1029-1033 and the 5.2 table row at 1926",
+        "issue": "The rung 1 (`always`) hold has the same gap as finding 1 one level down. C3's refusal (no reviewer return, and no `--intent not-asked` with a basis) is stated for `done --from-return`. A plain `done --commit <sha> --intent matches` skips the per-task review with no filed return. The row's wording comes from an earlier revision. This diff changed only its left column.",
+        "resolution": "Fix this together with finding 1: the refusal belongs on `done`, not only on `--from-return`."
+      },
+      {
+        "id": "P117-R33",
+        "severity": "low",
+        "file": "commit 68f43cac message (and b72372f7)",
+        "issue": "Both task commits touch a `.md` and carry no `claims:` block. `.claude/hooks/require-claim-block.py` covers every `.md`, but it fires only on a Bash `git commit`. These commits came through the plugin's commit path (`Audit-Row:` trailer), which the hook never sees. This is pipeline behaviour, not this diff's lines.",
+        "resolution": "Have the executor's filed return carry the claims block and the commit path append it, or record that commits made by the plugin are outside the hook's reach."
       }
     ],
-    "outcome": "[findings: 27 - 0 high, 8 med, 19 low; 22 with a recorded fix commit]"
+    "outcome": "[findings: 33 - 0 high, 10 med, 23 low; 27 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -653,7 +705,7 @@
     {
       "id": "P117.8-2sz",
       "title": "the per-task ratio states what its two sides hold, and G1 names everything it moves",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P117-R23 to P117-R27 from the cost phase's fourth review round. Documents only.\n\n- The per-task ratio's definition states that its denominator holds plain's session-level open and close and its numerator does not, and gives the size of that difference. The ladder prints the ratio both ways.\n- G1's guarantee change names everything the per-task review returns that G1 would drop: the intent binding before commit, the red-first grade, and the inherited-test question. Each one is either carried into the phase reviewer's computed brief, or listed as given up. The user chose G1 on the earlier wording, so section 8 restates the decision with the full list.\n- The sensitivity section doubles every row, ties writes to output, and adds a G1 table against the 1.25 ideal.\n- T1's unattributed-row target is limited to the sessions its mechanism explains.\n- The remaining sign-off and G1 estimates are based on readings, or added to a sensitivity row.",
       "files": [
         "docs/research/pipeline-cost-design.md",
@@ -682,19 +734,65 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "68f43cac",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes P117-R23 to P117-R27 in docs/research/pipeline-cost-design.md.\n\nR23: section 0.2 states that the cycle leaves out the plugin's session open and close, while whole arm A keeps plain's (15.7 to 16.4 percent of each A session). Every per-task ratio is printed both ways, and like-for-like is taken as the target's meaning. Rung 1 is 2.03-2.26 like-for-like and 1.70-1.90 against whole A. G1 is 1.33-1.59 like-for-like and 1.12-1.33 against whole A; with the moved review charged back it is 1.66-2.12 and 1.39-1.78.\n\nR24: the per-task review's three answers (the intent binding, the red-first grade and the inherited-test question) are carried into the phase reviewer's computed brief, with each task's SHA, files, filed return, recorded run and tests.gate. A new close state, deferred, is added, and sign-off refuses while any deferred task lacks an answer; T6 gets cases. Carrying costs 0.15-0.26 a session and takes the phase overhead to 0.80-0.95, against the 0.75 budget. Section 8 restates the G1 decision with the full list.\n\nR25: writes are tied to output, in the baseline and in the sensitivity check. Every row is doubled, and a G1 table against 1.25 is added. G1 meets 2x like-for-like in every session and does not reach 1.25.\n\nA new correction: filing writes the return back once.\n\nR26: the T1 unattributed target is limited to whole-C-3 and whole-C-1, with an investigation step for whole-C-2-r.\n\nR27: the sign-off estimates rest on readings.\n\nSuperseded figures are kept once as dated history. Lints are clean.",
+        "descriptive": "The design now compares the plugin with plain like for like: the script-driven pipeline alone is about 2.1x plain per task, and with the per-task review moved to the phase review about 1.45x, which meets the 2x ceiling but not the 1.25x ideal."
       },
       "startedAt": "2026-10-07T18:10:52Z",
-      "completedAt": null,
+      "completedAt": "2026-10-07T19:15:12Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-07T18:53:08Z.8303c9",
         "status": "passed",
         "at": "2026-10-07T18:53:08Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "68f43cac",
+        "at": "2026-10-07T19:15:12Z",
+        "basis": "orchestrator check: each finding maps to a change; the ratio is printed both ways; G1 carries all three per-task answers with a sign-off refusal; the sensitivity check doubles every row"
       }
+    },
+    {
+      "id": "P117.9-2sz",
+      "title": "G1's and rung 1's holds sit on done itself and the reviewer's phase return is specified",
+      "status": "pending",
+      "description": "Fixes review findings P117-R28 to P117-R33 from the cost phase's fifth review round. Documents only. They are the G1 and rung-1 holds, specified tightly enough to implement:\n- under review.perTask phase, the rule sits on done itself, so every close with --commit records deferred and any --intent word is refused; under always, the same applies to the reviewer-return refusal;\n- the reviewer definition's phase-mode rule, its return format with a per-task array, and the filing verb's phase-return shape are added to the files T6 (or T3) owns;\n- the fix-task exemption keys on the plan's own record, with a T6 case;\n- the probe's stops say which reading they protect, and the writes check is given per rung;\n- the plugin's own commit path and the claims-block hook are named, with the gap stated as a finding for T3's filed returns.",
+      "files": [
+        "docs/research/pipeline-cost-design.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-07T11:45:57Z"
