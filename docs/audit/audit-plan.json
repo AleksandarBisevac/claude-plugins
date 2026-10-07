@@ -1117,7 +1117,8 @@
       "P103.8",
       "P105.10-m32",
       "P110.4-exo",
-      "P107.5-gwk"
+      "P107.5-gwk",
+      "P106.4-b6f"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1586,7 +1587,8 @@
     ],
     "plugins/audit/commands/resume.md": [
       "P7.1",
-      "P73.1"
+      "P73.1",
+      "P106.9-b6f"
     ],
     "plugins/audit/commands/review.md": [
       "P7.1",
@@ -1603,7 +1605,9 @@
       "P8.2",
       "P57.1",
       "P69.4-j6r",
-      "P76.3-6qa"
+      "P76.3-6qa",
+      "P106.5-b6f",
+      "P106.7-b6f"
     ],
     "plugins/audit/commands/status.md": [
       "P7.1",
@@ -1621,7 +1625,11 @@
       "P75.2-j5h",
       "P80.17-rtb",
       "P81.12",
-      "P103.5"
+      "P103.5",
+      "P106.7-b6f",
+      "P106.9-b6f",
+      "P106.10-b6f",
+      "P106.11-b6f"
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1",
@@ -1668,7 +1676,10 @@
       "P81.17-j7p",
       "P106.1",
       "P106.2",
-      "P100.2"
+      "P100.2",
+      "P106.5-b6f",
+      "P106.7-b6f",
+      "P106.9-b6f"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -1951,7 +1962,9 @@
       "P102.11",
       "P106.2",
       "P106.3",
-      "P108.3"
+      "P108.3",
+      "P106.5-b6f",
+      "P106.7-b6f"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -1975,7 +1988,8 @@
       "P80.17-rtb",
       "P87.2",
       "P87.3-bpl",
-      "P87.6-bpl"
+      "P87.6-bpl",
+      "P106.7-b6f"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -2040,7 +2054,12 @@
       "P109.7",
       "P102.11",
       "P106.1",
-      "P108.3"
+      "P108.3",
+      "P106.5-b6f",
+      "P106.7-b6f",
+      "P106.9-b6f",
+      "P106.10-b6f",
+      "P106.11-b6f"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
@@ -2438,7 +2457,9 @@
       "P84.6-791",
       "P84.4-791",
       "P84.7-791",
-      "P84.8-791"
+      "P84.8-791",
+      "P106.8-b6f",
+      "P106.10-b6f"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4"
@@ -2494,7 +2515,9 @@
       "P75.1",
       "P75.2-j5h",
       "P84.8-791",
-      "P102.10"
+      "P102.10",
+      "P106.8-b6f",
+      "P106.10-b6f"
     ],
     "plugins/audit/scripts/governance/commit-audit-state.py": [
       "P28.2",
@@ -2702,7 +2725,8 @@
       "P71.2-zso",
       "P76.3-6qa",
       "P107.4",
-      "P103.6"
+      "P103.6",
+      "P106.4-b6f"
     ],
     "plugins/audit/scripts/manifest/_manifest_merge.py": [
       "P60.1"
@@ -2868,7 +2892,12 @@
       "P100.2",
       "P102.10",
       "P106.1",
-      "P106.2"
+      "P106.2",
+      "P106.4-b6f",
+      "P106.6-b6f",
+      "P106.8-b6f",
+      "P106.10-b6f",
+      "P106.11-b6f"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -3634,7 +3663,9 @@
       "P84.6-791",
       "P84.7-791",
       "P84.8-791",
-      "P84.9-791"
+      "P84.9-791",
+      "P106.8-b6f",
+      "P106.10-b6f"
     ],
     "plugins/audit/tests/test__manifest_crossrefs.py": [
       "P22.5",
@@ -3658,7 +3689,8 @@
       "P65.1",
       "P69.3",
       "P69.4-j6r",
-      "P71.3-zso"
+      "P71.3-zso",
+      "P106.4-b6f"
     ],
     "plugins/audit/tests/test__manifest_merge.py": [
       "P60.1"
@@ -3976,7 +4008,9 @@
       "P75.1",
       "P75.2-j5h",
       "P84.8-791",
-      "P94.1"
+      "P94.1",
+      "P106.8-b6f",
+      "P106.10-b6f"
     ],
     "plugins/audit/tests/test_audit_lookup.py": [
       "P56.3",
@@ -4084,7 +4118,12 @@
       "P96.1",
       "P100.2",
       "P106.1",
-      "P106.2"
+      "P106.2",
+      "P106.4-b6f",
+      "P106.6-b6f",
+      "P106.8-b6f",
+      "P106.10-b6f",
+      "P106.11-b6f"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
