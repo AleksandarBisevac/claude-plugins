@@ -305,8 +305,12 @@ live locks would fall silent exactly as the abandonment became certain, which is
 day in, which is when anyone finally looks. What liveness changes is the **repair**,
 so the sentence says which: a live holder means the run is either working or sitting
 idle mid-procedure, and `/audit:phase <id>` picks the remaining waves up; a holder
-that is gone means nothing is going to finish it, so `/audit:resume` continues it and
-`audit-lock.py release phase-<id>` gives the lock back.
+that is gone means nothing is going to finish it, so `/audit:resume` continues it on its
+own — the `audit-task.py start` it runs (`reference/orchestrator.md` → *Branch-per-phase*)
+takes a dead holder's lock over itself and records the takeover, with nothing to release by
+hand first. This is the current reading: a claim write now ties to this same lock, so "no
+lock held" is no longer read as "anyone may take the claim" the way it once was — the lock's
+own liveness is what a takeover checks.
 
 **Only a `phase-<id>` lock is a run.** The `index` lock is what a structural write
 takes and gives back inside one command, so a reading that counted it would trip on

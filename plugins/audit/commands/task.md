@@ -492,13 +492,27 @@ whose `claim.sessionId` is not this session's is refused with exit 2 and nothing
 when that other session still runs a live `phase-<id>` lock, or when liveness could not be
 asked about at all — the refusal names the claim's session, branch, moment and which of those
 it is. Otherwise (the holder's lock is not live) this start **takes the claim over** on its
-own and records the takeover; there is nothing here for `--force` to replace. On a refusal,
-`--force --reason "<why>"` is the same operator's exception as above: pass it only on the
-human's own instruction, their words as the reason, and it replaces the claim with this
-session's, with the `task.start` row keeping the replaced session as the `from` of its
-`claim.sessionId` row and in its `basis`. Under `--json` the result carries `claim`,
-`claimAction` (`none`, `keep`, `take`, `takeover`, `contested` or `no-session`) and
-`claimReplaced`.
+own and records the takeover; there is nothing here for `--force` to replace. **With no session
+id (`$CLAUDE_CODE_SESSION_ID` unset), `claimAction` is `no-session` and nothing is written over
+any claim already held** — a claim naming no session answers no later start's question of whose
+it is, so a held one stays exactly as it stands rather than being replaced; with none held, none
+is written either.
+
+**Taking the `phase-<id>` lock a written claim needs is a second, separate door.** A start that
+is about to write a claim takes that lock first (`reference/orchestrator.md` →
+*Branch-per-phase*); any live phase lock this run does not hold refuses the start outright,
+naming the holder — whether or not the claim check above also had something to say.
+
+**On either refusal, relay it the way `reference/manifest-conventions.md` → *The operator's
+words go in unchanged* states.** Forcing a claim refusal replaces the claim with this session's,
+with the `task.start` row keeping the replaced session as the `from` of its `claim.sessionId`
+row and in its `basis`.
+
+Under `--json` the result carries `claim`, `claimAction` (`none`, `keep`, `take`, `takeover`,
+`contested` or `no-session`), `claimReplaced` (the claim this start wrote over), `claimKept`
+(the other session's claim this start left standing), `claimHolder` (the liveness
+`_phase_holder` read, asked only when another session's claim was in play), `claimTakeoverBasis`
+(a `takeover`'s own reason) and `phaseLock` (the `phase-<id>` lock's own state).
 
 **The start that enters a phase warns about what sign-off will ask for** — an empty
 `testGate` (sign-off then rests on review alone) and a missing `desiredOutcome` — as

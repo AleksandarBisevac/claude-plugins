@@ -444,7 +444,7 @@
     {
       "id": "P106.6-b6f",
       "title": "every phase claim carries readable liveness, so a takeover never overwrites a live session",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P106-R8 (med) and P106-R9.\n\nEvery phase claim carries readable liveness, so that a takeover never overwrites a live session's claim. When start writes a claim and this run holds no phase-<id> lock, it takes one: a hand-off lock recording CLAUDE_PID the way `audit-lock.py acquire` does, through the same _locks writer. A hand-typed start then leaves the same evidence an orchestrated one does. The orchestrator's own lock (held_by_us) is reused, never doubled. Sign-off and cancel release it as they release the phase lock today; say where, in code.\n\nUntil a claim carries that evidence, `none` under another session's claim is read as `unaskable` unless this run holds the lock. That covers a claim pulled from another clone and one written before this change.\n\nA holder judged not live only by the age rule is `unaskable`, not `dead`. That covers no pid recorded, another host, and a probe that answered nothing. `dead` stays for a pid gone on this host and for the empty file an interrupted take leaves.\n\nThe takeover line and the summary state the basis itself (\"no live phase-<id> lock in this clone\"). They never conclude that the holder \"holds no live run\".\n\nCases:\n- A hand start by session A, with a live pid and no prior lock, makes session B's start refuse.\n- A then ends (its pid is gone) and B's start takes the claim over.\n- Locks with no pid, or from another host, past the age limit both refuse.\n- A claim with no lock at all, from another clone, refuses.\n- The orchestrator path (its own lock held) still takes over without --force.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -470,31 +470,51 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "791d8387",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py: a start that writes a claim and holds no phase lock takes one through _take_phase_lock -> _locks.acquire(git_root, 'phase-<id>', note=_START_LOCK_NOTE, wait=0, handed_off=True), the writer and flag audit-lock.py acquire uses, so CLAUDE_PID is recorded and the format is the same (ours: the orchestrator's lock is reused untouched; stale with the holder gone, or forced: taken over; live, or stale by age alone: held; not a git repository or unwritable: none, the start goes ahead). It is taken before any manifest write; held and unforced refuses (_lock_refusal) with nothing written; undo_lock() releases it on each rollback path. _phase_holder returns dead only where _holder_gone sees an end (the empty file of an interrupted take, or a pid gone on this host); every other not-live verdict (no pid, another host, an unanswered probe) is unaskable with a basis saying it was judged by age alone. _claim_plan (gaining an optional phase_id) passes the holder through _holder_under_claim: under another session's claim, none becomes unaskable, the claim possibly from another clone or predating the start lock. _takeover_basis words a takeover as 'no live phase-<id> lock in this clone (<judge basis>)' (or the ours basis); the claim.takeover row, the takeover line and the journal summary use it, and 'holds no live run' is gone. _release_start_lock(git_root, phase_id) releases only a lock whose note is the start's, through _locks.release, from _locked_signoff (after the phase.verdict row) and _locked_cancel (phase kind); the orchestrator's phase lock, held through the merge, is left alone. JSON gains phaseLock, claimTakeoverBasis and phaseLockReleased; text gains a phase lock line. Decisions: the start's lock is told apart by its existing note field; a start that writes no claim (a restart keeping its own claim, or no session id) takes no lock; a forced start never seizes a live lock.\nTests: tk1 (a claim with no lock now refuses as unaskable), tk2 (takeover row and wording), tk7 (a dead lock), and hl1-hl11 (a hand start writes acquire's lock format; a second session then refuses; after the pid is killed it takes over claim and lock; the takeover wording; no-pid and other-host locks past the age limit refuse; the orchestrator's lock reused byte for byte; sign-off and cancel release the start's lock and leave the orchestrator's alone). Red-first proved through the helper at HEAD c3482e27 (11 of 750 failing); an over-fire mutation (no note check on release) turned hl10, hl11 red. Suites: test_audit_task 750/750, test__locks 108/108, test_audit_lock 84/84, test__output, test__deps, test__refs green; ruff and vermin clean.",
+        "descriptive": "Starting a task by hand now takes the same phase lock the orchestrator takes, so another session can no longer take over a phase while its holder is still running; locks that only look old, and claims with no lock behind them, are refused rather than taken over."
       },
       "startedAt": "2026-10-07T02:41:07Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T05:11:48Z",
+      "verifiedBy": [
+        "tk1",
+        "tk2",
+        "hl1",
+        "hl2",
+        "hl3",
+        "hl5",
+        "hl6",
+        "hl7",
+        "hl8",
+        "hl9",
+        "hl10",
+        "hl11"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T05:11:18Z.2208ac",
         "status": "passed",
         "at": "2026-10-07T05:11:18Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "791d8387",
+        "at": "2026-10-07T05:11:48Z",
+        "basis": "orchestrator check: P106-R8 and R9 fixed through the existing _locks writer and judge, release named in code at sign-off and cancel, red-first proved with allow twins"
       }
     },
     {
       "id": "P106.7-b6f",
       "title": "the claim prose matches the code and the relay rule is stated once",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes review findings P106-R10 and P106-R11.\n\ncommands/task.md's claim paragraph is true of _claim_plan and _claim_refusal as they stand after the liveness fix:\n- A claim refuses only while its holder may still be live, or liveness cannot be asked.\n- Any live phase lock this run does not hold refuses.\n- With no session id, the claim is kept and claimAction is no-session.\n- Every --json key the start result carries is listed, including claimKept and claimHolder.\n\nThe rule \"stop and relay start's refusal verbatim; --force --reason only on the human's instruction, with the human's words as the reason\" is stated once, beside manifest-conventions' \"The operator's words go in unchanged\". execute-task.md steps 1-2, orchestrator.md's Phase entry, run.md and task.md point to it instead of restating it. Say there, in one sentence, that it is a rule the model follows: no script can tell an operator's --reason from the model's. Record the bytes /audit:next must read before and after; the restatements' removal should bring them back down.",
       "files": [
         "plugins/audit/commands/task.md",
         "plugins/audit/reference/manifest-conventions.md",
         "plugins/audit/reference/execute-task.md",
         "plugins/audit/reference/orchestrator.md",
-        "plugins/audit/commands/run.md"
+        "plugins/audit/commands/run.md",
+        "plugins/audit/commands/status.md"
       ],
       "tests": {
         "mode": "gate-only",
@@ -513,16 +533,21 @@
       "dependsOn": [
         "P106.6-b6f"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T05:12:20Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T05:39:39Z.532ac1",
+        "status": "passed",
+        "at": "2026-10-07T05:39:39Z"
+      }
     }
   ],
   "startedAt": "2026-10-06T22:17:03Z"

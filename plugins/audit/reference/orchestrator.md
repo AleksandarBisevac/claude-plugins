@@ -399,9 +399,8 @@ driven through the verbs never got a branch; the verb performs it now, before it
 - Outside a git repository the phase runs with no branch, and the verb says so. `/audit:doctor`
   names any running phase that has no branch.
 - **The same write also claims the phase (sharded layout) and checks readiness, and both refusals
-  are `start`'s**: on either, stop and relay the refusal verbatim — `--force --reason` only on the
-  human's own instruction, their words as the reason (`reference/manifest-conventions.md` → *The
-  operator's words go in unchanged*).
+  are `start`'s**: relay either the way `reference/manifest-conventions.md` → *The operator's
+  words go in unchanged* states.
 
 **During task execution:** all edits and commits happen on the phase branch. **Push remains FORBIDDEN** — local only.
 
