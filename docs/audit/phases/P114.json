@@ -21,7 +21,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P114-R1",
@@ -109,12 +109,14 @@
         "severity": "med",
         "file": "plugins/audit/scripts/status/audit-status.py _phase_ready_count and _readiness_moved; plugins/audit/commands/status.md",
         "issue": "The readiness-moved check runs even when the count was read from the linked worktree that holds the branch, so an accurate live reading is marked not live and its note blames 'the branch's copy', which is not the copy that was read.",
-        "resolution": "Treat a linked worktree's file as the live copy: skip the check there (readyLive stays true), keep it for the branch-tip read, and word the note and status.md around the copy actually read; a twin of the worktree fixtures with a post-fork readiness-moving edit on the checkout."
+        "resolution": "fixed in P114.4-ffv (fcdf5f76): Treat a linked worktree's file as the live copy: skip the check there (readyLive stays true), keep it for the branch-tip read, and word the note and status.md around the copy actually read; a twin of the worktree fixtures with a post-fork readiness-moving edit on the checkout.",
+        "fixTask": "P114.4-ffv",
+        "commit": "fcdf5f76"
       }
     ],
-    "outcome": "[findings: 10 - 0 high, 5 med, 5 low; 9 with a recorded fix commit]"
+    "outcome": "[findings: 10 - 0 high, 5 med, 5 low; 10 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "Every UNFINISHED line in /audit:status now counts the ready tasks of its own phase rather than the whole plan's. It reads them from the copy that holds the phase live, in this order:\n- this checkout, when it has the phase branch out;\n- the linked worktree that has the branch out, uncommitted state included;\n- the branch tip;\n- this checkout, when no branch exists.\n\nThe line names the copy it read. A phase with nothing ready of its own is silent. A held lock for a phase this checkout's plan does not hold is refused rather than counted as zero. A zero that is not live prints a re-read prompt instead of advice to resume. A branch-tip count is flagged only when this checkout's copy changed after the fork in a way that moves readiness; a no-content merge or a reworded title does not count. The --short entry view prints the same lines. commands/status.md states the contract, including the git calls made while a lock is held.\n\nThe review ran four rounds and every finding is fixed. The phase gate is green, with screenshots and the interactive check. Run read-only against the development branch, the lines print only for the two phases that have genuinely ready work. BUG-19 is fixed. The same stale-copy class in the ready list and the phase table is BUG-20, and phase P115 takes it next.",
   "tasks": [
     {
       "id": "P114.1",
@@ -329,7 +331,7 @@
     {
       "id": "P114.4-ffv",
       "title": "a count read from the worktree that holds the branch is live",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review finding P114-R10. A linked worktree's file that holds the branch is the copy that holds the phase live, so a count read from it is live.\n\n_readiness_moved runs only when the count was read from the branch's committed copy. On the worktree path it does not run, and readyLive stays true. The note and status.md's paragraph name the copy that was actually read. They do not say 'the branch's copy' when a worktree file was counted.\n\nCases, each with its twin:\n- A worktree holding the branch, with a post-fork readiness-moving edit on this checkout: a silent live zero.\n- The same edit with only the branch tip readable: the note, and the row is not live.",
       "files": [
         "plugins/audit/scripts/status/audit-status.py",
@@ -359,20 +361,34 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fcdf5f76",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-status.py: _phase_ready_count asks _readiness_moved only on the branch-tip path, inside the fallback that reads the branch's committed copy with git show. When a linked worktree's file was read, the row keeps readyLive true, and its basis makes no claim about the branch's copy, which was never read. _readiness_moved's docstring says it applies to the branch-tip path only, because a worktree's file is already the live state. status.md's readiness paragraph now says the note asks only about the branch's committed copy and is silent when a worktree file was counted. New fixture _worktree_post_fork_cases. wp1: a worktree holds the branch and main lands a readiness-moving edit to the same shard after the fork; the count is a silent live zero. wp2, its twin: the same edit with no worktree holding the branch, so the tip is read and the note fires. lw1, lw2, lw6, lw10 and lw11 are unchanged. Red-first proved for wp1 at HEAD.",
+        "descriptive": "When a phase's remaining work is counted from the worktree where it is being done, the status no longer marks that count as possibly out of date because of an unrelated change on the main branch."
       },
       "startedAt": "2026-10-07T07:58:27Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T08:21:55Z",
+      "verifiedBy": [
+        "wp1",
+        "wp2"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T08:21:49Z.e1c1a4",
         "status": "passed",
         "at": "2026-10-07T08:21:49Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "fcdf5f76",
+        "at": "2026-10-07T08:21:55Z",
+        "basis": "orchestrator check: P114-R10 fixed by asking the readiness question only on the branch-tip path, reviewer case reproduced red at HEAD, twin keeps the branch-tip note"
       }
     }
   ],
-  "startedAt": "2026-10-07T06:46:49Z"
+  "startedAt": "2026-10-07T06:46:49Z",
+  "testEvidence": {
+    "runId": "2026-10-07T08:28:53Z.02456b",
+    "status": "passed",
+    "at": "2026-10-07T08:28:53Z"
+  }
 }
