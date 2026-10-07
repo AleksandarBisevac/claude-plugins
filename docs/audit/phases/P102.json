@@ -28,45 +28,85 @@
         "severity": "high",
         "file": "plugins/audit/scripts/governance/stamp-verification.py dependency_plan, workspace_links, refused_links_problem",
         "issue": "--deps-from now defaults to the project, so an editable install of the project in an in-repo virtualenv is read as a workspace link and the whole red run is refused before anything executes, even for a unittest command that never uses that environment; a run that proved before this phase now cannot prove.",
-        "resolution": "Skip a dependency directory that holds a link into the tree, recording the reason in the plan's skipped list that the deps clause prints, and run without it; a case with an editable install in an in-repo virtualenv and a system-python unittest command that still proves."
+        "resolution": "fixed in P102.12-ptn (8b6e21f7): Skip a dependency directory that holds a link into the tree, recording the reason in the plan's skipped list that the deps clause prints, and run without it; a case with an editable install in an in-repo virtualenv and a system-python unittest command that still proves.",
+        "fixTask": "P102.12-ptn",
+        "commit": "8b6e21f7"
       },
       {
         "id": "P102-R2",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_runner_output.py jest assertion check; stamp-verification.py design note; PLUGIN-BUILD-GUIDE.md",
         "issue": "Jest prints a hint line for each node:assert failure rather than an AssertionError line, so the assertion check misses every node:assert failure and a genuine failure reads as a collection error, while the design note, a docstring and the guide state the opposite.",
-        "resolution": "Accept jest's node:assert hint line as an assertion, with a case from jest's real text, and correct the note, docstring, comment and guide."
+        "resolution": "fixed in P102.12-ptn (8b6e21f7): Accept jest's node:assert hint line as an assertion, with a case from jest's real text, and correct the note, docstring, comment and guide.",
+        "fixTask": "P102.12-ptn",
+        "commit": "8b6e21f7"
       },
       {
         "id": "P102-R3",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_runner_output.py summary readers",
         "issue": "Jest's summary line is not read when its output is coloured (FORCE_COLOR inherited or --colors), so a proved failure and a new test file read as no tally and the basis says the output carries no tally while it does.",
-        "resolution": "Strip terminal escapes once before the tally and failing-case readers; a case with jest's coloured summary line."
+        "resolution": "fixed in P102.12-ptn (8b6e21f7): Strip terminal escapes once before the tally and failing-case readers; a case with jest's coloured summary line.",
+        "fixTask": "P102.12-ptn",
+        "commit": "8b6e21f7"
       },
       {
         "id": "P102-R4",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/stamp-verification.py design note",
         "issue": "The note says each part is built while part one is written as future plans, and says the two pytest patterns become one while the next paragraph and the code keep two.",
-        "resolution": "Rewrite part one in the present tense and delete the sentence about one pattern."
+        "resolution": "fixed in P102.12-ptn (8b6e21f7): Rewrite part one in the present tense and delete the sentence about one pattern.",
+        "fixTask": "P102.12-ptn",
+        "commit": "8b6e21f7"
       },
       {
         "id": "P102-R5",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/materialize-proposal.py and other hand-parsed verb dispatchers",
         "issue": "Entry points that dispatch on a verb by hand get no usage hint, so an older cached copy asked for a newer verb names no newer copy, the case the phase outcome names.",
-        "resolution": "Print the shared hint lines on an unknown verb in every hand-parsed verb dispatcher, held by the same lint widened to them."
+        "resolution": "fixed in P102.13-ptn (099cbade): Print the shared hint lines on an unknown verb in every hand-parsed verb dispatcher, held by the same lint widened to them.",
+        "fixTask": "P102.13-ptn",
+        "commit": "099cbade"
       },
       {
         "id": "P102-R6",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/stamp-verification.py workspace_links",
         "issue": "The workspace-link walk lstats every entry of each dependency directory on every red, unbounded by the run's deadline.",
-        "resolution": "Limit the scan to entry shapes that can be workspace links, and check the deadline inside it."
+        "resolution": "fixed in P102.12-ptn (8b6e21f7): Limit the scan to entry shapes that can be workspace links, and check the deadline inside it.",
+        "fixTask": "P102.12-ptn",
+        "commit": "8b6e21f7"
+      },
+      {
+        "id": "P102-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py _decisive_line and error readers",
+        "issue": "Escapes are stripped only on entry to the tally and failing-case readers, so a coloured run's persisted basis carries raw escape bytes and a coloured error gutter is not matched.",
+        "resolution": "Read the plain text once in the decisive-line and error readers; a case that a coloured jest red's basis holds no escape, with an uncoloured twin."
+      },
+      {
+        "id": "P102-R8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/_output.py _prints_usage_block",
+        "issue": "A usage write is recognised only as a bare positional name, so a dispatcher writing the usage block inside a format expression would escape the widened lint.",
+        "resolution": "Walk each call argument so a usage name nested in a format expression counts; a case for that shape with a hinted twin."
+      },
+      {
+        "id": "P102-R9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/_output.py; plugins/audit/tests/test__output.py; plugins/audit/tests/test_materialize_proposal.py",
+        "issue": "Comments and a docstring cite a private register id, and a comment states an unbased count.",
+        "resolution": "Replace each id with the constraint it stands for and drop the count."
+      },
+      {
+        "id": "P102-R10",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/stamp-verification.py leftover_throwaways; plugins/audit/tests/test_stamp_verification.py",
+        "issue": "The leftover check treats any worktree with a throwaway-prefixed path component as a leftover, the main worktree included, so the suite run inside a throwaway reports its own fixture as a leftover and the helper can never prove red for that suite.",
+        "resolution": "Skip the main worktree and match the prefix only on the holder directly above a tree directory; the suite reads the same function; a case with the fixture under a throwaway-prefixed parent."
       }
     ],
-    "outcome": "[findings: 6 - 1 high, 2 med, 3 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 10 - 1 high, 2 med, 7 low; 6 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -824,7 +864,7 @@
     {
       "id": "P102.13-ptn",
       "title": "every hand-parsed verb dispatcher names the newer installed copy on an unknown verb",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review finding P102-R5. Every entry point that dispatches on a verb by hand prints the shared usage hint lines (_claude_home) on an unknown verb, so an older cached copy that is asked for a newer verb names the newer installed copy. materialize-proposal.py is the one the review drove, and every other hand-parsed verb dispatcher is found from the tree. The usage-hint lint is widened to hold these dispatchers: an unknown-verb branch that prints usage without the hint is reported.\n\nCases:\n- materialize-proposal.py with an unknown verb prints the hint;\n- the lint reports a fixture dispatcher without the hint, with an allow twin;\n- the real tree is clean.",
       "files": [
         "plugins/audit/scripts/manifest/materialize-proposal.py",
@@ -855,18 +895,80 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "099cbade",
+      "outcome": {
+        "technical": "materialize-proposal.py's unknown-verb branch writes the shared _claude_home usage hint to stderr after its usage block, so an older cached copy asked for a verb only a newer copy knows names this copy's version and any newer installed copy. _output.py's usage_hint_violations is widened with verb_dispatch_sites, which covers the hand-parsed dispatch shape that the argparse reader cannot see. A site is reported only when both signals hold: the compared name is later dispatched on with == against a literal in the same scope, and the refusal branch writes the module's usage block. One-shot validation and an ordinary one-line refusal are therefore not reported. Results are de-duplicated so an unparseable file is reported once. Every other candidate in the tree dispatches through argparse and is already hooked; materialize-proposal was the only hand-parsed verb dispatcher. Cases: mz46 and mz47 (an unknown verb still exits 2 and now carries the hint), and vd1-vd4 (a bare dispatcher reported, a hinted twin allowed, two over-fire twins quiet, two shape exclusions, and the real tree clean). Red-first proved for mz47 and vd1-vd3 through the helper.",
+        "descriptive": "Asking an older copy of the proposal command for a verb it does not know now tells you which copy answered and whether a newer one is installed, and a lint keeps every hand-written verb switch on that path."
+      },
+      "startedAt": "2026-10-07T09:13:29Z",
+      "completedAt": "2026-10-07T10:31:27Z",
+      "verifiedBy": [
+        "mz46",
+        "mz47",
+        "vd1",
+        "vd2",
+        "vd3",
+        "vd4"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T10:23:57Z.cc05af",
+        "status": "passed",
+        "at": "2026-10-07T10:23:57Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "099cbade",
+        "at": "2026-10-07T10:31:27Z",
+        "basis": "orchestrator check: P102-R5 fixed, dispatchers found from the tree, lint needs two signals so validation is not reported, red-first proved"
+      }
+    },
+    {
+      "id": "P102.14-ptn",
+      "title": "the readers, the usage lint and the leftover check read what they claim to read",
+      "status": "in_progress",
+      "description": "Fixes review findings P102-R7 to P102-R10.\n- The decisive-line and error readers read the plain text, so a coloured run's basis carries no escape bytes and a coloured error gutter is matched.\n- The usage lint walks each call argument, so a usage block written inside a format expression counts.\n- Comments and docstrings that cite a register id state the constraint instead, and the unbased count is dropped.\n- leftover_throwaways skips the main worktree and matches the throwaway prefix only on the holder directly above a tree directory. The suite's leftover case reads that same function.\n\nCases, each with a twin:\n- a coloured jest red's basis holds no escape;\n- the format-expression usage shape is reported, and its hinted twin is allowed;\n- a fixture built under a throwaway-prefixed parent reports no leftover.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__output.py",
+        "plugins/audit/tests/test_materialize_proposal.py",
+        "plugins/audit/tests/test_stamp_verification.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-07T09:13:29Z",
+      "startedAt": "2026-10-07T10:40:13Z",
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-10-07T10:23:57Z.cc05af",
+        "runId": "2026-10-07T11:16:26Z.ffdc99",
         "status": "passed",
-        "at": "2026-10-07T10:23:57Z"
+        "at": "2026-10-07T11:16:26Z"
       }
     }
   ],

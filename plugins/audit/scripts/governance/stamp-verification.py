@@ -1935,21 +1935,40 @@ def deps_clause(plan):
 
 # --- the throwaway tree itself ---
 def leftover_throwaways(root, timeout=120):
-    """`[{"path", "state", "pid"}]` - registered worktrees whose path carries
-    `THROWAWAY_PREFIX`, each graded by the process its `OWNER_FILE` names:
-    `running` while that process is alive (a sibling's `red`, still going),
-    `left-behind` once it is gone, `unknown` with no owner record. Reported,
-    never pruned. A reused pid reads as `running`, the safe direction."""
+    """`[{"path", "state", "pid"}]` - registered worktrees whose HOLDER (the
+    directory `_build_throwaway` makes with `tempfile.mkdtemp(prefix=
+    THROWAWAY_PREFIX, ...)`, directly above the checked-out `tree` directory)
+    carries `THROWAWAY_PREFIX`, each graded by the process its `OWNER_FILE`
+    names: `running` while that process is alive (a sibling's `red`, still
+    going), `left-behind` once it is gone, `unknown` with no owner record.
+    Reported, never pruned. A reused pid reads as `running`, the safe
+    direction.
+
+    THE MAIN WORKTREE IS NEVER A CANDIDATE, however its own path is spelled.
+    `git worktree list --porcelain` always lists it first, so it is skipped by
+    position rather than by name - a repository checked out under a directory
+    that happens to start with `THROWAWAY_PREFIX` (a scratch test root, say)
+    is still the main worktree and reports nothing about itself.
+
+    AND THE PREFIX IS READ ON ONE DIRECTORY, NOT ON EVERY ANCESTOR. Matching
+    any path segment reported the repository above as its own leftover
+    whenever a caller's scratch root happened to carry the prefix several
+    levels up; a throwaway's `tree` directory sits exactly one level under the
+    holder `_build_throwaway` made, so that is the only segment this reads."""
     code, listing = _git(root, ["worktree", "list", "--porcelain"], timeout=timeout)
     if code != 0:
         return []
     out = []
+    seen_main = False
     for ln in listing.splitlines():
         if not ln.startswith("worktree "):
             continue
         path = ln[len("worktree "):]
-        if not any(part.startswith(THROWAWAY_PREFIX)
-                   for part in path.replace("\\", "/").split("/")):
+        if not seen_main:
+            seen_main = True
+            continue
+        holder = posixpath.basename(posixpath.dirname(path))
+        if not holder.startswith(THROWAWAY_PREFIX):
             continue
         pid = None
         try:
@@ -2111,7 +2130,14 @@ NO_OUTPUT = "the run printed no output"
 
 def _decisive_line(text, tally):
     """The line a reader checks the verdict against: the tally, else the error,
-    else a sentence saying no reader matched - never a line picked by position."""
+    else a sentence saying no reader matched - never a line picked by position.
+
+    Read through `_runner_output.plain_text` first, same as every tally and case
+    reader `red` calls: a runner forced into colour through a pipe (`FORCE_COLOR`)
+    wraps the very words this hunts for (`Tests:`, `Error`) in terminal escapes,
+    and a basis quoting them raw is unreadable and still carries no more
+    information than the plain line underneath."""
+    text = _runner_output.plain_text(text)
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     if tally is not None and tally["runner"] in _TALLY_KEYS:
         hits = [ln for ln in lines if _TALLY_KEYS[tally["runner"]] in ln]

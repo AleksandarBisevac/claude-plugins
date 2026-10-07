@@ -296,7 +296,7 @@ def _cases(check):
     # ----------------------------------------------- the hand-parsed dispatcher shape
     # The other half of the same check: a dispatcher that reads its verb by hand
     # (`if verb not in (...)`) builds no parser, so `parser_sites()` cannot see it -
-    # `materialize-proposal.py` was exactly this (P102-R5) before it called the hint
+    # `materialize-proposal.py` was exactly this before it called the hint
     # directly in the branch that refuses an unrecognised verb. Two signals are
     # both required (see the module comment above `verb_dispatch_sites`), each
     # proven necessary by its own twin below: a fixture that has one signal but
@@ -378,6 +378,40 @@ def _cases(check):
                 '        sys.stderr.write("usage\\n")\n'
                 '        return 2\n'
                 '    return 0\n',
+            # The usage block written inside a FORMAT EXPRESSION, one level
+            # below the call argument itself - the shape this tree's own
+            # migrate-manifest.py and resolve-ado-parent.py write
+            # (`"%s\\n%s\\n" % (err, _USAGE)`), which a check that only read a
+            # bare `ast.Name` argument would miss.
+            "format_bare.py":
+                'import sys\n'
+                '_USAGE = "usage: format_bare.py <verb>\\n"\n'
+                'def main(argv):\n'
+                '    verb = argv[0]\n'
+                '    err = "bad verb"\n'
+                '    if verb not in ("list", "plan", "drop"):\n'
+                '        sys.stderr.write("%s\\n%s\\n" % (err, _USAGE))\n'
+                '        return 2\n'
+                '    if verb == "list":\n'
+                '        return 0\n'
+                '    return 1\n',
+            # The allow twin for the format-expression shape - same format
+            # expression, the hint called in the branch.
+            "format_hinted.py":
+                'import sys\n'
+                'import _claude_home\n'
+                '_USAGE = "usage: format_hinted.py <verb>\\n"\n'
+                'def main(argv):\n'
+                '    verb = argv[0]\n'
+                '    err = "bad verb"\n'
+                '    if verb not in ("list", "plan", "drop"):\n'
+                '        sys.stderr.write("%s\\n%s\\n" % (err, _USAGE))\n'
+                '        hint = _claude_home.usage_hint(None, None, None, None)\n'
+                '        sys.stderr.write("\\n".join(hint))\n'
+                '        return 2\n'
+                '    if verb == "list":\n'
+                '        return 0\n'
+                '    return 1\n',
         }
         for rel, text in vd_fixtures.items():
             with open(os.path.join(vd, rel), "w", encoding="utf-8") as fh:
@@ -394,7 +428,14 @@ def _cases(check):
               "stays quiet, and so do a dispatched-but-ordinary refusal, a "
               "usage-printing but never-dispatched flag, a single-flag check "
               "and a one-literal membership test: %r" % (vd_where,),
-              vd_where == [("bare.py", 5)])
+              vd_where == [("bare.py", 5), ("format_bare.py", 6)])
+        check("vd5 the usage block written inside a FORMAT EXPRESSION - "
+              "`\"%%s\\n%%s\\n\" %% (err, _USAGE)` - is read the same as a bare "
+              "name argument, and is named by file and line: %r" % (vd_where,),
+              ("format_bare.py", 6) in vd_where)
+        check("vd6 ...and its allow twin - the identical format expression, the "
+              "hint called in the branch - stays quiet: %r" % (vd_where,),
+              ("format_hinted.py", 6) not in vd_where)
     finally:
         shutil.rmtree(vd, ignore_errors=True)
 

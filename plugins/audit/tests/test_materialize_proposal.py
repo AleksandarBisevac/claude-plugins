@@ -186,10 +186,10 @@ def _cases(check):
               "rather than a silent default listing",
               M.main([lpath, "list", "alll"]) == 2)
 
-        # An unknown VERB (not a flag `list` rejects) is the one P102-R5 drove: a
-        # review caught this file naming the bare usage block and nothing else on
-        # that branch, so an older cached copy asked for a newer verb named
-        # nothing about the newer installed one.
+        # An unknown VERB (not a flag `list` rejects) is the case where naming
+        # the bare usage block and nothing else on that branch would leave an
+        # older cached copy asked for a newer verb naming nothing about the
+        # newer installed one.
         code6, err6 = _run_err([path, "revive2"])
         check("mz46 an unknown verb is still a usage error: %r" % (code6,),
               code6 == 2)

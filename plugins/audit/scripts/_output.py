@@ -1281,8 +1281,8 @@ def usage_hint_violations(dirs=None):
 # --- verb-dispatch check (the hand-parsed shape) --------------------------------
 # Two signals, both required, because `<name> not in (<literal>, ...)` alone is
 # also how this tree validates an ordinary flag or a manifest field - `_ui_theme.
-# validate_layout`'s `k not in ("density", "order")` and a dozen like it are NOT a
-# verb dispatcher, and a lint that could not tell them apart would be unusable
+# validate_layout`'s `k not in ("density", "order")` and others shaped like it are
+# NOT a verb dispatcher, and a lint that could not tell them apart would be unusable
 # here. A genuine hand-parsed dispatcher is told apart by BOTH of what it does
 # with the same name afterwards: it is DISPATCHED ON (compared with `==` against
 # one of the same literals, elsewhere in the same function - the shape every
@@ -1346,12 +1346,18 @@ def _prints_usage_block(node):
     """Whether `node`'s subtree writes a module-level `USAGE`/`_USAGE` name —
     this tree's own convention for the shared usage block, as opposed to some
     other one-line refusal (`"--all applies to plan and materialize only"`) that
-    owes the hint no more than any other error sentence does."""
+    owes the hint no more than any other error sentence does.
+
+    EACH ARGUMENT'S OWN SUBTREE IS WALKED, not merely tested for being a bare
+    `ast.Name`: a usage name read through a `%`-format expression one level
+    below the argument itself is still a write of the block, and a check that
+    only recognised a bare name missed a shape this tree already writes."""
     for sub in ast.walk(node):
         if isinstance(sub, ast.Call):
             for arg in sub.args:
-                if isinstance(arg, ast.Name) and arg.id in _USAGE_NAMES:
-                    return True
+                for inner in ast.walk(arg):
+                    if isinstance(inner, ast.Name) and inner.id in _USAGE_NAMES:
+                        return True
     return False
 
 
@@ -1371,10 +1377,10 @@ def verb_dispatch_sites(files):
     `ArgumentParser` is invisible there, so a dispatcher written as
     `if verb not in ("list", "plan", ...): print(USAGE); return 2` could print a
     bare usage block forever with nothing catching it. `why` is None when the
-    branch itself calls `_claude_home.usage_hint` (P102-R5's fix in
-    `materialize-proposal.py`); otherwise it names the gap the same way `parser_sites`
-    names a parser the hook never reached. A file that will not parse is reported
-    at line 0, same as `parser_sites`."""
+    branch itself calls `_claude_home.usage_hint`, which an unknown-verb branch
+    that only prints the bare usage block does not; otherwise it names the gap
+    the same way `parser_sites` names a parser the hook never reached. A file
+    that will not parse is reported at line 0, same as `parser_sites`."""
     out = []
     for rel, path in files:
         try:

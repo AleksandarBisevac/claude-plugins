@@ -2883,6 +2883,43 @@ def _listing_cases(check):
           and M.still_listed(win_listing, native + "2", as_windows) is False)
 
 
+def _leftover_cases(check):
+    """`leftover_throwaways` reads the HOLDER directly above a `tree` directory
+    - never any ancestor segment, and never the main worktree, however its own
+    path happens to be spelled."""
+    real_git = M._git
+    root = "/nest/%snest/repo" % (M.THROWAWAY_PREFIX,)
+    good_holder = "/tmp/%sabc" % (M.THROWAWAY_PREFIX,)
+    good_path = good_holder + "/tree"
+    deep_path = "/tmp/%snest/mid/tree" % (M.THROWAWAY_PREFIX,)
+    listing = ("worktree %s\nHEAD %s\nbranch refs/heads/main\n\n"
+              "worktree %s\nHEAD %s\ndetached\n\n"
+              "worktree %s\nHEAD %s\ndetached\n"
+              % (root, "a" * 40, good_path, "b" * 40, deep_path, "c" * 40))
+
+    def fake(where, args, timeout=120, strip=True):
+        if args[:2] == ["worktree", "list"]:
+            return 0, listing
+        return 1, "fatal: refused"
+    M._git = fake
+    try:
+        found = [e["path"] for e in M.leftover_throwaways(root)]
+    finally:
+        M._git = real_git
+    check("sr202 a repository checked out under a directory that itself carries "
+          "THROWAWAY_PREFIX - a scratch test root, say - is the MAIN worktree "
+          "and is never reported as its own leftover: %r" % (found,),
+          root not in found)
+    check("sr203 a genuine throwaway, whose HOLDER directly above the `tree` "
+          "directory carries the prefix, is reported: %r" % (found,),
+          good_path in found)
+    check("sr204 THE ALLOW CASE for sr202/sr203: a tree nested two levels under "
+          "a prefixed ancestor, whose DIRECT holder does not itself carry the "
+          "prefix, is not reported - only the immediate holder is read, never "
+          "any ancestor segment: %r" % (found,),
+          deep_path not in found)
+
+
 def _holder_cases(check):
     """The throwaway's temp directory, when the configured one is inside the repo."""
     root = _seeded_repo("stamp-holder-")
@@ -3017,6 +3054,31 @@ _JEST_NO_SUITE = (
     "Ran all test suites.\n")
 
 
+# jest 30.5.2's own output for the same failure, captured with FORCE_COLOR=1 set
+# (observed 2026-10-07, `npx jest@30.5.2`): every summary word and bullet is
+# wrapped in a terminal escape, the shape a runner forced into colour through a
+# pipe actually prints, and `_decisive_line` has to read through it rather than
+# quote it raw.
+_JEST_ASSERT_COLORED = (
+    "\x1b[0m\x1b[7m\x1b[1m\x1b[31m FAIL \x1b[39m\x1b[22m\x1b[27m\x1b[0m "
+    "\x1b[2m./\x1b[22m\x1b[1madd.test.js\x1b[22m\n"
+    "\x1b[1m\x1b[31m  \x1b[1m● \x1b[22m\x1b[1madds two numbers\x1b[39m"
+    "\x1b[22m\n\n"
+    "    \x1b[2mexpect(\x1b[22m\x1b[31mreceived\x1b[39m\x1b[2m).\x1b[22mtoBe"
+    "\x1b[2m(\x1b[22m\x1b[32mexpected\x1b[39m\x1b[2m) // Object.is equality"
+    "\x1b[22m\n\n"
+    "    Expected: \x1b[32m4\x1b[39m\n"
+    "    Received: \x1b[31m3\x1b[39m\n\n"
+    "\x1b[1mTest Suites: \x1b[22m\x1b[1m\x1b[31m1 failed\x1b[39m\x1b[22m, "
+    "1 total\n"
+    "\x1b[1mTests:       \x1b[22m\x1b[1m\x1b[31m1 failed\x1b[39m\x1b[22m, "
+    "1 total\n"
+    "\x1b[1mSnapshots:   \x1b[22m0 total\n"
+    "\x1b[1mTime:\x1b[22m        0.275 s, estimated 1 s\n"
+    "\x1b[2mRan all test suites\x1b[22m\x1b[2m matching \x1b[22madd.test.js"
+    "\x1b[2m.\x1b[22m\n")
+
+
 def _jest_cases(check):
     cmd = ["npx", "jest"]
     verdict, tally = M.classify_run(1, _JEST_ASSERT, cmd)
@@ -3051,6 +3113,21 @@ def _jest_cases(check):
           and cases_s == [("Test suite failed to run", False)]
           and code_s == M.E_CANNOT_PROVE
           and ": Tests:       0 total;" in basis_s)
+    verdict_c, tally_c = M.classify_run(1, _JEST_ASSERT_COLORED, cmd)
+    cases_c = [(c.get("label"), c.get("assertion"))
+               for c in M.failing_cases(_JEST_ASSERT_COLORED)]
+    basis_c = _unread_basis(1, _JEST_ASSERT_COLORED, cmd)
+    check("sr200 a coloured jest red (FORCE_COLOR=1) still reads as red, its "
+          "tally and bullet read the same as the plain run: %r %r %r"
+          % (verdict_c, tally_c, cases_c),
+          verdict_c == M.V_RED and (tally_c or {}).get("runner") == "jest"
+          and (tally_c or {}).get("collected") == 1
+          and (tally_c or {}).get("assertions") == 1
+          and cases_c == [("adds two numbers", True)])
+    check("sr201 ...and the basis it writes quotes the decisive line PLAIN - no "
+          "terminal escape byte in it, even though the run's own output carried "
+          "nothing but coloured lines: %r" % (basis_c,),
+          "Tests:       1 failed, 1 total" in basis_c and "\x1b" not in basis_c)
 
 
 # A jest test file as a task adds it: a comment and strings holding brackets and
@@ -3672,6 +3749,7 @@ def _cases(check):
     _harness.stage(check, "sj-credit", _jest_credit_cases)
     _harness.stage(check, "sr-crlf", _crlf_cases)
     _harness.stage(check, "sr-listing", _listing_cases)
+    _harness.stage(check, "sr-leftover", _leftover_cases)
     _harness.stage(check, "sr-holder", _holder_cases)
     _harness.stage(check, "sv-take", _take_cases)
     _harness.stage(check, "sv-compare", _compare_cases)
