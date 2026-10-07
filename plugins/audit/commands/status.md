@@ -306,11 +306,14 @@ day in, which is when anyone finally looks. What liveness changes is the **repai
 so the sentence says which: a live holder means the run is either working or sitting
 idle mid-procedure, and `/audit:phase <id>` picks the remaining waves up; a holder
 that is gone means nothing is going to finish it, so `/audit:resume` continues it on its
-own — the `audit-task.py start` it runs (`reference/orchestrator.md` → *Branch-per-phase*)
-takes a dead holder's lock over itself and records the takeover, with nothing to release by
-hand first. This is the current reading: a claim write now ties to this same lock, so "no
-lock held" is no longer read as "anyone may take the claim" the way it once was — the lock's
-own liveness is what a takeover checks.
+own — its own preflight acquire (`reference/orchestrator.md` → *Concurrency lock*) meets the
+dead holder as exit 4 and takes the lock over through that same acquire once the human
+confirms it, and the `audit-task.py start` it then runs (`reference/orchestrator.md` →
+*Branch-per-phase*) reuses that already-held lock rather than taking it over a second time.
+`start`'s own takeover of a dead holder's lock is for the hand-typed case, with no preflight
+acquire ahead of it. This is the current reading: a claim write now ties to this same lock, so
+"no lock held" is no longer read as "anyone may take the claim" the way it once was — the
+lock's own liveness is what a takeover checks.
 
 **Only a `phase-<id>` lock is a run.** The `index` lock is what a structural write
 takes and gives back inside one command, so a reading that counted it would trip on

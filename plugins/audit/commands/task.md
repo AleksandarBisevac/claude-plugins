@@ -477,11 +477,10 @@ ceiling so the caller can make it.
 its phase's `blockedBy` — is refused with exit 2 and nothing written, and the refusal names
 each reference the way `/audit:status` does (`_status_facts.unmet_refs` is the one answer both
 read; a phase-level blocker reads `<id> (phase)`). `--force --reason "<why>"` is the
-operator's exception, never a route for promoting a task by hand on its own say-so: pass it
-only on the human's own instruction, their words verbatim as `--reason`
-(`reference/manifest-conventions.md` → *The operator's words go in unchanged*), and the
-`task.start` row records it. The door refuses `--force` without `--reason`, and `--reason`
-without `--force`; `--reason -` reads the text off stdin like every prose flag. A re-start of
+recorded way past it, and the `task.start` row keeps it — see
+`reference/manifest-conventions.md` → *The operator's words go in unchanged*. The door refuses
+`--force` without `--reason`, and `--reason` without `--force`; `--reason -` reads the text off
+stdin like every prose flag. A re-start of
 a task already `in_progress`
 is the retry above and is never refused for readiness — it prints a `NOTE:` naming what is
 still unmet. Under `--json` the result carries `ready`, `waitingOn`, `forced` and
@@ -489,10 +488,13 @@ still unmet. Under `--json` the result carries `ready`, `waitingOn`, `forced` an
 
 **A claim is refused only while its holder may still be live.** On the sharded layout, a phase
 whose `claim.sessionId` is not this session's is refused with exit 2 and nothing written only
-when that other session still runs a live `phase-<id>` lock, or when liveness could not be
-asked about at all — the refusal names the claim's session, branch, moment and which of those
-it is. Otherwise (the holder's lock is not live) this start **takes the claim over** on its
-own and records the takeover; there is nothing here for `--force` to replace. **With no session
+when the claim's `phase-<id>` lock is still live under another session, or when it is
+**unaskable** — no such lock in this clone, or one `judge` could only place by its age, neither
+of which says the holder's run has stopped (`_holder_under_claim`) — the refusal names the
+claim's session, branch, moment and which of those it is. Otherwise this start **takes the
+claim over**: the lock's run was observed to end (`_locks.holder_gone`), or the live
+`phase-<id>` lock it names is this run's own (`_locks.held_by_us`) — and the takeover is
+recorded (`_claim_plan`); there is nothing here for `--force` to replace. **With no session
 id (`$CLAUDE_CODE_SESSION_ID` unset), `claimAction` is `no-session` and nothing is written over
 any claim already held** — a claim naming no session answers no later start's question of whose
 it is, so a held one stays exactly as it stands rather than being replaced; with none held, none
