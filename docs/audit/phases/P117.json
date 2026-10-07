@@ -757,7 +757,7 @@
     {
       "id": "P117.9-2sz",
       "title": "G1's and rung 1's holds sit on done itself and the reviewer's phase return is specified",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes review findings P117-R28 to P117-R33 from the cost phase's fifth review round. Documents only. They are the G1 and rung-1 holds, specified tightly enough to implement:\n- under review.perTask phase, the rule sits on done itself, so every close with --commit records deferred and any --intent word is refused; under always, the same applies to the reviewer-return refusal;\n- the reviewer definition's phase-mode rule, its return format with a per-task array, and the filing verb's phase-return shape are added to the files T6 (or T3) owns;\n- the fix-task exemption keys on the plan's own record, with a T6 case;\n- the probe's stops say which reading they protect, and the writes check is given per rung;\n- the plugin's own commit path and the claims-block hook are named, with the gap stated as a finding for T3's filed returns.",
       "files": [
         "docs/research/pipeline-cost-design.md"
@@ -783,16 +783,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T19:25:11Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T19:57:31Z.01d256",
+        "status": "passed",
+        "at": "2026-10-07T19:57:31Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T11:45:57Z"

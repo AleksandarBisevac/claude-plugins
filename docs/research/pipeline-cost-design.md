@@ -38,6 +38,23 @@ section 5.5, the earlier task targets beside the tasks that replace them.
 
 The figures this revision replaces are kept once, dated, beside the ones that replace them.
 
+**Revised after its fifth review (2026-10-07).** The G1 and rung-1 holds are specified tightly
+enough to build, each in the section it concerns. No earlier figure changes. Two derived ones are
+added, both for the probe: G1's like-for-like output limit, and its writes bound under G1:
+
+- The close's rule sits on `done` itself, in every form and under both keys, so a plain
+  `done --commit` cannot skip what `--from-return` refuses (C3, section 5.2, T3, T6).
+- The fix-task exception keys on the plan's own record, written when the fix task is added
+  (section 5.2, T6).
+- The key is read once per phase, and the plugin's merge path asks sign-off's question too
+  (section 5.2, T6).
+- The reviewer's definition, its return format with a per-task array, and the filing verb's
+  phase-return shape are T6's files (C14, T6).
+- The probe's stops say which reading they protect, and its writes check is given per rung
+  (sections 5.3 and 7).
+- The plugin's commit path is outside this repository's claims-block hook. T3's filed return
+  carries the block, and the commit path appends it (T3).
+
 ## 0. How to read this
 
 | Label | Means |
@@ -1026,11 +1043,30 @@ verbs hold the order around the filed returns, and T3 pins each with a case:
 - `brief` for the reviewer exits non-zero, writing no brief, until the executor's return for the
   task's current start is filed. The reviewer's brief carries that return as filed, so it cannot be
   composed before it.
-- `done --from-return` reads the executor's return for the task's current start. It also reads the
-  reviewer's, unless the close passes `--intent not-asked` with its basis, which the verb already
-  refuses without one (`scripts/manifest/audit-task.py:7055`). It refuses, writing nothing, when a
-  return it reads is not filed for the current start, and a return from an earlier start does not
-  count.
+- `done` holds the reviewer's half in every form that passes `--commit`, not in `--from-return`
+  alone. At `7b489337`, `done` closes with `--commit <sha>` or with `--no-change --reason`, and
+  either takes `--intent` and `--intent-basis` (`scripts/manifest/audit-task.py:38-43`). Its flag
+  check, `_done_flags_refusal` (`:7010`), reads the flags and nothing else, so it cannot see a
+  filed return. The rule therefore sits in `_locked_done`, before its call of `_done_task`
+  (`:4750`). That is the only writer in the plugin's scripts that sets a task in a user's plan to
+  `done` (`:4440`); the demo and benchmark builders write it only into plans they generate, and the
+  panel edits a task's `model` and `skills` alone (`scripts/panel/_panel_settings.py:107`). T3's
+  `--from-return` closes through the same function, so it meets the same rule.
+  - A close that passes `--commit`, with or without `--from-return`, needs the reviewer's return
+    for the task's current start, or `--intent not-asked` with its basis, which the verb already
+    refuses without one (`:7055`).
+  - When the reviewer's return is filed, its answer is the one recorded. A typed `--intent` word
+    that differs from it is refused, `not-asked` included, so a typed word cannot replace an
+    answer a reviewer filed.
+  - `--from-return` also reads the executor's return for the current start.
+  - It refuses, writing nothing, when a return it needs is not filed for the current start, and
+    a return from an earlier start does not count.
+  - A `--no-change` close has no diff to bind and keeps today's rule. Section 5.2 gives the rule
+    under G1.
+
+  The plain close is the reason. At `7b489337`, `done --commit <sha> --intent matches` closes with
+  no review behind it, and `done --commit <sha>` with no `--intent` closes recording no answer at
+  all. A rule on `--from-return` alone would leave both as the way past it.
 
 **The reviewer's one write, and what holds it.**
 
@@ -1062,13 +1098,18 @@ verbs hold the order around the filed returns, and T3 pins each with a case:
     `reviewer`, or for the task it was handed. So a filing under a role or a task not yet filed is a
     followed rule: write-once stops a reviewer replacing a return, not filing one that nobody has
     filed yet, such as another task's or a role whose agent has not run. If a reviewer files its own
-    return under the wrong task, its own task is left with none, and `done --from-return` refuses
-    that close, by the case T3 pins. The only way past that refusal is a close that records
+    return under the wrong task, its own task is left with none, and `done` refuses that close in
+    either form, by the cases T3 pins. The only way past that refusal is a close that records
     `--intent not-asked` with its basis.
   - **The reviewer runs nothing else that writes.** That stays a followed rule, as it is today: its
     Bash can write and nothing refuses it, which its own prompt says ("Nothing refuses these"). The
     filing verb widens what the reviewer is *told* it may do by one call. It does not widen what the
     harness lets it do.
+  - **A close that skips the review reads no executor return either.** `--from-return` refuses
+    without the executor's return, but a plain `done --commit` with `--intent not-asked` and its
+    basis reads neither return. So a task can close with no executor claim filed, as any close can
+    at `7b489337`. When the reviewer was handed its computed brief, a close that reads its return
+    has an executor's behind it, because `brief` composes no reviewer brief before one is filed.
 - *The enforced row is untouched.* "The reviewer cannot edit" is held by the `tools:` line
   (`agents/audit-reviewer.md:4`), and that line gains nothing: the verb runs through the Bash the
   reviewer already has.
@@ -1083,7 +1124,12 @@ the brief's prose are re-pointed at the script's output. `return_shape_drift` re
 today (`scripts/_refs.py:1275`).
 
 **COMPATIBILITY.md.** The new flags are additive. The filed return is a new record whose shape is
-outside the contract.
+outside the contract. The close's refusal is wider: a `done --commit` with neither a filed reviewer
+return nor `--intent not-asked` and its basis closes at `7b489337`, and is refused after T3. What a
+verb refuses is outside the contract too, and `COMPATIBILITY.md`'s *Not promised* list records each
+such change; its entry for `done` refusing a close over a verdict that no longer holds is the
+precedent. T3 adds an entry for this one. The consequence to publish is that a close typed by hand,
+with no review behind it, now has to say so: `--intent not-asked --intent-basis "<why>"`.
 
 **Confirming reading.** Each reading is taken inside the task cycle (section 1.1) and divided by the
 tasks it holds.
@@ -1107,9 +1153,10 @@ target moves by what the cycle leaves out of `feature-C-1`: 5000 − 2657 = 2343
 11000 − 3598 = 7402, rounded to 7400. So each keeps its place against the two predictions.
 
 **Effort, blast radius, risk.** It touches one extended script, a new verb and flag in
-`audit-task.py`, both agent prompts, the task prose, `_refs.py`, and `PLUGIN-BUILD-GUIDE.md`. The
-enforced and followed tables lose no row, and the admissions that nothing checks a return's shape or
-its stamp are answered by an exit code. The reviewer's prompt loosens by one call, held as above.
+`audit-task.py` and the rule on its `done`, `commit-task-work.py`'s message, both agent prompts, the
+task prose, `_refs.py`, `PLUGIN-BUILD-GUIDE.md` and `COMPATIBILITY.md`. The enforced and followed
+tables lose no row, and the admissions that nothing checks a return's shape or its stamp are
+answered by an exit code. The reviewer's prompt loosens by one call, held as above.
 
 ### C4 — Rules a script already enforces, deleted from the prose
 
@@ -1533,9 +1580,13 @@ Each lever of the host facts, priced on the whole-feature sessions:
     still pass with its behaviour deleted? It is bounded by `tests.gate`, which only a task-mode
     review is handed.
 
-  A phase-mode review as written answers none of the three per task. It grades red-first
-  `not-attempted`, and with no `tests.gate` its inherited-test answer is `not-asked`. So G1 carries
-  each answer into the phase reviewer's computed brief (T3, T6). For each task the brief holds:
+  A phase-mode review as written answers none of the three per task, and its own definition is
+  what says so. In `mode: phase` it grades red-first `not-attempted`
+  (`agents/audit-reviewer.md:55-57` at `7b489337`), and its return format holds one `intent` object
+  for the whole phase (`:220-235`). With no `tests.gate`, its inherited-test answer is `not-asked`.
+  So G1 changes the definition as well as the brief. The phase-mode paragraph asks the three
+  questions of each task the brief lists, and the return gains a `tasks` array with one entry per
+  task (T6). The brief carries each task's inputs (T3, T6). For each task it holds:
   - its commit SHA and declared files, so `git show <sha> -- <files>` reaches that task's own diff;
   - its description verbatim;
   - its filed return, with the `redFirst` word, the basis and `testsAdded`;
@@ -1743,7 +1794,8 @@ labelled:
   - the four are the phase reviewer's dispatch, the triage decision, the sign-off step and the final
     report;
   - a fix task's three are `next`, the executor and `next`, and the recorded fix tasks closed
-    `not-asked`;
+    `not-asked`. Under G1 a fix task keeps that close only as the `fixTask` its finding records
+    (section 5.2). Closed `deferred`, it would need a second phase review this model does not price;
   - it starts at the prefix the cycle leaves, `P′` + `W`, and grows by its own writes, so its main
     loop is `main(S, P′ + W, W_s, O_s)`. That replaces the flat `P′` + 4000 a request the revision at
     `b72372f7` assumed;
@@ -1923,7 +1975,7 @@ How each guarantee is held under it:
 | the recorded gate, independent of the executor's claim | the main loop calling `run-test-gate.py --record` | the driver calling it; the model no longer transcribes the result |
 | the stamp comparison | the main loop calling `stamp-verification.py compare` | the driver calling it, printing which field moved |
 | a return's shape and stamp | nothing (`execute-task.md:168`, `:249`) | the filing verb's exit code (C3) |
-| the per-task review's three answers: the intent binding, the red-first grade, the inherited-test question (C14) | the reviewer's dispatch, followed | the driver printing the dispatch; the close refusing without the reviewer's filed return or `--intent not-asked` with a basis (C3) |
+| the per-task review's three answers: the intent binding, the red-first grade, the inherited-test question (C14) | the reviewer's dispatch, followed | the driver printing the dispatch; `done` refusing every close that passes `--commit`, in either form, without the reviewer's filed return or `--intent not-asked` with a basis (C3) |
 | each followed rule | a sentence in prose read up front | the same sentence printed at its step or stated in the agent prompt; T2's anchor lint fails a followed row that resolves to neither |
 | the reviewer cannot edit | its `tools:` line | the same line; the filing verb's one write is held as C3 says |
 
@@ -1973,20 +2025,54 @@ the phase overhead, which it takes over its budget (section 5.4).
 answers before the task commits: the intent binding, the red-first grade and the inherited-test
 question (C14). Under G1 each one is answered before the phase merges.
 
-- **Carried by:** the phase reviewer's computed brief (T3, T6). For each task it holds the commit
-  SHA and files, the description verbatim, the filed return with its `redFirst` word and basis, the
-  recorded run and the `tests.gate` commands, and it asks the three questions of each task. The SHA
-  is the way back from a line to its task, which the reviewer prompt says the phase diff lacks
-  (`agents/audit-reviewer.md:48` at `7b489337`).
-- **Held by:** a close state of its own and the sign-off verb's refusal. Under `review.perTask:
-  phase`, `done --from-return` records the task's intent as `deferred` itself. It refuses an
-  `--intent` flag on a task with a diff. So such a task cannot close as `not-asked`, the word
-  sign-off already counts as answered (`reference/execute-task.md:373-377`), and the refusal below
-  cannot be met at the task's own close. The sign-off verb refuses, writing nothing, while any task
-  closed `deferred` lacks any of its three answers in the phase review's filed return. `not-asked`
-  with its basis keeps its meaning for the closes that use it today: `done --no-change`, and the fix
-  tasks sign-off creates from a finding. T6 pins the refusal with a fixture whose tasks closed the G1
-  way.
+- **Carried by:** the phase reviewer's computed brief (T3, T6), and the reviewer's own definition,
+  whose phase-mode paragraph and return format T6 changes so that it answers each task in a `tasks`
+  array. For each task the brief holds the commit SHA and files, the description verbatim, the
+  filed return with its `redFirst` word and basis, the recorded run and the `tests.gate` commands,
+  and it asks the three questions of each task. The SHA is the way back from a line to its task,
+  which the reviewer prompt says the phase diff lacks (`agents/audit-reviewer.md:48` at `7b489337`).
+- **Held by:** a close state of its own, and one refusal asked at sign-off and again at the
+  plugin's merge. Each reads the plan's own record, never a flag the caller sets at the close.
+  - *The close.* The rule sits on `done` itself, in the check C3 places in `_locked_done`, so it
+    holds whichever form closes the task. Under `review.perTask: phase`, every close that passes
+    `--commit`, with or without `--from-return`, records the task's intent as `deferred` itself,
+    and refuses any `--intent` word, `not-asked` included, writing nothing. So a task with a diff
+    can close neither as `not-asked`, the word sign-off already counts as answered
+    (`reference/execute-task.md:373-377`), nor as a `matches` no reviewer gave. `deferred` is a word
+    the verb writes and never one `--intent` offers (`INTENT_ANSWERS`,
+    `scripts/manifest/audit-task.py:4318`), so no caller can type it.
+  - *The one exception, a fix task the plan records as one.* A task that a finding in its own
+    phase's `review.findings` names as its `fixTask` may close `--intent not-asked` with its basis,
+    which is how section 5.1's sign-off model closes a fix task. Every other word is refused for it
+    too, and with no `--intent` it records `deferred` like any task. At `7b489337` no fix task could
+    meet this at its own close: `fixTask` is written only by `resolve-finding`, which refuses until
+    the fix task is `done` (`audit-task.py:7676`). So T6 has `add` write `fixTask` onto the
+    findings a new task fixes, in the write that adds the task, and nowhere else. It refuses a
+    finding outside the task's phase, or one already naming another task. A task added before its
+    finding existed, which is every task the phase review answers for, cannot gain the link. A
+    finding holding `fixTask` with no `commit` is already a state the plan holds after a `reopen`
+    (`:4955-4958`), and the findings tally counts only the two together (`:7348`).
+  - *The key, read once per phase.* `start` records the key's value on the phase when it promotes
+    the phase's first task, and `done` and the driver read the phase's value, never the live key.
+    Read live, a key switched to `always` partway through would let a later task close `not-asked`
+    with a basis, which `always` accepts, and the refusal below reads only tasks closed `deferred`.
+  - *The refusal.* The sign-off verb refuses, writing nothing, while any task closed `deferred`
+    lacks any of its three answers in the phase review's filed return. `close-phase.py` asks the
+    same question through the same function before it merges or hands over the merge command. At
+    `7b489337` it refuses on the gate verdict, and its merge plan reads the trees and the branches
+    and never whether sign-off passed (`scripts/git/_worktrees.py:722`). Without the question, the
+    plugin's own merge would be a way past the sign-off verb.
+  - *Followed, not enforced:*
+    - a `--no-change` close of a task whose files did change. It records no commit, so there is no
+      diff for `deferred` to hold, and nothing compares the task's files with what changed while it
+      ran. `not-asked` with its basis keeps its meaning there, as today;
+    - a `cancel` of a task whose work landed, which records its reason and no answer, as today;
+    - a hand edit of the shard. `journal-writes.py` records every write to the plan after the fact,
+      and nothing refuses one (`reference/phase-signoff.md:69`). That is every plan field's standing
+      today;
+    - a merge made outside the plugin, by hand or through a pull request.
+
+  T6 pins each enforced half with a fixture whose tasks closed the G1 way.
 - **Given up:** the timing, and nothing else the per-task review returns. A misread task, a
   `not-proved` on a `tdd` task or a vacuous inherited test is found after its commit, not before.
   Its repair is a fix task inside the phase, as both recorded per-task findings already were, rather
@@ -2059,6 +2145,19 @@ k × (o + w + r × (k − 1) / 2) to the cycle, because it is written back. That
 
 The probe's stop is set at those two figures (section 7). The revision at `b72372f7` set 500, the
 doubled estimate. With the writes tied, 500 a request puts rung 1's worst session at 2.08.
+
+Both stops protect the whole-A reading, which section 0.2 says the target does not mean. Like for
+like, the limits sit elsewhere:
+
+- G1 is over the 1.25 ideal before anything grows, at a mean of 1.45, so its binding limit is the
+  2.0 ceiling in `whole-C-2-r`. Output reaches it at (2 × 0.459507 − 0.7296) / 230e-6 = 824 tokens
+  over 250, so at about 1070 tokens a request;
+- rung 1 is over 2.0 in every session before anything grows, at 2.03 to 2.26, so like for like
+  there is no output figure for a stop to sit at.
+
+So each stop is stricter than the target on purpose. It protects the one reading on which G1 meets
+the ideal and rung 1 meets the ceiling, and tripping it costs a re-derivation (section 7), never a
+decision.
 
 The other side of the margin is the executors. They are measured, not estimated, and they are what
 `whole-C-2-r` spent most on: 32 executor requests, against 26 and 23 (section 1.5.5's request
@@ -2423,12 +2522,18 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
 
 - **Files:**
   - `plugins/audit/scripts/status/audit-lookup.py`, whose `brief` writes the whole brief;
-  - `plugins/audit/scripts/manifest/audit-task.py`, for the filing verb and `done --from-return`;
+  - `plugins/audit/scripts/manifest/audit-task.py`, for the filing verb, `done --from-return`, and
+    the rule C3 puts on every form of `done`;
+  - `plugins/audit/scripts/governance/commit-task-work.py`, whose `commit_message` appends a filed
+    `claims` block (below);
   - `plugins/audit/agents/audit-executor.md`, `plugins/audit/agents/audit-reviewer.md`;
   - the task prose, `plugins/audit/scripts/_refs.py` and `PLUGIN-BUILD-GUIDE.md`;
-  - the tests of both scripts.
+  - `COMPATIBILITY.md`, whose *Not promised* list gains the wider refusal (C3);
+  - the tests of each script it changes.
 - **The reviewer's write.** `audit-reviewer.md` gains one *May* line: one call of the filing verb.
-  Its *Must not* keeps "anything that writes", with that call as the only exception. The filing
+  Its *Must not* keeps "anything that writes", with that call as the only exception. Its paragraph
+  naming who reads the answer (`:246-251` at `7b489337`) says the orchestrator carries the word into
+  `done --intent`; it then names `done`, which reads the filed return (C3). The filing
   verb takes the task id and the role and no path, and derives the one file it writes from them and
   the task's current start. Its tests pin these:
   - a path-like argument is refused;
@@ -2441,12 +2546,24 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
   - `brief` for the reviewer exits non-zero and writes no brief while the executor's return for the
     task's current start is unfiled. Once that return is filed, the brief is written and carries it
     byte-identical. Without that half, a `brief` that refused every reviewer brief would pass.
-  - `done --from-return` refuses and writes nothing when the executor's return for the current
-    start is missing. It also refuses when the reviewer's is missing and the close does not pass
-    `--intent not-asked` with its basis, and when the only return filed is from an earlier start.
-    It closes when both are filed for the current start, and when the executor's is filed and the
-    close passes `--intent not-asked` with its basis. Without those halves, a close that refused
-    everything would pass.
+  - `done`, in every form that passes `--commit`, under `always`, the only value of
+    `review.perTask` until T6 lands (C3):
+    - a plain `done --commit <sha>` with no reviewer return filed for the current start is refused,
+      writing nothing, both with no `--intent` and with `--intent matches`. So is the same close
+      when the only reviewer return filed is from an earlier start;
+    - once the reviewer's return for the current start answers `matches`, a plain `done --commit
+      <sha> --intent matches` closes, and the same close with no `--intent` records that answer.
+      Over a filed `diverges`, `--intent matches` is refused, and so is `--intent not-asked` with
+      its basis;
+    - `done --commit <sha> --intent not-asked` with its basis closes with no return filed, and a
+      `--no-change` close with `not-asked` and its basis closes as it does today;
+    - `done --from-return` meets each of those the same way, and is also refused when the
+      executor's return for the current start is missing. It closes when both returns are filed
+      for the current start, and when the executor's is filed and the close passes
+      `--intent not-asked` with its basis.
+
+    Without the closing halves, a close that refused everything would pass. Without the plain-form
+    refusals, a rule placed on `--from-return` alone would pass every case.
 
   Those cases hold the write to one derived path that never replaces a return already filed. They
   do not hold the task id and role to the caller's own. Those are the caller's word, so a filing
@@ -2458,17 +2575,49 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
   request leaves open? (section 5.4). Its case: a brief computed for a phase with a saved request
   holds that text byte-identical, and one with none says so rather than leaving the field empty.
 - **Added by the fourth review: what that brief carries per task under G1.** With `review.perTask:
-  phase` (T6), the brief also carries, for each task, its commit SHA and declared files, its recorded
-  gate run, and its `tests.gate` commands resolved through `meta.buildCommands`. It asks the three
-  per-task questions of each task: the intent binding against `git show <sha> -- <files>`, the
-  red-first grade, and the inherited-test question bounded by that task's `tests.gate` (C14). Its
-  cases:
+  phase` (T6), the brief also carries, for each task closed `deferred`, its commit SHA and declared
+  files, its recorded gate run, and its `tests.gate` commands resolved through
+  `meta.buildCommands`. Those are the tasks with a diff, less any fix task the plan records as one
+  (section 5.2). It asks the three per-task questions of each task: the intent binding against
+  `git show <sha> -- <files>`, the red-first grade, and the inherited-test question bounded by that
+  task's `tests.gate` (C14). Its cases:
   - a brief computed for a phase of three tasks holds each task's SHA, files and `tests.gate`
     byte-identical to the plan's;
   - a task whose `tests.gate` names a `key:project` entry the plan cannot resolve is printed with
     that entry unresolved and says so, rather than dropping it;
   - a brief for a task with no commit yet is refused, writing nothing, because the binding would
     have no diff. Without that half, a brief that carried a missing SHA as empty would pass.
+- **Added by the fifth review: the claims block rides the filed return into the commit.**
+  - *The gap.* This repository's `.claude/hooks/require-claim-block.py` refuses a commit on a
+    claim-bearing surface, such as any `.md`, whose message has no `claims:` block. It is a
+    `PreToolUse` hook on Bash (its docstring's first line, and `.claude/settings.json`), and it
+    decides on a command's `git commit` statement. The plugin's commit path runs its `git commit`
+    as a subprocess of its own (`run_git`, `plugins/audit/scripts/governance/_scoped_commit.py:105`
+    at `7b489337`). So the Bash command the hook reads is `commit-task-work.py`'s invocation. It
+    holds no `git commit` statement, and the hook lets it through with no block. The fifth review
+    names two task commits of this document, `b72372f7` and `68f43cac`. Each touches a `.md` and
+    carries no block (`git log -1 --format=%B <sha>`), and each carries the `Audit-Row` trailer the
+    plugin's commit path writes.
+  - *The fix.* The executor's filed return takes an optional `claims` text, kept verbatim.
+    `commit_message` (`commit-task-work.py:494`) reads the executor's return for the task's current
+    start from the filing verb's derived path. When that return carries `claims`, it is appended
+    byte-identical as a paragraph of its own, after the subject and before the trailers. A return
+    without it gives today's message.
+  - *What the trailers need.* `with_row_trailer` (`_scoped_commit.py:670`) joins the `Audit-Row`
+    trailer to the message's last paragraph, because git reads trailers from the last paragraph
+    only. With no co-author line, that would be the claims paragraph. So the row trailer keeps a
+    paragraph of trailers, its own when there is no co-author line.
+  - *Its cases:* a filed return with `claims` gives a commit whose message holds the block
+    byte-identical as its own paragraph; one without gives today's message; and with `claims` and
+    no co-author line, `git log -1 --format='%(trailers:key=Audit-Row,valueonly)'` still prints the
+    nonce. Each is shown red against a `commit_message` that drops the block, or that joins the
+    trailer onto it.
+  - *What this does not hold: presence.* A filed return with no `claims` still commits with none,
+    and the hook still cannot see the commit. Requiring the block is this repository's rule, not
+    the plugin's, so the plugin's verb has no ground to refuse a return for lacking it. On this
+    path the block stays a followed rule, asked for by the `before-you-claim` skill when a task
+    names it. A check git runs on every commit would hold it, because the commit path skips no
+    hook. Such a `commit-msg` hook is this repository's configuration, not a task of this design.
 - **Target** (`python3 tools/stream-cost.py <session>/stream.jsonl`, with T1's task cycle). Each
   reading is taken inside the cycle and divided by the tasks it holds, as C3's *Confirming reading*
   says:
@@ -2524,31 +2673,108 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
 
 ### T6 — Only if the user decides: the per-task review at the phase (G1) or gated (G2)
 
-- **Files:** the config schema and `_config_rules.py` for `review.perTask` (`always` by default;
-  `phase` for G1; `signals` for G2), the panel's control, the doctor's line, the driver's step (T4),
-  the phase reviewer's brief (T3), the plan schema's intent answers, and `done --from-return` and
-  the sign-off verb in `audit-task.py`.
+- **Files:**
+  - the config schema and `_config_rules.py` for `review.perTask` (`always` by default; `phase` for
+    G1; `signals` for G2), the panel's control and the doctor's line;
+  - the driver's step (T4) and the phase reviewer's brief (T3);
+  - the plan schema: `deferred` as an intent answer, and the key's value recorded on the phase;
+  - in `plugins/audit/scripts/manifest/audit-task.py`: `done` in every form, through
+    `_locked_done`; `start`, which records the key on the phase; `add`, which gains `--fixes`; the
+    filing verb's shape for a phase return (T3's verb); and the sign-off verb;
+  - `plugins/audit/scripts/git/close-phase.py`, which asks sign-off's question before it merges;
+  - `plugins/audit/agents/audit-reviewer.md` at `7b489337`: the *What you are handed* table
+    (`:25-36`), the `mode: phase` paragraph (`:55-57`), the return format (`:220-235`) and the
+    paragraph naming who reads the answer (`:246-251`). Its additions count against T8's reviewer
+    ceiling;
+  - `plugins/audit/scripts/_refs.py` for the key check below; its tests in
+    `plugins/audit/tests/test__refs.py`, which also hold the pins over the reviewer's text; and
+    `tools/prove-gates.py`, whose tables need a row for that check;
+  - the tests of each script it changes.
 - **Mechanism.**
   - Under `phase`, the driver dispatches no per-task reviewer. The phase reviewer's brief carries,
-    for each task, what T3 lists: its commit SHA and files, description, filed return, recorded run
-    and `tests.gate`. It asks the three per-task questions of each task (C14).
-  - Under `phase`, `done --from-return` records a closing task's intent as `deferred` itself, a new
-    answer in the plan schema, and refuses an `--intent` flag on a task with a diff. So a task the
-    phase review must bind cannot close as `not-asked`, which sign-off counts as answered
-    (`reference/execute-task.md:373-377` at `7b489337`). `not-asked` with its basis stays for a
-    `--no-change` close and for a fix task sign-off creates from a finding.
-  - The sign-off verb refuses, writing nothing, while any task closed `deferred` lacks any of its
-    three answers in the phase review's filed return: an intent answer, a red-first grade, and an
-    inherited-test answer, with its basis where that answer is `not-asked`. When the review answers
-    for a task, sign-off writes the answer onto that task with the task's own commit SHA, so the
-    answer still names the diff it judged.
+    for each task closed `deferred`, what T3 lists: its commit SHA and files, description, filed
+    return, recorded run and `tests.gate`. It asks the three per-task questions of each task (C14).
+  - *The reviewer's definition.* At `7b489337` it grades red-first `not-attempted` in `mode: phase`
+    and returns one `intent` object (C14). Under `review.perTask: phase` its phase-mode paragraph
+    asks the three questions of each task the brief lists, by the rules `mode: task` applies to one
+    task. The phase-level `intent` keeps its meaning, an answer against `desiredOutcome`. The *What
+    you are handed* table marks the per-task inputs as handed in phase mode too, one set per task.
+    The return gains a top-level `tasks` array, one entry per task the brief lists:
+
+    ```
+    "tasks": [{"id": "<task id>",
+               "answer": "<one word of intent.answer's list>",
+               "note": "what this task's diff does, said against its description and its claim",
+               "missing": ["<an input this task's entry was not handed>", ...],
+               "redFirst": "<one word of intent.redFirst's list>",
+               "redFirstBasis": "the command and exit code that proves it, or what was absent",
+               "inheritedTests": "<one word of intent.inheritedTests's list>",
+               "inheritedTestsBasis": "the gate commands read and the files they selected"}, ...]
+    ```
+
+    The entry names each word list rather than repeating it, so each list is declared once.
+    For `redFirst` that is also a lint: `red_first_vocabulary_drift` requires the reviewer's return
+    format to declare that list exactly once (`scripts/_refs.py:1181-1185`, through `_RF_REV_SHAPE`
+    at `:1154`), so a second literal list here would turn it red. The paragraph naming who reads the
+    answer gains the phase-mode reader:
+    the sign-off verb, which writes each entry onto its task with that task's own commit SHA.
+  - *The filing verb's phase return.* T3's verb files it under the phase id with the role
+    `reviewer`. Its derived path is keyed on the head the reviewer's brief was computed at, which
+    the brief records. So a review after fix tasks files beside the earlier one, and a second filing
+    for one head is refused, as a second filing for one start is. It refuses, writing nothing and
+    naming what is missing, a return that lacks a `tasks` entry for any task of the phase closed
+    `deferred`, an entry that lacks any of the three answers or gives `not-asked` with no basis, and
+    an entry naming a task outside the phase. A reviewer that follows the old definition is refused
+    at filing and told which entries it owes, so it does not reach sign-off as a held phase.
+  - *The key check.* The entry's keys are one tuple, read by the filing verb and by a check in
+    `_refs.py` modelled on `red_first_vocabulary_drift` (`_refs.py:1189`). The check reads the
+    `tasks` entry in the reviewer's return format, and fails on a key either side names that the
+    other does not.
+  - *The close.* Under `phase`, `done` in every form that passes `--commit` records the task's
+    intent as `deferred` itself, a new answer in the plan schema, and refuses any `--intent` word,
+    writing nothing. So a task the phase review must bind cannot close as `not-asked`, which
+    sign-off counts as answered (`reference/execute-task.md:373-377` at `7b489337`). The exception
+    is a task that a finding in its own phase's `review.findings` names as its `fixTask`: it may
+    close `--intent not-asked` with its basis. `add --fixes <findingId>[,<findingId>]` writes that
+    `fixTask` in the write that adds the task. It refuses a finding outside the task's phase, or
+    one already naming another task, and every other verb refuses the flag through `VERB_FLAGS`
+    (`audit-task.py:9834`). A `--no-change` close keeps today's rule (section 5.2).
+  - *The key, once per phase.* `start` records `review.perTask`'s value on the phase when it
+    promotes the phase's first task, and `done` and the driver read that value. A phase with none
+    recorded reads as `always`, the default.
+  - *The refusal.* The sign-off verb refuses, writing nothing, while any task closed `deferred`
+    lacks any of its three answers in the phase review's filed return: an intent answer, a
+    red-first grade, and an inherited-test answer, with its basis where that answer is `not-asked`.
+    When the review answers for a task, sign-off writes the answer onto that task with the task's
+    own commit SHA, so the answer still names the diff it judged. The question is one function in a
+    helper both import, and `close-phase.py` asks it before it merges or hands over the merge
+    command.
   - Under `signals`, the driver dispatches the per-task reviewer only when the task's `redFirst` did
     not come back `proved`, or when the gate row disagrees with the filed return.
 - **Micro-test, offline:** a drive over the T4 fixture with each value:
   - `phase` dispatches no per-task reviewer, and every task it closes records `deferred`;
-  - under `phase`, `done --from-return --intent not-asked` on a task with a diff is refused, writing
-    nothing. A `--no-change` close with `not-asked` and its basis is accepted. Without that half, a
-    close that refused every `not-asked` would pass;
+  - under `phase`, each of these on a task with a diff is refused, writing nothing:
+    `done --from-return --intent not-asked` with its basis, a plain `done --commit <sha> --intent
+    not-asked --intent-basis "..."`, and a plain `done --commit <sha> --intent matches`. A plain
+    `done --commit <sha>` with no `--intent` closes and records `deferred`. A `--no-change` close
+    with `not-asked` and its basis is accepted. Without that half, a close that refused every
+    `not-asked` would pass;
+  - under `always`, a plain `done --commit <sha> --intent not-asked --intent-basis "..."` closes as
+    it does today, and `--intent matches` closes once the reviewer's filed return answers `matches`
+    (T3's cases). Without that half, a rule that refused the plain form under every key would pass;
+  - under `phase`, a task added with `--fixes` naming a finding of its own phase closes
+    `--intent not-asked` with its basis, and a task not recorded that way is refused with the same
+    flags. `add --fixes` naming a finding of another phase, or one already naming another task, is
+    refused, writing nothing;
+  - a phase whose first task started under `phase`, with the key then set to `always`: a plain
+    `done --commit <sha> --intent not-asked --intent-basis "..."` is still refused;
+  - a phase return that lacks one `deferred` task's entry is refused at filing, writing nothing,
+    and names that task. With the entry restored it files;
+  - the key check goes red when the reviewer's return format drops a key of the `tasks` entry, and
+    red when the filing verb's tuple gains one the format lacks. `red_first_vocabulary_drift` stays
+    green over the changed definition;
+  - `close-phase.py` refuses to merge a fixture whose `deferred` task lacks one answer, and merges
+    it once all three are filed;
   - a fixture whose tasks closed the G1 way, `deferred`, is refused at sign-off when one task's
     intent answer is removed from the phase review's filed return. The same holds with its red-first
     grade removed, and with its inherited-test answer removed. With all three restored it passes;
@@ -2679,17 +2905,24 @@ micro-tests.
   - the cycle's main-loop requests are at most 4 (T4);
   - the cycle's main-loop output per request is at most 320 tokens under G1, or 390 without it.
     These are the points at which section 5.3's tied model puts G1's mean over 1.25, and rung 1's
-    worst session over 2.0, on the whole-A reading;
-  - the cycle's writes per task follow its output as section 5.1 ties them: at most the output plus
-    400 tokens of tool results a task, against the 388 assumed;
+    worst session over 2.0, on the whole-A reading. Each is stricter than the target on purpose.
+    Like for like, G1's binding limit is the 2.0 ceiling, which output reaches at about 1070 tokens
+    a request, and rung 1 is over the ceiling before its output grows (section 5.3);
+  - the cycle's writes per task follow its output as section 5.1 ties them, with that rung's tool
+    results: at most the output plus 200 tokens a task under G1, against the 194 assumed, or plus
+    400 without it, against the 388 assumed. Each bound is its rung's assumption rounded up. Read
+    against 388, G1 would pass at twice its own assumption;
   - no brief above 200 tokens among the largest outputs (T3);
   - the executor's first start written is at most 16000 tokens (T8);
   - the session is at most `0.75`.
 - **What it does not confirm.** The per-task target. Its single task runs its executor on the plain
   session's own model. There rung 1 is predicted at 2.22 times plain, and G1 at 1.85, or 2.25 with
   the review it defers charged back (section 5.1). Under G1 the probe runs no phase review, so the
-  carried review is read only in step 3. A probe reading over a ceiling stops step 3 until the
-  estimate behind it is re-derived and the prediction re-computed.
+  carried review is read only in step 3. So is the phase reviewer's `tasks` array: step 3 is the
+  first time a live reviewer is asked the three questions per task. What stands before it is
+  offline: the filing verb's refusal of a return missing a task's entry, and the check that the
+  reviewer's return format and the verb's shape name the same keys (T6). A probe reading over a
+  ceiling stops step 3 until the estimate behind it is re-derived and the prediction re-computed.
 
 **Step 3, the full benchmark.** It runs only once the probe has passed.
 
@@ -2781,9 +3014,10 @@ this design's saving.
    - (c) G1: add `review.perTask: phase` with a default of `always` (minor). No reviewer runs per
      task. Each of the three answers is carried into the phase reviewer's computed brief, per task,
      with the task's commit SHA, files, filed return, recorded run and `tests.gate`. Each such task
-     closes `deferred`, not `not-asked`. Sign-off refuses while any `deferred` task lacks any of its
-     three answers (section 5.2, T3, T6). What is given up is the timing: each answer arrives before
-     the merge, not before the commit.
+     closes `deferred`, not `not-asked`, whichever form of `done` closes it. Sign-off, and the
+     plugin's merge after it, refuse while any `deferred` task lacks any of its three answers
+     (section 5.2, T3, T6). What is given up is the timing: each answer arrives before the merge,
+     not before the commit.
      - Predicted on the cycle: 1.33 to 1.59 like for like, a mean of 1.45, and 1.12 to 1.33 against
        whole arm A, a mean of 1.22.
      - Carrying costs `0.1482` to `0.2552` a session at sign-off. Charged back to the cycle, that is
