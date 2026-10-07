@@ -3097,6 +3097,90 @@ def _takeover_cases(check):
                 _harness.remove_tree(wt)
 
 
+def _cli(mpath, root, *extra):
+    """`(exit, stdout)` of this command run as the main loop runs it: a process,
+    with the session's own variables dropped."""
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+    done = subprocess.run(
+        [sys.executable, _loader.script_path("close-phase.py"), mpath, "P1",
+         "--project", root] + list(extra),
+        cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        universal_newlines=True, encoding="utf-8")
+    return done.returncode, done.stdout
+
+
+def _sl_repo(root, dirty=False):
+    """A signed-off phase branch one commit ahead of `main`, standing on main -
+    with, when `dirty`, an uncommitted edit there that refuses the landing."""
+    git = _fixture_git(root)
+    _init_fixture_repo(git)
+    phase = _signed_phase("P1", "audit/p1-demo")
+    mpath = _write_plan(root, {"developmentBranch": "main"}, [phase])
+    with open(os.path.join(root, "tracked.txt"), "w") as fh:
+        fh.write("base\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "base")
+    git("checkout", "-q", "-b", "audit/p1-demo")
+    with open(os.path.join(root, "work.txt"), "w") as fh:
+        fh.write("work\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "work")
+    git("checkout", "-q", "main")
+    if dirty:
+        with open(os.path.join(root, "tracked.txt"), "a") as fh:
+            fh.write("uncommitted\n")
+    return git, mpath
+
+
+def _sl_on_main(git):
+    """Whether the phase's work reached `main` - asked of `main` itself, since a
+    landing deletes the branch it merged."""
+    return git("cat-file", "-e", "main:work.txt").returncode == 0
+
+
+def _success_line_cases(check):
+    """A landing, said in one line naming the merge and the record it wrote; a
+    preview, a refusal and `--verbose`, in full."""
+    root = _harness.fixture_root("closephase-sl-")
+    git, mpath = _sl_repo(root)
+    code, short = _cli(mpath, root)
+    lines = short.splitlines()
+    check("sl1 a landing prints ONE line within the byte bound, naming the "
+          "branch, its parent, the merged head and the file the merge was "
+          "recorded in: %r" % (short,),
+          code == 0 and len(lines) == 1 and _sl_on_main(git)
+          and len(lines[0].encode("utf-8")) <= 200
+          and lines[0].startswith("[close-phase] audit/p1-demo -> main")
+          and "written to docs/audit/audit-plan.json" in lines[0]
+          and "mergedHead = " in lines[0])
+    vroot = _harness.fixture_root("closephase-sl-verbose-")
+    vgit, vmpath = _sl_repo(vroot)
+    vcode, verbose = _cli(vmpath, vroot, "--verbose")
+    check("sl2 ...and `--verbose` prints what a landing always printed: every "
+          "git step with its exit, and the fields written: %r"
+          % (verbose[-200:],),
+          vcode == 0 and _sl_on_main(vgit) and len(verbose.splitlines()) > 3
+          and any(ln.startswith("  git ") for ln in verbose.splitlines())
+          and any(ln.startswith("  mergedAt = ")
+                  for ln in verbose.splitlines()))
+    proot = _harness.fixture_root("closephase-sl-preview-")
+    _pgit, pmpath = _sl_repo(proot)
+    preview = _cli(pmpath, proot, "--dry-run")
+    check("sl3 a preview is a success that still owes the reader its plan, so "
+          "it prints in full: %r" % (preview[1][-200:],),
+          preview[0] == 0 and "would run: git " in preview[1]
+          and len(preview[1].splitlines()) > 1)
+    rroot = _harness.fixture_root("closephase-sl-refused-")
+    _rgit, rmpath = _sl_repo(rroot, dirty=True)
+    refused = _cli(rmpath, rroot)
+    check("sl4 a refusal prints in full, `--verbose` or not - the deny twin of "
+          "sl1: %r" % (refused[1][-200:],),
+          refused[0] != 0 and "REFUSED: " in refused[1]
+          and len(refused[1].splitlines()) > 1
+          and refused == _cli(rmpath, rroot, "--verbose"))
+
+
 def _selftest():
     def body(check):
         _takeover_cases(check)
@@ -3118,6 +3202,7 @@ def _selftest():
         _backfill_cases(check)
         _backfill_direction_cases(check)
         _recovery_cases(check)
+        _harness.stage(check, "sl-block", _success_line_cases)
     return _harness.run(body)
 
 

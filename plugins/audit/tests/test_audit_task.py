@@ -5618,7 +5618,11 @@ def _cases(check):
             return env
 
         def lv_call(script, proj, argv, session, pid):
-            done = subprocess.run([sys.executable, script] + argv,
+            # `--verbose`, because what these cases read is the phase lock's
+            # sentence in the long form a success prints; run as a command, a
+            # success is otherwise one line (`sl` below), which these cases are
+            # not about.
+            done = subprocess.run([sys.executable, script] + argv + ["--verbose"],
                                   env=lv_env(session, pid), cwd=proj,
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             return done.returncode, done.stdout.decode("utf-8", "replace")
@@ -12236,8 +12240,88 @@ def _cases(check):
         _harness.remove_tree(tmp)
 
 
+def _cli(argv, cwd):
+    """`(exit, stdout)` of this command run as the main loop runs it: a process
+    started in `cwd`, with the session's own variables dropped."""
+    import subprocess
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+    done = subprocess.run(
+        [sys.executable, _loader.script_path("audit-task.py")] + argv,
+        cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        universal_newlines=True, encoding="utf-8")
+    return done.returncode, done.stdout
+
+
+def _success_line_cases(check):
+    """A write, said in one line naming the task and the file written; a value
+    verb's one line kept as it is; `--verbose` and a refusal, in full."""
+    root = _harness.fixture_root("audit-task-sl-")
+
+    def project(name):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json"})
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        _panel_write._atomic_write_json(mpath, {
+            "meta": {"version": 2, "buildCommands": {"test": "true"}},
+            "phases": [{"id": "P1", "title": "Live", "status": "in_progress",
+                        "testGate": ["test"], "tasks": [
+                            {"id": "P1.1", "title": "a",
+                             "status": "in_progress", "files": ["src/a.ts"],
+                             "startedAt": "2026-01-01T00:00:00Z",
+                             "attempts": 1, "maxAttempts": 3}]}],
+            "fileIndex": {"src/a.ts": ["P1.1"]}, "bugs": []})
+        return proj
+
+    short_proj, long_proj = project("short"), project("long")
+    code, short = _cli(["note", "P1.1", "--text", "probe"], short_proj)
+    lines = short.splitlines()
+    check("sl1 a successful write prints ONE line within the byte bound, "
+          "naming what was done to which task and the file it wrote: %r"
+          % (short,),
+          code == 0 and len(lines) == 1
+          and len(lines[0].encode("utf-8")) <= 200
+          and lines[0].startswith("[audit-task] P1.1 note 1 appended")
+          and lines[0].endswith("written: docs/audit/audit-plan.json"))
+    vcode, verbose = _cli(["note", "P1.1", "--text", "probe", "--verbose"],
+                          long_proj)
+    check("sl2 ...and `--verbose` prints the text the verb always printed: the "
+          "same headline, then the lines after it, the record's among them: %r"
+          % (verbose,),
+          vcode == 0 and len(verbose.splitlines()) > 1
+          and verbose.splitlines()[0].split(" at ")[0]
+          == lines[0].split(" at ")[0]
+          and "  written: docs/audit/audit-plan.json" in verbose.splitlines())
+    icode, minted = _cli(["next-id", "task", "--phase", "P1"], short_proj)
+    check("sl3 a verb that answers with a value keeps its one line exactly, "
+          "since a caller reads that line AS the value: %r" % (minted,),
+          icode == 0 and minted.startswith("P1.2") and minted.count("\n") == 1
+          and not minted.startswith("["))
+    wcode, wide = _cli(["note", "P1.1", "--text", "w" * 300], short_proj)
+    check("sl5 a headline carrying a long text of the caller's is the part cut, "
+          "and the cut says so; the file written is kept whole: %r" % (wide,),
+          wcode == 0 and wide.count("\n") == 1
+          and len(wide.rstrip("\n").encode("utf-8")) <= 200
+          and _output.CLIPPED_MARK in wide
+          and wide.rstrip("\n").endswith("; written: docs/audit/audit-plan.json"))
+    refused = _cli(["done", "P1.1", "--outcome", "x"], short_proj)
+    check("sl4 a refusal prints in full, `--verbose` or not - the deny twin of "
+          "sl1: %r" % (refused,),
+          refused[0] == M.E_USAGE and len(refused[1].splitlines()) > 1
+          and refused == _cli(["done", "P1.1", "--outcome", "x", "--verbose"],
+                              short_proj))
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        # Each block staged, so one that raises still lets the other run.
+        _harness.stage(check, "at-block", _cases)
+        _harness.stage(check, "sl-block", _success_line_cases)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

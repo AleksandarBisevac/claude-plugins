@@ -2720,6 +2720,142 @@ def _cases(check):
 
     _remove_tree_cases(check)
     _finding_code_cases(check)
+    _success_line_cases(check)
+
+
+# --- the success line ---------------------------------------------------------
+def _door(argv, run, summarize, keep_verbose=False):
+    """`(stdout, code, argv the run saw)` for one pass through `terse_cli`."""
+    import contextlib
+    import io
+
+    seen = []
+
+    def recording(args):
+        seen.append(list(args))
+        return run(args)
+
+    held = io.StringIO()
+    with contextlib.redirect_stdout(held):
+        code = M.terse_cli(recording, argv, summarize, keep_verbose=keep_verbose)
+    return held.getvalue(), code, seen
+
+
+def _success_line_cases(check):
+    long_lines = ["[verb] did the thing to R1", "  detail one", "  written: plan.json"]
+
+    def long_run(args, code=0):
+        for line in long_lines:
+            print(line)
+        return code
+
+    def name_it(lines):
+        return "%s; wrote %s" % (lines[0], lines[-1].split(": ")[-1])
+
+    out, code, seen = _door(["x", "--flag"], long_run, name_it)
+    check("sl1 a success prints ONE line naming what was done and the record, "
+          "within the byte bound: %r" % (out,),
+          code == 0 and out == "[verb] did the thing to R1; wrote plan.json\n"
+          and len(out.rstrip("\n").encode("utf-8")) <= M.SUCCESS_LINE_BYTES
+          and seen == [["x", "--flag"]])
+
+    out, code, seen = _door(["x", "--verbose", "--flag"], long_run, name_it)
+    check("sl2 `--verbose` prints the verb's own text byte for byte, and the "
+          "verb never sees the flag: %r" % ((out, seen),),
+          out == "\n".join(long_lines) + "\n" and seen == [["x", "--flag"]])
+
+    out, code, _seen = _door(["x"], lambda a: long_run(a, code=2), name_it)
+    check("sl3 a refusal prints in full, unchanged, with its own exit code - "
+          "the deny twin of sl1: %r" % (out,),
+          code == 2 and out == "\n".join(long_lines) + "\n")
+
+    out, code, _seen = _door(["x"], long_run, lambda lines: None)
+    check("sl4 a success the verb's summary declines (it carries something "
+          "still owed) prints in full", out == "\n".join(long_lines) + "\n")
+
+    def broken(lines):
+        raise ValueError("no summary")
+
+    out, code, _seen = _door(["x"], long_run, broken)
+    check("sl5 a summary that raises costs the caller nothing: the long form "
+          "prints and the exit code stands",
+          code == 0 and out == "\n".join(long_lines) + "\n")
+
+    def one_line(args):
+        print("P1.3-abc")
+        return 0
+
+    out, code, _seen = _door(["next-id"], one_line, name_it)
+    check("sl6 an output that is already one line within the bound is kept "
+          "exactly - a caller may be reading it as a value: %r" % (out,),
+          out == "P1.3-abc\n")
+
+    out, code, seen = _door(["red", "--", "pytest", "--verbose"], long_run,
+                            name_it)
+    check("sl7 a `--verbose` after `--` belongs to the command it precedes: it "
+          "is passed on and does not ask for the long form: %r" % ((out, seen),),
+          seen == [["red", "--", "pytest", "--verbose"]]
+          and out.count("\n") == 1)
+
+    out, code, _seen = _door(["x", "--json"], long_run, name_it)
+    check("sl8 `--json` keeps its payload whole", out == "\n".join(long_lines) + "\n")
+
+    token = "audit-stamp: {%s}" % ("\"k\":1," * 60,)
+    out, code, _seen = _door(["take"], long_run,
+                             lambda lines: ("took a stamp", token))
+    check("sl15 a payload the caller carries byte for byte is printed whole "
+          "after the success text - the one way a line exceeds the bound: %r"
+          % (out[:80],),
+          out == "took a stamp %s\n" % (token,)
+          and len(token.encode("utf-8")) > M.SUCCESS_LINE_BYTES)
+
+    import contextlib
+    import io
+    held = io.StringIO()
+    with contextlib.redirect_stdout(held):
+        M.terse_cli(long_run, ["x", "--full"], name_it, long_form=("--full",))
+    check("sl14 a verb's own long-form flag keeps the long form, and only for "
+          "that verb: %r" % (held.getvalue(),),
+          held.getvalue() == "\n".join(long_lines) + "\n"
+          and _door(["x", "--full"], long_run, name_it)[0].count("\n") == 1)
+
+    out, code, seen = _door(["x", "--verbose"], long_run, name_it,
+                            keep_verbose=True)
+    check("sl9 a verb that reads `--verbose` itself is handed it: %r" % (seen,),
+          seen == [["x", "--verbose"]] and out == "\n".join(long_lines) + "\n")
+
+    wide = M.success_line("é" * 300)
+    check("sl10 a line that does not fit is cut at a character boundary, within "
+          "the bound, and SAYS it was cut: %r" % (wide[-60:],),
+          len(wide.encode("utf-8")) <= M.SUCCESS_LINE_BYTES
+          and wide.endswith(M.CLIPPED_MARK)
+          and wide[:-len(M.CLIPPED_MARK)] == "é" * len(wide[:-len(M.CLIPPED_MARK)]))
+    check("sl11 a line that fits is folded onto one line and otherwise kept",
+          M.success_line("a\n  b  c") == "a b c")
+    kept = M.success_line("x" * 300, "; written: plan.json")
+    check("sl13 the record a verb wrote is kept whole and the cut falls in the "
+          "text before it, saying so: %r" % (kept[-70:],),
+          len(kept.encode("utf-8")) <= M.SUCCESS_LINE_BYTES
+          and kept.endswith(M.CLIPPED_MARK + "; written: plan.json")
+          and M.success_line("did it", "; written: plan.json")
+          == "did it; written: plan.json")
+
+    def dies(args):
+        print("said before dying")
+        raise RuntimeError("boom")
+
+    import contextlib
+    import io
+    held = io.StringIO()
+    raised = None
+    with contextlib.redirect_stdout(held):
+        try:
+            M.terse_cli(dies, ["x"], name_it)
+        except RuntimeError as exc:
+            raised = exc
+    check("sl12 an exception escaping the verb still prints what it said first, "
+          "then propagates: %r" % (held.getvalue(),),
+          raised is not None and held.getvalue() == "said before dying\n")
 
 
 # --- removing a scratch tree --------------------------------------------------

@@ -22,6 +22,7 @@ import sys
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _loader                                      # noqa: E402
+import _output                                      # noqa: E402  (CLIPPED_MARK, the cut a payload must never carry)
 import _journal_io                                  # noqa: E402
 import _evidence_io as _evio                        # noqa: E402
 
@@ -560,8 +561,68 @@ def _cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _cli(argv, cwd):
+    """`(exit, stdout)` of this command run as the main loop runs it: a process."""
+    import subprocess
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+    done = subprocess.run(
+        [sys.executable, _loader.script_path("audit-lookup.py")] + argv,
+        cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        universal_newlines=True, encoding="utf-8")
+    return done.returncode, done.stdout
+
+
+def _in_process(argv):
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = M.main(argv)
+    return code, out.getvalue()
+
+
+def _success_line_cases(check):
+    """A lookup's answer is a payload, printed whole, `--verbose` or not; a
+    miss, in full, as it always was."""
+    tmp = _harness.fixture_root("audit-lookup-sl-")
+    mpath = os.path.join(tmp, "audit-plan.json")
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(_manifest(), fh)
+    code, answer = _cli([mpath, "file", "src/a.py"], tmp)
+    check("sl1 a `file` answer prints whole - the answer line AND its pointer, "
+          "byte for byte what `main` prints - never folded into a success "
+          "line: %r" % (answer,),
+          code == M.E_OK
+          and answer == _in_process([mpath, "file", "src/a.py"])[1]
+          and len(answer.splitlines()) == 2
+          and answer.splitlines()[1].startswith("pointer: "))
+    vcode, verbose = _cli([mpath, "brief", "P1.1", "--verbose"], tmp)
+    check("sl2 `--verbose` is accepted and prints the answer `main` prints, "
+          "byte for byte: %r" % (verbose,),
+          vcode == M.E_OK
+          and verbose == _in_process([mpath, "brief", "P1.1"])[1]
+          and len(verbose.splitlines()) > 1)
+    bcode, brief = _cli([mpath, "brief", "P1.1"], tmp)
+    check("sl3 a `brief` longer than the byte bound - the answer folded into an "
+          "executor's spawn prompt - prints byte-identical to `--verbose`: "
+          "nothing cut, `executor.runsGate` included: %r" % (brief,),
+          bcode == M.E_OK and brief == verbose
+          and len(brief.encode("utf-8")) > 200
+          and "executor.runsGate: " in brief
+          and _output.CLIPPED_MARK not in brief)
+    miss = _cli([mpath, "file", "src/nope.py", "--verbose"], tmp)
+    check("sl4 a miss prints as it always did, `--verbose` or not: %r"
+          % (miss,),
+          miss[0] == M.E_NOMATCH
+          and miss == _cli([mpath, "file", "src/nope.py"], tmp)
+          and miss[1] == _in_process([mpath, "file", "src/nope.py"])[1])
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        # Each block staged, so one that raises still lets the other run.
+        _harness.stage(check, "al-block", _cases)
+        _harness.stage(check, "sl-block", _success_line_cases)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

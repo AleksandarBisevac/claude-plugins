@@ -292,6 +292,8 @@ def _cases(check):
               == os.path.join(idle_root, ".claude", "usage"))
 
         _baseline_cases(check, tmp)
+        _harness.stage(check, "sl-block",
+                       lambda c: _success_line_cases(c, tmp))
     finally:
         _harness.remove_tree(tmp)
 
@@ -675,6 +677,49 @@ def _baseline_cases(check, tmp):
     check("vb25 the baseline's names here are the library's own objects, so "
           "the command and the gate cannot come to spell them apart: %r"
           % (forked,), forked == [])
+
+
+def _cli(argv):
+    """`(exit, stdout)` of this command run as the main loop runs it: a process,
+    with the session's own variables dropped."""
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+    done = subprocess.run(
+        [sys.executable, _loader.script_path("verify-invariants.py")] + argv,
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        universal_newlines=True, encoding="utf-8")
+    return done.returncode, done.stdout
+
+
+def _success_line_cases(check, tmp):
+    """A phase with no breach, said in one line; a breach and `--verbose`, in
+    full."""
+    root = os.path.join(tmp, "sl-clean")
+    os.makedirs(root)
+    clean = repo(root)
+    code, short = _cli([clean, "P1", "--project", root])
+    lines = short.splitlines()
+    check("sl1 a phase with no breach prints ONE line within the byte bound, "
+          "naming the phase and that nothing was found in what could be "
+          "examined: %r" % (short,),
+          code == 0 and len(lines) == 1
+          and len(lines[0].encode("utf-8")) <= 200
+          and lines[0].startswith("[verify-invariants] PHASE P1")
+          and "no breach found" in lines[0])
+    vcode, verbose = _cli([clean, "P1", "--project", root, "--verbose"])
+    check("sl2 ...and `--verbose` prints the report `main` prints - a verdict "
+          "and a basis per check - byte for byte: %r" % (verbose[:120],),
+          vcode == 0
+          and verbose == _run([clean, "P1", "--project", root])[1]
+          and len(verbose.splitlines()) > len(_invariants.CHECK_NAMES))
+    rroot = os.path.join(tmp, "sl-rogue")
+    os.makedirs(rroot)
+    rogue = repo(rroot, rogue=True)
+    breach = _cli([rogue, "P1", "--project", rroot])
+    check("sl3 a BREACH prints the whole report, `--verbose` or not - the deny "
+          "twin of sl1: %r" % (breach[1][-160:],),
+          breach[0] != 0 and "BREACH: " in breach[1]
+          and breach == _cli([rogue, "P1", "--project", rroot, "--verbose"]))
 
 
 def _selftest():

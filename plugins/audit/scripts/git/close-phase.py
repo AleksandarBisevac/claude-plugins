@@ -1891,6 +1891,56 @@ def render(answer, out=print):
 
 # --- cli -------------------------------------------------------------------------
 
+# What a landing's long form says when it still owes the reader something: a
+# refusal, a preview, a cleanup to finish, a field it could not write, an
+# override of the verdict, a lock taken while it ran, work parked to materialize.
+_OWED = ("REFUSED", "NOT MERGED", "WARNING", "would run", "would write",
+         "cleanup is not finished", "after the merge", "parked on", " NOT ",
+         "OVER ITS VERDICT")
+
+
+def _short_record(line):
+    """A written field's line, shortened for the one-line form: the merged head
+    abbreviated, and a path written under the working directory spelled
+    relative to it."""
+    head = "%s = " % (MERGED_HEAD_FIELD,)
+    if line.startswith(head):
+        return head + line[len(head):].strip()[:12]
+    lead, sep, path = line.rpartition(" written to ")
+    here = os.getcwd()
+    if sep and _wt.within_tree(here, path):
+        return "%s%s%s" % (lead, sep, _output.posix_rel(
+            os.path.realpath(path), os.path.realpath(here)))
+    return line
+
+
+def success_line(lines):
+    """A landing's one line: branch, parent and mode, the merge field it wrote
+    and where, the merged head, and how many steps were not done.
+
+    None - the long form - when a git step failed or any line carries one of
+    `_OWED`. A `not done:` row is counted rather than printed, with the flag
+    that prints why: the ordinary one says there was no worktree to own.
+    """
+    said = [ln.strip() for ln in lines if ln.strip()]
+    if not said or not said[0].startswith("[close-phase] "):
+        return None
+    failed = [ln for ln in said if ln.startswith("git ")
+              and (ln.split(" -> ", 1)[1:] or ["?"])[0].split()[:1] != ["0"]]
+    if failed or any(mark in ln for ln in said for mark in _OWED):
+        return None
+    record = [_short_record(ln) for ln in said
+              if ln.startswith(("%s = " % (MERGED_FIELD,),
+                                "%s = " % (MERGED_HEAD_FIELD,)))]
+    skipped = len([ln for ln in said if ln.startswith("not done: ")])
+    if not record:
+        return None
+    return _output.success_line(
+        said[0], "; %s%s" % ("; ".join(record),
+                             "; %d step(s) not done (`--verbose` says why)"
+                             % (skipped,) if skipped else ""))
+
+
 def build_parser():
     p = argparse.ArgumentParser(
         prog="close-phase.py",
@@ -2206,4 +2256,4 @@ if __name__ == "__main__":
         print("close-phase.py has no inline --selftest; its cases live in "
               "plugins/audit/tests/test_close_phase.py - run that file instead.")
         sys.exit(0)
-    raise SystemExit(main(sys.argv[1:]))
+    raise SystemExit(_output.terse_cli(main, sys.argv[1:], success_line))

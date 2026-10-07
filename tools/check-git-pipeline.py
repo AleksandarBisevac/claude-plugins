@@ -1085,8 +1085,10 @@ def check_invariants_have_a_basis(fx):
     `git show --name-only` against a recorded SHA, so it has a subject here.
     """
     write_manifest(fx, manifest_body(commit=fx["head"], task_status="done"))
+    # `--verbose`: the per-check lines this reads are the long form; run as a
+    # command, a clean answer is otherwise one line.
     code, out = script(fx, "verify-invariants.py", MANIFEST_REL, "--all",
-                       "--project", ".")
+                       "--project", ".", "--verbose")
     scope = [ln.strip() for ln in out.splitlines()
              if ln.strip().startswith("commit-scope")]
     ok = (code == 0 and len(scope) == 1 and "no-basis" not in scope[0]

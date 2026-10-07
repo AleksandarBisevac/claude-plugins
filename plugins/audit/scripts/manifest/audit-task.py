@@ -10299,6 +10299,21 @@ def json_refusal(code, lines):
                       indent=2, sort_keys=True)
 
 
+def success_line(lines):
+    """A write's one line: the verb's own headline, which names what was done to
+    which id, and every file its `written:` lines name. The validator warnings
+    re-printed after each write are what this drops, and `--verbose` keeps."""
+    body = [ln for ln in lines if ln.strip()]
+    heads = [ln for ln in body if ln.startswith("[audit-task]")] or body
+    written = [ln.strip()[len("written:"):].strip() for ln in body
+               if ln.strip().startswith("written:")]
+    # The headline carries the caller's own text on some verbs (a note, a
+    # title), so it is the part cut when the line will not fit - the file
+    # written is the record, and is kept whole.
+    return _output.success_line(
+        heads[0], "; written: %s" % (", ".join(written),) if written else "")
+
+
 def main(argv, out=print):
     p = build_parser()
     # INTERMIXED, BECAUSE THE DOCUMENTED ORDER PUTS THE MANIFEST LAST. On some
@@ -10397,4 +10412,4 @@ if __name__ == "__main__":
         print("audit-task.py has no inline --selftest; its cases moved to "
               "plugins/audit/tests/test_audit_task.py - run that file instead.")
         sys.exit(0)
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(_output.terse_cli(main, sys.argv[1:], success_line))

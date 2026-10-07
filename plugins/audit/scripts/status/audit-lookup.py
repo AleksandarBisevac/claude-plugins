@@ -585,6 +585,19 @@ def build_parser():
     return _claude_home.attach_usage_hint(p)
 
 
+def success_line(lines):
+    """None, always: a lookup's answer is a PAYLOAD, printed whole.
+
+    What this prints is the answer the caller asked for rather than a report
+    that something was done - `brief` is folded verbatim into an executor's
+    spawn prompt - so there is no shorter line to say it in, and a cut one
+    would hand the caller part of an answer. The command still goes through
+    `_output.terse_cli`, so `--verbose` is accepted here as on every verb the
+    main loop calls, and prints the same bytes.
+    """
+    return None
+
+
 def main(argv):
     args = build_parser().parse_args(argv)
     try:
@@ -668,4 +681,4 @@ if __name__ == "__main__":
               "plugins/audit/tests/test_audit_lookup.py - run that file "
               "instead.")
         sys.exit(0)
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(_output.terse_cli(main, sys.argv[1:], success_line))

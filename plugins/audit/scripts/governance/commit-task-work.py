@@ -714,6 +714,27 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
     return E_OK, answer
 
 
+def success_line(lines):
+    """A commit's one line: the SHA it wrote, how many paths it carries, and
+    the verdict it rests on.
+
+    None - the long form - for a run that committed with anything beside those
+    to say: a degraded step, a journal row outside the commit or never written.
+    """
+    head = lines[0].strip() if lines else ""
+    if not head.startswith("%s committed " % (PREFIX,)):
+        return None
+    carried = _scoped_commit.ROW_CARRIED.split("%")[0]
+    paths = [ln for ln in lines[1:] if ln.startswith("    ") and ln.strip()]
+    rest = [ln.strip() for ln in lines[1:] if ln.strip() and ln not in paths]
+    verdict = [ln for ln in rest if ln.startswith("verdict: ")]
+    if any(not ln.startswith((carried, "verdict: ")) for ln in rest):
+        return None
+    return "%s (%d path(s), its journal row inside it)%s" % (
+        head, len(paths),
+        "; %s" % (verdict[0].split(" - ")[0],) if verdict else "")
+
+
 def main(argv, out=print):
     parser = build_parser()
     try:
@@ -785,4 +806,4 @@ if __name__ == "__main__":
               "plugins/audit/tests/test_commit_task_work.py - run that file "
               "instead.")
         sys.exit(0)
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(_output.terse_cli(main, sys.argv[1:], success_line))

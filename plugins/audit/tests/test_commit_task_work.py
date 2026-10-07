@@ -641,6 +641,8 @@ def _cases(check):
               and M.foreign_refusal(None, {"indexRel": INDEX_REL}) is None)
         _index_cases(check, repos)
         _verdict_cases(check, repos)
+        _harness.stage(check, "sl-block",
+                       lambda c: _success_line_cases(c, repos))
     finally:
         repos.close()
 
@@ -1529,6 +1531,56 @@ def _branch_cases(check, repos):
           and ("D\t%s" % (IGN_TRACKED,)) in _name_status(fx, after)
           and os.path.exists(os.path.join(fx["root"], IGN_TRACKED))
           and _staged(fx) == [])
+
+
+def _cli(fx, *extra):
+    """`(exit, stdout)` of this command run as the main loop runs it: a process,
+    with the session's own variables dropped."""
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+    done = subprocess.run(
+        [sys.executable, _loader.script_path("commit-task-work.py"),
+         fx["manifest"], TASK, "--project", fx["root"]] + list(extra),
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        universal_newlines=True, encoding="utf-8")
+    return done.returncode, done.stdout
+
+
+def _success_line_cases(check, repos):
+    """A commit, said in one line naming the SHA it wrote; a refusal and
+    `--verbose`, in full."""
+    fx = repos.make()
+    _dirty_work(fx)
+    _gate(fx)
+    code, short = _cli(fx, "--subject", "the work")
+    lines = short.splitlines()
+    head = _head(fx)
+    check("sl1 a commit prints ONE line within the byte bound, naming the "
+          "commit it wrote and the verdict it rests on: %r" % (short,),
+          code == 0 and len(lines) == 1
+          and len(lines[0].encode("utf-8")) <= 200
+          and lines[0].startswith("[commit-task-work] committed %s"
+                                  % (head[:12],))
+          and "verdict: bound to run" in lines[0])
+    vfx = repos.make()
+    _dirty_work(vfx)
+    _gate(vfx)
+    vcode, verbose = _cli(vfx, "--subject", "the work", "--verbose")
+    check("sl2 ...and `--verbose` prints what the command always printed: the "
+          "headline, every path the commit carries, the journal row, the "
+          "verdict: %r" % (verbose[:200],),
+          vcode == 0 and len(verbose.splitlines()) > 3
+          and verbose.startswith("[commit-task-work] committed %s"
+                                 % (_head(vfx)[:12],))
+          and "    %s" % (OWNED,) in verbose.splitlines())
+    rfx = repos.make()
+    _dirty_work(rfx)
+    refused = _cli(rfx, "--subject", "the work")
+    check("sl3 a refused commit - no gate verdict binds the work - prints in "
+          "full, the same with `--verbose`: the deny twin of sl1: %r"
+          % (refused[1][:200],),
+          refused[0] != 0 and len(refused[1].splitlines()) > 1
+          and refused == _cli(rfx, "--subject", "the work", "--verbose"))
 
 
 def _selftest():

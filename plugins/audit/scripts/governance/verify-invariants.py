@@ -24,7 +24,8 @@ Usage:
                        [--baseline FILE] [--write-baseline]
 
 Exit codes:
-  0  answered - no breach found (gaps are printed and do not fail)
+  0  answered - no breach found (gaps are printed, or counted in the one
+     line a command run without `--verbose` prints, and do not fail)
   1  at least one breach - with a baseline in use, at least one it does not
      hold. A --write-baseline that succeeded exits 0: what it found is exactly
      what it just baselined, and the count it wrote is printed; a refused write
@@ -284,6 +285,32 @@ def _baseline_answer(args, result, manifest, git_root):
     return "baseline", block, known, None
 
 
+def success_line(lines):
+    """A clean answer's one line: which phases, that no breach was found, and
+    how many `no basis` lines - checks that could not be examined - the long
+    form names. A written baseline is said as the record it wrote.
+
+    None - the long form - when a baseline is compared (what still matches and
+    what no longer does is the answer), or when no phase had started.
+    """
+    said = [ln.strip() for ln in lines if ln.strip()]
+    written = [ln for ln in said if ln.startswith("BASELINE WRITTEN: ")]
+    if written:
+        return "[verify-invariants] %s" % (written[0],)
+    if (not any(ln.startswith("No breach found") for ln in said)
+            or any(ln.startswith(("NO PHASE HAS STARTED", "NEW BREACHES",
+                                  "BASELINE")) for ln in said)):
+        return None
+    phases = [ln for ln in said if ln.startswith("PHASE ")]
+    gaps = len([ln for ln in said if ln.startswith("no basis: ")])
+    skipped = [ln for ln in said if ln.startswith("SKIPPED ")]
+    return "[verify-invariants] %s: no breach found in what could be examined; " \
+           "%d `no basis` line(s)%s%s" % (
+               ", ".join(phases), gaps,
+               " (`--verbose` names them)" if gaps else "",
+               "; %s" % (skipped[0],) if skipped else "")
+
+
 def main(argv, out=print):
     parser = build_parser()
     try:
@@ -369,4 +396,4 @@ if __name__ == "__main__":
               "plugins/audit/tests/test_verify_invariants.py - run that file "
               "instead.")
         sys.exit(0)
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(_output.terse_cli(main, sys.argv[1:], success_line))

@@ -312,9 +312,51 @@ def _cases(record):
         _cases_gate_evidence(record, path2)
         _cases_muted(record, path2)
         _cases_bug_value_types(record, path2)
+        _cases_success_line(record, path2)
     finally:
         if os.path.exists(path2):
             os.unlink(path2)
+
+
+def _cli(argv):
+    """`(exit, stdout)` of this command run as the main loop runs it: a process."""
+    import subprocess
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+    done = subprocess.run(
+        [sys.executable, _loader.script_path("validate-manifest.py")] + argv,
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        universal_newlines=True, encoding="utf-8")
+    return done.returncode, done.stdout
+
+
+def _cases_success_line(record, path):
+    """A valid plan, said in one line; an invalid one, and `--verbose`, in full."""
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(_skills_plan((("P0", 7), ("P1", 5))), fh)
+    code, short = _cli([path])
+    lines = short.splitlines()
+    record("sl1 a valid plan prints ONE line within the byte bound - the OK "
+           "line, which names the file it read and the warnings it counted, "
+           "and that `--verbose` prints them: %r" % (short,),
+           code == 0 and len(lines) == 1
+           and len(lines[0].encode("utf-8")) <= 200
+           and lines[0].startswith("OK: %s valid" % (path,))
+           and "--verbose" in lines[0])
+    vcode, verbose = _cli([path, "--verbose"])
+    record("sl2 ...and `--verbose` prints what `--verbose` always printed, "
+           "every warning on its own line, byte for byte",
+           vcode == 0 and verbose == _run([path, "--verbose"])[1]
+           and len(verbose.splitlines()) > 1)
+    bad = _skills_plan((("P0", 7),))
+    bad["phases"][1]["tasks"][0]["status"] = "doing"
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(bad, fh)
+    bcode, refused = _cli([path])
+    record("sl3 an INVALID plan prints in full, exactly as it always did - the "
+           "deny twin of sl1: %r" % (refused[-120:],),
+           bcode == 1 and refused == _run([path])[1]
+           and "FINDING: " in refused and "INVALID: " in refused)
 
 
 def _cases_bug_value_types(record, path):

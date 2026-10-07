@@ -29,7 +29,7 @@
     {
       "id": "P118.1",
       "title": "the cost instruments read spans, injected command bodies and background agents as the design predicts",
-      "status": "in_progress",
+      "status": "done",
       "description": "Design section 6, T1. measure-context gains --sections and entries for /audit:phase add, /audit:task add and the phase run form before and at sign-off. stream-cost gains: the task cycle as its own section, read off the verb and its operand; the planning row; sign-off, its fix task and the close as three parts; the longest gap per context; each dispatch's start read and written by agent type; injected command bodies sized as their own source; and no phantom final for a background-launched agent (internal fault F563). Targets are T1's, on feature-C-1, whole-C-1, whole-C-2, whole-C-3 and the twin fixtures. whole-C-2-r's remaining unattributed amount is investigated and named before any target is set for it. Every new case is shown red first.",
       "files": [
         "tools/measure-context.py",
@@ -58,18 +58,41 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d783beef",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Design T1. tools/stream-cost.py prints priced spans:\n- planning, before the cycle, the task cycle, sign-off, fix task, close and unattributed, with the bounds read off parsed shell words and the Skill input;\n- the task cycle on its own;\n- injected command bodies sized as their own source;\n- reference reads by span;\n- one line per dispatch with its start read and written;\n- the longest gap per context.\n\nA background-launched dispatch gets no rebuilt final. tools/measure-context.py gains --sections, using the design's classification table, plus entries for /audit:phase add, /audit:task add, and the run form before and at sign-off.\n\nTargets met on feature-C-1, whole-C-2, whole-C-3, whole-C-1 and whole-C-2-r:\n- class sums 77811/27767/25037/23089;\n- cycle 6-13 with 8 requests, 21857 tokens, task 0.704895, file 0.212897, output 11374;\n- whole-C-2 planning 1 and no cycle;\n- whole-C-3 planning 1-12 and cycle 15-36 holding P1.1-P1.3;\n- command bodies of 15808 and 16035 tokens;\n- the unattributed row gone on C-3 and C-1 with totals unchanged;\n- whole-C-2-r at -5043, named as a hidden mid-agent request, with a rule proposed and not implemented;\n- background and foreground twins priced equal.\n\nCycle and fix-task costs move at the fourth decimal because the phantom finals no longer absorb Sonnet's residual write. Command bodies are classed run.\n\nSelftests: 40/40 and 18/18; ruff, vermin and the prose lint are clean. 23 scratch-clone mutations each turned their case red. The red-first helper refused, because the task declares no test file.",
+        "descriptive": "The cost tools now show where a plugin session spends by phase of work - planning, each task, sign-off and close - and no longer double-count background agents."
       },
       "startedAt": "2026-10-07T21:17:01Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T22:38:35Z",
+      "verifiedBy": [
+        "sp1",
+        "sp2",
+        "sp3",
+        "sp4",
+        "sp5",
+        "sp6",
+        "sp7",
+        "sp8",
+        "sp9",
+        "sp10",
+        "sp11",
+        "mc14",
+        "mc15",
+        "mc16",
+        "mc17",
+        "mc18"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T22:31:30Z.0f0087",
         "status": "passed",
         "at": "2026-10-07T22:31:30Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d783beef",
+        "at": "2026-10-07T22:38:35Z",
+        "basis": "orchestrator check: every T1 target has its printed reading; mutations each red; the one unexplained residual is named with its cause"
       }
     },
     {

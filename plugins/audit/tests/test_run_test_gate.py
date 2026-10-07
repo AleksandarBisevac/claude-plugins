@@ -9147,9 +9147,95 @@ def _selection_miss_cases(check):
                if a is not None] == ["bug-add"])
 
 
+def _cli(argv):
+    """`(exit, stdout)` of this command run as the main loop runs it: a process,
+    with the session's own variables dropped."""
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+    done = subprocess.run(
+        [sys.executable, _loader.script_path("run-test-gate.py")] + argv,
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        universal_newlines=True, encoding="utf-8")
+    return done.returncode, done.stdout
+
+
+def _success_line_cases(check):
+    """A green gate, said in one line naming the verdict and the row it
+    recorded; a red one, a refusal and `--verbose`, in full."""
+    def project(name, command):
+        root = _mini_repo("run-test-gate-sl-%s-" % (name,))
+        mp = os.path.join(root, "audit-plan.json")
+        with open(mp, "w") as fh:
+            json.dump({"meta": {"version": 2,
+                                "buildCommands": {"test": command}},
+                       "phases": [{"id": "P1", "title": "p",
+                                   "status": "in_progress",
+                                   "testGate": ["test"],
+                                   "tasks": [{"id": "P1.1", "title": "t",
+                                              "status": "in_progress",
+                                              "files": ["a.txt"],
+                                              "tests": {"gate": ["test"]}}]}]},
+                      fh)
+        return root, mp
+
+    def pointer(mp):
+        task = json.load(open(mp))["phases"][0]["tasks"][0]
+        return (task.get("testEvidence") or {}).get("runId")
+
+    root, mp = project("green", "true")
+    code, short = _cli([mp, "P1", "--task", "P1.1", "--project-dir", root,
+                        "--record"])
+    lines = short.splitlines()
+    run_id = pointer(mp)
+    check("sl1 a green gate prints ONE line within the byte bound, naming the "
+          "verdict and the evidence row it recorded - the id the plan's "
+          "pointer now holds: %r" % (short,),
+          code == M.E_OK and len(lines) == 1
+          and len(lines[0].encode("utf-8")) <= 200
+          and lines[0].startswith("[run-test-gate] GATE GREEN")
+          and run_id and ("evidence: recorded %s" % (run_id,)) in lines[0])
+    vroot, vmp = project("verbose", "true")
+    vcode, verbose = _cli([vmp, "P1", "--task", "P1.1", "--project-dir", vroot,
+                           "--record", "--verbose"])
+    check("sl2 ...and `--verbose` prints the text the gate always printed: the "
+          "evidence block, the per-step inventory, the verdict: %r"
+          % (verbose[:200],),
+          vcode == M.E_OK and len(verbose.splitlines()) > 3
+          and "  evidence: recorded %s" % (pointer(vmp),) in verbose.splitlines()
+          and any(ln.startswith("GATE GREEN") for ln in verbose.splitlines()))
+    rroot, rmp = project("red", "false")
+    rcode, red = _cli([rmp, "P1", "--task", "P1.1", "--project-dir", rroot,
+                       "--record"])
+    check("sl3 a RED gate prints in full - the deny twin of sl1: %r"
+          % (red[-200:],),
+          rcode != M.E_OK and len(red.splitlines()) > 3
+          and any(ln.startswith("GATE RED") for ln in red.splitlines()))
+    green = ["  evidence: recorded R-1", "  machine:  this run had the machine "
+             "to itself", "  pointer:  P1.1 now names it", "GATE GREEN: test, "
+             "tree unchanged"]
+    crowded = list(green)
+    crowded[1] = ("  machine:  1 other gate run(s) shared this window (R-0). A "
+                  "full suite measured beside another is not this run's alone")
+    check("sl5 a green that did NOT have the host to itself is told in full - "
+          "the `machine:` line is read beside the verdict - while the same "
+          "green alone on the host is one line: %r"
+          % ((M.success_line(green), M.success_line(crowded)),),
+          M.success_line(crowded) is None
+          and M.success_line(green).startswith("[run-test-gate] GATE GREEN")
+          and "evidence: recorded R-1" in M.success_line(green))
+    refused = _cli([mp, "P1", "--task", "P1.1", "--project-dir", root,
+                    "--own", "--record"])
+    check("sl4 a refusal is what it always was, `--verbose` or not: %r"
+          % (refused,),
+          refused[0] != M.E_OK and "refuses --record" in refused[1]
+          and refused == _cli([mp, "P1", "--task", "P1.1", "--project-dir",
+                               root, "--own", "--record", "--verbose"]))
+
+
 def _selftest():
     def body(check):
         _cases(check)
+        _harness.stage(check, "sl-block", _success_line_cases)
         _group_cases(check)
         _crowd_cases(check)
         _full_scope_cases(check)

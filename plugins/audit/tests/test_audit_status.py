@@ -4144,6 +4144,52 @@ def _worked_elsewhere_cases(check):
         _harness.remove_tree(root)
 
 
+def _cli(argv, cwd):
+    """`(exit, stdout)` of this command run as the main loop runs it: a process
+    started in `cwd`, with the session's own variables dropped."""
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+    done = subprocess.run(
+        [sys.executable, _loader.script_path("audit-status.py")] + argv,
+        cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        universal_newlines=True, encoding="utf-8")
+    return done.returncode, done.stdout
+
+
+def _success_line_cases(check):
+    """Every render is printed whole, `--verbose` or not: the `--short` entry
+    view is folded verbatim into the reply a run opens with, and the bare table
+    is what `/audit:status` exists to show. A refusal, as it always was."""
+    root = _harness.fixture_root("audit-status-sl-")
+    subprocess.run(["git", "init", "-q", root], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    mpath = os.path.join(root, "audit-plan.json")
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(_fixture(), fh)
+    with _own_project(root):
+        held = _in_project(root, [mpath, "--short"])[1]
+        full = _in_project(root, [mpath])[1]
+    code, short = _cli([mpath, "--short"], root)
+    check("sl1 the `--short` entry view prints WHOLE - a payload `/audit:phase` "
+          "and the orchestrator print verbatim into a reply - byte for byte "
+          "what `main` prints, the ready list and its commands included: %r"
+          % (short[:120],),
+          code == 0 and short == held and len(short.splitlines()) > 1
+          and "run: /audit:run P2.1" in short)
+    vcode, verbose = _cli([mpath, "--short", "--verbose"], root)
+    check("sl2 ...and `--short --verbose` is accepted and prints the same "
+          "bytes: %r" % (verbose[:120],),
+          vcode == 0 and verbose == held == short)
+    check("sl3 the bare render a person types is NOT shortened - it is the "
+          "table `/audit:status` exists to show, byte for byte",
+          _cli([mpath], root) == (0, full) and len(full.splitlines()) > 1)
+    refused = _cli([mpath, "--phase", "P9"], root)
+    check("sl4 a refusal is what it always was, `--verbose` or not: %r"
+          % (refused,),
+          refused[0] == 2 and refused == _cli([mpath, "--phase", "P9",
+                                               "--verbose"], root))
+
+
 def _selftest():
     def body(record):
         _cases(record)
@@ -4154,6 +4200,7 @@ def _selftest():
         _harness.stage(record, "wp", _worktree_post_fork_cases)
         _harness.stage(record, "es", _every_surface_cases)
         _harness.stage(record, "we", _worked_elsewhere_cases)
+        _harness.stage(record, "sl-block", _success_line_cases)
     return _harness.run(body)
 
 

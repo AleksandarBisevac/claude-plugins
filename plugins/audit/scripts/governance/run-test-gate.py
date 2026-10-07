@@ -4487,6 +4487,43 @@ def _run_full(project, args, manifest, out=print):
     return code
 
 
+# The statements a run prints beside a green verdict that the caller must still
+# read: each says what the verdict does not cover, or what was not recorded.
+# A success carrying any of them prints in full rather than as one line.
+_STATEMENT_OPENINGS = ("PHASE GATE RAN NO SUITE", "SAME SUITE COUNTED ONCE",
+                       "SAME COUNT, SAME SUITE NOT ESTABLISHED",
+                       "RETRIED AFTER A SIGNAL", "TREE CHANGED OUTSIDE THIS WORK",
+                       "NO CHECK RAN", "NO OVERLAP WITH THIS WORK",
+                       "NARROWED sign-off", "evidence: NOT recorded",
+                       "pointer:  NOT updated")
+_ALONE = "machine: this run had the machine to itself"
+
+
+def success_line(lines):
+    """A green run's one line: its verdict, the evidence row it recorded and the
+    pointer that names it, or the raw log an `--own` run wrote.
+
+    None - the long form - for anything but a plain green: a verdict other than
+    `GATE GREEN`, or any statement in `_STATEMENT_OPENINGS` beside it.
+    """
+    said = [ln.strip() for ln in lines if ln.strip()]
+    verdicts = [ln for ln in said if ln.startswith("GATE GREEN:")]
+    if len(verdicts) != 1 or any(ln.startswith(_STATEMENT_OPENINGS)
+                                 for ln in said):
+        return None
+    # The `machine:` line is read beside the verdict (`reference/orchestrator.md`
+    # names it): a run that did not have the host to itself, or could not say,
+    # is told in full.
+    if any(ln.startswith("machine:") and " ".join(ln.split()) != _ALONE
+           for ln in said):
+        return None
+    records = [" ".join(ln.split()) for ln in said
+               if ln.startswith(("evidence: recorded ", "pointer: ",
+                                 "raw log: "))]
+    return _output.success_line("[run-test-gate] %s" % (verdicts[0],),
+                                "; ".join([""] + records) if records else "")
+
+
 def main(argv, out=print):
     p = argparse.ArgumentParser(prog="run-test-gate.py", add_help=True)
     p.add_argument("manifest")
@@ -4919,4 +4956,7 @@ if __name__ == "__main__":
         print("run-test-gate.py: cases live in "
               "plugins/audit/tests/test_run_test_gate.py")
         raise SystemExit(0)
-    raise SystemExit(main(sys.argv[1:]))
+    # `--full` keeps its long form, and streams it: `full-gate.py` hands this
+    # run's lines to an operator watching a pre-push hook as they arrive.
+    raise SystemExit(_output.terse_cli(main, sys.argv[1:], success_line,
+                                       long_form=("--full",)))

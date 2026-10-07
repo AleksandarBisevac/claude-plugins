@@ -427,6 +427,7 @@ def _cases(check):
     # would let a reader take "the block never ran" for "that case went red".
     _harness.stage(check, "sc-block", _shell_code_cases)
     _harness.stage(check, "ho-block", _handed_off_cases)
+    _harness.stage(check, "sl-block", _success_line_cases)
 
 
 # --- the two readers of this command, and what each is told -------------------
@@ -538,6 +539,54 @@ def _handed_off_cases(check):
             os.environ.pop("CLAUDE_PID", None)
         else:
             os.environ["CLAUDE_PID"] = prev
+        _harness.remove_tree(tmp)
+
+
+def _cli(argv):
+    """`(exit, stdout)` of this command run as the main loop runs it: a process,
+    with the session's own variables dropped so a lock is judged on its fixture."""
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+    done = subprocess.run([sys.executable, _loader.script_path("audit-lock.py")]
+                          + argv, env=env, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, universal_newlines=True,
+                          encoding="utf-8")
+    return done.returncode, done.stdout
+
+
+def _success_line_cases(check):
+    """The verb's success, said in one line; its refusal and `--verbose`, in full."""
+    tmp = tempfile.mkdtemp(prefix="audit-lock-sl-")
+    try:
+        subprocess.run(["git", "init", "-q", tmp], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        mine = ["--project", tmp, "--session", "sess-A",
+                "--pid", str(os.getpid())]
+        code, _ = _cli(["acquire", "phase-P1", "--note", "phase P1"] + mine)
+        status_code, short = _cli(["status", "--project", tmp])
+        lines = short.splitlines()
+        check("sl1 `status` over a held lock prints one line within the byte "
+              "bound, naming the lock and how it was judged: %r" % (short,),
+              code == 0 and status_code == 0 and len(lines) == 1
+              and len(lines[0].encode("utf-8")) <= 200
+              and "phase-P1" in lines[0] and "LIVE" in lines[0])
+        held = []
+        M.main(["status", "--project", tmp], out=held.append)
+        _code, verbose = _cli(["status", "--project", tmp, "--verbose"])
+        check("sl2 ...and `--verbose` prints the text `status` always printed, "
+              "byte for byte: %r" % (verbose,),
+              verbose == "\n".join(held) + "\n" and len(held) > 1)
+        refused = _cli(["acquire", "phase-P1", "--project", tmp,
+                        "--session", "sess-B", "--pid", str(os.getpid()),
+                        "--wait", "0"])
+        refused_verbose = _cli(["acquire", "phase-P1", "--project", tmp,
+                                "--session", "sess-B", "--pid",
+                                str(os.getpid()), "--wait", "0", "--verbose"])
+        check("sl3 a refusal prints in full, the same with `--verbose` and "
+              "without - the deny twin of sl1: %r" % (refused,),
+              refused[0] == M.E_LIVE and refused == refused_verbose
+              and len(refused[1].splitlines()) > 1)
+    finally:
         _harness.remove_tree(tmp)
 
 
