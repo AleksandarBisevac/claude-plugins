@@ -25,7 +25,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   rendering with no plan, which read `meta.usage` off nothing and so showed equivalent cost for a
   project whose plan sets `showCost: false`. With no config and no plan at the default location,
   `/audit:usage` still renders the ledger and says it has no plan, and `/audit:status` and
-  `/audit:report` exit 2 naming where they looked.
+  `/audit:report` exit 2 naming where they looked. A plan that is found but cannot be loaded -
+  it does not parse, a shard of a sharded plan is missing, or an explicit argument names a file
+  that is not there - makes all three exit 2 with the same `cannot read/parse <path>` line;
+  `/audit:usage` used to render that case with an empty plan, whose `showCost` defaults to on.
+- **`/audit:usage` prints no dollar figure when `showCost` is false.** The cost-band thresholds
+  and the routing advice's re-priced figures were printed regardless of the setting, unlike the
+  totals beside them. With `showCost` off the band line names its basis and says the thresholds
+  are withheld, and the routing advice states its saving as a share.
 
 - **The first-contact commands no longer hand their script a `<manifestPath>` placeholder.**
   `/audit:status`, `/audit:usage`, `/audit:report` and `/audit:next` used to leave the model to

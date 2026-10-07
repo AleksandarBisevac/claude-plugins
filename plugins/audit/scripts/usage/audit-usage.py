@@ -225,12 +225,21 @@ def resolve_ledger(args, project, manifest):
 
 
 def load_manifest(path):
+    """(manifest, refusal). No path is the one case that renders without a plan
+    (`main` has already said so); a path that resolved but does not load or is
+    not an object is refused, in the words /audit:status and /audit:report print
+    for the same load. Reading it as `{}` instead would default showCost to on
+    for a plan that may have turned it off."""
     if not path:
-        return {}
+        return {}, None
     try:
-        return mio.load_manifest_safe(path)
-    except Exception:
-        return {}
+        manifest = mio.load_manifest(path)
+    except Exception as exc:
+        return None, "ERROR: cannot read/parse %s: %s" % (path, exc)
+    if not isinstance(manifest, dict):
+        return None, ("ERROR: %s is not a JSON object (got %s)"
+                      % (path, type(manifest).__name__))
+    return manifest, None
 
 
 def titles_of(manifest):
@@ -430,11 +439,12 @@ def render(rows, args, manifest, window, show_cost, pt=None):
         else:
             out += group_table("task", "TOP TASKS", limit=args.top)
         out.append("")
-        out.append(("" if md else "  ") + pt.paint(band_note(bands), "dim"))
+        out.append(("" if md else "  ")
+                   + pt.paint(band_note(bands, show_cost), "dim"))
         out += routing_advice_lines(
             ul.routing(manifest, rows,
                        (meta_usage or {}).get("pricing")).get("advice") or [],
-            fmt=fmt, pt=pt)
+            fmt=fmt, pt=pt, show_cost=show_cost)
     out += render_monthly(manifest, rows, show_cost, fmt=fmt, pt=pt)
     out += render_trend(rows, fmt=fmt, pt=pt)
     return "\n".join(out)
@@ -534,11 +544,15 @@ def render_monthly(manifest, rows, show_cost, fmt="ascii", pt=None):
     return out
 
 
-def routing_advice_lines(advice, fmt="ascii", pt=None):
+def routing_advice_lines(advice, fmt="ascii", pt=None, show_cost=True):
     """The one recommendation the CLI makes. Silent unless the ledger's own
     evidence clears every gate — which on a well-routed project is normal.
     md nests the two evidence lines under their advice bullet; markdown
-    would otherwise merge all three into one paragraph."""
+    would otherwise merge all three into one paragraph.
+
+    With `show_cost` off the re-priced figures are dollars like any other, so
+    the saving is stated as a share alone and the line says the dollars are
+    withheld rather than dropping the basis the advice stands on."""
     if not advice:
         return []
     md = fmt == "md"
@@ -551,11 +565,16 @@ def routing_advice_lines(advice, fmt="ascii", pt=None):
         out.append(("- " if md else "  ")
                    + "%s work is running on %s - %d task(s) at %.1f mean attempts"
                    % (a["risk"], a["from"], a["tasks"], a["fromMeanAttempts"] or 0))
-        out.append(("  - " if md else "    ")
-                   + "those same tokens cost %s at %s rates vs %s  ->  %s less (%.0f%%)"
-                   % (fmt_cost(a["atToRates"]), a["to"],
-                      fmt_cost(a["atFromRates"]), fmt_cost(a["saving"]),
-                      a["savingPct"]))
+        if show_cost:
+            priced = ("those same tokens cost %s at %s rates vs %s  ->  %s less "
+                      "(%.0f%%)" % (fmt_cost(a["atToRates"]), a["to"],
+                                    fmt_cost(a["atFromRates"]),
+                                    fmt_cost(a["saving"]), a["savingPct"]))
+        else:
+            priced = ("those same tokens cost %.0f%% less at %s rates (dollar "
+                      "figures withheld: showCost is off)"
+                      % (a["savingPct"], a["to"]))
+        out.append(("  - " if md else "    ") + priced)
         out.append(("  - " if md else "    ")
                    + "%s has already run %d task(s) in this band here, at %.1f "
                    "mean attempts" % (a["to"], a["evidenceTasks"],
@@ -566,20 +585,25 @@ def routing_advice_lines(advice, fmt="ascii", pt=None):
     return out
 
 
-def band_note(bands):
+def band_note(bands, show_cost=True):
     """One line saying where the band thresholds came from, or why there are none.
 
     "This task is an outlier" is a claim, and a claim whose basis is invisible
     cannot be checked. On a young project this line is the entire content: it says
-    the band is waiting for a sample rather than leaving a blank column."""
+    the band is waiting for a sample rather than leaving a blank column.
+
+    The thresholds are dollar figures, so with `show_cost` off the line keeps the
+    basis and says the thresholds are withheld rather than printing them."""
     if not bands.get("sufficient"):
         return ("band: not calibrated yet - needs %d completed tasks, there are %d "
                 "(or set usage.bands.highUSD / outlierUSD for a fixed budget)"
                 % (bands.get("gate", 5), bands.get("sample", 0)))
+    basis = ("configured thresholds" if bands.get("basis") == "absolute"
+             else "this project's completed tasks (median / p90)")
+    if not show_cost:
+        return ("band: %s - thresholds withheld: showCost is off" % basis)
     return ("band: %s - typical <= %s, high <= %s, outlier above"
-            % ("configured thresholds" if bands.get("basis") == "absolute"
-               else "this project's completed tasks (median / p90)",
-               fmt_cost(bands.get("high")), fmt_cost(bands.get("outlier"))))
+            % (basis, fmt_cost(bands.get("high")), fmt_cost(bands.get("outlier"))))
 
 
 def render_trend(rows, width=28, fmt="ascii", pt=None):
@@ -947,7 +971,10 @@ def main(argv):
         # are absent.
         sys.stderr.write("note: rendering without the plan's titles and "
                          "meta.usage - %s\n" % (mio.describe_unresolved(resolved),))
-    manifest = load_manifest(manifest_path)
+    manifest, refusal = load_manifest(manifest_path)
+    if refusal:
+        sys.stderr.write(refusal + "\n")
+        return 2
     ledger_dir = resolve_ledger(args, project, manifest)
 
     meta_usage = ((manifest or {}).get("meta") or {}).get("usage") or {}
