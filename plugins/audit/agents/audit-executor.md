@@ -50,6 +50,12 @@ Hard rules (non-negotiable):
   command, runner crash, zero tests collected where some were expected) — the
   orchestrator treats these very differently. (`run-test-gate.py` applies
   `meta.nodePreamble` itself; you only prepend it to a command you type yourself.)
+- **A tool call refused by the auto-mode permission classifier — text containing
+  `auto mode cannot determine the safety` or `gave no verdict` — produced no
+  verdict on that step: report it as `could-not-run`, never as `fail`.** Put
+  the refusal in `task.outcome.technical` **verbatim**, the classifier's own
+  words rather than your summary of them — the same discipline the red-first
+  rule below already asks of this exact refusal.
 - **A gate failure in a file you do not own is probably not yours.** The working
   tree is shared with sibling tasks running right now, editing it while you run
   whatever gate reading you were given — so a type error, a lint error or a failing

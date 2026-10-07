@@ -128,6 +128,11 @@ import sys
 import tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(REPO, "plugins", "audit", "scripts"))
+import _output  # noqa: E402  (install_path: the plugin's folders are labels)
+
+_output.install_path()
+import _journal_io  # noqa: E402  (the machine-path shapes the writer refuses on)
 
 # --- the domain ---------------------------------------------------------------
 # What the plugin GENERATES and tells a user to commit. Everything else this
@@ -202,11 +207,11 @@ def tracked_paths(repo=None):
 # division of labour with `_journal_io`'s redaction -- a detector's false positive
 # costs a human a minute; a rewriter's false negative is already committed.
 #
-# THE TRANSFORM SPELLINGS LIVE HERE, and this is the only place in the tree that
-# should know them. A session directory reaches a command line dash-joined
-# (`-Users-someone-Desktop-...`), a URL percent-escaped, and a Windows path
-# backslashed -- three renderings of one leak, and a substitution table that tried
-# to cover all three is what the redaction deliberately does not do.
+# THE TRANSFORM SPELLINGS ARE THE WRITER'S TOO. A session directory reaches a
+# command line dash-joined (`-Users-someone-Desktop-...`), a URL percent-escaped,
+# and a Windows path backslashed -- renderings of one leak. The writer
+# refuses and redacts each by name rather than substituting one rendering for
+# another, so the patterns live beside its own and are read from there.
 #
 # THE LEADING SEPARATOR IS NOT WHAT MAKES A PATH SOMEBODY'S MACHINE, and keying
 # on it left the narrowest possible hole in the rule this file exists for. A
@@ -221,17 +226,16 @@ def tracked_paths(repo=None):
 # detector that could only see the tidy spelling is the half of that pair which
 # has to stand on its own, because it is the one reading bytes somebody already
 # committed.
-_TOKEN_START = r"(?<![A-Za-z0-9._~$+/\\-])"
-DETECTORS = (
-    ("posix-home", re.compile(_TOKEN_START + r"[/\\]?(?:Users|home)/[A-Za-z0-9._-]+")),
-    ("windows-user-path", re.compile(r"[A-Za-z]:\\{1,2}Users\\|\\{2,4}[A-Za-z0-9._-]+\\{1,2}[A-Za-z0-9._$-]+\\")),
-    ("session-slug", re.compile(r"-(?:Users|home)-[A-Za-z0-9._]+|-private-tmp-")),
-    ("escaped-path", re.compile(r"%2F(?:Users|home)%2F|%5CUsers%5C", re.I)),
-    ("tempdir-session", re.compile(_TOKEN_START + r"/?(?:private/)?tmp/claude-\d+"
-                                   r"|" + _TOKEN_START + r"/?var/folders/[A-Za-z0-9_+]{2,}"
-                                   r"|\\Temp\\claude-", re.I)),
-    ("unexpanded-home", re.compile(r"(?:^|[\s\"'=:(\[,])~/")),
-)
+#
+# NO ROW IS SPELLED HERE. `_journal_io` refuses a caller's free-text value
+# carrying any of these shapes before the row is hashed, and redacts the
+# plugin's own, so the writer and this backstop read one definition -
+# `_journal_io.MACHINE_PATH_SHAPES`, the same pattern objects - and the token
+# boundary with them. A copy here would agree with the writer until the day one
+# side was widened, and the row the other side missed would be the one already
+# committed. The one deliberate difference is the writer's, not this table's:
+# it takes a relative path whose first segment is `home`, which this flags.
+DETECTORS = _journal_io.MACHINE_PATH_SHAPES
 
 # --- the contract checks ------------------------------------------------------
 # NOT heuristics. A journal row has a shape this repository owns, so these ask
@@ -636,6 +640,32 @@ BASELINE = (
      "posix-home",
      "the task.add row beside it, whose title quotes the same phrase for the same "
      "reason. A phrase, not a directory; chained, so recorded rather than rewritten."),
+    ("docs/audit/journal/2026-10.6c881c24-c1fd-461f-8c48.wt-d215e320.jsonl", 23,
+     "posix-home",
+     "a task.note row whose text quoted an operator's command, and that command's "
+     "argument was an absolute path under the operator's home directory. The "
+     "plan's copy of the note was corrected to a repository-relative spelling; "
+     "this row cannot be - its hash covers these bytes and the chain runs "
+     "through it - so it is recorded here rather than rewritten."),
+    ("docs/audit/journal/2026-10.6c881c24-c1fd-461f-8c48.wt-d215e320.jsonl", 114,
+     "posix-home",
+     "a row whose text quotes a relative 'home/page.tsx' as the example of a "
+     "repository path the writer must accept - a file a repository may hold, "
+     "not a directory of any machine. posix-home flags `home/` at a token start "
+     "by design, and the row is chained, so it is recorded rather than rewritten."),
+    ("docs/audit/journal/2026-10.6c881c24-c1fd-461f-8c48.wt-d215e320.jsonl", 194,
+     "unexpanded-home",
+     "a review-finding row quoting the reviewer's own probe text: the tilde "
+     "config directory every install shares, written to show it is refused at "
+     "the writer's door. A placeholder location, not a path of any machine; the "
+     "row is chained, so it is recorded rather than rewritten."),
+    ("docs/audit/journal/2026-10.6c881c24-c1fd-461f-8c48.wt-d215e320.jsonl", 195,
+     "posix-home",
+     "a review-finding row quoting the reviewer's own probe text: two file URLs "
+     "into a placeholder home directory of a one-letter user, one with no host "
+     "and one naming localhost, showing which of the two the shapes caught. "
+     "Neither names a machine; the row is chained, so it is recorded rather "
+     "than rewritten."),
     # THE PLAN'S ROWS, recorded when the plan entered the domain. Every one is a
     # shape QUOTED in a task's text - an example, a fixture name, a phrase - and
     # names no machine. KEYED BY WHAT THE LINE SAYS (`line_anchor`), not by its
@@ -1363,6 +1393,73 @@ def _cases(check):
     check("q2b ...and a repo-relative path that merely RESEMBLES one is left "
           "alone: the separator became optional, not absent, and a match has "
           "to start where a word starts: %r" % (_wrong,), _wrong == [])
+
+    # EVERY PLACE A REAL SLUG STANDS, each a whole path segment: at a token
+    # start, under the harness's projects directory, under a scratch tempdir,
+    # quoted, and in the Windows spelling whose drive letter carries a dash.
+    _slugs = (
+        "dir -Users-%s-Desktop-x" % _user,
+        "~/.claude/projects/-Users-%s-Desktop-x/s.jsonl" % _user,
+        "/private/tmp/claude-501/-Users-%s-Desktop-x/s" % _user,
+        "/projects/-home-%s-src/s.jsonl" % _user,
+        "/projects/-private-tmp-probe/s.jsonl",
+        '{"b":"-Users-%s-x"}' % _user,
+        "D:\\data\\.claude\\projects\\C--Users-%s-x" % _user,
+    )
+    _unseen = [line for line in _slugs
+               if "session-slug" not in set(h[2] for h in
+                                            scan_text("f.md", line, "report"))]
+    check("q2c a session slug is found at every placement a real one takes: %r"
+          % (_unseen,), _unseen == [])
+    # THE ALLOW TWIN q2c's start rule exists for: a kebab word holding the
+    # same letters mid-word is prose, and a door refusing it gets routed around.
+    _kebab = ("the my-home-page component, the add-Users-list view and "
+              "go-home-now")
+    _kebab_hits = scan_text("f.md", _kebab, "report")
+    check("q2d ALLOW: kebab prose holding -home-<word> and -Users-<word> "
+          "mid-word trips nothing: %r" % (_kebab_hits,), _kebab_hits == [])
+    # A dash-led word at a token start with nothing after it - an option name,
+    # a bare user name in prose - is not a slug either; beside a separator the
+    # same lone segment is.
+    # Each placement q2f takes has its whitespace-led twin here.
+    _lone_u = "-".join(("", "Users", _user))
+    _lone_h = "-".join(("", "home", "dir"))
+    _proses = (
+        "rename %s option, abc %s here" % (_lone_h, _lone_u),
+        '{"b":"see %s here"}' % (_lone_u,),
+        "set HOME = %s for it" % (_lone_h,),
+        "( see %s )" % (_lone_u,),
+        "first line\n  %s is an option" % (_lone_h,),
+        "the C%s page" % (_lone_u,),
+        "an option named `%s`" % (_lone_h,),
+    )
+    _prose_hits = [(p, scan_text("f.md", p, "report")) for p in _proses
+                   if scan_text("f.md", p, "report")]
+    check("q2e ALLOW: prose naming a -home-<word> option and a lone "
+          "-Users-<name> led by whitespace, at every placement q2f convicts, "
+          "trips nothing: %r" % (_prose_hits,), _prose_hits == [])
+    _lone = ("/projects/%s" % (_lone_u,), "-home-%s/s.jsonl" % _user,
+             '{"b":"%s"}' % (_lone_u,), "HOME=%s" % (_lone_u,),
+             "cwd (%s)" % (_lone_u,), "first line\n%s here" % (_lone_u,),
+             "dir C-%s here" % (_lone_u,), "path:%s" % (_lone_u,))
+    _lone_unseen = [line for line in _lone
+                    if "session-slug" not in set(h[2] for h in
+                                                 scan_text("f.md", line,
+                                                           "report"))]
+    check("q2f ...and the same lone segment bounded by a separator, a quote, "
+          "a key's `=`, a parenthesis, a line start, a colon or a drive "
+          "letter is found: "
+          "%r" % (_lone_unseen,), _lone_unseen == [])
+    # A file URL may name a host before its path; an https URL with the same
+    # host and path names a web page.
+    _hosted = scan_text("f.md", "open file://localhost/Users/%s/r.html" % _user,
+                        "report")
+    _web = scan_text("f.md", "open https://localhost/Users/%s/r.html" % _user,
+                     "report")
+    check("q2g a file URL naming a host before a home directory is found, and "
+          "its https twin with the same host and path trips nothing: %r"
+          % ((_hosted, _web),),
+          "posix-home" in set(h[2] for h in _hosted) and _web == [])
 
     # The rule this whole file would otherwise break one layer out. Counted over
     # the rendered line rather than asserted absent, because a report that

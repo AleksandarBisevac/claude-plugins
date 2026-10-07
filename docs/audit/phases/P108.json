@@ -1,7 +1,7 @@
 {
   "id": "P108",
   "title": "the same operation gets the same verdict, and a refusal says what to do",
-  "status": "pending",
+  "status": "done",
   "description": "Tasks: (1) A verdict table (operation class x tier) that the hook corpus asserts; the operator decides three undefined boundary cases. (2) Shell-write refusal text names what to do (the file is outside the running task; scope it or ask) instead of 'use the Edit/Write tools'. (3) The orchestrator recognizes the auto-mode classifier's no-verdict text and records could-not-run. (4) Only after measuring the 3.0.x refusals: the same verdict for Edit and a shell write of the same change - guard-reading code, written by the human maintainer.",
   "desiredOutcome": "for every documented operation class the plan gate's verdict is written down per tier, a refusal never tells the model to use a tool the harness steers away from, and a classifier that gives no verdict is recorded as could-not-run, not as a failed attempt",
   "testGate": [
@@ -15,21 +15,329 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
-  "mergedAt": null,
+  "baseRef": "cd6933ada1f214a0af05fdb63330bdc94aeafa55",
+  "branch": "audit/p108-the-same-operation-gets-the-sa",
+  "mergedAt": "2026-10-07T10:39:48Z",
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P108-R1",
+        "severity": "high",
+        "file": "plugins/audit/hooks/journal-writes.py:1234-1250; scripts/governance/_journal_io.py:1741-1755,1558-1578",
+        "issue": "The pre-hash machine-path refusal makes the hook's own manifest rows droppable with no sign: journal-writes renders task-field values into details.changes from/to, a value holding a home path makes _append raise, append() swallows it, and the hook exits 0 with no manifest.edit row - and an edit that corrects such a value can never be journalled either; SECURITY.md still says every manifest write appends a row.",
+        "resolution": "fixed in P108.10-4gh (179d4f18): Do not refuse rows the plugin builds itself: rewrite the offending token in place (as redacted_text does for program output) so the write is still recorded; keep the hard refusal only for caller free text at the verb boundary; a journal-writes case where a manifest edit holding a home path still yields a manifest.edit row without the path.",
+        "fixTask": "P108.10-4gh",
+        "commit": "179d4f18"
+      },
+      {
+        "id": "P108-R2",
+        "severity": "high",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:4697-4705,2056-2072; set-priority.py; derive-phase-gate.py; panel/_panel_write.py:1413-1423",
+        "issue": "For CLI and panel verbs the refusal lands after the manifest write and is swallowed: `audit-task note ... --text '<a home path>'` exits 0, the path is committed in the phase shard, no journal row is written, and the field/shape/remedy text never reaches the user - the reverse of the intent.",
+        "resolution": "fixed in P108.10-4gh (179d4f18): Expose the check (a public _journal_io check on caller free text) and call it in each verb before the plan or panel save, refusing with a non-zero exit and the field/shape/remedy text so neither the manifest nor the journal takes the value; carry any later append failure's text into journaledWhy; verb-level cases (manifest unchanged, exit non-zero, message names the field).",
+        "fixTask": "P108.10-4gh",
+        "commit": "179d4f18"
+      },
+      {
+        "id": "P108-R3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_journal_io.py:1430-1446",
+        "issue": "machine_path_shape checks a boundary after the checkout root but not before it, so with a short root (/src, /app, /repo, /workspace in containers) any text containing that segment ('lib/src/foo.ts', a URL) is refused as checkout-root; and the detector's over-flagging patterns (a relative path whose first segment is the word home reads as a home directory) are now a hard refusal with no baseline.",
+        "resolution": "fixed in P108.10-4gh (179d4f18): Require a token start before the root too, with cases for short roots where a relative path containing the segment is written unchanged; decide whether a relative 'home/<x>' at token start refuses at the writer or is only flagged by the detector.",
+        "fixTask": "P108.10-4gh",
+        "commit": "179d4f18"
+      },
+      {
+        "id": "P108-R4",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_journal_io.py:1539-1578,1668 (via _scoped_commit.py:715-734, close-phase.py:1200-1216)",
+        "issue": "The check applies to every summary and details value, including program output: a scoped-commit withdrawal whose reason is git's stderr naming an outside .git path in a linked worktree under a home directory is refused and the withdrawal row lost, where the module's rule for program output was redaction.",
+        "resolution": "fixed in P108.10-4gh (179d4f18): Route program-produced fields (withdraw reasons, verdict sentences, close-phase basis) through the redaction path, keep refusal for caller-supplied text, with a case for a withdrawal reason quoting an outside .git path.",
+        "fixTask": "P108.10-4gh",
+        "commit": "179d4f18"
+      },
+      {
+        "id": "P108-R5",
+        "severity": "med",
+        "file": "SECURITY.md:761-765,826-836,894-895,188",
+        "issue": "The trail section describes neither journal change: every manifest write is still said to append a row (no word on the pre-hash rule or which writers surface it), and hand edits to the journal are still said to be refused by guard-edits alone, with no word on the shell arm now refusing redirect, tee and sed -i into the journal at PreToolUse.",
+        "resolution": "fixed in P108.12-4gh (c7ff7d1d): Update the trail section and the fail-mode description to match the settled behaviour, and extend the hand-edits bullet with the shell arm and its residuals.",
+        "fixTask": "P108.12-4gh",
+        "commit": "c7ff7d1d"
+      },
+      {
+        "id": "P108-R6",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-secrets-read.py:1573-1580,2509; tests/test_hooks.py:49-53; SECURITY.md:419-440",
+        "issue": "Real bypasses at the deny tier, stated only in code: `bash -c \"sed -i ... src/app.py\"` and `eval \"sed -i ...\"` are allowed where bare sed -i is denied; `sh -c \"sed -i ... <journal>\"` and `python3 -c \"open('<journal>','a')...\"` are allowed while the journal-write class says deny at every tier; test_hooks.py says shapes left out of its table are the ones the security document lists as open, which these are not.",
+        "resolution": "fixed in P108.11-4gh (fb2f68fa): Close them: the shell-write arm reads the command inside a bash -c / sh -c / eval argument through the shared wrapper readers, and the interpreter arm grades a journal target; cases at every tier; anything left open listed in SECURITY.md and as test_hooks rows marked today with a contradicts basis.",
+        "fixTask": "P108.11-4gh",
+        "commit": "fb2f68fa"
+      },
+      {
+        "id": "P108-R7",
+        "severity": "low",
+        "file": "plugins/audit/tests/test__refs.py:2733",
+        "issue": "A section-marker comment cites a register task id.",
+        "resolution": "fixed in P108.12-4gh (c7ff7d1d): Drop the id and keep the constraint.",
+        "fixTask": "P108.12-4gh",
+        "commit": "c7ff7d1d"
+      },
+      {
+        "id": "P108-R8",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-secrets-read.py:1589-1605",
+        "issue": "cp, mv and install into a source file or the journal are allowed at deny: the shell write grammar reads only redirect, tee and sed -i (pre-existing).",
+        "resolution": "fixed in P108.11-4gh (fb2f68fa): Read the destination operand of cp/mv/install, or name the gap in SECURITY.md with the other residuals.",
+        "fixTask": "P108.11-4gh",
+        "commit": "fb2f68fa"
+      },
+      {
+        "id": "P108-R9",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_journal_io.py machine_path_shape; tools/check-committed-pii.py DETECTORS",
+        "issue": "The writer knows fewer identity shapes than the detector: session-slug, tempdir-session, escaped-path and unexpanded-home pass both redacted_free_text and check_free_text, so a note naming an agent scratchpad path lands verbatim in the manifest and a chained journal row that check-committed-pii then fails and that can only be baselined.",
+        "resolution": "fixed in P108.13-4gh (33173cfc): Move those detector shapes into _journal_io as shared pattern objects like MACHINE_PATH_SHAPES and have machine_path_shape read them, so redaction replaces and the door refuses them; keep only the deliberate relative home/ difference; a case per shape in both directions.",
+        "fixTask": "P108.13-4gh",
+        "commit": "33173cfc"
+      },
+      {
+        "id": "P108-R10",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-secrets-read.py _copy_destinations",
+        "issue": "cp onto an existing directory spelled without a trailing slash is allowed at the deny tier and writes an uncovered source file inside it, while the slash and -t spellings are blocked; SECURITY.md lists no such residual and KNOWN_DIVERGENCE has no row.",
+        "resolution": "fixed in P108.14-4gh (b22c2c41): Treat a last operand that resolves at the effective cwd to an existing directory as a directory, with a test_hooks row and an allow twin.",
+        "fixTask": "P108.14-4gh",
+        "commit": "b22c2c41"
+      },
+      {
+        "id": "P108-R11",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_journal_io.py MACHINE_PATH_TOKEN_START",
+        "issue": "A file URL into a home directory passes check_free_text, comes back unchanged from redacted_free_text and is written raw into a chained row, and no detector flags it; reports here are opened over file://, so this shape will appear in notes.",
+        "resolution": "fixed in P108.13-4gh (33173cfc): Let a token start after a URL scheme's slashes so posix-home matches file:// paths in writer and detector alike; cases for refuse, redact and flag, with an https allow twin.",
+        "fixTask": "P108.13-4gh",
+        "commit": "33173cfc"
+      },
+      {
+        "id": "P108-R12",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py resolve_briefs",
+        "issue": "Caller text outside the prose flags (--gate, --gate-set, --verified-by) is never put to check_free_text, so a gate command carrying a home path is stored in the manifest while its journal row is redacted.",
+        "resolution": "fixed in P108.13-4gh (33173cfc): Put gate-command and verified-by values through the same door before the lock, with a retarget --gate case.",
+        "fixTask": "P108.13-4gh",
+        "commit": "33173cfc"
+      },
+      {
+        "id": "P108-R13",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-secrets-read.py _write_views depth bound",
+        "issue": "Handed commands are followed only to a fixed depth; one level deeper a write is allowed at the deny tier while its bare form is blocked, and the bound is stated only in a code comment.",
+        "resolution": "fixed in P108.14-4gh (b22c2c41): When the bound is reached and a further handed command exists, grade it unresolved at the deny tier rather than as nothing, with a case at the bound and one past it.",
+        "fixTask": "P108.14-4gh",
+        "commit": "b22c2c41"
+      },
+      {
+        "id": "P108-R14",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-secrets-read.py _eval_write_targets; SECURITY.md hand-edits bullet",
+        "issue": "An interpreter open() with a keyword mode='a' or mode='w' is not read as a write, so the journal arm's 'refused at every tier' sentence is untrue for that spelling, and the source arm misses it the same way.",
+        "resolution": "fixed in P108.14-4gh (b22c2c41): Teach the interpreter grammar the mode= keyword, with a journal case and a source-file case at each tier.",
+        "fixTask": "P108.14-4gh",
+        "commit": "b22c2c41"
+      },
+      {
+        "id": "P108-R15",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_journal_io.py repo_relative_or_token",
+        "issue": "Redaction relativises the realpath, so a path through a symlinked directory is recorded as the link target's path, a path the writer never wrote.",
+        "resolution": "fixed in P108.13-4gh (33173cfc): Decide inside or outside on the realpath, but relativise the normalised spelling when it lies under the root; a case with a symlinked directory.",
+        "fixTask": "P108.13-4gh",
+        "commit": "33173cfc"
+      },
+      {
+        "id": "P108-R16",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-secrets-read.py redirect and tee arms",
+        "issue": "The redirect and tee arms still read a > inside a quoted argument at the outer cwd, so a commit message mentioning a redirect is blocked as a source write, a handed cd that leaves the tree is blocked, and a handed redirect is read twice with the misplaced outer hit named first.",
+        "resolution": "fixed in P108.14-4gh (b22c2c41): Now that handed commands are graded through their own views, have the redirect and tee arms skip matches inside quotes as the in-place arm does; allow cases for a commit message and a handed cd out of the tree.",
+        "fixTask": "P108.14-4gh",
+        "commit": "b22c2c41"
+      },
+      {
+        "id": "P108-R17",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-secrets-read.py quoted-word skip; SECURITY.md",
+        "issue": "The quoted-word skip reads git's quoted words as text where git runs them: behind an environment prefix (GIT_EDITOR, GIT_SEQUENCE_EDITOR, GIT_EXTERNAL_DIFF, bare or through env) and in git grep -O/--open-files-in-pager, so writes into a source file or the journal that the guard blocked before are now allowed at every tier, reopening the journal's every-tier guarantee.",
+        "resolution": "fixed in P108.16-4gh (f1a96d0e): Treat a span with any NAME=value assignment before the program as live, and treat -O/--open-files-in-pager as making git grep's words live; hook cases for each spelling red-first with the commit-message allow twin kept; correct the SECURITY.md sentence.",
+        "fixTask": "P108.16-4gh",
+        "commit": "f1a96d0e"
+      },
+      {
+        "id": "P108-R18",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-secrets-read.py _beyond_bound_verdict and _journal_write_hit; SECURITY.md journal bullet",
+        "issue": "A journal append nested past the walk's bound is allowed at observe and warn, because the journal arm walks only the views inside the bound, while SECURITY.md says such a command naming the journal is refused at every tier.",
+        "resolution": "fixed in P108.16-4gh (f1a96d0e): Run the commands past the bound through the journal arm too, so a journal target is refused at every tier; contract rows at observe and warn.",
+        "fixTask": "P108.16-4gh",
+        "commit": "f1a96d0e"
+      },
+      {
+        "id": "P108-R19",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-secrets-read.py _beyond_bound_verdict",
+        "issue": "The bound verdict fires on any command handed past the bound, including a read such as ls, so a read is refused at deny and asked at ask.",
+        "resolution": "fixed in P108.16-4gh (f1a96d0e): Grade commands past the bound by their write shapes and refuse only one carrying a write or an unreadable handed command.",
+        "fixTask": "P108.16-4gh",
+        "commit": "f1a96d0e"
+      },
+      {
+        "id": "P108-R20",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-secrets-read.py _existing_directory; SECURITY.md residuals",
+        "issue": "A directory or symlink that an earlier clause of the same command creates (mkdir, ln -s) is read as a file, so cp into it writes an uncovered source file at deny, and SECURITY.md does not name the shape.",
+        "resolution": "fixed in P108.16-4gh (f1a96d0e): Read a last operand an earlier clause creates with mkdir or names as an ln -s target as a directory, or name the shape among the residuals.",
+        "fixTask": "P108.16-4gh",
+        "commit": "f1a96d0e"
+      },
+      {
+        "id": "P108-R21",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_journal_io.py session-slug and unexpanded-home",
+        "issue": "With the shapes shared, the door refuses prose naming no machine: a whitespace-led single-dash word such as -home-dir is refused as a session slug and collapses a whole redacted value, and a tilde path such as the user's config directory is refused as unexpanded-home.",
+        "resolution": "fixed in P108.17-4gh (63f88868): Narrow session-slug to a real slug's shape (more than the user segment, or a path separator around it); record in code why unexpanded-home stays refused at the door, since the detector fails the build on it.",
+        "fixTask": "P108.17-4gh",
+        "commit": "63f88868"
+      },
+      {
+        "id": "P108-R22",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_journal_io.py MACHINE_PATH_TOKEN_START",
+        "issue": "The :// token start covers a file URL with an empty host but not one naming a host such as localhost before the home directory, which passes the door, redaction and the detector unchanged.",
+        "resolution": "fixed in P108.17-4gh (63f88868): Let a token start after file://<host> for the file scheme only, with refuse, redact and flag cases and an https twin.",
+        "fixTask": "P108.17-4gh",
+        "commit": "63f88868"
+      },
+      {
+        "id": "P108-R23",
+        "severity": "low",
+        "file": "SECURITY.md plan-gate residual paragraph",
+        "issue": "Two counts are written into prose: the known-divergence case count and the number of open shapes; the first is held by KNOWN_DIVERGENCE and rots when a row is added. Also unnamed residuals: GIT_CONFIG_PARAMETERS editor, git diff --output, cp -r of source files.",
+        "resolution": "fixed in P108.16-4gh (f1a96d0e): Point at KNOWN_DIVERGENCE instead of counting, drop the leading number, and name the unnamed residuals or close them.",
+        "fixTask": "P108.16-4gh",
+        "commit": "f1a96d0e"
+      },
+      {
+        "id": "P108-R24",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-secrets-read.py copy expansion and the manifest and journal arms",
+        "issue": "A recursive copy or directory move outside the project now expands into every file and each arm resolves every destination's tree with its own git call, so an ordinary cp -r of a few hundred files takes far longer than the hook's timeout, where it took a fraction of a second before this phase.",
+        "resolution": "fixed in P108.18-4gh (302a6006): Resolve the tree once per destination root (memoized by directory) and skip the expansion when the destination root lies outside the project; a case asserting the number of git calls is bounded by destination roots, not by files.",
+        "fixTask": "P108.18-4gh",
+        "commit": "302a6006"
+      },
+      {
+        "id": "P108-R25",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-secrets-read.py journal arm; SECURITY.md journal bullet",
+        "issue": "An interpreter journal append handed to a shell (bash -c, sh -c, eval around python -c or node -e) is allowed at observe and deny, already open before this phase, while the new SECURITY.md sentence and the task claim say the journal is refused at every tier wherever an append sits.",
+        "resolution": "fixed in P108.18-4gh (302a6006): Narrow the SECURITY.md sentence to what the code reads and name this shape among the residuals, with contract rows recording its per-tier verdict as a reasoned known divergence; the hash-chained journal detects such a write after the fact.",
+        "fixTask": "P108.18-4gh",
+        "commit": "302a6006"
+      },
+      {
+        "id": "P108-R26",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-secrets-read.py past-bound flat read; SECURITY.md",
+        "issue": "A journal redirect handed two or more levels past the bound is allowed at observe and warn, because the flat read skips the quoted words of the command it hands on and no view grades them, and SECURITY.md's every-tier opening reads as covering it.",
+        "resolution": "fixed in P108.18-4gh (302a6006): Narrow the sentence and name the shape as a residual with contract rows recording its per-tier verdict as a reasoned known divergence.",
+        "fixTask": "P108.18-4gh",
+        "commit": "302a6006"
+      },
+      {
+        "id": "P108-R27",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-secrets-read.py _quoted_words_are_data",
+        "issue": "An assignment prefix makes every quoted word of the command live, so an env-prefixed commit message or grep pattern that mentions a redirect is refused as a write, at every tier for the journal, where the same text without the prefix is allowed.",
+        "resolution": "fixed in P108.18-4gh (302a6006): Treat only the assignment words themselves as live and keep the program's arguments under the data-program rule; allow twins for an env-prefixed commit message and grep pattern.",
+        "fixTask": "P108.18-4gh",
+        "commit": "302a6006"
+      },
+      {
+        "id": "P108-R28",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_journal_io.py session-slug",
+        "issue": "The narrowed session-slug no longer catches a lone home slug bounded by a quote, an equals sign, a colon, a parenthesis or a line start, nor the Windows home slug, which the detector caught before, so a JSON value or key=value holding a home slug passes the writer and the build.",
+        "resolution": "fixed in P108.19-4gh (0cd45d3b): Accept the lone user segment when a non-whitespace delimiter or a text or line boundary bounds it, leaving only whitespace-led prose alone; rows in sp10 and q2f for a quoted JSON value and the Windows spelling.",
+        "fixTask": "P108.19-4gh",
+        "commit": "0cd45d3b"
+      },
+      {
+        "id": "P108-R29",
+        "severity": "med",
+        "file": "docs/audit/phases/P108.json (a closed task's outcome text)",
+        "issue": "An outcome text quoted a home word after a slash that the writer accepts and the detector flags, so committing the manifest would turn the build red; the writer and detector still differ on posix-home's leading separator.",
+        "resolution": "fixed in P108.18-4gh (302a6006): Reworded by the orchestrator; record the writer/detector posix-home difference in SECURITY.md as the open class it is.",
+        "fixTask": "P108.18-4gh",
+        "commit": "302a6006"
+      },
+      {
+        "id": "P108-R30",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-secrets-read.py _git_grep_runs_a_pager",
+        "issue": "Any single-dash word containing an uppercase O, including a pattern stuck to -e, is read as the pager option, over-reporting.",
+        "resolution": "fixed in P108.18-4gh (302a6006): Stop scanning a short-option cluster at the first option that takes a value.",
+        "fixTask": "P108.18-4gh",
+        "commit": "302a6006"
+      },
+      {
+        "id": "P108-R31",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-secrets-read.py _copy_destinations",
+        "issue": "A whole copy or move onto a new directory spelled with a trailing slash is read as landing inside a subdirectory named after the source, while it lands as the destination itself, so cp -r src/ lib/ and mv src/ lib/ are refused against a plan that declares the files they write, where the slashless twins are allowed and both were allowed before this phase.",
+        "resolution": "fixed in P108.20-4gh (104f9847): When the copy is whole and the slash-ended destination does not exist and no earlier clause made it, read it the way the slashless operand is read; allow twins per spelling and a block twin with the directory present; record the platform split for a slash-ended source onto an existing directory as a residual.",
+        "fixTask": "P108.20-4gh",
+        "commit": "104f9847"
+      },
+      {
+        "id": "P108-R32",
+        "severity": "low",
+        "file": "plugins/audit/hooks/_config.py tree memo; guard-secrets-read.py copy expansion",
+        "issue": "A whole copy onto existing directories inside a linked worktree still asks git once per directory, so a wide tree can exceed the hook's timeout, and a killed hook lets the write through.",
+        "resolution": "fixed in P108.20-4gh (104f9847): Answer a directory's descendants by containment under the toplevel already known, or bound the expansion by directory count and report the rest as not established.",
+        "fixTask": "P108.20-4gh",
+        "commit": "104f9847"
+      },
+      {
+        "id": "P108-R33",
+        "severity": "low",
+        "file": "SECURITY.md copy and residual sentences",
+        "issue": "Two sentences still say a whole-directory copy is read as every file inside it, though an out-of-project destination is one destination now; a residual paragraph counts its residuals while a third follows; the lone-slug over- and under-match shapes are not named.",
+        "resolution": "fixed in P108.20-4gh (104f9847): Add the out-of-project clause and the symlinked-subdirectory edge, drop the count, and name the lone-slug residual shapes.",
+        "fixTask": "P108.20-4gh",
+        "commit": "104f9847"
+      },
+      {
+        "id": "P108-R34",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_guard_secrets_read.py t11",
+        "issue": "The case fails when its fixture root sits under a path holding a harness slug, because redaction cuts the recorded file.",
+        "resolution": "fixed in P108.20-4gh (104f9847): Build the fixture under a root with no slug shape, or assert relative to the fixture root.",
+        "fixTask": "P108.20-4gh",
+        "commit": "104f9847"
+      }
+    ],
+    "outcome": "[findings: 34 - 2 high, 16 med, 16 low; 34 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "For every documented operation class, the plan gate's verdict at each tier is now an executable contract in test_hooks.py. A shell write gets the same verdict as an Edit, through one free-file slot shared in hooks/_config. The guard reads writes inside subshells, command substitutions, bash -c and eval, cp/mv/install destinations (including directories made earlier in the same command and recursive copies), git --output, interpreter writes with a keyword mode, and editor or pager settings that git runs. It stays within its time budget on wide copies. A quoted argument is read as text only where it provably is text, so commit messages and grep patterns that mention a redirect are not refused. The shapes the grammar deliberately does not read are named in SECURITY.md and recorded per tier as reasoned known divergences, rather than chased with more grammar. A refusal names a sanctioned tool, and a classifier with no verdict is recorded as could-not-run.\n\nThe journal: the plugin's own rows redact a machine path and are always written. Caller free text carrying one is refused at the verb before any write, gate commands and verified-by values included. The writer and the commit-time detector read one shared table of identity shapes, file URLs and home slugs included, and the remaining over- and under-match shapes are named.\n\nThe review ran six rounds. Rounds three to five found regressions introduced by the earlier fixes (a recursive copy slower than the hook timeout, an env prefix turning prose into a write, a slug detector regression, a trailing slash changing a verdict); each was fixed and proved by mutation in both directions. The phase gate is green, with screenshots and the interactive check.\n\nThe invariants check reports a manifest-revalidated breach on earlier task commits. Each recorded a task linked to a bug that reached the committed index only in a later index commit; that is the same bookkeeping-order class as the bug-link ordering finding recorded for the plugin. The current manifest validates, and every linked bug is reciprocal.",
   "tasks": [
     {
       "id": "P108.1",
       "title": "Assert the plan gate's verdict per operation class and tier from the hook corpus",
-      "status": "pending",
+      "status": "done",
       "description": "Write the plan gate's verdict contract as a test: a table keyed by operation class, each class naming its verdict at observe, warn and deny. Its instances are the hook corpus rows handed over in the brief, cited by row id. Each row goes through py-launch.sh to every PreToolUse hook hooks.json registers for its tool, against three fixture projects built under _harness.fixture_root with a local git identity, since the sweep supplies none. Rows whose current verdict differs from their class's intent are marked known-divergence with the basis they contradict, so the human task flips them rather than the table hiding them. Today those are b02, b03o and b17s, refused through the shell where the same change passes through Edit. Before spawning, the orchestrator asks the operator for the verdict of the three rows no document defines (b06, b10, g06) and passes the answers in. An answer that differs from today's behaviour is filed with /audit:bug and its row marked known-divergence. The documented-gap rows stay out of this table; they belong to the phase that names open shapes in SECURITY.md. The file is new, but _output.selftest_coverage() already assigns this name to hooks/hooks.json, so it is not an orphan and needs no layer, guide section or preamble. Measure its wall clock twice with a gap and report the spread.",
       "files": [
         "plugins/audit/tests/test_hooks.py"
@@ -55,21 +363,45 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b1094019",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/tests/test_hooks.py writes the plan gate's verdict contract as an executable table: each operation class (edit a declared file, restore one from HEAD, a trivial or a large edit of an undeclared file, write a test file, run a plugin script, read a non-secret, history-safe git, scratch outside the tree, rewrite recorded history, stash with a plan, unquoted git words, write the journal, edit the manifest as orchestrator or subagent, read a secret) names its verdict at observe, warn and deny with a basis, and its instances are the hook-corpus rows cited by id (documented-gap rows stay out; rows that call _command_is_read_only directly belong to that guard's suite). Each row runs every PreToolUse command whose hooks.json matcher fullmatches its tool, exactly as hooks.json spells it, against three git fixture projects under _harness.fixture_root (no manifest; a manifest with nothing running; a running phase), each row and tier with its own session and HOME; verdicts combine deny over ask over allow, and a hook that cannot run is never read as an allow. The operator's verdicts for the three rows no document defined are recorded with their dated basis (b06 allow, b10 deny, g06 allow; decided 2026-10-06 by the orchestrator under the operator's standing instruction, on the analysis's recommendation). Today's behaviour matches the corpus exactly; five rows are marked known-divergence with the basis they contradict - b02, b03o and b17s (a shell write refused at deny where the same change through Edit takes the trivial allowance) and b10 and g06 (today's verdict contradicts the operator's decision), the last two filed as bugs. Cases hk0a-d, hk1-hk5b and hk6a-e; every PreToolUse matcher is exercised or declared out of scope with a reason. Regression mode, so no red-first was owed; nine mutations of a scratch copy (combine order, a weakened class, a dropped or stale divergence mark, a matcher declared out of scope, a decision-less output read as allow, a missing launcher root, an undated operator decision, a no-op flip) each turned the suite red. Wall clock 5.35 s and 3.78 s real, 80 s apart.",
+        "descriptive": "What each kind of operation should get from the plugin's guards at each enforcement level is now a test run against the real hooks, so a guard that answers the same change differently depending on the tool is caught, and today's known differences are listed rather than hidden."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T21:26:46Z",
+      "completedAt": "2026-10-06T22:03:40Z",
+      "verifiedBy": [
+        "hk0a",
+        "hk1",
+        "hk2",
+        "hk2a",
+        "hk2b",
+        "hk3",
+        "hk3a",
+        "hk4",
+        "hk5",
+        "hk5a",
+        "hk5b",
+        "hk6a"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T22:03:26Z.c920dd",
+        "status": "passed",
+        "at": "2026-10-06T22:03:26Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b1094019",
+        "at": "2026-10-06T22:03:40Z",
+        "basis": "orchestrator check: the table, fixtures and cases the description asks for are present; the operator verdicts are recorded and the two that differ from today's behaviour are filed as bugs; nine mutations proved the suite can fail"
+      }
     },
     {
       "id": "P108.2",
       "title": "Make shell-write refusals name the remedy instead of the Edit/Write tools",
-      "status": "pending",
+      "status": "done",
       "description": "The deny and ask texts of guard-secrets-read's shell-write arms tell the model to use the Edit/Write tools, and guard-bash-writes' notices say the same. That is the opposite of what the harness tells a model in auto mode. Reword each to say what is true and what to do: the file is outside the running task (name the phase), so widen the task with /audit:task scope <taskId> --files <path>, or stop and ask the operator; exempt paths are unaffected. Only message constants and docstrings change, never grading logic. That includes the docstring sentences in guard-secrets-read.py and _config.plan_gate_mode that claim one file gets one verdict however it is written: they must name the first-trivial-file allowance as Edit-only until the verdict task lands. Update the existing case that pins the old phrase.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -96,21 +428,40 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "73c2aa44",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Shell-write refusals and notices no longer steer to the Edit/Write tools, which an auto-mode refusal has usually already steered the model away from; they name the remedy instead. guard-secrets-read.py's plan-gate deny and ask texts for a shell write, and guard-bash-writes.py's warn, named and unproven notices, now say to put the file on an in_progress task (/audit:task scope <taskId> --files ...) or to stop and ask the operator, keeping the exempt-paths sentence; the lock-conflict notice keeps its own remedy with the tool names spelled out. Docstrings in guard-secrets-read.py and _config.py (the enforce key and plan_gate_mode) now say a shell write and an Edit of one file agree on the TIER, not necessarily the verdict, because trivialLineThreshold's first-free-file allowance is read only on require-plan's Edit/Write path - the divergence the verdict-contract task records. No grading logic changed. Cases we9 (rewritten) and we9b in test_guard_secrets_read.py; ew1, ew2, ew3, bg14b and fl3 in test_guard_bash_writes.py. Red-first proved through the helper: 2/396 (we9, we9b) and 4/210 (ew1, ew3, fl3, bg14b) at HEAD. No model or classifier refusal occurred while editing these guard messages.",
+        "descriptive": "When the plugin stops a shell command that writes a file outside the plan, its message now says how to fix that - add the file to the running task or ask the operator - instead of suggesting a different editing tool."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T21:26:46Z",
+      "completedAt": "2026-10-06T21:54:43Z",
+      "verifiedBy": [
+        "we9",
+        "we9b",
+        "ew1",
+        "ew2",
+        "ew3",
+        "bg14b",
+        "fl3"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T21:54:33Z.89ba41",
+        "status": "passed",
+        "at": "2026-10-06T21:54:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "73c2aa44",
+        "at": "2026-10-06T21:54:43Z",
+        "basis": "orchestrator check: every shell-write refusal and notice template changed; docstrings corrected to tier agreement; red-first proved for both suites"
+      }
     },
     {
       "id": "P108.3",
       "title": "Record a classifier no-verdict as could-not-run, not as a failed attempt",
-      "status": "pending",
+      "status": "done",
       "description": "When the auto-mode permission classifier cannot reach a verdict, Claude Code refuses the tool call with text containing 'auto mode cannot determine the safety' or 'gave no verdict' (the wording seen in 2.1.2xx transcripts). The pipeline reads that as a failed attempt. Add an arm beside the infrastructure arm in execute-task.md: that text means the step produced no verdict. The arm records could-not-run with the refusal verbatim in task.outcome.technical, reverts the attempts increment, leaves the task in_progress, and reports the classifier as unavailable rather than raising a human fix item. Add the matching progress line to orchestrator.md, and tell the executor in audit-executor.md to report such a refusal verbatim as could-not-run, never as fail. Pin the fragments and their routing in test__refs.py so the rule has a mechanism. Blocked by P100, which edits both reference files.",
       "files": [
         "plugins/audit/reference/execute-task.md",
@@ -137,21 +488,38 @@
         "P100"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b8080a5c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "A classifier no-verdict is now its own arm, beside the infrastructure-failure arm, in reference/execute-task.md's step 4: on a tool-call refusal that says auto mode cannot determine the safety of the action or gave no verdict, the orchestrator reverts the attempt it counted, records the refusal verbatim in task.outcome.technical, leaves the task in_progress, reports the classifier as unavailable, and raises no human action item. orchestrator.md's progress output gains a matching [NO-VERDICT] line (no retry spent), and agents/audit-executor.md tells the executor to report such a refusal as could-not-run, never as a failure, with the refusal verbatim. test__refs.py pins all three (cv1-cv5), with cv3 as the twin that keeps the infrastructure arm's own human action item; red-first proved 305/309 at HEAD (cv1, cv2, cv4, cv5).",
+        "descriptive": "When Claude Code's safety classifier cannot decide on a step, the run now records it as an unavailable check rather than a failed attempt, so an agent's retry budget is not spent on something the work did not cause."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T21:26:46Z",
+      "completedAt": "2026-10-06T21:42:07Z",
+      "verifiedBy": [
+        "cv1",
+        "cv2",
+        "cv3",
+        "cv4",
+        "cv5"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T21:41:41Z.5e2a00",
+        "status": "passed",
+        "at": "2026-10-06T21:41:41Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b8080a5c",
+        "at": "2026-10-06T21:42:07Z",
+        "basis": "orchestrator check: the arm, the progress line and the executor rule are present and pinned; red-first proved"
+      }
     },
     {
       "id": "P108.4",
       "title": "Give a shell write the same plan-gate verdict as Edit of the same change",
-      "status": "pending",
+      "status": "done",
       "description": "Make a shell write and Edit of the same change get the same plan-gate verdict. The shell-write arm of guard-secrets-read reads the session's first-trivial-file slot the way require-plan does, through one reader moved into _config so the two cannot drift. The human decides how a shell write's magnitude is measured when the command does not state it, and once the verdicts agree, restores the one-verdict docstring sentences the message task qualified. Precondition, without which this task does not start: sort the shell-write refusals recorded since 3.0.0 into covered, first-trivial and uncovered, and record the result on this task with /audit:task note together with the command that produced it. An executor attempts the guard-reading code first, because the maintainer wants code written by agents; Claude also supplies the tests and the corpus rows. This step may be stopped by the model's safeguard; if so, record the refusal verbatim and hand it to the human.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -159,7 +527,10 @@
         "plugins/audit/hooks/require-plan.py",
         "plugins/audit/tests/test_guard_secrets_read.py",
         "plugins/audit/tests/test_require_plan.py",
-        "plugins/audit/tests/test_hooks.py"
+        "plugins/audit/tests/test_hooks.py",
+        "SECURITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/check-committed-pii.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -183,16 +554,1143 @@
         "P108.1",
         "P108.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "51032cbc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "A shell write and an Edit of the same change now get the same plan-gate verdict. hooks/_config.py holds the one reader and writer of the session's first-trivial slot: trivial_slot returns [] only for an absent slot file and [SLOT_UNREADABLE] for an unreadable, unparseable or nameless one (spent on a file nobody can name, so the write is graded by both tools); take_trivial_slot publishes atomically (mkstemp temp named plan-gate-tmp-*, os.link onto the slot name, temp removed in finally); on a volume without hard links (an os.link OSError other than FileExistsError) it falls back to _take_slot_exclusive, an O_CREAT|O_EXCL create plus the JSON dump, whose half-written file reads as spent; it returns True (taken), False (lost the race) or None (neither publish could write: the documented open door, every uncovered file allowed at deny too, worded 'could not be recorded' by both hooks); _slot_path keeps only [A-Za-z0-9_.-] of the session id, capped; text_lines / text_char_lines / text_magnitude are the one magnitude formula, shared with require-plan's _change_magnitude.\nguard-secrets-read.py: _decide_core asks the manifest arm first, then merges interpreter and shell-write hits (deduplicated by shown) and grades them in ONE _slot_write_verdict call, so no arm returns an allow early and the slot is spent at most once per command; a shell write is measured by the command's whole text and, over trivialLineThreshold, takes no slot and is graded; every graded hit is graded in its own tree and the strictest verdict (block > ask > allow) wins, naming the file that decided it; a lost race re-reads the slot and is graded against the winner. Content a command computes or fetches still takes the slot unmeasured, and nothing reports an oversized one yet (the guard-bash-writes follow-up task builds that report).\nrequire-plan.py: step 5 takes the slot at Pre for the trivial allowance, as the shell arm does (Post only confirms, taking it if Pre did not); allow.trivial is logged and 'recorded first trivial code file' said only when the take returns True; False re-reads and grades; None allows with 'the slot could not be recorded' and logs nothing. The header names this as the one exception to decide-at-Pre, commit-at-Post.\nSECURITY.md: the same-verdict sentence names the free-file slot and its exceptions (unmeasured computed/fetched content, no after-the-fact report yet, the unwritable-slot open door), in step with the guard header and plan_gate_mode's docstring.\nPrecondition (task note 1): shell-write refusals recorded since v3.0.0, sorted from the dogfood plan-gate events feed: covered 1, first-trivial 2, uncovered 25, unestablished 4. Magnitude decision and its correction: task notes 2 and 3.\nTests: test_guard_secrets_read ts1-ts25 and ts21b, tt1-tt3; test_require_plan ss0-ss3 (b2-b5 rewritten for the Pre-take contract); test_hooks b17h plus b02/b17s/b03o unmarked (known divergence now b10 and g06 only). Red-first: helper at HEAD b1094019 proved the guard suite (12 of 21 failing before HEAD's run stops at the missing take_trivial_slot), test_hooks (hk1/hk2/hk4) and test_require_plan (b2, b3, ss1); the cases HEAD cannot reach (ts20-ts23, tt1-tt3, ss3) were proved by scratch mutation rows (mutate_slot.py, mutate_round2.py), each red. Suites 423/423, 202/202, 131/131, plus test__config, test_guard_bash_writes, test_detect_plan_skip and the doc-reading suites; ruff, vermin, check-prohibitions and bench-hooks --gate green. Three review rounds, every finding fixed; no model or classifier refusal met. One hook refusal: the INSTALLED 3.1.0 guard placed a heredoc write to a scratchpad file (after `cd <scratchpad>`) inside the worktree; the executor used the Edit tool the refusal names, on the real out-of-repo path, and drove this branch's decide() to show it places the same command correctly.\nPII baseline: the precondition note's journal row (task.note, chained) quoted an operator command whose argument was an absolute path under the operator's home; the plan's copy was corrected to a repository-relative spelling, and tools/check-committed-pii.py gains one forward-only BASELINE row for the chained journal row, which cannot be rewritten. The write-time refusal that would have prevented it is filed separately.",
+        "descriptive": "Writing a file through a shell command and editing it with the Edit tool now get the same answer from the plan gate, including the one free uncovered file a session gets, and the remaining exceptions are written down in SECURITY.md."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T22:04:13Z",
+      "completedAt": "2026-10-07T01:08:37Z",
+      "verifiedBy": [
+        "ts1",
+        "ts11",
+        "ts12",
+        "ts13",
+        "ts15",
+        "ts17",
+        "ts18",
+        "ts20",
+        "ts21",
+        "ts21b",
+        "ts22",
+        "ts23",
+        "tt1",
+        "tt2",
+        "tt3",
+        "ss1",
+        "ss3",
+        "b17h",
+        "ts24",
+        "ts25"
+      ],
+      "notes": [
+        {
+          "at": "2026-10-06T22:06:38Z",
+          "text": "Precondition (2026-10-07): shell-write refusals recorded since 3.0.0 (tag v3.0.0 at 2026-09-18T00:42:55Z), sorted into covered / first-trivial / uncovered.\nCommand: python3 <scratchpad>/sort_shell_write_refusals.py <repo>/.claude/logs/plan-gate-events.jsonl (exit 0; read-only). Source: the dogfood checkout's plan-gate events feed, deny rows whose reason is one of the guard-secrets-read plan-gate write wordings. The redacted classifier corpus (quality-gates-internal .../classifier-events.redacted.jsonl) was read too: its guard-secrets-read rows carry no reason text and a truncated input, so a write cannot be told from a read there and none of its rows could be sorted; the result below rests on the events feed alone.\nRule: first-trivial = no earlier slot-taking row in the same session (allow.trivial, a require-plan slot-spent/second-file row, or an earlier shell-write refusal that would itself have taken the slot), so under one slot shared by both tools the write is allowed; uncovered = the slot was already spent, so Edit of the same file is graded by the tier too; covered = the pre-fix inline-eval wording that consulted no plan, so an Edit may have been covered (its row names no target).\nResult: covered 1, first-trivial 2, uncovered 25, plus 4 rows outside the three words: targets carrying an expansion ($SP/..., $SCRATCH/..., $D/...) that the current guard already allows as unestablished destinations. Of the 25 uncovered, 22 compare against a slot or target the feed truncated to its first character (the heredoc wording is cut short), so a repeat of the slot's own file cannot be ruled out for them; 3 (session 82de1879) are distinct named files after the slot was spent.\nReading: the shared slot changes the verdict of the first-trivial rows only; every other recorded refusal is one an Edit of the same file would also have met at the deny tier."
+        },
+        {
+          "at": "2026-10-06T22:06:39Z",
+          "text": "Magnitude decision (decided 2026-10-06 by the orchestrator on the operator's standing instruction; recorded 2026-10-07 as this task's basis): a shell write whose magnitude the command does not state takes the session's first-trivial slot exactly as an Edit within trivialLineThreshold would, because PreToolUse cannot see the change before it happens. The PostToolUse arm (guard-bash-writes), which does see the change, reports it when it exceeded trivialLineThreshold. So the PreToolUse verdict is the same whichever tool makes the change, and an oversized shell write is reported after the fact rather than guessed at beforehand."
+        },
+        {
+          "at": "2026-10-07T00:15:48Z",
+          "text": "Correction to the magnitude decision note (2026-10-07, after review round 2): the PostToolUse report of an oversized shell write that took the slot is NOT built by this task. Its builder is P108.7-4gh (guard-bash-writes reports an oversized shell write after the fact), which depends on this task. Until P108.7-4gh lands, an unstated oversized shell write that took the slot is reported by nothing, and the docstrings this task wrote say exactly that. \"Decided by the orchestrator on the operator's standing instruction\" refers to the operator's 2026-10-06 instruction adopting every proposal in this plan and asking for the run to go to completion without waiting. The decision stays open to the operator's review at phase sign-off."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T01:01:42Z.2b09ea",
+        "status": "passed",
+        "at": "2026-10-07T01:01:42Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "51032cbc",
+        "at": "2026-10-07T01:08:37Z",
+        "basis": "orchestrator check: one slot reader and writer in _config used by both hooks, b02/b03o/b17s match their Edit twins at every tier, precondition recorded as note 1, magnitude decision and its correction recorded as notes 2-3; review rounds 1-2 findings fixed and proved"
+      }
+    },
+    {
+      "id": "P108.5-4gh",
+      "title": "a shell append to the journal is refused like an Edit of it",
+      "status": "done",
+      "description": "Fix BUG-18-4gh: a shell append to the audit journal (echo '{}' >> docs/audit/journal/<file>.jsonl) passes every PreToolUse hook while Edit of the same journal is refused by guard-edits. Decided 2026-10-06: the shell write is deny at every tier, one operation one verdict. The shell-write arm that grades plan coverage (guard-secrets-read's write arm) refuses a shell write whose resolved target is a journal file, with a refusal that names the journal and the sanctioned writer, the same way guard-edits refuses the edit tools; the plugin's own journal writer, which runs as a script rather than a shell redirect, is unaffected. test_hooks.py's b10 loses its known-divergence mark.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_hooks.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: a shell redirect or append to a docs/audit/journal file is refused at every tier, naming the journal",
+          "plugins/audit/tests/test_hooks.py: b10 gets the class verdict deny at every tier without a known-divergence mark"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P108.4"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "25dd7c0d",
+      "outcome": {
+        "technical": "guard-secrets-read.py: new _journal_write_hit(cmd, root, cfg, cwd) finds a journal target the way the manifest arm finds a manifest target - the same shell write targets (>/>>, tee, sed -i) and placement steps - then asks _config.in_journal, the check guard-edits uses, so a journal moved with journal.dir is covered. In _decide_core it sits right after the manifest refusal and before _source_write_hit and _slot_write_verdict, so a journal append is refused before any slot logic and never takes or spends the free-file slot. The refusal (_SHELL_JOURNAL) names the journal file, says it is append-only, and names `audit-journal.py append` as the sanctioned writer; the plugin's own journal writer runs as a script and is unaffected. The module docstring gains the journal arm and states the remaining gap: a journal write through an interpreter call (python3 -c open(...,'a')) is not seen, because the interpreter arm reads only source-extension paths.\ntest_hooks.py: b10 loses its today/contradicts marks and keeps decided; KNOWN_DIVERGENCE is now (g06,). Existing case sm12, which asserted a shell write to a journal file was allowed, now points at docs/audit/notes/2026-09.md, keeping its purpose (an exempt non-manifest path stays writable when the manifest check runs first).\nTests: stage sj in test_guard_secrets_read.py - deny sj1 (every tier, message names the journal, append-only and the sanctioned writer), sj2 (no manifest: observe tier), sj3 (tee -a, sed -i), sj4 (subagent), sj5 (journal append chained with a source write: refused, slot untouched), sj6 (journal.dir moved); allow twins sj7 (cat), sj8 (wc -l <), sj9 (copy rows out), sj10 (docs/audit/notes.md), sj11 (audit-journal.py append), sj12 (old default path after the journal moved). Red-first proved through the helper at HEAD 51032cbc: test_guard_secrets_read 10 of 441 failing (sj deny cases), test_hooks 3 of 130 (hk1 b10, hk2 journal-write, hk4 b10). Over-fire mutation in a scratch copy turned sj9, sj10, sj12 red. Suites 441/441 and 130/130; ruff and house lints clean.",
+        "descriptive": "Appending to the audit journal from a shell command is now refused at every tier, the same way editing it is, with a message naming the journal's own writer, and such a command never uses up the session's one free file."
+      },
+      "startedAt": "2026-10-07T01:08:51Z",
+      "completedAt": "2026-10-07T01:32:48Z",
+      "verifiedBy": [
+        "sj1",
+        "sj2",
+        "sj3",
+        "sj4",
+        "sj5",
+        "sj6",
+        "sj7",
+        "sj9",
+        "sj11",
+        "sj12"
+      ],
+      "bugId": "BUG-18-4gh",
+      "testEvidence": {
+        "runId": "2026-10-07T01:32:28Z.ed1ee1",
+        "status": "passed",
+        "at": "2026-10-07T01:32:28Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "25dd7c0d",
+        "at": "2026-10-07T01:32:48Z",
+        "basis": "orchestrator check: BUG-18-4gh's expected behaviour holds at every tier, b10's divergence mark removed, the refusal precedes the slot logic, red-first proved with allow twins; the interpreter-call gap is stated, not hidden"
+      }
+    },
+    {
+      "id": "P108.6-4gh",
+      "title": "a secret path inside a string literal is not a read",
+      "status": "done",
+      "description": "Fix BUG-19-4gh: guard-secrets-read refuses a program fed to an interpreter's stdin whose only reference to a secret file is a string literal (python3 - <<'PY' DOC = \"the guard refuses open('.env') in a program\"; print(len(DOC)) PY) - the guard matches the program's text, not an operation it performs. Decided 2026-10-06: that program is allowed. A secret path that appears only inside a string literal that is not the argument of a read call is not a read; a program that passes such a literal to open(), read_text(), or a subprocess that reads it is still refused, and so is every shape the guard refuses today outside string literals. test_hooks.py's g06 loses its known-divergence mark. This is guard-reading code: if a model or classifier safeguard stops the attempt, the refusal is recorded verbatim with audit-task note and the task is handed to the human; nobody rewords the work to get past it.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_hooks.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: a heredoc program whose only secret path is a string literal not passed to a read is allowed, and the same literal passed to open() is still refused",
+          "plugins/audit/tests/test_hooks.py: g06 gets the class verdict allow at every tier without a known-divergence mark"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P108.5-4gh"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "ed891f8b",
+      "outcome": {
+        "technical": "guard-secrets-read.py, read classifier only: new _inert_literal_spans(body) (with _runs_text, _inert_literal, _in_spans, _LIVE_IN_SOME_LANGUAGE and the _RUNS_TEXT fragment list) returns the character spans of string literals no interpreter would run; _eval_read_targets, _unestablished_read_target and _shell_out_arguments take inert=() and skip a read-call or shell-out match that starts inside such a span; _eval_reads_a_secret computes the spans once per body. The write arms (_WRITE_CALL_EXPR, _eval_bindings, _eval_write_targets) are unchanged.\nDecisions: literals are found with ast.parse (lazily imported, warnings silenced), never a hand quote scan, so only a body that parses as Python is narrowed and anything else is graded as strictly as before; a literal counts as inert only on one line, with a plain ' or \" and no prefix (an f-string is code), its quote only at its ends, and none of backslash, $, @, backtick or #{ (the body may be fed to ruby, perl or node); the narrowing is off for the whole body if any call could run text (a callee that is not a plain name or attribute, or a name holding one of the _RUNS_TEXT fragments - exec, eval, spawn, popen, system, compile, import, run, call, load, send and the like), and the comment states the limit (a runner whose name holds none of them is not recognised). Residual, on the refusing side: the inline `python3 -c` spelling of the same program is still refused, because the eval arm reads that clause as shell text that does not parse as Python and fails closed.\ntest_hooks.py: g06 loses its today/contradicts marks; KNOWN_DIVERGENCE is now empty and the hk2a label prints 'none'.\nTests: allow sl1 (heredoc, the g06 shape), sl2 (here-string), sl7 (a shell-out call quoted inside a literal); block sl3 (literal beside a real open), sl4 (bound name), sl5 (exec), sl6 (Ruby interpolation), sl8 (real subprocess), sl9 (f-string). Red-first proved through the helper at HEAD 3dbef505: test_guard_secrets_read 447/450 (sl1, sl2, sl7), test_hooks 126/129 (hk1, hk2, hk4 on g06). In-memory mutations each red: no masking (sl1), _runs_text never (sl5), live-character check off (sl6), _runs_text always (sl1, over-fire). Suites 450/450, 129/129; ruff, vermin, bench-hooks --gate (3.11 not measured), and the source-reading lints green.",
+        "descriptive": "A program that only mentions reading a secret file inside a quoted string is no longer refused, while every program that actually reads one - directly, through a variable, through exec, or by interpolation - still is."
+      },
+      "startedAt": "2026-10-07T01:44:13Z",
+      "completedAt": "2026-10-07T02:08:49Z",
+      "verifiedBy": [
+        "sl1",
+        "sl2",
+        "sl3",
+        "sl4",
+        "sl5",
+        "sl6",
+        "sl7",
+        "sl8",
+        "sl9"
+      ],
+      "bugId": "BUG-19-4gh",
+      "testEvidence": {
+        "runId": "2026-10-07T02:08:39Z.fd7e71",
+        "status": "passed",
+        "at": "2026-10-07T02:08:39Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ed891f8b",
+        "at": "2026-10-07T02:08:49Z",
+        "basis": "orchestrator check: BUG-19-4gh's decided behaviour holds, g06's divergence mark removed, read arm only, allow and block twins red-first proved; the -c spelling residual is on the refusing side and stated"
+      }
+    },
+    {
+      "id": "P108.7-4gh",
+      "title": "an oversized shell write that took the free slot is reported after it lands",
+      "status": "done",
+      "description": "A shell write now takes the session's first-trivial slot at PreToolUse exactly as an Edit within trivialLineThreshold would, because the change cannot be seen before it happens (decided 2026-10-06). The PostToolUse arm that sees the change, guard-bash-writes, must therefore report a shell write that took the slot when the change it made exceeded trivialLineThreshold, measured the way require-plan measures an Edit's magnitude (one shared reader, not a second copy), naming the file, the measured magnitude and the threshold, and the remedy (put the file on an in_progress task, or ask the operator). It reports and never refuses, as guard-bash-writes does today. The docstrings that name this as an open residual (guard-secrets-read's header, _config's plan_gate_mode) are corrected once it holds.",
+      "files": [
+        "plugins/audit/hooks/guard-bash-writes.py",
+        "plugins/audit/tests/test_guard_bash_writes.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "SECURITY.md",
+        "plugins/audit/hooks/require-plan.py",
+        "plugins/audit/tests/test_require_plan.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_bash_writes.py: a shell write that took the first-trivial slot and changed more lines than trivialLineThreshold is reported with the file, the magnitude and the threshold, and one within the threshold is not"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P108.4"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "3dbef505",
+      "outcome": {
+        "technical": "hooks/_config.py: new change_magnitude(new, old) = max(text_magnitude(new), text_lines(old)), the Edit sizing formula written once; the slot section comment, plan_gate_mode's header row and its docstring now say the size is measured after the write and reported, never refused (at deny such a write still lands).\nguard-bash-writes.py: SLOT_SIZE_TEMPLATE names the file, `change magnitude N > trivialLineThreshold T`, what was measured and the remedy (`/audit:task scope ...` or ask the operator). _git_out, diff_sides and slot_write_magnitude size the change with change_magnitude: a file git does not track is measured whole, as a Write's content is; a tracked file by `git diff -U0 HEAD`, counting added and removed lines as an Edit's new and old text (diff header lines skipped). In decide, after the in_progress-coverage check, a file the session's slot holds is silent within the threshold (it is the session's free file, as for an Edit) and reported over it, or when it cannot be measured; a non-blocking warning only, skipped at the observe tier like the rest of the plan-coverage class. Decisions: a slot file within the threshold gets no 'no plan coverage' warning either; the change is measured against HEAD (the file was clean at the session's previous look); a size that cannot be measured is reported as unmeasured with its reason; only the pass where the file first turns dirty measures it (stated in the code).\nWidened: guard-secrets-read.py's _slot_write_verdict docstring and SECURITY.md now describe the report that exists (measured after it lands, reported with magnitude and threshold, never refused), in step with plan_gate_mode; require-plan's _change_magnitude Edit branch calls _config.change_magnitude (one formula; MultiEdit keeps its own different sums, deliberately).\nTests: test_guard_bash_writes sz1-sz9 (real git, threshold 5, the slot taken as the PreToolUse arm takes it); test_require_plan m10 (require-plan's Edit magnitude equals change_magnitude on three pairs each decided by a different term). Red-first proved through the helper at HEAD 51032cbc (sz1, sz3-sz7; 212/219); m10 locks a behaviour-preserving refactor and was shown red by a scratch mutation (202/203). Scratch mutations of the slot branch, header skip and both change_magnitude terms each went red. Suites: 219/219, 441/441, 203/203, test__config 281/281, test_hooks 130/130, doc-reading suites green; bench-hooks --gate within budget (3.11 not measured, no interpreter); ruff and vermin clean.",
+        "descriptive": "A shell write that used the session's one free file is now measured after it lands, with the same formula an Edit is sized by, and reported when it is larger than the trivial limit - so the free file can no longer silently carry a large change."
+      },
+      "startedAt": "2026-10-07T01:08:51Z",
+      "completedAt": "2026-10-07T01:44:12Z",
+      "verifiedBy": [
+        "sz1",
+        "sz3",
+        "sz4",
+        "sz5",
+        "sz6",
+        "sz7",
+        "sz9",
+        "m10"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T01:43:55Z.b34c60",
+        "status": "passed",
+        "at": "2026-10-07T01:43:55Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "3dbef505",
+        "at": "2026-10-07T01:44:12Z",
+        "basis": "orchestrator check: one shared magnitude formula used by require-plan and the post-write report, the report never refuses, the docstrings and SECURITY.md describe the report that exists, red-first proved"
+      }
+    },
+    {
+      "id": "P108.8-4gh",
+      "title": "a write inside a subshell or command substitution is graded like the same write outside it",
+      "status": "done",
+      "description": "Fix BUG-20-4gh. guard-secrets-read's shell-write reader must descend into subshell `( ... )` and command-substitution `$( ... )` (and backtick) bodies, so a redirect, `tee`, `sed -i` or interpreter write inside one is graded exactly like the same write outside it. Reuse the shared shell readers in hooks/_config (command_clauses / split_heredocs) rather than adding a second grammar. If a form stays unreadable, it is named in the guard's own list of what it cannot see. Cases: each form alone at every tier; each after an interpreter write in the same command (the second file is graded and the slot is spent at most once); and allow twins: a read-only subshell such as `(cd src && ls)`, and a substitution that only reads, such as `x=$(cat README.md)`.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_hooks.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: a redirect inside ( ... ) or $( ... ) to an uncovered file is graded by the tier like the same redirect outside it, alone and after an interpreter write, while a read-only subshell or substitution is allowed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P108.6-4gh"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "f62b51e3",
+      "outcome": {
+        "technical": "The defect: the guard's shell-write walker read a group's closing ) or backtick as the last character of the target name, so `(echo x > src/a.py)` became the target `src/a.py)` - no source extension, no verdict, allowed - while the same write outside the group was blocked; the same held for tee and sed -i, and a sed -i inside a double-quoted \"$( )\" was skipped as quoted text. guard-secrets-read.py: _quote_walk is replaced by _shell_states(text), which returns the open quote and the nesting depth before each character - an unquoted (, a $( inside double quotes and a backtick each open a group whose body is unquoted, and only a closer that pairs with an opener ends it (escaped characters marked, so \\; is still not a separator); _closes_group and _word_end cut a target at a paired closer; _in_quote and _clause_end read the states (_clause_end stops at a separator at the clause's own depth or at its group's closer); _inplace_targets computes the states once; _shell_write_targets cuts redirect and tee targets at the paired closer. The manifest and journal arms use the same extractor, so a journal append inside backticks is refused too. The existing walker was extended rather than a second grammar added; hooks/_config was not needed (the shell-write path never calls command_clauses or split_heredocs for its targets). Named remaining gap, pre-existing: a command handed to another program as a quoted argument (bash -c \"sed -i ...\") is not read by the sed -i arm (the redirect and tee arms do read quoted text, so bash -c \"echo x > src/a.py\" is blocked).\nTests: stage sb in test_guard_secrets_read.py - sb1 (redirect, tee, sed -i and interpreter inside ( ), $( ), backticks and x=\"$( )\" get the bare form's verdict at every tier, deny naming the file), sb2/sb3 (after an interpreter write, the second file is refused at deny with no slot spent; at warn the slot holds only the first), sb4 (a journal append inside each wrapper is refused), sb5 (read-only groups allowed, no slot), sb6 (the closer is not part of the target), sb7 (a ( inside a quoted name stays in it - over-block guard); test_hooks rows b10p, b10b (journal-write class) and n18, n19 (read-only). Red-first proved through the helper at HEAD ed891f8b: test_guard_secrets_read 479/511 (32 failing incl. sb1), test_hooks 134/137 (hk1, hk2, hk4). Scratch mutations each red: target cut removed, every closer treated as a group closer (sb7, ud1), $( in double quotes left quoted, clause end ignoring the group closer. Suites 511/511 and 137/137 plus every suite that loads the guard; ruff, vermin, bench-hooks --gate (3.11 not measured) clean.",
+        "descriptive": "Wrapping a file write in parentheses, a command substitution or backticks no longer hides it from the plan gate: it gets the same answer as the same write written plainly, while groups that only read stay allowed."
+      },
+      "startedAt": "2026-10-07T02:08:50Z",
+      "completedAt": "2026-10-07T02:25:10Z",
+      "verifiedBy": [
+        "sb1",
+        "sb2",
+        "sb3",
+        "sb4",
+        "sb5",
+        "sb6",
+        "sb7"
+      ],
+      "bugId": "BUG-20-4gh",
+      "testEvidence": {
+        "runId": "2026-10-07T02:24:35Z.8727fe",
+        "status": "passed",
+        "at": "2026-10-07T02:24:35Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "f62b51e3",
+        "at": "2026-10-07T02:25:10Z",
+        "basis": "orchestrator check: BUG-20-4gh's expected behaviour holds for every form and wrapper, the existing walker extended instead of a second grammar, read-only twins allowed, red-first proved; the bash -c quoted-argument gap is pre-existing and named"
+      }
+    },
+    {
+      "id": "P108.9-4gh",
+      "title": "free text never carries a machine path into a chained journal row",
+      "status": "done",
+      "description": "Fix BUG-21-4gh. Free text that a verb takes from its caller and writes into the hash-chained journal must not carry a machine path into a committed row. Such text includes task notes, technical and descriptive outcomes, reasons, finding text and refusal reasons.\n\nToday _journal_io's redaction section answers structural fields before row_hash() and leaves free prose to the after-the-fact detector, tools/check-committed-pii.py. By the time the detector reports, the row is chained, and only a BASELINE row can account for it.\n\nThe fix sits at the one place every row passes before it is hashed. A free-text value is checked there for the path shapes the detector reads as machine identity: a home directory under /Users/<name> or /home/<name>, a Windows user directory, and this checkout's absolute root.\n- A path inside this repository is rewritten to its repo-relative spelling. That is the structural answer the section already uses.\n- Anything else of those shapes is refused before the row is written. The refusal names the field and the shape, never echoes the value, and says how to say it instead (a repo-relative path, or <scratchpad>/<home> placeholders).\n- The detector's patterns are not copied. Share them with tools/check-committed-pii.py through one definition, if the layer rule allows; otherwise state why the two must agree, and add a case that holds them equal.\n\nCases:\n- A note quoting a home path is refused and the journal is unchanged.\n- An in-repo absolute path is written repo-relative.\n- Ordinary prose that mentions 'home' or 'Users' as words is written unchanged.\n- The refusal text does not contain the value.",
+      "files": [
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "tools/check-committed-pii.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__journal_io.py: a free-text field quoting a home-directory path is refused before the row is hashed and the journal is unchanged, an in-repo absolute path is written repo-relative, and prose using 'home' or 'Users' as words is written unchanged"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "bd415c44",
+      "outcome": {
+        "technical": "_journal_io's redaction section, at the one place every row passes before row_hash: _MACHINE_PATH_SHAPES (posix-home and windows-user-path, moved here from the detector) with MACHINE_PATH_SHAPES as a public alias for it and MACHINE_PATH_TOKEN_START, the token boundary both readers use; _checkout_roots(project) (the root as written and resolved, never the filesystem root); _in_repo_relative rewrites each absolute token inside the repo through repo_relative_or_token (only tokens os.path.isabs calls absolute on this platform); machine_path_shape(text, roots) asks about the checkout root first, then each shape; free_text(project, field, value) rewrites, then raises ValueError if a shape remains, naming the field (summary, details.reason, details.changes[3].to) and the shape, never the value, and saying to write a repo-relative path or <home>/... / <scratchpad>/... . _normalise runs it on summary and normalise_details on every value except cwd (already a token) and the command facts, before _clip and row_hash, so hook rows are covered as well as CLI verbs. tools/check-committed-pii.py imports the shared definition (DETECTORS built from _journal_io.MACHINE_PATH_SHAPES and the token start), so the writer and the detector read one pattern set. Limits stated: append() still swallows the refusal and returns False, so a verb calling append() drops the row and its message (surfacing it needs caller files); a repo-relative path beginning home/<name> or Users/<name> is refused (over-refusal); ft6's checkout-root shape assertion is skipped on Windows. Cost measured twice with a gap: _normalise about 30-32 µs per row, free_text about 10-11 µs; bench-hooks --gate green.\nTests: test__journal_io ft1-ft7 (a home path in a note refused with the journal unchanged; an in-repo absolute path written repo-relative; prose using 'home' and 'Users' as words written unchanged; the refusal does not echo the value; the checkout root refused; the detector's rows are the writer's own objects). Red-first proved through the helper at HEAD e534952d (ft1-ft4, ft6; 191/197); an in-memory over-fire mutation turned the allow cases red. test__journal_io 216/216, test_audit_journal 186/186, check-committed-pii --selftest 35/35 and the real scan green, full sweep 306/306.",
+        "descriptive": "A note, outcome or reason that quotes a home directory or this checkout's full path is now refused before it becomes a permanent journal row, and an absolute path inside the repository is written repository-relative, with the writer and the privacy check sharing one definition of what counts."
+      },
+      "startedAt": "2026-10-07T02:27:40Z",
+      "completedAt": "2026-10-07T02:46:18Z",
+      "verifiedBy": [
+        "ft1",
+        "ft2",
+        "ft3",
+        "ft4",
+        "ft5",
+        "ft6",
+        "ft7"
+      ],
+      "bugId": "BUG-21-4gh",
+      "testEvidence": {
+        "runId": "2026-10-07T02:46:07Z.e991d0",
+        "status": "passed",
+        "at": "2026-10-07T02:46:07Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "bd415c44",
+        "at": "2026-10-07T02:46:18Z",
+        "basis": "orchestrator check: BUG-21-4gh's expected behaviour holds at the one place every row passes, one pattern definition shared with the detector, red-first proved; the append() swallow is a stated limit for the phase review"
+      }
+    },
+    {
+      "id": "P108.10-4gh",
+      "title": "a machine path in a journal row is redacted when the plugin wrote it, and refused before any write when a caller typed it",
+      "status": "done",
+      "description": "Fixes review findings P108-R1 and P108-R2 (high), P108-R3 and P108-R4. They concern the machine-path rule on journal rows.\n\nSplit the rule by who wrote the text.\n\n- Text the plugin builds itself. This covers hook rows (journal-writes' rendered changes), program output (scoped-commit withdrawal reasons, verdict sentences, close-phase basis) and anything else not typed by a caller. A machine path there is REDACTED in place, the same way redacted_text already treats program output: the token becomes OUTSIDE_TOKEN or a named marker. The row is still written. A hook or verb never drops its own row because of what a value contains.\n\n- Free text a caller hands a verb. This covers note text, outcomes, reasons, finding text and the panel's free-text saves. The check is public (for example _journal_io.check_free_text(project, field, value)). Each verb calls it BEFORE it writes the plan, the shard or the panel save. When the check fails, the verb refuses with a non-zero exit and the field/shape/remedy text, and neither the manifest nor the journal takes the value. The verbs are audit-task (note, done, cancel, block, reopen, finding, bug-add and every other free-text flag), set-priority, derive-phase-gate and the panel's write path. Any append that still fails carries its reason into journaledWhy, never silently.\n\n- The checkout-root shape requires a token start before the root as well as after it, so a short root (/src, /app, /repo, /workspace) never matches a relative path or URL containing that segment. A relative 'home/<x>' at the start of a token is flagged by the detector only. The writer does not refuse it, because a repository can hold a home/ directory.\n\nCases:\n- A journal-writes manifest edit whose value holds a home path still yields a manifest.edit row, and the row does not contain the path.\n- A withdrawal reason quoting an outside .git path is written tokenised.\n- `audit-task note` with a home path exits non-zero, leaves the shard unchanged and names the field.\n- The panel save of such a value is refused before writing.\n- A short-root fixture writes 'lib/src/foo.ts' and a URL unchanged.",
+      "files": [
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/tests/test_journal_writes.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/set-priority.py",
+        "plugins/audit/tests/test_set_priority.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/tests/test_derive_phase_gate.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "tools/check-committed-pii.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_journal_writes.py: a manifest edit whose value holds a home path still yields a manifest.edit row, and the row does not carry the path",
+          "plugins/audit/tests/test_audit_task.py: a note carrying a home path exits non-zero, leaves the shard unchanged and names the field",
+          "plugins/audit/tests/test__journal_io.py: a withdrawal reason quoting an outside path is written tokenised, and a short checkout root never matches a relative path or URL containing that segment"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "validate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "179d4f18",
+      "outcome": {
+        "technical": "_journal_io.py splits the machine-path rule by who wrote the text. check_free_text(project, field, value) judges caller text as typed and returns None or a refusal naming the field, the shape and the remedy, never the value; redacted_free_text(project, value) is for the plugin's own text and never raises: in-repo absolute paths become repo-relative, any token still carrying a machine path becomes OUTSIDE_TOKEN, and a shape crossing token boundaries replaces the whole value. free_text is removed; _normalise and normalise_details redact instead of raising, so a hook or verb never loses its own row over a value. machine_path_shape needs a token start before the checkout root as well as after it, and the writer's posix-home shape needs a leading separator, so a short root no longer matches relative paths or URLs; the detector still reads the same pattern objects. append_why and append_from_cli_why return the path or (False, reason); append and append_from_cli wrap them. audit-task.py: resolve_briefs runs check_free_text on every prose flag after the stdin read and before the lock, so neither the shard nor the journal takes a refused value; _finding_problems applies the same check to issue and resolution for --findings-file batches; every 'did NOT take' and 'not journaled' line prints the reason. set-priority.py and derive-phase-gate.py take the same append path and print the reason (derive-phase-gate --json adds journaledWhy and journaledReason when a row failed). _panel_write.py builds the journaled block once (journal_block) and refuses a change whose new value carries a machine path before the write, in both the composition and config writers; only the new value is judged, so a save can still remove an old one. The failure reason travels in a new journaledReason key because the panel toast and its pin compare journaledWhy to the exact word. One forward-only BASELINE row in check-committed-pii.py covers a chained journal row that quotes the task's own relative example. Red-first: test__journal_io (10 cases), test_journal_writes mp1 and test__panel_write (3 cases) failed at HEAD and pass with the change; every refusal case has an allow twin. Six other argument-taking appenders now redact rather than drop, but do not refuse caller text at their door.",
+        "descriptive": "A hook or command no longer loses its own audit-trail entry because a value mentions a machine path: the plugin's own text is redacted and written, and a path typed by the caller is refused before anything is saved."
+      },
+      "startedAt": "2026-10-07T05:02:18Z",
+      "completedAt": "2026-10-07T05:43:54Z",
+      "verifiedBy": [
+        "ft1",
+        "ft2",
+        "ft2b",
+        "ft3",
+        "ft6",
+        "ft8",
+        "ft9",
+        "ft10",
+        "ft11",
+        "ft12",
+        "mp1",
+        "nt3",
+        "nt4",
+        "panel home-path refusal and twin"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T05:41:54Z.405b99",
+        "status": "passed",
+        "at": "2026-10-07T05:41:54Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "179d4f18",
+        "at": "2026-10-07T05:43:54Z",
+        "basis": "orchestrator check: P108-R1..R4 fixed, redaction for plugin text and refusal at the door for caller text, panel writers refuse before writing, red-first proved with allow twins, residual appenders named"
+      }
+    },
+    {
+      "id": "P108.11-4gh",
+      "title": "a write inside bash -c, eval, cp/mv/install or an interpreter journal append gets the bare form's verdict",
+      "status": "done",
+      "description": "Fixes review findings P108-R6 and P108-R8. They are real bypasses at the deny tier.\n\nguard-secrets-read's shell-write arm also reads three things it misses today:\n- the command inside a `bash -c` / `sh -c` / `zsh -c` argument and an `eval` argument;\n- the destination operand of cp, mv and install;\n- for the journal, an interpreter write (python3 -c / a heredoc program that opens a journal file for writing or appending).\n\nIt reads them through the shared shell readers in hooks/_config (the wrapper unwrapping it already uses for env, sudo, xargs and the like), never a second grammar. If unwrapping a `-c` argument needs a change to _config, make it there; hooks/_config.py is in this task's files.\n\nEach form gets the same verdict as the bare form at every tier:\n- `bash -c \"sed -i ... src/app.py\"`\n- `eval \"sed -i ...\"`\n- `sh -c \"sed -i ... <journal>\"`\n- `python3 -c \"open('<journal>','a')...\"`\n- `cp notes.md <journal>`\n- `cp x src/app.py`\n\nThe allow twins stay allowed:\n- `bash -c \"ls src\"`\n- `eval \"echo hi\"`\n- `cp src/app.py /tmp/x`\n- a program that only reads the journal\n\ntest_hooks.py gains rows for these shapes in their classes. Any shape that is still left open is listed in KNOWN_DIVERGENCE with today and contradicts set, so the contract records the gap.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_hooks.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: bash -c, sh -c and eval sed -i, cp/mv/install destinations and an interpreter journal append each get the bare form's verdict at every tier, while read-only twins stay allowed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "fb2f68fa",
+      "outcome": {
+        "technical": "hooks/_config.py: shell_words (the former _dir_change_words, now public and used by effective_cwd; it reads a backslash before $, a backtick, \" or a backslash inside double quotes, and before a quote outside them, as an escape); _handed_command and handed_commands(text) read the command a shell's -c or eval runs (the program found past wrappers through program_candidates, so sudo bash -c and env A=1 sh -c read like bash -c; a c anywhere in a short-option cluster counts; the command is the first operand after the options, value-taking options skipped; an operand before -c is a script run; eval joins its arguments as the shell does); program_name(word) is a public name for _program_of; effective_cwd follows a literal cd inside eval (unreadable returns None), while a cd inside bash -c moves only the child shell. guard-secrets-read.py: _simple_commands cuts at separators and group openers/closers outside quotes; _copy_destinations/_copy_targets read cp, mv and install in command position (the last operand is written; a source's name inside the destination for a trailing slash, several sources, or -t/--target-directory; install -d writes nothing) and _shell_write_targets includes them; _write_views(text, cwd) returns the text plus every command it hands to a shell or eval, each placed at effective_cwd, nested up to _MAX_HANDED levels, and the source, manifest and journal write checks go through every view; _journal_write_hit also takes the interpreter clauses' write targets, so open(<journal>, 'a') in python3 -c or a heredoc program is refused at every tier while a read-only program is not. The header, the _shell_states comment, the docstrings and the journal refusal text name the new forms. Decisions: an eval's literal cd is followed (same shell), an eval of a substitution leaves the walk alone; a destination written without a trailing slash is read as the file it names; an interpreter write to the manifest stays a stated residual (the scope named the journal). Found, not fixed: guard-history-rewrite keeps its own -c/eval reader (its eval takes only the next word) - one grammar instead of two is a follow-up.\nTests: test_guard_secrets_read stage ww (ww1 sed -i handed to bash/sh/zsh -c, sh -ec, sudo bash -c and eval; ww2 cp/mv/install onto a source file; ww3 a cd inside bash -c; ww4 seven journal forms; ww5 eight allow twins taking no slot; ww6 the destination grammar), each graded case compared tier by tier against the bare form; test__config hc1-hc3; test_hooks rows b17c, b17v, b17p, b10s, b10e, b10i, b10c, n20-n22, b21 (KNOWN_DIVERGENCE still empty). Red-first proved through the helper at HEAD bd415c44 for all three suites (546/564, 281/284, 150/159). Over-fire mutations red: dropping the -c requirement (hc2), a quote-blind copy split (ww5). Suites 564/564, 284/284, 159/159 and every neighbouring guard suite green; ruff, vermin, bench-hooks --gate (3.11 not measured) clean.",
+        "descriptive": "Wrapping a file write in bash -c or eval, copying over a file, or appending to the journal from a script is now judged the same way as writing it directly."
+      },
+      "startedAt": "2026-10-07T05:02:18Z",
+      "completedAt": "2026-10-07T05:43:55Z",
+      "verifiedBy": [
+        "hc1",
+        "hc2",
+        "hc3",
+        "ww5",
+        "b17c",
+        "b17v",
+        "b17p",
+        "b10s",
+        "b10e",
+        "b10i",
+        "b10c",
+        "n20",
+        "n21",
+        "n22",
+        "b21"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T05:43:43Z.afdcd9",
+        "status": "passed",
+        "at": "2026-10-07T05:43:43Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "fb2f68fa",
+        "at": "2026-10-07T05:43:55Z",
+        "basis": "orchestrator check: P108-R6 and R8 fixed through shared shell readers in hooks/_config.py, every write check runs over each handed command, residual shapes recorded"
+      }
+    },
+    {
+      "id": "P108.12-4gh",
+      "title": "SECURITY.md's trail and plan-gate sections describe the journal and guard as they now behave",
+      "status": "done",
+      "description": "Fixes review findings P108-R5 and P108-R7.\n\nSECURITY.md's trail section describes the journal as it now behaves:\n- Rows the plugin builds itself redact a machine path and are still written.\n- Caller free text carrying one is refused by the verb before anything is written.\n- The fail-mode table's journal rows match that.\n\nThe hand-edits bullet names the PreToolUse shell arm, which refuses redirect, tee, sed -i, cp/mv/install, -c and eval forms, and interpreter writes into the journal at every tier, plus whatever residual the guard task left open. The plan-gate paragraph lists any remaining open shapes, together with the guard-bash-writes after-the-fact report.\n\nEvery sentence must be true of the code as committed by the two tasks this one depends on.\n\ntest__refs.py's section-marker comment that cites a task id loses the id and keeps its constraint.",
+      "files": [
+        "SECURITY.md",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P108.10-4gh",
+        "P108.11-4gh"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "c7ff7d1d",
+      "outcome": {
+        "technical": "SECURITY.md's trail section now says every journal writer (the hooks, the panel and the argument-taking scripts commit-task-work, commit-manifest-index, audit-journal, commit-audit-state, record-risk-confirmation and close-phase) redacts a machine path in a row's free text through _journal_io.redacted_free_text and still writes the row, while only audit-task's prose flags and a panel save ask check_free_text and refuse such text before anything is written; the fail-mode table's journal-hook row is unchanged because the refusal is the verb's door. The hand-edits bullet names guard-secrets-read's PreToolUse shell arm: redirect, tee, sed -i, the destination of cp/mv/install, those forms handed to a shell's -c or to eval, and an interpreter write naming the journal are refused at every tier, and it says this reading is not shared with guard-history-rewrite's own older -c/eval reader, whose eval takes only the next word. The plan-gate paragraph lists the added shell write forms the shard-lock denial catches and states the open residual: an interpreter write naming the manifest, its lock or a shard is not read by that arm, with guard-bash-writes' after-the-fact report as the backstop. Each sentence was checked against the committed code of the two tasks it depends on. test__refs.py's section-marker comment drops its task id and keeps its constraint. Gate-only; no number in prose (doc_prose_numbers over SECURITY.md reports nothing).",
+        "descriptive": "The security document now says exactly which journal text is redacted and which is refused, which shell write forms the guards catch, and which shapes are still open."
+      },
+      "startedAt": "2026-10-07T05:44:10Z",
+      "completedAt": "2026-10-07T05:53:34Z",
+      "verifiedBy": [
+        "test__refs",
+        "test__output",
+        "test__deps selftests"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T05:53:24Z.3ee57f",
+        "status": "passed",
+        "at": "2026-10-07T05:53:24Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c7ff7d1d",
+        "at": "2026-10-07T05:53:34Z",
+        "basis": "orchestrator check: P108-R5 and R7 fixed, every sentence read against the committed code of the redaction and shell-arm tasks, residuals stated rather than omitted"
+      }
+    },
+    {
+      "id": "P108.13-4gh",
+      "title": "the journal writer and the commit-time detector recognise the same identity shapes, at every caller door",
+      "status": "done",
+      "description": "Fixes review findings P108-R9, P108-R11, P108-R12 and P108-R15. The journal writer and the commit-time detector must recognise the same identity shapes.\n\n- Detector shapes in the writer. tools/check-committed-pii.py flags session-slug, tempdir-session, escaped-path and unexpanded-home. Move these into _journal_io as shared pattern objects, the way MACHINE_PATH_SHAPES already is, so the detector reads the same objects. machine_path_shape reads them too, so redacted_free_text replaces them and check_free_text refuses them. The one deliberate difference stays: a relative path whose first segment is home.\n- File URLs. A token may start after a URL scheme's slashes, so a file URL into a home directory is refused at the door, redacted in a plugin row, and flagged by the detector. An https URL whose path merely contains the word Users stays allowed.\n- More flags at the door. Values of --gate, --gate-set, scope's --gate and done's --verified-by go through the same check_free_text door before the lock, like the prose flags.\n- Symlinks. Redaction decides inside or outside on the realpath, but relativises the normalised spelling when that spelling lies under the root. A path through a symlinked directory therefore keeps the spelling the writer used.\n\nCases, each in both directions:\n- each detector shape, redacted in a hook row and refused at the audit-task door;\n- a file URL refused, redacted and flagged, with an https allow twin;\n- a retarget --gate carrying a home path refused, with a plain-command twin allowed;\n- a symlinked directory keeps its own spelling.",
+      "files": [
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "tools/check-committed-pii.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_journal_writes.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "33173cfc",
+      "outcome": {
+        "technical": "_journal_io.py: session-slug, escaped-path, tempdir-session and unexpanded-home join _MACHINE_PATH_SHAPES, so machine_path_shape, check_free_text and redacted_free_text read every shape the detector flags; the only shape read differently by the writer is still posix-home, which needs a leading separator. session-slug is anchored at a slug start (start of text, whitespace, a quote, =, / or backslash, never a letter or dash), keeping the Windows C--Users- spelling, so kebab prose such as my-home-page is neither refused nor flagged while a real slug is caught wherever it sits. MACHINE_PATH_TOKEN_START also matches right after ://, so a file URL into a home directory is refused, redacted and flagged, while an https URL whose path holds the word Users is not; the checkout-root check uses the same rule. repo_relative_or_token still decides inside or outside on the realpath, but _spelled_under returns the normalised spelling when it lies under the root and resolves to the same file, so a path through a symlinked directory keeps the writer's spelling and a link pointing outside still gets the outside token. A value whose shape has no separator turns whole into the token. tools/check-committed-pii.py assigns DETECTORS from _journal_io.MACHINE_PATH_SHAPES and defines no shape of its own. audit-task.py: resolve_verbatim_values runs after resolve_briefs and before the lock and puts every --gate, --gate-set and --verified-by value through check_free_text, on every verb that takes them. Red-first proved at HEAD for ft7, sp1, sp3, sp5, mp2, nt5 and md1; sp7/sp8 and q2c/q2d proved by scratch-copy mutation; over-fire mutations (slug start dropped, token start emptied, _spelled_under widened, unexpanded-home widened, door widened) turned sp2, sp4, sp6, sp8, nt6, md2 and q2d red; narrowing mutations turned the deny cases red. check-committed-pii exits 0 on the tree with no new BASELINE row.",
+        "descriptive": "Every machine path the commit check would flag is now redacted from the plugin's own journal rows and refused when a caller types it, including file URLs and gate commands, while ordinary hyphenated words are left alone."
+      },
+      "startedAt": "2026-10-07T06:01:33Z",
+      "completedAt": "2026-10-07T06:56:45Z",
+      "verifiedBy": [
+        "ft7",
+        "sp1",
+        "sp2",
+        "sp3",
+        "sp4",
+        "sp5",
+        "sp6",
+        "sp7",
+        "sp8",
+        "mp2",
+        "nt5",
+        "nt6",
+        "md1",
+        "md2",
+        "q2c",
+        "q2d"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T06:56:37Z.149c35",
+        "status": "passed",
+        "at": "2026-10-07T06:56:37Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "33173cfc",
+        "at": "2026-10-07T06:56:45Z",
+        "basis": "orchestrator check: P108-R9, R11, R12 and R15 fixed through one shared shape table read by writer and detector, slug anchored to its real placements, red-first and over-fire mutations proved in both directions"
+      }
+    },
+    {
+      "id": "P108.14-4gh",
+      "title": "a shell write gets its bare form's verdict in every spelling the shell arm reads, and a quoted argument is not a redirect",
+      "status": "done",
+      "description": "Fixes review findings P108-R10, P108-R13, P108-R14 and P108-R16. A shell write gets its bare form's verdict in every spelling the shell arm reads, and a quoted argument is not read as a redirect.\n\n- cp, mv and install. A last operand that resolves at the effective cwd to an existing directory is read as a directory, so the source's name inside it is the target. This holds even when the directory is spelled without a trailing slash.\n- Nesting depth. When the handed-command walk reaches its depth bound and a further handed command exists, that command is graded unresolved at the deny tier rather than read as nothing.\n- Interpreter writes. The interpreter write grammar reads a keyword mode= (for example mode='a' or mode='w') as well as the positional mode, for the journal arm and the source arm alike.\n- Redirect and tee. Handed commands are already graded through their own views, so the redirect and tee arms skip matches inside quotes, as the in-place arm does. A commit message that mentions a redirect, and a handed cd that leaves the tree, are no longer read as writes. A handed redirect is read once, at its own cwd.\n\nCases, each with an allow twin:\n- cp onto an existing directory with no slash;\n- a nesting one level past the bound;\n- open with a keyword mode, against the journal and a source file, at each tier;\n- a commit message containing a redirect;\n- a handed cd out of the tree followed by a redirect.\n\ntest_hooks.py's contract rows cover the new shapes. KNOWN_DIVERGENCE lists any shape still left open, with its reason.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_hooks.py",
+        "plugins/audit/tests/test__config.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "b22c2c41",
+      "outcome": {
+        "technical": "guard-secrets-read.py only. cp, mv and install: _copy_destinations reads a slashless last operand as a directory when _existing_directory places it at the command's cwd and finds a directory on disk, while -T/--no-target-directory keeps it a file; the cwd is threaded through _copy_targets and _shell_write_targets, and the source, manifest and journal arms pass their view's own cwd. Nesting: _write_views delegates to _handed_walk, which also returns the handed commands past the bound; _decide_core grades those through _beyond_bound_verdict before the slot (block at deny, ask at ask, named in the not-established allow message at observe and warn), sharing the deny-cause sentence through _plan_gate_cause. Keyword mode: the interpreter write grammar's open arm accepts mode= after other keyword arguments, for journal and source alike, and newline='' is not read as a mode. Redirect and tee: a quoted match is skipped only where it is provably text or graded elsewhere - a quoted argument of echo, printf, grep-family or rg; a quoted argument of git for commit/tag/notes/log/show/grep/diff/status/add with no global -c or --config-env; the handed word of eval or of a shell -c when it is the last word - and every other program keeps the quoted read, so no shape the outer read caught is opened ($( ), backticks, heredocs, find -exec sh -c, watch and git -c core.pager keep their verdicts, with cases). test_hooks.py gains the write-past-handed-bound class and rows for each new shape; HANDED_BOUND is read off the hook; KNOWN_DIVERGENCE names one row, an interpreter os.system redirect whose target touches the closing quote, allowed at HEAD too, with its reason. Red-first proved on test_guard_secrets_read (15 cases) and test_hooks (12 cases) at HEAD; over-fire and under-fire mutations in a scratch copy turned the named cases red. Residuals seen, not fixed: the in-place sed -i arm still skips every quoted match; the read grammar does not read a keyword mode='r' as a read; one journal refusal names its target with a trailing quote.",
+        "descriptive": "Copying into a directory without a trailing slash, a write nested deeper than the guard follows, and a script opening a file with mode= are now judged like the plain write, while a commit message that mentions a redirect is no longer mistaken for one."
+      },
+      "startedAt": "2026-10-07T06:01:33Z",
+      "completedAt": "2026-10-07T06:56:44Z",
+      "verifiedBy": [
+        "ww7",
+        "ww7a",
+        "ww7b",
+        "ww8",
+        "ww8a",
+        "ww8b",
+        "ww9",
+        "ww9a",
+        "ww9b",
+        "ww10",
+        "ww10a",
+        "ww10b",
+        "ww11",
+        "ww11a",
+        "b17d",
+        "b17n",
+        "n23",
+        "n24",
+        "n16r",
+        "n16s",
+        "b22",
+        "b22b",
+        "b10d",
+        "b10k",
+        "b10o",
+        "b17o",
+        "b17q"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T06:49:18Z.087b1d",
+        "status": "passed",
+        "at": "2026-10-07T06:49:18Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b22c2c41",
+        "at": "2026-10-07T06:56:44Z",
+        "basis": "orchestrator check: P108-R10, R13, R14 and R16 fixed in guard-secrets-read only, each reviewer shape reproduced red at HEAD, quoted-skip limited to provably-text or graded-elsewhere arguments with keep-verdict cases, contract rows and one reasoned KNOWN_DIVERGENCE row"
+      }
+    },
+    {
+      "id": "P108.15-4gh",
+      "title": "SECURITY.md states the journal door, the shared identity shapes and the shell arm's remaining open shapes as the code leaves them",
+      "status": "done",
+      "description": "SECURITY.md describes the journal door, the redaction and the shell arm as P108.13 and P108.14 leave them:\n- which caller flags are asked at the door;\n- which identity shapes the writer and the detector share;\n- the shell arm's directory, nesting, keyword-mode and quoted-redirect behaviour;\n- the residual list, stating every shape still open and nothing already closed.\n\nEvery sentence must be true of the committed code of the two tasks this one depends on.",
+      "files": [
+        "SECURITY.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P108.13-4gh",
+        "P108.14-4gh"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "bc716d88",
+      "outcome": {
+        "technical": "SECURITY.md only, checked against the committed code of the shared-shape task and the shell-arm task. The plan-gate paragraph of shell write forms now states three things: cp, mv and install read a slashless destination that is an existing directory as a directory; a command handed past the nesting bound is graded as a write the arm cannot place, not as nothing; and two residuals are named, the in-place sed -i arm still skipping every quoted match and the interpreter os.system redirect whose target touches the closing quote (the one KNOWN_DIVERGENCE row). The journal-door bullet lists --gate, --gate-set and --verified-by beside the prose flags. A new bullet describes the shared identity-shape table that the writer and the detector both read, with the writer-only checkout-root shape stated as the writer's own, the file:// token start, the posix-home leading-separator asymmetry, and the symlink spelling rule. The journal-write refusal bullet describes the directory reading, the nesting bound, the keyword mode= reading, and the narrowed quoted-argument skip, and keeps the stated residual that guard-history-rewrite has its own -c/eval reader. The interpreter manifest-write residual and the six redact-only appenders stay as written, both still true. Gate-only; doc_prose_numbers reports nothing.",
+        "descriptive": "The security document now lists exactly which machine-path shapes are caught, which caller inputs are checked, how the shell guard reads copies, nesting and script writes, and which shapes are still open."
+      },
+      "startedAt": "2026-10-07T06:56:55Z",
+      "completedAt": "2026-10-07T07:13:21Z",
+      "verifiedBy": [
+        "test__refs",
+        "test__output",
+        "test__deps selftests"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T07:13:13Z.50f095",
+        "status": "passed",
+        "at": "2026-10-07T07:13:13Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "bc716d88",
+        "at": "2026-10-07T07:13:21Z",
+        "basis": "orchestrator check: residual list read against the two committed tasks, closed shapes removed, open ones named with their reading"
+      }
+    },
+    {
+      "id": "P108.16-4gh",
+      "title": "no quoted word a program runs is read as text, the journal is refused at every tier wherever an append sits, and a read is never refused",
+      "status": "done",
+      "description": "Fixes review findings P108-R17 to P108-R20 and P108-R23. No quoted word that a program runs is read as text, the journal is refused at every tier wherever an append sits, and a read is never refused.\n\n- A span with any NAME=value assignment before its program, bare or through env, makes its quoted words live. git grep -O / --open-files-in-pager, in every spelling, makes git grep's words live.\n- Commands handed past the nesting bound go through the journal arm too, so a journal target is refused at every tier. They are graded by their write shapes: past the bound, refuse only a command that carries a write or a handed command that cannot be read, so a nested read stays allowed.\n- A last operand that an earlier clause of the same command creates with mkdir, or names as the target of ln -s, is read as a directory.\n- SECURITY.md's quoted-skip sentence names the environment-prefix rule. The journal bullet says what the code now does at each tier. The residual paragraph points at KNOWN_DIVERGENCE instead of counting it, drops the leading number before its list, and names or closes these remaining shapes:\n  - GIT_CONFIG_PARAMETERS carrying an editor\n  - git diff --output\n  - a recursive cp of source files\n\nCases, red-first against this branch's tree, with the commit-message allow twin kept:\n- each git spelling the review drove: GIT_EDITOR, GIT_EXTERNAL_DIFF, env-prefixed, git grep -O and --open-files-in-pager, against a source file and the journal at each tier;\n- a nested journal append at observe and at warn;\n- a nested read allowed;\n- mkdir and ln -s followed by cp into the new directory.\n\ntest_hooks.py gets contract rows for each.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_hooks.py",
+        "plugins/audit/tests/test__config.py",
+        "SECURITY.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "f1a96d0e",
+      "outcome": {
+        "technical": "_config.py: leading_assignments(words) returns the NAME=value words ahead of the program (bare, or through env, sudo or time), taking the program position from program_candidates; one _ASSIGNMENT pattern replaces the inline copies. guard-secrets-read.py, quoted words: a span that sets any assignment for its program reads every quoted word as live. _git_grep_runs_a_pager catches -O alone, stuck or in a short cluster, and --open-files-in-pager or any accepted prefix with or without =value, stopping at --. Redirect and tee targets strip a backslash at either end, so a GIT_CONFIG_PARAMETERS editor with escaped quotes is named correctly. Copies: _copy_targets carries forward what earlier clauses create (mkdir, every parent under -p, and ln -s links resolved beside themselves), and _copy_destinations expands a whole-directory copy (mv, or cp with -r/-R/-a/--recursive/--archive) into each file inside it, sorted and capped, with a destination past the cap reported as not established. git --output, in its = and separate spellings, is read on any subcommand under global -C, stopping at --. Past the nesting bound, _handed_walk returns the past-bound commands with their directory. _past_bound_writers keeps only those carrying a write, a handed command or an interpreter write, so a nested read is allowed. _every_write_view feeds the past-bound commands, read flat, to the journal and manifest arms, so a nested journal append is refused at every tier. SECURITY.md names these, points at KNOWN_DIVERGENCE instead of counting it, and lists none of the closed residuals as open. Red-first proved on test_guard_secrets_read, test_hooks (q01-q18 rows) and test__config (la1) at HEAD. Over-fire and under-fire mutations turned the named allow and deny cases red (lq1-lq9, ww2, ww7a, ww10, ww11). Known over-reporting on the safe side: any assignment prefix makes a quoted redirect in a commit message count as a write.",
+        "descriptive": "The shell guard now catches writes hidden in git editor and pager settings, copies into directories made earlier in the same command, recursive copies and git --output, refuses a deeply nested journal append at every tier, and lets a deeply nested read through."
+      },
+      "startedAt": "2026-10-07T07:25:06Z",
+      "completedAt": "2026-10-07T08:06:21Z",
+      "verifiedBy": [
+        "lq1",
+        "lq1a",
+        "lq1b",
+        "lq2",
+        "lq3",
+        "lq4",
+        "lq5",
+        "lq5a",
+        "lq6",
+        "lq6a",
+        "lq7",
+        "lq7a",
+        "lq8",
+        "lq8a",
+        "lq8b",
+        "lq9",
+        "la1",
+        "q01-q18"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T07:59:01Z.f56381",
+        "status": "passed",
+        "at": "2026-10-07T07:59:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "f1a96d0e",
+        "at": "2026-10-07T08:06:21Z",
+        "basis": "orchestrator check: P108-R17..R20 and R23 fixed, every reviewer spelling reproduced and red-first at HEAD, the three named residuals closed, allow twins kept and proved by over-fire mutations"
+      }
+    },
+    {
+      "id": "P108.17-4gh",
+      "title": "the shared identity shapes match what names a machine and nothing else",
+      "status": "done",
+      "description": "Fixes review findings P108-R21 and P108-R22. The shared identity shapes match what names a machine, and nothing else.\n\nsession-slug is narrowed to a real slug's shape: more than the user segment after -Users- or -home-, or a path separator around it. A whitespace-led word such as -home-dir, or -Users-bob alone in prose, no longer matches. Every real slug placement the detector reads is still caught. unexpanded-home stays refused at the door, because the commit-time detector fails the build on it. The code says so beside the shape, so the choice is recorded rather than accidental.\n\nFor the file scheme only, a token may start after file://<host>, so a file URL naming a host before a home directory is refused, redacted and flagged. An https URL with the same path stays allowed.\n\nCases:\n- prose with -home-dir and -Users-bob is allowed;\n- every real slug placement is denied;\n- file://localhost is refused, redacted and flagged, with an https twin;\n- check-committed-pii's selftest carries the same allow and deny pairs.\n\ncheck-committed-pii must still exit 0 on the tree.",
+      "files": [
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "tools/check-committed-pii.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "63f88868",
+      "outcome": {
+        "technical": "_journal_io.py: session-slug is narrowed through _SLUG_USER and now matches in three cases. The first is at a slug start with another segment after the user, or a separator right after it. The second is right after a forward or back slash, so a lone user segment beside a separator matches, drive-letter form included. The third is the private-tmp form, as before. Prose such as -home-dir, go-home-now or a lone -Users-<name> is therefore neither refused nor redacted nor flagged. MACHINE_PATH_TOKEN_START gains a branch for the file scheme only, so a token may start after file://<host>; tempdir-session shares it. _shape_fires for posix-home asks _HOME_AFTER_SEPARATOR, so a file URL naming a host fires for the writer, while a home word with no separator before it still does not. A comment beside unexpanded-home records that it stays refused in prose because the commit-time detector fails the build on the same pattern. tools/check-committed-pii.py gains the same allow and deny pairs (q2e, q2f, q2g). Forward-only BASELINE rows cover two chained journal rows that quote a reviewer's probe text. Red-first: sp9 and sp12 in test__journal_io and nt7 and nt8 in test_audit_task failed at HEAD and pass with the change, and q2e and q2g failed in the ordinary tdd red. Seven mutations in a scratch git copy turned the intended cases red in both directions: narrowing reverted, separator alternative dropped, lookahead dropped, file-host branch off, host start for every scheme, the old first-character fire rule, and the whitespace lead removed from unexpanded-home.",
+        "descriptive": "Ordinary words like -home-dir are no longer mistaken for a machine path, and file links that name a host before a home directory are now caught by both the journal writer and the commit check."
+      },
+      "startedAt": "2026-10-07T07:25:06Z",
+      "completedAt": "2026-10-07T08:06:23Z",
+      "verifiedBy": [
+        "sp9",
+        "sp10",
+        "sp11",
+        "sp12",
+        "sp13",
+        "nt7",
+        "nt8",
+        "q2e",
+        "q2f",
+        "q2g"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T08:06:11Z.d5cae1",
+        "status": "passed",
+        "at": "2026-10-07T08:06:11Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "63f88868",
+        "at": "2026-10-07T08:06:23Z",
+        "basis": "orchestrator check: P108-R21 and R22 fixed in the one shared shape table, every real slug placement still caught, unexpanded-home kept by recorded choice, mutations in both directions proved"
+      }
+    },
+    {
+      "id": "P108.18-4gh",
+      "title": "the shell arm costs ordinary work no time or false refusals, and states where its grammar stops",
+      "status": "done",
+      "description": "Fixes review findings P108-R24 to P108-R27, P108-R29 and P108-R30. The shell arm stops costing ordinary work time or false refusals. Where the grammar stops, it says so instead of chasing more spellings.\n\n- Copies: resolve the tree once per destination root, memoized by directory. Do not expand a recursive copy or directory move whose destination root lies outside the project. A case asserts that the number of git calls is bounded by destination roots, not by files, for a large out-of-project cp -r and mv. Count calls; do not time them.\n- Assignments: only the NAME=value words of an assignment prefix are live. The program's own arguments stay under the data-program rule, so an env-prefixed commit message or grep pattern that mentions a redirect is allowed. The git spellings whose redirect sits inside the assignment word stay refused. Add allow twins for both.\n- git grep: a short-option cluster is scanned only up to its first value-taking option (-e, -f, -A, -B, -C, -m), so a pattern stuck to -e is not read as the pager option.\n- SECURITY.md:\n  - Narrow the journal bullet to what the code reads.\n  - Name as residuals an interpreter journal append handed to a shell, and a journal redirect two or more levels past the bound. The hash-chained journal detects either write after the fact.\n  - Record the writer/detector posix-home separator difference as an open class.\n  - test_hooks.py's contract rows record the per-tier verdict of each residual shape as a reasoned KNOWN_DIVERGENCE row, so the verdict is written down per tier.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_hooks.py",
+        "plugins/audit/tests/test__config.py",
+        "SECURITY.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "302a6006",
+      "outcome": {
+        "technical": "_config.py: _memo_rev_parse(cache, cwd, fields) lets path_tree and tree_for ask git once per watched tree and once per nearest existing directory when given a cache. Without a cache, behaviour is unchanged. guard-secrets-read.py: _tree_placer(root, cfg) returns a cached place function and an expands predicate, used by the source, manifest and journal arms. A whole-directory copy or move is not expanded when its placed destination root is neither in the project nor in a linked worktree; a root nobody can place is still expanded. An out-of-project recursive copy therefore costs git calls per destination directory, not per file (lw10, lw10a, lw11, tm1, tm2). Assignments: _program_offset finds where the program's words begin after the assignment prefix, and _quoted_text_skipper never skips a quoted position before it. The assignment values are therefore live while the program's own quoted arguments stay under the data-program rule; an unlocatable offset or a line continuation keeps the whole span live. git grep: a short-option cluster is read only up to its first value-taking option, and such an option standing alone takes the next word. test_hooks.py records the residuals' verdicts at each tier as reasoned KNOWN_DIVERGENCE rows: an interpreter journal append handed to a shell, a journal redirect two levels past the bound, and an editor or pager variable set to a bare shell. SECURITY.md narrows the journal bullet to what the code reads, names those residuals and points at their rows. It says verify and guard-bash-writes detect such a write afterwards, describes the assignment-word and git grep cluster rules, records the writer/detector posix-home separator difference as an open class, and restates the session-slug rule in words. Red-first proved on test__config (tm1, tm2) and test_guard_secrets_read (lq9, lq3 twins, lq10 and more) at HEAD. Mutations M1-M8 on a scratch copy turned the named cases red in both directions. The sweep is green.",
+        "descriptive": "Recursive copies no longer slow the guard past its time limit, environment-prefixed commit messages and search patterns are no longer refused by mistake, and the shapes the guard does not read are written down with their verdict at each tier."
+      },
+      "startedAt": "2026-10-07T08:18:39Z",
+      "completedAt": "2026-10-07T08:53:58Z",
+      "verifiedBy": [
+        "lw10",
+        "lw10a",
+        "lw11",
+        "tm1",
+        "tm2",
+        "lq3",
+        "lq9",
+        "lq10",
+        "lq11",
+        "lq11a",
+        "lq12",
+        "r01",
+        "r02",
+        "r03"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T08:46:43Z.e5e13f",
+        "status": "passed",
+        "at": "2026-10-07T08:46:43Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "302a6006",
+        "at": "2026-10-07T08:53:58Z",
+        "basis": "orchestrator check: P108-R24..R27, R29, R30 fixed; regressions reproduced and fixed with call-count cases; residuals named in SECURITY.md and recorded per tier as reasoned known divergences instead of more grammar"
+      }
+    },
+    {
+      "id": "P108.19-4gh",
+      "title": "every real home slug placement is caught and prose is left alone",
+      "status": "done",
+      "description": "Fixes review finding P108-R28. Every real home slug placement is caught again, and prose is still left alone.\n\nsession-slug accepts the lone user segment wherever a non-whitespace delimiter, or a text or line boundary, bounds it: a quote, =, :, (, or the start or end of a line. This covers a JSON value, a key=value, and the Windows home slug C--Users-<name>. Only whitespace-led prose, such as an option named -home-dir or a lone dash-led user word in a sentence, is left alone.\n\nsp10 and q2f gain rows for:\n- a quoted JSON value;\n- a key=value;\n- a line start;\n- the Windows spelling.\nEach comes with a prose allow twin.\n\ncheck-committed-pii must still exit 0 on the tree.",
+      "files": [
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "tools/check-committed-pii.py",
+        "plugins/audit/tests/test__journal_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "0cd45d3b",
+      "outcome": {
+        "technical": "_journal_io.py: two session-slug alternatives replace the separator-only lone-segment alternative. The first takes the Windows drive spelling (a letter, then a double dash before the user segment) wherever a token starts, whitespace-led included, because that spelling is not a prose word. The second is _SLUG_LONE_LEAD: a lone user segment counts as a slug when it follows the start of the text or of a line, a separator, a quote, =, : or (. A backtick does not lead a slug, so a code span naming an option stays prose. The existing alternatives (more segments, or a separator after) are unchanged. The writer and the detector share the pattern object. sp10 and q2f gain rows for a quoted JSON value, key=value, parentheses, a line start, a colon and the whitespace-led Windows spelling. sp9 and q2e become tables of whitespace-led allow twins, one per placement, including a code span. Every test string is composed from parts. check-committed-pii exits 0 on the tree. Red-first: sp10 was proved red at HEAD through the helper. q2f lives in the implementation file, so it was seen red as the ordinary tdd red and under mutation. Mutations on a git-initialised scratch copy: adding whitespace or a backtick to the lead set turned sp9 and q2e red; reverting to separator-only, or dropping the drive alternative, turned sp10 and q2f red.",
+        "descriptive": "The machine-path check again catches a home-directory slug written as a value, in quotes, after an equals sign, in parentheses, at a line start or in the Windows spelling, while ordinary prose and code spans are left alone."
+      },
+      "startedAt": "2026-10-07T08:18:39Z",
+      "completedAt": "2026-10-07T08:54:00Z",
+      "verifiedBy": [
+        "sp9",
+        "sp10",
+        "q2e",
+        "q2f"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T08:53:45Z.bf8364",
+        "status": "passed",
+        "at": "2026-10-07T08:53:45Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "0cd45d3b",
+        "at": "2026-10-07T08:54:00Z",
+        "basis": "orchestrator check: P108-R28 fixed in the shared shape, regression rows restored with whitespace-led allow twins, mutations proved in both directions, tree scan green"
+      }
+    },
+    {
+      "id": "P108.20-4gh",
+      "title": "a trailing slash never changes a copy's verdict, and a wide copy stays within the hook budget",
+      "status": "done",
+      "description": "Fixes review findings P108-R31 to P108-R34. A trailing slash never changes a copy's verdict, and a wide copy stays within the hook's time budget.\n\n- A whole copy or move (mv, or cp -r/-R/-a) onto a slash-ended destination that does not exist, and that no earlier clause made, lands as the destination itself, so it is read the way the slashless operand is read. Record as a residual the platform split for a slash-ended source onto an existing directory (BSD copies the contents, GNU copies the directory).\n- Directories under a toplevel git has already answered are resolved by containment, with no further git call. If that is not enough, bound the expansion by directory count, and report what is past the bound as not established.\n- SECURITY.md:\n  - an out-of-project destination root is one destination;\n  - the symlinked-subdirectory edge;\n  - no count before the residual list;\n  - the lone-slug residual shapes are named: option or value text read as a slug, and a whitespace-led slug in a value position.\n- t11's fixture root carries no slug shape.\n\nCases:\n- cp -r src/ lib/ and mv src/ lib/ allowed against a plan declaring lib/app.ts, each with a block twin where lib exists;\n- a wide copy into a linked worktree whose git call count is bounded by toplevels;\n- t11 run under a slug-shaped temp root.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_hooks.py",
+        "plugins/audit/tests/test__config.py",
+        "SECURITY.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "104f9847",
+      "outcome": {
+        "technical": "guard-secrets-read.py: _lands_as_named(last, whole, is_dir) is used by _copy_destinations. A whole copy or move of one source onto a slash-ended name that is not a directory, either on disk or made by an earlier mkdir or ln -s clause, now lands as that name, so a trailing slash no longer changes the verdict. A plain file copy, or a call with no disk answer, keeps the slash-as-directory reading. _config.py: _inside_known_tree and _tree_of_dir answer a directory under a toplevel git has already named by containment of its resolved path, with no further git call. A directory holding a .git entry on the way (a nested clone, a submodule, a worktree inside the tree) and a symlinked subdirectory still ask git. A wide copy into a linked worktree therefore costs one git call per toplevel instead of one per directory. SECURITY.md says that an out-of-project destination root is one destination, and it states the trailing-slash rule, the containment placement and its nested-repository and symlinked-subdirectory edges, and the platform split for a slash-ended source onto an existing directory. It drops the residual count and names the open lone-slug shapes. t11's failure came from the feed cell bound cutting a long temp root, not from redaction; the cases now use a short root with no slug shape (t14). Red-first proved: sc1 and sc2 (test_guard_secrets_read), lw12, and tm3 and tm4 (test__config) failed at HEAD. Mutations on a scratch copy turned sc1a, sc3, sc4, tm4, lw13 and t14 red in the over-fire direction.",
+        "descriptive": "Copying a folder to a new folder is judged the same with or without a trailing slash, a wide copy no longer slows the guard toward its time limit, and the remaining platform and naming edge cases are written down."
+      },
+      "startedAt": "2026-10-07T09:04:45Z",
+      "completedAt": "2026-10-07T10:01:17Z",
+      "verifiedBy": [
+        "sc1",
+        "sc1a",
+        "sc2",
+        "sc3",
+        "sc4",
+        "lw12",
+        "lw13",
+        "t14",
+        "tm3",
+        "tm4"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T09:27:43Z.94cac1",
+        "status": "passed",
+        "at": "2026-10-07T09:27:43Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "104f9847",
+        "at": "2026-10-07T10:01:17Z",
+        "basis": "orchestrator check: P108-R31..R34 fixed, slash regression reproduced red at HEAD, git calls counted per toplevel, residuals named, mutations proved both directions"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-10-06T21:26:46Z",
+  "testEvidence": {
+    "runId": "2026-10-07T10:38:35Z.b7ddea",
+    "status": "passed",
+    "at": "2026-10-07T10:38:35Z"
+  },
+  "mergedHead": "7f6905a26207634d229fc7564a94706f16bbe879"
 }

@@ -36,9 +36,15 @@ Config keys (all optional; defaults in DEFAULTS below):
                                   branches of guard-secrets-read (the shell forms
                                   and the interpreter ones) and the PostToolUse
                                   report in guard-bash-writes all resolve their
-                                  tier through plan_gate_mode below, so one
-                                  file gets one verdict whichever way it is
-                                  written. The secret guards are never graded and
+                                  tier through plan_gate_mode below, and the
+                                  first two read one free-file slot
+                                  (trivial_slot), so one file gets one verdict
+                                  whichever way it is written — except a shell
+                                  write whose size its command does not state,
+                                  which takes the slot unmeasured and is sized
+                                  by guard-bash-writes once it lands; see that
+                                  function's own docstring.
+                                  The secret guards are never graded and
                                   deny at every tier, because reading .env is
                                   wrong whether or not a plan exists.
   planGate                str   — pin the plan gate to one tier by hand:
@@ -746,7 +752,79 @@ def _nearest_existing_dir(path):
         p = parent
 
 
-def path_tree(file_path, root, cfg):
+def _memo_rev_parse(cache, cwd, fields):
+    """`_git_rev_parse(cwd, fields)`, asked once per (directory, fields) when
+    `cache` is a dict the caller keeps, and every time when it is None."""
+    if cache is None:
+        return _git_rev_parse(cwd, fields)
+    key = ("rev-parse", str(cwd), tuple(fields))
+    if key not in cache:
+        cache[key] = _git_rev_parse(cwd, fields)
+    return cache[key]
+
+
+def _inside_known_tree(real, top):
+    """True when the resolved directory `real` lies in the working tree whose
+    resolved toplevel is `top`, with no repository of its own in between: no
+    directory from `real` up to, but not including, `top` holds a `.git`
+    entry - a nested clone, a submodule or a linked worktree placed inside
+    the tree, each of which git would name as a toplevel of its own."""
+    if real != top and not real.startswith(top.rstrip(os.sep) + os.sep):
+        return False
+    at = real
+    while at != top:
+        if os.path.lexists(os.path.join(at, ".git")):
+            return False
+        parent = os.path.dirname(at)
+        if parent == at:
+            return False
+        at = parent
+    return True
+
+
+def _tree_of_dir(cache, start):
+    """`git rev-parse --show-toplevel --git-common-dir` for the existing
+    directory `start`, the common dir made absolute - or None.
+
+    ONE QUESTION PER TOPLEVEL, WHEN THE CALLER KEEPS A `cache`. A directory
+    under a toplevel git already named for this cache is answered by
+    containment, with no process: a whole copy onto directories that already
+    exist lists each file in a directory of its own, and a memo keyed by
+    directory still started one git per directory - a wide tree inside a
+    linked worktree outran the hook's timeout that way, and a killed hook
+    lets the write through. Containment is decided on the RESOLVED path,
+    which is also what git answers for, so a symlinked subdirectory pointing
+    out of the tree is asked about where it really is; and a `.git` entry on
+    the way up hands the question back to git (`_inside_known_tree`).
+
+    The common dir comes back relative to the directory asked from for an
+    ordinary checkout (`_shares_repository`'s note), so it is joined there
+    before it is reused for any other directory."""
+    fields = ["--show-toplevel", "--git-common-dir"]
+    if cache is None:
+        got = _git_rev_parse(start, fields)
+        return got if not got or not got[0] else [
+            got[0], os.path.join(str(start), got[1])]
+    try:
+        real = os.path.realpath(str(start))
+    except Exception:
+        real = None
+    known = cache.setdefault(("toplevels",), [])
+    for top, answer in known:
+        if real is not None and _inside_known_tree(real, top):
+            return answer
+    got = _memo_rev_parse(cache, start, fields)
+    if not got or not got[0]:
+        return got
+    answer = [got[0], os.path.join(str(start), got[1])]
+    try:
+        known.append((os.path.realpath(got[0]), answer))
+    except Exception:
+        pass
+    return answer
+
+
+def path_tree(file_path, root, cfg, cache=None):
     """Where a FILE lands, for a caller that already knows `file_path` is not
     under `root` (`within_root` answered False) - the plan gate's own "is this
     even mine" question, asked of a PATH rather than of `command_tree`'s `cwd`.
@@ -789,9 +867,19 @@ def path_tree(file_path, root, cfg):
     PAID FOR ONLY BY A CALLER WHOSE CHEAP CHECK ALREADY FAILED. The ordinary
     edit, inside the tree the session started in, never reaches this function
     and never pays for the git calls inside it - `within_root` answers it with
-    no process started at all."""
+    no process started at all.
+
+    ONE QUESTION PER TOPLEVEL, WHEN THE CALLER KEEPS A `cache`. Both git
+    answers depend on a directory and never on the file in it - the watched
+    tree's, and the nearest existing directory's - so a caller placing many
+    files hands one dict to every call; a directory is asked once, and one
+    under a toplevel already named is answered by containment
+    (`_tree_of_dir`). A recursive copy out of the tree placed every file it
+    lands with two processes of its own, which outran the hook's timeout on
+    an ordinary directory. With no cache every call asks afresh, as it always
+    did."""
     watching = git_root_dir(root, cfg)
-    ours = _git_rev_parse(watching, ["--git-common-dir"])
+    ours = _memo_rev_parse(cache, watching, ["--git-common-dir"])
     if not ours or not ours[0]:
         return {"root": str(root), "placed": True,
                 "basis": "this project names no git repository to compare "
@@ -800,7 +888,7 @@ def path_tree(file_path, root, cfg):
     if start is None:
         return {"root": str(root), "placed": False,
                 "basis": "no existing directory contains %s" % file_path}
-    got = _git_rev_parse(start, ["--show-toplevel", "--git-common-dir"])
+    got = _tree_of_dir(cache, start)
     if not got or not got[0]:
         return {"root": str(root), "placed": True,
                 "basis": "git names no working tree for %s" % start}
@@ -838,7 +926,7 @@ def in_project(file_path, root, cfg):
 PROJECT_ONLY = object()
 
 
-def tree_for(data, target=None, cfg=None, project=None):
+def tree_for(data, target=None, cfg=None, project=None, cache=None):
     """Which tree's PLAN governs the work this hook is judging - the one
     question every hook that reads the manifest asks before it reads it.
 
@@ -880,6 +968,9 @@ def tree_for(data, target=None, cfg=None, project=None):
         caller wants the config and the state home, and places its own
         targets through this function afterwards.
 
+    `cache` is `path_tree`'s: a dict a caller placing many targets keeps
+    across its calls, so a directory outside the project is asked about once.
+
     RESIDUAL, stated because the containment shortcut is what makes it: a
     linked worktree placed UNDER the project directory is judged as part of
     the project, since `within_root` answers before git is asked. The default
@@ -913,7 +1004,7 @@ def tree_for(data, target=None, cfg=None, project=None):
         out["rel"] = rel_path(project, target)
         out["basis"] = "inside the project"
         return out
-    placement = path_tree(target, project, cfg)
+    placement = path_tree(target, project, cfg, cache=cache)
     out["basis"] = placement["basis"]
     if not placement["placed"]:
         out["placed"] = False
@@ -937,6 +1028,173 @@ def state_dir(root, cfg):
 
 def logs_dir(root, cfg):
     return root / (cfg.get("logsDir") or DEFAULTS["logsDir"])
+
+
+# --- the session's free-file slot ----------------------------------------------
+# `trivialLineThreshold`'s allowance is ONE file per session, whichever tool
+# writes it. `require-plan.py` grades Edit/Write against it,
+# `guard-secrets-read.py` grades a shell write against it and
+# `guard-bash-writes.py` measures that shell write once it has landed, and the
+# slot has one reader and one writer here so the hooks cannot disagree about
+# which file a session has already spent it on - which is what they did while
+# the shell half never read the slot at all.
+TRIVIAL_SLOT = "plan-gate-%s.json"
+_SLOT_UNSAFE = re.compile(r"[^A-Za-z0-9_.-]")
+_SLOT_ID_MAX = 96
+
+
+def _slot_path(state, session_id):
+    """The slot's file. The session id is payload text, so it is reduced to a
+    file-name-safe class and bounded before it names a file: a separator in
+    it would otherwise place the slot outside the state directory."""
+    sid = _SLOT_UNSAFE.sub("_", str(session_id or "no-session"))[:_SLOT_ID_MAX]
+    return Path(state) / (TRIVIAL_SLOT % sid)
+
+
+def text_lines(text):
+    """Lines in `text`; 0 for the empty string."""
+    s = str(text)
+    return 0 if s == "" else len(s.splitlines())
+
+
+def text_char_lines(text):
+    """`text`'s length in 200-character lines, rounded up."""
+    return (len(str(text)) + 199) // 200
+
+
+def text_magnitude(text):
+    """The size `trivialLineThreshold` is compared against, for a body of
+    text: max(lines, chars / 200, rounded up). One formula for both plan-gate
+    halves - require-plan measures an edit's new text with it, and
+    guard-secrets-read measures the content a shell write states - so a
+    one-line blob and a long file count the same through either tool."""
+    return max(text_lines(text), text_char_lines(text))
+
+
+def change_magnitude(new, old):
+    """The size of a change that replaces `old` text with `new`: the new
+    text's `text_magnitude`, or the removed text's lines when more were taken
+    away than put in - so a large deletion is not trivial either. require-plan
+    sizes an Edit this way, and guard-bash-writes sizes the diff a shell write
+    left behind this way, so the free-file limit means one thing after the
+    fact as well as before it."""
+    return max(text_magnitude(new), text_lines(old))
+
+
+# What `trivial_slot` answers for a slot file that exists but names no file it
+# can read. Not a path any tree holds, so it never matches a `rel` - the slot
+# is spent, on a file nobody can name.
+SLOT_UNREADABLE = "(an unreadable free-file slot)"
+
+
+def trivial_slot(state, session_id):
+    """The repo-relative files this session's free-file slot holds; [] while
+    it is unspent.
+
+    A SLOT FILE THAT EXISTS IS A SPENT SLOT, readable or not. One that cannot
+    be parsed, or names no file, answers [SLOT_UNREADABLE]: spent on a file
+    nobody can name, so the next uncovered file is graded. Reading it as
+    unspent gave two verdicts by tool - an Edit was allowed as the first free
+    file while a shell write, whose exclusive take then failed, was graded -
+    and kept the door open for the rest of the session. Only an ABSENT file
+    is unspent. `take_trivial_slot` publishes the file whole, so a reader
+    never meets one half-written by a live writer; this answer is for a file
+    damaged some other way."""
+    path = _slot_path(state, session_id)
+    try:
+        if not path.exists():
+            return []
+    except Exception:
+        return [SLOT_UNREADABLE]
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            loaded = json.load(fh)
+        files = loaded.get("files") if isinstance(loaded, dict) else None
+        named = [f for f in files or [] if isinstance(f, str)]
+        return named or [SLOT_UNREADABLE]
+    except Exception:
+        return [SLOT_UNREADABLE]
+
+
+def take_trivial_slot(state, session_id, files):
+    """Take this session's slot for `files`.
+
+    -> True   taken
+       False  another write took it first: the slot file already exists, so
+              the loser re-reads the slot and is graded against it
+       None   the slot could not be written at all
+
+    PUBLISHED WHOLE. The JSON is written to a temp file in the state
+    directory and `os.link`ed to the slot's name, which fails if the name
+    exists - so two writers racing for an empty slot cannot both win, and no
+    reader can ever see a slot file that is present but not yet written. An
+    exclusive create followed by a write had the first property and not the
+    second: a failed write left an empty slot file behind. A volume that
+    refuses hard links falls back to exactly that create
+    (`_take_slot_exclusive`), so a writable directory always takes the slot.
+
+    NONE IS AN OPEN DOOR, and it is stated here because it is the cost of
+    keeping state writes best-effort. With a state directory nobody can write,
+    every slot reads as unspent, so EVERY uncovered file of the session is
+    taken as its first free file and allowed - at the deny tier too, through
+    either tool. A hook cannot refuse an edit for want of its own scratch
+    space without making that scratch space a way to stop all work, so the
+    door is accepted and named rather than closed.
+
+    `tempfile` is imported here, not at module scope, for the reason
+    `atomic_write_text` gives: every hook imports this module on every call,
+    and this is reached only when a slot is taken."""
+    import tempfile
+    tmp = None
+    try:
+        ensure_local_dir(Path(state))
+        fd, tmp = tempfile.mkstemp(dir=str(state), prefix="plan-gate-tmp-",
+                                   suffix=".json")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump({"files": list(files)}, fh)
+        try:
+            os.link(tmp, str(_slot_path(state, session_id)))
+        except FileExistsError:
+            raise
+        except OSError:
+            return _take_slot_exclusive(state, session_id, files)
+        return True
+    except FileExistsError:
+        return False
+    except Exception:
+        return None
+    finally:
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except Exception:
+                pass
+
+
+def _take_slot_exclusive(state, session_id, files):
+    """`take_trivial_slot` on a volume that refuses hard links.
+
+    FAT/exFAT, some SMB and FUSE mounts and some container bind mounts raise
+    on `os.link` in a directory that is perfectly writable, and reading that
+    as "the slot cannot be written" opened the door for every uncovered file
+    of the session. So the slot is taken by an exclusive create instead: the
+    race is still won once, and the cost is the property `os.link` bought - a
+    write that fails after the create leaves a partial file, which
+    `trivial_slot` reads as SLOT_UNREADABLE, a spent slot. That errs strict.
+    None only when this create fails too."""
+    try:
+        fd = os.open(str(_slot_path(state, session_id)),
+                     os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        return False
+    except Exception:
+        return None
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump({"files": list(files)}, fh)
+        return True
+    except Exception:
+        return None
 
 
 # --- usage / ledger -----------------------------------------------------------
@@ -1250,23 +1508,35 @@ _DIR_CHANGE_CLAUSE = re.compile(
     r"^\s*(cd|pushd|popd)(?:\s+(.*))?$", re.IGNORECASE)
 
 
-def _dir_change_words(text):
-    """Directory-change words with balanced quotes removed, else None.
+_DQUOTE_ESCAPABLE = "$`\"\\"
 
-    A backslash immediately before whitespace keeps that whitespace in its word.
-    Other backslashes stay literal so a Windows path remains one destination.
-    This deliberately reads only the shell shape `effective_cwd` can establish.
-    """
+
+def shell_words(text):
+    """`text` split into the words the shell would hand a program, quotes
+    removed, or None when a quote never closes.
+
+    A backslash before whitespace or a quote keeps that character in its word,
+    and inside double quotes one before `$`, a backtick, `"` or a backslash
+    does the same - which is how a command handed to `bash -c "..."` spells a
+    quote of its own. Other backslashes stay literal so a Windows path remains
+    one word. No expansion is performed: a word carrying `$` keeps it, for
+    `resolvable_destination` to read."""
     words, current, quote, has_word = [], [], None, False
     index = 0
     while index < len(text):
         ch = text[index]
+        if quote == '"' and ch == "\\" and index + 1 < len(text) \
+                and text[index + 1] in _DQUOTE_ESCAPABLE:
+            current.append(text[index + 1])
+            index += 2
+            continue
         if quote:
             if ch == quote:
                 quote = None
             else:
                 current.append(ch)
-        elif ch == "\\" and index + 1 < len(text) and text[index + 1].isspace():
+        elif ch == "\\" and index + 1 < len(text) and (
+                text[index + 1].isspace() or text[index + 1] in "'\""):
             current.append(text[index + 1])
             has_word = True
             index += 1
@@ -1358,13 +1628,22 @@ def effective_cwd(cmd, payload_cwd):
     if shell:
         return None
     for clause in command_clauses(text):
+        # `eval` runs its argument in THIS shell, so a directory change inside
+        # it moves every write after it, and is read exactly as a bare one is.
+        # A shell's `-c` runs in a child, which moves nothing here.
+        handed = _handed_command(shell_words(clause.strip()) or [])
+        if handed is not None and handed[0] == "eval":
+            current = effective_cwd(handed[1], current)
+            if current is None:
+                return None
+            continue
         m = _DIR_CHANGE_CLAUSE.match(clause)
         if not m:
             continue
         verb = m.group(1).lower()
         if verb == "popd":
             return None
-        words = _dir_change_words(m.group(2) or "")
+        words = shell_words(m.group(2) or "")
         if words is None:
             return None
         args = [w for w in words if not w.startswith("-")]
@@ -1509,6 +1788,12 @@ def is_shell(word):
     return _program_of(word) in _SHELL_PROGRAMS
 
 
+def program_name(word):
+    """The program a command word runs, as the readers here compare it:
+    basename, quotes and `.exe` dropped."""
+    return _program_of(word)
+
+
 # Per interpreter family: the flags that hand it its program inline (or name
 # a module to run), and the options that take a separate value, so the value
 # is not read as the script. Unknown options do not name a program, and `--`
@@ -1565,6 +1850,9 @@ def runs_own_program(words):
     return False
 
 
+# A shell variable assignment, `NAME=value`, as one of a command's words.
+_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
 _WRAPPER_VALUE_OPTIONS = {
     "sudo": ("-u", "-g", "-h", "-p", "-r", "-t", "-C", "--user", "--group",
              "--host", "--prompt", "--role", "--type", "--close-from", "-a"),
@@ -1591,8 +1879,7 @@ def _wrapper_rest(name, words):
         word = words[index]
         if word == "--":
             return words[index + 1:]
-        if name in ("env", "sudo", "time") and re.match(
-                r"^[A-Za-z_][A-Za-z0-9_]*=", word):
+        if name in ("env", "sudo", "time") and _ASSIGNMENT.match(word):
             index += 1
             continue
         if name == "xargs" and word == "-i":
@@ -1627,7 +1914,7 @@ def _wrapper_fallback(words):
     while words:
         while words and (words[0].startswith("-") or words[0].isdigit()):
             words = words[1:]
-        while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
+        while words and _ASSIGNMENT.match(words[0]):
             words = words[1:]
         if words and _program_of(words[0]) in _HEAD_WRAPPERS:
             words = words[1:]
@@ -1645,7 +1932,7 @@ def program_candidates(words):
     word that can remain after wrapper prefixes as a candidate."""
     words = list(words)
     fallback_candidates = []
-    while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
+    while words and _ASSIGNMENT.match(words[0]):
         words = words[1:]
     while words and _program_of(words[0]) in _HEAD_WRAPPERS:
         fallback = _wrapper_fallback(words[1:])
@@ -1656,6 +1943,89 @@ def program_candidates(words):
         words = rest
     candidates = words[:1] if words else []
     return (words, candidates + fallback_candidates)
+
+
+def leading_assignments(words):
+    """The `NAME=value` words one command's `words` set for its program: the
+    ones ahead of it, bare (`A=1 git diff`) or through a wrapper that takes
+    them (`env A=1 git diff`, `sudo A=1 ...`), in the order written.
+
+    An assignment there is environment the program reads, and a program can
+    run what it reads - git runs `GIT_EDITOR`, `GIT_EXTERNAL_DIFF` and a
+    `core.editor` carried in `GIT_CONFIG_PARAMETERS` - so a reader deciding a
+    quoted word is mere text asks this first. The words are those
+    `program_candidates` steps over, so the two never disagree about where the
+    program starts."""
+    rest, _candidates = program_candidates(words)
+    prefix = list(words)[:len(words) - len(rest)]
+    return [w for w in prefix if _ASSIGNMENT.match(w)]
+
+
+# A shell's options that take a separate value, so the value is not read as
+# the script operand that ends the option list.
+_SHELL_VALUE_OPTIONS = ("-o", "+o", "-O", "+O", "--rcfile", "--init-file")
+
+
+def _handed_command(words):
+    """("eval" | "shell", the command it runs) when one command's `words` hand
+    a command to `eval` or to a shell's `-c`, else None.
+
+    The program is found past assignments and wrappers by `program_candidates`,
+    so `sudo bash -c` and `env A=1 sh -c` are read as `bash -c` is. A shell
+    takes its command from the first operand after its options once `c` is in
+    any short-option cluster (`-c`, `-lc`, `-ec`); an operand before that is a
+    script run, whose own `-c` is the script's business. `eval` joins its
+    arguments with a blank and runs the result, as the shell does."""
+    rest, _candidates = program_candidates(words)
+    if not rest:
+        return None
+    program = _program_of(rest[0])
+    if program == "eval":
+        args = rest[1:]
+        if args and args[0] == "--":
+            args = args[1:]
+        return ("eval", " ".join(args)) if args else None
+    if program not in _SHELL_PROGRAMS or program in ("source", "."):
+        return None
+    flagged, index = False, 1
+    while index < len(rest):
+        word = rest[index]
+        if word == "--":
+            index += 1
+            break
+        if word in _SHELL_VALUE_OPTIONS:
+            index += 2
+            continue
+        if word.startswith("--"):
+            index += 1
+            continue
+        if len(word) > 1 and word[0] in "-+":
+            if word[0] == "-" and "c" in word[1:]:
+                flagged = True
+            index += 1
+            continue
+        break
+    if not flagged or index >= len(rest):
+        return None
+    return ("shell", rest[index])
+
+
+def handed_commands(text):
+    """Every command `text` hands to `eval` or to a shell's `-c` as an
+    ARGUMENT, one per clause that does, in command order.
+
+    Such a command is text to every reader of the outer command - a quoted
+    word - and a command to the shell that runs it, so a guard that grades
+    what a command DOES reads it again as a command of its own. One level:
+    a handed command that hands another is the caller's to read again, with
+    whatever bound it keeps. A clause whose quoting never closes hands
+    nothing this can read."""
+    out = []
+    for clause in command_clauses(join_continuations(text or "")):
+        handed = _handed_command(shell_words(clause.strip()) or [])
+        if handed is not None and handed[1].strip():
+            out.append(handed[1])
+    return out
 
 
 def _head_runs_body(head):
@@ -2717,7 +3087,25 @@ def plan_gate_mode(cfg, state):
     and an advisory that cried wolf in a repo which never opted in was how a
     stranger met this plugin. Only the plan-coverage claim is graded. A guard whose
     claim binds to evidence of its own — a secret path, a held lock, a journal file
-    — needs no tier to be right and reports at all of them."""
+    — needs no tier to be right and reports at all of them.
+
+    THE TIER IS HALF OF THE VERDICT; THE FREE-FILE SLOT IS THE OTHER HALF.
+    `trivialLineThreshold` allows a session's first uncovered code file before
+    any tier is asked, and that slot is `trivial_slot` — one reader, one
+    writer, asked by `require-plan.py` for an edit and by
+    `guard-secrets-read.py` for a shell write — so a file spent through either
+    tool is spent for both, and a change's size is `text_magnitude` through
+    either: an edit's new text, or the text a shell command carries. So the
+    same change gets one verdict - WITH ONE EXCEPTION, decided rather than
+    open: a shell write whose command does not state its content (it
+    computes or fetches it) cannot be measured before it runs, and takes the
+    slot exactly as an Edit within the threshold would (decided 2026-10-06).
+    It is measured afterwards, by the PostToolUse arm: `guard-bash-writes.py`
+    reads the slot, sizes the diff the write left with `change_magnitude`,
+    and reports a slot file over `trivialLineThreshold` with its magnitude and
+    the threshold. That is a report and not a refusal - the write has
+    already landed - so at the deny tier an oversized unstated shell write
+    still lands where an Edit of the same size would have been refused."""
     try:
         knob = plan_gate_knob(cfg)
         if knob:

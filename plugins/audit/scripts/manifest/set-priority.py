@@ -201,14 +201,14 @@ def _journal_row(project, config, mpath, phase_id, was, now):
     append dirties, and `guard-bash-writes` reports an unclaimed one as a shell
     write into the append-only trail."""
     mod = _panel_write._journalmod()
-    if mod is None or not hasattr(mod, "append_from_cli"):
+    if mod is None or not hasattr(mod, "append_from_cli_why"):
         return {"journaled": False, "journaledWhy": "unavailable"}
     summary = "%s priority %s -> %s" % (
         phase_id, "none" if was is None else was,
         "none" if now is None else now)
     cfg = None if config else {"manifestPath": _output.posix_rel(mpath, project)}
     try:
-        ok = bool(mod.append_from_cli(project, {
+        written, why = mod.append_from_cli_why(project, {
             "action": "phase.priority",
             # Persisted row: "/" separators regardless of platform, like every
             # other journal path.
@@ -218,11 +218,10 @@ def _journal_row(project, config, mpath, phase_id, was, now):
             "actor": {"author": _panel_write._viewer(project,
                                                      config).get("author"),
                       "sessionId": os.environ.get("CLAUDE_CODE_SESSION_ID"),
-                      "via": "cli"}}, config=cfg))
-    except Exception:
-        ok = False
-    return {"journaled": True} if ok else {"journaled": False,
-                                           "journaledWhy": "failed"}
+                      "via": "cli"}}, config=cfg)
+    except Exception as exc:
+        written, why = False, exc
+    return _panel_write.journal_block(project, written, why)
 
 
 def _locked_set(args, project, config, mpath, phase_id, tier, out):
@@ -351,7 +350,8 @@ def _locked_set(args, project, config, mpath, phase_id, tier, out):
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
-        out("  journal: the audit trail did NOT take the phase.priority row")
+        out("  journal: the audit trail did NOT take the phase.priority row "
+            "(%s)" % (jres.get("journaledReason"),))
     out("  written: %s" % ", ".join(written))
     return 0
 

@@ -21,7 +21,12 @@ Two branches by tool_name:
       not claimed by another session, and not covered by an in_progress task →
       inject a NON-blocking additionalContext warning (once per file per
       session). PostToolUse cannot undo the write — but the model gets told,
-      in-band, that it just sidestepped the plan gate.
+      in-band, that it just sidestepped the plan gate. The one uncovered file
+      the session's free-file slot holds (`_config.trivial_slot`) is free here
+      as it is for an Edit, and is reported only when the change it shows
+      exceeds `trivialLineThreshold` or cannot be measured
+      (`slot_write_magnitude`): a shell write
+      takes that slot before it runs, when its size cannot be seen.
 
 AN MCP SERVER'S WRITE TOOL IS DELIBERATELY NOT ON THIS HOOK, and the reason is
 this hook's own fault history rather than an oversight. The mechanism would fit —
@@ -181,10 +186,28 @@ TIMEOUT_TEMPLATE = (
 
 WARN_TEMPLATE = (
     "[bash-write-guard] That shell command modified source file(s) with no "
-    "plan coverage: %s. Plan-first applies to shell writes too — add the "
-    "file(s) to an in_progress task in the audit manifest, or use the "
-    "Edit/Write tools (which the plan gate reviews). This is a non-blocking "
+    "plan coverage: %s. Plan-first applies to shell writes too — put the "
+    "file(s) on an in_progress task (`/audit:task scope <taskId> --files "
+    "...`), or stop and ask the operator. This is a non-blocking "
     "notice; the change itself was NOT reverted."
+)
+
+# The session's free file, taken by a shell write BEFORE it ran and found too big
+# once it had. PreToolUse sees a command and not the change it makes, so a write
+# whose command does not state its content takes the slot unmeasured, exactly as
+# an Edit within the threshold would; this pass is the first place the change is
+# visible. Each item carries the measured magnitude, the threshold and what was
+# measured, because "too big" without the numbers is a claim with no basis.
+SLOT_SIZE_TEMPLATE = (
+    "[bash-write-guard] That shell command wrote this session's free file - the "
+    "one uncovered source file a session may change without a task, taken before "
+    "the command ran because a command does not show the size of its change - "
+    "and its change is over the limit a free file has, or could not be "
+    "measured against it: %s. A change over that limit is graded against the "
+    "plan, not taken as free. Put the file on an "
+    "in_progress task (`/audit:task scope <taskId> --files ...`), or stop and "
+    "ask the operator. This is a non-blocking notice; the change itself was "
+    "NOT reverted."
 )
 
 # The same finding with the authorship claim KEPT, and the statement that carried
@@ -198,9 +221,9 @@ WARN_TEMPLATE = (
 NAMED_TEMPLATE = (
     "[bash-write-guard] That shell command modified source file(s) with no plan "
     "coverage, and its own text names the write: %s. So this is not a guess and "
-    "nothing else needs ruling out. Plan-first applies to shell writes too — add "
-    "the file(s) to an in_progress task in the audit manifest, or use the "
-    "Edit/Write tools (which the plan gate reviews). This is a non-blocking "
+    "nothing else needs ruling out. Plan-first applies to shell writes too — put "
+    "the file(s) on an in_progress task (`/audit:task scope <taskId> --files "
+    "...`), or stop and ask the operator. This is a non-blocking "
     "notice; the change itself was NOT reverted."
 )
 
@@ -235,13 +258,13 @@ JOURNAL_TEMPLATE = (
 # what to avoid — there is no avoiding it by the time this runs.
 LOCKED_TEMPLATE = (
     "[bash-write-guard] That shell command wrote to manifest file(s) held by "
-    "ANOTHER LIVE SESSION: %s. Through Edit/Write the plan gate would have "
-    "refused this; a shell write cannot be caught before it lands, so it has "
-    "already happened and was NOT reverted. The other session is still running "
-    "and holds no knowledge of this change — it will write its own version over "
-    "yours, or yours over its, with no conflict, because one working tree means "
-    "git never sees two versions. Stop, tell the human, and reconcile by hand: "
-    "`audit-lock.py status` shows who holds what."
+    "ANOTHER LIVE SESSION: %s. Through the Edit or Write tools the plan gate "
+    "would have refused this; a shell write cannot be caught before it lands, "
+    "so it has already happened and was NOT reverted. The other session is "
+    "still running and holds no knowledge of this change — it will write its "
+    "own version over yours, or yours over its, with no conflict, because one "
+    "working tree means git never sees two versions. Stop, tell the human, "
+    "and reconcile by hand: `audit-lock.py status` shows who holds what."
 )
 
 # The same finding as WARN_TEMPLATE with the authorship claim removed, because the
@@ -262,10 +285,10 @@ UNPROVEN_TEMPLATE = (
     "that shell command ran: %s. This guard CANNOT say the command wrote them: %s. "
     "What is established: the "
     "file(s) were clean at this session's previous look and are dirty now, and "
-    "no in_progress task covers them. If the change is yours, put the file(s) on "
-    "an in_progress task or use the Edit/Write tools (which the plan gate "
-    "reviews); if it is not, it belongs to whatever the clause above names. This "
-    "is a non-blocking notice; nothing was reverted."
+    "no in_progress task covers them. If the change is yours, put the file(s) "
+    "on an in_progress task (`/audit:task scope <taskId> --files ...`), or "
+    "stop and ask the operator; if it is not, it belongs to whatever the "
+    "clause above names. This is a non-blocking notice; nothing was reverted."
 )
 
 # A command that ran in a WORKING TREE this guard is not watching, said once per
@@ -1350,6 +1373,83 @@ def _git_dirty(root):
         return (None, "git-error")
 
 
+# --- the free file, measured once it has landed ---------------------------------
+def _git_out(git_root, argv):
+    """git's stdout as text, or None when it did not answer. Bytes decoded as
+    UTF-8 with replacement: the file's content is not this hook's to trust,
+    and a legacy console code page must not turn a diff into an exception."""
+    import subprocess
+    try:
+        out = subprocess.run(["git", "--no-optional-locks"] + list(argv),
+                             cwd=str(git_root), capture_output=True,
+                             timeout=_GIT_TIMEOUT_SECONDS)
+    except Exception:
+        return None
+    if out.returncode != 0:
+        return None
+    return out.stdout.decode("utf-8", "replace")
+
+
+def diff_sides(diff):
+    """(added text, removed text) out of a `git diff -U0` body. The file
+    header's `+++`/`---` lines come before the first hunk and are not content,
+    so nothing is read until a hunk opens; `\\ No newline` markers are git's
+    and not the file's. Each line keeps its newline so a blank line counts."""
+    added, removed, in_hunk = [], [], False
+    for line in diff.splitlines():
+        if line.startswith("@@"):
+            in_hunk = True
+        elif not in_hunk:
+            continue
+        elif line.startswith("+"):
+            added.append(line[1:] + "\n")
+        elif line.startswith("-"):
+            removed.append(line[1:] + "\n")
+    return ("".join(added), "".join(removed))
+
+
+def slot_write_magnitude(git_root, git_rel, path):
+    """-> (magnitude, what was measured), or (None, why it could not be).
+
+    The change a shell write made to the session's free file, sized by
+    `_config.change_magnitude` - the formula require-plan sizes an Edit with -
+    so one limit means one thing whichever tool spent the slot. A file git does
+    not track is a new file and is measured whole, as a Write's content is; a
+    tracked one by what its diff against HEAD adds and removes. HEAD is the
+    right base because the file reaches this question only when it was clean at
+    the session's previous look, so its diff is the change made since."""
+    tracked = _git_out(git_root, ["ls-files", "-z", "--", git_rel])
+    if tracked is None:
+        return (None, "git could not say whether the file is tracked")
+    if not tracked:
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                body = fh.read()
+        except Exception as exc:
+            return (None, "the new file could not be read (%s)"
+                    % type(exc).__name__)
+        return (_config.change_magnitude(body, ""), "the new file's whole text")
+    diff = _git_out(git_root, ["diff", "--no-color", "--no-ext-diff", "-U0",
+                               "HEAD", "--", git_rel])
+    if diff is None:
+        return (None, "git could not diff the file against HEAD")
+    added, removed = diff_sides(diff)
+    return (_config.change_magnitude(added, removed),
+            "lines added and removed against HEAD")
+
+
+def _slot_size_item(rel, size, limit):
+    """One file of SLOT_SIZE_TEMPLATE: the measured magnitude beside the
+    threshold and what was measured - or, when nothing could be measured,
+    that, with the reason, rather than a number standing in for one."""
+    magnitude, basis = size
+    if magnitude is None:
+        return ("%s (change magnitude unmeasured: %s; trivialLineThreshold %d)"
+                % (rel, basis, limit))
+    return ("%s (change magnitude %d > trivialLineThreshold %d, measured as %s)"
+            % (rel, magnitude, limit, basis))
+
+
 # --- who moved the journal: read from the rows -----------------------------------
 # A journal file that went dirty with no claim in THIS session's sidecar was
 # blamed on the shell command in hand - and the plugin's own writers put files
@@ -1749,6 +1849,8 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
     in_prog = None
     plan_mode = None
     others = None
+    slot = None
+    oversized = []
     suspicious = []
     attributed = []
     locked = []
@@ -1811,6 +1913,25 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
         if rel in in_prog or any(
                 rel.startswith(f) for f in in_prog if f.endswith("/")):
             continue
+        # THE SESSION'S FREE FILE, which the PreToolUse arm let a shell write
+        # take unmeasured. Within `trivialLineThreshold` it is free here as it
+        # is for an Edit, so it is not reported as uncovered; over it, it is
+        # reported with its magnitude. Asked before the other-session question
+        # because the slot is this session's own record that it took the file.
+        # Measured on the pass where the file first turns dirty and not again:
+        # a later pass sees only paths that are new to `seenDirty`.
+        if slot is None:
+            slot = _config.trivial_slot(sd, session_id)
+        if rel in slot:
+            size = slot_write_magnitude(
+                _config.git_root_dir(root, cfg),
+                rel[len(prefix) + 1:] if prefix else rel,
+                os.path.join(str(root), rel))
+            threshold = int(cfg.get("trivialLineThreshold")
+                            or _config.DEFAULTS["trivialLineThreshold"])
+            if size[0] is None or size[0] > threshold:
+                oversized.append((rel, size, threshold))
+            continue
         # The last question before an accusation, and the one this hook never
         # asked: did somebody ELSE write this? Read lazily, so a session alone in
         # a tree never pays for the answer. Only the plan-coverage class is
@@ -1855,6 +1976,10 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
             parts.append(PLUGIN_JOURNAL_TEMPLATE % "; ".join(own))
         if merged:
             parts.append(MERGED_JOURNAL_TEMPLATE % "; ".join(merged))
+    if oversized:
+        state["warned"].extend(r for r, _, _ in oversized)
+        parts.append(SLOT_SIZE_TEMPLATE % "; ".join(
+            _slot_size_item(r, size, limit) for r, size, limit in oversized))
     if suspicious:
         state["warned"].extend(suspicious)
         # BOTH KINDS OF OTHER-AUTHOR, joined rather than ranked. A peer session and
