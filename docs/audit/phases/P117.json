@@ -271,45 +271,92 @@
         "severity": "med",
         "file": "docs/research/pipeline-cost-design.md:1982-1990, 2535-2539, 2548-2551 (against plugins/audit/scripts/manifest/audit-task.py:7010-7060)",
         "issue": "The deferred close can be bypassed. The rule is attached to `done --from-return` alone: under `phase`, that form records `deferred` and refuses an `--intent` flag. The plain close is untouched: `done <id> --commit <sha> --intent not-asked --intent-basis \"...\"`. `_done_flags_refusal` accepts it today, and the design never retires it. The same goes for `--intent matches` typed by the main loop. Either way, a task with a diff can still close with a word other than `deferred`. The sign-off refusal reads only tasks closed `deferred`, and its allow case lets a phase with no `deferred` task sign off as today. So a task closed the plain way never meets the refusal. Section 5.2 says the refusal 'cannot be met at the task's own close'. That is true only of the `--from-return` form. T6's only close-side case is `done --from-return --intent not-asked`, so an implementation that checks inside `--from-return` alone passes every case. Separately, `--no-change` has no diff for 'a task with a diff' to be judged against. A task whose work landed can still close that way as `not-asked`. That escape also exists today, so it is not new, but it is now the one the design leaves unnamed.",
-        "resolution": "Put the rule on `done` itself under `review.perTask: phase`. Every close that passes `--commit` records `deferred`, with or without `--from-return`, and any `--intent` word is refused. Add T6 cases: under `phase`, plain `done --commit <sha> --intent not-asked --intent-basis ...` and `done --commit <sha> --intent matches` are each refused and write nothing. Under `always`, the same flags close as today; that is the allow half. In section 5.2's 'Held by', list the `--no-change` close of a task whose files changed as a rule that is followed but not enforced."
+        "resolution": "fixed in P117.9-2sz (ec004935): Put the rule on `done` itself under `review.perTask: phase`. Every close that passes `--commit` records `deferred`, with or without `--from-return`, and any `--intent` word is refused. Add T6 cases: under `phase`, plain `done --commit <sha> --intent not-asked --intent-basis ...` and `done --commit <sha> --intent matches` are each refused and write nothing. Under `always`, the same flags close as today; that is the allow half. In section 5.2's 'Held by', list the `--no-change` close of a task whose files changed as a rule that is followed but not enforced.",
+        "fixTask": "P117.9-2sz",
+        "commit": "ec004935"
       },
       {
         "id": "P117-R29",
         "severity": "med",
         "file": "docs/research/pipeline-cost-design.md:1536-1540, 2424-2430, 2460-2471, 2529-2531 (against plugins/audit/agents/audit-reviewer.md:55-57 and its return format at :231, at 7b489337)",
         "issue": "C14 says 'A phase-mode review as written answers none of the three per task' and fixes this through the brief alone. But the reviewer's own definition is what says so. In `mode: phase`, '`redFirst` is `not-attempted`', and its return format holds one `intent` object, not one per task. T3 lists `audit-reviewer.md` only for the filing line. Neither T3's nor T6's files name three things: the definition's phase-mode rule, its return format, or the filing verb's shape for a phase return. T6's refusal reads per-task answers from that return. T6's cases run offline on hand-made fixtures of the return. Under G1 the probe runs no phase review (T11, step 2). So the first time a real phase reviewer is asked the per-task questions is the full benchmark, the paid step. A reviewer following its definition there files one phase intent and `not-attempted`. The refusal would then correctly hold every task, which stalls step 3's sign-off.",
-        "resolution": "Add to T6's files (or T3's) the phase-mode paragraph and return format of `agents/audit-reviewer.md`. Under `review.perTask: phase`, the return carries a `tasks` array: per task id, the intent answer and note, the red-first grade and basis, and the inherited-test answer and basis. Define the filing verb's shape for that return. Add a case in which a phase return missing one task's entry is refused at filing. Add an offline check that the prompt's return format and the verb's shape name the same keys, after the model of `red_first_vocabulary_drift`."
+        "resolution": "fixed in P117.9-2sz (ec004935): Add to T6's files (or T3's) the phase-mode paragraph and return format of `agents/audit-reviewer.md`. Under `review.perTask: phase`, the return carries a `tasks` array: per task id, the intent answer and note, the red-first grade and basis, and the inherited-test answer and basis. Define the filing verb's shape for that return. Add a case in which a phase return missing one task's entry is refused at filing. Add an offline check that the prompt's return format and the verb's shape name the same keys, after the model of `red_first_vocabulary_drift`.",
+        "fixTask": "P117.9-2sz",
+        "commit": "ec004935"
       },
       {
         "id": "P117-R30",
         "severity": "low",
         "file": "docs/research/pipeline-cost-design.md:1986-1990, 2537-2539 (against 1742-1746)",
         "issue": "`not-asked` 'stays for ... a fix task sign-off creates from a finding'. The same paragraph refuses an `--intent` flag on any task with a diff under `phase`, and a fix task has a diff. Nothing says how `done` tells a fix task apart, and no T6 case closes one. If the exemption keys on something the caller sets, it is a second way past `deferred`. If there is no exemption, a G1 fix task closes `deferred`, and sign-off refuses until a second phase review answers for it. Section 5.1's sign-off model leaves that cost out: there a fix task is `next`, the executor and `next`, closed `not-asked`.",
-        "resolution": "Key the exemption on the plan's own record: the task is the `fixTask` of a finding in `phase.review.findings`. Add a T6 case. Under `phase`, a task recorded that way closes `not-asked` with its basis, and a task not recorded that way is refused with the same flags."
+        "resolution": "fixed in P117.9-2sz (ec004935): Key the exemption on the plan's own record: the task is the `fixTask` of a finding in `phase.review.findings`. Add a T6 case. Under `phase`, a task recorded that way closes `not-asked` with its basis, and a task not recorded that way is refused with the same flags.",
+        "fixTask": "P117.9-2sz",
+        "commit": "ec004935"
       },
       {
         "id": "P117-R31",
         "severity": "low",
         "file": "docs/research/pipeline-cost-design.md:~2680-2684 (T11 step 2), against 2052-2063 (5.3) and 1792 (G1's T)",
         "issue": "Two stops in the probe do not follow the document's own choices. (a) The output stops of 320 and 390 tokens are set on the whole-A reading, which section 0.2 says the target does not mean. Like for like, G1's binding limit is the 2.0 ceiling. In whole-C-2-r that leaves (2 × 0.459507 − 0.7296) / 230e-6 ≈ 825 tokens over 250. (b) The writes check reads 'output plus 400 tokens of tool results a task, against the 388 assumed'. 388 is rung 1's T. G1's, the rung the user chose, is 194, so this check passes at twice G1's assumption. Neither changes a decision: a stop only triggers a re-derivation, and doubling G1's tool results moves its mean by 0.0051.",
-        "resolution": "Say which reading each stop protects: it is stricter than the target on purpose, or give its like-for-like figure as well. Give the writes check per rung, with 194 under G1."
+        "resolution": "fixed in P117.9-2sz (ec004935): Say which reading each stop protects: it is stricter than the target on purpose, or give its like-for-like figure as well. Give the writes check per rung, with 194 under G1.",
+        "fixTask": "P117.9-2sz",
+        "commit": "ec004935"
       },
       {
         "id": "P117-R32",
         "severity": "low",
         "file": "docs/research/pipeline-cost-design.md:1029-1033 and the 5.2 table row at 1926",
         "issue": "The rung 1 (`always`) hold has the same gap as finding 1 one level down. C3's refusal (no reviewer return, and no `--intent not-asked` with a basis) is stated for `done --from-return`. A plain `done --commit <sha> --intent matches` skips the per-task review with no filed return. The row's wording comes from an earlier revision. This diff changed only its left column.",
-        "resolution": "Fix this together with finding 1: the refusal belongs on `done`, not only on `--from-return`."
+        "resolution": "fixed in P117.9-2sz (ec004935): Fix this together with finding 1: the refusal belongs on `done`, not only on `--from-return`.",
+        "fixTask": "P117.9-2sz",
+        "commit": "ec004935"
       },
       {
         "id": "P117-R33",
         "severity": "low",
         "file": "commit 68f43cac message (and b72372f7)",
         "issue": "Both task commits touch a `.md` and carry no `claims:` block. `.claude/hooks/require-claim-block.py` covers every `.md`, but it fires only on a Bash `git commit`. These commits came through the plugin's commit path (`Audit-Row:` trailer), which the hook never sees. This is pipeline behaviour, not this diff's lines.",
-        "resolution": "Have the executor's filed return carry the claims block and the commit path append it, or record that commits made by the plugin are outside the hook's reach."
+        "resolution": "fixed in P117.9-2sz (ec004935): Have the executor's filed return carry the claims block and the commit path append it, or record that commits made by the plugin are outside the hook's reach.",
+        "fixTask": "P117.9-2sz",
+        "commit": "ec004935"
+      },
+      {
+        "id": "P117-R34",
+        "severity": "med",
+        "file": "docs/research/pipeline-cost-design.md 5.2 'The one exception', T6 'The close'",
+        "issue": "The fix-task exemption can be acquired after the fact. resolve-finding --fix-task writes fixTask onto any finding, does not refuse one outside the task's phase, and overwrites an existing link. reopen keeps fixTask. So a task closed deferred can gain the link, be reopened, restarted and closed not-asked, which takes it out of the sign-off refusal. The finding verb also lets the caller mint a finding to link a new task to.",
+        "resolution": "Key the exemption on a field only add writes onto the task (task.fixes), held only while a finding of the task's own phase names it as fixTask. Or make resolve-finding refuse to create a link in a G1 phase. Add the reopen-sequence T6 case, and name the minted-finding leg as followed or key the exemption on findings recorded from a filed phase-review return."
+      },
+      {
+        "id": "P117-R35",
+        "severity": "med",
+        "file": "docs/research/pipeline-cost-design.md the tasks entry shape, the phase-return filing, T6 'The refusal'",
+        "issue": "A per-task entry in the phase return carries no commit, and the spec does not say which filed phase return the sign-off refusal reads. A task answered at one commit can be reopened, re-committed and re-closed deferred while the old entry still satisfies the refusal.",
+        "resolution": "Add commit to each entry and to the key check. The filing verb refuses an entry whose commit is not the task's recorded commit, and the refusal counts an entry only when its commit equals the task's current commit. Add the reopen-and-recommit T6 case."
+      },
+      {
+        "id": "P117-R36",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md C3 COMPATIBILITY and T3 Files",
+        "issue": "The precedent for done refusing a close lives under COMPATIBILITY.md's 'Outside this document entirely', not a Not promised list.",
+        "resolution": "Point both sentences there, and have T3 add its entry there."
+      },
+      {
+        "id": "P117-R37",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md T6 'The key, once per phase'",
+        "issue": "move accepts a started blocked or pending task, so a task can leave a G1 phase for one with no key and close not-asked.",
+        "resolution": "Record the key on the task at start and have done read it, or name the cross-phase move as followed."
+      },
+      {
+        "id": "P117-R38",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md run_git citation",
+        "issue": "run_git is defined at _scoped_commit.py:85; line 105 is its subprocess call.",
+        "resolution": "Cite :85, with the subprocess at :105."
       }
     ],
-    "outcome": "[findings: 33 - 0 high, 10 med, 23 low; 27 with a recorded fix commit]"
+    "outcome": "[findings: 38 - 0 high, 12 med, 26 low; 33 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -757,7 +804,7 @@
     {
       "id": "P117.9-2sz",
       "title": "G1's and rung 1's holds sit on done itself and the reviewer's phase return is specified",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P117-R28 to P117-R33 from the cost phase's fifth review round. Documents only. They are the G1 and rung-1 holds, specified tightly enough to implement:\n- under review.perTask phase, the rule sits on done itself, so every close with --commit records deferred and any --intent word is refused; under always, the same applies to the reviewer-return refusal;\n- the reviewer definition's phase-mode rule, its return format with a per-task array, and the filing verb's phase-return shape are added to the files T6 (or T3) owns;\n- the fix-task exemption keys on the plan's own record, with a T6 case;\n- the probe's stops say which reading they protect, and the writes check is given per rung;\n- the plugin's own commit path and the claims-block hook are named, with the gap stated as a finding for T3's filed returns.",
       "files": [
         "docs/research/pipeline-cost-design.md"
@@ -785,19 +832,65 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ec004935",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes P117-R28 to P117-R33 in docs/research/pipeline-cost-design.md, a specification fix.\n\n- R28 and R32: the holds sit on done itself, inside _locked_done before _done_task, the only writer that sets a task done. Under review.perTask phase, every close passing --commit records deferred and refuses any --intent word. Under always, a close needs the reviewer's filed return or --intent not-asked with its basis, and a typed word that differs from the filed answer is refused. The followed-only residue is listed: a --no-change close of changed files, a cancel of landed work, a hand edit, an outside merge.\n- R29: T6 owns the reviewer definition's phase-mode paragraph and return format. The return carries a tasks array with per-task intent, red-first and inherited-test answers, and a key-agreement check.\n- R30: the fix-task exemption keys on phase.review.findings[].fixTask, written at add time by a new add --fixes.\n- R31: the probe stops say they protect the whole-A reading and are stricter than the target on purpose. The writes check is per rung.\n- R33: the plugin's commit path is outside the claims-block hook. T3 specifies a claims text in the filed return, which the commit message appends.\n\nFurther holds found while specifying: the key is pinned per phase at start, close-phase asks whether sign-off passed, and the phase return's write-once key is the brief's head. No earlier figure changed. Lints are clean, and every one of the added code citations resolves.",
+        "descriptive": "The design now places every hold where it cannot be bypassed: on the close itself, in every form, with the reviewer's per-task answers given an owner and a shape."
       },
       "startedAt": "2026-10-07T19:25:11Z",
-      "completedAt": null,
+      "completedAt": "2026-10-07T19:57:32Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-07T19:57:31Z.01d256",
         "status": "passed",
         "at": "2026-10-07T19:57:31Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ec004935",
+        "at": "2026-10-07T19:57:32Z",
+        "basis": "orchestrator check: each of the six findings maps to a change; the remaining unenforced paths are named; figures unchanged"
       }
+    },
+    {
+      "id": "P117.10-2sz",
+      "title": "the G1 hold is specified as a property with every writing verb enumerated",
+      "status": "pending",
+      "description": "Fixes review findings P117-R34 to P117-R38 from the cost phase's sixth review round. Documents only.\n\nTwo rounds in a row found a new way past the G1 hold by reading verbs one at a time, so this task closes the class.\n- It applies R34's and R35's resolutions: the exemption is keyed on a field only add writes onto the task, and each per-task answer is bound to the commit it judged.\n- It applies the three low resolutions.\n- It specifies the hold as a property. Under the phase key, a task whose files changed cannot reach the phase's landing without the three answers bound to its current commit.\n- T6's acceptance includes an enumeration of every verb that writes a task's status, intentCheck, commit or a finding's fixTask, or that moves or reopens a task. Each verb either has a refused case under the phase key, or is named as followed with its reason, and the enumeration is derived from the code rather than typed.",
+      "files": [
+        "docs/research/pipeline-cost-design.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-07T11:45:57Z"
