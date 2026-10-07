@@ -67,6 +67,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
+import _loader                                     # noqa: E402
 
 PLUGIN_DIR = os.path.dirname(_harness.HOOKS_DIR)
 HOOKS_JSON = os.path.join(_harness.HOOKS_DIR, "hooks.json")
@@ -121,6 +122,12 @@ CLASSES = {
         "basis": "require-plan.py header: a magnitude above "
                  "trivialLineThreshold is not trivial, graded by the "
                  "plan_gate_mode ladder"},
+    "write-past-handed-bound": {
+        "verdict": _ladder("allow", "allow", "deny"),
+        "basis": "guard-secrets-read.py _handed_walk: a command handed deeper "
+                 "than the walk reads writes files nobody can name, so the "
+                 "plan gate refuses it at the deny tier rather than read it as "
+                 "nothing; observe and warn never block"},
     "write-test-file": {
         "verdict": _all("allow"),
         "basis": "_config test-file exemption: a test file and its data are "
@@ -191,6 +198,22 @@ def _bash(command):
     return {"command": command}
 
 
+def _nested(command, levels):
+    """`command` handed down `levels` times through `bash -c`, `sh -c` and
+    `eval`, each level a single-quoted word."""
+    wraps = ("bash -c %s", "sh -c %s", "eval %s")
+    for at in range(levels):
+        command = wraps[(levels - 1 - at) % len(wraps)] % (
+            "'" + command.replace("'", "'\"'\"'") + "'")
+    return command
+
+
+# How deep guard-secrets-read's walk reads a handed command. Read off the hook
+# rather than restated, so the rows below sit one level past whatever it is.
+HANDED_BOUND = _loader.load(os.path.join(_harness.HOOKS_DIR, "guard-secrets-read.py"),
+                            modname="guard_secrets_read")._MAX_HANDED
+
+
 ROWS = (
     # edit-declared-file
     {"id": "n01", "class": "edit-declared-file", "tool": "Edit",
@@ -241,7 +264,37 @@ ROWS = (
     {"id": "b17p", "class": "trivial-edit-undeclared-file", "tool": "Bash",
      "input": _bash("cp notes.md src/app.py"),
      "why": "an uncovered source file overwritten by a copy"},
+    {"id": "b17d", "class": "trivial-edit-undeclared-file", "tool": "Bash",
+     "input": _bash("cp %s src" % OTHER_HOOK),
+     "why": "a copy onto an existing directory spelled without a slash, "
+            "landing as an uncovered source file"},
+    # write-past-handed-bound
+    {"id": "b17n", "class": "write-past-handed-bound", "tool": "Bash",
+     "input": _bash(_nested("sed -i '' 's/A = 1/A = 2/' src/app.py",
+                            HANDED_BOUND + 1)),
+     "why": "the same change as b17, handed one level past the nesting the "
+            "write guard reads"},
     # large-new-undeclared-file
+    {"id": "b17o", "class": "large-new-undeclared-file", "tool": "Bash",
+     "input": _bash("python3 -c \"import os; os.system('cat > src/new_module.py "
+                    "<<EOF\n{BIGCONTENT}EOF')\""),
+     "why": "the same new file as b17w, written by a shell command a program "
+            "hands to os.system - the redirect read kept inside a program's "
+            "quoted code"},
+    {"id": "b17q", "class": "large-new-undeclared-file", "tool": "Bash",
+     "input": _bash("python3 -c \"import os; os.system('echo \\\"{BIGCONTENT}\\\" "
+                    "> src/new_module.py')\""),
+     "why": "the same new file as b17w, the shell-out's redirect target "
+            "closing the program's quoted string",
+     "today": _all("allow"),
+     "contradicts": "require-plan.py header: a magnitude above "
+                    "trivialLineThreshold is not trivial at the deny tier. "
+                    "Left open because a shell-out's argument is code, not a "
+                    "handed command: nothing grades the shell command a "
+                    "program hands to os.system or subprocess as a command of "
+                    "its own, and the redirect arm, reading the code as text, "
+                    "takes the program's closing quote and parenthesis into "
+                    "the target, which then names no source file"},
     {"id": "b17w", "class": "large-new-undeclared-file", "tool": "Write",
      "input": {"file_path": "{ROOT}/src/new_module.py", "content": "{BIGCONTENT}"},
      "why": "a new uncovered source file above the trivial threshold"},
@@ -321,6 +374,13 @@ ROWS = (
      "why": "a string literal MENTIONS opening a secret file; the program "
             "reads nothing",
      "decided": "allow - " + OPERATOR_DECISION},
+    {"id": "n23", "class": "read-non-secret", "tool": "Bash",
+     "input": _bash(_nested("ls src", HANDED_BOUND)),
+     "why": "a listing handed down exactly the nesting the write guard reads"},
+    {"id": "n24", "class": "read-non-secret", "tool": "Bash",
+     "input": _bash("python3 -c \"print(open('%s', mode='r').read())\""
+                    % JOURNAL),
+     "why": "a program that only reads the journal, its mode a keyword"},
     # history-safe-git
     {"id": "n10", "class": "history-safe-git", "tool": "Bash",
      "input": _bash("git worktree add --detach {TMP}/redfirst-wt HEAD"),
@@ -332,6 +392,12 @@ ROWS = (
      "input": _bash("git commit -m \"guards: refuse git stash drop in a "
                     "shared tree\""),
      "why": "a commit message that NAMES a forbidden command"},
+    {"id": "n16r", "class": "history-safe-git", "tool": "Bash",
+     "input": _bash("git commit -m \"echo x >> %s\"" % JOURNAL),
+     "why": "a commit message that NAMES a journal append"},
+    {"id": "n16s", "class": "history-safe-git", "tool": "Bash",
+     "input": _bash("git commit -m \"echo x | tee src/app.py\""),
+     "why": "a commit message that NAMES a tee into a source file"},
     {"id": "b13", "class": "history-safe-git", "tool": "Bash",
      "input": _bash("git reset --hard"),
      "why": "a reset to HEAD orphans no recorded commit"},
@@ -345,6 +411,13 @@ ROWS = (
     {"id": "b21", "class": "scratch-outside-tree", "tool": "Bash",
      "input": _bash("cp src/app.py {TMP}/x"),
      "why": "copy an uncovered source file out to a named scratch file"},
+    {"id": "b22", "class": "scratch-outside-tree", "tool": "Bash",
+     "input": _bash("bash -c \"cd {TMP} && echo x >> %s\"" % JOURNAL),
+     "why": "a handed cd out of the tree, then an append to a relative path "
+            "the journal also has"},
+    {"id": "b22b", "class": "scratch-outside-tree", "tool": "Bash",
+     "input": _bash("bash -c \"cd {TMP} && echo x > ww.py\""),
+     "why": "a handed cd out of the tree, then a redirect into a source name"},
     # history-rewrite-recorded
     {"id": "b12", "class": "history-rewrite-recorded", "tool": "Bash",
      "input": _bash("git push --force origin main"),
@@ -390,6 +463,19 @@ ROWS = (
     {"id": "b10c", "class": "journal-write", "tool": "Bash",
      "input": _bash("cp notes.md " + JOURNAL),
      "why": "the journal overwritten by a copy"},
+    {"id": "b10d", "class": "journal-write", "tool": "Bash",
+     "input": _bash("cp {TMP}/%s %s" % (JOURNAL.rsplit("/", 1)[1],
+                                        JOURNAL.rsplit("/", 1)[0])),
+     "why": "the journal overwritten by a copy onto its directory, no slash"},
+    {"id": "b10k", "class": "journal-write", "tool": "Bash",
+     "input": _bash("python3 -c \"open('%s', mode='a').write('x')\""
+                    % JOURNAL),
+     "why": "an interpreter appending to the journal, its mode a keyword"},
+    {"id": "b10o", "class": "journal-write", "tool": "Bash",
+     "input": _bash("python3 -c \"import os; os.system('echo x >> %s')\""
+                    % JOURNAL),
+     "why": "an interpreter shelling out an append to the journal - the "
+            "redirect read kept inside a program's quoted code"},
     # manifest edits
     {"id": "b11", "class": "manifest-edit-orchestrator", "tool": "Edit",
      "input": _edit(MANIFEST, "\"title\": \"r\"", "\"title\": \"renamed\""),
@@ -656,7 +742,7 @@ def _verdict_word(decided):
 
 
 # --- the cases ----------------------------------------------------------------------
-KNOWN_DIVERGENCE = ()
+KNOWN_DIVERGENCE = ("b17q",)
 OPERATOR_DECIDED = ("b06", "b10", "g06")
 
 

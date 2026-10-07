@@ -64,7 +64,9 @@
         "severity": "med",
         "file": "SECURITY.md:761-765,826-836,894-895,188",
         "issue": "The trail section describes neither journal change: every manifest write is still said to append a row (no word on the pre-hash rule or which writers surface it), and hand edits to the journal are still said to be refused by guard-edits alone, with no word on the shell arm now refusing redirect, tee and sed -i into the journal at PreToolUse.",
-        "resolution": "Update the trail section and the fail-mode description to match the settled behaviour, and extend the hand-edits bullet with the shell arm and its residuals."
+        "resolution": "fixed in P108.12-4gh (c7ff7d1d): Update the trail section and the fail-mode description to match the settled behaviour, and extend the hand-edits bullet with the shell arm and its residuals.",
+        "fixTask": "P108.12-4gh",
+        "commit": "c7ff7d1d"
       },
       {
         "id": "P108-R6",
@@ -80,7 +82,9 @@
         "severity": "low",
         "file": "plugins/audit/tests/test__refs.py:2733",
         "issue": "A section-marker comment cites a register task id.",
-        "resolution": "Drop the id and keep the constraint."
+        "resolution": "fixed in P108.12-4gh (c7ff7d1d): Drop the id and keep the constraint.",
+        "fixTask": "P108.12-4gh",
+        "commit": "c7ff7d1d"
       },
       {
         "id": "P108-R8",
@@ -90,9 +94,65 @@
         "resolution": "fixed in P108.11-4gh (fb2f68fa): Read the destination operand of cp/mv/install, or name the gap in SECURITY.md with the other residuals.",
         "fixTask": "P108.11-4gh",
         "commit": "fb2f68fa"
+      },
+      {
+        "id": "P108-R9",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_journal_io.py machine_path_shape; tools/check-committed-pii.py DETECTORS",
+        "issue": "The writer knows fewer identity shapes than the detector: session-slug, tempdir-session, escaped-path and unexpanded-home pass both redacted_free_text and check_free_text, so a note naming an agent scratchpad path lands verbatim in the manifest and a chained journal row that check-committed-pii then fails and that can only be baselined.",
+        "resolution": "Move those detector shapes into _journal_io as shared pattern objects like MACHINE_PATH_SHAPES and have machine_path_shape read them, so redaction replaces and the door refuses them; keep only the deliberate relative home/ difference; a case per shape in both directions."
+      },
+      {
+        "id": "P108-R10",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-secrets-read.py _copy_destinations",
+        "issue": "cp onto an existing directory spelled without a trailing slash is allowed at the deny tier and writes an uncovered source file inside it, while the slash and -t spellings are blocked; SECURITY.md lists no such residual and KNOWN_DIVERGENCE has no row.",
+        "resolution": "Treat a last operand that resolves at the effective cwd to an existing directory as a directory, with a test_hooks row and an allow twin."
+      },
+      {
+        "id": "P108-R11",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_journal_io.py MACHINE_PATH_TOKEN_START",
+        "issue": "A file URL into a home directory passes check_free_text, comes back unchanged from redacted_free_text and is written raw into a chained row, and no detector flags it; reports here are opened over file://, so this shape will appear in notes.",
+        "resolution": "Let a token start after a URL scheme's slashes so posix-home matches file:// paths in writer and detector alike; cases for refuse, redact and flag, with an https allow twin."
+      },
+      {
+        "id": "P108-R12",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py resolve_briefs",
+        "issue": "Caller text outside the prose flags (--gate, --gate-set, --verified-by) is never put to check_free_text, so a gate command carrying a home path is stored in the manifest while its journal row is redacted.",
+        "resolution": "Put gate-command and verified-by values through the same door before the lock, with a retarget --gate case."
+      },
+      {
+        "id": "P108-R13",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-secrets-read.py _write_views depth bound",
+        "issue": "Handed commands are followed only to a fixed depth; one level deeper a write is allowed at the deny tier while its bare form is blocked, and the bound is stated only in a code comment.",
+        "resolution": "When the bound is reached and a further handed command exists, grade it unresolved at the deny tier rather than as nothing, with a case at the bound and one past it."
+      },
+      {
+        "id": "P108-R14",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-secrets-read.py _eval_write_targets; SECURITY.md hand-edits bullet",
+        "issue": "An interpreter open() with a keyword mode='a' or mode='w' is not read as a write, so the journal arm's 'refused at every tier' sentence is untrue for that spelling, and the source arm misses it the same way.",
+        "resolution": "Teach the interpreter grammar the mode= keyword, with a journal case and a source-file case at each tier."
+      },
+      {
+        "id": "P108-R15",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_journal_io.py repo_relative_or_token",
+        "issue": "Redaction relativises the realpath, so a path through a symlinked directory is recorded as the link target's path, a path the writer never wrote.",
+        "resolution": "Decide inside or outside on the realpath, but relativise the normalised spelling when it lies under the root; a case with a symlinked directory."
+      },
+      {
+        "id": "P108-R16",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-secrets-read.py redirect and tee arms",
+        "issue": "The redirect and tee arms still read a > inside a quoted argument at the outer cwd, so a commit message mentioning a redirect is blocked as a source write, a handed cd that leaves the tree is blocked, and a handed redirect is read twice with the misplaced outer hit named first.",
+        "resolution": "Now that handed commands are graded through their own views, have the redirect and tee arms skip matches inside quotes as the in-place arm does; allow cases for a commit message and a handed cd out of the tree."
       }
     ],
-    "outcome": "[findings: 8 - 2 high, 4 med, 2 low; 6 with a recorded fix commit]"
+    "outcome": "[findings: 16 - 2 high, 7 med, 7 low; 8 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -847,7 +907,7 @@
     {
       "id": "P108.12-4gh",
       "title": "SECURITY.md's trail and plan-gate sections describe the journal and guard as they now behave",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P108-R5 and P108-R7.\n\nSECURITY.md's trail section describes the journal as it now behaves:\n- Rows the plugin builds itself redact a machine path and are still written.\n- Caller free text carrying one is refused by the verb before anything is written.\n- The fail-mode table's journal rows match that.\n\nThe hand-edits bullet names the PreToolUse shell arm, which refuses redirect, tee, sed -i, cp/mv/install, -c and eval forms, and interpreter writes into the journal at every tier, plus whatever residual the guard task left open. The plan-gate paragraph lists any remaining open shapes, together with the guard-bash-writes after-the-fact report.\n\nEvery sentence must be true of the code as committed by the two tasks this one depends on.\n\ntest__refs.py's section-marker comment that cites a task id loses the id and keeps its constraint.",
       "files": [
         "SECURITY.md",
@@ -873,19 +933,171 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "c7ff7d1d",
+      "outcome": {
+        "technical": "SECURITY.md's trail section now says every journal writer (the hooks, the panel and the argument-taking scripts commit-task-work, commit-manifest-index, audit-journal, commit-audit-state, record-risk-confirmation and close-phase) redacts a machine path in a row's free text through _journal_io.redacted_free_text and still writes the row, while only audit-task's prose flags and a panel save ask check_free_text and refuse such text before anything is written; the fail-mode table's journal-hook row is unchanged because the refusal is the verb's door. The hand-edits bullet names guard-secrets-read's PreToolUse shell arm: redirect, tee, sed -i, the destination of cp/mv/install, those forms handed to a shell's -c or to eval, and an interpreter write naming the journal are refused at every tier, and it says this reading is not shared with guard-history-rewrite's own older -c/eval reader, whose eval takes only the next word. The plan-gate paragraph lists the added shell write forms the shard-lock denial catches and states the open residual: an interpreter write naming the manifest, its lock or a shard is not read by that arm, with guard-bash-writes' after-the-fact report as the backstop. Each sentence was checked against the committed code of the two tasks it depends on. test__refs.py's section-marker comment drops its task id and keeps its constraint. Gate-only; no number in prose (doc_prose_numbers over SECURITY.md reports nothing).",
+        "descriptive": "The security document now says exactly which journal text is redacted and which is refused, which shell write forms the guards catch, and which shapes are still open."
+      },
+      "startedAt": "2026-10-07T05:44:10Z",
+      "completedAt": "2026-10-07T05:53:34Z",
+      "verifiedBy": [
+        "test__refs",
+        "test__output",
+        "test__deps selftests"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T05:53:24Z.3ee57f",
+        "status": "passed",
+        "at": "2026-10-07T05:53:24Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c7ff7d1d",
+        "at": "2026-10-07T05:53:34Z",
+        "basis": "orchestrator check: P108-R5 and R7 fixed, every sentence read against the committed code of the redaction and shell-arm tasks, residuals stated rather than omitted"
+      }
+    },
+    {
+      "id": "P108.13-4gh",
+      "title": "the journal writer and the commit-time detector recognise the same identity shapes, at every caller door",
+      "status": "in_progress",
+      "description": "Fixes review findings P108-R9, P108-R11, P108-R12 and P108-R15. The journal writer and the commit-time detector must recognise the same identity shapes.\n\n- Detector shapes in the writer. tools/check-committed-pii.py flags session-slug, tempdir-session, escaped-path and unexpanded-home. Move these into _journal_io as shared pattern objects, the way MACHINE_PATH_SHAPES already is, so the detector reads the same objects. machine_path_shape reads them too, so redacted_free_text replaces them and check_free_text refuses them. The one deliberate difference stays: a relative path whose first segment is home.\n- File URLs. A token may start after a URL scheme's slashes, so a file URL into a home directory is refused at the door, redacted in a plugin row, and flagged by the detector. An https URL whose path merely contains the word Users stays allowed.\n- More flags at the door. Values of --gate, --gate-set, scope's --gate and done's --verified-by go through the same check_free_text door before the lock, like the prose flags.\n- Symlinks. Redaction decides inside or outside on the realpath, but relativises the normalised spelling when that spelling lies under the root. A path through a symlinked directory therefore keeps the spelling the writer used.\n\nCases, each in both directions:\n- each detector shape, redacted in a hook row and refused at the audit-task door;\n- a file URL refused, redacted and flagged, with an https allow twin;\n- a retarget --gate carrying a home path refused, with a plain-command twin allowed;\n- a symlinked directory keeps its own spelling.",
+      "files": [
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "tools/check-committed-pii.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_journal_writes.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-07T05:44:10Z",
+      "startedAt": "2026-10-07T06:01:33Z",
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-10-07T05:53:24Z.3ee57f",
+        "runId": "2026-10-07T06:56:37Z.149c35",
         "status": "passed",
-        "at": "2026-10-07T05:53:24Z"
+        "at": "2026-10-07T06:56:37Z"
       }
+    },
+    {
+      "id": "P108.14-4gh",
+      "title": "a shell write gets its bare form's verdict in every spelling the shell arm reads, and a quoted argument is not a redirect",
+      "status": "in_progress",
+      "description": "Fixes review findings P108-R10, P108-R13, P108-R14 and P108-R16. A shell write gets its bare form's verdict in every spelling the shell arm reads, and a quoted argument is not read as a redirect.\n\n- cp, mv and install. A last operand that resolves at the effective cwd to an existing directory is read as a directory, so the source's name inside it is the target. This holds even when the directory is spelled without a trailing slash.\n- Nesting depth. When the handed-command walk reaches its depth bound and a further handed command exists, that command is graded unresolved at the deny tier rather than read as nothing.\n- Interpreter writes. The interpreter write grammar reads a keyword mode= (for example mode='a' or mode='w') as well as the positional mode, for the journal arm and the source arm alike.\n- Redirect and tee. Handed commands are already graded through their own views, so the redirect and tee arms skip matches inside quotes, as the in-place arm does. A commit message that mentions a redirect, and a handed cd that leaves the tree, are no longer read as writes. A handed redirect is read once, at its own cwd.\n\nCases, each with an allow twin:\n- cp onto an existing directory with no slash;\n- a nesting one level past the bound;\n- open with a keyword mode, against the journal and a source file, at each tier;\n- a commit message containing a redirect;\n- a handed cd out of the tree followed by a redirect.\n\ntest_hooks.py's contract rows cover the new shapes. KNOWN_DIVERGENCE lists any shape still left open, with its reason.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_hooks.py",
+        "plugins/audit/tests/test__config.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-07T06:01:33Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T06:49:18Z.087b1d",
+        "status": "passed",
+        "at": "2026-10-07T06:49:18Z"
+      }
+    },
+    {
+      "id": "P108.15-4gh",
+      "title": "SECURITY.md states the journal door, the shared identity shapes and the shell arm's remaining open shapes as the code leaves them",
+      "status": "pending",
+      "description": "SECURITY.md describes the journal door, the redaction and the shell arm as P108.13 and P108.14 leave them:\n- which caller flags are asked at the door;\n- which identity shapes the writer and the detector share;\n- the shell arm's directory, nesting, keyword-mode and quoted-redirect behaviour;\n- the residual list, stating every shape still open and nothing already closed.\n\nEvery sentence must be true of the committed code of the two tasks this one depends on.",
+      "files": [
+        "SECURITY.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P108.13-4gh",
+        "P108.14-4gh"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-06T21:26:46Z"

@@ -810,11 +810,211 @@ def _wrapped_write_cases(check):
               "`install -d` or a lone operand",
               dests is not None and all(g == x for (_w, g), (_v, x)
                                         in zip(got, want)), got)
+        _handed_spelling_cases(check, root, outside, journal, shell,
+                               same_as_bare, sid_of, cfg)
     finally:
         if held is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)
         else:
             os.environ["CLAUDE_PROJECT_DIR"] = held
+
+
+def _single_quoted(text):
+    """`text` as one single-quoted shell word."""
+    return "'" + text.replace("'", "'\"'\"'") + "'"
+
+
+def _nested(cmd, levels):
+    """`cmd` handed down `levels` times, cycling through `bash -c`, `sh -c`
+    and `eval`, the outermost first."""
+    wraps = ("bash -c %s", "sh -c %s", "eval %s")
+    for at in range(levels):
+        cmd = wraps[(levels - 1 - at) % len(wraps)] % _single_quoted(cmd)
+    return cmd
+
+
+def _handed_spelling_cases(check, root, outside, journal, shell, same_as_bare,
+                           sid_of, cfg):
+    """A shell write gets its bare form's verdict in every spelling the shell
+    arm reads, and a quoted argument of a program that runs nothing is text.
+
+    Runs inside `_wrapped_write_cases`' fixture: a running phase whose task
+    declares one file, so the tier by evidence is deny."""
+    deny_cfg = _config._deep_merge(cfg, {"planGate": "deny"})
+
+    def deny_of(seen):
+        return dict((t, w) for t, _b, w in seen)["deny"]
+
+    # A copy onto a directory that EXISTS writes the source's name inside it,
+    # whether or not the directory carries a trailing slash.
+    for cname, copy in (("cp", "cp notes.py src"), ("mv", "mv notes.py src"),
+                        ("install", "install -m 644 notes.py src")):
+        seen = same_as_bare("dir-" + cname, "echo x > src/notes.py", copy,
+                            "src/notes.py")
+        check("ww7 `%s` onto an existing directory spelled without a slash "
+              "is graded like a redirect into the file it lands as, at every "
+              "tier" % (copy,),
+              all(b == w for _t, b, w in seen)
+              and deny_of(seen) == ("block", True), seen)
+    for name, cmd in (
+            ("a copy whose landed name is no source file", "cp notes.md src"),
+            ("a copy onto an existing directory outside the tree",
+             "cp src/app.py %s" % outside),
+            ("a copy onto a name that is no directory and no source file",
+             "cp notes.py src-backup")):
+        sid = sid_of("ww7a", name)
+        _spend_slot(root, cfg, sid)
+        got = shell(sid, cmd)
+        check("ww7a %s is allowed at the deny tier" % name,
+              got[0] == "allow", got)
+    dests = M._copy_destinations
+    want = (
+        ((["cp", "a.py", "src"], lambda w: w == "src"), ["src/a.py"]),
+        ((["cp", "a.py", "src"], lambda w: False), ["src"]),
+        ((["cp", "-T", "a.py", "src"], lambda w: True), ["src"]),
+        ((["mv", "--no-target-directory", "a.py", "src"], lambda w: True),
+         ["src"]),
+    )
+    got = []
+    for (words, is_dir), _x in want:
+        ok, res = _harness.attempt(dests, words, is_dir)
+        got.append(res if ok else ("raised", str(res)))
+    check("ww7b the disk decides a slashless last operand: an existing "
+          "directory takes the source's name, anything else - or `-T` - is "
+          "the file written",
+          got == [x for _w, x in want], got)
+
+    # A handed command one level past the bound the walk reads is graded as
+    # a write this guard cannot place: refused at the deny tier, said at the
+    # others. At the bound the write inside is read and graded as bare.
+    bound = M._MAX_HANDED
+    sed = "sed -i '' 's/A/B/' src/ww.py"
+    seen = same_as_bare("nest-at-bound", sed, _nested(sed, bound), "src/ww.py")
+    check("ww8 a write handed down exactly the bound the walk reads is "
+          "graded like the bare write at every tier",
+          all(b == w for _t, b, w in seen)
+          and deny_of(seen) == ("block", True), seen)
+    past = _nested(sed, bound + 1)
+    verdicts = {}
+    for tier in _config.PLAN_GATE_TIERS:
+        sid = sid_of("ww8", "past", tier)
+        _spend_slot(root, cfg, sid)
+        verdicts[tier] = shell(sid, past,
+                               use_cfg=_config._deep_merge(cfg, {"planGate": tier}))
+    check("ww8a a write handed one level past the bound is refused at the "
+          "deny tier, asked at ask, and allowed - said, not silent - at "
+          "observe and warn",
+          verdicts["deny"][0] == "block" and verdicts["ask"][0] == "ask"
+          and all(verdicts[t][0] == "allow" and "not established" in verdicts[t][1]
+                  for t in ("observe", "warn")), verdicts)
+    sid = sid_of("ww8b", "read-only at bound")
+    got = shell(sid, _nested("ls src", bound), use_cfg=deny_cfg)
+    check("ww8b ...while a read-only command handed down exactly the bound is "
+          "allowed at the deny tier", got[0] == "allow", got)
+
+    # A keyword `mode=` is the positional mode spelled another way.
+    jforms = (
+        ("mode='a'", "python3 -c \"open('%s', mode='a').write('x')\"" % journal),
+        ("encoding then mode='a'",
+         "python3 -c \"open('%s', encoding='utf-8', mode='a').write('x')\""
+         % journal),
+        ("a heredoc with mode='w'",
+         "python3 - <<'PY'\nwith open('%s', mode='w') as fh:\n    fh.write('x')"
+         "\nPY" % journal),
+    )
+    for fname, cmd in jforms:
+        got = [(tier, shell(sid_of("ww9", fname, tier), cmd,
+                            use_cfg=_config._deep_merge(cfg, {"planGate": tier})))
+               for tier in _config.PLAN_GATE_TIERS]
+        check("ww9 the journal opened with %s is refused at every tier, naming "
+              "it" % fname,
+              all(v[0] == "block" and journal in v[1] for _t, v in got), got)
+    seen = same_as_bare("kw-mode",
+                        "python3 -c \"open('src/ww.py', 'w').write('x')\"",
+                        "python3 -c \"open('src/ww.py', mode='w').write('x')\"",
+                        "src/ww.py")
+    check("ww9a a source file opened with mode='w' is graded like the "
+          "positional 'w' at every tier",
+          all(b == w for _t, b, w in seen)
+          and deny_of(seen) == ("block", True), seen)
+    for name, cmd in (
+            ("the journal opened with mode='r'",
+             "python3 -c \"print(open('%s', mode='r').read())\"" % journal),
+            ("a source file opened with mode='r'",
+             "python3 -c \"print(open('src/ww.py', mode='r').read())\""),
+            ("a source file opened with a keyword that is not the mode",
+             "python3 -c \"print(open('src/ww.py', newline='').read())\"")):
+        sid = sid_of("ww9b", name)
+        _spend_slot(root, cfg, sid)
+        got = shell(sid, cmd, use_cfg=deny_cfg)
+        check("ww9b %s is allowed at the deny tier" % name,
+              got[0] == "allow", got)
+
+    # A redirect inside a quoted argument of a program that runs nothing is
+    # text; inside a command something runs, it is still a write.
+    for name, cmd in (
+            ("a commit message naming a redirect",
+             "git commit -m \"echo x > src/ww.py\""),
+            ("a commit message naming tee", "git commit -m \"x | tee src/ww.py\""),
+            ("a commit message naming a journal append",
+             "git commit -m \"echo x >> %s\"" % journal),
+            ("an echoed sentence naming a redirect",
+             "echo 'run: echo x > src/ww.py'")):
+        sid = sid_of("ww10", name)
+        _spend_slot(root, cfg, sid)
+        got = shell(sid, cmd, use_cfg=deny_cfg)
+        check("ww10 %s is allowed at the deny tier and takes no slot" % name,
+              got[0] == "allow" and _slot_file(root, cfg, sid)
+              == ["src/spent-before-these-cases.ts"], got)
+    for name, cmd in (
+            ("the bare redirect", "echo x > src/ww.py"),
+            ("a redirect handed to bash -c", "bash -c \"echo x > src/ww.py\""),
+            ("tee handed to sh -c", "sh -c 'echo x | tee src/ww.py'"),
+            ("a substitution inside double quotes",
+             "x=\"$(echo x > src/ww.py)\""),
+            ("backticks inside double quotes",
+             "x=\"`echo x > src/ww.py`\""),
+            ("a heredoc fed to a shell, its target absolute",
+             "bash <<'EOF'\necho x > %s/src/ww.py\nEOF" % root),
+            ("a heredoc program shelling out",
+             "python3 - <<'PY'\nimport os\nos.system('echo x > src/ww.py')\nPY"),
+            ("find running a shell per file",
+             "find . -name a -exec sh -c 'echo x > src/ww.py' \\;"),
+            ("a positional argument the handed command runs",
+             "bash -c 'eval \"$1\"' _ 'echo x > src/ww.py'"),
+            ("a quoted word of a program not known to run nothing",
+             "watch 'echo x > src/ww.py'"),
+            ("a git whose -c may run the quoted text",
+             "git -c core.pager='tee src/ww.py' log")):
+        sid = sid_of("ww10a", name)
+        _spend_slot(root, cfg, sid)
+        got = shell(sid, cmd, use_cfg=deny_cfg)
+        check("ww10a %s is still refused at the deny tier, naming the file"
+              % name, got[0] == "block" and "src/ww.py" in got[1], got)
+    # A shell body ends the directory walk (`_config.effective_cwd`), so a
+    # relative target inside one keeps being said as unestablished - not
+    # dropped as text.
+    sid = sid_of("ww10b", "heredoc relative")
+    _spend_slot(root, cfg, sid)
+    got = shell(sid, "bash <<'EOF'\necho x > src/ww.py\nEOF", use_cfg=deny_cfg)
+    check("ww10b a relative redirect in a heredoc fed to a shell is still said "
+          "as a destination not established, naming it",
+          got[0] == "allow" and "not established (src/ww.py)" in got[1], got)
+
+    # A handed `cd` places the handed write, and the outer read no longer
+    # grades the same redirect a second time at the outer directory.
+    sid = sid_of("ww11", "cd-out")
+    _spend_slot(root, cfg, sid)
+    got = shell(sid, "bash -c \"cd %s && echo x > ww.py\"" % outside,
+                use_cfg=deny_cfg)
+    check("ww11 a handed `cd` out of the tree followed by a redirect is "
+          "allowed at the deny tier", got[0] == "allow", got)
+    sid = sid_of("ww11a", "cd-in")
+    _spend_slot(root, cfg, sid)
+    got = shell(sid, "bash -c \"cd src && echo x > ww.py\"", use_cfg=deny_cfg)
+    check("ww11a ...while a handed `cd` into the tree followed by a redirect is "
+          "refused naming the file it lands in, not the word typed",
+          got[0] == "block" and "gate: src/ww.py\n" in got[1], got)
 
 
 def _expand_optional_chars(fragment):
