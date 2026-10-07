@@ -855,7 +855,7 @@
     {
       "id": "P117.10-2sz",
       "title": "the G1 hold is specified as a property with every writing verb enumerated",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes review findings P117-R34 to P117-R38 from the cost phase's sixth review round. Documents only.\n\nTwo rounds in a row found a new way past the G1 hold by reading verbs one at a time, so this task closes the class.\n- It applies R34's and R35's resolutions: the exemption is keyed on a field only add writes onto the task, and each per-task answer is bound to the commit it judged.\n- It applies the three low resolutions.\n- It specifies the hold as a property. Under the phase key, a task whose files changed cannot reach the phase's landing without the three answers bound to its current commit.\n- T6's acceptance includes an enumeration of every verb that writes a task's status, intentCheck, commit or a finding's fixTask, or that moves or reopens a task. Each verb either has a refused case under the phase key, or is named as followed with its reason, and the enumeration is derived from the code rather than typed.",
       "files": [
         "docs/research/pipeline-cost-design.md"
@@ -881,16 +881,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T20:04:02Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T20:45:14Z.44f402",
+        "status": "passed",
+        "at": "2026-10-07T20:45:14Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T11:45:57Z"

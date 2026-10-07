@@ -55,6 +55,25 @@ added, both for the probe: G1's like-for-like output limit, and its writes bound
 - The plugin's commit path is outside this repository's claims-block hook. T3's filed return
   carries the block, and the commit path appends it (T3).
 
+**Revised after its sixth review (2026-10-07).** Two rounds in a row found a verb that got past the
+G1 hold, each read one verb at a time. So the hold is stated once, as a property of the plan's
+record that landing asks, and the verbs that write what it reads are listed off the code. No figure
+changes:
+
+- The hold is one property: a task whose files changed reaches its phase's landing only with the
+  three answers bound to its current commit. Sign-off and `close-phase.py` ask it of the plan's
+  record, so a writer the list missed still cannot land a phase (section 5.2, T6).
+- T6 lists every verb whose calls write a key the property reads, each with a refused case or a
+  named reason. The verb command in section 10 derives the list.
+- The fix-task exception keys on `fixes`, which only `add` writes onto the task, and holds only
+  while findings of the task's own phase name it (section 5.2, T6).
+- Each per-task answer in the phase return names the commit it judged. Sign-off counts it only
+  while that is still the task's commit (T6).
+- The key is recorded on each task as well as on its phase, so a task that moves keeps it
+  (section 5.2, T6).
+- The citations of where `COMPATIBILITY.md` records a changed refusal (C3, T3) and of `run_git`
+  (T3) are corrected.
+
 ## 0. How to read this
 
 | Label | Means |
@@ -1125,11 +1144,12 @@ today (`scripts/_refs.py:1275`).
 
 **COMPATIBILITY.md.** The new flags are additive. The filed return is a new record whose shape is
 outside the contract. The close's refusal is wider: a `done --commit` with neither a filed reviewer
-return nor `--intent not-asked` and its basis closes at `7b489337`, and is refused after T3. What a
-verb refuses is outside the contract too, and `COMPATIBILITY.md`'s *Not promised* list records each
-such change; its entry for `done` refusing a close over a verdict that no longer holds is the
-precedent. T3 adds an entry for this one. The consequence to publish is that a close typed by hand,
-with no review behind it, now has to say so: `--intent not-asked --intent-basis "<why>"`.
+return nor `--intent not-asked` and its basis closes at `7b489337`, and is refused after T3.
+`COMPATIBILITY.md` records a change to what a verb refuses as an entry under *Outside this document
+entirely* (`:386` at `7b489337`), not in either *Not promised* list. Its entry for `done` and
+`close-phase.py` refusing to close over a verdict that no longer holds (`:451`) is the precedent,
+and T3 adds an entry beside it for this one. The consequence to publish is that a close typed by
+hand, with no review behind it, now has to say so: `--intent not-asked --intent-basis "<why>"`.
 
 **Confirming reading.** Each reading is taken inside the task cycle (section 1.1) and divided by the
 tasks it holds.
@@ -1794,8 +1814,9 @@ labelled:
   - the four are the phase reviewer's dispatch, the triage decision, the sign-off step and the final
     report;
   - a fix task's three are `next`, the executor and `next`, and the recorded fix tasks closed
-    `not-asked`. Under G1 a fix task keeps that close only as the `fixTask` its finding records
-    (section 5.2). Closed `deferred`, it would need a second phase review this model does not price;
+    `not-asked`. Under G1 a fix task keeps that close only when it was added with `--fixes` naming
+    its finding, and only while that finding names it (section 5.2). Closed `deferred`, it would
+    need a second phase review this model does not price;
   - it starts at the prefix the cycle leaves, `P′` + `W`, and grows by its own writes, so its main
     loop is `main(S, P′ + W, W_s, O_s)`. That replaces the flat `P′` + 4000 a request the revision at
     `b72372f7` assumed;
@@ -2031,42 +2052,96 @@ question (C14). Under G1 each one is answered before the phase merges.
   filed return with its `redFirst` word and basis, the recorded run and the `tests.gate` commands,
   and it asks the three questions of each task. The SHA is the way back from a line to its task,
   which the reviewer prompt says the phase diff lacks (`agents/audit-reviewer.md:48` at `7b489337`).
-- **Held by:** a close state of its own, and one refusal asked at sign-off and again at the
-  plugin's merge. Each reads the plan's own record, never a flag the caller sets at the close.
+- **Held by:** one property of the plan's record, asked at sign-off and again at the plugin's
+  merge, and a close state through which a task reaches it honestly. Each reads the plan's own
+  record, never a flag the caller sets at the close.
+  - *The property.* Under `review.perTask: phase`, a task whose files changed cannot reach its
+    phase's landing, sign-off and then `close-phase.py`, without the three answers bound to its
+    current commit. On the record it reads: each task of the phase that records a `commit`, and
+    whose key reads `phase` (below), carries in `intentCheck` an intent answer other than
+    `deferred`, a red-first grade and an inherited-test answer, each with its basis where it is
+    `not-asked`, and its
+    `intentCheck.commit` equals its `commit`. A fix task the plan records as one (below) may carry
+    `not-asked` with its basis instead, bound to its commit the same way. Landing asks this of the
+    record, not of which verbs ran, so a writer this design did not list still cannot land a phase
+    over a task that lacks it. T6 lists every verb whose calls write what the property reads,
+    derived from the code, with the answer each one gets.
   - *The close.* The rule sits on `done` itself, in the check C3 places in `_locked_done`, so it
-    holds whichever form closes the task. Under `review.perTask: phase`, every close that passes
-    `--commit`, with or without `--from-return`, records the task's intent as `deferred` itself,
-    and refuses any `--intent` word, `not-asked` included, writing nothing. So a task with a diff
-    can close neither as `not-asked`, the word sign-off already counts as answered
+    holds whichever form closes the task. When the task's key reads `phase`, every close that
+    passes `--commit`, with or without `--from-return`, records the task's intent as `deferred`
+    itself, and refuses any `--intent` word, `not-asked` included, writing nothing. So a task with
+    a diff can close neither as `not-asked`, the word sign-off already counts as answered
     (`reference/execute-task.md:373-377`), nor as a `matches` no reviewer gave. `deferred` is a word
     the verb writes and never one `--intent` offers (`INTENT_ANSWERS`,
-    `scripts/manifest/audit-task.py:4318`), so no caller can type it.
-  - *The one exception, a fix task the plan records as one.* A task that a finding in its own
-    phase's `review.findings` names as its `fixTask` may close `--intent not-asked` with its basis,
-    which is how section 5.1's sign-off model closes a fix task. Every other word is refused for it
-    too, and with no `--intent` it records `deferred` like any task. At `7b489337` no fix task could
-    meet this at its own close: `fixTask` is written only by `resolve-finding`, which refuses until
-    the fix task is `done` (`audit-task.py:7676`). So T6 has `add` write `fixTask` onto the
-    findings a new task fixes, in the write that adds the task, and nowhere else. It refuses a
-    finding outside the task's phase, or one already naming another task. A task added before its
-    finding existed, which is every task the phase review answers for, cannot gain the link. A
-    finding holding `fixTask` with no `commit` is already a state the plan holds after a `reopen`
-    (`:4955-4958`), and the findings tally counts only the two together (`:7348`).
-  - *The key, read once per phase.* `start` records the key's value on the phase when it promotes
-    the phase's first task, and `done` and the driver read the phase's value, never the live key.
-    Read live, a key switched to `always` partway through would let a later task close `not-asked`
-    with a basis, which `always` accepts, and the refusal below reads only tasks closed `deferred`.
-  - *The refusal.* The sign-off verb refuses, writing nothing, while any task closed `deferred`
-    lacks any of its three answers in the phase review's filed return. `close-phase.py` asks the
-    same question through the same function before it merges or hands over the merge command. At
+    `scripts/manifest/audit-task.py:4318`), so no caller can type it. A `deferred` task fails the
+    property until sign-off writes its answers.
+  - *The one exception, a fix task the plan records as one.* A task is one when it carries `fixes`,
+    the ids of the findings it was added to fix, and each of those is a finding in its own phase's
+    `review.findings` that names it as its `fixTask`. Such a task may close `--intent not-asked`
+    with its basis, which is how section 5.1's sign-off model closes a fix task. Every other word is
+    refused for it too, and with no `--intent` it records `deferred` like any task.
+    - *What writes the key.* `add --fixes <findingId>[,<findingId>]` writes `fixes` onto the task,
+      and each finding's `fixTask`, in the write that adds the task. No other verb writes `fixes`:
+      each refuses the flag through `VERB_FLAGS` (`audit-task.py:9834`). `add` refuses a finding
+      outside the task's phase, or one already naming another task. A task added before its
+      finding existed, which is every task the phase review answers for, cannot gain the key.
+    - *Why the link alone is not the key.* At `7b489337` no fix task could meet the exception at its
+      own close: `fixTask` is written only by `resolve-finding`, which refuses until the fix task is
+      `done` (`:7676`). Once the task is done, though, `resolve-finding --fix-task` writes the link
+      onto any finding. It refuses none outside the task's phase and replaces a link already there
+      (`:7703-7745`), and `reopen` keeps it (`:4955-4958`). Keyed on the link, a task closed
+      `deferred` could gain it, be reopened, restarted and closed `not-asked`. Keyed on `fixes`,
+      that close is refused.
+    - *How long it holds.* Only while each finding `fixes` names still names the task. A
+      `resolve-finding` that points one at another task ends it. So does a `move`, which takes the
+      task to another phase while its findings stay behind. The task then owes its three answers
+      like any other, and the property refuses the landing without them. A finding holding
+      `fixTask` with no `commit` is already a state the plan holds after a `reopen`
+      (`:4955-4958`), and the findings tally counts only the two together (`:7348`).
+  - *The key, read once per phase and kept by the task.* `start` records the key's value on the
+    phase when it promotes the phase's first task. It records the same value on each task at that
+    task's first start, copied from the phase, and a later start keeps it. `done`, the driver and
+    the property read the task's value; a task with none reads its phase's, and a phase with none
+    reads as `always`, the default.
+    - Read live, a key switched to `always` partway through would let a later task close
+      `not-asked` with a basis, which `always` accepts.
+    - Read off the phase alone, the key would stay behind when the task moves. `move` takes a
+      started task once it is `blocked`, or `pending` again after a `reopen` (`_move_refusal`,
+      `audit-task.py:5408-5424`), into a phase that may record no key, where it would close
+      `not-asked`. Recorded on the task, the key moves with it.
+  - *The refusal.* A task that records a commit, and whose key reads `phase`, is *owed an answer*
+    until a filed phase return answers its current commit, unless it is a fix task the plan records
+    as one. The phase reviewer's brief lists the tasks owed an answer (T3), and the filing verb
+    refuses a return that leaves one out (T6). The sign-off verb reads every phase return filed for
+    each phase it signs off, alone or in a group (`_locked_signoff`, `:7173`, and `_locked_group`,
+    `:8377`). For each task it counts an entry only when the entry's `commit`
+    equals the commit the task records now, and it writes that entry's three answers onto the task
+    with that commit. Then it asks the property of the plan it is about to write, and refuses,
+    writing nothing, while any task fails it. `close-phase.py` asks the property through the same
+    function, in a helper both import, before it merges or hands over the merge command. At
     `7b489337` it refuses on the gate verdict, and its merge plan reads the trees and the branches
     and never whether sign-off passed (`scripts/git/_worktrees.py:722`). Without the question, the
-    plugin's own merge would be a way past the sign-off verb.
+    plugin's own merge would be a way past the sign-off verb. So a task reopened and recommitted
+    after a review answered it is refused at both until a review answers its new commit, though the
+    old entry is still filed.
   - *Followed, not enforced:*
-    - a `--no-change` close of a task whose files did change. It records no commit, so there is no
-      diff for `deferred` to hold, and nothing compares the task's files with what changed while it
-      ran. `not-asked` with its basis keeps its meaning there, as today;
-    - a `cancel` of a task whose work landed, which records its reason and no answer, as today;
+    - work a task committed and then stopped recording. A `--no-change` close records no commit.
+      `reopen` clears the one a task recorded (`:5023`), and the task may then close `--no-change`,
+      be cancelled or be moved away. The record then holds no diff for the property to read while
+      the commit stays on the branch, and nothing compares the task's files with what changed while
+      it ran. `not-asked` with its basis keeps its meaning on a `--no-change` close, and a `cancel`
+      records its reason and no answer, as today. The check that would see this work is the one a
+      group sign-off already makes: every commit the branch carries past its fork must be a task's
+      recorded commit, an audit-state or index commit the journal records, a clean merge of those,
+      or one accepted with a reason (`audit-task.py:7924-7938`). Asked at one phase's landing, it
+      would also stop on the first commit of every task reopened and recommitted, which the plan no
+      longer records;
+    - a finding the caller records. `finding` records what it is handed (`:7566-7587`), so a task
+      added with `--fixes` naming a finding its caller has just recorded closes `not-asked` like a
+      review's fix task. Keying the exception on findings recorded from a filed phase return would
+      not make this enforced, because the role a return is filed under is the caller's word (C3,
+      *What nothing checks*). It would move this leg onto that rule, and take the exception from
+      every fix task whose finding was recorded by hand;
     - a hand edit of the shard. `journal-writes.py` records every write to the plan after the fact,
       and nothing refuses one (`reference/phase-signoff.md:69`). That is every plan field's standing
       today;
@@ -2528,7 +2603,8 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
     `claims` block (below);
   - `plugins/audit/agents/audit-executor.md`, `plugins/audit/agents/audit-reviewer.md`;
   - the task prose, `plugins/audit/scripts/_refs.py` and `PLUGIN-BUILD-GUIDE.md`;
-  - `COMPATIBILITY.md`, whose *Not promised* list gains the wider refusal (C3);
+  - `COMPATIBILITY.md`, whose *Outside this document entirely* list gains an entry for the wider
+    refusal, beside the one for closing over a verdict that no longer holds (C3);
   - the tests of each script it changes.
 - **The reviewer's write.** `audit-reviewer.md` gains one *May* line: one call of the filing verb.
   Its *Must not* keeps "anything that writes", with that call as the only exception. Its paragraph
@@ -2575,14 +2651,18 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
   request leaves open? (section 5.4). Its case: a brief computed for a phase with a saved request
   holds that text byte-identical, and one with none says so rather than leaving the field empty.
 - **Added by the fourth review: what that brief carries per task under G1.** With `review.perTask:
-  phase` (T6), the brief also carries, for each task closed `deferred`, its commit SHA and declared
-  files, its recorded gate run, and its `tests.gate` commands resolved through
+  phase` (T6), the brief also carries, for each task owed an answer (section 5.2), its commit SHA
+  and declared files, its recorded gate run, and its `tests.gate` commands resolved through
   `meta.buildCommands`. Those are the tasks with a diff, less any fix task the plan records as one
-  (section 5.2). It asks the three per-task questions of each task: the intent binding against
-  `git show <sha> -- <files>`, the red-first grade, and the inherited-test question bounded by that
-  task's `tests.gate` (C14). Its cases:
+  and any task a filed phase return already answers at its current commit. It asks the three
+  per-task questions of each task: the intent binding against `git show <sha> -- <files>`, the
+  red-first grade, and the inherited-test question bounded by that task's `tests.gate` (C14). Its
+  cases:
   - a brief computed for a phase of three tasks holds each task's SHA, files and `tests.gate`
     byte-identical to the plan's;
+  - a task whose current commit a filed phase return answers is left out of the next brief, and
+    once it is reopened and closed at a new commit it is listed again. Without the second half, a
+    brief that left out every task a return had ever named would pass;
   - a task whose `tests.gate` names a `key:project` entry the plan cannot resolve is printed with
     that entry unresolved and says so, rather than dropping it;
   - a brief for a task with no commit yet is refused, writing nothing, because the binding would
@@ -2592,9 +2672,10 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
     claim-bearing surface, such as any `.md`, whose message has no `claims:` block. It is a
     `PreToolUse` hook on Bash (its docstring's first line, and `.claude/settings.json`), and it
     decides on a command's `git commit` statement. The plugin's commit path runs its `git commit`
-    as a subprocess of its own (`run_git`, `plugins/audit/scripts/governance/_scoped_commit.py:105`
-    at `7b489337`). So the Bash command the hook reads is `commit-task-work.py`'s invocation. It
-    holds no `git commit` statement, and the hook lets it through with no block. The fifth review
+    as a subprocess of its own (`run_git`, `plugins/audit/scripts/governance/_scoped_commit.py:85`
+    at `7b489337`, whose `subprocess.run` is at `:105`). So the Bash command the hook reads is
+    `commit-task-work.py`'s invocation. It holds no `git commit` statement, and the hook lets it
+    through with no block. The fifth review
     names two task commits of this document, `b72372f7` and `68f43cac`. Each touches a `.md` and
     carries no block (`git log -1 --format=%B <sha>`), and each carries the `Audit-Row` trailer the
     plugin's commit path writes.
@@ -2677,11 +2758,16 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
   - the config schema and `_config_rules.py` for `review.perTask` (`always` by default; `phase` for
     G1; `signals` for G2), the panel's control and the doctor's line;
   - the driver's step (T4) and the phase reviewer's brief (T3);
-  - the plan schema: `deferred` as an intent answer, and the key's value recorded on the phase;
+  - the plan schema: `deferred` as an intent answer; the review's red-first grade and
+    inherited-test answer, with their bases, beside the answer in `intentCheck`; `fixes` on a task;
+    and the key's value, recorded on the phase and on the task;
   - in `plugins/audit/scripts/manifest/audit-task.py`: `done` in every form, through
-    `_locked_done`; `start`, which records the key on the phase; `add`, which gains `--fixes`; the
-    filing verb's shape for a phase return (T3's verb); and the sign-off verb;
-  - `plugins/audit/scripts/git/close-phase.py`, which asks sign-off's question before it merges;
+    `_locked_done`; `start`, which records the key on the phase and on the task; `add`, which gains
+    `--fixes`; the filing verb's shape for a phase return (T3's verb); and the sign-off verb, for
+    one phase and for a group;
+  - the property of section 5.2 as one function, in a helper `audit-task.py` and `close-phase.py`
+    both import;
+  - `plugins/audit/scripts/git/close-phase.py`, which asks the property before it merges;
   - `plugins/audit/agents/audit-reviewer.md` at `7b489337`: the *What you are handed* table
     (`:25-36`), the `mode: phase` paragraph (`:55-57`), the return format (`:220-235`) and the
     paragraph naming who reads the answer (`:246-251`). Its additions count against T8's reviewer
@@ -2692,8 +2778,9 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
   - the tests of each script it changes.
 - **Mechanism.**
   - Under `phase`, the driver dispatches no per-task reviewer. The phase reviewer's brief carries,
-    for each task closed `deferred`, what T3 lists: its commit SHA and files, description, filed
-    return, recorded run and `tests.gate`. It asks the three per-task questions of each task (C14).
+    for each task owed an answer (section 5.2), what T3 lists: its commit SHA and files,
+    description, filed return, recorded run and `tests.gate`. It asks the three per-task questions
+    of each task (C14).
   - *The reviewer's definition.* At `7b489337` it grades red-first `not-attempted` in `mode: phase`
     and returns one `intent` object (C14). Under `review.perTask: phase` its phase-mode paragraph
     asks the three questions of each task the brief lists, by the rules `mode: task` applies to one
@@ -2703,6 +2790,7 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
 
     ```
     "tasks": [{"id": "<task id>",
+               "commit": "<the commit SHA the brief handed for this task>",
                "answer": "<one word of intent.answer's list>",
                "note": "what this task's diff does, said against its description and its claim",
                "missing": ["<an input this task's entry was not handed>", ...],
@@ -2716,41 +2804,112 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
     For `redFirst` that is also a lint: `red_first_vocabulary_drift` requires the reviewer's return
     format to declare that list exactly once (`scripts/_refs.py:1181-1185`, through `_RF_REV_SHAPE`
     at `:1154`), so a second literal list here would turn it red. The paragraph naming who reads the
-    answer gains the phase-mode reader:
-    the sign-off verb, which writes each entry onto its task with that task's own commit SHA.
+    answer gains the phase-mode reader: the sign-off verb, which writes each entry onto its task
+    with the entry's `commit`, and only while that is the commit the task records.
   - *The filing verb's phase return.* T3's verb files it under the phase id with the role
     `reviewer`. Its derived path is keyed on the head the reviewer's brief was computed at, which
     the brief records. So a review after fix tasks files beside the earlier one, and a second filing
     for one head is refused, as a second filing for one start is. It refuses, writing nothing and
-    naming what is missing, a return that lacks a `tasks` entry for any task of the phase closed
-    `deferred`, an entry that lacks any of the three answers or gives `not-asked` with no basis, and
-    an entry naming a task outside the phase. A reviewer that follows the old definition is refused
-    at filing and told which entries it owes, so it does not reach sign-off as a held phase.
-  - *The key check.* The entry's keys are one tuple, read by the filing verb and by a check in
-    `_refs.py` modelled on `red_first_vocabulary_drift` (`_refs.py:1189`). The check reads the
-    `tasks` entry in the reviewer's return format, and fails on a key either side names that the
-    other does not.
-  - *The close.* Under `phase`, `done` in every form that passes `--commit` records the task's
-    intent as `deferred` itself, a new answer in the plan schema, and refuses any `--intent` word,
-    writing nothing. So a task the phase review must bind cannot close as `not-asked`, which
-    sign-off counts as answered (`reference/execute-task.md:373-377` at `7b489337`). The exception
-    is a task that a finding in its own phase's `review.findings` names as its `fixTask`: it may
-    close `--intent not-asked` with its basis. `add --fixes <findingId>[,<findingId>]` writes that
-    `fixTask` in the write that adds the task. It refuses a finding outside the task's phase, or
-    one already naming another task, and every other verb refuses the flag through `VERB_FLAGS`
-    (`audit-task.py:9834`). A `--no-change` close keeps today's rule (section 5.2).
-  - *The key, once per phase.* `start` records `review.perTask`'s value on the phase when it
-    promotes the phase's first task, and `done` and the driver read that value. A phase with none
-    recorded reads as `always`, the default.
-  - *The refusal.* The sign-off verb refuses, writing nothing, while any task closed `deferred`
-    lacks any of its three answers in the phase review's filed return: an intent answer, a
-    red-first grade, and an inherited-test answer, with its basis where that answer is `not-asked`.
-    When the review answers for a task, sign-off writes the answer onto that task with the task's
-    own commit SHA, so the answer still names the diff it judged. The question is one function in a
-    helper both import, and `close-phase.py` asks it before it merges or hands over the merge
-    command.
+    naming what is missing:
+    - a return that lacks a `tasks` entry for a task owed an answer (section 5.2);
+    - an entry that lacks any of the three answers or gives `not-asked` with no basis;
+    - an entry naming a task outside the phase;
+    - an entry whose `commit` is not the commit its task records, and an entry for a task whose
+      current commit an earlier filed return already answers. So each commit of a task is answered
+      once, and sign-off never chooses between two answers.
+
+    A reviewer that follows the old definition is refused at filing and told which entries it owes,
+    so it does not reach sign-off as a held phase.
+  - *The key check.* The entry's keys are one tuple, `commit` among them, read by the filing verb
+    and by a check in `_refs.py` modelled on `red_first_vocabulary_drift` (`_refs.py:1189`). The
+    check reads the `tasks` entry in the reviewer's return format, and fails on a key either side
+    names that the other does not.
+  - *The close.* When the task's key reads `phase`, `done` in every form that passes `--commit`
+    records the task's intent as `deferred` itself, a new answer in the plan schema, and refuses any
+    `--intent` word, writing nothing. So a task the phase review must bind cannot close as
+    `not-asked`, which sign-off counts as answered (`reference/execute-task.md:373-377` at
+    `7b489337`). The exception is a fix task the plan records as one: a task carrying `fixes`, each
+    of whose findings sits in its own phase's `review.findings` naming it as `fixTask`. It may close
+    `--intent not-asked` with its basis. `add --fixes <findingId>[,<findingId>]` writes `fixes` onto
+    the task and each finding's `fixTask`, in the write that adds the task. It refuses a finding
+    outside the task's phase, or one already naming another task, and every other verb refuses the
+    flag through `VERB_FLAGS` (`audit-task.py:9834`). A `--no-change` close keeps today's rule
+    (section 5.2).
+  - *The key, once per phase and kept by the task.* `start` records `review.perTask`'s value on the
+    phase when it promotes the phase's first task, and on each task at its first start, copied from
+    the phase. `done`, the driver and the property read the task's value. A task with none reads
+    its phase's, and a phase with none recorded reads as `always`, the default.
+  - *The refusal.* The sign-off verb reads every phase return filed for each phase it signs off,
+    alone or in a group. It counts an entry only when the entry's `commit` equals the commit its
+    task records now, and writes that entry's three answers onto the task's `intentCheck` with that
+    commit: an intent answer, a red-first grade, and an inherited-test answer, with its basis where
+    that answer is `not-asked`. Then it asks the property of section 5.2 of the plan it is about to
+    write, and refuses, writing nothing, while any task fails it. The property is one function in a
+    helper both import, and `close-phase.py` asks it of the plan's record before it merges or hands
+    over the merge command.
   - Under `signals`, the driver dispatches the per-task reviewer only when the task's `redFirst` did
     not come back `proved`, or when the gate row disagrees with the filed return.
+- **Every verb that writes what the property reads.** The list is derived, not typed. The verb
+  command in section 10 takes the verbs from the `doors` map in `audit-task.py`'s `_dispatch`
+  (`:10372-10381` at `7b489337`), the dispatch `VERB_FLAGS` is graded against, and adds
+  `close-phase.py`'s `main`. It walks each one's calls through the plugin's scripts and prints the
+  keys among those the property reads that the calls write: a task's `status`, `intentCheck`,
+  `commit` or `redFirst`, its place in a phase's `tasks`, a finding's `fixTask`, and a phase's
+  `findings`. It cannot tell whose record a key belongs to, so the third column is read off each
+  site `-v` prints. Each verb with a key on a task or a finding, or one the exception reads, gets a
+  refused case under `phase` or a named reason. Lines are `audit-task.py`'s at `7b489337` unless
+  another file is named:
+
+  | Verb | The command prints | Whose, read at each site | Its answer under `phase` |
+  |---|---|---|---|
+  | `done` | `commit intentCheck status` | the task's (`:4440-4457`); a journal row's commit (`:4516`) | refused: every `--intent` word on a close that passes `--commit`, but a recorded fix task's `not-asked` (the close's cases) |
+  | `reopen` | `commit findings intentCheck status` | the task's status, commit and `intentCheck` (`:5021-5029`); a bug's status (`:5034`); a finding's commit (`:4975-4982`) | refused: a task reopened and recommitted after a review answered it, at sign-off and at `close-phase.py`; a task `resolve-finding` linked, then reopened and closed `not-asked`, at `done`. Followed: work it stops recording (section 5.2). It refuses a task whose phase is signed off (`:4926-4948`) |
+  | `resolve-finding` | `commit findings fixTask status` | a finding's (`:7742-7745`) | refused: the linked-then-reopened case above. It cannot grant the exception, which reads `fixes`. A link it moves ends the exception of the task the finding named, and the property then refuses the landing |
+  | `move` | `fixTask status tasks` | the task's phase (`:5490`, `:5500`); a finding's `fixTask`, renamed with the task (`_id_refs.py:119-122`) | refused: a started task moved to a phase that records no key, at `done --intent not-asked`; a fix task moved away from its findings, at sign-off. It refuses a task that is done or in progress (`:5408-5424`) |
+  | `cancel` | `status` | the task's (`:3034`); cancelling a phase, the phase's (`:3089`) and each open task's (`:3098-3101`) | refused, today and pinned under `phase`: a task closed `deferred` (`:3069`). Followed: work a task stopped recording (section 5.2) |
+  | `block` | `status` | the task's (`:5289`) | refused, today and pinned under `phase`: a task closed `deferred` (`:5276`). A blocked task records no commit, and sign-off refuses a phase with open work (`:7147`) |
+  | `start` | `status` | the task's (`:3287`); a phase's (`_panel_write.py:1343`) | writes no commit and no answer, and records the key the others read. Refused: the key switched after the phase's first start, and the moved task above |
+  | `add` | `status tasks` | a new task, appended to its phase (`:2809`); a phase's status | refused: `--fixes` naming another phase's finding, or one already naming another task. A new task records no commit, so the property reads nothing of it until `done` writes one |
+  | `finding` | `findings status` | a phase's `review.findings` (`:7587`) | followed: a finding its caller records (section 5.2) |
+  | `signoff` | `status` | the phase review's verdict, for one phase (`:7206`) and for a group (`:8439`) | the landing: it writes the answers and asks the property, in both forms |
+  | `close-phase.py` | `commit status` | a phase's (`close-phase.py:677`); a journal row's commit (`_journal_io.py:1741`) | the landing: it asks the property |
+  | `seed` | `status tasks` | the one task of a plan it writes where none exists (`:9731`) | cannot reach a keyed phase: `seed` is refused where a plan exists (`:6032`) |
+
+  - *The verbs left.* `add-phase`, `scope`, `retarget`, `next-id`, `settle`, `note`, `couple`,
+    `uncouple`, `correct`, `bug-add`, `mute` and `unmute` print `status` alone, and only through a
+    phase's. That is the status a phase takes from its index stub as the plan is read
+    (`_manifest_io.py:176`), and the stub fields a write copies onto the index (`:1916`). The
+    command prints `:1874` and `:1944` beside that site because their loops share its variable.
+    Each verb in the table prints the first of those sites too. None of the verbs left writes a key
+    the property reads on a task or a finding.
+  - *Outside `audit-task.py` and `close-phase.py`.* The command's `--all` walks every other entry
+    point. Those that write a key the property reads into a user's plan are `repair-commits.py`,
+    which clears the commit of a task whose commit no ref holds (`_commit_trail.py:314-344`), and
+    the ones that rename ids through `_id_refs.rename`, a finding's `fixTask` among them
+    (`_id_refs.py:119`): `materialize-proposal.py` and the panel, bringing a parked phase in, and
+    the merge driver `merge-manifest.py`. The property holds each at landing, because it reads the
+    record whoever wrote it. A cleared commit is on no ref, so its work cannot land. A parked task
+    brought in with a commit and no answers, under a key that reads `phase`, is owed one. A rename
+    rewrites a task's id and the `fixTask` naming it in one pass and leaves finding ids alone
+    (`_id_refs.py:103-148`), so the exception still reads the same link.
+  - *`redFirst` is on no line.* No verb writes `task.redFirst`: the orchestrator copies the block
+    onto the task by hand (`reference/execute-task.md:674-678`), the hand edit section 5.2 names.
+    The property does not read that field. The review's red-first grade, which it reads, reaches
+    the task only through sign-off.
+  - *What the command cannot see, and what it prints instead.* It follows no call made through a
+    value, a function or module held in a variable, and reads no key set through `setattr` or
+    spread from a `**` mapping. Each `audit-task.py` verb that writes reaches the validator through
+    a value (`_validator`, `:5104-5113`), so the command walks the validator as a root of its own;
+    it prints `-`. Every
+    store whose key it cannot read is printed with `-v`, never dropped. At `7b489337` those stores
+    are:
+    - maps a function builds for its own reading, and the bytes a write keeps for its rollback
+      (`_panel_write.py:317-319`);
+    - whole shard and index bodies on the write path (`_manifest_io.py:1105`, `:1931`), and the
+      file index's lists renamed with a task (`_id_refs.py:147`);
+    - a list entry a verb replaces whole beside the `dict(...)` line that names its keys
+      (`:4978`, `:7744`), and a mute entry (`:9446`);
+    - `_settle`'s phase or bug (`:1812-1821`), and `scope`'s two reference lists (`:6414-6423`).
 - **Micro-test, offline:** a drive over the T4 fixture with each value:
   - `phase` dispatches no per-task reviewer, and every task it closes records `deferred`;
   - under `phase`, each of these on a task with a diff is refused, writing nothing:
@@ -2766,20 +2925,42 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
     `--intent not-asked` with its basis, and a task not recorded that way is refused with the same
     flags. `add --fixes` naming a finding of another phase, or one already naming another task, is
     refused, writing nothing;
+  - under `phase`, a task closed `deferred`, then named as `fixTask` by `resolve-finding
+    --fix-task` on a finding of its own phase, reopened, restarted and closed `--intent not-asked`
+    with its basis, is refused: it carries no `fixes`. The same sequence on a task added with
+    `--fixes` closes. Without that half, a rule that refused every reopened task would pass;
+  - a task added with `--fixes` and closed `not-asked`, whose finding `resolve-finding` then
+    points at another task, is refused at sign-off and by `close-phase.py`, and passes once a filed
+    phase return answers its commit;
   - a phase whose first task started under `phase`, with the key then set to `always`: a plain
     `done --commit <sha> --intent not-asked --intent-basis "..."` is still refused;
-  - a phase return that lacks one `deferred` task's entry is refused at filing, writing nothing,
-    and names that task. With the entry restored it files;
-  - the key check goes red when the reviewer's return format drops a key of the `tasks` entry, and
-    red when the filing verb's tuple gains one the format lacks. `red_first_vocabulary_drift` stays
-    green over the changed definition;
-  - `close-phase.py` refuses to merge a fixture whose `deferred` task lacks one answer, and merges
-    it once all three are filed;
+  - a task started under `phase`, blocked, and moved to a phase that records no key: a plain
+    `done --commit <sha> --intent not-asked --intent-basis "..."` is refused, and with no
+    `--intent` it closes `deferred`. A task moved before its first start takes its new phase's key
+    and closes `not-asked` there. Without that half, a rule that refused every moved task would
+    pass;
+  - `cancel` and `block` of a task closed `deferred` are refused, writing nothing, under `phase`;
+  - a phase return that lacks the entry of one task owed an answer is refused at filing, writing
+    nothing, and names that task. With the entry restored it files;
+  - a phase return whose entry names a commit other than the one its task records is refused at
+    filing, writing nothing, and so is a second entry for a commit an earlier return answers. With
+    the task's own commit, and for a commit no return answers, it files;
+  - the key check goes red when the reviewer's return format drops a key of the `tasks` entry,
+    `commit` included, and red when the filing verb's tuple gains one the format lacks.
+    `red_first_vocabulary_drift` stays green over the changed definition;
+  - a task answered in a filed phase return, then reopened, recommitted and closed `deferred`, is
+    refused at sign-off, naming the task, while the earlier entry is still filed. A return
+    answering its new commit lets sign-off pass;
+  - `close-phase.py` refuses to merge a fixture whose task with a commit lacks one of its three
+    answers on the record, and merges it once all three are written;
+  - after sign-off, a fixture whose task's `commit` is changed in the shard by hand is refused by
+    `close-phase.py`, and so is one whose `intentCheck.commit` is. Restored, it merges. This case
+    holds a writer the table above missed, since it reads the record and not the verb;
   - a fixture whose tasks closed the G1 way, `deferred`, is refused at sign-off when one task's
     intent answer is removed from the phase review's filed return. The same holds with its red-first
     grade removed, and with its inherited-test answer removed. With all three restored it passes;
-  - a fixture with no `deferred` task signs off as today, so the refusal does not fire where G1 is
-    off;
+  - a fixture with no task whose key reads `phase` signs off as today, so the refusal does not fire
+    where G1 is off;
   - `signals` dispatches exactly the reviewers its two conditions select;
   - `always` drives as T4 does.
 
@@ -3015,9 +3196,9 @@ this design's saving.
      task. Each of the three answers is carried into the phase reviewer's computed brief, per task,
      with the task's commit SHA, files, filed return, recorded run and `tests.gate`. Each such task
      closes `deferred`, not `not-asked`, whichever form of `done` closes it. Sign-off, and the
-     plugin's merge after it, refuse while any `deferred` task lacks any of its three answers
-     (section 5.2, T3, T6). What is given up is the timing: each answer arrives before the merge,
-     not before the commit.
+     plugin's merge after it, refuse while any task whose files changed lacks any of its three
+     answers bound to its current commit (section 5.2, T3, T6). What is given up is the timing: each
+     answer arrives before the merge, not before the commit.
      - Predicted on the cycle: 1.33 to 1.59 like for like, a mean of 1.45, and 1.12 to 1.33 against
        whole arm A, a mean of 1.22.
      - Carrying costs `0.1482` to `0.2552` a session at sign-off. Charged back to the cycle, that is
@@ -3165,6 +3346,7 @@ And from the records:
 | how much of the main loop's output came back as its own cache writes (section 5.1) | the write-back command below, from the same checkout |
 | each dispatch's brief and hand-back bytes, the review's three answers, and its work beyond its start, billed and at Opus rates (C14, section 5.1) | the review command below, with the first and last main-loop request, from the same checkout |
 | rung 1, G2 and G1, and every doubled row (sections 5.1, 5.3, 5.4) | the arithmetic written in section 5.1, on the span, open-and-close, write-back and review commands' readings and `contexts:` → `$/request` |
+| the verbs whose calls write what G1's property reads, and each site (section 5.2, T6) | the verb command below, from any checkout that holds `7b489337`; `-v` prints each site and every store whose key it cannot read, and `--all` walks the other entry points |
 
 ```
 python3 - <(git show 7b489337:plugins/audit/reference/orchestrator.md) <<'EOF'
@@ -3594,3 +3776,137 @@ Run over each arm C session from its cycle's first request to its last request (
 The background executors' hand-backs print 1188 bytes, the launch notice. On `feature-C-1` with
 `6 13` it printed the reviewer's brief at 4742 bytes, its hand-back at 3550, its work at `0.0996`,
 and the executor's hand-back at 6142.
+
+The verb command reads the plugin's scripts at a commit through git, so it runs from any checkout
+that holds the commit. It takes the verbs from the `doors` map in `audit-task.py`'s `_dispatch`,
+and adds `close-phase.py`'s `main` and the validator. From each it walks the calls it can resolve
+by name: a function of the same file, a nested one, an imported one, or one reached through a
+module's alias. In each function it reads the stores of the keys the property reads:
+
+- a subscript written or deleted;
+- a `pop` or `setdefault` of the key, and a mutating call on a subscript of it;
+- `dict(...)` or `update(...)` with the key as a keyword;
+- the key passed to a function that stores through that parameter;
+- a key held in a module constant, or in a loop over one.
+
+It prints each verb with the keys its calls write. `-v` adds each site, and every store whose key it
+could not read. `--all` walks every other entry point's `main` in place of `audit-task.py`'s verbs.
+
+```
+python3 - 7b489337 [-v] [--all] <<'EOF'
+import ast, subprocess, sys
+REF = sys.argv[1]
+F = ("status", "intentCheck", "commit", "redFirst", "fixTask", "tasks", "findings")
+MUT = ("append", "extend", "insert", "remove", "pop", "clear", "update", "setdefault")
+git = lambda *a: subprocess.run(("git",) + a, stdout=subprocess.PIPE, check=True).stdout.decode()
+key = lambda s: s.slice.value if type(s.slice).__name__ == "Index" else s.slice
+lit = lambda n: n.value if isinstance(n, ast.Constant) and isinstance(n.value, str) else None
+mods = dict((p.rsplit("/", 1)[1][:-3], ast.parse(git("show", REF + ":" + p)))
+            for p in git("ls-tree", "-r", "--name-only", REF, "plugins/audit/scripts").split() if p.endswith(".py"))
+defs, alias, consts = {}, {}, {}
+for m, tree in mods.items():
+    defs[m] = dict((d.name, d) for d in tree.body if isinstance(d, ast.FunctionDef))
+    alias[m], consts[m] = {}, {}
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            alias[m].update((a.asname or a.name, (a.name, None)) for a in n.names if a.name in mods)
+        if isinstance(n, ast.ImportFrom) and n.module in mods:
+            alias[m].update((a.asname or a.name, (n.module, a.name)) for a in n.names)
+    for n in tree.body:
+        names, v = [t.id for t in getattr(n, "targets", []) if isinstance(t, ast.Name)], getattr(n, "value", None)
+        if isinstance(v, (ast.Tuple, ast.List, ast.Constant)):
+            consts[m].update((t, [lit(e) for e in getattr(v, "elts", [v])]) for t in names)
+        if isinstance(v, ast.Attribute) and isinstance(v.value, ast.Name) and alias[m].get(v.value.id, (0, 0))[1] is None:
+            alias[m].update((t, (alias[m][v.value.id][0], v.attr)) for t in names)
+
+
+def resolve(m, fn, f):
+    if isinstance(f, ast.Name):
+        inner = [d for d in ast.walk(fn) if isinstance(d, ast.FunctionDef) and d is not fn and d.name == f.id]
+        src = (m, inner[0]) if inner else alias[m].get(f.id) or (m, f.id)
+        return src if inner else (src[0], defs[src[0]][src[1]]) if src[1] in defs.get(src[0], {}) else None
+    if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name):
+        src = alias[m].get(f.value.id)
+        return (src[0], defs[src[0]][f.attr]) if src and not src[1] and f.attr in defs[src[0]] else None
+
+
+def stores(fn):
+    for n in ast.walk(fn):
+        ts = getattr(n, "targets", None) or [getattr(n, "target", None)] if isinstance(n, (ast.Assign, ast.Delete, ast.AugAssign)) else []
+        for t in [e for t in ts for e in getattr(t, "elts", [t])]:
+            if isinstance(t, ast.Subscript):
+                yield n.lineno, key(t)
+
+
+def slots(d):
+    names = [a.arg for a in d.args.args]
+    return set(names.index(k.id) for _, k in stores(d) if isinstance(k, ast.Name) and k.id in names)
+
+
+def scan(m, name, memo={}):
+    if (m, name) not in memo:
+        fn, writes, odd, edges, loops = defs[m][name], [], [], set(), {}
+        for n in ast.walk(fn):
+            if isinstance(n, ast.For) and isinstance(n.target, ast.Name):
+                it = n.iter
+                held = consts.get(alias[m].get(getattr(it.value, "id", ""), ("",))[0], {}).get(it.attr) \
+                    if isinstance(it, ast.Attribute) else consts[m].get(getattr(it, "id", ""))
+                loops.setdefault(n.target.id, []).extend(held or [lit(e) for e in getattr(it, "elts", [])])
+        params = set(a.arg for d in ast.walk(fn) if isinstance(d, ast.FunctionDef) for a in d.args.args)
+        for line, k in stores(fn):
+            named = isinstance(k, ast.Name) and (loops.get(k.id) or consts[m].get(k.id))
+            if lit(k) in F or named:
+                writes.extend((v, line, "store") for v in (named or [lit(k)]) if v in F)
+            elif not isinstance(k, ast.Constant) and not (isinstance(k, ast.Name) and k.id in params):
+                odd.append(line)
+        for n in ast.walk(fn):
+            r = resolve(m, fn, n) if isinstance(getattr(n, "ctx", None), ast.Load) else None
+            if r and defs[r[0]].get(r[1].name) is r[1]:
+                edges.add((r[0], r[1].name))
+            f, args = getattr(n, "func", None), getattr(n, "args", None)
+            if not isinstance(n, ast.Call):
+                continue
+            if isinstance(f, ast.Attribute) and f.attr in MUT:
+                if f.attr in ("pop", "setdefault") and args and lit(args[0]) in F:
+                    writes.append((lit(args[0]), n.lineno, f.attr))
+                if isinstance(f.value, ast.Subscript) and lit(key(f.value)) in F:
+                    writes.append((lit(key(f.value)), n.lineno, f.attr))
+            if getattr(f, "id", None) == "dict" or getattr(f, "attr", None) == "update":
+                writes.extend((kw.arg, n.lineno, "dict") for kw in n.keywords if kw.arg in F)
+            r = resolve(m, fn, f)
+            writes.extend((lit(args[i]), n.lineno, "via " + r[1].name) for i in (slots(r[1]) if r else ())
+                          if i < len(args) and lit(args[i]) in F)
+        memo[(m, name)] = writes, odd, edges
+    return memo[(m, name)]
+
+
+doors = [n.value for n in ast.walk(defs["audit-task"]["_dispatch"])
+         if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "doors"][0]
+roots = [("audit-task " + lit(k), ("audit-task", v.id)) for k, v in zip(doors.keys, doors.values)]
+if "--all" in sys.argv:
+    roots = [(m, (m, "main")) for m in sorted(mods) if "-" in m and "main" in defs[m] and m not in ("audit-task", "close-phase")]
+for label, root in roots + [("close-phase", ("close-phase", "main")), ("validator", ("_manifest_rules", "validate"))]:
+    seen, todo, hits, odd = set(), [root], {}, set()
+    while todo:
+        x = todo.pop()
+        if x not in seen:
+            seen.add(x)
+            todo.extend(scan(*x)[2])
+    for m, name in seen:
+        w, o, _ = scan(m, name)
+        for field, line, how in w:
+            hits.setdefault(field, set()).add("%s.py:%d %s %s" % (m, line, name, how))
+        odd.update("%s.py:%d %s" % (m, line, name) for line in o)
+    print(label + ":", " ".join(sorted(hits)) or "-")
+    if "-v" in sys.argv:
+        for field in sorted(hits):
+            print("   ", field, "; ".join(sorted(hits[field])))
+        print("    unresolved", "; ".join(sorted(odd)) or "-")
+EOF
+```
+
+At `7b489337` it printed the keys T6's table carries in its second column, `status` alone for each
+verb T6 lists as left, and `-` for the validator. With `--all` it printed the entry points T6 names
+outside the table. Each other one printed only keys that sit on a phase's or a proposal's status, a
+lookup's answer, a journal row, a list of findings a check or the panel builds, the doctor's report,
+or the demo's own plan.
