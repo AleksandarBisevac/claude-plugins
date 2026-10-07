@@ -937,7 +937,7 @@
     {
       "id": "P117.11-2sz",
       "title": "the G1 key is never read from a default",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes review findings P117-R39 to P117-R41 from the cost phase's seventh review round. Documents only. The G1 key is never read from a default. It is recorded at every write that makes a task count as started, or done records it from the phase or the live config when the task has none, so always means only a phase that really started under always. T6 adds the block and block-then-move cases. The repair-commits claim is restated, and that writer is listed as followed. signoff --verdict skipped is named as refused for a phase with a task owed an answer, with a T6 case and a COMPATIBILITY entry.",
       "files": [
         "docs/research/pipeline-cost-design.md"
@@ -963,16 +963,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T20:52:02Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T21:08:49Z.e6ce4e",
+        "status": "passed",
+        "at": "2026-10-07T21:08:49Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T11:45:57Z"

@@ -74,6 +74,16 @@ changes:
 - The citations of where `COMPATIBILITY.md` records a changed refusal (C3, T3) and of `run_git`
   (T3) are corrected.
 
+**Revised after its seventh review (2026-10-07).** No figure changes:
+
+- The G1 key has no default. A task with none takes its phase's, and a phase with none takes the
+  live config's, and the close or sign-off that reads it records it. So a task `block` took from
+  `pending`, which reaches `done` with no `start`, cannot read as `always` (section 5.2, T6).
+- `repair-commits.py --apply` joins section 5.2's followed item: after a rebase, the work whose
+  commit it clears is on the branch under a new SHA (section 5.2, T6).
+- Sign-off's refusal holds under `--verdict skipped` as well, and the `COMPATIBILITY.md` entry
+  names it (C3, section 5.2, T6).
+
 ## 0. How to read this
 
 | Label | Means |
@@ -1150,6 +1160,10 @@ entirely* (`:386` at `7b489337`), not in either *Not promised* list. Its entry f
 `close-phase.py` refusing to close over a verdict that no longer holds (`:451`) is the precedent,
 and T3 adds an entry beside it for this one. The consequence to publish is that a close typed by
 hand, with no review behind it, now has to say so: `--intent not-asked --intent-basis "<why>"`.
+If the user chooses G1 (section 8, decision 1), T6 adds sign-off's refusal to that entry.
+`signoff --verdict skipped`, which signs off at `7b489337` with neither a gate run nor a reason, is
+refused for a phase with a task owed an answer (section 5.2). It fires only where a task's key reads
+`phase`, so a project whose config never sets the key signs off as before.
 
 **Confirming reading.** Each reading is taken inside the task cycle (section 1.1) and divided by the
 tasks it holds.
@@ -2101,14 +2115,28 @@ question (C14). Under G1 each one is answered before the phase merges.
   - *The key, read once per phase and kept by the task.* `start` records the key's value on the
     phase when it promotes the phase's first task. It records the same value on each task at that
     task's first start, copied from the phase, and a later start keeps it. `done`, the driver and
-    the property read the task's value; a task with none reads its phase's, and a phase with none
-    reads as `always`, the default.
+    the property read the task's value, and none of them has a default for it. A task with none
+    takes its phase's recorded value, and a phase with none takes the live config's value at that
+    moment. `done` and the sign-off verb write the value they took onto the task, and onto the
+    phase when it recorded none, in the write each already makes. `close-phase.py` reads a missing
+    one the same way. So every recorded `always` traces to a config that read `always` when a
+    phase's key was first recorded, and a missing record never reads as `always`.
+    - `start` is not the only way to `done`. `done` refuses only a task that is `pending` with no
+      recorded attempt (`_started`, `audit-task.py:1363-1378`, asked at `:4681`), and `block`
+      takes a `pending` task straight to `blocked` (`:5276-5284`). So a task blocked from
+      `pending`, committed and closed, never ran `start`, and its phase may have no task that did.
+      A task blocked from `pending` and then moved into a phase none of whose tasks has started is
+      the same. Each reaches `done` with no key on itself or on its phase. Read as `always`, the
+      key would let either close `not-asked` under a config that reads `phase`; read from the live
+      config, it is refused.
     - Read live, a key switched to `always` partway through would let a later task close
-      `not-asked` with a basis, which `always` accepts.
+      `not-asked` with a basis, which `always` accepts. The live config is read only while the
+      phase records no key, and the first `start`, `done` or sign-off that writes records it there.
     - Read off the phase alone, the key would stay behind when the task moves. `move` takes a
       started task once it is `blocked`, or `pending` again after a `reopen` (`_move_refusal`,
-      `audit-task.py:5408-5424`), into a phase that may record no key, where it would close
-      `not-asked`. Recorded on the task, the key moves with it.
+      `audit-task.py:5408-5424`), into a phase that recorded `always`, or none while the config
+      now reads `always`, where it would close `not-asked`. Recorded on the task, the key moves
+      with it.
   - *The refusal.* A task that records a commit, and whose key reads `phase`, is *owed an answer*
     until a filed phase return answers its current commit, unless it is a fix task the plan records
     as one. The phase reviewer's brief lists the tasks owed an answer (T3), and the filing verb
@@ -2117,7 +2145,11 @@ question (C14). Under G1 each one is answered before the phase merges.
     `:8377`). For each task it counts an entry only when the entry's `commit`
     equals the commit the task records now, and it writes that entry's three answers onto the task
     with that commit. Then it asks the property of the plan it is about to write, and refuses,
-    writing nothing, while any task fails it. `close-phase.py` asks the property through the same
+    writing nothing, while any task fails it. It asks under either verdict. `--verdict skipped`
+    signs off today with neither a gate run nor a reason (`reference/phase-signoff.md:393`; the
+    run is asked for `passed` alone, `audit-task.py:7193`). So refusing it for a phase with a task
+    owed an answer is a new refusal of an existing form, which the entry T3 adds to
+    `COMPATIBILITY.md` names (C3). `close-phase.py` asks the property through the same
     function, in a helper both import, before it merges or hands over the merge command. At
     `7b489337` it refuses on the gate verdict, and its merge plan reads the trees and the branches
     and never whether sign-off passed (`scripts/git/_worktrees.py:722`). Without the question, the
@@ -2127,8 +2159,10 @@ question (C14). Under G1 each one is answered before the phase merges.
   - *Followed, not enforced:*
     - work a task committed and then stopped recording. A `--no-change` close records no commit.
       `reopen` clears the one a task recorded (`:5023`), and the task may then close `--no-change`,
-      be cancelled or be moved away. The record then holds no diff for the property to read while
-      the commit stays on the branch, and nothing compares the task's files with what changed while
+      be cancelled or be moved away. `repair-commits.py --apply` clears a task's commit when no ref
+      holds it (`_commit_trail.py:314-344`), and after a rebase that commit's changes are on the
+      branch under a new SHA. The record then holds no diff for the property to read while the
+      work stays on the branch, and nothing compares the task's files with what changed while
       it ran. `not-asked` with its basis keeps its meaning on a `--no-change` close, and a `cancel`
       records its reason and no answer, as today. The check that would see this work is the one a
       group sign-off already makes: every commit the branch carries past its fork must be a task's
@@ -2153,7 +2187,10 @@ question (C14). Under G1 each one is answered before the phase merges.
   Its repair is a fix task inside the phase, as both recorded per-task findings already were, rather
   than a re-spawn before the commit.
 - **The consequence to publish:** that timing. A key with a default of `always` keeps today's
-  behaviour. A default of `phase` would be a major release (section 2).
+  behaviour. A default of `phase` would be a major release (section 2). Under `phase`, an existing
+  form also stops doing what it does today: `signoff --verdict skipped` is refused for a phase with
+  a task owed an answer, so a sign-off cannot skip the review that carries its answers (T6, and the
+  `COMPATIBILITY.md` entry C3 names).
 
 ### 5.3 How far the margin can be trusted
 
@@ -2604,7 +2641,8 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
   - `plugins/audit/agents/audit-executor.md`, `plugins/audit/agents/audit-reviewer.md`;
   - the task prose, `plugins/audit/scripts/_refs.py` and `PLUGIN-BUILD-GUIDE.md`;
   - `COMPATIBILITY.md`, whose *Outside this document entirely* list gains an entry for the wider
-    refusal, beside the one for closing over a verdict that no longer holds (C3);
+    refusal, beside the one for closing over a verdict that no longer holds (C3). T6 adds
+    sign-off's `--verdict skipped` refusal to the same entry;
   - the tests of each script it changes.
 - **The reviewer's write.** `audit-reviewer.md` gains one *May* line: one call of the filing verb.
   Its *Must not* keeps "anything that writes", with that call as the only exception. Its paragraph
@@ -2762,12 +2800,13 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
     inherited-test answer, with their bases, beside the answer in `intentCheck`; `fixes` on a task;
     and the key's value, recorded on the phase and on the task;
   - in `plugins/audit/scripts/manifest/audit-task.py`: `done` in every form, through
-    `_locked_done`; `start`, which records the key on the phase and on the task; `add`, which gains
-    `--fixes`; the filing verb's shape for a phase return (T3's verb); and the sign-off verb, for
-    one phase and for a group;
+    `_locked_done`; `start`, which records the key on the phase and on the task, as `done` and the
+    sign-off verb also do where none is recorded; `add`, which gains `--fixes`; the filing verb's
+    shape for a phase return (T3's verb); and the sign-off verb, for one phase and for a group;
   - the property of section 5.2 as one function, in a helper `audit-task.py` and `close-phase.py`
     both import;
   - `plugins/audit/scripts/git/close-phase.py`, which asks the property before it merges;
+  - `COMPATIBILITY.md`, whose entry T3 adds gains sign-off's `--verdict skipped` refusal (C3);
   - `plugins/audit/agents/audit-reviewer.md` at `7b489337`: the *What you are handed* table
     (`:25-36`), the `mode: phase` paragraph (`:55-57`), the return format (`:220-235`) and the
     paragraph naming who reads the answer (`:246-251`). Its additions count against T8's reviewer
@@ -2837,16 +2876,20 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
     (section 5.2).
   - *The key, once per phase and kept by the task.* `start` records `review.perTask`'s value on the
     phase when it promotes the phase's first task, and on each task at its first start, copied from
-    the phase. `done`, the driver and the property read the task's value. A task with none reads
-    its phase's, and a phase with none recorded reads as `always`, the default.
+    the phase. `done`, the driver and the property read the task's value, with no default. A task
+    with none takes its phase's recorded value, and a phase with none takes the live config's at
+    that moment. `done` and the sign-off verb write the value they took onto the task, and onto the
+    phase when it recorded none. That holds a task that reaches `done` without a `start`: one
+    `block` took from `pending`, and one blocked from `pending` and then moved (section 5.2).
   - *The refusal.* The sign-off verb reads every phase return filed for each phase it signs off,
     alone or in a group. It counts an entry only when the entry's `commit` equals the commit its
     task records now, and writes that entry's three answers onto the task's `intentCheck` with that
     commit: an intent answer, a red-first grade, and an inherited-test answer, with its basis where
     that answer is `not-asked`. Then it asks the property of section 5.2 of the plan it is about to
-    write, and refuses, writing nothing, while any task fails it. The property is one function in a
-    helper both import, and `close-phase.py` asks it of the plan's record before it merges or hands
-    over the merge command.
+    write, and refuses, writing nothing, while any task fails it. It asks under `--verdict passed`
+    and `--verdict skipped` alike, so `skipped` no longer signs off a phase with a task owed an
+    answer. The property is one function in a helper both import, and `close-phase.py` asks it of
+    the plan's record before it merges or hands over the merge command.
   - Under `signals`, the driver dispatches the per-task reviewer only when the task's `redFirst` did
     not come back `proved`, or when the gate row disagrees with the filed return.
 - **Every verb that writes what the property reads.** The list is derived, not typed. The verb
@@ -2862,16 +2905,16 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
 
   | Verb | The command prints | Whose, read at each site | Its answer under `phase` |
   |---|---|---|---|
-  | `done` | `commit intentCheck status` | the task's (`:4440-4457`); a journal row's commit (`:4516`) | refused: every `--intent` word on a close that passes `--commit`, but a recorded fix task's `not-asked` (the close's cases) |
+  | `done` | `commit intentCheck status` | the task's (`:4440-4457`); a journal row's commit (`:4516`) | refused: every `--intent` word on a close that passes `--commit`, but a recorded fix task's `not-asked` (the close's cases). It records the key where the task, or its phase, has none (section 5.2) |
   | `reopen` | `commit findings intentCheck status` | the task's status, commit and `intentCheck` (`:5021-5029`); a bug's status (`:5034`); a finding's commit (`:4975-4982`) | refused: a task reopened and recommitted after a review answered it, at sign-off and at `close-phase.py`; a task `resolve-finding` linked, then reopened and closed `not-asked`, at `done`. Followed: work it stops recording (section 5.2). It refuses a task whose phase is signed off (`:4926-4948`) |
   | `resolve-finding` | `commit findings fixTask status` | a finding's (`:7742-7745`) | refused: the linked-then-reopened case above. It cannot grant the exception, which reads `fixes`. A link it moves ends the exception of the task the finding named, and the property then refuses the landing |
-  | `move` | `fixTask status tasks` | the task's phase (`:5490`, `:5500`); a finding's `fixTask`, renamed with the task (`_id_refs.py:119-122`) | refused: a started task moved to a phase that records no key, at `done --intent not-asked`; a fix task moved away from its findings, at sign-off. It refuses a task that is done or in progress (`:5408-5424`) |
+  | `move` | `fixTask status tasks` | the task's phase (`:5490`, `:5500`); a finding's `fixTask`, renamed with the task (`_id_refs.py:119-122`) | refused: a started task moved to a phase that recorded `always`, or none while the config reads `always`, at `done --intent not-asked`; a task blocked from `pending` and moved into a phase none of whose tasks has started, at the same close, which records the live config's key; a fix task moved away from its findings, at sign-off. It refuses a task that is done or in progress (`:5408-5424`) |
   | `cancel` | `status` | the task's (`:3034`); cancelling a phase, the phase's (`:3089`) and each open task's (`:3098-3101`) | refused, today and pinned under `phase`: a task closed `deferred` (`:3069`). Followed: work a task stopped recording (section 5.2) |
-  | `block` | `status` | the task's (`:5289`) | refused, today and pinned under `phase`: a task closed `deferred` (`:5276`). A blocked task records no commit, and sign-off refuses a phase with open work (`:7147`) |
+  | `block` | `status` | the task's (`:5289`) | refused, today and pinned under `phase`: a task closed `deferred` (`:5276`). A blocked task records no commit, and sign-off refuses a phase with open work (`:7147`). Refused: a task it takes from `pending`, which no `start` gave a key, committed and closed `--intent not-asked` under a config that reads `phase`, at `done`, which records the live config's key where the phase has none |
   | `start` | `status` | the task's (`:3287`); a phase's (`_panel_write.py:1343`) | writes no commit and no answer, and records the key the others read. Refused: the key switched after the phase's first start, and the moved task above |
   | `add` | `status tasks` | a new task, appended to its phase (`:2809`); a phase's status | refused: `--fixes` naming another phase's finding, or one already naming another task. A new task records no commit, so the property reads nothing of it until `done` writes one |
   | `finding` | `findings status` | a phase's `review.findings` (`:7587`) | followed: a finding its caller records (section 5.2) |
-  | `signoff` | `status` | the phase review's verdict, for one phase (`:7206`) and for a group (`:8439`) | the landing: it writes the answers and asks the property, in both forms |
+  | `signoff` | `status` | the phase review's verdict, for one phase (`:7206`) and for a group (`:8439`) | the landing: it writes the answers, and the key where none is recorded, and asks the property in both forms, under `--verdict passed` and `--verdict skipped` alike |
   | `close-phase.py` | `commit status` | a phase's (`close-phase.py:677`); a journal row's commit (`_journal_io.py:1741`) | the landing: it asks the property |
   | `seed` | `status tasks` | the one task of a plan it writes where none exists (`:9731`) | cannot reach a keyed phase: `seed` is refused where a plan exists (`:6032`) |
 
@@ -2887,11 +2930,14 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
     which clears the commit of a task whose commit no ref holds (`_commit_trail.py:314-344`), and
     the ones that rename ids through `_id_refs.rename`, a finding's `fixTask` among them
     (`_id_refs.py:119`): `materialize-proposal.py` and the panel, bringing a parked phase in, and
-    the merge driver `merge-manifest.py`. The property holds each at landing, because it reads the
-    record whoever wrote it. A cleared commit is on no ref, so its work cannot land. A parked task
-    brought in with a commit and no answers, under a key that reads `phase`, is owed one. A rename
-    rewrites a task's id and the `fixTask` naming it in one pass and leaves finding ids alone
-    (`_id_refs.py:103-148`), so the exception still reads the same link.
+    the merge driver `merge-manifest.py`. The property holds the renames at landing, because it
+    reads the record whoever wrote it. A parked task brought in with a commit and no answers, under
+    a key that reads `phase`, is owed one. A rename rewrites a task's id and the `fixTask` naming it
+    in one pass and leaves finding ids alone (`_id_refs.py:103-148`), so the exception still reads
+    the same link. The property does not hold `repair-commits.py --apply`. The commit it clears is
+    on no ref, but after a rebase that commit's changes are on the branch under a new SHA, and the
+    task then records no commit for the property to read. That is section 5.2's followed item, with
+    `reopen` and the `--no-change` close.
   - *`redFirst` is on no line.* No verb writes `task.redFirst`: the orchestrator copies the block
     onto the task by hand (`reference/execute-task.md:674-678`), the hand edit section 5.2 names.
     The property does not read that field. The review's red-first grade, which it reads, reaches
@@ -2934,11 +2980,23 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
     phase return answers its commit;
   - a phase whose first task started under `phase`, with the key then set to `always`: a plain
     `done --commit <sha> --intent not-asked --intent-basis "..."` is still refused;
-  - a task started under `phase`, blocked, and moved to a phase that records no key: a plain
-    `done --commit <sha> --intent not-asked --intent-basis "..."` is refused, and with no
-    `--intent` it closes `deferred`. A task moved before its first start takes its new phase's key
-    and closes `not-asked` there. Without that half, a rule that refused every moved task would
-    pass;
+  - a task started under `phase`, blocked, and moved to a phase that recorded `always` at its
+    first start, with the config still reading `phase`: a plain `done --commit <sha> --intent
+    not-asked --intent-basis "..."` is refused, and with no `--intent` it closes `deferred`. A task
+    moved there before its first start takes that phase's `always` and closes `not-asked`. Without
+    that half, a rule that refused every moved task would pass;
+  - with the config reading `phase`, in a phase none of whose tasks has started: a task blocked
+    from `pending`, committed, and closed with a plain `done --commit <sha> --intent not-asked
+    --intent-basis "..."` is refused, writing nothing. With no `--intent` it closes `deferred` and
+    records `phase` on the task and on the phase, so a second task of that phase started after the
+    config is set to `always` still records `phase`. With the config reading `always`, the same
+    first close records `always` and closes `not-asked` as today. Without that half, a rule that
+    refused every close of a task no `start` gave a key would pass;
+  - with the config reading `phase`, a task blocked from `pending` and moved into a phase none of
+    whose tasks has started is refused the same close, writing nothing, and closes `deferred` with
+    no `--intent`. Moved instead into a phase that recorded `always` at its first start, it takes
+    that `always` and closes `not-asked`. Without that half, a rule that refused every moved task
+    no `start` gave a key would pass;
   - `cancel` and `block` of a task closed `deferred` are refused, writing nothing, under `phase`;
   - a phase return that lacks the entry of one task owed an answer is refused at filing, writing
     nothing, and names that task. With the entry restored it files;
@@ -2951,6 +3009,11 @@ named with its expected cost. Only T11 holds a paid step. Every target is re-der
   - a task answered in a filed phase return, then reopened, recommitted and closed `deferred`, is
     refused at sign-off, naming the task, while the earlier entry is still filed. A return
     answering its new commit lets sign-off pass;
+  - under `phase`, `signoff --verdict skipped` of a phase with a task owed an answer is refused,
+    writing nothing, and names the task, as `--verdict passed` is. Once a filed phase return
+    answers the task's commit, `skipped` signs it off, and a phase with no task whose key reads
+    `phase` signs off `skipped` as today. Without those halves, a sign-off that refused every
+    `skipped` would pass;
   - `close-phase.py` refuses to merge a fixture whose task with a commit lacks one of its three
     answers on the record, and merges it once all three are written;
   - after sign-off, a fixture whose task's `commit` is changed in the shard by hand is refused by
@@ -3226,9 +3289,10 @@ this design's saving.
      (section 5.4).
 
    The consequence to publish: a misread task, a `not-proved` red-first or a vacuous inherited test
-   is found before the merge, not before its commit, and is repaired by a fix task. Keeping (a) is
-   coherent if the per-commit timing is wanted for itself. Then the ceiling is missed like for like
-   in every session.
+   is found before the merge, not before its commit, and is repaired by a fix task. And
+   `signoff --verdict skipped` no longer signs off a phase with a task owed an answer (section 5.2).
+   Keeping (a) is coherent if the per-commit timing is wanted for itself. Then the ceiling is missed
+   like for like in every session.
 2. **The light path (C1).**
    - (a) Do not build it.
    - (b) Build it behind a key that defaults off. The README's enforced row then has to say it does not
