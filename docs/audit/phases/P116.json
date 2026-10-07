@@ -21,7 +21,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P116-R1",
@@ -125,7 +125,7 @@
     ],
     "outcome": "[findings: 11 - 0 high, 1 med, 10 low; 11 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "The whole-feature benchmark ran under its protocol and is published. One returns-and-refunds feature spanning several modules of a seeded shop was built three ways: plain Claude Code, organized CLAUDE.md with skills, and the plugin pipeline. There were three valid sessions per arm, graded on hidden acceptance tests, invented APIs, reuse, scope, unbacked claims, interventions, tokens and time. Every session built the feature and missed the same hidden test the same way. The document judges that test to over-specify the request and sets out both readings. Only the plain arm changed an existing test, wrote stock directly or touched an unneeded file. The organized CLAUDE.md shared by the other two arms states each of those rules, so the difference is not credited to the plugin. The plugin arm cost about 9.9 times the plain arm and about 6.1 times the organized arm (list-price equivalent, derived). In return it left a plan, red-first verdicts, reviews and recorded gates that the hidden tests do not score. Deviations and limits are listed with their effect. One invalidation was reversed when the session's own stream contradicted its recorded reason. Two review rounds ran, and their eleven findings are resolved by fix tasks P116.3 and P116.4. Plugin faults the benchmark exposed are recorded in the internal plan: a landed phase's status left uncommitted, and a could-not-prove red-first block left out of task.redFirst.",
   "tasks": [
     {
       "id": "P116.1",
@@ -346,5 +346,10 @@
       }
     }
   ],
-  "startedAt": "2026-10-07T11:36:46Z"
+  "startedAt": "2026-10-07T11:36:46Z",
+  "testEvidence": {
+    "runId": "2026-10-07T18:09:43Z.bc62b5",
+    "status": "passed",
+    "at": "2026-10-07T18:09:43Z"
+  }
 }
