@@ -6,6 +6,54 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ## [Unreleased]
 
+### Changed
+- **`audit-task.py done` and `close-phase.py` refuse to close over a verdict that no longer
+  holds** — except where there is no measurement to vouch for in the first place: no run is
+  recorded under the gate, the newest row answers `empty-gate`, the phase's branch has already
+  landed, or the newest green is stale behind a sign-off's `--no-evidence-reason`; none of those
+  refuse. Both used to exit 0 over a newest gate verdict that had gone red, or that no longer
+  covered the declared files' current content; `done` now exits 2 and `close-phase` exits 1,
+  naming the refusal `_verdict_binding.close_refusal` found. Both take
+  `--override-verdict "<why>"` to close anyway, which journals the override as
+  `audit.verdict.close-overridden` rather than closing silently — unless the override itself
+  cannot be recorded: with `journal.enabled` false, `done` still exits 2 and `close-phase` still
+  exits 1, refusing rather than closing with nothing to show for the exception; if the journal
+  row fails to write, `done` rolls back every write and exits 1 instead of 2, and `close-phase`
+  exits 1 having merged or written nothing. A sign-off given no `--no-evidence-reason` now drops
+  an earlier `review.noEvidenceReason` instead of letting it outlive the sign-off that recorded
+  it and excuse a later landing over a verdict that one no longer backs.
+
+- **A panel URL without its session token now answers 403.** The panel page carries the
+  per-launch token substituted into it, so `GET /` is held to the same token check every API
+  call already was; before, a request that passed only the host check was handed the page and
+  the token in it. The refusal is plain text, because a person reads it in a browser tab: it
+  says where the full URL is (`/audit:panel status` for whether the panel runs,
+  `.claude/audit-panel.json` for the URL itself, or a relaunch) and echoes no token. The URL
+  `--status` prints is redacted and does not open the page; `commands/panel.md` says so, and
+  that the browser was opened with the full one.
+
+### Fixed
+- **A stamp now goes stale when a sibling rewrites a file the task does not declare.**
+  `stamp-verification.py compare` answered `current`, exit 0, after an already-dirty undeclared
+  file was rewritten: the three identity fields record HEAD, the declared files' contents and
+  WHICH paths were dirty, never the other files' bytes. A stamp is now version 2 and carries a
+  `content` field, which is `_tree_stamp.content_digest` over the tree with the paths this
+  plugin's recorder writes left out (`_evidence_io.recorded_paths`, derived again at compare
+  time from the manifest the stamp stores). It also carries a bounded per-path list of the
+  dirty set, so a stale answer prints a `moved:` line naming the path that moved; over the
+  bound (`_tree_stamp.DIRTY_PATHS_LIMIT`) the list is not kept and the line says so. A
+  version-1 token still compares, on its three fields, and says that it carries no content
+  field. Gate rows are unchanged: `dirtyDigest` and the row shape `tested_state` writes do not
+  move. `reference/execute-task.md` lists the new field and its limits.
+
+- **A launch killed while writing the pidfile no longer leaves its token in an untracked
+  file.** The pidfile is written to an `audit-panel.json.tmp-*` sibling and renamed into
+  place; a launch killed between the two left the sibling behind, outside every ignore rule.
+  The panel's own `.claude/.gitignore` rows now cover that name, and the next launch or
+  `--stop` removes any such file, warning on one it cannot. A pidfile an older build left at a
+  wider mode is narrowed to owner-only when `--status` or a launch that finds a panel already
+  running reads it, on POSIX; the docstring claiming owner-only now limits that claim to POSIX.
+
 ## [3.1.0] - 2026-10-05
 
 ### Added

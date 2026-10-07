@@ -158,7 +158,7 @@ claude-plugins/                           # this repo (personal, public)
           full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, then a coupling and a bug per named selection miss of a red run (the red still blocks), or the sentence and exit 0 when no meta.fullGate is declared; --learn-from <runId> runs nothing and learns from an imported row through the same function
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs; the one POSIX sh (and its PATH) every plan command runs under, or a refusal - never cmd.exe
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
-          _verdict_binding.py             # the ONE rule for whether a recorded gate verdict binds the declared work now - a task commit's and a sign-off's
+          _verdict_binding.py             # the ONE rule for whether a recorded gate verdict binds the declared work now - a task commit's, a sign-off's, and whether `done` or close-phase may close over the newest verdict (one that no longer holds refuses)
           stamp-verification.py           # the CLI over it: take a stamp, or grade one - current / stale (naming the field) / unestablished; `red` proves a red-first in a throwaway tree
           derive-phase-gate.py            # observes a phase's version answer, its two importer listings, changed/red-suite paths and the plan gate's exempt verdict, hands them to _gate_derive.derive, and records phase.testGateDerived (+ testGate in enforce mode) under the index lock
         _output.py                        # stdout/stderr that degrade a glyph instead of crashing
@@ -250,6 +250,7 @@ claude-plugins/                           # this repo (personal, public)
       templates/
         audit.config.example.json         # per-repo hook config template
         audit-plan.starter.json           # minimal manifest skeleton with $schema
+        permissions-deny.example.json     # optional Claude Code permissions.deny fragment
       README.md                           # end-user install/config/extend docs
 ```
 
@@ -342,7 +343,7 @@ L3:
   _panel_settings -> _config_rules, _output
   _usage_bench -> _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
   _usage_viz -> _fmt, _output, _report_html
-  _verdict_binding -> _evidence_io, _journal_io, _output, _tree_stamp
+  _verdict_binding -> _evidence_io, _journal_io, _manifest_io, _output, _tree_stamp
   usage_ledger -> _manifest_io, _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
 
 L4:
@@ -385,7 +386,7 @@ L7:
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
-  close-phase -> _branch, _journal_io, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _worktrees
+  close-phase -> _branch, _evidence_io, _journal_io, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _tree_stamp, _verdict_binding, _worktrees
   commit-audit-state -> _evidence_io, _invariants, _journal_io, _manifest_io, _output, _scoped_commit
   commit-manifest-index -> _invariants, _journal_io, _manifest_io, _output, _panel_write, _scoped_commit
   commit-task-work -> _evidence_io, _invariants, _journal_io, _manifest_io, _manifest_vocab, _output, _scoped_commit, _verdict_binding
@@ -414,7 +415,7 @@ L7:
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
   run-test-gate -> _evidence_io, _fmt, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _status_facts, _tree_stamp
   set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
-  stamp-verification -> _locks, _manifest_io, _output, _proc_group, _tree_stamp, _worktrees
+  stamp-verification -> _evidence_io, _locks, _manifest_io, _output, _proc_group, _tree_stamp, _worktrees
   validate-config -> _config_rules, _output
   validate-manifest -> _evidence_io, _manifest_io, _manifest_rules, _output, _warning_groups
   verify-invariants -> _invariants, _manifest_io, _output
@@ -990,9 +991,20 @@ Sign-off steps 5c–5e as one command. It merges the phase branch into its resol
 before the first write, and each result read back by asking a *different* question than the write
 answered. The merge is an input of the phase's derived status, so the stamp stores that status in
 the same write (`done`, for a signed-off phase with every task terminal) and `mirror_stub`
-re-mirrors the index stub from the shard under the index lock. Both writes are revalidated, and a
-finding the write introduced restores the prior bytes (`_revalidated_write`). Any failure of the
-mirror, the lock's own included, is a sentence naming `audit-task.py settle`, never a failed merge.
+re-mirrors the index stub from the shard. Each of the three plan writes here — the stamp, the
+`mergedHead` backfill (`record_merged_head`) and the mirror — reads the plan and writes it while
+holding the index lock every other plan writer takes (`under_index_lock`, through
+`_panel_write.acquire_index_lock`). On the single-file layout, two closes or a close and a panel
+save used to each write the copy they had read, and one write was lost while both answered ok.
+A stamp or a backfill whose lock is not taken writes nothing; it says why and names the re-run of
+close-phase that writes it. A stamp not written exits 1 with the cleanup held back. A backfill
+not written prints `mergedHead NOT recorded` with that sentence. Every write is
+revalidated, and a finding the write introduced restores the prior bytes through
+`_panel_write.restore`'s temp file and replace (`_revalidated_write`), so the rollback is as
+atomic as the write it undoes. Any failure of the mirror, the lock's own included, is a sentence
+naming `audit-task.py settle`, never a failed merge. `test_close_phase.py` covers this with a
+held lock and an inode check, plus two races between real processes: two closes released
+together, and a close against a panel save with each in turn caught mid-write.
 
 **It never runs `git switch`.** Not as a preference: `git switch <parent>` from inside the worktree
 a phase ran in fails with `fatal: '<parent>' is already used by worktree at '<the main tree>'`, so
@@ -1340,6 +1352,16 @@ asset they could not read and a directory they could not list, rather than skipp
 `.py` side had already reported a file it could not *tokenize* while quietly swallowing one it
 could not *open*, and the `ui/` side returned an empty list for a missing `scripts/ui/` — the whole
 report and panel UI gone, printing exactly what a clean tree prints. `--selftest`.
+`state_write_violations()` holds the rule that a state file is replaced only through a sanctioned
+writer: every `os.replace`/`os.rename` under `scripts/` and `hooks/` — through `os.`, a module
+alias, or a name imported from `os` — must sit in a function `STATE_WRITERS` names, and each row
+carries a reason and must still name a live site, so the table cannot excuse code nobody wrote.
+The writers a new site routes through are `_manifest_io.atomic_write_text` (which
+`atomic_write_json` writes through) and, on the hooks side, `_config.atomic_write_text`; both take
+a temp name of their own, which is what a fixed `<target>.tmp` shared between two writers running
+at once did not. `state_write_sites()` prints the corpus the rule judged. A method of the same name
+on a string or a path is not the `os` module's and is not read — the allow row in
+`tools/prove-gates.py` holds that line.
 
 ### `plugins/audit/scripts/_refs.py`
 The other half of the same idea, aimed at paths rather than at imports: roughly 150 places
@@ -1460,8 +1482,9 @@ than per run, because `--only report` rewrites some images and leaves others, an
 version would then claim the new build for pictures nobody re-shot. The hash is what stops the
 sidecar being edited into agreement without the pictures being the ones captured; it does not
 make the claim unforgeable, only impossible to break by accident. `demo-gate.gif` is out of
-scope on purpose — `tools/capture-demo-gif.py` writes it, so demanding an entry would report a
-missing basis against a producer never asked to record one.
+scope on purpose — its record lives in the same sidecar under its own `gifs` key, written by
+`tools/capture-demo-gif.py` when it records, and it is graded by that tool's `--check`, not by
+this rule.
 
 **That version answered only half the question, and the source digest below is the other half.**
 "Was this captured at this release" is not "does this picture still show the current UI", and
@@ -3900,10 +3923,11 @@ shape that table exists to keep rare, which is why the shared half came down to 
 new command reaching up.
 
 ### `plugins/audit/scripts/governance/_verdict_binding.py`
-Whether a recorded gate verdict binds the declared work as it stands now - one answer for the two
-writers that stand on one. `commit-task-work.py` commits a task's work only under a green run of
+Whether a recorded gate verdict binds the declared work as it stands now - one answer for every
+writer that stands on one. `commit-task-work.py` commits a task's work only under a green run of
 the gate that measures it; `audit-task.py signoff` records a `passed` sign-off only under a green
-run of the phase's gate (a group's carrier, over every member's files). A second implementation
+run of the phase's gate (a group's carrier, over every member's files); `audit-task.py done` and
+`close-phase.py` close a task or land a phase only while its newest verdict still holds. A second implementation
 of the rule in the sign-off verb had fewer arms than the task commit's: it graded a repeated
 verdict by the repeat's own empty stamp and refused it on an unchanged tree, compared a digest the
 recorder took with its own writes left out against one taken with them in, and accepted an
@@ -3914,7 +3938,24 @@ source, its declared files and the caller's own sentences, and answers `bound`, 
 `refused` with a sentence naming the run: the newest row for the subject, never the plan's
 pointer; a repeat graded through `reusedFrom`; a gate changed after the run; a red nothing
 retired; an unparseable line that could be the subject's; the digest with the recorder's paths
-left out on both sides. Its cases are `plugins/audit/tests/test__verdict_binding.py`.
+left out on both sides. Every refusal carries the `arm` that produced it, and a close reads the
+arm rather than the sentence: `close_refusal()` refuses a close on every arm in
+`CLOSE_REFUSING_ARMS`, whose comments give each arm's reason - every refusing arm except no run
+recorded and an `empty-gate` answer, where there is no measurement to vouch for and the sign-off
+recorded why. `group_of()` answers which run grades a phase signed off in a group: the carrier's,
+over every member's files; `member_red()` refuses a member whose own rows hold a red newer than
+that run. `binding()` takes the ledger as `ledger_texts()`-shaped sources and the
+tree to digest, so a landing reads the head it would merge rather than whatever tree `--project`
+names - `rows_of()` is the union of two copies of one ledger by row identity, and an unreadable
+source is unreadable, never no run. A sign-off recorded with `--no-evidence-reason` is honoured
+by `close_refusal()`: the `STALE_GREEN_ARMS` do not refuse, and a red refuses only when recorded
+after the sign-off's `phase.verdict` journal row (`signoff_moment()`), or always when that row
+cannot be found. The way past a refusal is `--override-verdict`, journaled as
+`audit.verdict.close-overridden` naming the run and the reason, and refused when the journal is
+off or the row will not write. The digest reads
+the declared files' content and nothing wider: a gate row records no content digest of undeclared
+paths, which is the stamp's `content` field alone. Its cases are
+`plugins/audit/tests/test__verdict_binding.py`.
 
 ### `plugins/audit/scripts/governance/_tree_stamp.py`
 Which tree was this, and is it still that one.
@@ -4486,7 +4527,9 @@ drawing, no ANSI, no emoji) so the command file can print it verbatim without pa
 to reformat a JSON rollup. With `--by phase|task|model|author|agent|day|hour|session|branch|
 attr` it prints one focused table; without it, the full dashboard. `--backfill` re-reads every
 transcript for the project from offset 0 and rebuilds the ledger — idempotent, and the only
-path that rewrites (and therefore locks) rather than only appending. `--json`'s payload also
+path that rewrites rather than only appending. The lock it takes excludes only another backfill:
+the metering hook appends with no lock, so each month's rewrite carries the rows appended to it
+during the rebuild (`usage_ledger.rewrite_month`), a month with no file yet included. `--json`'s payload also
 carries `planCost` (since P56.6): `_usage_economics.plan_cost_claim`, read against BOTH ledgers
 this command's project has — the usage ledger already loaded for everything else, and
 `_evidence_io.read_rows(project)` for the gate-scope and gate-reuse comparisons, which live in
@@ -4777,11 +4820,18 @@ server (the UI's HTML/CSS/JS lives as `scripts/ui/panel.html` plus the ordered p
 byte-identically — the served page is still one self-contained HTML file, the source just is not.
 It reuses the plugin's pure cores — `validate-manifest.py`, `validate-config.py`,
 `audit-status.py`, `hooks/_config.py` — via importlib). It binds `127.0.0.1`, checks the Host header, and requires a random per-launch token
-on every `/api/*` call (`X-Audit-Token`/`?t=`); it tracks **one panel per project** via a
-`.claude/audit-panel.json` pidfile (open/stop/status; stale pidfiles auto-cleaned), which
-carries a **build stamp** as well — written by `_write_pidfile` rather than by `serve()`, so
-every pidfile this plugin writes has it and `--status` always holds both halves of the
-comparison below.
+on every `/api/*` call AND on the page itself (`X-Audit-Token`/`?t=`) — `do_GET`'s `/` route
+makes the same Host and token checks inline, so reaching the Host check alone is not enough to
+read the token the served HTML carries, but it answers a refusal differently: a person in a
+browser tab reads plain text naming where the real URL lives, while `/api/*` stays JSON for the
+script calling it. It tracks **one panel per project** via a
+`.claude/audit-panel.json` pidfile (open/stop/status; stale pidfiles auto-cleaned), written
+owner-only from the instant it exists, on POSIX, through a temp file in the same directory and an
+`os.replace`, never through a plain write followed by a `chmod` — that order leaves a window,
+on every launch, during which another local user could hold a readable descriptor on a live
+credential. The pidfile carries a **build stamp** as well — written by `_write_pidfile` rather
+than by `serve()`, so every pidfile this plugin writes has it and `--status` always holds both
+halves of the comparison below.
 
 **The pidfile is no longer the panel's only per-project artifact.** A detached launch
 that discarded stderr left a launch that FAILED looking exactly like one that succeeded and
@@ -5047,6 +5097,19 @@ No client identifiers.
 ### `plugins/audit/templates/audit-plan.starter.json`
 Minimal manifest with `$schema`, a `meta` showing all new fields, one phase + one task. **TODO:**
 set the `$schema` URL to your published raw path and fill `repo`/`createdISO`.
+
+### `plugins/audit/templates/permissions-deny.example.json`
+Byte-for-byte the JSON block `docs/research/guard-ownership-design.md` derives. An optional
+`.claude/settings.json` fragment for users who also want Claude Code's own sandbox and
+`permissions.deny` layer to refuse secret reads — it sits alongside this plugin's guards and
+replaces no rule in them. `plugins/audit/tests/test_guard_secrets_read.py` parses `SECRET_PATH`'s
+own compiled alternation rather than reading it by line, so a grouped extension or two
+alternatives written on one source line are not merged or dropped; it pins that the template
+parses and is byte-identical to the design doc's block, that every top-level alternative is
+matched against an anchored shape for one of its known families (an unmatched alternative is
+reported as drift unless named, with a reason, in the suite's own `_OMITTED_ALTS`), and that
+EVERY member of every matched family — not only the first — carries its own `Read(...)` entry
+in the template, individually.
 
 ### `plugins/audit/README.md`
 End-user docs: install, run, the config table, the three-layer extensibility model, and a

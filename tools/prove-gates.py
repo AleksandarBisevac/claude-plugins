@@ -445,6 +445,14 @@ TABLE = (
   "def json_encoding_violations(script_dir=None, hooks_dir=None):",
   "def json_encoding_violations(script_dir=None, hooks_dir=None):\n    return []",
   DEP, "je2"),
+ # The one-way-to-replace rule, crippled. It is what keeps a state file from being
+ # replaced by code that shares its temp name with another writer, and a version
+ # reporting nothing reads exactly like a tree that replaces only at its writers.
+ ("state_write_violations", S + "_deps.py", "replace",
+  "def state_write_violations(script_dir=None, hooks_dir=None, table=None):",
+  "def state_write_violations(script_dir=None, hooks_dir=None, table=None):\n"
+  "    return []",
+  DEP, "sw3"),
  # The one-tree rule, crippled. It is what keeps a hook from reading the main
  # checkout's plan for work in a linked worktree, and a version reporting
  # nothing reads exactly like hooks that all ask `_config.tree_for`.
@@ -784,16 +792,16 @@ TABLE = (
   '    import tempfile as _leak\n    _leak.mkdtemp(prefix="probe-leak-")\n',
   "tools/sweep-selftests.py", "x4"),
 
- # --- One fact with two homes, and the rule that compares them ----------------
- # THE MUTATED FILE IS THE HOME, not the guard: `_harness.remove_tree()` is where
- # the read-only-object fact lives, and the sweep runner keeps a copy because a
- # runner may not import a file it is one of the runners OF. The thing this rule
- # guards is the two staying identical, so the mutation edits ONE of them and
- # changes nothing else - a permission constant, which is exactly the shape a
- # forgotten carry-across arrives in. `rm1` is the case that reads both files.
- ("removal_helper_drift", "plugins/audit/tests/_harness.py", "replace",
-  "                os.chmod(os.path.join(base, name), 0o700)",
-  "                os.chmod(os.path.join(base, name), 0o755)",
+ # --- One fact, its home and the runner's copy, and the rule comparing them ----
+ # THE MUTATED FILE IS THE HOME, not the guard: `_output.remove_tree()` in the
+ # scripts anchor is where the read-only-object fact lives, and the sweep runner
+ # keeps a copy of it. The thing this rule guards is the two staying identical,
+ # so the mutation edits ONE of them and changes nothing else - a permission
+ # constant, which is exactly the shape a forgotten carry-across arrives in.
+ # `rm1` is the case that reads both files.
+ ("removal_helper_drift", "plugins/audit/scripts/_output.py", "replace",
+  "                os.chmod(entry, 0o700)",
+  "                os.chmod(entry, 0o755)",
   "tools/sweep-selftests.py", "rm1"),
  # --- The callers, and the rule that stops the next one -----------------------
  # THE MUTATED FILE IS A CALLER, not the guard: the drift row above watches the two
@@ -1340,6 +1348,14 @@ ALLOW = (
   "                if _called_name(node) not in JSON_WRITER_NAMES "
   "+ _JSON_DUMP_NAMES:",
   DEP, "je5"),
+ # The one-way-to-replace rule, widened from the os module's two functions to any
+ # method of those names. A string's `.replace` is the commonest call in the tree
+ # and replaces no file, so the widened rule convicts every string edit - `sw4`'s
+ # fixture holds a string's, a path's and an unbound str method's.
+ ("state_write_violations", S + "_deps.py", "replace",
+  "            and isinstance(func.value, ast.Name) and func.value.id in modules:",
+  "            and isinstance(func.value, (ast.Name, ast.Attribute)):",
+  DEP, "sw4"),
  # The one-tree rule, widened to every `repo_root`. The config and the
  # session's own state live with the project on purpose, so a hook resolving
  # the project for those alone is honest code this would convict.

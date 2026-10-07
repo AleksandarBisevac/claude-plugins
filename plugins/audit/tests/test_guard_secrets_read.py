@@ -39,7 +39,7 @@ import time
 from pathlib import Path
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
-from _output import safe_stdio                     # noqa: E402
+from _output import safe_stdio, PLUGIN_ROOT, REPO_ROOT  # noqa: E402
 import _loader                                     # noqa: E402
 import _config                                     # noqa: E402
 
@@ -88,9 +88,436 @@ def _refresh_cases(check):
             os.environ["CLAUDE_PROJECT_DIR"] = held
 
 
+def _expand_optional_chars(fragment):
+    """`"ya?ml"` -> `["yml", "yaml"]`. Expands every `X?` in a regex alternative
+    into its two literal spellings, one character at a time, so a family list
+    read off `_CRED_EXT` does not have to retype what the regex already says."""
+    i = fragment.find("?")
+    if i == -1:
+        return [fragment]
+    without = fragment[:i - 1] + fragment[i + 1:]
+    with_char = fragment[:i - 1] + fragment[i - 1] + fragment[i + 1:]
+    out = []
+    for variant in (without, with_char):
+        out.extend(_expand_optional_chars(variant))
+    return out
+
+
+# --- family derivation, pure text -> data, so a probe can call it on a crafted
+# pattern string without ever importing or touching the hook file -------------
+def _inner_alternation(pattern_text):
+    """Strip the ONE outer capturing group `SECRET_PATH` wraps its whole
+    alternation in (`"(" ... ")"`). `None` when the text is not shaped that
+    way, which is itself something the caller has to answer for rather than
+    silently reading garbage."""
+    text = pattern_text.strip()
+    if not (text.startswith("(") and text.endswith(")")):
+        return None
+    return text[1:-1]
+
+
+def _split_top_level_alts(text):
+    """Split on `|` that sits OUTSIDE every group and character class, so
+    `(?:a|b)` stays one alternative and `a$ | b$` written on one line still
+    yields two. Splitting by LINE (the earlier shape of this suite) silently
+    merged a same-line second alternative into its neighbour and could not
+    tell a grouped `(?:jks|bks)` from a top-level choice between two
+    unrelated branches - both are the same depth-0-vs-not question, which is
+    what this answers directly instead of by position on the page.
+
+    DOES NOT MODEL `re.VERBOSE` COMMENTS. An unescaped `#` outside a
+    character class starts a comment that runs to end-of-line in VERBOSE
+    mode, and this splitter has no notion of that - a literal `(` or `)`
+    inside such a comment would corrupt the depth count. Stripping comments
+    before splitting was the other option and was judged riskier (a second
+    hand-rolled scanner next to this one, with its own edge cases); instead
+    `gs-tpl21` asserts the real pattern carries no unescaped `#`, which
+    states the limit rather than hiding it. A mis-split from a FUTURE
+    violation of that would not pass quietly either way: the garbled
+    fragments it produces match none of `_classify_alt`'s anchored shapes,
+    so they surface as unclassified drift (`gs-tpl20`) rather than as a
+    silent gap."""
+    depth = 0
+    in_class = False
+    buf = []
+    alts = []
+    i = 0
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if c == "\\" and i + 1 < n:
+            buf.append(c)
+            buf.append(text[i + 1])
+            i += 2
+            continue
+        if in_class:
+            buf.append(c)
+            if c == "]":
+                in_class = False
+            i += 1
+            continue
+        if c == "[":
+            in_class = True
+            buf.append(c)
+        elif c == "(":
+            depth += 1
+            buf.append(c)
+        elif c == ")":
+            depth -= 1
+            buf.append(c)
+        elif c == "|" and depth == 0:
+            alts.append("".join(buf))
+            buf = []
+            i += 1
+            continue
+        else:
+            buf.append(c)
+        i += 1
+    alts.append("".join(buf))
+    return [a.strip() for a in alts if a.strip()]
+
+
+# Anchored per-family shapes, each `re.fullmatch`ed against a WHOLE
+# alternative - a prefix or substring test (the earlier shape of this suite)
+# let `(^|/)secrets\.env$` into the dotenv bucket on a bare `"\\.env" in alt`
+# check, and a SECOND `(^|/)credentials[^/]*\.(?:...)` alternative was bucketed
+# correctly but then never looked at, because only `[0]` of each bucket was
+# read. Anchoring to the exact known shape is what makes "not exactly this"
+# fall through to `None` instead of being half-recognised; checking every
+# member of every bucket (below, in `_template_cases`) is what makes a SECOND
+# member of a correctly-recognised family stop being invisible.
+_DOTENV_RE = re.compile(
+    re.escape(r"(^|/)\.env(?!\.(?:") + r"(?P<names>[\w|]+)" +
+    re.escape(r")\b)(?:rc)?(\.[^/]+)?$"))
+_CRED_EXT_RE = re.compile(
+    re.escape(r"(^|/)credentials[^/]*\.(?:") + r"(?P<exts>[\w|?]+)" +
+    re.escape(r")$"))
+_ID_RE = re.compile(
+    re.escape(r"(^|/)id_(?:") + r"(?P<variants>[\w|]+)" + re.escape(r")$"))
+_STANDALONE_RE = re.compile(
+    r"\\\.(?:\(\?:(?P<group>[^()]*)\)|(?P<bare>\w+))\$")
+
+
+def _classify_alt(alt):
+    """One alternative -> `(kind, payload)`, or `None` when nothing here
+    recognises it. `None` is the point: it is what lets the caller collect
+    everything no classifier consumed instead of one of them silently eating
+    a shape it half-matches."""
+    if _DOTENV_RE.fullmatch(alt):
+        return "dotenv", alt
+    if _CRED_EXT_RE.fullmatch(alt):
+        return "credentials_ext", alt
+    if alt == "(^|/)credentials$":
+        return "credentials_bare", alt
+    if _ID_RE.fullmatch(alt):
+        return "id", alt
+    m = _STANDALONE_RE.fullmatch(alt)
+    if m:
+        group, bare = m.group("group"), m.group("bare")
+        raw = group.split("|") if group is not None else [bare]
+        exts = []
+        for frag in raw:
+            exts.extend(_expand_optional_chars(frag))
+        return "standalone_ext", exts
+    return None
+
+
+def _unescaped_hashes(text):
+    """Indices of every `#` outside a character class and not preceded by a
+    live backslash - the one shape `_split_top_level_alts` cannot read
+    correctly, since it has no model of `re.VERBOSE` comments. Used to assert
+    the real pattern never puts this suite in that blind spot, rather than
+    to work around it."""
+    found = []
+    i = 0
+    in_class = False
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if c == "\\" and i + 1 < n:
+            i += 2
+            continue
+        if in_class:
+            if c == "]":
+                in_class = False
+            i += 1
+            continue
+        if c == "[":
+            in_class = True
+        elif c == "#":
+            found.append(i)
+        i += 1
+    return found
+
+
+# Alternatives SECRET_PATH names that this suite deliberately does not expect
+# a `Read(...)` entry for, each with the reason. Empty today: nothing is
+# exempted, so a new, unrecognised alternative is drift this suite reports
+# rather than quietly ignores.
+_OMITTED_ALTS = {}
+
+
+def _classify_secret_alts(pattern_text):
+    """Partitions every top-level alternative of a `SECRET_PATH`-shaped
+    pattern into its known families plus `"unclassified"` for whatever
+    none of them consumed. Operates on TEXT, so a probe can hand it a crafted
+    pattern string - a `.netrc` line added, two extensions on one line, a
+    grouped `(?:jks|bks)` - without this suite or the probe ever importing,
+    patching or otherwise touching the real hook module."""
+    buckets = {"dotenv": [], "credentials_ext": [], "credentials_bare": [],
+               "id": [], "standalone_ext": [], "unclassified": []}
+    inner = _inner_alternation(pattern_text)
+    if inner is None:
+        buckets["unclassified"].append(pattern_text)
+        return buckets
+    for alt in _split_top_level_alts(inner):
+        found = _classify_alt(alt)
+        if found is None:
+            buckets["unclassified"].append(alt)
+            continue
+        kind, payload = found
+        buckets[kind].append(payload)
+    return buckets
+
+
+def _misplaced_carve_outs(deny):
+    """Every `Read(!...)` entry that does not come after `Read(.env.*)`.
+
+    With no `Read(.env.*)` in the list every carve-out is misplaced, since there
+    is nothing before it for it to carve from."""
+    if not isinstance(deny, list):
+        return []
+    anchor = deny.index("Read(.env.*)") if "Read(.env.*)" in deny else len(deny)
+    return [d for i, d in enumerate(deny)
+            if isinstance(d, str) and d.startswith("Read(!") and i < anchor]
+
+
+def _template_cases(check):
+    """The shipped `permissions.deny` fragment must not drift from the guard's
+    own `SECRET_PATH`/`_CRED_EXT` silently - every family either guard reads
+    has to earn a `Read(...)` entry in the template, or the gap has to be one
+    this suite names on purpose."""
+    template_path = os.path.join(PLUGIN_ROOT, "templates",
+                                  "permissions-deny.example.json")
+    design_path = os.path.join(REPO_ROOT, "docs", "research",
+                                "guard-ownership-design.md")
+
+    def _read(path):
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read()
+
+    read_ok, template_text = _harness.attempt(_read, template_path)
+    check("gs-tpl0 the shipped fragment FILE exists and reads", read_ok,
+          template_text if not read_ok else "")
+    if not read_ok:
+        return
+
+    ok, template = _harness.attempt(json.loads, template_text)
+    check("gs-tpl1 the shipped fragment PARSES as JSON",
+          ok, template if not ok else "")
+    if not ok:
+        return
+
+    design_text = _read(design_path)
+    section_m = re.search(
+        r"## The recommended `permissions\.deny` fragment(.*?)(?:\n## |\Z)",
+        design_text, re.S)
+    section = section_m.group(1) if section_m else ""
+    fence_count = len(re.findall(r"```json\n", section))
+    check("gs-tpl2 the design doc's fragment section carries exactly one "
+          "fenced json block to compare against (found %d)" % fence_count,
+          fence_count == 1)
+    if fence_count != 1:
+        return
+    fence = re.search(r"```json\n(.*?)\n```", section, re.S)
+    design_block_text = fence.group(1)
+    design_json = json.loads(design_block_text)
+
+    check("gs-tpl3 the shipped file is BYTE-FOR-BYTE the design's fenced block "
+          "(trailing newline aside)", template_text.rstrip("\n") ==
+          design_block_text.rstrip("\n"),
+          "shipped %d bytes, design %d bytes" %
+          (len(template_text), len(design_block_text)))
+    check("gs-tpl4 ...and parses to the SAME structure, independent of "
+          "formatting", template == design_json)
+
+    deny = template.get("permissions", {}).get("deny", [])
+    check("gs-tpl5 the fragment carries a deny list", isinstance(deny, list)
+          and len(deny) > 0)
+
+    # ORDER is part of the fragment's meaning, so it is read off the parsed
+    # LIST before the set below throws order away: a `!` carve-out reaches only
+    # the rules before it in the same list, and one placed above the rule it
+    # carves from exempts nothing.
+    check("gs-tpl22 every `Read(!...)` carve-out comes AFTER `Read(.env.*)` in "
+          "the fragment's deny list: %r" % (_misplaced_carve_outs(deny),),
+          isinstance(deny, list) and not _misplaced_carve_outs(deny))
+    early = ["Read(!.env.example)", "Read(.env)", "Read(.env.*)",
+             "Read(!.env.sample)"]
+    check("gs-tpl22b ...and the reader names a carve-out placed before it, and "
+          "only that one: %r" % (_misplaced_carve_outs(early),),
+          _misplaced_carve_outs(early) == ["Read(!.env.example)"])
+    check("gs-tpl22c ...and a list with carve-outs but NO `Read(.env.*)` at all "
+          "is reported too, rather than read as nothing out of place: %r"
+          % (_misplaced_carve_outs(["Read(.env)", "Read(!.env.dist)"]),),
+          _misplaced_carve_outs(["Read(.env)", "Read(!.env.dist)"])
+          == ["Read(!.env.dist)"])
+    deny = set(deny)
+
+    # Read the families straight off the compiled pattern and the extension
+    # string, rather than retyping either - a family added to the guard and
+    # not to this list is a family this suite would otherwise miss entirely.
+    families = _classify_secret_alts(M.SECRET_PATH.pattern)
+
+    unexpected = sorted(a for a in families["unclassified"]
+                         if a not in _OMITTED_ALTS)
+    stale = sorted(a for a in _OMITTED_ALTS if a not in families["unclassified"])
+    check("gs-tpl20 every top-level alternative in SECRET_PATH is classified "
+          "by this suite, or named in _OMITTED_ALTS with a reason - one that "
+          "reaches neither is silent drift",
+          not unexpected and not stale,
+          "unclassified and not omitted: %r; omitted but gone: %r" %
+          (unexpected, stale))
+
+    check("gs-tpl21 SECRET_PATH's pattern text carries no unescaped `#` "
+          "outside a character class - the one shape the splitter above "
+          "cannot read, stated as a limit rather than hidden",
+          not _unescaped_hashes(M.SECRET_PATH.pattern),
+          "hash at index(es) %r" % (_unescaped_hashes(M.SECRET_PATH.pattern),))
+
+    # EVERY family below unions across ALL of its bucket's members, not just
+    # the first - a SECOND alternative of a correctly-recognised shape (a
+    # second `credentials[^/]*\.(?:...)` line, a second `id_(?:...)` line)
+    # used to be bucketed right and then never read, because only `[0]` was
+    # checked. That silently let a real gap through: the bucket was correct,
+    # the per-member check was not.
+    dotenv_alts = families["dotenv"]
+    check("gs-tpl6 SECRET_PATH still names a dotenv family to check",
+          len(dotenv_alts) > 0)
+    if dotenv_alts:
+        check("gs-tpl7 the bare dotenv file and any `.env.<suffix>` are denied",
+              "Read(.env)" in deny and "Read(.env.*)" in deny)
+        all_names = []
+        unreadable = []
+        for alt in dotenv_alts:
+            m = _DOTENV_RE.fullmatch(alt)
+            if m is None:
+                unreadable.append(alt)
+                continue
+            all_names.extend(m.group("names").split("|"))
+        check("gs-tpl8 every dotenv alternative's template carve-out is "
+              "readable", not unreadable, "unreadable: %r" % (unreadable,))
+        names = sorted(set(all_names))
+        if names:
+            missing = [n for n in names if ("Read(!.env.%s)" % n) not in deny]
+            check("gs-tpl9 every carved-out template name across ALL dotenv "
+                  "alternatives (%s) has its own `Read(!...)` entry" %
+                  ",".join(names), not missing, "missing: %r" % (missing,))
+            carve_outs = set(d for d in deny if d.startswith("Read(!"))
+            expected_carve_outs = set("Read(!.env.%s)" % n for n in names)
+            check("gs-tpl19 EVERY `Read(!...)` entry in the fragment is "
+                  "exactly one of the template names the regex's negative "
+                  "lookahead grants - no name missing, and no broader or "
+                  "unrelated carve-out such as `Read(!.env.*)` or "
+                  "`Read(!*.pem)` smuggled in",
+                  carve_outs == expected_carve_outs,
+                  "got %r, expected %r" %
+                  (sorted(carve_outs), sorted(expected_carve_outs)))
+        # Unconditional: ask the REGEX ENGINE whether `.envrc` is still part
+        # of this family, rather than grepping the pattern text for the
+        # literal spelling `(?:rc)?` it happens to use today. A rewrite of
+        # the optional group that keeps matching `.envrc` must not make this
+        # case vanish instead of fail.
+        check("gs-tpl10 the same family also covers `.envrc` (SECRET_PATH "
+              "still matches it), which the fragment denies as its own pair "
+              "of entries - a gitignore pattern cannot express the regex's "
+              "optional group",
+              bool(M.SECRET_PATH.search(".envrc"))
+              and "Read(.envrc)" in deny and "Read(.envrc.*)" in deny)
+
+    cred_ext_alts = families["credentials_ext"]
+    check("gs-tpl11 SECRET_PATH still names a `credentials.<ext>` family to "
+          "check", len(cred_ext_alts) > 0)
+    if cred_ext_alts:
+        all_exts = []
+        unreadable = []
+        for alt in cred_ext_alts:
+            m = _CRED_EXT_RE.fullmatch(alt)
+            if m is None:
+                unreadable.append(alt)
+                continue
+            for frag in m.group("exts").split("|"):
+                all_exts.extend(_expand_optional_chars(frag))
+        check("gs-tpl11b every credentials-ext alternative's extension "
+              "alternation is readable", not unreadable,
+              "unreadable: %r" % (unreadable,))
+        exts = sorted(set(all_exts))
+        # Cross-check the FIRST (primary) alternative against the named
+        # constant the hook also exposes - that constant is what the source
+        # literally substitutes into that one alternative, so this is a
+        # scoped claim about alternative #1, not about the union.
+        first_m = _CRED_EXT_RE.fullmatch(cred_ext_alts[0])
+        if first_m is not None:
+            primary_exts = []
+            for frag in first_m.group("exts").split("|"):
+                primary_exts.extend(_expand_optional_chars(frag))
+            cred_ext_from_const = []
+            for frag in M._CRED_EXT.split("|"):
+                cred_ext_from_const.extend(_expand_optional_chars(frag))
+            check("gs-tpl11c `_CRED_EXT` names the SAME extensions the "
+                  "PRIMARY credentials-ext alternative embeds",
+                  sorted(primary_exts) == sorted(cred_ext_from_const),
+                  "pattern: %r, _CRED_EXT: %r" %
+                  (sorted(primary_exts), sorted(cred_ext_from_const)))
+        missing = []
+        for ext in exts:
+            if ("Read(credentials*.%s)" % ext) in deny:
+                continue
+            if ("Read(*.%s)" % ext) in deny:
+                continue  # covered by a standalone extension entry
+            missing.append(ext)
+        check("gs-tpl12 every extension named across ALL credentials-ext "
+              "alternatives (%s) is denied either as `credentials*.<ext>` or "
+              "by a standalone `*.<ext>` entry" % ",".join(exts), not missing,
+              "missing: %r" % (missing,))
+
+    check("gs-tpl13 the bare `credentials` file (no extension) is denied",
+          len(families["credentials_bare"]) > 0 and "Read(credentials)" in deny)
+
+    id_alts = families["id"]
+    check("gs-tpl14 SECRET_PATH still names an SSH private-key family to check",
+          len(id_alts) > 0)
+    if id_alts:
+        all_variants = []
+        unreadable = []
+        for alt in id_alts:
+            m = _ID_RE.fullmatch(alt)
+            if m is None:
+                unreadable.append(alt)
+                continue
+            all_variants.extend(m.group("variants").split("|"))
+        check("gs-tpl15 every id_ alternative's key-type alternation is "
+              "readable", not unreadable, "unreadable: %r" % (unreadable,))
+        variants = sorted(set(all_variants))
+        missing = [v for v in variants if ("Read(id_%s)" % v) not in deny]
+        check("gs-tpl16 every key type across ALL id_ alternatives (%s) has "
+              "its own `Read(id_...)` entry" % ",".join(variants),
+              not missing, "missing: %r" % (missing,))
+
+    standalone_exts = sorted(set(
+        ext for payload in families["standalone_ext"] for ext in payload))
+    check("gs-tpl17 SECRET_PATH still names standalone extension families to "
+          "check", len(standalone_exts) > 0)
+    missing = [e for e in standalone_exts if ("Read(*.%s)" % e) not in deny]
+    check("gs-tpl18 every standalone extension (%s) has its own `Read(*.<ext>)`"
+          " entry" % ",".join(standalone_exts), not missing,
+          "missing: %r" % (missing,))
+
+
 def _cases(check):
     """Exercise the decision core with fictional secret paths (never real files)."""
     _harness.stage(check, "gs-live", _refresh_cases)
+    _harness.stage(check, "gs-template", _template_cases)
     cfg = _config._deep_merge(_config.DEFAULTS, {})
     tmp = Path(_harness.fixture_root("guard-secrets-selftest-"))
 
@@ -416,6 +843,62 @@ def _cases(check):
           "refused every unreadable read target would pass sr12 and sr13 "
           "forever", "allow",
           bash("python3 -c \"print(open(base + '/app.ts').read())\""))
+
+    # (sr22+) KNOWN OPEN, named in SECURITY.md's "a read is refused only where
+    # one call names a secret path ... beside a verb it lists" paragraph and
+    # again under "Secret-read guard is name-based" / "a read that reaches the
+    # file without the call naming it": these reach a secret's bytes with no
+    # single call the guard's readings parse as a read of that path, so today's
+    # verdict is allow. Each is pinned as a DECISION, not an oversight, and each
+    # sits beside the ordinary `cat .env.production` twin the guard still
+    # denies, so the gap is what moves and not an inert guard. Closing one of
+    # these must turn its case red and make SECURITY.md's own list shrink with
+    # it, rather than leaving a document and a suite that quietly disagree.
+    _expect("sr22 twin: `cat .env.production` is still denied", "block",
+          bash("cat .env.production"))
+    _expect("sr23 KNOWN OPEN: `grep -r TOKEN ./` reaches every file under a "
+          "directory with no single call naming the secret path - "
+          "SECURITY.md's 'a recursive grep -r over a directory'", "allow",
+          bash("grep -r TOKEN ./"))
+    _expect("sr24 KNOWN OPEN: the Grep TOOL over a directory with no glob "
+          "naming a secret is the same gap through the tool door - "
+          "SECURITY.md's 'the Grep tool over a directory with no glob that "
+          "names a secret'", "allow", grep(pattern="TOKEN", path="./"))
+    _expect("sr25 KNOWN OPEN: `diff .env.development .env.production` names "
+          "the secret beside `diff`, a verb the guard's list lacks - "
+          "SECURITY.md's 'diff of two env files'", "allow",
+          bash("diff .env.development .env.production"))
+    _expect("sr26 KNOWN OPEN: a `for` loop over `.env.*` reading the loop "
+          "variable never names a secret path in the call the guard parses - "
+          "SECURITY.md's 'a for loop over .env.* whose body reads the loop "
+          "variable'", "allow",
+          bash("for f in .env.*; do cat $f; done"))
+    _expect("sr27 KNOWN OPEN: `ls .env.production | xargs cat` hands the name "
+          "to `cat` on stdin rather than as a named argument - SECURITY.md's "
+          "'xargs cat handed the names on stdin'", "allow",
+          bash("ls .env.production | xargs cat"))
+    _expect("sr28 KNOWN OPEN: `comm .env.development .env.production` names "
+          "the secret beside `comm`, a verb the guard's list lacks - "
+          "SECURITY.md's 'comm'", "allow",
+          bash("comm .env.development .env.production"))
+    _expect("sr29 KNOWN OPEN: `cut -d= -f2 .env.production` names the secret "
+          "beside `cut`, a verb the guard's list lacks - SECURITY.md's "
+          "'cut'", "allow",
+          bash("cut -d= -f2 .env.production"))
+    _expect("sr30 KNOWN OPEN: `sort .env.production` names the secret beside "
+          "`sort`, a verb the guard's list lacks - SECURITY.md's 'sort'",
+          "allow", bash("sort .env.production"))
+    _expect("sr31 KNOWN OPEN: `jq . .env.production` names the secret beside "
+          "`jq`, a verb the guard's list lacks - SECURITY.md's 'jq'",
+          "allow", bash("jq . .env.production"))
+    _expect("sr32 KNOWN OPEN: `vim .env.production` names the secret beside "
+          "an editor, a verb the guard's list lacks - SECURITY.md's 'an "
+          "editor'", "allow", bash("vim .env.production"))
+    _expect("sr33 KNOWN OPEN: `find . -name .env.production -exec cat {} +` "
+          "spells the secret path before the `-exec` verb, so no single call "
+          "the guard's readings parse names it as a read - SECURITY.md's "
+          "'find ... -exec cat, where the path is spelled before the verb'",
+          "allow", bash("find . -name .env.production -exec cat {} +"))
 
     # (sr16+) THE PROJECT'S OWN PATTERNS, WHICH REACHED EVERY MATCHER BUT THE
     # SHELL. The arm that was supposed to carry them required the BUILT-IN matcher

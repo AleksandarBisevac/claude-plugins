@@ -56,6 +56,42 @@ import _report_html as _rhtml                      # noqa: E402  (TEV_LABELS: th
 import _panel_page as M                            # noqa: E402
 
 
+# Every spelling a view could use to read STATE's rollup field: dot (the one a
+# bare `.rollup` substring scan used to catch alone), bracket, and a
+# destructured binding off STATE - `ps1` below needs all three, or a view
+# switching spelling is how the raw "no plan" test it replaced would come back.
+_ROLLUP_RE = re.compile(
+    r"\.rollup\b"
+    r"|STATE\s*\[\s*['\"]rollup['\"]\s*\]"
+    r"|\{[^{}]*\brollup\b[^{}]*\}\s*=\s*STATE\b"
+)
+
+
+def _rollup_unaccounted(html, ov_start, ov_end):
+    """Every line of `html` that reads STATE's rollup field, in any spelling
+    `_ROLLUP_RE` knows, minus the handful of callers allowed to: a
+    `planState(` call site, that function's own JSDoc, the ONE alias Overview
+    takes before handing it to `planState` - scoped to Overview's OWN part by
+    byte position (`ov_start`..`ov_end`), not by matching the literal text
+    anywhere in the page, so a second file carrying byte-identical text is NOT
+    waved through - and the unrelated `evidenceBoundary` field. What is left
+    over is exactly a raw test reading the field for itself."""
+    unaccounted = []
+    offset = 0
+    for line in html.split("\n"):
+        if _ROLLUP_RE.search(line):
+            accounted = (
+                "planState(" in line
+                or "@param {*} rollup" in line
+                or "evidenceBoundary" in line
+                or ("const r=STATE.rollup;" in line and ov_start <= offset < ov_end)
+            )
+            if not accounted:
+                unaccounted.append(line)
+        offset += len(line) + 1
+    return unaccounted
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     # --- build order ----------------------------------------------------------
@@ -125,8 +161,19 @@ def _cases(check):
     check("D9: it stops while the tab is hidden, and catches up on return",
           "if(document.hidden)return;" in M.UI_HTML
           and "visibilitychange" in M.UI_HTML)
-    check("D9: a failed poll leaves a stale badge rather than killing the panel",
-          "catch(e){/* a panel that dies because a poll failed" in M.UI_HTML)
+    # The catch used to swallow every failure, which is how a stopped server left
+    # the page looking live. It still keeps the panel up, but a fetch that got no
+    # answer now sets the offline state, and anything else is said in the console.
+    # The behaviour is executed by tools/ui-tests/server-offline.test.mjs; what is
+    # pinned here is the construct that suite relies on, inside the poll itself.
+    _d9 = M.UI_HTML[M.UI_HTML.index("async function pollRunStatus"):
+                    M.UI_HTML.index("function startRunPoll")]
+    check("D9: a failed poll sets the offline state instead of swallowing the "
+          "failure, and an answer of any shape clears it",
+          "}catch(e){runOffline(!!(e&&e.noAnswer));" in _d9
+          and "runOffline(false);" in _d9
+          and "catch(e){/*" not in _d9,
+          repr(_d9[-400:]))
 
     check("UI renders area badges (per tag) + area-searchable composition",
           ".badge.area" in M.UI_HTML and "P.area" in M.UI_HTML
@@ -372,8 +419,17 @@ def _cases(check):
           and "return TABS[0];}" in M.UI_HTML
           and "if(!TABS.includes(t))t=TABS[0];" in M.UI_HTML,
           repr({"TABS": _tab_ids, "strip": _strip_ids}))
-    check("one Save for four cards, and it is reachable from all of them",
-          M.UI_HTML.count("'/api/config'") == 1 and ".savebar{position:sticky" in M.UI_HTML)
+    # Two config writes, and both are PATCHES built against the base their form
+    # was drawn from: Settings' one Save for its four cards, and the Policy tab's
+    # Save for its one key. A third, or either sending a whole document, is a
+    # write that can carry another writer's change back at an older value.
+    check("one Save for four cards, and it is reachable from all of them - and the "
+          "only other config write is the policy tab's patch",
+          M.UI_HTML.count("'/api/config'") == 2
+          and "api('PUT','/api/config',\n     {patch:configPatch(base,cfg,STATE.defaults||{})})"
+          in M.UI_HTML
+          and "api('PUT','/api/config',{patch:policyPatch()})" in M.UI_HTML
+          and ".savebar{position:sticky" in M.UI_HTML)
     # --- the three facts the form has to state out loud ------------------------
     check("tokenVars: an empty box means the three defaults are ACTIVE, and says so "
           "rather than looking like nothing is protected",
@@ -953,7 +1009,8 @@ def _cases(check):
           # One constant, shared with the report rather than spelled again.
           and "const DAY_MS = 86400000;" in M.UI_HTML)
     check("composition's filter state is hoisted too, so it survives a re-render",
-          "const COMPF={q:'',status:'',needs:false,open:{},apply:null};" in M.UI_HTML
+          "const COMPF={q:'',status:'',needs:false,open:{},adoOpen:false,"
+          "apply:null};" in M.UI_HTML
           and "const open=COMPF.open;" in M.UI_HTML
           and "COMPF.apply=()=>{q.value=COMPF.q;syncFilters();refresh();};" in M.UI_HTML)
     # --- c6: confirm before write, and who is writing --------------------------
@@ -987,7 +1044,7 @@ def _cases(check):
           "cannot protect",
           "const EDITS={};" in M.UI_HTML
           and "EDITS.comp=()=>compChanges(patch);" in M.UI_HTML
-          and "EDITS.guards=()=>configChanges(cfg);" in M.UI_HTML
+          and "EDITS.guards=pendingRows;" in M.UI_HTML
           and "EDITS.policy=()=>policyChanges();" in M.UI_HTML
           and "EDITS.ado=()=>adoRows(saved,ADRAFT);" in M.UI_HTML
           # The theme card: registered last of the five, because its draft lives
@@ -1128,7 +1185,11 @@ def _cases(check):
           # off within five seconds. A view that stopped restoring anything still
           # drops one from each, which is what asserting both is for.
           and M.UI_HTML.count("focusBack(") == 6
-          and M.UI_HTML.count("restoreCaret(") == 6   # one def, four tails, one early return
+          # one def, four tails, two early returns in Overview - the original
+          # no-plan-yet state and the new one for a manifest that exists and will
+          # not parse, each its own early return and each handing the search box's
+          # caret back the same way.
+          and M.UI_HTML.count("restoreCaret(") == 7
           and "focusKeep('#policy')" in M.UI_HTML
           and "focusKeep('#usage')" in M.UI_HTML
           and "focusKeep('#over')" in M.UI_HTML
@@ -1196,7 +1257,7 @@ def _cases(check):
           "const cfRow=(target,field,from,to)=>({target,field,"
           "from:cfNorm(from),to:cfNorm(to)});" in M.UI_HTML
           and "function compChanges(patch)" in M.UI_HTML
-          and "function configChanges(cfg)" in M.UI_HTML)
+          and "function configChanges(cfg,base)" in M.UI_HTML)
     check("what came back is compared with what was shown, not merely trusted",
           "function appliedDiff(rows,res)" in M.UI_HTML
           and "res.applied.map(key)" in M.UI_HTML
@@ -1591,6 +1652,54 @@ def _cases(check):
     # source, and this is the only place they exist.
     check("pri10b the fifth heading names BOTH of the things its column holds",
           "flabel('skills · priority',MDESC.taskSkills,{comp:'taskSkills',"
+          in M.UI_HTML)
+    # --- av: ADO shows only where the plan uses it ------------------------------
+    # A project that never set meta.ado and carries no link or declaration
+    # anywhere used to get the parent column, the "on the board" lever and the
+    # whole connector card regardless, with checked boxes under a "Not
+    # configured" banner - a form describing a sync that does not exist. This
+    # is a SOURCE property: that the sixth heading, the legend's third lever and
+    # the per-row cells are each built behind the one `showAdo` gate, computed
+    # once from `adoVisible(comp)` rather than re-asked per control.
+    check("av1 the composition table reads showAdo=adoVisible(comp) ONCE, and "
+          "the sixth heading and the legend's third lever are both built only "
+          "under it - a project nothing has ever synced gets neither",
+          "const showAdo=adoVisible(comp);" in M.UI_HTML
+          and M.UI_HTML.count("const showAdo=adoVisible(comp);") == 1
+          and "showAdo?flabel('on the board',MDESC.phaseAdoTracked," in M.UI_HTML
+          and "...(showAdo?[{label:flabel('ADO parent',MDESC.phaseAdoParent,"
+          in M.UI_HTML)
+    check("av2 the phase row's sixth cell and the task row's empty sixth cell "
+          "are each built only under showAdo - the column does not exist with "
+          "every cell left blank, it is not in the row at all",
+          "showAdo?el('td',{class:'phparent'},at,atLine,ap,apId,apBoard,apNote)"
+          ":null" in M.UI_HTML
+          and "showAdo?el('td',{class:'phparent'}):null" in M.UI_HTML)
+    # av3 is the one check that can actually fail if the collapse is deleted.
+    # Reverting the ternary to `const body=card` or dropping adoCollapsedSummary()
+    # from the <summary> leaves av1/av2 green and every vitest case green too -
+    # those read composition.js alone and the pure function alone, neither of
+    # which names the choice the CARD makes between the two. Counted, not merely
+    # found: a second copy of either literal would mean a second place deciding
+    # the same thing, free to disagree with this one.
+    check("av3 the connector card itself chooses `card` under adoVisible(comp) "
+          "and builds its <summary> from adoCollapsedSummary() - each exactly "
+          "once, so neither half of the collapse can be quietly deleted while "
+          "av1/av2 and the pure-function cases stay green",
+          M.UI_HTML.count("const body=adoVisible(comp)?card") == 1
+          and M.UI_HTML.count("el('summary',{},adoCollapsedSummary())") == 1,
+          repr((M.UI_HTML.count("const body=adoVisible(comp)?card"),
+                M.UI_HTML.count("el('summary',{},adoCollapsedSummary())"))))
+    check("av4 the collapsed card remembers it was opened: COMPF carries the "
+          "state (the same shape COMPF.open already keeps per phase row), one "
+          "listener writes it from the details element's own toggle, and the "
+          "build reads it back rather than always starting closed",
+          "adoOpen:false" in M.UI_HTML
+          and M.UI_HTML.count("adoOpen:false") == 1
+          and "function adoCardToggled(isOpen){COMPF.adoOpen=!!isOpen;}"
+          in M.UI_HTML
+          and "open:COMPF.adoOpen?true:null" in M.UI_HTML
+          and "body.addEventListener('toggle',()=>adoCardToggled(body.open));"
           in M.UI_HTML)
     # The reading order and the freeze both hang off ONE classifier. Pinning the
     # reuse is the point: a second done/cancelled list inside the composition tab
@@ -2333,15 +2442,22 @@ def _cases(check):
           "verdicts are re-read from the server after a save",
           "moved?el('span',{class:'badge pend'" in M.UI_HTML
           and "POLICY=await api('GET','/api/policy')" in M.UI_HTML)
-    # EVERY assignment, not one of them. The first version of this pin asked
-    # whether the string appeared at all — and it appears four times (boot, save,
-    # discard, and v0.34's refreshFromDisk), so a mutation that pointed one of
-    # them at the merged block left it green. A wholesale PUT built from defaults
-    # would write every default into the file the first time anyone pressed Save.
-    _pdraft = re.findall(r"PDRAFT=pClone\(([^)]*)\)", M.UI_HTML)
+    # EVERY reset, not one of them. The first version of this pin asked whether
+    # the string appeared at all, so a mutation that pointed one reset at the
+    # merged block left it green; a patch built from defaults would write every
+    # default into the file the first time anyone pressed Save. Resets now go
+    # through `pTake`, which sets the draft and its base together - so the pin
+    # reads every call of it AND that nothing else assigns either variable
+    # beyond its declaration and pBlock's first-write `{}`.
+    _ptake = sorted(re.findall(r"(?<!function )pTake\(([^)]*)\)", M.UI_HTML))
+    _passign = sorted(re.findall(r"\bP(DRAFT|BASE)=(?!=)([^;]*);", M.UI_HTML))
     check("the draft is the block AS WRITTEN, not the merged one - and that is "
-          "true of every place the draft is set, not merely somewhere",
-          _pdraft == ["POLICY&&POLICY.stored"] * 4
+          "true of every place the draft and its base are set, not merely "
+          "somewhere: %r" % ((_ptake, _passign),),
+          _ptake == ["POLICY&&POLICY.stored"] * 3 + ["back?back.stored:PDRAFT"]
+          and _passign == [("BASE", "null"), ("BASE", "pClone(stored)"),
+                           ("DRAFT", "null"), ("DRAFT", "pClone(stored)"),
+                           ("DRAFT", "{}")]
           and "pRuleOf(POLICY.stored,kind,r.name,tag)" in M.UI_HTML)
     # THE PIN THAT USED TO BE HERE ASSERTED A SPELLING, AND THE SPELLING DID NOT
     # DELIVER ITS OWN CLAIM. It read
@@ -2477,16 +2593,18 @@ def _cases(check):
           "function pPrune(" in M.UI_HTML
           and "if(Array.isArray(k[l])&&!k[l].length)delete k[l];" in M.UI_HTML
           and "if(!Object.keys(k.areas).length)delete k.areas;" in M.UI_HTML)
-    check("a save goes through the one confirm flow, writes through the one policy "
-          "endpoint, and describes itself in the vocabulary the server echoes "
-          "(four call sites: boot, PUT, the post-save re-read, refreshFromDisk)",
+    check("a save goes through the one confirm flow, writes through the config "
+          "patch, and describes itself in the vocabulary the server echoes - the "
+          "policy endpoint is READ at boot, after a save and by refreshFromDisk, "
+          "and written by nothing on this page",
           # Through `confirmSave` now, which is where the confirm flow lives for
           # all four writable surfaces - the title is what identifies this one.
           "confirmSave({rows:policyChanges,\n     title:'Save capability policy'"
           in M.UI_HTML
-          and M.UI_HTML.count("'/api/policy'") == 4
+          and M.UI_HTML.count("'/api/policy'") == 3
+          and "'PUT','/api/policy'" not in M.UI_HTML
           and "function policyChanges(){" in M.UI_HTML
-          and "return configChanges(cfg);}" in M.UI_HTML)
+          and "return configChanges(pAsConfig(PDRAFT),pAsConfig(PBASE));}" in M.UI_HTML)
     check("the box saying what a save did survives the redraw that follows it, "
           "instead of being wiped by the re-read it triggers",
           "PNOTE=[...findings.childNodes];" in M.UI_HTML
@@ -4968,6 +5086,63 @@ def _cases(check):
           "phaseSignoffNote(ph)?el('span',{class:'count whynote'}" in M.UI_HTML
           and "tasks.every(t=>t.status==='done')" not in M.UI_HTML
           and "awaiting sign-off (/audit:review)" not in M.UI_HTML)
+
+    # --- ps: one helper tells "no plan" apart from "unreadable plan" -------------
+    # Overview, Plan & models, Proposals and the Policy area-rules line each used
+    # to test `!STATE.rollup` (or a local alias of it) for itself, so a manifest
+    # that EXISTS and failed to parse read the same as no manifest at all - the
+    # wrong advice ("/audit:init writes one") for a file already on disk.
+    #
+    # A PROPERTY OF THE SOURCE: every line that reads STATE's rollup field, in
+    # ANY spelling, must be accounted for by a short, named list of legitimate
+    # callers - so a NEW view reintroducing the raw test is what is left over,
+    # rather than this trusting that nothing else appears. A bare `.rollup`
+    # substring scan missed two spellings a view could still use to bypass it
+    # (`STATE['rollup']`, and a destructured `const {rollup}=STATE`), and an
+    # exemption that matched Overview's own alias as a literal ANYWHERE in the
+    # page let a second view copy that exact text and pass too - both fixed
+    # below: a regex over three spellings, and the alias exemption scoped to
+    # Overview's own part by BYTE POSITION rather than by matching the text.
+    _ov_src = _theme.read_asset("panel/overview.js")
+    _ov_start = M.UI_HTML.index(_ov_src)
+    _ov_end = _ov_start + len(_ov_src)
+    _unaccounted = _rollup_unaccounted(M.UI_HTML, _ov_start, _ov_end)
+    check("ps1 planState() is the only place a view may ask whether the plan "
+          "rollup is missing, in any spelling (dot, bracket or destructured) - "
+          "every other mention is accounted for (a planState() call, its own "
+          "doc comment, Overview's own alias at Overview's own position, or "
+          "the unrelated evidenceBoundary field), so what is left is a raw "
+          "test sneaking back in: %r" % (_unaccounted,),
+          not _unaccounted
+          # one definition, four call sites - Overview, Composition, Proposals,
+          # Policy - so a FIFTH view this count does not expect is also caught.
+          and M.UI_HTML.count("planState(") == 5)
+
+    # ps2 DENY/ALLOW twin: the tightened scan is proved to actually FIRE, not
+    # merely to still pass on the unmutated page. A scratch view is appended to
+    # a COPY of the real page (never written to disk, never touching M.UI_HTML
+    # or ps1's own verdict) carrying the two spellings ps1 used to miss, plus a
+    # BYTE-IDENTICAL copy of Overview's own alias sitting outside Overview's
+    # part - the position check must catch a copy of the exact text the same
+    # way it catches a differently-worded raw test.
+    _bogus = ("\nfunction renderBogusBracket(){if(!STATE['rollup'])return;}\n"
+              "function renderBogusDestructure(){const {rollup}=STATE;"
+              "if(!rollup)return;}\n"
+              "function renderBogusCopy(){const r=STATE.rollup;if(!r)return;}\n")
+    _mutated = M.UI_HTML + _bogus
+    _planted = _rollup_unaccounted(_mutated, _ov_start, _ov_end)
+    check("ps2 DENY: a bracket read, a destructured read, and a byte-identical "
+          "copy of Overview's own alias sitting OUTSIDE Overview's part are "
+          "all three caught the moment they are planted - %d found, expected "
+          "3: %r" % (len(_planted), _planted),
+          len(_planted) == 3
+          and any("renderBogusBracket" in l for l in _planted)
+          and any("renderBogusDestructure" in l for l in _planted)
+          and any("renderBogusCopy" in l for l in _planted))
+    check("ps3 ALLOW: the real page, unmutated, stays clean under the same "
+          "scan - the twin that shows the ps2 DENY case above is about the "
+          "planted lines, not about the scan being generally trigger-happy",
+          not _rollup_unaccounted(M.UI_HTML, _ov_start, _ov_end))
 
 def _selftest():
     return _harness.run(_cases)

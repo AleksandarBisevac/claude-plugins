@@ -2438,7 +2438,104 @@ def _cases(check):
           "`dict` reading disables both while raising nothing: %r" % (_lk_bad,),
           not _lk_bad and len(_lk_callers) >= _lk_floor)
 
+    _remove_tree_cases(check)
     _finding_code_cases(check)
+
+
+# --- removing a scratch tree --------------------------------------------------
+def _refusing_tree():
+    """A temp tree whose one file refuses deletion until made writable, on
+    every platform CI runs: the file is read-only (windows checks the file's
+    own attribute, as it does for git's loose objects) inside a read-only
+    directory (POSIX checks the directory)."""
+    import tempfile
+    top = tempfile.mkdtemp(prefix="output-remove-tree-")
+    inner = os.path.join(top, "objects")
+    os.makedirs(inner)
+    leaf = os.path.join(inner, "loose")
+    with open(leaf, "w") as fh:
+        fh.write("written read-only, as git writes an object\n")
+    os.chmod(leaf, 0o444)
+    os.chmod(inner, 0o555)
+    return top
+
+
+def _remove_tree_cases(check):
+    import shutil
+    top = _refusing_tree()
+    try:
+        shutil.rmtree(top, ignore_errors=True)
+        # The fixture's own proof: plain `rmtree(ignore_errors=True)`, the call
+        # the helper replaces, leaves this tree behind and says nothing. Run as
+        # a superuser nothing refuses, and this case reports that rather than
+        # letting the next one pass over a fixture that never resisted.
+        check("rt0 the fixture refuses plain rmtree(ignore_errors=True): the "
+              "tree survives it silently: %r" % (os.path.exists(top),),
+              os.path.exists(top))
+        remove = getattr(M, "remove_tree", None)
+        gone = remove(top) if remove else None
+        check("rt1 RED-FIRST: remove_tree removes a tree whose files refuse "
+              "deletion until made writable, and answers True: helper %r, "
+              "answered %r, still there %r"
+              % (remove is not None, gone, os.path.exists(top)),
+              remove is not None and gone is True and not os.path.exists(top))
+        raised, again = None, None
+        try:
+            again = remove(top) if remove else None
+        except Exception as exc:
+            raised = exc
+        check("rt2 ...and on a tree that is already gone it returns without "
+              "raising, answering True: answered %r, raised %r"
+              % (again, raised), remove is not None and raised is None
+              and again is True)
+    finally:
+        # Removed with the harness's binding of the same helper; a subject that
+        # left the tree behind has already failed rt1 above.
+        _harness.remove_tree(top)
+    _remove_tree_link_cases(check)
+
+
+def _remove_tree_link_cases(check):
+    """The fallback pass makes the TREE writable, never what a link in it
+    points at: a chmod through a link changes its target, which may be any
+    file on the machine."""
+    import shutil
+    import stat
+    import tempfile
+    outside_dir = tempfile.mkdtemp(prefix="output-remove-tree-outside-")
+    top = None
+    try:
+        outside = os.path.join(outside_dir, "precious")
+        with open(outside, "w") as fh:
+            fh.write("not part of the tree being removed\n")
+        os.chmod(outside, 0o640)
+        top = _refusing_tree()
+        inner = os.path.join(top, "objects")
+        os.chmod(inner, 0o755)
+        try:
+            os.symlink(outside, os.path.join(inner, "link-out"))
+            linked = None
+        except (OSError, NotImplementedError, AttributeError) as exc:
+            linked = "%s: %s" % (type(exc).__name__, exc)
+        os.chmod(inner, 0o555)
+        if linked is not None:
+            _harness.skip(check, "rt3", "os.symlink is refused here (%s)"
+                          % (linked,), True)
+            return
+        shutil.rmtree(top, ignore_errors=True)
+        forced = os.path.exists(top)
+        gone = M.remove_tree(top) if forced else None
+        mode = stat.S_IMODE(os.stat(outside).st_mode)
+        check("rt3 RED-FIRST: a tree the plain removal could not take (%r) is "
+              "removed by the fallback pass (%r) without changing the mode of "
+              "a file OUTSIDE it that a link inside it points at: mode %o"
+              % (forced, gone, mode),
+              forced and gone is True and mode == 0o640
+              and os.path.exists(outside))
+    finally:
+        if top:
+            _harness.remove_tree(top)
+        _harness.remove_tree(outside_dir)
 
 
 # --- every validator finding carries the code of its rule --------------------

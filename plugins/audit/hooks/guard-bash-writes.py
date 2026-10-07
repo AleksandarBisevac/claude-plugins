@@ -1669,9 +1669,11 @@ def decide(data, *, cfg=None, state_dir=None, dirty=None):
     # answer, and it is the same reasoning the plugin already applies to its own
     # journal appends through the `pluginWrote` sidecar.
     #
-    # This only ever REMOVES an attribution, and only where the command is provably
-    # read-only. Anything unrecognised is watched exactly as before, so the guard
-    # cannot be talked out of a real write by a spelling it has not seen.
+    # This only ever REMOVES an attribution, and only where the command READS AS
+    # read-only - not where it is provably read-only; a write spelled through a
+    # listed program's own arguments or script is absorbed too. Anything
+    # unrecognised is watched exactly as before, so the guard cannot be talked out
+    # of a real write by a spelling it has not seen.
     if _command_is_read_only((data.get("tool_input", {}) or {}).get("command")):
         absorbed = [f for f in dirty if f not in state["seenDirty"]]
         state["seenDirty"] = sorted(set(state["seenDirty"]) | set(dirty))

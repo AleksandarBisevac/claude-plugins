@@ -58,6 +58,34 @@ every file it can read.
 this product.** A control nobody is told about is a control that exists for readers
 of this document, and the people who most need it are the ones who have not read it.
 
+**Which layer holds which guarantee.** This plugin's command-reading guards keep the
+verdicts only the plugin can give: whether a write is covered by the running plan,
+whether a write targets the manifest, its lock or a phase shard, whether a history
+rewrite runs in a repository whose manifest records a commit (`task.commit`) and, for
+`reset --hard`, whether a recorded commit would be orphaned, and whether a stash would
+take uncommitted work out of a tree that holds an audit plan. Claude Code's own layers
+cannot hold these, because each depends on the plan's state. The secret-read rules are
+different: they read no plan state, and they stay because no host layer covers them by
+default. Auto mode allows dotenv reads, a `permissions.deny` rule matches spelling and not
+operation, `Read(...)` deny rules plus the sandbox are the layer that actually *contains*
+a read, and no permission rule can name a path inside an MCP payload. Every statement
+in this paragraph about what Claude Code does — these, and the classifier's role below —
+rests on one reading: its
+permissions, sandboxing and permission-modes documentation and the output of
+`claude auto-mode defaults` on Claude Code 2.1.291, both read on 2026-10-06 and quoted in
+[`docs/research/guard-ownership-design.md`](docs/research/guard-ownership-design.md).
+Neither source is a contract, so re-read both before a release relies on them.
+`plugins/audit/templates/permissions-deny.example.json` is the recommended fragment —
+merge it into your own `.claude/settings.json`; it replaces no guard rule above, it only
+adds a layer beside them, and `QUICKSTART.md` names what it costs. `/audit:doctor`'s
+`sandbox` row reports whether the sandbox is declared in the settings files it reads. Its
+`secret rules` row reports only whether some `Read` or `Grep` deny rule naming `.env` is
+declared there — a `!` carve-out does not count, since it refuses nothing — and does not
+check the rest of the fragment; when no such rule is declared, its fix names the
+fragment's file. This plugin does not refuse generic destructive git or shell commands in
+a repository with no plan, and it does not try to: that is the classifier's job in auto
+mode, and a `permissions.ask` or `permissions.deny` rule's job outside it.
+
 ## The plugin's own files
 
 This plugin installs hooks that run on **every tool call**, so whether those files
@@ -357,7 +385,17 @@ base refused:
   three-argument with a mode of exactly `'<'`; the idiomatic call without
   parentheses, and a three-argument mode carrying a layer (`'<:raw'`, an
   encoding), name no read target in that reading, although `.env` opened either way
-  is still refused by another of the guard's readings.
+  is still refused by another of the guard's readings;
+- in `guard-secrets-read`, a read is refused only where one call names a secret
+  path, in a form this reading parses, beside a verb it lists (`_READ_VERB`, a
+  dot-source, a redirect into stdin). What passes is either **a read that reaches the
+  file without the call naming it**: a recursive `grep -r` over a directory, the
+  Grep tool over a directory with no `glob` naming a secret, a `for` loop over
+  `.env.*` whose body reads the loop variable, and `xargs cat` handed the names on
+  stdin — or **a read verb the list lacks**, with the secret named in plain sight:
+  `diff` of two env files, `comm`, `cut`, `sort`, `jq`. The *Secret-read guard is
+  name-based* entry of *Known bypass classes* below is the same boundary seen from the
+  name side.
 
 **The plan a git command answers to is the one of the tree it runs in.** `git -C
 <dir>`, a `cd` before it, or the payload's own directory names each invocation's
@@ -657,6 +695,22 @@ straight answer:
   transcript — and block nothing. Under `usage.showCost: false` the first states a
   multiple and the second omits the figure, so the setting is not defeated by
   either message.
+- **The panel's trust boundary is the token, and the token is as private as the
+  pidfile that carries it.** `/audit:panel` trusts every local process that can
+  read that token, not merely one that already runs inside this session: holding
+  it grants every write the panel's API exposes, including the composition levers
+  (`meta.reviewSkill` / `meta.buildCommands`, `phase.review.model`, `task.model` /
+  `task.skills`) and the Sweep route above — the gate command the token-holder
+  sets is the one the next `/audit:phase`/`/audit:review` run actually executes,
+  and that write is journalled like any other. `panel-server.py`'s `do_GET` serves
+  `GET /` with no token check and embeds the token in the page it returns, so
+  reaching the port at all is reaching the token; `_write_pidfile` writes the
+  pidfile carrying that same token through a plain `open(path, "w")`, with no
+  `os.chmod` narrowing its mode, so today any local account that can read the
+  pidfile — not only the one that launched the panel — can read the token too.
+  That is wider than `commands/panel.md`'s "requires a per-launch token on every
+  API call" reads on its own: a token on every call is not the same claim as who
+  can obtain the token in the first place.
 - `/audit:panel`'s **Export report** button writes only to the report location
   derived from the project's own `manifestPath`, re-checked against the project
   root; there is no path parameter on the route to traverse with. The rendered
@@ -980,11 +1034,25 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    - **A NEW dirty path**, relative to a baseline the session's first Bash pass
      seeds silently — not every unplanned write, only one that appears between
      two of this hook's own looks at the tree.
-   - **It can prove a command harmless; it cannot prove one guilty.** The
-     evidence is bound to the operation instead of to the tree: a command
-     provably unable to write is absorbed and no path is attributed to it. That
-     only ever *removes* an attribution — an unrecognised command is still
-     watched exactly as before. **The proof is taken over shell TOKENS, not over
+   - **It absorbs a command it reads as unable to write; it never proves one
+     guilty.** The evidence is bound to the operation instead of to the tree: a
+     command whose every program is on a read-only list (`_READ_ONLY_CMDS` in
+     `hooks/guard-bash-writes.py`), carrying no surviving redirect, no
+     substitution and no write flag (`_write_flag`: `-i` and its attached forms,
+     `--in-place`, `--output`, `-delete`), is absorbed and no path is
+     attributed to it. That only ever *removes* an attribution — an unrecognised
+     command is still watched exactly as before. **"Reads as unable to write" is
+     not "provably unable to write"**: the reading looks at a program's name and
+     its flags, never at what the program does with its other arguments, so it
+     mistakes a write made THROUGH a listed program's arguments for a read. Each
+     of these is absorbed: `git -C <dir> checkout -- <file>` (the value of a
+     global option is taken for the subcommand, so `reset --hard` and `commit`
+     behind `-C` pass too), `env rm -rf <dir>` (a listed program that runs its
+     argument as a command is not asked what that command is), `awk`'s
+     `print > file` and `sed`'s `w` command (a write spelled inside the
+     program's own script), and `sort -o <file>`. A write that lands in a
+     watched file this way is not reported, then or later: an absorbed command's
+     new dirt joins the baseline the next look compares against. **The proof is taken over shell TOKENS, not over
      the command text** — before this was fixed it read the raw string, so a metacharacter
      inside a quoted search pattern was taken for shell syntax and `grep -n
      "cost > 5"` was a redirect. Redirects that name no file are dropped
@@ -1076,13 +1144,21 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    it. The extension vocabulary has one home, and the cases assert the pair
    rather than either door alone.
 
-   **What is still name-based and still missed**, said so it is a decision:
-   a read verb this list has never heard of (`cut`, `sort`, `jq`, an editor) with
-   a secret path after it, an argv assembled element by element, a path built by
-   a call (`os.path.join(a, b)`), and `find … -exec cat` — where the path is
-   spelled before the verb. Each is a shape rather than a class, and the class
-   itself is the one this document opens with: text inspection is bypassable in
-   principle.
+   **What is still name-based and still missed**, said so it is a decision. Every
+   shape found so far falls into one of these classes:
+
+   - **a read that reaches the file without the call naming it in a form the guard
+     reads** — a recursive `grep -r` over a directory, the Grep tool over a
+     directory with no `glob` that names a secret, a `for` loop over `.env.*` whose
+     body reads the loop variable, `xargs cat` handed the names on stdin, an argv
+     assembled element by element, a path built by a call (`os.path.join(a, b)`),
+     and `find … -exec cat`, where the path is spelled before the verb;
+   - **a read verb this list has never heard of**, with the secret path named in
+     plain sight after it — `diff` of two env files, `comm`, `cut`, `sort`, `jq`,
+     an editor.
+
+   Neither is closed by adding the next spelling; the class behind both is the one
+   this document opens with: text inspection is bypassable in principle.
 7. **State files are plaintext.** `.claude/state/` and `.claude/logs/` in the
    consuming repo hold session state and the bypass log (no secrets). Add them
    to your `.gitignore`. Files older than 7 days are garbage-collected

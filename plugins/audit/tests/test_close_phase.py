@@ -28,11 +28,15 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import json
 import os
 import re
+import subprocess
 import sys
+import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402  (TESTS_DIR, for the race children)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
+import _locks                                      # noqa: E402  (the wait a held-lock case shortens)
 import _manifest_io as _mio                        # noqa: E402  (the layout the stamp writes)
 import _proposals                                  # noqa: E402  (the rule sign-off reports)
 import _worktrees as W                             # noqa: E402
@@ -647,7 +651,7 @@ def _cases(check):
         shard = os.path.join(root, "P2.json")
         with open(shard, "w") as fh:
             json.dump({"id": "P2", "mergedAt": None}, fh)
-        path, stamp = M.stamp_merged(shard, "P2", when="2026-01-02T03:04:05Z")
+        path, stamp = M.stamp_merged(shard, "P2", when="2026-01-02T03:04:05Z")[:2]
         with open(shard) as fh:
             body = json.load(fh)
         check("s1 the stamp lands in the phase's own file and is the moment it was "
@@ -655,20 +659,20 @@ def _cases(check):
               path == shard and body["mergedAt"] == "2026-01-02T03:04:05Z",
               repr(body.get("mergedAt")))
         missing = os.path.join(root, "nope.json")
-        path2, why = M.stamp_merged(missing, "P2")
+        path2, why = M.stamp_merged(missing, "P2")[:2]
         check("s2 a file that cannot be read returns a REASON rather than raising "
               "- a merge that happened must not be reported as not having happened "
               "because the plan could not be updated",
               path2 == "" and why != "", repr(why))
         with open(shard, "w") as fh:
             json.dump({"id": "P9"}, fh)
-        path3, why3 = M.stamp_merged(shard, "P2")
+        path3, why3 = M.stamp_merged(shard, "P2")[:2]
         check("s3 ...and a file holding a DIFFERENT phase is refused by name "
               "rather than stamped anyway",
               path3 == "" and "P2" in why3, repr(why3))
         with open(shard, "w") as fh:
             json.dump({"id": "P2", "mergedAt": "2026-01-02T03:04:05Z"}, fh)
-        path4, stamp4 = M.stamp_merged(shard, "P2", when="2026-09-09T09:09:09Z")
+        path4, stamp4 = M.stamp_merged(shard, "P2", when="2026-09-09T09:09:09Z")[:2]
         with open(shard) as fh:
             body4 = json.load(fh)
         check("s4 a phase that already records its merge KEEPS that moment - an "
@@ -691,20 +695,20 @@ def _cases(check):
         stub_of = lambda: [s for s in _mio.read_json(mpath)["phases"]  # noqa: E731
                            if s.get("id") == "P2"][0]
         spath = os.path.join(root, stub_of()["shard"])
-        path5, _st5 = M.stamp_merged(mpath, "P2", when="2026-01-02T03:04:05Z")
+        path5, _st5 = M.stamp_merged(mpath, "P2", when="2026-01-02T03:04:05Z")[:2]
         body5 = _mio.read_json(spath)
         check("s5 the stamp stores the status the merge now derives - done, for a "
               "signed-off phase with every task terminal - in the same write as "
               "mergedAt: %r" % (body5.get("status"),),
               path5 == spath and body5.get("status") == "done"
               and body5.get("mergedAt") == "2026-01-02T03:04:05Z")
-        mirrored, why = M.mirror_stub(mpath, "P2", root)
+        mirrored, why = M.mirror_stub(mpath, "P2", root)[:2]
         check("s6 ...and the index stub is re-mirrored from that shard, so the index "
               "alone reads done too: stub=%r (%s)" % (stub_of().get("status"), why),
               mirrored == mpath and stub_of().get("status") == "done")
         with open(mpath, "rb") as fh:
             before = fh.read()
-        again, why2 = M.mirror_stub(mpath, "P2", root)
+        again, why2 = M.mirror_stub(mpath, "P2", root)[:2]
         with open(mpath, "rb") as fh:
             after = fh.read()
         check("s7 ...and a stub that already agrees is not rewritten - the index "
@@ -734,7 +738,7 @@ def _cases(check):
         with open(claim, "w") as fh:
             fh.write("held elsewhere")
         try:
-            got9, why9 = M.mirror_stub(mpath, "P2", root)
+            got9, why9 = M.mirror_stub(mpath, "P2", root)[:2]
         finally:
             os.remove(claim)
         with open(mpath, "rb") as fh:
@@ -750,7 +754,7 @@ def _cases(check):
         M._panel_write.read_config = _boom
         try:
             try:
-                got10, why10 = M.mirror_stub(mpath, "P2", root)
+                got10, why10 = M.mirror_stub(mpath, "P2", root)[:2]
                 raised10 = None
             except Exception as exc:
                 got10, why10, raised10 = "", "", exc
@@ -951,6 +955,742 @@ def _main_tree_cases(check):
               "git worktree remove" not in text and "must go first" not in text)
     finally:
         _harness.remove_tree(root)
+
+
+# The trail's action name for a close made over its verdict's refusal, spelled
+# out: it is what a reader greps the journal for, so the suite pins the literal.
+_OVERRIDE_ACTION = "audit.verdict.close-overridden"
+
+
+def _red_fixture(name, statuses, gate=("test",), member=False):
+    """`(root, mpath, git)` - a signed-off P1 on `audit/p1-demo`, standing in the
+    main tree, whose ledger holds one phase row per `statuses` entry, oldest
+    first and an hour apart, as `cr-0`, `cr-1`... The rows ride the branch's
+    last commit, so the tree is clean and only the verdict differs.
+
+    `member` adds P2 on the same branch, signed off in a group with P1 as the
+    carrier: P2's `testEvidence` points at P1's run with `gradedBy`, and the
+    ledger holds no row of P2's own - group sign-off's shape."""
+    root = _harness.fixture_root(name)
+    git = _fixture_git(root)
+    _init_fixture_repo(git)
+    phase = _signed_phase("P1", "audit/p1-demo")
+    phase["testGate"] = list(gate)
+    phases = [phase]
+    if member:
+        other = _signed_phase("P2", "audit/p1-demo")
+        other["testGate"] = list(gate)
+        other["testEvidence"] = {"runId": "cr-0", "status": "passed",
+                                 "gradedBy": "P1"}
+        phases.append(other)
+    mpath = _write_plan(root, {"developmentBranch": "main"}, phases)
+    git("add", "-A")
+    git("commit", "-q", "-m", "base")
+    git("checkout", "-q", "-b", "audit/p1-demo")
+    with open(os.path.join(root, "work.txt"), "w") as fh:
+        fh.write("work\n")
+    _write_rows(root, statuses, gate)
+    git("add", "-A")
+    git("commit", "-q", "-m", "work")
+    return root, mpath, git
+
+
+def _write_rows(root, statuses, gate=("test",), name="2026-09.cr.jsonl",
+                first=0):
+    """P1's ledger rows, `cr-<first>` onward, an hour apart from `first`."""
+    import _evidence_io as E
+    ev = E.evidence_dir(root)
+    os.makedirs(ev, exist_ok=True)
+    with open(os.path.join(ev, name), "a") as fh:
+        for i, status in enumerate(statuses, first):
+            fh.write(json.dumps({
+                "runId": "cr-%d" % i, "ts": "2026-09-01T0%d:00:00Z" % i,
+                "scope": "phase", "phaseId": "P1", "status": status,
+                "gateSource": "phase", "steps": [{"name": n} for n in gate],
+                "testedState": {}}) + "\n")
+
+
+def _landing_fixture(name, rows, files=(), reason=None, verdict_hour=None,
+                     change_after=False):
+    """`(root, mpath, git)` - P1 on `audit/p1-demo` declaring `files`, with
+    everything committed on the branch: the work, P1's ledger rows - `rows` is
+    `[(hour, status)]`, each `passed` row carrying the declared files' digest as
+    the branch first held them - and, with `verdict_hour`, the sign-off's
+    `phase.verdict` journal row. `reason` records the sign-off with
+    `--no-evidence-reason`; `change_after` rewrites the declared files in a
+    later commit, so a green measured before it no longer binds."""
+    import _evidence_io as E
+    import _journal_io as J
+    import _tree_stamp as T
+    root = _harness.fixture_root(name)
+    git = _fixture_git(root)
+    _init_fixture_repo(git)
+    phase = _signed_phase("P1", "audit/p1-demo")
+    phase["testGate"] = ["test"]
+    phase["tasks"][0]["files"] = list(files)
+    if reason:
+        phase["review"]["noEvidenceReason"] = reason
+    mpath = _write_plan(root, {"developmentBranch": "main"}, [phase])
+    git("add", "-A")
+    git("commit", "-q", "-m", "base")
+    git("checkout", "-q", "-b", "audit/p1-demo")
+    for rel in ("work.txt",) + tuple(files):
+        with open(os.path.join(root, rel), "w") as fh:
+            fh.write("work\n")
+    digest = T.scope_digest(root, list(files))[0] if files else None
+    ev = E.evidence_dir(root)
+    os.makedirs(ev, exist_ok=True)
+    with open(os.path.join(ev, "2026-09.cr.jsonl"), "w") as fh:
+        for hour, status in rows:
+            fh.write(json.dumps({
+                "runId": "cr-%d" % hour, "ts": "2026-09-01T0%d:00:00Z" % hour,
+                "scope": "phase", "phaseId": "P1", "status": status,
+                "gateSource": "phase", "steps": [{"name": "test"}],
+                "testedState": {"scopeDigest": digest}}) + "\n")
+    if verdict_hour is not None:
+        jd = J.journal_dir(root)
+        os.makedirs(jd, exist_ok=True)
+        with open(os.path.join(jd, "2026-09.cr.jsonl"), "w") as fh:
+            fh.write(json.dumps({
+                "action": "phase.verdict", "target": "P1",
+                "ts": "2026-09-01T0%d:00:00Z" % verdict_hour,
+                "summary": "P1 signed off (passed)",
+                "details": {"phaseId": "P1"}}) + "\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "work")
+    if change_after:
+        for rel in files:
+            with open(os.path.join(root, rel), "w") as fh:
+                fh.write("changed after the gate measured it\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "more work")
+    return root, mpath, git
+
+
+def _landing_cases(check):
+    """THE HEAD IT WOULD MERGE, not the tree `--project` names; and a sign-off
+    that chose to stand on no run, honoured for the green it set aside and not
+    for a red recorded after it."""
+    def run_case(name, build, act):
+        root = None
+        try:
+            root, mpath, git = build()
+            act(root, mpath, git)
+        finally:
+            if root:
+                _harness.remove_tree(root)
+
+    def from_parent(rows, files, label, expect_refused):
+        def build():
+            return _landing_fixture(label, rows, files=files)
+
+        def act(root, mpath, git):
+            # The main tree goes back to the parent: --project is now a tree
+            # holding none of the branch's rows and none of its files.
+            git("checkout", "-q", "main")
+            # --keep-branch: with no worktree holding the branch the default
+            # deletes it once landed, and the ancestry asked below needs it.
+            code, text = _close(mpath, root, "--keep-branch")
+            if expect_refused:
+                check("cr11 RED-FIRST: run from the PARENT's tree, a phase whose "
+                      "branch carries a red after its green refuses, naming the "
+                      "red read at the branch tip, and lands nothing: exit %r, "
+                      "landed %r, %r" % (code, _landed(git), text[:300]),
+                      code == 1 and not _landed(git) and "cr-1" in text)
+            else:
+                check("cr12 ALLOW: run from the parent's tree, a green newest "
+                      "verdict at the branch tip lands, BOUND - the digest taken "
+                      "over the tip's declared files, not the parent's: exit %r, "
+                      "landed %r, %r" % (code, _landed(git), text[:400]),
+                      code == 0 and _landed(git)
+                      and "gate: bound to run cr-1" in text)
+        run_case(label, build, act)
+
+    from_parent([(0, "passed"), (1, "failed")], (), "closephase-tip-red", True)
+    from_parent([(0, "failed"), (1, "passed")], ("src.txt",),
+                "closephase-tip-green", False)
+
+    def uncommitted(root, mpath, git):
+        _write_rows(root, ["failed"], first=1)
+        code, text = _close(mpath, root)
+        check("cr13 RED-FIRST: a red recorded in the tree holding the branch and "
+              "NOT committed still counts - the union of the tip and that tree: "
+              "exit %r, landed %r, %r" % (code, _landed(git), text[:300]),
+              code == 1 and not _landed(git) and "cr-1" in text)
+    run_case("closephase-uncommitted-red",
+             lambda: _landing_fixture("closephase-uncommitted-red",
+                                      [(0, "passed")]), uncommitted)
+
+    def honoured(root, mpath, git):
+        code, text = _close(mpath, root)
+        check("cr14 RED-FIRST: a sign-off recorded with --no-evidence-reason over "
+              "an older green whose files changed since lands - the stale green "
+              "is not the verdict it stood on - and says so: exit %r, landed %r, "
+              "%r" % (code, _landed(git), text[:400]),
+              code == 0 and _landed(git) and "--no-evidence-reason" in text
+              and "have changed since it was measured" in text)
+    run_case("closephase-noevidence-stale",
+             lambda: _landing_fixture("closephase-noevidence-stale",
+                                      [(0, "passed")], files=("src.txt",),
+                                      reason="graded by hand", verdict_hour=5,
+                                      change_after=True), honoured)
+
+    def red_after(root, mpath, git):
+        code, text = _close(mpath, root)
+        check("cr15 SECOND DIRECTION: a red recorded AFTER that sign-off still "
+              "refuses - newer evidence it never saw: exit %r, landed %r, %r"
+              % (code, _landed(git), text[:300]),
+              code == 1 and not _landed(git) and "cr-6" in text)
+    run_case("closephase-noevidence-red-after",
+             lambda: _landing_fixture("closephase-noevidence-red-after",
+                                      [(0, "passed"), (6, "failed")],
+                                      files=("src.txt",), reason="graded by hand",
+                                      verdict_hour=5), red_after)
+
+    def red_before(root, mpath, git):
+        code, text = _close(mpath, root)
+        check("cr16 ...and a red the sign-off came AFTER, it chose to stand over: "
+              "it lands: exit %r, landed %r, %r"
+              % (code, _landed(git), text[:300]),
+              code == 0 and _landed(git))
+    run_case("closephase-noevidence-red-before",
+             lambda: _landing_fixture("closephase-noevidence-red-before",
+                                      [(0, "passed"), (1, "failed")],
+                                      files=("src.txt",), reason="graded by hand",
+                                      verdict_hour=5), red_before)
+
+    def no_moment(root, mpath, git):
+        code, text = _close(mpath, root)
+        check("cr17 a no-evidence sign-off whose journal row cannot be found "
+              "refuses on any red - with no moment, the side that cannot land "
+              "over an unanswered red: exit %r, landed %r, %r"
+              % (code, _landed(git), text[:300]),
+              code == 1 and not _landed(git) and "cr-1" in text)
+    run_case("closephase-noevidence-no-moment",
+             lambda: _landing_fixture("closephase-noevidence-no-moment",
+                                      [(0, "passed"), (1, "failed")],
+                                      files=("src.txt",), reason="graded by hand"),
+             no_moment)
+
+    import _evidence_io as EV
+    import _tree_stamp as TS
+
+    def _row(root, run_id, hour, status, phase_id="P1", files=()):
+        """One ledger row appended in the tree holding the branch, uncommitted,
+        carrying the declared files' digest as they stand on disk."""
+        with open(os.path.join(EV.evidence_dir(root), "2026-09.cr.jsonl"),
+                  "a") as fh:
+            fh.write(json.dumps({
+                "runId": run_id, "ts": "2026-09-01T0%d:00:00Z" % hour,
+                "scope": "phase", "phaseId": phase_id, "status": status,
+                "gateSource": "phase", "steps": [{"name": "test"}],
+                "testedState": {"scopeDigest": TS.scope_digest(
+                    root, list(files))[0] if files else None}}) + "\n")
+
+    def green_over_dirty(root, mpath, git):
+        with open(os.path.join(root, "src.txt"), "w") as fh:
+            fh.write("uncommitted - never at the tip\n")
+        _row(root, "cr-1", 1, "passed", files=("src.txt",))
+        code, text = _close(mpath, root)
+        check("cr19 RED-FIRST: a green recorded over an UNCOMMITTED declared "
+              "change refuses - the tip that would land is not what it measured: "
+              "exit %r, landed %r, %r" % (code, _landed(git), text[:300]),
+              code == 1 and not _landed(git) and "cr-1" in text
+              and "have changed since it was measured" in text)
+    run_case("closephase-green-over-dirty",
+             lambda: _landing_fixture("closephase-green-over-dirty",
+                                      [(0, "passed")], files=("src.txt",)),
+             green_over_dirty)
+
+    def dirty_after_green(root, mpath, git):
+        with open(os.path.join(root, "src.txt"), "w") as fh:
+            fh.write("an edit after the green, not committed\n")
+        code, text = _close(mpath, root)
+        check("cr20 SECOND DIRECTION: a green at the tip with a dirty declared "
+              "edit after it lands - the dirt does not land, so it does not "
+              "decide: exit %r, landed %r, %r" % (code, _landed(git), text[:300]),
+              code == 0 and _landed(git) and "gate: bound to run cr-0" in text)
+    run_case("closephase-dirty-after-green",
+             lambda: _landing_fixture("closephase-dirty-after-green",
+                                      [(0, "passed")], files=("src.txt",)),
+             dirty_after_green)
+
+    def member_own_red(root, mpath, git):
+        _row(root, "cr-m", 3, "failed", phase_id="P2")
+        lines = []
+        code = M.main([mpath, "P2", "--project", root], out=lines.append)
+        text = "\n".join(lines)
+        check("cr7b RED-FIRST: a red recorded on a group MEMBER alone, after the "
+              "carrier's green that grades the group, refuses that member's "
+              "landing and merges nothing: exit %r, landed %r, %r"
+              % (code, _landed(git), text[:300]),
+              code == 1 and not _landed(git) and "cr-m" in text)
+    run_case("closephase-member-own-red",
+             lambda: _red_fixture("closephase-member-own-red", ["passed"],
+                                  member=True), member_own_red)
+
+    def member_old_red(root, mpath, git):
+        _row(root, "cr-m", 0, "failed", phase_id="P2")
+        _write_rows(root, ["passed"], first=1)
+        lines = []
+        code = M.main([mpath, "P2", "--project", root], out=lines.append)
+        check("cr7c SECOND DIRECTION: a member's red OLDER than the carrier's "
+              "green that grades the group does not refuse: exit %r, landed %r"
+              % (code, _landed(git)), code == 0 and _landed(git))
+    run_case("closephase-member-old-red",
+             lambda: _red_fixture("closephase-member-old-red", [],
+                                  member=True), member_old_red)
+
+    # LAST: it calls helpers that exist only with the fix, so on code without
+    # it this is where the run stops, after every case above has been graded.
+    import _verdict_binding as VB
+    nowhere = _harness.fixture_root("closephase-nowhere")
+    try:
+        texts, _notes = M.branch_texts(nowhere, nowhere, "audit/p1-demo", None,
+                                       os.path.join(nowhere, "docs", "audit",
+                                                    "evidence"))
+        bound = VB.binding(nowhere, {"phaseId": "P1"}, ["test"], "phase", [],
+                           os.path.join(nowhere, "docs", "audit",
+                                        "audit-plan.json"),
+                           "run the gate", "no gate", texts=texts)
+        check("cr18 RED-FIRST: a branch tip git cannot read and no worktree "
+              "holding the branch is UNREADABLE, never no run - it refuses a "
+              "close: texts %r, arm %r" % (texts, bound.get("arm")),
+              texts and all(t is None for _l, t in texts)
+              and bound.get("arm") == VB.ARM_UNREADABLE
+              and VB.close_refusal(bound) == bound.get("sentence"))
+        # The worktree holding the branch exists, but its evidence directory
+        # does not: it lists nothing, which is no reading at all.
+        texts, _notes = M.branch_texts(nowhere, nowhere, "audit/p1-demo",
+                                       {"path": nowhere},
+                                       os.path.join(nowhere, "docs", "audit",
+                                                    "evidence"))
+        check("cr21 RED-FIRST: a tip git cannot read and a holding worktree "
+              "whose evidence directory lists nothing is UNREADABLE too, never "
+              "no run: %r" % (texts,),
+              texts and all(t is None for _l, t in texts))
+    finally:
+        _harness.remove_tree(nowhere)
+    _scratch_cases(check)
+
+
+def _tip_temps():
+    import tempfile
+    return set(n for n in os.listdir(tempfile.gettempdir())
+               if n.startswith("close-phase-tip-"))
+
+
+def _scratch_cases(check):
+    """`tip_scope`'s scratch repository: it never outlives a failure, and the
+    operator's git config never decides what it holds."""
+    root = None
+    try:
+        root, mpath, git = _landing_fixture("closephase-tip-scratch",
+                                            [(0, "passed")], files=("src.txt",))
+        before = _tip_temps()
+
+        def refuse_to_write(*_a, **_k):
+            raise IOError("a write the disk refused")
+        M.open = refuse_to_write
+        try:
+            raised, got = None, None
+            try:
+                got = M.tip_scope(root, root, "audit/p1-demo", ["src.txt"])
+            except Exception as exc:
+                raised = exc
+        finally:
+            del M.open
+        check("cr22 RED-FIRST: a write that raises inside tip_scope answers None, "
+              "raises nothing and leaves no scratch directory behind: got %r, "
+              "raised %r, left %r" % (got, raised, sorted(_tip_temps() - before)),
+              got is None and raised is None and not (_tip_temps() - before))
+
+        # A declared DIRECTORY whose file matches the operator's global
+        # excludes: without isolation the scratch `add` skips it, and the digest
+        # reads the directory as holding nothing.
+        os.makedirs(os.path.join(root, "lib"))
+        with open(os.path.join(root, "lib", "x.txt"), "w") as fh:
+            fh.write("tracked, and matched by a global exclude\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "lib")
+        home = os.path.join(root, ".fake-global")
+        os.makedirs(home)
+        with open(os.path.join(home, "ignore"), "w") as fh:
+            fh.write("*.txt\n")
+        with open(os.path.join(home, "config"), "w") as fh:
+            fh.write("[core]\n\texcludesFile = %s\n"
+                     % (os.path.join(home, "ignore").replace(os.sep, "/"),))
+        saved = os.environ.get("GIT_CONFIG_GLOBAL")
+        os.environ["GIT_CONFIG_GLOBAL"] = os.path.join(home, "config")
+        try:
+            scratch = M.tip_scope(root, root, "audit/p1-demo", ["lib"])
+        finally:
+            if saved is None:
+                os.environ.pop("GIT_CONFIG_GLOBAL", None)
+            else:
+                os.environ["GIT_CONFIG_GLOBAL"] = saved
+        try:
+            listed = (_fixture_git(scratch)("ls-files").stdout.decode()
+                      if scratch else "")
+        finally:
+            if scratch:
+                _harness.remove_tree(scratch)
+        check("cr23 RED-FIRST: a tracked file matching the operator's global "
+              "excludes is still in the scratch repository the digest reads: "
+              "%r" % (listed,), "lib/x.txt" in listed)
+    finally:
+        if root:
+            _harness.remove_tree(root)
+
+
+def _checked_out_fixture(name, attributes, declared, change_after=False):
+    """`(root, mpath, git, working)` - P1 on `audit/p1-demo` declaring `declared`,
+    whose green was recorded over `src.txt` AS CHECKED OUT: the file is removed
+    and checked out again under the branch's `.gitattributes` (`attributes`, or
+    none) before the digest is taken, so the bytes the recorder hashed are the
+    checkout's, not the blob's. `working` is those bytes. `change_after` commits
+    a different `src.txt` after the green, so it no longer binds."""
+    import _evidence_io as E
+    import _tree_stamp as T
+    root = _harness.fixture_root(name)
+    git = _fixture_git(root)
+    _init_fixture_repo(git)
+    phase = _signed_phase("P1", "audit/p1-demo")
+    phase["testGate"] = ["test"]
+    phase["tasks"][0]["files"] = list(declared)
+    mpath = _write_plan(root, {"developmentBranch": "main"}, [phase])
+    git("add", "-A")
+    git("commit", "-q", "-m", "base")
+    git("checkout", "-q", "-b", "audit/p1-demo")
+    if attributes:
+        with open(os.path.join(root, ".gitattributes"), "w") as fh:
+            fh.write(attributes)
+    src = os.path.join(root, "src.txt")
+    with open(src, "wb") as fh:
+        fh.write(b"line one\nline two\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "work")
+    os.remove(src)
+    git("checkout", "--", "src.txt")
+    with open(src, "rb") as fh:
+        working = fh.read()
+    digest = T.scope_digest(root, list(declared))[0]
+    ev = E.evidence_dir(root)
+    os.makedirs(ev, exist_ok=True)
+    with open(os.path.join(ev, "2026-09.cr.jsonl"), "w") as fh:
+        fh.write(json.dumps({
+            "runId": "cr-0", "ts": "2026-09-01T00:00:00Z", "scope": "phase",
+            "phaseId": "P1", "status": "passed", "gateSource": "phase",
+            "steps": [{"name": "test"}],
+            "testedState": {"scopeDigest": digest}}) + "\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "gate")
+    if change_after:
+        with open(src, "wb") as fh:
+            fh.write(b"line one\nchanged after the gate measured it\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "more work")
+    return root, mpath, git, working
+
+
+def _checked_out_cases(check):
+    """THE TIP IS DIGESTED AS A CHECKOUT WRITES IT, and a declared entry as the
+    recorder's digest reads it. Each allow case has a twin whose declared file
+    changed after the green, so a reading that made every digest agree - both
+    sides missing, say - goes red there instead of passing here."""
+    def run(name, attributes, declared, change_after):
+        root = None
+        try:
+            root, mpath, git, working = _checked_out_fixture(
+                name, attributes, declared, change_after)
+            git("checkout", "-q", "main")
+            code, text = _close(mpath, root, "--keep-branch")
+            return code, text, _landed(git), working
+        finally:
+            if root:
+                _harness.remove_tree(root)
+
+    crlf = "* text eol=crlf\n"
+    code, text, landed, working = run("closephase-crlf", crlf, ["src.txt"], False)
+    check("cr24 RED-FIRST: a branch whose .gitattributes says eol=crlf over LF "
+          "blobs, with its green recorded over the checked-out (CRLF) file, "
+          "lands BOUND - the tip is digested as a checkout writes it, not as "
+          "the blob holds it: working %r, exit %r, landed %r, %r"
+          % (working, code, landed, text[:400]),
+          working == b"line one\r\nline two\r\n" and code == 0 and landed
+          and "gate: bound to run cr-0" in text)
+    code, text, landed, _w = run("closephase-crlf-moved", crlf, ["src.txt"], True)
+    check("cr25 SECOND DIRECTION: the same eol=crlf branch whose declared file "
+          "changed after the green still refuses as moved: exit %r, landed %r, "
+          "%r" % (code, landed, text[:300]),
+          code == 1 and not landed
+          and "have changed since it was measured" in text)
+
+    code, text, landed, _w = run("closephase-suffix", None, ["src.txt:1-2"],
+                                 False)
+    check("cr26 RED-FIRST: a phase declaring 'src.txt:1-2' whose file did not "
+          "change lands BOUND - the line-range suffix is stripped before the "
+          "tip is listed, as the recorder's digest strips it: exit %r, landed "
+          "%r, %r" % (code, landed, text[:400]),
+          code == 0 and landed and "gate: bound to run cr-0" in text)
+    code, text, landed, _w = run("closephase-suffix-moved", None,
+                                 ["src.txt:1-2"], True)
+    check("cr27 SECOND DIRECTION: the same suffixed declaration whose file "
+          "changed after the green refuses as moved - the suffix is not read "
+          "as a file missing on both sides: exit %r, landed %r, %r"
+          % (code, landed, text[:300]),
+          code == 1 and not landed
+          and "have changed since it was measured" in text)
+
+
+def _symlink_refusal():
+    """Why `os.symlink` cannot make a link here, or None when it can."""
+    import tempfile
+    probe = tempfile.mkdtemp(prefix="closephase-symlink-probe-")
+    try:
+        os.symlink("target", os.path.join(probe, "link"))
+        return None
+    except (OSError, NotImplementedError, AttributeError) as exc:
+        return "%s: %s" % (type(exc).__name__, exc)
+    finally:
+        _harness.remove_tree(probe)
+
+
+def _symlink_fixture(name, change_after):
+    """`(root, mpath, git)` - P1 declaring `link`, a committed symbolic link to
+    `t.txt`, with its green recorded over the working tree: the recorder's
+    digest follows the link and hashes `t.txt`'s bytes. `change_after` commits
+    a different `t.txt` after the green."""
+    import _evidence_io as E
+    import _tree_stamp as T
+    root = _harness.fixture_root(name)
+    git = _fixture_git(root)
+    _init_fixture_repo(git)
+    phase = _signed_phase("P1", "audit/p1-demo")
+    phase["testGate"] = ["test"]
+    phase["tasks"][0]["files"] = ["link"]
+    mpath = _write_plan(root, {"developmentBranch": "main"}, [phase])
+    git("add", "-A")
+    git("commit", "-q", "-m", "base")
+    git("checkout", "-q", "-b", "audit/p1-demo")
+    with open(os.path.join(root, "t.txt"), "wb") as fh:
+        fh.write(b"the bytes the link leads to\n")
+    os.symlink("t.txt", os.path.join(root, "link"))
+    git("add", "-A")
+    git("commit", "-q", "-m", "work")
+    digest = T.scope_digest(root, ["link"])[0]
+    ev = E.evidence_dir(root)
+    os.makedirs(ev, exist_ok=True)
+    with open(os.path.join(ev, "2026-09.cr.jsonl"), "w") as fh:
+        fh.write(json.dumps({
+            "runId": "cr-0", "ts": "2026-09-01T00:00:00Z", "scope": "phase",
+            "phaseId": "P1", "status": "passed", "gateSource": "phase",
+            "steps": [{"name": "test"}],
+            "testedState": {"scopeDigest": digest}}) + "\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "gate")
+    if change_after:
+        with open(os.path.join(root, "t.txt"), "wb") as fh:
+            fh.write(b"changed after the gate measured it\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "more work")
+    return root, mpath, git
+
+
+def _symlink_cases(check):
+    """A DECLARED LINK IS DIGESTED THROUGH IT, as the recorder's file hash
+    follows it: the tip must hand the digest the target's bytes, not the
+    link's target text."""
+    refused = _symlink_refusal()
+    if refused is not None:
+        for label in ("cr28", "cr29"):
+            _harness.skip(check, label, "os.symlink is refused here (%s)"
+                          % (refused,), True)
+        return
+
+    def run(name, change_after):
+        root = None
+        try:
+            root, mpath, git = _symlink_fixture(name, change_after)
+            git("checkout", "-q", "main")
+            code, text = _close(mpath, root, "--keep-branch")
+            return code, text, _landed(git)
+        finally:
+            if root:
+                _harness.remove_tree(root)
+
+    code, text, landed = run("closephase-symlink", False)
+    check("cr28 RED-FIRST: a declared symbolic link to a file that did not "
+          "change lands BOUND - the tip hands the digest the bytes following "
+          "the link reads: exit %r, landed %r, %r" % (code, landed, text[:400]),
+          code == 0 and landed and "gate: bound to run cr-0" in text)
+    code, text, landed = run("closephase-symlink-moved", True)
+    check("cr29 SECOND DIRECTION: the same link whose TARGET changed after the "
+          "green refuses as moved: exit %r, landed %r, %r"
+          % (code, landed, text[:300]),
+          code == 1 and not landed
+          and "have changed since it was measured" in text)
+
+
+def _override_rows(project):
+    """The rows a close over its verdict left, whole - their details are the
+    claim."""
+    import _journal_io
+    return [r for r in _journal_io.read_all(project)
+            if r.get("action") == _OVERRIDE_ACTION]
+
+
+def _close(mpath, root, *extra):
+    """`(exit, text)` of one close-phase run."""
+    lines = []
+    code = M.main([mpath, "P1", "--project", root] + list(extra),
+                  out=lines.append)
+    return code, "\n".join(lines)
+
+
+def _landed(git):
+    return git("merge-base", "--is-ancestor", "audit/p1-demo",
+               "main").returncode == 0
+
+
+def _override_cases(check):
+    """THE PROBE SEQUENCE: a green the sign-off was bound to, a red recorded after
+    it, then the close. The newer red is newer evidence about the work being
+    landed, and the merge used to go ahead over it."""
+    root = None
+    try:
+        root, mpath, git = _red_fixture("closephase-over-red",
+                                        ["passed", "failed"])
+        lines = []
+        code = M.main([mpath, "P1", "--project", root], out=lines.append)
+        text = "\n".join(lines)
+        check("cr1 RED-FIRST: a red phase-gate run recorded after the green the "
+              "sign-off was bound to makes close-phase refuse, name the row, and "
+              "land nothing: exit %r, landed %r, %r"
+              % (code, _landed(git), text[:300]),
+              code == 1 and not _landed(git) and "cr-1" in text
+              and "`failed`" in text and "--override-verdict" in text
+              and not _merged_at(mpath))
+        lines = []
+        code = M.main([mpath, "P1", "--project", root, "--override-verdict",
+                       "the red was a runner outage"], out=lines.append)
+        rows = _override_rows(root)
+        check("cr2 RED-FIRST: an explicit --override-verdict lands it and journals "
+              "the exception - ONE row naming the phase, the red run and the "
+              "reason: exit %r, landed %r, rows %r"
+              % (code, _landed(git), rows),
+              code == 0 and _landed(git) and len(rows) == 1
+              and (rows[0].get("details") or {}).get("runId") == "cr-1"
+              and (rows[0].get("details") or {}).get("phaseId") == "P1"
+              and (rows[0].get("details") or {}).get("reason")
+              == "the red was a runner outage")
+        # ALREADY LANDED: the branch is kept and the parent holds it, a later
+        # red is recorded, and the re-runs that stamp or clean up must finish.
+        _write_rows(root, ["failed"], first=2)
+        code, text = _close(mpath, root, "--override-verdict", "again")
+        check("cr5 a re-run over a landed branch with the override writes NO "
+              "second row - one row per actual merge: exit %r, rows %d, %r"
+              % (code, len(_override_rows(root)), text[:300]),
+              code == 0 and len(_override_rows(root)) == 1)
+        code, text = _close(mpath, root)
+        check("cr6 RED-FIRST: a re-run over a landed branch with a red recorded "
+              "after is not refused - the landing happened, and the cleanup it "
+              "prints could otherwise never finish; the verdict is said: exit "
+              "%r, %r" % (code, text[:300]),
+              code == 0 and "REFUSED" not in text and "already landed" in text
+              and "cr-2" in text and len(_override_rows(root)) == 1)
+    finally:
+        if root:
+            _harness.remove_tree(root)
+    root = None
+    try:
+        root, mpath, git = _red_fixture("closephase-group-member",
+                                        ["passed", "failed"], member=True)
+        lines = []
+        code = M.main([mpath, "P2", "--project", root], out=lines.append)
+        text = "\n".join(lines)
+        check("cr7 RED-FIRST: a group member whose carrier holds a red after its "
+              "green refuses, naming the carrier's run, and lands nothing - its "
+              "own ledger holds no row, and reading that as no verdict merged "
+              "the whole branch: exit %r, landed %r, %r"
+              % (code, _landed(git), text[:300]),
+              code == 1 and not _landed(git) and "cr-1" in text)
+    finally:
+        if root:
+            _harness.remove_tree(root)
+    root = None
+    try:
+        root, mpath, git = _red_fixture("closephase-dry-override",
+                                        ["passed", "failed"])
+        code, text = _close(mpath, root, "--dry-run", "--override-verdict", "x")
+        check("cr8 --dry-run with the override merges nothing and writes no "
+              "row, saying so: exit %r, landed %r, rows %d, %r"
+              % (code, _landed(git), len(_override_rows(root)), text[:300]),
+              code == 0 and not _landed(git) and not _override_rows(root)
+              and "a dry run writes nothing" in text)
+        os.makedirs(os.path.join(root, ".claude"), exist_ok=True)
+        with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json",
+                       "journal": {"enabled": False}}, fh)
+        code, text = _close(mpath, root, "--override-verdict", "x")
+        check("cr9 RED-FIRST: journal.enabled false with the override exits 1 "
+              "and lands nothing - an override recorded nowhere is a gate "
+              "quietly removed: exit %r, landed %r, %r"
+              % (code, _landed(git), text[:300]),
+              code == 1 and not _landed(git) and "journal.enabled" in text
+              and not _merged_at(mpath))
+    finally:
+        if root:
+            _harness.remove_tree(root)
+    root = None
+    try:
+        root, mpath, git = _red_fixture("closephase-journal-unwritable",
+                                        ["passed", "failed"])
+        import _journal_io
+        jdir = _journal_io.journal_dir(root)
+        if os.path.isdir(jdir):
+            _harness.remove_tree(jdir)
+        with open(jdir, "w") as fh:
+            fh.write("a file where the journal directory goes\n")
+        code, text = _close(mpath, root, "--override-verdict", "x")
+        check("cr10 RED-FIRST: a journal the row cannot be written to, with the "
+              "override, exits 1, lands nothing and stamps nothing: exit %r, "
+              "landed %r, mergedAt %r, %r"
+              % (code, _landed(git), _merged_at(mpath), text[:300]),
+              code == 1 and not _landed(git) and not _merged_at(mpath)
+              and "could NOT be written" in text)
+    finally:
+        if root:
+            _harness.remove_tree(root)
+    root = None
+    try:
+        root, mpath, git = _red_fixture("closephase-green-newest",
+                                        ["failed", "passed"])
+        lines = []
+        code = M.main([mpath, "P1", "--project", root], out=lines.append)
+        text = "\n".join(lines)
+        check("cr3 ALLOW: a green newest verdict closes with no flag, says the "
+              "run it is bound to, and journals no exception: exit %r, landed "
+              "%r, %r" % (code, _landed(git), text[:300]),
+              code == 0 and _landed(git) and "gate: bound to run cr-1" in text
+              and not _override_rows(root))
+    finally:
+        if root:
+            _harness.remove_tree(root)
+    root = None
+    try:
+        root, mpath, git = _red_fixture("closephase-no-gate", [], gate=())
+        lines = []
+        code = M.main([mpath, "P1", "--project", root], out=lines.append)
+        text = "\n".join(lines)
+        check("cr4 ALLOW: a phase no gate measures closes, in the no-gate arm's "
+              "own sentence: exit %r, landed %r, %r"
+              % (code, _landed(git), text[:300]),
+              code == 0 and _landed(git)
+              and "gate: phase P1 declares no gate" in text)
+    finally:
+        if root:
+            _harness.remove_tree(root)
 
 
 def _composed_cases(check):
@@ -1885,14 +2625,492 @@ def _backfill_direction_cases(check):
             _harness.remove_tree(wt)
 
 
+# --- the stamp under the index lock ------------------------------------------------
+# Every other plan writer takes the index lock around its read-modify-write, so a
+# stamp that did not was one side of a race the other side believed it had closed:
+# two closes, or a close and a panel save, each read the plan, each wrote it whole,
+# and the one written second carried the other's copy - both answering ok.
+
+# How many times each race is run. Two closes released together lose on the
+# unlocked code often, not on every trial, so the deterministic held-lock and inode
+# cases are the ones that prove the fix; the races say the lock holds when real
+# processes collide.
+_RACE_TRIALS = 4
+
+# One racing writer: imports first, then says it is ready, then waits for the shared
+# release so both writers start their read-modify-write in the same instant.
+#
+# A `-hold` writer is HELD BETWEEN ITS READ AND ITS WRITE: it signals, then pauses
+# before writing. An `-after` writer starts once that signal is up, so it runs inside
+# the other's window on every trial. Released together and nothing more, a stamp -
+# whose own window is a millisecond - almost never met a panel save in the middle
+# of one, and the unlocked code passed that race by luck.
+_RACER = r'''
+import json, os, sys, time
+sys.path.insert(0, sys.argv[1])
+import _harness, _loader, _panel_write
+M = _loader.load_script("close-phase.py")
+role, root, mpath, pid, value, ready, go, signal = sys.argv[2:10]
+
+
+def held_open(real):
+    def wrapped(*a, **k):
+        open(signal, "w").close()
+        time.sleep(0.3)
+        return real(*a, **k)
+    return wrapped
+
+
+if role == "stamp-hold":
+    M._revalidated_write = held_open(M._revalidated_write)
+elif role == "panel-hold":
+    _panel_write._write_back = held_open(_panel_write._write_back)
+open(ready, "w").close()
+deadline = time.time() + 60
+while not os.path.exists(go) and time.time() < deadline:
+    time.sleep(0.001)
+while role.endswith("-after") and not os.path.exists(signal) \
+        and time.time() < deadline:
+    time.sleep(0.001)
+role = role.split("-")[0]
+if role == "stamp":
+    path, why = M.stamp_merged(mpath, pid, when=value)[:2]
+    print(json.dumps({"ok": bool(path), "why": why}))
+else:
+    res = _panel_write.apply_composition(
+        root, {"phases": {pid: {"reviewModel": value}}})
+    print(json.dumps({"ok": bool(res.get("ok")), "why": res.get("findings")}))
+'''
+
+# Another run holding the index lock: it takes the lock, says so, and gives it back
+# once its stdin closes.
+_HOLDER = r'''
+import sys
+sys.path.insert(0, sys.argv[1])
+import _harness, _locks
+code = _locks.acquire(sys.argv[2], "index", note="fixture holder",
+                      out=lambda *a, **k: None)
+sys.stdout.write("held %d\n" % code)
+sys.stdout.flush()
+sys.stdin.read()
+_locks.release(sys.argv[2], "index", out=lambda *a, **k: None)
+'''
+
+
+def _child_env():
+    """The environment a fixture child runs under: no lock token this process
+    carries, so the child is another run rather than a re-entry of this one."""
+    env = dict(os.environ)
+    env.pop(_locks.TOKEN_ENV, None)
+    return env
+
+
+def _race_plan(root, merged=()):
+    """A git repository holding a single-file plan of two signed-off phases -
+    git, so the lock taken is the shared one that waits for its holder."""
+    git = _fixture_git(root)
+    _init_fixture_repo(git)
+    phases = []
+    for pid in ("P1", "P2"):
+        ph = _signed_phase(pid, "audit/%s" % (pid.lower(),))
+        ph["review"]["model"] = "sonnet"
+        if pid in merged:
+            ph["mergedAt"] = "2026-01-01T00:00:00Z"
+        phases.append(ph)
+    return _write_plan(root, {"version": 2, "developmentBranch": "main"}, phases)
+
+
+def _race(root, mpath, racers):
+    """Run `racers` - (role, phaseId, value) - released together. Returns each
+    racer's parsed answer, or {"ok": False, "why": <what it printed>}."""
+    procs = []
+    go = os.path.join(root, ".go")
+    signal = os.path.join(root, ".held")
+    for n, (role, pid, value) in enumerate(racers):
+        ready = os.path.join(root, ".ready%d" % (n,))
+        procs.append((ready, subprocess.Popen(
+            [sys.executable, "-c", _RACER, _output.TESTS_DIR, role, root, mpath,
+             pid, value, ready, go, signal], cwd=root, env=_child_env(),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)))
+    deadline = time.time() + 60
+    while not all(os.path.exists(r) for r, _p in procs) and time.time() < deadline:
+        time.sleep(0.005)
+    open(go, "w").close()
+    answers = []
+    for _ready, proc in procs:
+        try:
+            out = proc.communicate(timeout=90)[0].decode("utf-8", "replace")
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            out = proc.communicate()[0].decode("utf-8", "replace")
+        try:
+            answers.append(json.loads(out.strip().splitlines()[-1]))
+        except Exception:
+            answers.append({"ok": False, "why": out[-400:]})
+    return answers
+
+
+def _plan_phase(mpath, pid):
+    return [p for p in _mio.read_json(mpath)["phases"] if p.get("id") == pid][0]
+
+
+def _lock_cases(check):
+    """The stamp and the head backfill write under the index lock, and a rollback
+    restores the prior bytes atomically."""
+    root = _harness.fixture_root("closephase-held")
+    holder = None
+    real_wait = _locks.WAIT_SECONDS
+    try:
+        mpath = _race_plan(root, merged=("P1",))
+        with open(mpath, "rb") as fh:
+            before = fh.read()
+        holder = subprocess.Popen(
+            [sys.executable, "-c", _HOLDER, _output.TESTS_DIR, root], cwd=root,
+            env=_child_env(), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT)
+        said = holder.stdout.readline().decode("utf-8", "replace").strip()
+        # The holder is live for the whole window, so the default wait would only
+        # make the case slower: it is shortened, never removed.
+        _locks.WAIT_SECONDS = 0.2
+        path1, why1 = M.stamp_merged(mpath, "P2", when="2026-02-02T02:02:02Z")[:2]
+        path2, head2, why2 = M.record_merged_head(mpath, "P1", "a" * 40)[:3]
+        with open(mpath, "rb") as fh:
+            after = fh.read()
+        check("lk1 with another run holding the index lock the stamp writes nothing, "
+              "says the lock was not taken and names the re-run that stamps it "
+              "(holder %r): %r" % (said, why1),
+              said == "held 0" and path1 == "" and "not taken" in why1
+              and "run close-phase again for P2" in why1 and after == before)
+        check("lk2 ...and so does the head backfill, leaving the plan's bytes as "
+              "they were: %r" % (why2,),
+              path2 == "" and head2 == "" and "not taken" in why2
+              and "run close-phase again for P1" in why2 and after == before)
+        holder.stdin.close()
+        holder.wait(timeout=30)
+        holder = None
+        path3, stamp3 = M.stamp_merged(mpath, "P2", when="2026-02-02T02:02:02Z")[:2]
+        path4, head4, why4 = M.record_merged_head(mpath, "P1", "a" * 40)[:3]
+        check("lk3 SECOND DIRECTION: with the lock free both write - the case that "
+              "goes red when the lock is refused unconditionally: %r / %r"
+              % (stamp3, why4),
+              path3 == mpath and stamp3 == "2026-02-02T02:02:02Z"
+              and _plan_phase(mpath, "P2").get("mergedAt") == stamp3
+              and head4 == "a" * 40
+              and _plan_phase(mpath, "P1").get("mergedHead") == "a" * 40)
+    finally:
+        _locks.WAIT_SECONDS = real_wait
+        if holder is not None:
+            holder.stdin.close()
+            holder.wait(timeout=30)
+        _harness.remove_tree(root)
+
+    # THE ROLLBACK IS AN ATOMIC REPLACE. The write itself replaced the file, so the
+    # file's inode right after it is the one an in-place rollback would keep; a
+    # restore through temp-plus-replace leaves a different one, with the bytes back.
+    root = _harness.fixture_root("closephase-inode")
+    real_write, real_findings = M._mio.atomic_write_json, M._findings_of
+    try:
+        mpath = _write_plan(root, {"version": 2, "developmentBranch": "main"},
+                            [_signed_phase("P1", "audit/p1")])
+        with open(mpath, "rb") as fh:
+            before = fh.read()
+        written = []
+
+        def recording_write(path, obj, **kw):
+            real_write(path, obj, **kw)
+            written.append(os.stat(path).st_ino)
+
+        def stamped_is_a_finding(manifest_path):
+            body = _mio.read_json(manifest_path)
+            if any(p.get("mergedAt") for p in body.get("phases") or []):
+                return set(["fixture: a stamped phase is a finding here"])
+            return set()
+        M._mio.atomic_write_json = recording_write
+        M._findings_of = stamped_is_a_finding
+        path5, why5 = M.stamp_merged(mpath, "P1", when="2026-03-03T03:03:03Z")[:2]
+        with open(mpath, "rb") as fh:
+            after = fh.read()
+        final = os.stat(mpath).st_ino
+        check("lk4 a stamp whose write introduces a finding restores the prior bytes "
+              "through an atomic replace: the bytes match and the inode is not the "
+              "one the write left, which an in-place rewrite keeps (written %r, "
+              "now %r): %r" % (written, final, why5),
+              path5 == "" and "restored" in why5 and after == before
+              and len(written) == 1 and final != written[0])
+        M._findings_of = lambda _m: set()
+        path6, stamp6 = M.stamp_merged(mpath, "P1", when="2026-03-03T03:03:03Z")[:2]
+        check("lk5 SECOND DIRECTION: a stamp introducing no finding stands - the case "
+              "that goes red when every stamp is rolled back: %r" % (stamp6,),
+              path6 == mpath
+              and _plan_phase(mpath, "P1").get("mergedAt") == stamp6)
+    finally:
+        M._mio.atomic_write_json, M._findings_of = real_write, real_findings
+        _harness.remove_tree(root)
+
+    # THE RACES, between real processes released together.
+    lost, unanswered = [], []
+    for trial in range(_RACE_TRIALS):
+        root = _harness.fixture_root("closephase-race")
+        try:
+            mpath = _race_plan(root)
+            answers = _race(root, mpath, [("stamp", "P1", "2026-04-04T04:04:0%dZ" % trial),
+                                          ("stamp", "P2", "2026-04-04T04:04:1%dZ" % trial)])
+            unanswered += [a["why"] for a in answers if not a.get("ok")]
+            lost += ["trial %d %s" % (trial, pid) for pid in ("P1", "P2")
+                     if not _plan_phase(mpath, pid).get("mergedAt")]
+        finally:
+            _harness.remove_tree(root)
+    check("lk6 two processes stamping different phases of one single-file plan, "
+          "released together over %d trials, both answer ok and lose no mergedAt: "
+          "lost %r, unanswered %r" % (_RACE_TRIALS, lost, unanswered),
+          lost == [] and unanswered == [])
+
+    # Alternating which writer is caught mid-write: an even trial holds the panel
+    # save open while a stamp runs, an odd one holds the stamp open while a save runs.
+    lost, unanswered = [], []
+    for trial in range(_RACE_TRIALS):
+        root = _harness.fixture_root("closephase-panel")
+        try:
+            mpath = _race_plan(root)
+            when = "2026-05-05T05:05:0%dZ" % (trial,)
+            roles = ("stamp-after", "panel-hold") if trial % 2 == 0 \
+                else ("stamp-hold", "panel-after")
+            answers = _race(root, mpath, [(roles[0], "P1", when),
+                                          (roles[1], "P2", "opus")])
+            unanswered += [a["why"] for a in answers if not a.get("ok")]
+            if answers[0].get("ok") and _plan_phase(mpath, "P1").get("mergedAt") != when:
+                lost.append("trial %d stamp" % (trial,))
+            if answers[1].get("ok") and (_plan_phase(mpath, "P2").get("review")
+                                         or {}).get("model") != "opus":
+                lost.append("trial %d save" % (trial,))
+        finally:
+            _harness.remove_tree(root)
+    check("lk7 stamps racing panel composition saves over %d trials, each writer "
+          "in turn caught between its read and its write while the other runs, "
+          "lose neither a stamp nor a save that answered ok: lost %r, "
+          "unanswered %r" % (_RACE_TRIALS, lost, unanswered),
+          lost == [] and unanswered == [])
+
+
+# What the lock module says when it refuses to hand back a claim another session
+# has taken over: built from parts, so it is one value the cases can count.
+_TAKEN_OVER = "the index lock is held by %s now; this run's release was declined" \
+    % ("another session",)
+
+
+def _declining(real, said):
+    """`release_index_lock` that gives the lock back as the real one does and then
+    answers as a release the lock DECLINED - the claim having been taken over."""
+    def release(lock, out=None):
+        real(lock, out=out)
+        if out is not None:
+            out(said)
+        return said
+    return release
+
+
+def _close_run(root, wt_mpath, *extra):
+    """`(exit, text, answer)` of one close-phase run over `_worktree_fixture`, the
+    answer read from the same run's `--json`."""
+    lines = []
+    code = M.main([wt_mpath, "P1", "--project", root, "--json"] + list(extra),
+                  out=lines.append)
+    text = "\n".join(lines)
+    try:
+        answer = json.loads(text)
+    except ValueError:
+        answer = {}
+    return code, text, answer
+
+
+def _stamped_is_a_finding(manifest_path):
+    """A validator under which a stamped phase is the write's own finding, so every
+    stamp is refused and its rollback is what runs."""
+    body = _mio.read_json(manifest_path)
+    if any(p.get("mergedAt") for p in body.get("phases") or []):
+        return set(["fixture: a stamped phase is a finding here"])
+    return set()
+
+
+def _takeover_cases(check):
+    """A stamp written under a lock another session took over, and a refused write
+    whose rollback itself failed: neither may read as the ordinary outcome."""
+    real_release = M._panel_write.release_index_lock
+    real_restore, real_findings = M._panel_write.restore, M._findings_of
+
+    # --- the release, at the function a close calls ---------------------------
+    root = _harness.fixture_root("closephase-takeover-unit")
+    try:
+        mpath = _write_plan(root, {"version": 2, "developmentBranch": "main"},
+                            [_signed_phase("P1", "audit/p1")])
+        M._panel_write.release_index_lock = _declining(real_release, _TAKEN_OVER)
+        try:
+            got = M.stamp_merged(mpath, "P1", when="2026-06-06T06:06:06Z")
+        finally:
+            M._panel_write.release_index_lock = real_release
+        notes = got[2] if len(got) > 2 else {}
+        check("to1 a stamp whose index-lock release is DECLINED hands the release's "
+              "sentence back beside the path it wrote, rather than dropping it: %r"
+              % (got,),
+              got[0] == mpath and notes.get("released") == _TAKEN_OVER)
+        mpath2 = _write_plan(root, {"version": 2, "developmentBranch": "main"},
+                             [_signed_phase("P1", "audit/p1")])
+        got2 = M.stamp_merged(mpath2, "P1", when="2026-06-06T06:06:06Z")
+        notes2 = got2[2] if len(got2) > 2 else None
+        check("to2 SECOND DIRECTION: an ordinary release hands back no sentence - the "
+              "case that goes red when every release is reported as taken over: %r"
+              % (got2,),
+              got2[0] == mpath2 and notes2 == {"released": "", "unrestored": False})
+    finally:
+        M._panel_write.release_index_lock = real_release
+        _harness.remove_tree(root)
+
+    # --- the release, in the close answer -------------------------------------
+    for declined in (True, False):
+        root = _harness.fixture_root("closephase-takeover")
+        wt = None
+        try:
+            mpath, wt, wt_mpath, _git = _worktree_fixture(root)
+            if declined:
+                M._panel_write.release_index_lock = _declining(real_release,
+                                                               _TAKEN_OVER)
+            try:
+                code, text, answer = _close_run(root, wt_mpath, "--keep-worktree",
+                                                "--keep-branch")
+            finally:
+                M._panel_write.release_index_lock = real_release
+            lines = []
+            if answer:
+                M.render(answer, out=lines.append)
+            rendered = "\n".join(lines)
+            if declined:
+                check("to3 a close whose stamp was written under a lock taken over "
+                      "carries the release sentence in its answer, and its rendered "
+                      "text says it once, on a warning line: exit %r, warnings %r, "
+                      "%r" % (code, answer.get("lockWarnings"), rendered[-400:]),
+                      bool(_merged_at(mpath))
+                      and answer.get("lockWarnings") == [_TAKEN_OVER]
+                      and rendered.count(_TAKEN_OVER) == 1
+                      and "WARNING" in [ln for ln in lines
+                                        if _TAKEN_OVER in ln][0])
+            else:
+                check("to4 SECOND DIRECTION: a close whose release is ordinary adds "
+                      "no warning to its answer or its text - the case that goes "
+                      "red when a warning is written unconditionally: exit %r, "
+                      "%r / %r" % (code, answer.get("lockWarnings"),
+                                   rendered[-300:]),
+                      code == M.E_OK and bool(_merged_at(mpath)) and bool(answer)
+                      and not answer.get("lockWarnings")
+                      and "WARNING" not in rendered)
+        finally:
+            M._panel_write.release_index_lock = real_release
+            _harness.remove_tree(root)
+            if wt and os.path.isdir(wt):
+                _harness.remove_tree(wt)
+
+    # --- a rollback that itself fails -----------------------------------------
+    def _no_restore(_snap):
+        raise OSError("No space left on device")
+    root = _harness.fixture_root("closephase-unrestored-unit")
+    try:
+        for broken in (True, False):
+            mpath = _write_plan(root, {"version": 2, "developmentBranch": "main"},
+                                [_signed_phase("P1", "audit/p1")])
+            M._findings_of = _stamped_is_a_finding
+            if broken:
+                M._panel_write.restore = _no_restore
+            try:
+                got = M.stamp_merged(mpath, "P1", when="2026-07-07T07:07:07Z")
+            finally:
+                M._panel_write.restore = real_restore
+                M._findings_of = real_findings
+            why = got[1]
+            notes = got[2] if len(got) > 2 else {}
+            if broken:
+                check("to5 a refused stamp whose restore RAISES says the write landed "
+                      "and was not rolled back, names the finding and the error, and "
+                      "never says the file could not be written: %r" % (why,),
+                      got[0] == "" and "was written and introduced" in why
+                      and "fixture: a stamped phase is a finding here" in why
+                      and "restoring its prior bytes failed" in why
+                      and "No space left on device" in why
+                      and "the plan holds the refused write" in why
+                      and "could not be written" not in why
+                      and notes.get("unrestored") is True
+                      and bool(_merged_at(mpath)))
+            else:
+                check("to6 SECOND DIRECTION: a refused stamp whose restore works says "
+                      "the prior bytes were restored and claims no stranded write - "
+                      "the case that goes red when every rollback is reported as "
+                      "failed: %r / %r" % (why, notes),
+                      got[0] == "" and "restored" in why
+                      and "holds the refused write" not in why
+                      and notes.get("unrestored") is False
+                      and not _merged_at(mpath))
+    finally:
+        M._panel_write.restore = real_restore
+        M._findings_of = real_findings
+        _harness.remove_tree(root)
+
+    for broken in (True, False):
+        root = _harness.fixture_root("closephase-unrestored")
+        wt = None
+        try:
+            mpath, wt, wt_mpath, _git = _worktree_fixture(root)
+            M._findings_of = _stamped_is_a_finding
+            if broken:
+                M._panel_write.restore = _no_restore
+            try:
+                code, text, answer = _close_run(root, wt_mpath)
+            finally:
+                M._panel_write.restore = real_restore
+                M._findings_of = real_findings
+            lines = []
+            if answer:
+                M.render(answer, out=lines.append)
+            rendered = "\n".join(lines)
+            if broken:
+                check("to7 a close whose refused stamp could not be rolled back exits "
+                      "as a failure, says the plan holds the refused write, keeps "
+                      "the worktree, and never says mergedAt could not be written: "
+                      "exit %r, %r" % (code, rendered[-500:]),
+                      code not in (M.E_OK,) and bool(answer)
+                      and "the plan holds the refused write" in rendered
+                      and "could not be written" not in rendered
+                      and "NOT written" not in rendered
+                      and os.path.isdir(wt))
+            else:
+                check("to8 SECOND DIRECTION: a refused stamp that WAS rolled back is "
+                      "a failing exit that says so and claims no stranded write - "
+                      "the case that goes red when the stranded-write sentence is "
+                      "printed for every refusal: exit %r, %r"
+                      % (code, rendered[-400:]),
+                      code not in (M.E_OK,) and bool(answer)
+                      and "restored" in rendered
+                      and "holds the refused write" not in rendered
+                      and not _merged_at(mpath))
+        finally:
+            M._panel_write.restore = real_restore
+            M._findings_of = real_findings
+            _harness.remove_tree(root)
+            if wt and os.path.isdir(wt):
+                _harness.remove_tree(wt)
+
+
 def _selftest():
     def body(check):
+        _takeover_cases(check)
+        _lock_cases(check)
         _no_survivor_cases(check)
         _landed_survivor_cases(check)
         _cases(check)
         _parked_cases(check)
         _landed_cases(check)
         _main_tree_cases(check)
+        _override_cases(check)
+        _landing_cases(check)
+        _checked_out_cases(check)
+        _symlink_cases(check)
         _composed_cases(check)
         _same_dir_cases(check)
         _surviving_copy_cases(check)

@@ -439,6 +439,7 @@ def build_state(project, run=None, full_run_cache=None):
     mpath = _manifest_path(project, config)
     manifest, exists = None, os.path.isfile(mpath)
     rollup, m_findings = None, []
+    parsed = False
     composition = {"meta": {"reviewSkill": None, "buildCommands": None,
                             "ado": None},
                    "areaSkills": [],
@@ -458,8 +459,18 @@ def build_state(project, run=None, full_run_cache=None):
     if exists:
         try:
             manifest = _mio.load_manifest(mpath)   # dual-format: single-file OR index+shards
+            parsed = True
         except Exception as exc:
             m_findings = ["cannot parse manifest: %s" % exc]
+        if parsed and not isinstance(manifest, dict):
+            # The manifest IS valid JSON, so `load_manifest` raised nothing -
+            # this is the case the exception branch above cannot see. The
+            # client's unreadable-plan branch can only print a reason the
+            # server sends, and `manifestExists: true` with an empty findings
+            # list beside a null rollup used to read as "nothing wrong" when
+            # the plan was actually a list, a string, or a number.
+            m_findings = ["manifest is not a JSON object (got %s)"
+                         % type(manifest).__name__]
         if isinstance(manifest, dict):
             m_findings, m_warn = vm.validate(manifest)
             # The boundary is READ HERE and handed down, for the reason

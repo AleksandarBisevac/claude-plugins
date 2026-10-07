@@ -1,7 +1,7 @@
 {
   "id": "P100",
   "title": "a stamp or a close never vouches for a gate verdict that no longer holds",
-  "status": "pending",
+  "status": "done",
   "description": "A field report on 3.1.0 (TypeScript/jest) found two false clean sheets around the test evidence, the plugin's main value. (1) The stamp's dirtyDigest hashes which paths are dirty, never their contents, so compare answers current (exit 0) after a sibling rewrites an undeclared dirty file a test imports - the documented parallel-executor setup. (2) Only commit-task-work and signoff ask _verdict_binding; audit-task done and close-phase close over a red newest verdict silently (a hand commit or a chained check-then-write reaches them). Both are false clean sheets, the direction the design refuses, and both are small. Driven against b090fbd5 by the maintainer's probe.",
   "desiredOutcome": "stamp-verification compare answers stale and names the path when an undeclared dirty file's content changed after the stamp, and audit-task done and close-phase refuse to close over a newest gate verdict that is red unless an explicit, journaled override is given",
   "testGate": [
@@ -15,28 +15,95 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
-  "mergedAt": null,
+  "baseRef": "4ff8b10b237a54922ae4eff68d00157e8d0e71ed",
+  "branch": "audit/p100-a-stamp-or-a-close-never-vouch",
+  "mergedAt": "2026-10-06T21:21:33Z",
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P100-R1",
+        "severity": "high",
+        "file": "plugins/audit/scripts/git/close-phase.py:1342-1360",
+        "issue": "_write_tip writes the declared files into the scratch repo with `git cat-file blob` (raw blob bytes), while the recorded scopeDigest was taken over the working tree's bytes. Whenever git converts on checkout (core.autocrlf=true, which Git for Windows sets in its system config, a .gitattributes eol=crlf rule, or an LFS/clean-smudge filter) every landing of a phase declaring text files reads ARM_DIGEST_MOVED and is refused, so the operator needs --override-verdict on every phase. CI cannot see it because the sweep sets GIT_CONFIG_NOSYSTEM.",
+        "resolution": "fixed in P100.3-zxo (f48dfb80): Write the tip files in their checked-out form (`git cat-file --filters <branch>:<path>`, or checkout into the scratch with --work-tree), and add a test_close_phase case with `* text eol=crlf` and LF blobs that lands green, proven red against the raw-blob code.",
+        "fixTask": "P100.3-zxo",
+        "commit": "f48dfb80"
+      },
+      {
+        "id": "P100-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/close-phase.py:1345-1347",
+        "issue": "tip_scope/_write_tip pass each declared entry to `git ls-tree` as written, without stripping the schema's `:<line-range>` suffix or normalising backslashes as _tree_stamp.declared_scope does. `a.py:1-2` lists nothing, the scratch never gets the file, and the landing is refused as digest-moved though nothing changed (probed: owns=['a.py:1-2'] digest differs).",
+        "resolution": "fixed in P100.3-zxo (f48dfb80): Run the entries through _tree_stamp.declared_scope before the tip listing; add a case declaring `src.txt:1-2` that lands, proven red first.",
+        "fixTask": "P100.3-zxo",
+        "commit": "f48dfb80"
+      },
+      {
+        "id": "P100-R3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/git/close-phase.py:1338,1433",
+        "issue": "The scratch git repo is removed with shutil.rmtree(ignore_errors=True). On Windows git's loose objects are read-only, os.unlink fails and the error is hidden, so close-phase-tip-*/.git/objects stays in the operator's temp on every run with declared files, and the windows sweep leg's watched TMPDIR can turn test_close_phase red. tests/_harness.remove_tree documents the hazard and its chmod fallback, but only the test harness has it.",
+        "resolution": "fixed in P100.3-zxo (f48dfb80): A production remove-tree helper in scripts/ (rmtree, then chmod and rmtree again if the directory remains), used at both sites, with a case asserting no close-phase-tip-* directory survives when read-only files refuse deletion the way Windows does.",
+        "fixTask": "P100.3-zxo",
+        "commit": "f48dfb80"
+      },
+      {
+        "id": "P100-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py:43-45,1225-1227",
+        "issue": "The module docstring and a section comment say the digest is taken over the worktree or the tip's files, whichever --project names; the code always digests the tip's committed declared files when a branch is given, as gate_answer's docstring, orchestrator.md and phase-signoff.md say.",
+        "resolution": "fixed in P100.3-zxo (f48dfb80): Reword both passages to what the code does.",
+        "fixTask": "P100.3-zxo",
+        "commit": "f48dfb80"
+      },
+      {
+        "id": "P100-R5",
+        "severity": "med",
+        "file": "CHANGELOG.md:7-21",
+        "issue": "[Unreleased] carries only the stamp's entry. The close refusals are user-visible and unrecorded: done exits 2 and close-phase exits 1 where both exited 0, both take --override-verdict, a new journal action audit.verdict.close-overridden exists, and a sign-off with no reason drops an earlier review.noEvidenceReason. COMPATIBILITY.md's outside-the-contract list records this kind of change and is not updated. Not a contract break.",
+        "resolution": "fixed in P100.4-zxo (71fff07f): Add a Changed entry under [Unreleased] and an 'and it changed' bullet in COMPATIBILITY.md's outside-the-contract list naming the new exit codes and the --override-verdict way past them.",
+        "fixTask": "P100.4-zxo",
+        "commit": "71fff07f"
+      },
+      {
+        "id": "P100-R6",
+        "severity": "low",
+        "file": "plugins/audit/agents/audit-executor.md:77-78",
+        "issue": "The executor brief says stamp compare names the branch, the declared files or a path's dirty status; the stamp now also reports a content field with a moved: path line for a rewritten undeclared dirty file, which changes how wide a re-check has to be.",
+        "resolution": "fixed in P100.4-zxo (71fff07f): Name the content field and its moved: path: a moved undeclared file means re-checking the claims that file could affect, not re-taking everything.",
+        "fixTask": "P100.4-zxo",
+        "commit": "71fff07f"
+      },
+      {
+        "id": "P100-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_verdict_binding.py:5",
+        "issue": "'Four writers stand on a recorded verdict' is a present-tense count in prose that this phase already had to correct once (from 'Two writers'); it is the author-enforced shape the lint cannot see.",
+        "resolution": "fixed in P100.4-zxo (71fff07f): Delete the number and keep the list.",
+        "fixTask": "P100.4-zxo",
+        "commit": "71fff07f"
+      }
+    ],
+    "outcome": "phase review (audit-reviewer, phase mode, no project skill): findings fixed by two fix tasks and confirmed over two re-review rounds; the phase gate re-measured after the fixes [findings: 7 - 1 high, 3 med, 3 low; 7 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "A stamp now names an undeclared dirty file whose bytes moved after it was taken, and a task or phase can no longer be closed over a gate verdict that no longer holds: audit-task done and close-phase ask the newest recorded verdict and refuse, naming the run, unless an explicit --override-verdict is given and journaled. close-phase reads that verdict at the branch tip the way the recorder read the files - checked out with the repository's eol and filter rules, line-range entries normalised, symbolic links followed - and removes its scratch git trees even where Windows leaves read-only objects. The desired outcome is met: compare answers stale and names the path for a moved undeclared file, and both closing verbs refuse a red or stale newest verdict without the journaled override.",
   "tasks": [
     {
       "id": "P100.1",
       "title": "a stamp names an undeclared dirty file whose content moved",
-      "status": "pending",
+      "status": "done",
       "description": "Stamp v2 carries a content field built from _tree_stamp.content_digest (the one content identity; no third digest arithmetic), with the recorder's own paths excluded, so compare answers stale when an undeclared dirty file's bytes moved and names the path(s) it cannot vouch for (bounded per-path list for the dirty set). compare keeps reading v1 tokens. Measured cost of content_digest is about the cost of take itself at these sizes, so the 'expensive' premise in the module docstring is revised with the measurement. Gate rows keep dirtyDigest unchanged. Update the stamp's limits text and the field list in reference/execute-task.md. Red-first: the rewrite-of-undeclared-file case answers current at HEAD and stale after.",
       "files": [
         "plugins/audit/scripts/governance/_tree_stamp.py",
         "plugins/audit/scripts/governance/stamp-verification.py",
         "plugins/audit/tests/test__tree_stamp.py",
         "plugins/audit/tests/test_stamp_verification.py",
-        "plugins/audit/reference/execute-task.md"
+        "plugins/audit/reference/execute-task.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -62,21 +129,39 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2ec163d7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Stamp v2 (STAMP_VERSION 2, READABLE_VERSIONS 1 and 2) adds content, dirtyPaths and manifest fields. content is built from _tree_stamp.content_digest, split into a reading and an answer half with no new digest arithmetic. stamp-verification derives the recorder's own paths from _evidence_io.recorded_paths and excludes them on take and compare. compare names moved paths up to DIRTY_PATHS_LIMIT and says so when it cannot name them. tested_state is unchanged, so gate rows and dirtyDigest are unchanged. The module docstring's 'expensive' premise is replaced by a dated measurement. execute-task.md's field list and limits, CHANGELOG and the module-map line are updated. Red-first: tsl3 and tsv1 fail against HEAD's module and pass after.",
+        "descriptive": "A verification stamp now notices when a file the task did not declare, but which was already modified, has its contents rewritten after the stamp was taken. compare answers stale and names that file instead of answering current. Older stamps keep comparing on the fields they carry."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T14:06:10Z",
+      "completedAt": "2026-10-06T14:38:46Z",
+      "verifiedBy": [
+        "tsl3",
+        "tsv1",
+        "tsb1",
+        "tsb2",
+        "sv16",
+        "sv17"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T14:32:59Z.914a8e",
+        "status": "passed",
+        "at": "2026-10-06T14:32:59Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2ec163d7",
+        "at": "2026-10-06T14:38:46Z",
+        "basis": "audit-reviewer (task mode): every point of the description is in the diff, no findings, redFirst proved, inheritedTests not-asked because the gate runs the whole-project sweep"
+      }
     },
     {
       "id": "P100.2",
       "title": "done and close-phase refuse to close over a red newest gate verdict",
-      "status": "pending",
+      "status": "done",
       "description": "audit-task done --commit and close-phase become the third and fourth callers of _verdict_binding, with its existing arms: refused -> the verb refuses and names the row; no-gate -> passes with its sentence; an explicit override (--over-red-reason) is journaled the way signoff --no-evidence-reason is. Decide whether done --no-change skips the question (no work landed). close-phase asks for the phase's newest verdict at the head it would merge; a red recorded after the run sign-off was bound to is newer evidence. Also decide, with the measurement from P100.1, whether the binding reads content (the same undeclared-file blind spot at commit time). Measure whether done/close-phase print validator findings the plan already carried before deciding on a warning. Red-first: both probe sequences (red then done; green sign-off, later red, then close) exit 0 at HEAD and refuse after.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -85,7 +170,12 @@
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/tests/test_close_phase.py",
         "plugins/audit/tests/test__verdict_binding.py",
-        "plugins/audit/reference/orchestrator.md"
+        "plugins/audit/reference/orchestrator.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/README.md",
+        "plugins/audit/reference/phase-signoff.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -113,16 +203,164 @@
       "dependsOn": [
         "P100.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "aa98464e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task done (with --commit or --no-change) and close-phase now ask the subject's newest recorded gate verdict through _verdict_binding.close_refusal and refuse, naming the run, on every arm in CLOSE_REFUSING_ARMS: a red, a red after the green, an unreadable or undated ledger, and a green whose declared files changed after it measured them. A no-change close asks too, because its claim is that the code as it stands needed nothing. No recorded run, or an empty gate, does not refuse and the close prints that on its gate: line. The way out is a green run or --override-verdict \"<why>\", the flag commit-task-work.py takes, which writes an audit.verdict.close-overridden journal row and refuses when the journal is off or the row will not write (a failed row rolls the close back). close-phase reads the verdict at the head it would merge: the branch tip's committed ledger and declared files, copied into a scratch git isolated from the operator's config, never a worktree's uncommitted bytes; it asks only while the landing is still to happen, so a re-run over a landed branch is never refused. A red recorded after the run a sign-off was bound to refuses the landing; a group member is asked through its carrier's run and also refused by a red on its own rows newer than that run. A sign-off with no evidence reason now drops a stale noEvidenceReason. Content decision: the binding digests the declared files only; whether an undeclared file moved stays the stamp's question (P100.1's content field), since a task commit stages its declared files alone. Validator measurement: done already prints warnings the plan carried before the call and refuses on pre-existing findings, and close-phase deliberately does not grade the plan, so no new warning was added. Cases rd1-rd9, so16-so17, cr1-cr23 (with cr7b, cr7c), vb19-vb31 (with vb21b-e); each review fix was proved red alone in a scratch tree, and the full sweep was green.",
+        "descriptive": "A task or a phase can no longer be closed over a gate verdict that is red or out of date; the only way past is a stated reason, which is written to the journal."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T14:39:02Z",
+      "completedAt": "2026-10-06T19:22:02Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T19:21:53Z.a67db6",
+        "status": "passed",
+        "at": "2026-10-06T19:21:53Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "aa98464e",
+        "at": "2026-10-06T19:22:02Z",
+        "basis": "audit-reviewer (task mode) over four rounds: matches; every finding fixed with a per-fix red in a scratch tree; the validator-findings measurement the description asked for is on the record and decided no new warning"
+      }
+    },
+    {
+      "id": "P100.3-zxo",
+      "title": "close-phase reads the tip's declared files the way the recorder read them",
+      "status": "done",
+      "description": "Fixes review findings P100-R1 to P100-R4. (1) _write_tip writes each declared file in its checked-out form, applying the repository's eol, text and smudge rules (git cat-file --filters, or a checkout into the scratch work tree), so a branch under core.autocrlf, a .gitattributes eol rule or a clean/smudge filter is digested the way the recorder digested the working tree. (2) tip_scope normalises the declared entries through _tree_stamp.declared_scope before listing the tip, so an entry carrying a line-range suffix or a backslash path is read the same way the digest reads it. (3) The scratch repo is removed through a production remove-tree helper in the scripts anchor module (plain rmtree, then make read-only entries writable and remove again if the directory is still there), at both sites, so Windows' read-only git objects do not leave close-phase-tip-* directories in the operator's temp; the test harness's remove_tree documents the hazard. (4) The module docstring and the section comment say what the code does: the ledger is read from the tip and the worktree holding the branch, and the digest is always taken over the tip's committed declared files. Other scripts that rmtree a scratch tree are left for a separate task.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py",
+        "plugins/audit/scripts/_output.py",
+        "plugins/audit/tests/test__output.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/_harness.py",
+        "tools/sweep-selftests.py",
+        "tools/_suite.py",
+        "tools/prove-gates.py",
+        ".claude/hooks/guard-release.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_close_phase.py: a branch whose .gitattributes says '* text eol=crlf' over LF blobs, with a green recorded on the checked-out files, lands instead of being refused as digest-moved",
+          "plugins/audit/tests/test_close_phase.py: a phase declaring 'src.txt:1-2' whose file did not change lands instead of being refused as digest-moved",
+          "plugins/audit/tests/test__output.py: the remove-tree helper removes a tree whose files refuse deletion until made writable, and returns without raising when the tree is already gone"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "f48dfb80",
+      "outcome": {
+        "technical": "close-phase.py now reads the branch tip's declared files the way the recorder read them. _write_tip no longer writes raw blobs: _check_out loads the tip into a private index (GIT_INDEX_FILE under a close-phase-tip- staging directory) with read-tree and writes the listed paths into a private work tree with checkout-index, so the tip's .gitattributes, core.autocrlf and clean/smudge filters apply as in a real checkout, and the operator's .git, index and hooks are untouched (no hook runs; checked with linked worktrees and sparse checkout). A declared symbolic link is read through to its in-repository target, as _journal_io.file_hash reads it; a target outside the repository or absent makes the tip unanswerable rather than moved, and a required filter whose program is missing refuses the landing. tip_scope normalises the declared entries through _tree_stamp.declared_scope, so a line-range suffix or a backslash path is read as the digest reads it. The scratch trees are removed through a new _output.remove_tree (plain rmtree, then, only if the tree is still there, a top-down pass that makes entries writable - never through a symbolic link - and removes again, answering whether the path is gone), so Windows' read-only git objects no longer leave close-phase-tip-* directories behind. _output.remove_tree is now the one home of that fact: tests/_harness binds to it, and the sweep runner's and .claude/hooks/guard-release.py's copies are compared to it statement for statement (removal_helper_drift and gr48 each go red when either side changes one statement), with tools/_suite.py's s11 and the prove-gates row pointed at the new home. The module docstring and section comment say the digest is always taken over the tip's committed declared files. Cases: cr24-cr29 in test_close_phase.py (eol=crlf, a line-range entry, a symlink, each with a refusing twin), rt0-rt3 in test__output.py. Reds: the helper proved cr24/cr26 (144/146) and rt1/rt2 (179/181) at HEAD; cr28 and rt3 were red before their fixes (147/148, 181/182); the prove-gates row was proved red and its allow side quiet in a throwaway clone, because redfirst.sh refuses to mutate the uncommitted home in the shared tree.",
+        "descriptive": "Landing a phase no longer refuses falsely in repositories that convert line endings or use filters, for declared files with a line range, or for declared symbolic links, and it no longer leaves temporary git copies behind on Windows."
+      },
+      "startedAt": "2026-10-06T19:29:54Z",
+      "completedAt": "2026-10-06T20:17:47Z",
+      "verifiedBy": [
+        "cr24",
+        "cr25",
+        "cr26",
+        "cr27",
+        "cr28",
+        "cr29",
+        "rt0",
+        "rt1",
+        "rt2",
+        "rt3"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T20:10:52Z.72a339",
+        "status": "passed",
+        "at": "2026-10-06T20:10:52Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "f48dfb80",
+        "at": "2026-10-06T20:17:47Z",
+        "basis": "audit-reviewer (phase mode) re-review over two rounds: R1-R4 closed; the follow-up findings (a third copy of the removal helper, symlink bytes, chmod through links) fixed with reds; the reviewer probed the operator's repository untouched under hooks, linked worktrees and sparse checkout"
+      }
+    },
+    {
+      "id": "P100.4-zxo",
+      "title": "the close refusals are recorded where a user and an executor read them",
+      "status": "done",
+      "description": "Fixes review findings P100-R5 to P100-R7. CHANGELOG.md gains a Changed entry under [Unreleased] for the close refusals: audit-task done exits 2 and close-phase exits 1 over a verdict that no longer holds where both used to exit 0, both take --override-verdict, the new journal action audit.verdict.close-overridden records the override, and a sign-off given no reason now drops an earlier review.noEvidenceReason. COMPATIBILITY.md's list of what is outside the contract gains an 'and it changed' bullet naming the new exit codes and the way past them. agents/audit-executor.md's sentence about what stamp compare reports names the content field and its moved: path line, and says a moved undeclared file means re-checking the claims that file could affect, not re-taking everything. _verdict_binding.py's docstring drops its count of writers and keeps the list.",
+      "files": [
+        "CHANGELOG.md",
+        "COMPATIBILITY.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/scripts/governance/_verdict_binding.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "71fff07f",
+      "outcome": {
+        "technical": "CHANGELOG.md gains a Changed entry under [Unreleased], and COMPATIBILITY.md's list of what is outside the contract an 'and it changed' bullet, both read from the code: audit-task.py done and close-phase.py now refuse to close over a newest gate verdict that no longer holds (done exits 2, close-phase exits 1, where both exited 0); they do not refuse when no run is recorded under the gate, when the newest row answers empty-gate, when the branch has already landed, or when the newest green is stale behind a sign-off's --no-evidence-reason; --override-verdict \"<why>\" closes anyway and journals audit.verdict.close-overridden, and is itself refused when journal.enabled is false (done exits 2, close-phase 1) or when the row will not write (done rolls back and exits 1, close-phase exits 1); and a sign-off given no --no-evidence-reason drops an earlier review.noEvidenceReason, which COMPATIBILITY now names beside the additive key it already lists. agents/audit-executor.md's sentence on stamp compare says the content field reads every byte git reports outside the recorder's own paths - a staged or unstaged change, an untracked file, or an undeclared write of the executor's own - and that a moved: line names that path whoever wrote it, or says the index moved. _verdict_binding.py's docstring no longer counts its writers.",
+        "descriptive": "The changelog, the compatibility contract and the executor's own brief now say that a task or phase can no longer be closed over a gate verdict that no longer holds, when the refusal does not apply, and how to get past it."
+      },
+      "startedAt": "2026-10-06T19:29:54Z",
+      "completedAt": "2026-10-06T20:17:48Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T20:17:32Z.c70570",
+        "status": "passed",
+        "at": "2026-10-06T20:17:32Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "71fff07f",
+        "at": "2026-10-06T20:17:48Z",
+        "basis": "audit-reviewer (phase mode) re-review: R5-R7 addressed; the follow-up wording gaps (the override is itself refused without a journal; the non-refusing cases; what the content field reads) fixed and checked against the code"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-10-06T14:06:10Z",
+  "testEvidence": {
+    "runId": "2026-10-06T20:40:10Z.f8c0dc",
+    "status": "passed",
+    "at": "2026-10-06T20:40:10Z"
+  },
+  "priority": 1,
+  "mergedHead": "f96699d3a88bdbbbcc5edae389c1c1eed2441507"
 }

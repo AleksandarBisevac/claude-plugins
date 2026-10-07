@@ -23,7 +23,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { fixtureProblem } from '../capture-screenshots.mjs';
+import { fixtureProblem, mergeCaptureRecord } from '../capture-screenshots.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PY = process.env.PYTHON || 'python3';
@@ -132,5 +132,38 @@ describe('paintedIdentityProblem: the paths a capture paints, judged by the one 
     const { status, out } = scanText('');
     expect(status).toBe(1);
     expect(out).toContain('NOTHING WAS READ');
+  });
+});
+
+// The sidecar is shared. `docs/screenshots/captured-at.json` carries the screenshots'
+// records under `images` and the demo GIF's record under a key of its own, written
+// by a different tool. A screenshot re-capture used to rewrite the file as note plus
+// images and nothing else, so the GIF's record vanished on every release - and the
+// GIF's own check reads that absence as a finding, which would have been red for a
+// reason nobody could see from the diff.
+describe('mergeCaptureRecord: one shot\'s record merged into the shared sidecar', () => {
+  const gifs = { 'demo-gate.gif': { sha256: 'g', textDigest: 't' } };
+  const prior = { note: 'old', images: { 'b.png': { sha256: 'b' } }, gifs };
+
+  it('KEEPS a top-level key it does not own', () => {
+    const next = mergeCaptureRecord(prior, 'new note', 'a.png', { sha256: 'a' });
+    expect(next.gifs).toEqual(gifs);
+  });
+
+  // The allow twin: keeping a foreign key must not stop the merge doing its own
+  // job, which is the note, the new entry and a sorted image table.
+  it('still writes its own half: the note, the new entry, images sorted by name', () => {
+    const next = mergeCaptureRecord(prior, 'new note', 'a.png', { sha256: 'a' });
+    expect(next.note).toBe('new note');
+    expect(Object.keys(next.images)).toEqual(['a.png', 'b.png']);
+    expect(next.images['a.png']).toEqual({ sha256: 'a' });
+    expect(Object.keys(next)).toEqual(['note', 'images', 'gifs']);
+  });
+
+  it('builds a fresh body from nothing, and leaves the one it was handed alone', () => {
+    const fresh = mergeCaptureRecord(null, 'n', 'a.png', { sha256: 'a' });
+    expect(fresh).toEqual({ note: 'n', images: { 'a.png': { sha256: 'a' } } });
+    mergeCaptureRecord(prior, 'new note', 'a.png', { sha256: 'a' });
+    expect(prior).toEqual({ note: 'old', images: { 'b.png': { sha256: 'b' } }, gifs });
   });
 });

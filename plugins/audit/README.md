@@ -25,23 +25,6 @@ shipped without.
 It governs **one repository per manifest, deliberately** —
 [COMPATIBILITY.md](../../COMPATIBILITY.md) names what that leaves out.
 
-## TL;DR
-
-```
-/plugin marketplace add AleksandarBisevac/claude-plugins
-/plugin install audit@quality-gates          # then /reload-plugins
-/audit:usage --backfill                        # free: your past spend, from transcripts already on disk
-/audit:doctor                                  # is the setup healthy?
-/audit:init                                    # audit the codebase → writes the manifest
-/audit:status                                  # see phases/tasks/bugs + what's ready
-/audit:phase P0                                # run a whole phase (or /audit:run <id> for one task)
-```
-
-Every action is its own `/audit:<verb>` (`status` · `doctor` · `next` · `run` · `phase` · `review` · `resume` ·
-`report` · `panel` · `init` · `task` · `bug` · `sync`) — there is **no bare `/audit`**. Requirements: Python
-(`python3`/`python`/`py`; Windows = Git Bash). Add `--dry-run` to `next`/`run`/`phase` to preview
-without touching anything. Git-in-a-subdir? set `meta.gitRoot`.
-
 ## See it
 
 The **[live demo](https://aleksandarbisevac.github.io/claude-plugins/)** is a real report you can
@@ -65,11 +48,14 @@ of its tasks matched, and nothing auto-expands. **Save as PDF** prints A4 in eit
 `/audit:panel` opens a local, **on-demand** browser UI (an ephemeral Python-stdlib server) to
 manage the plugin without hand-editing JSON. It's an **open / stop / status** trio backed by a
 per-project pidfile, so a running panel is always discoverable and stoppable — never a stray
-background process. It leaves two files beside your config, and writes a targeted ignore rule
-for each: `.claude/audit-panel.json`, the pidfile, which also records the plugin build that
-assembled the page; and `.claude/audit-panel.log`, the detached launch's stderr, emptied by
-the server once it is actually listening — so a launch that never got up leaves a reason
-`status` can print instead of looking exactly like one that was started and stopped:
+background process. Beside your config it leaves `.claude/audit-panel.json`, the pidfile, which
+also records the plugin build that assembled the page, and `.claude/audit-panel.log`, the
+detached launch's stderr, emptied by the server once it is actually listening — so a launch that
+never got up leaves a reason `status` can print instead of looking exactly like one that was
+started and stopped — the panel gitignores both with a targeted rule. It also leaves
+`.claude/state/panel-openstate.json`, a count of how many times this project's panel has ever
+been opened and read back by `/audit:doctor`, inside a directory that ignores itself rather than
+needing a rule of its own:
 
 - **`/audit:panel`** — open it (prints the `http://127.0.0.1:<port>/…` URL and opens your browser)
 - **`/audit:panel stop`** — stop it · **`/audit:panel status`** — check if it's running
@@ -212,37 +198,12 @@ page behind it, read against the form rather than instead of it. All of it is
 
 ## What you get
 
-- **Execution commands** — `/audit:status` (report), `/audit:next` (next ready task),
-  `/audit:run <id>` (one task), `/audit:phase <id>` (whole phase + sign-off),
-  `/audit:review <id>` (re-run sign-off), `/audit:resume` (continue an interrupted run) —
-  orchestrate phases → tasks from a JSON manifest. Per-task model + skills subagents,
-  TDD/regression/gate-only test discipline, branch-per-phase git flow, gated phase sign-off
-  (optional review skill + test gates + optional runtime boot). All share
-  `reference/orchestrator.md`.
-- **`/audit:init`** — multi-agent codebase audit that GENERATES the manifest: interview →
-  recon → parallel read-only explorers → synthesized phases presented for **approval before
-  anything is written** — approve to materialize, or park them as proposals.
-- **`/audit:propose`** — the parked-phase lifecycle: `list` what init parked,
-  `materialize` a proposal into a live phase (a move, not a re-synthesis), `drop` one
-  with a recorded reason.
-- **`/audit:task`** — add a tracked task: every answer is a flag the caller may pass, and
-  the command asks only for what is missing (including a skills step fed by
-  `audit-status --json --discovery`, with the explicit `null — none applies` choice)
-  before `scripts/manifest/audit-task.py` does the write itself.
-- **`/audit:bug`** — report/list/close bugs; `fix` materializes a bug into a **red-first TDD
-  task** (the repro test must fail before the fix) executed by `/audit:run`.
-- **`/audit:sync`** — set the connector up on a board for the first time (`connect`), mirror
-  bugs/tasks into **Azure DevOps work items** (`push`), import
-  assigned ADO bugs (`pull`), cache the board's backlog levels and parent candidates
-  (`parents`), or diff link state (`status`). Explicit, idempotent, one
-  direction per invocation; `az boards` CLI contract with the azure-devops MCP tools as an
-  optional fast-path.
-- **`/audit:report`** — self-contained, **interactive** HTML + Markdown report (collapsible
-  phases, text + status filters, **Save as PDF**, optional AI summary) — publishable as a CI
-  artifact, or to a link with `--share`. See [Reports](#reports).
-- **`/audit:panel`** — a local **control panel** (browser UI) to visually manage the config +
-  composition with live validation and skill/agent **discovery**. See [Control panel](#control-panel).
-- **`/audit:doctor`** — answers "is this working?" before you find out the hard way: the interpreter the hooks will resolve, whether `gitRoot` is a repo, config and manifest validity, shard integrity, **which plan-gate tier is active**, submodule conflicts that would fail at commit time, whether the `buildCommands` runners exist, **whether the skills the plan names would resolve from a clone or only here**, whether the hooks have ever fired here **and which copy of the plugin ran them**, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never actually enforced. Read-only and safe mid-phase; exits 1 on findings so CI can run it too.
+- **Commands** — one `/audit:<verb>` per action: running phases and tasks from a JSON
+  manifest (per-task model + skills subagents, TDD/regression/gate-only test discipline,
+  branch-per-phase git flow, gated phase sign-off), generating that manifest, tracking
+  tasks and bugs, the report, the control panel, token usage and the setup diagnosis.
+  [Commands](#commands) is the one list — every verb, its arguments and what it does —
+  so it is not repeated here.
 - **CI without Claude** — `scripts/status/audit-status.py --json | --gate` turns the manifest into
   a pipeline gate (fails on validator findings, open high-severity bugs, blocked tasks —
   tunable via `--fail-on`, which also carries the test-evidence conditions
@@ -262,10 +223,11 @@ page behind it, read against the form rather than instead of it. All of it is
   not beside the launcher; every hook has a 10 s timeout):
   - `require-plan.py` (PreToolUse + PostToolUse: Edit/Write/MultiEdit/NotebookEdit) —
     non-trivial edits must be planned in the manifest or opted out via a single-use keyword,
-    **once there is a plan to check against**: with no manifest it observes and reports once
-    per session, with a manifest but nothing running it warns, and it denies only while a
-    phase has work in flight — an `in_progress` task, or an `in_progress` phase with work
-    left; one that only awaits sign-off does not hold it (`planGate` pins any single tier — including `ask`, which holds
+    **once there is a plan to check against**: it observes with no plan (one report per
+    session), warns with a plan and nothing running, and denies while a phase runs —
+    `/audit:doctor` prints the active tier. A phase runs while it has work in flight — an
+    `in_progress` task, or an `in_progress` phase with work left; one that only awaits
+    sign-off does not hold it (`planGate` pins any single tier — including `ask`, which holds
     each out-of-plan edit for your approval; legacy `enforce: true` = `planGate: "deny"`).
     Every Bash WRITE form
     in `guard-secrets-read.py` grades identically, so `sed -i`, a `>` redirect and
@@ -284,9 +246,12 @@ page behind it, read against the form rather than instead of it. All of it is
     see only human prompts, which is what makes the keyword the human's and not an
     agent's); also warns once per session when
     `.claude/audit.config.json` is malformed (your custom rules would silently not apply).
-  - `guard-secrets-read.py` (PreToolUse: Read/Grep/Bash) — blocks reading secret files
-    (`.env`, credentials, signing material) directly or indirectly (`git show`, `source`,
-    `cp`/`mv`), dumping env/token values, and shell writes into source files
+  - `guard-secrets-read.py` (PreToolUse: Read/Grep/Bash) — refuses a call naming a
+    secret file (`.env`, credentials, signing material) beside a read verb the guard
+    lists — the direct tool call, a listed shell read verb, `git show`, `source`,
+    `cp`/`mv` — and leaves two classes open: a read that never names the file, and an
+    unlisted verb naming it ([SECURITY.md](../../SECURITY.md#known-bypass-classes-accepted-documented)
+    — this is name-based, not containment). It also refuses dumping env/token values, and shell writes into source files
     (`sed -i`, `tee`, `>` redirects) that bypass the plan gate. Multi-clause commands are
     judged per clause (a redirect in one clause plus an eval in another is not an
     eval-write), and its verdicts land in the same gate events feed the panel reads.
@@ -374,7 +339,7 @@ are the table in [SECURITY.md](../../SECURITY.md#fail-modes-by-design).
 
 | Rule | Mechanism | What happens when it is broken |
 |---|---|---|
-| Secret **contents** are never read — directly, or through `git show`, `git cat-file`, `source`, a copy-verb, an inline `python3 -c`, a heredoc fed to an interpreter, or an MCP server's own file tool | `guard-secrets-read.py` — PreToolUse `Read\|Grep\|Bash\|mcp__.*` | **deny**, at every tier, manifest or not. Reading file *names* is never blocked. An MCP call is judged on the paths its payload names, at any depth, never on the server it was installed under — so a secret file is refused there whatever the operation, creating it included |
+| A call naming a secret file beside a read verb the guard lists is refused — the `Read`/`Grep` tools, a listed shell read verb, `git show`, `git cat-file`, `source`, a copy-verb, an inline `python3 -c`, a heredoc fed to an interpreter, or an MCP server's own file tool. Two classes stay open: a read that never names the file, and an unlisted verb naming it ([SECURITY.md](../../SECURITY.md#known-bypass-classes-accepted-documented)) | `guard-secrets-read.py` — PreToolUse `Read\|Grep\|Bash\|mcp__.*` | **deny**, at every tier, manifest or not. Reading file *names* is never blocked. An MCP call is judged on the paths its payload names, at any depth, never on the server it was installed under — so a secret file is refused there whatever the operation, creating it included |
 | Env values are never dumped (`printenv`, `env`) and token-like variables never echoed | `guard-secrets-read.py` | **deny**, ungraded |
 | A **shell** write into a source file that no `in_progress` task covers — `sed -i`, `tee`, `>`/`>>`, heredoc redirects, inline-eval writes | `guard-secrets-read.py` | the plan gate's tier for that file: observe / warn / **ask** / **deny** — the same tier `Edit` would get, so the two channels agree on one file |
 | No commit the manifest records is orphaned: force-push (`--force-with-lease` included), `--orphan`, `filter-branch`/`filter-repo`, `rebase`, an `--amend` of a recorded HEAD, `reset --hard <ref>` past a recorded SHA | `guard-history-rewrite.py` — PreToolUse `Bash` | **deny** while any `task.commit` is set; **inert** with none recorded, and `reset --hard` with no ref is always allowed |
@@ -384,7 +349,7 @@ are the table in [SECURITY.md](../../SECURITY.md#fail-modes-by-design).
 | The model does not edit the installed plugin's own files | `guard-edits.py` — PreToolUse edits **and `mcp__.*`** | **deny**, with a dev-mode exception when the plugin is checked out *inside* the repo. An MCP call naming a path in there is refused **whatever the operation**, as a secret path is one guard over: that directory sits outside the consuming repo, so nothing ordinary reads or writes it |
 | The plan-first bypass cannot be armed by an agent | `guard-edits.py` refuses a forged `<stateDir>/plan-bypass-*.json` — through an edit tool, or through an MCP call whose payload carries a write basis; `detect-plan-skip.py` — UserPromptSubmit — arms it only from a submitted prompt | **deny** for the forgery. Hooks see human prompts only, which is what makes the keyword the human's |
 | The audit trail is append-only — no hand edits | `guard-edits.py` | **deny**. Nothing legitimate writes those files with an edit tool, or with an MCP write tool — both are refused. A *read* of a journal file is not: the trail is committed and meant to be read |
-| A non-trivial edit is covered by an `in_progress` task, or by a live single-use bypass | `require-plan.py` — PreToolUse edits **and `mcp__.*`**, an MCP call decided on the path `_mcp_plan_target` resolves | graded on evidence: no manifest → observe, a manifest with nothing running → warn, a phase `in_progress` → **deny**. `planGate` pins one tier by hand |
+| A non-trivial edit is covered by an `in_progress` task, or by a live single-use bypass | `require-plan.py` — PreToolUse edits **and `mcp__.*`**, an MCP call decided on the path `_mcp_plan_target` resolves | graded on evidence: it observes with no plan, warns with a plan and nothing running, and **denies** while a phase runs (`/audit:doctor` prints the active tier). `planGate` pins one tier by hand |
 | A manifest or shard write while another **live** session holds the governing lock | `require-plan.py`, reading the lock `scripts/governance/audit-lock.py` wrote | **deny**, naming the holder. An abandoned lock allows, with a notice — [the full verdict table](../../SECURITY.md#the-one-denial-that-is-not-about-the-plan-0270) |
 | Every write to the manifest or the config leaves a hash-chained row — including the derived `task.complete`, `task.commit` and `phase.signoff` rows — **whichever tool made it**, a shell command inside a `Bash` call and an MCP server's write tool included | `journal-writes.py` — PreToolUse and PostToolUse on edits, `Bash` and `mcp__.*` | records; never blocks. It is the **only** writer of those actions, which is why the orchestrator must not append them. The Post pass refreshes the pre-image it just recorded, so the baseline is the manifest as of the last row rather than as of the last edit |
 | Token spend is attributed to a phase and a task | `meter-usage.py` — Stop / SubagentStop / SessionEnd | records; never blocks. Ledger rows carry `phaseId`, `taskId` and `model` |
@@ -428,7 +393,7 @@ what this table exists to stop presenting as a guarantee.
 | The executor is spawned with a `description` starting with the task id, so metering is per-task | § Execute the task, 3 | **post-hoc**: ledger rows fall back to phase level when the id is absent, so the gap shows in `/audit:usage` |
 | Skills are invoked before coding — the area's first, then `task.skills` | § Execute the task, 3 | **nothing** |
 | Completion rows are hook-emitted and never appended by hand | § Execute the task, 4c | **enforced**: a hand edit of the journal is denied (first table) |
-| Never read secrets, never log tokens, and do not work around the guards | § Non-negotiable guardrails | **enforced** — the one invariant whose whole content is a pointer to the first table |
+| Never read secrets, never log tokens, and do not work around the guards | § Non-negotiable guardrails | **name-based refusal** — the first table's rows: a call naming a secret file beside a read verb the guard lists is refused, while a read that never names the file, and an unlisted verb naming it, stay open ([SECURITY.md](../../SECURITY.md#known-bypass-classes-accepted-documented)); token logging is refused by pattern |
 
 **How a row moves left.** The `post-hoc` rows are the ones worth building for: their
 evidence already exists in git, the shard, the journal and the ledger, and what is
@@ -469,7 +434,7 @@ Every action is its own `/audit:<verb>` (there is **no bare `/audit`**). Add `--
 | `/audit:version` | `[--offline] [--json]` | Which build of the plugin is running, and whether a newer one is published — the running copy's `plugin.json`; the marketplace it was installed from, what that clone offers, when it was refreshed and whether it **auto-updates**; every installed copy by scope and project (older ones marked); and the newest release on the repository `plugin.json` names. Each line says where it was read — two of them from Claude Code's own records, files it writes and does not document — and a source that could not be read says why. The verdict comes only from what was read: an unanswered feed is *could not be asked*, never *up to date*. When a newer release is published it prints `claude plugin marketplace update <marketplace>`, `claude plugin update audit@<marketplace>` and the restart, and exits 1 so a script can ask. Read-only; the release check is the plugin's one outbound request (`SECURITY.md` → *Outbound network*), skipped by `--offline`. |
 | `/audit:guide` | `<question about the audit plugin>` | Answer a question about the plugin itself — what a config key does, how the plan gate grades, what the journal can and cannot prove — from the plugin's own README, reference docs, schemas and `SECURITY.md`, with a citation for every claim. Read-only and cheap; it changes nothing. |
 | `/audit:worktree` | `<list\|add\|remove\|sweep> [phaseId]` · `[--path DIR]` `[--force]` · sweep: `[--apply]` `[--remove-worktrees]` `[--delete-branches]` `[--prune]` `[--json]` | The **git worktrees** this plan owns. `list` shows each one with the phase it belongs to and whether its branch is contained in its parent; `add` sets one up so a phase can run in a parallel session and prints the `cd … && claude` line; `remove` takes one down (`--path <dir>` for one this plan does not name); `sweep` reports what may be reaped — **read-only until `--apply`**, which needs at least one verb. A worktree is reaped only when **the plugin created it**, its **phase has signed off** with no task left open and `mergedAt` recorded, its branch is contained in its parent, and its tree is clean — because removal also destroys ignored files (`.env`, `node_modules`) that `git status` never mentions. Anything else is reported and left alone. Never edits the manifest. |
-| `/audit:task` | `add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] \| scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] \| start <taskId> \| done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] \| reopen <taskId> --reason "<why>" \| move <taskId> --to <phaseId> \| block <taskId> --reason "<why>" \| note <taskId> --text TEXT \| couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id], or --test <path> --caught <runId> \| uncouple --test <path> \| mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId> \| unmute --test <path> \| cancel <id> --reason "<why>"` | Add a tracked task — every answer is a flag the caller may pass, and the command asks only for what is missing (including a skills step with the explicit `null — none applies` choice) before calling `scripts/manifest/audit-task.py`, which allocates the id under the index lock, initializes every orchestrator field, updates the `fileIndex`, revalidates from disk (rolling back on findings) and journals a `task.add` row. The task is then executable via `/audit:run`. **`start`** performs phase entry — on a phase's first task it cuts the phase branch from its resolved parent (or records the one `/audit:worktree add` checked out) and records `baseRef`, and it refuses a start from anywhere else — then promotes the task to `in_progress` — `status`, `startedAt`, `attempts += 1`, exactly the fields `reference/execute-task.md` → *Execute the task*, step 2 prescribes as an `Edit` — **without spawning anything**, through the same lock, revalidation and rollback, with a `task.start` journal row. It exists because `add` writes `pending` and the plan gate resolves an allowed path only through `in_progress` tasks (`hooks/_config.in_progress_task_map`, whose `fileIndex` arm only re-adds paths for ids already in that filtered set), so a task added to a phase that is already running has its OWN declared files refused on its first `Edit` and `/audit:run` — which promotes *and* spawns — was the only verb that could clear it. It is deliberately **not** idempotent: `attempts` counts spawns, so a call on a task that is already `in_progress` is the retry step 4 prescribes and is reported as `RE-STARTED`. A `done` or `cancelled` task is refused by name, as is a start that would take `attempts` past `maxAttempts` — the `blocked` transition that follows owes an ADO echo and a human, so it stays the orchestrator's. **`done`** is its twin at the other end: it closes a task against `--commit <sha>`, writing `status`, `completedAt`, `commit`, the two halves of `outcome` and `verifiedBy` in ONE write with a `task.done` journal row — the fields `reference/execute-task.md` → *Execute the task*, step 4 prescribed as two hand `Edit`s, which is how a task's completion once went into the phase shard **and** the manifest index, lost the index to a `git reset --hard`, and turned out never to have been in the shard at all. The SHA is required, because a done task carrying none is a state `/audit:doctor` already reports and `done` is terminal here; it must be an object id rather than `HEAD` or a branch, a SHA git can be asked about and does not have is refused, and one git could NOT be asked about (no git, or a shallow clone) is written and reported as unverified rather than accused. A task that was never started is refused too — `pending` with no attempt means the close would lay a terminal state over a hole. Closing the last open task does **not** close the phase: a phase reads `done` only once `/audit:phase signoff` has recorded the verdict and any branch has merged, so the close says sign-off is due and writes nothing on the phase. **`done --no-change --reason`** is the one close without a SHA — a task whose answer was that nothing needed to change — recording the reason and the HEAD it examined in `outcome.noChange`, which `/audit:doctor`'s no-SHA warning reads to leave it out; **`--intent not-asked --intent-basis TEXT`** records an intent question deliberately not put, and sign-off and `/audit:status` name the done tasks carrying no answer at all. **`reopen`** puts a done task back to pending with the reason recorded. **`add
+| `/audit:task` | `add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] \| scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] \| start <taskId> \| done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] [--override-verdict TEXT] \| reopen <taskId> --reason "<why>" \| move <taskId> --to <phaseId> \| block <taskId> --reason "<why>" \| note <taskId> --text TEXT \| couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id], or --test <path> --caught <runId> \| uncouple --test <path> \| mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId> \| unmute --test <path> \| cancel <id> --reason "<why>"` | Add a tracked task — every answer is a flag the caller may pass, and the command asks only for what is missing (including a skills step with the explicit `null — none applies` choice) before calling `scripts/manifest/audit-task.py`, which allocates the id under the index lock, initializes every orchestrator field, updates the `fileIndex`, revalidates from disk (rolling back on findings) and journals a `task.add` row. The task is then executable via `/audit:run`. **`start`** performs phase entry — on a phase's first task it cuts the phase branch from its resolved parent (or records the one `/audit:worktree add` checked out) and records `baseRef`, and it refuses a start from anywhere else — then promotes the task to `in_progress` — `status`, `startedAt`, `attempts += 1`, exactly the fields `reference/execute-task.md` → *Execute the task*, step 2 prescribes as an `Edit` — **without spawning anything**, through the same lock, revalidation and rollback, with a `task.start` journal row. It exists because `add` writes `pending` and the plan gate resolves an allowed path only through `in_progress` tasks (`hooks/_config.in_progress_task_map`, whose `fileIndex` arm only re-adds paths for ids already in that filtered set), so a task added to a phase that is already running has its OWN declared files refused on its first `Edit` and `/audit:run` — which promotes *and* spawns — was the only verb that could clear it. It is deliberately **not** idempotent: `attempts` counts spawns, so a call on a task that is already `in_progress` is the retry step 4 prescribes and is reported as `RE-STARTED`. A `done` or `cancelled` task is refused by name, as is a start that would take `attempts` past `maxAttempts` — the `blocked` transition that follows owes an ADO echo and a human, so it stays the orchestrator's. **`done`** is its twin at the other end: it closes a task against `--commit <sha>`, writing `status`, `completedAt`, `commit`, the two halves of `outcome` and `verifiedBy` in ONE write with a `task.done` journal row — the fields `reference/execute-task.md` → *Execute the task*, step 4 prescribed as two hand `Edit`s, which is how a task's completion once went into the phase shard **and** the manifest index, lost the index to a `git reset --hard`, and turned out never to have been in the shard at all. The SHA is required, because a done task carrying none is a state `/audit:doctor` already reports and `done` is terminal here; it must be an object id rather than `HEAD` or a branch, a SHA git can be asked about and does not have is refused, and one git could NOT be asked about (no git, or a shallow clone) is written and reported as unverified rather than accused. A task that was never started is refused too — `pending` with no attempt means the close would lay a terminal state over a hole. Closing the last open task does **not** close the phase: a phase reads `done` only once `/audit:phase signoff` has recorded the verdict and any branch has merged, so the close says sign-off is due and writes nothing on the phase. **`done --no-change --reason`** is the one close without a SHA — a task whose answer was that nothing needed to change — recording the reason and the HEAD it examined in `outcome.noChange`, which `/audit:doctor`'s no-SHA warning reads to leave it out; **`--intent not-asked --intent-basis TEXT`** records an intent question deliberately not put, and sign-off and `/audit:status` name the done tasks carrying no answer at all. **`reopen`** puts a done task back to pending with the reason recorded. **`add
 --failing-from <runId>`** gates a FIX task opened after a red sign-off run on that run's
 OWN failing suites: the runId is looked up in the evidence ledger (never parsed), the row
 must exist, be scoped to this phase and carry `status: failed`, else exit 2 naming which;
@@ -513,15 +478,14 @@ the report, and `scripts/manifest/validate-manifest.py` runs the referential val
 
 ## Install
 
-```
-/plugin marketplace add AleksandarBisevac/claude-plugins   # or a local path during dev
-/plugin install audit@quality-gates
-```
-
-Commands appear as `/audit:status`, `/audit:doctor`, `/audit:next`, `/audit:run`, `/audit:phase`, `/audit:review`,
-`/audit:resume`, `/audit:report`, `/audit:panel`, `/audit:init`, `/audit:propose`, `/audit:task`, `/audit:bug`, `/audit:sync` — every
-action is its own `/audit:<verb>` (there is no bare `/audit`). If they don't show up immediately,
-run `/reload-plugins` (or restart the session).
+[QUICKSTART.md](../../QUICKSTART.md) has the install step, in order, with the one
+case worth knowing before you type it (installing arms the guard hooks in **all**
+your projects, not just this one). Come back here for everything after that —
+commands appear as `/audit:status`, `/audit:doctor`, `/audit:next`, `/audit:run`,
+`/audit:phase`, `/audit:review`, `/audit:resume`, `/audit:report`, `/audit:panel`,
+`/audit:init`, `/audit:propose`, `/audit:task`, `/audit:bug`, `/audit:sync` — every
+action is its own `/audit:<verb>` (there is no bare `/audit`). If they don't show up
+immediately, run `/reload-plugins` (or restart the session).
 
 ## Making it travel with the repo
 
@@ -585,9 +549,10 @@ but it surprises teams who expect a prompt first.
 ## Installing arms global hooks
 
 The guard hooks activate in **every** project and session. That is the point — a guard you
-have to remember to switch on is not a guard. But the plan gate is **enforced, once you
-have a plan; observing before that**, so installing it does not start denying edits in
-repos that never opted in.
+have to remember to switch on is not a guard. But the plan gate observes with no plan,
+warns with a plan and nothing running, and denies while a phase runs (`/audit:doctor`
+prints the active tier), so installing it does not start denying edits in repos that
+never opted in.
 
 **The plan gate grades itself on what it actually knows:**
 
@@ -653,66 +618,10 @@ Scope or turn it off:
 
 ## Quick start
 
-### First, the part that costs nothing
-
-```
-/audit:usage --backfill
-```
-
-No manifest, no agents, no tokens spent. It scans the Claude Code transcripts already
-sitting in `~/.claude/projects/` and prints what this repo has cost you — totals, cache
-economics, and a breakdown by model, author and **agent** (orchestrator vs. subagents),
-with a daily trend. Nothing is generated and nothing is called; the data was already on
-your disk, unread.
-
-Every row will say **Uncategorized**, and that is the useful part. Native tooling can
-tell you what a *session* or a *model* cost. Tying spend to a **phase and a task** needs
-a plan to tie it to — which is what everything below builds, and the comparison a
-date-range dashboard structurally cannot make.
-
-Then check the setup is sound before committing to a run:
-
-```
-/audit:doctor          # interpreter the hooks will use, git root, config, manifest, gates
-```
-
-### Then the manifest
-
-Generate it (recommended):
-
-```
-/audit:init            # interviews you, audits the codebase in parallel, proposes phases
-                       # — approve to write them, or park them for /audit:propose later
-```
-
-…or copy the starter and fill it in by hand (from your repo root, any terminal):
-
-```bash
-mkdir -p docs/audit .claude
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v3.1.0/plugins/audit/templates/audit-plan.starter.json -o docs/audit/audit-plan.json
-curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v3.1.0/plugins/audit/templates/audit.config.example.json -o .claude/audit.config.json   # optional
-```
-
-> The starter's `meta.buildCommands` are **npm examples** — replace them with your repo's
-> real lint/test/typecheck commands. Inside a Claude Code session the installed plugin's
-> files are also reachable at `${CLAUDE_PLUGIN_ROOT}` (that's how the commands invoke the
-> validator); `claude plugin list` shows what's installed. Not a Node project? The
-> [worked example](../../examples/) carries a second phase in a different ecosystem
-> (`workertest: "go test ./..."` beside the storefront's `test: "npm test"`) so the shape
-> of a `meta.buildCommands` entry and a `tests.gate` reference is not tied to npm's
-> spelling of either.
-
-Run it:
-
-```
-/audit:status          # report (phases, tasks, bugs, resumable phases), no changes
-/audit:next            # execute the next ready task
-/audit:phase P0        # run a whole phase, then sign it off
-/audit:review P0       # re-run a phase's sign-off
-/audit:resume          # continue an interrupted phase run
-/audit:report          # write audit-report.html + .md next to the manifest
-/audit:task add "..."  # add a tracked task (--phase <id> to target a phase)
-```
+[QUICKSTART.md](../../QUICKSTART.md) is the one page: the read-only `/audit:doctor`
+check, the `/audit:usage --backfill` look at past spend, generating the manifest with `/audit:init`, running
+one task and reading the report. Copying the starter manifest by hand instead of running
+`/audit:init` is covered in [the manifest in one minute](#the-manifest-in-one-minute).
 
 ## Bugs
 
@@ -994,10 +903,14 @@ The most common question testers ask is "what did that cost?" — so the plugin 
 
 **You can answer it before installing anything else.** `--backfill` reads the Claude Code
 transcripts already in `~/.claude/projects/`, so it works in a repo with no manifest, no
-config and no prior runs — nothing is generated and no agent is called:
+config and no prior runs. It runs no agent and no analysis — a script reads the files and
+prints a table, so it costs one ordinary turn — and the only thing it leaves in the working
+tree is a self-ignoring ledger under `.claude/usage/` (`ensure_ledger_dir` in
+`scripts/usage/usage_ledger.py` drops a `.gitignore` marker inside on creation, so `git
+status` stays clean):
 
 ```bash
-/audit:usage --backfill               # free: past spend, from transcripts already on disk
+/audit:usage --backfill               # no agent: past spend, from transcripts already on disk
 ```
 
 Expect every row to read **Uncategorized**. Native tooling can price a *session* or a
@@ -2060,6 +1973,24 @@ or from a checkout of this repo (exit 0 = valid, 1 = findings, 2 = unreadable):
 ```bash
 python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json
 ```
+
+**No Claude session at all**, and you'd rather fill the manifest in by hand than run
+`/audit:init`: copy the starter (from your repo root, any terminal):
+
+```bash
+mkdir -p docs/audit .claude
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v3.1.0/plugins/audit/templates/audit-plan.starter.json -o docs/audit/audit-plan.json
+curl -fsSL https://raw.githubusercontent.com/AleksandarBisevac/claude-plugins/v3.1.0/plugins/audit/templates/audit.config.example.json -o .claude/audit.config.json   # optional
+```
+
+> The starter's `meta.buildCommands` are **npm examples** — replace them with your repo's
+> real lint/test/typecheck commands. Inside a Claude Code session the installed plugin's
+> files are also reachable at `${CLAUDE_PLUGIN_ROOT}` (that's how the commands invoke the
+> validator); `claude plugin list` shows what's installed. Not a Node project? The
+> [worked example](../../examples/) carries a second phase in a different ecosystem
+> (`workertest: "go test ./..."` beside the storefront's `test: "npm test"`) so the shape
+> of a `meta.buildCommands` entry and a `tests.gate` reference is not tied to npm's
+> spelling of either.
 
 **With no checkout and no plugin**, validate the *shape* against the published JSON Schema:
 

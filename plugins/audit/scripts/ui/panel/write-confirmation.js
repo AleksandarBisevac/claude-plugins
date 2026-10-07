@@ -270,11 +270,15 @@ function compChanges(patch){
    if(!cfSame(t[k],tv[k]))rows.push(cfRow(tid,k,t[k],tv[k]));});});
  return rows;}
 /**
- * Dotted leaf paths of a config object.
+ * Leaf paths of a config object, each as its list of key SEGMENTS.
  *
  * A non-empty plain object is a branch; a list, an empty object and every scalar
- * are leaves. One row per PATH rather than per block, because "usage.bands.highUSD
+ * are leaves. One entry per PATH rather than per block, because "usage.bands.highUSD
  * changed" is a sentence somebody can check and "usage changed" is not.
+ *
+ * Segments rather than a dotted string because a key may itself hold a dot — a
+ * model id such as `claude-3.5` under `usage.pricing` — and a joined path cannot
+ * say where that key ends.
  *
  * This mirrors `_flat_paths` in `_panel_write.py`, which is what the server
  * flattens with — the two have to agree on what a leaf is, or the dialog and the
@@ -282,35 +286,129 @@ function compChanges(patch){
  *
  * @param {*} o - the object to flatten; anything that is not a plain object
  *   flattens to no leaves at all
- * @param {string} [pre] - path prefix for the recursion
- * @param {Object<string, *>} [out] - accumulator for the recursion
+ * @param {string[]} [pre] - the segments above `o`, for the recursion
+ * @returns {Array<[string[], *]>} each leaf's segments and value
+ */
+function cfLeaves(o,pre){
+ if(!o||typeof o!=='object'||Array.isArray(o))return [];
+ return Object.keys(o).reduce((out,k)=>{const p=(pre||[]).concat([k]),v=o[k];
+  return out.concat(v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length
+    ?cfLeaves(v,p):[[p,v]]);},[]);}
+/**
+ * Dotted leaf paths of a config object, for the readers that label rows with them.
+ *
+ * @param {*} o - the object to flatten
  * @returns {Object<string, *>} leaf value by dotted path
  */
-// The keys are DOTTED CONFIG PATHS off a document a human edits, so the
-// accumulator gets no prototype: a config key of `__proto__` would otherwise be
-// dropped on the way in and the diff would not mention it.
-function cfFlat(o,pre,out){out=out||Object.create(null);
- if(o&&typeof o==='object'&&!Array.isArray(o))for(const k of Object.keys(o)){
-  const p=pre?pre+'.'+k:k,v=o[k];
-  if(v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length)cfFlat(v,p,out);
-  else out[p]=v;}
- return out;}
+// The keys are DOTTED CONFIG PATHS off a document a human edits, so the result
+// gets no prototype: a config key of `__proto__` would otherwise be dropped on
+// the way in and the diff would not mention it.
+function cfFlat(o){const out=Object.create(null);
+ cfLeaves(o).forEach(([p,v])=>{out[p.join('.')]=v;});return out;}
 /**
- * What saving this config would change, path by path.
+ * One path's value in a document, and whether the path is there at all.
  *
- * @param {Object<string, *>} cfg - the config document the Guards form would write
- * @returns {Array<{target: 'config', field: string, from: *, to: *}>} one row per
- *   changed leaf, sorted by path; empty when nothing changed
+ * @param {*} o - the document
+ * @param {string[]} segs - the key segments
+ * @returns {{has: boolean, v: *}} `has` false when any step is missing or is not a
+ *   plain object, which a hand-written config can hold
  */
-function configChanges(cfg){
- const a=cfFlat(STATE.config||{}),b=cfFlat(cfg||{}),rows=[];
- [...new Set([...Object.keys(a),...Object.keys(b)])].sort().forEach(p=>{
-  const ina=(p in a),inb=(p in b);
+function cfAt(o,segs){let cur=o;
+ for(const k of segs){
+  if(!cur||typeof cur!=='object'||Array.isArray(cur)
+     ||!Object.prototype.hasOwnProperty.call(cur,k))return {has:false,v:undefined};
+  cur=cur[k];}
+ return {has:true,v:cur};}
+/**
+ * Every leaf the form changed, as an entry the patch and the dialog both read.
+ *
+ * Decided by PRESENCE, never by comparing against the shipped default: a key the
+ * draft no longer holds is a removal — the form's grammar for "use the default" —
+ * and a key it holds is written, even when the value equals today's default. A
+ * default may change in a later release and a key set explicitly is how a project
+ * keeps its value through that, so 'X' and 'default (X)' stay two answers.
+ *
+ * A list key set from absent where the shipped default is a NON-EMPTY list is
+ * marked `pin`: writing it copies that default into the file, so a later plugin
+ * default stops reaching the project, and the dialog has to say so. An empty
+ * shipped default copies nothing, so there is nothing to pin.
+ *
+ * An EMPTY object is a leaf on one side only while the other side has keys
+ * beneath it, and then it is not an entry of its own. Writing `{}` over an
+ * object, or removing an empty one before writing into it, would replace the
+ * whole branch on the server — taking every key another writer put in it since
+ * the form was drawn. The entries for the keys beneath already say what changed,
+ * and the server prunes a container its removals empty.
+ *
+ * So a branch the draft CLEARS is written as ABSENCE, never as `{}`: its leaves
+ * are removed and the container goes with them. For the policy block the two
+ * read the same, but not everywhere — `_deep_merge` in hooks/_config.py treats a
+ * literal `{}` at depth two (`usage.pricing: {}`) as replacing the shipped
+ * table, and absence as keeping it. A form that means the literal `{}` has to
+ * send that entry itself; this diff will not produce it.
+ *
+ * @param {*} before - the config the form was drawn from
+ * @param {*} after - the form's draft
+ * @param {*} defaults - the shipped defaults
+ * @returns {Array<{path: string[], from: *, to: *, remove: boolean, pin: boolean}>}
+ *   sorted by dotted path; `to` is undefined on a removal
+ */
+function cfDiff(before,after,defaults){
+ const a=new Map(cfLeaves(before).map(([p,v])=>[JSON.stringify(p),v]));
+ const b=new Map(cfLeaves(after).map(([p,v])=>[JSON.stringify(p),v]));
+ const out=[];
+ const emptyObj=v=>!!v&&typeof v==='object'&&!Array.isArray(v)&&!Object.keys(v).length;
+ const holdsUnder=(m,path)=>[...m.keys()].some(k=>{const p=JSON.parse(k);
+  return p.length>path.length&&path.every((seg,i)=>p[i]===seg);});
+ [...new Set([...a.keys(),...b.keys()])].forEach(k=>{
+  const path=JSON.parse(k),ina=a.has(k),inb=b.has(k),from=a.get(k),to=b.get(k);
   // Presence as well as value: deleting a key is how "use the default" is
   // written, and a key whose value was already null would otherwise vanish.
-  if(ina===inb&&cfSame(a[p],b[p]))return;
-  rows.push(cfRow('config',p,ina?a[p]:null,inb?b[p]:null));});
- return rows;}
+  if(ina===inb&&cfSame(from,to))return;
+  if(!inb&&emptyObj(from)&&holdsUnder(b,path))return;
+  if(!ina&&emptyObj(to)&&holdsUnder(a,path))return;
+  if(!inb){out.push({path,from,to:undefined,remove:true,pin:false});return;}
+  const def=cfAt(defaults,path);
+  out.push({path,from,to,remove:false,pin:!ina&&Array.isArray(to)&&def.has
+    &&Array.isArray(def.v)&&def.v.length>0});});
+ const dotted=e=>e.path.join('.');
+ return out.sort((x,y)=>dotted(x)<dotted(y)?-1:dotted(x)>dotted(y)?1:0);}
+/**
+ * What Settings sends on Save: one entry per changed key, never the whole file.
+ *
+ * The form's copy of the config has been through a browser's JSON, which keeps
+ * no float/int distinction, and it predates anything written since the page
+ * loaded — so sending it back rewrote keys nobody changed. The server applies
+ * these entries to the config it reads under its write lock.
+ *
+ * @param {*} before - the config the form was drawn from. Not `STATE.config`
+ *   read at Save time: the disk refresh replaces that while a form is dirty, and
+ *   a diff against it sends another writer's change back at the form's old value
+  * @param {*} after - the form's draft
+ * @param {*} defaults - the shipped defaults
+ * @returns {Array<{path: string[], value: *, pin: (boolean|undefined)}|{path: string[], remove: true}>}
+ *   empty when nothing changed
+ */
+function configPatch(before,after,defaults){
+ return cfDiff(before,after,defaults).map(e=>e.remove?{path:e.path,remove:true}
+   :Object.assign({path:e.path,value:e.to},e.pin?{pin:true}:{}));}
+/**
+ * What saving this config would change, path by path — the patch, read for a
+ * person.
+ *
+ * The base is an ARGUMENT and has no fallback, for the reason `configPatch`
+ * gives: the rows and the patch must be the same diff, and a default of
+ * `STATE.config` is exactly the diff that lists another writer's change as the
+ * reader's own.
+ *
+ * @param {Object<string, *>} cfg - the config document the form would write
+ * @param {Object<string, *>} base - the config the form diffs against
+ * @returns {Array<{target: 'config', field: string, from: *, to: *, pin: (boolean|undefined)}>}
+ *   one row per patch entry, sorted by path; empty when nothing changed
+ */
+function configChanges(cfg,base){
+ return cfDiff(base||{},cfg||{},STATE.defaults||{}).map(e=>
+   Object.assign(cfRow('config',e.path.join('.'),e.from,e.to),e.pin?{pin:true}:{}));}
 
 // --- handing the caret back -----------------------------------------------------
 // ONE rule, and two places that need it: anything which REPLACES the element
@@ -461,6 +559,11 @@ function focusKeep(within){
  *   because a caller has nothing different to do about the two
  */
 async function confirmSave(o){
+ // Refused BEFORE the dialog: a confirm the server cannot act on is a promise the
+ // page cannot keep. The write controls are already marked unavailable, but a
+ // view re-rendered since the last tick builds its Save afresh, so this is the
+ // check that holds every surface at once.
+ if(OFFLINE){toast(OFFLINE_SAY,'err');return null;}
  const rows=o.rows();
  if(!rows.length){toast('nothing to save — '+o.empty);return null;}
  if(!await confirmChanges({title:o.title,rows:rows,scope:o.scope,
@@ -806,7 +909,11 @@ function confirmChanges(o){
   o.rows.forEach(r=>tb.append(el('tr',{'data-cfrow':r.target+' '+r.field},
     el('td',{class:'tgt'},r.target),el('td',{class:'fld'},r.field),
     el('td',{},cfVal(r.from,'was',r.field),el('span',{class:'cfarr'},'→'),
-      cfVal(r.to,'now',r.field)))));
+      cfVal(r.to,'now',r.field),
+      // The list was drawn from the shipped default, so writing it copies that
+      // default into the file — and a later plugin default stops reaching here.
+      r.pin?el('div',{class:'mut small','data-cfpin':'1'},'pins the shipped '
+        +'default: later plugin defaults for this key stop applying'):null))));
   d.append(el('div',{class:'cflist'},el('table',{class:'cftbl'},
     tableHead(['what','field','change']),tb)));
   const lk=o.lock===false?null:cfLock(o.rows,o.scope);
@@ -866,7 +973,7 @@ function appliedDiff(rows,res){
  * get their own sentence, because "nothing was written" and "nothing needed
  * writing" are not the same news.
  *
- * @param {{ok: (boolean|undefined), locked: (boolean|undefined), unchanged: (boolean|undefined), applied: (Array<Object>|undefined), journaled: (boolean|undefined), journaledWhy: (string|undefined)}} res -
+ * @param {{ok: (boolean|undefined), locked: (boolean|undefined), noAnswer: (boolean|undefined), unchanged: (boolean|undefined), applied: (Array<Object>|undefined), journaled: (boolean|undefined), journaledWhy: (string|undefined)}} res -
  *   the write endpoint's answer
  * @param {Array<{target: string, field: string, from: *, to: *}>} rows - what the
  *   dialog showed, so the echo can be compared against it
@@ -889,7 +996,8 @@ function appliedDiff(rows,res){
  */
 function saveOutcome(res,rows,what,slot,hint){
  if(!res||!res.ok){
-  toast(res&&res.locked?(what+' is locked — nothing was written')
+  toast(res&&res.noAnswer?NO_ANSWER
+    :res&&res.locked?(what+' is locked — nothing was written')
     :('rejected — nothing was written'),'err');
   return;}
  if(res.unchanged){toast('nothing to save — no values changed');return;}
@@ -936,7 +1044,7 @@ function saveOutcome(res,rows,what,slot,hint){
  */
 async function boot(){STATE=await api('GET','/api/state');REG=await api('GET','/api/registry');
  USAGE=await api('GET','/api/usage').catch(()=>null);BANDS=null;MITEMS=null;
- POLICY=await api('GET','/api/policy').catch(()=>null);PDRAFT=pClone(POLICY&&POLICY.stored);
+ POLICY=await api('GET','/api/policy').catch(()=>null);pTake(POLICY&&POLICY.stored);
  // The usage filters are restored BEFORE the first Usage render: the hash first
  // (a share link is an instruction somebody sent), this repo's stored filters
  // second, defaults last.

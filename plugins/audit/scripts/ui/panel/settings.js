@@ -180,11 +180,15 @@ function settingsLink(text,path){
  * is 'custom' names its own renderer in the local CUSTOM map; every other kind
  * goes through one of the two generic builders below.
  *
- * One draft and one Save for all of it, because the cards are one FILE and
- * saving a quarter of a document is not something the config endpoint can do.
+ * One draft and one Save for all of it, because the cards are one FILE.
  * Every control edits a deep clone of the served config; Save diffs that clone
- * against what the server last sent, which is what lets the confirm dialog list
- * the change as rows and lets Discard say how much it is about to throw away.
+ * against a second clone taken at the same moment — the config this form was
+ * drawn from — and sends only that diff, as a patch the server applies to the
+ * file it reads under its write lock. Never against `STATE.config` at Save time:
+ * the disk refresh replaces it while the form is dirty (it defers the re-render,
+ * not the read), and that diff names another writer's change as this reader's. The same diff is
+ * what lets the confirm dialog list the change as rows and lets Discard say how
+ * much it is about to throw away.
  *
  * Calling this again is how the form is reset to disk — Discard does exactly
  * that. It replaces the whole view, so it is also what makes the caret hand-back
@@ -206,29 +210,41 @@ function renderSettings(){closeCombo();
  const keepBack=focusKeep('#guards');
  const c=$('#guards');c.textContent='';
  const cfg=JSON.parse(JSON.stringify(STATE.config||{})),d=STATE.defaults;
+ // Reassigned once, after a save the server accepted: from then on the file holds
+ // the draft's values for every key the patch named.
+ let base=JSON.parse(JSON.stringify(STATE.config||{}));
  const findings=el('div',{class:'findings-slot'});
- // What this form would change, against the config the server last served. Read by
- // Save (to list it), by Discard (to say what is being thrown away) and by
- // beforeunload (to decide whether it may interrupt at all).
- EDITS.guards=()=>configChanges(cfg);
- // One `cfg`, one Save: the four cards are one FILE, and saving a quarter of a
- // document is not a thing this API can do.
+ // What this form would change, against the config it was drawn from. Read by
+ // Save (to list it and to build the patch), by Discard (to say what is being
+ // thrown away) and by beforeunload (to decide whether it may interrupt at all).
+ const pendingRows=()=>configChanges(cfg,base);
+ EDITS.guards=pendingRows;
+ // One `cfg`, one Save: the four cards are one FILE, and one Save is one
+ // confirm dialog listing everything about to change in it.
  // `data-save` is the hand-back's hook, the pair of `data-discard`: focusSel names
  // an element by its id or by its data- attributes, and a savebar Save carried
  // NEITHER — so the caret that a confirm dialog gave back to it had no way home
  // across the re-render that followed. #policy and the theme card already had
  // data-psave and data-thsave; these three are the ones that did not.
  const save=el('button',{class:'btn primary','data-save':'guards',onclick:async()=>{
-   const rows=await confirmSave({rows:()=>configChanges(cfg),
+   const rows=await confirmSave({rows:pendingRows,
      title:'Save settings',scope:'guards',empty:'no settings changed',
-     note:'writes .claude/audit.config.json'});
+     note:'writes .claude/audit.config.json, rewritten in canonical JSON layout '
+       +'— its existing formatting is not kept'});
    if(!rows)return;
-   const res=await api('PUT','/api/config',cfg);
+   // Only what changed, applied by the server to the file as it reads it under
+   // its write lock: the draft predates anything written since this page loaded.
+   const res=await api('PUT','/api/config',
+     {patch:configPatch(base,cfg,STATE.defaults||{})});
    findings.replaceChildren(findingsBox(res));
    saveOutcome(res,rows,'the config',findings);
-   if(res.ok){STATE.config=JSON.parse(JSON.stringify(cfg));syncGuardsDirty();}}},
+   // The base moves only on the server's yes, and to the draft: every key the
+   // patch named now holds the draft's value. A key another writer changed is
+   // still stale in both until the refresh this save triggers redraws the form.
+   if(res.ok){base=JSON.parse(JSON.stringify(cfg));
+    STATE.config=JSON.parse(JSON.stringify(cfg));syncGuardsDirty();}}},
    'Save settings');
- const discard=discardButton({key:'guards',rows:()=>configChanges(cfg),
+ const discard=discardButton({key:'guards',rows:pendingRows,
    title:'Discard unsaved settings',
    note:'nothing is written; the form goes back to the saved file',
    toast:'discarded — the form is back to the saved file',
@@ -239,10 +255,10 @@ function renderSettings(){closeCombo();
  // Both the count and the per-field marks come from ONE read of the form, and
  // the save path needs the same read: `onViewEdit` fires on the Save CLICK, which
  // is before the PUT resolves, so the last thing it ever computes is the state
- // just before the write. Without a second call after `STATE.config` moves, the
+ // just before the write. Without a second call after the base moves, the
  // savebar keeps offering to discard a change that is already on disk.
  const syncGuardsDirty=()=>{
-   const rows=configChanges(cfg);
+   const rows=pendingRows();
    refreshDiscard(discard,rows.length);
    markPending('guards',rows,fieldId);};
  onViewEdit('guards',syncGuardsDirty);
@@ -370,7 +386,13 @@ function scalarField(cfg,d,f,tip){
   // <button> becomes the label's first labelable descendant and the box's
   // `labels` drops 1 -> 0. A field that is labelled only while it is empty is not
   // labelled. The visible words are carried, so SC 2.5.3 holds with it.
-  const ed=listEditor(()=>getPath(cfg,f.path)??def??[],a=>setPath(cfg,f.path,a),
+  // The editor DRAWS the default while the key is unset, so it hands back a copy
+  // of it on every edit. While the key is unset in the file and the list still
+  // equals that default, nothing has changed and the key stays absent; the first
+  // real change writes the list — which the confirm dialog marks as pinning.
+  const wasSet=cur!==undefined;
+  const ed=listEditor(()=>getPath(cfg,f.path)??def??[],
+    a=>{if(!wasSet&&cfSame(a,def??[]))delPath(cfg,f.path);else setPath(cfg,f.path,a);},
     f.placeholder||'add…',null,f.label+': add');
   ed.id=fieldId(f.path);ed.tabIndex=-1;
   // No forId: the id is on the editor, which is a <div> and not labelable, so a
@@ -400,9 +422,9 @@ function scalarField(cfg,d,f,tip){
  * boolean `enforce`, where true meant the strictest tier. This control reads
  * planGate first and falls back to presetting 'deny' from that flag, and any
  * change writes planGate while deleting enforce — so a file that stated the tier
- * twice leaves this form stating it once. The write sends the whole object and
- * the server echoes both halves of that at save time, which is what keeps the
- * removal visible instead of incidental.
+ * twice leaves this form stating it once. The save's patch carries both halves
+ * — the planGate write and the enforce removal — and the server echoes both,
+ * which is what keeps the removal visible instead of incidental.
  *
  * The caption is the honest part: while both keys are still in the file it says
  * where the shown value came from and what saving will do about it, because

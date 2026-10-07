@@ -450,7 +450,10 @@ def record_opened(project, config=None):
     try:
         path = _open_state_path(project, config)
         prior = read_open_state(project, config)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        # ensure_local_dir, not a plain makedirs: it also drops the self-ignoring
+        # `.gitignore` every other plugin-local directory gets, so a project where
+        # no hook has run yet does not leave this directory untracked.
+        _paths.hooks_config().ensure_local_dir(os.path.dirname(path))
         with open(path, "w", encoding="utf-8") as fh:
             json.dump({"count": prior["count"] + 1}, fh)
     except Exception:

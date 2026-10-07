@@ -1,8 +1,75 @@
 # Contributing
 
-**Read in this order.** The reference documents here are long, and a second
-contributor who opens the wrong one first spends an hour learning the architecture
-before learning how to run the tests.
+## Your first change
+
+One page, so a first PR does not start by reading four documents cover to cover.
+
+**Clone it, then try your working copy in a throwaway repo** (a Claude Code
+session):
+
+```bash
+git clone https://github.com/AleksandarBisevac/claude-plugins
+cd claude-plugins
+npm ci                               # vitest, playwright and the other JS gate tools
+npx playwright install chromium      # the browser the report and panel gates drive
+```
+
+```
+/plugin marketplace add /abs/path/to/claude-plugins
+/plugin install audit@quality-gates
+/reload-plugins        # after edits to the plugin
+```
+
+`guard-edits` has a dev-mode exception — self-edit protection is off when the
+plugin checkout IS the working repo, so you can develop the plugin under its
+own hooks.
+
+**What to read depends on what you're touching:**
+
+- **A doc fix** (this file, `README.md`, `QUICKSTART.md`, a comment, a
+  docstring) — just the document itself and `CLAUDE.md`'s hard rules on
+  claims and numbers in prose.
+- **A Python fix** under `plugins/audit/{hooks,scripts}` — the `writing-python`
+  skill, and whichever other row of `CLAUDE.md`'s skill table matches the job
+  (`no-silent-pass` for a guard or lint, `before-you-claim` for anything
+  touching a recorded fault).
+- **A UI fix** under `plugins/audit/scripts/ui/` or `_ui_theme.py` — the
+  `refactoring-the-assembled-ui` skill first, then `writing-css` or
+  `writing-javascript` for the surface you're editing.
+- **`PLUGIN-BUILD-GUIDE.md`** is the architecture reference, file by file —
+  open it only when you're adding a new `.py` file and need to know where it
+  belongs and what its checklist owes; it is not an onboarding read.
+
+**One command while you iterate:**
+
+```bash
+tools/verify.sh --fast
+```
+
+**One command before a PR:**
+
+```bash
+tools/verify.sh
+```
+
+This is what CI checks — the same gate set, described gate by gate in *Tests*
+below, plus the selftest suite run again on Windows to prove the interpreter
+fallback. `tools/verify.sh` itself, run plain, needs more than the stdlib the
+plugin ships with: Node (`npx vitest`, `npx ajv-cli`, the browser gates), `ruff`
+and `vermin` (pip-installed; CI's lint job pins their versions), and the Claude
+Code CLI (`claude plugin validate`; CI installs it with `npm install -g`). None
+of these ship with the plugin's own stdlib-only hooks and scripts — they're
+tooling the gate set reaches for, not a product dependency. Pillow is not
+needed by `tools/verify.sh` or CI at all; it's only for manually regenerating
+the demo GIF itself with `tools/capture-demo-gif.py` (no `--check`), a release
+step the one pre-PR command above does not run.
+
+Writing a change a *user* will see? [COMPATIBILITY.md](COMPATIBILITY.md) is the
+contract over the manifest and the config file they own, and
+[QUICKSTART.md](QUICKSTART.md) is the one page a new user reads — a change that
+adds a step to first-run belongs there and nowhere else.
+
+## Reading order beyond this page
 
 1. **This file** — the rulebook. The gates you must run before a PR, the hard rules
    that are enforced by lints rather than by review, and the Decision record at the
@@ -14,30 +81,6 @@ before learning how to run the tests.
 4. **The skill for the language you are about to write** — the table is in
    `CLAUDE.md`. Each states the house dialect and the anti-patterns that have actually
    bitten here.
-
-Writing a change a *user* will see? [COMPATIBILITY.md](COMPATIBILITY.md) is the
-contract over the manifest and the config file they own, and
-[QUICKSTART.md](QUICKSTART.md) is the one page a new user reads — a change that adds
-a step to first-run belongs there and nowhere else.
-
-## Dev setup
-
-```bash
-git clone https://github.com/AleksandarBisevac/claude-plugins
-cd claude-plugins
-```
-
-Try your working copy in a throwaway repo (Claude Code session):
-
-```
-/plugin marketplace add /abs/path/to/claude-plugins
-/plugin install audit@quality-gates
-/reload-plugins        # after edits to the plugin
-```
-
-Note: `guard-edits` has a dev-mode exception — self-edit protection is off when
-the plugin checkout IS the working repo, so you can develop the plugin under
-its own hooks.
 
 ## Tests (run before every PR)
 
@@ -988,9 +1031,10 @@ that a probe which could only pass was not mistaken for evidence:
   fetch of `/ui/panel.js` answers 403 without the session token and 404 with it, and `/api/state`
   cannot double as a module because module scripts are strictly MIME-checked.
 - A **relative specifier inherits the path but never the `?t=` query**, so a token-guarded module
-  graph must either be open (host-check only — which is what `/` already is, and `/` already hands
-  the token to any loopback client) or chain the credential through `import.meta.url`. Both were
-  confirmed working.
+  graph must either be open (host-check only — now the only route that would leave unguarded,
+  since `/` is token-guarded the same way `/api/*` is) or chain the credential through
+  `import.meta.url`. Both were confirmed working at the time of this measurement, when `/` was
+  still host-check only.
 - The panel's script is still a **classic** `<script>`, not `type="module"` like the report's. It
   boots unchanged as a module — measured by rewriting only the response body through route
   interception, so no tracked file was touched and every `/api` call still went to the real
@@ -1033,13 +1077,14 @@ you.
 
 - `README.md` — the pitch. What is enforced versus what is merely followed, the demo,
   install, and one link per audience. No procedure.
-- `QUICKSTART.md` — a new user's first session: install, one audited task, one report.
-  Nothing else, ever.
+- `QUICKSTART.md` — a new user's first session: install, the read-only `/audit:doctor`
+  check, a first look at past spend, one audited task, one report. Nothing else, ever.
 - `COMPATIBILITY.md` — what a version number promises about the manifest and the
   config file the user owns, and where the promise stops.
 - `plugins/audit/README.md` — the deep product reference, for a reader who is already
   running it. It now says so in its first screen.
-- This file — the contributor's first stop, with the reading order at the top.
+- This file — the contributor's first stop, opening on *Your first change*, which
+  carries the reading order.
 - `PLUGIN-BUILD-GUIDE.md` — the architecture, reached from that reading order.
 
 **A lead section inside `README.md` was rejected, and not on effort.** A landing page's
@@ -1049,6 +1094,16 @@ appends a line and nothing says it should not, which is exactly how the list the
 past first success into a tour. A separate page can be held to *install, one task, one
 report* because that is its entire scope, and the failure mode is legible on the page
 itself rather than buried in a section of a longer one.
+
+**The first look at past spend was added to `QUICKSTART.md` later, and it amends the
+page's scope rather than breaking it.** `/audit:usage --backfill` runs no agent and no
+analysis, costs one ordinary turn, and leaves only a self-ignoring ledger in the working
+tree, and it answers the question a first-time user asks before they will spend anything
+on a plan: what has this repository already cost me? That answer needs no manifest, so
+it belongs before `/audit:init` rather than behind it, and it sits after `/audit:doctor`
+so the read-only check still runs before anything is written. The root `README.md`
+points at that step instead of carrying its own copy, because a first-run step in two
+places is the duplication this entry exists to remove.
 
 **A reading order alone was rejected for the user and adopted for the contributor**,
 because the two readers want different things from the wall. A reading order tells you
@@ -1156,3 +1211,40 @@ cost in the `-p` result JSON or the transcript's `cost-state` row, or
 Any of those would let per-task attribution ride on Claude Code's own figure, and
 the table could shrink to a fallback. Re-check on the next CLI version that changes
 the shape of `modelUsage` or `cost-state`.
+
+### Optional modules take fixes only (decided 2026-10-06): no new UI shape pins, no new prose lints
+
+The surface that must be maintained grows through discretionary work — a feature nobody
+asked for still has to keep passing every gate forever. The decision is (a), (b) and (c) below.
+
+**(a) Fixes only, until a user asks.** The panel, the usage views, the ADO connector, the
+demo and the theme editor take bug fixes but no new features by default. Exceptions named
+up front rather than discovered later: the cost-truth work in the usage views, the
+panel's state-truth fixes, and an ADO feature a real user requests. "A real user
+requests it" is the bar for every other optional module too — the cost-truth work, the
+state-truth fixes and the requested ADO feature are already past that bar, not a license
+to add more without it.
+
+**(b) No new UI shape pins.** `plugins/audit/tests/` already carries byte-level substring
+pins against the assembled report and panel (counted by `tools/count-ui-pins.py`); that
+count is the budget and it does not grow. When a UI part changes, the pin that used to
+guard it moves to a `vitest` unit test or a browser behaviour check instead of being
+joined by a new one — the shape-pin style stays frozen at today's inventory rather than
+being the default for new coverage.
+
+**(c) No new lints over prose or repository numbers.** `_output.prose_number_claims()` and
+`_deps.doc_prose_numbers()` stay as they are; a false claim in a README, a comment or a
+doc gets no new mechanical guard. The consequence, stated rather than hidden: such a claim
+is caught by review at release time, not by CI on every commit — the same tier the
+Decision record above already applies to `COMPATIBILITY.md`'s unlisted promises.
+
+**Revisit trigger for (a):** a user report that an optional module is blocking their work
+on it, observed in an issue or a support thread — never a count of how long a module has
+sat unchanged.
+
+**Revisit trigger for (b):** a UI defect that a behaviour check could not have caught but
+a new shape pin would have, found after the fact — not the pin count drifting from
+whatever it is today.
+
+**Revisit trigger for (c):** a false documentation claim that review missed and a user
+acted on, found after release — not the number of prose claims in the tree.

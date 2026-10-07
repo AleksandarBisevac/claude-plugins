@@ -308,12 +308,19 @@ function renderProposals() {
     // The absent basis, named. A tab that vanished when empty would be the same
     // defect as a row that vanishes: the reader cannot tell "none" from "not
     // shown".
-    // ...and "none parked" is not the same fact as "nowhere to park them". Both
-    // render an empty list, so without this the reader is told the plan holds no
-    // proposals when there is no plan at all - the one distinction this card's
-    // own comment exists to make, missed one level up.
+    // ...and "none parked" is not the same fact as "nowhere to park them", and
+    // neither is the same fact as "the plan exists and could not be read" -
+    // three absences this card's own comment exists to keep apart, missed one
+    // level up.
+    const ps = planState(STATE && STATE.manifestExists, STATE && STATE.rollup);
+    if (ps === 'unreadable') {
+      const mf = (STATE && STATE.manifestFindings) || [];
+      card.append(manifestFindingsBox(mf.length, mf),
+        el('p', { class: 'blurb' }, planUnreadableNote(STATE && STATE.manifestPath)));
+      return;
+    }
     card.append(el('p', { class: 'blurb', 'data-propnone': '1' },
-      (STATE && STATE.rollup)
+      ps === 'ready'
         ? 'No parked proposals. /audit:init parks a synthesized phase here when you '
           + 'decline it, so nothing is lost and nothing starts until you say so.'
         : 'No plan yet, so nothing can be parked. /audit:init proposes phases and '

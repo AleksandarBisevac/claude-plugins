@@ -3918,7 +3918,8 @@ def _cases(check):
               "rendered by every report surface and one quoted back to the next "
               "executor. `--intent-basis` and a note's `--text` are the same "
               "again, and so are a finding's `--issue` and `--resolution` and "
-              "a bug's `--repro`, `--expected` and `--actual`; "
+              "a bug's `--repro`, `--expected` and `--actual`, and the why of "
+              "a close over its verdict, `--override-verdict`; "
               "`move --to`, `--fix-task` and `--severity` are an id and a word, "
               "and a mute's `--owner`, `--until` and `--bug` a name, a day and "
               "an id, which is why they are not: %r"
@@ -3926,8 +3927,8 @@ def _cases(check):
               sorted(M.PROSE_FLAGS)
               == ["actual", "description", "descriptive", "expected",
                   "intent_basis", "issue", "no_evidence_reason", "outcome",
-                  "reason", "rename", "repro", "resolution", "review_outcome",
-                  "summary", "technical", "text"]
+                  "override_verdict", "reason", "rename", "repro", "resolution",
+                  "review_outcome", "summary", "technical", "text"]
               and "owner" not in M.PROSE_FLAGS
               and "until" not in M.PROSE_FLAGS
               and "bug" not in M.PROSE_FLAGS
@@ -5234,6 +5235,154 @@ def _cases(check):
               and "rolled back" not in txtbd2
               and open(mpbd2, "rb").read() == _pd_bd_before)
 
+        # ---- (rd) a close does not stand over a verdict that no longer holds ----
+        # THE PROBE SEQUENCE: a gate run recorded red for the task, then `done`.
+        # The commit verb refuses to commit over that verdict, and the close used
+        # to write `done` over it anyway, so the record said finished while its
+        # own newest measurement said failed. The rows are written by hand, as in
+        # `test__verdict_binding.py`, so each arm is reached by exactly the row
+        # that should reach it.
+        import _evidence_io as _rd_ev
+        import _journal_io as _rd_jio
+        import _tree_stamp as _rd_ts
+        # The trail's action name, spelled out: it is what a reader greps the
+        # journal for, so the suite pins the literal rather than the constant.
+        _RD_ACTION = "audit.verdict.close-overridden"
+
+        def rd_ledger(proj, statuses, files=("src/fresh.ts",)):
+            """P2.4's rows, oldest first and an hour apart, as `rd-0`, `rd-1`...
+            A `passed` row carries the declared work's digest as it stands, so
+            the allow case is BOUND rather than merely not refused."""
+            ev = _rd_ev.evidence_dir(proj)
+            os.makedirs(ev, exist_ok=True)
+            digest = _rd_ts.scope_digest(proj, list(files))[0]
+            with open(os.path.join(ev, "2026-09.rd.jsonl"), "w") as fh:
+                for i, status in enumerate(statuses):
+                    fh.write(json.dumps({
+                        "runId": "rd-%d" % i,
+                        "ts": "2026-09-01T0%d:00:00Z" % i, "scope": "task",
+                        "taskId": "P2.4", "phaseId": "P2", "status": status,
+                        "gateSource": "task", "steps": [{"name": "test"}],
+                        "testedState": {"scopeDigest": digest}}) + "\n")
+
+        def rd_rows(proj):
+            return [r for r in _rd_jio.read_all(proj)
+                    if r.get("action") == _RD_ACTION]
+
+        projrd1, mprd1 = mk("dn-over-red", pd_fixture())
+        rd_ledger(projrd1, ["passed", "failed"])
+        coderd1, txtrd1 = run(["done", "P2.4", "--project-dir", projrd1,
+                               "--commit", _PD_SHA])
+        check("rd1 RED-FIRST: done --commit over a task whose newest recorded "
+              "gate verdict is red refuses, names the row, and writes nothing: "
+              "exit %r, status %r, %r"
+              % (coderd1, (task_in(mprd1, "P2.4") or {}).get("status"),
+                 txtrd1[:300]),
+              coderd1 == 2 and "rd-1" in txtrd1 and "`failed`" in txtrd1
+              and "--override-verdict" in txtrd1
+              and (task_in(mprd1, "P2.4") or {}).get("status") == "in_progress")
+        coderd2, txtrd2 = run(["done", "P2.4", "--project-dir", projrd1,
+                               "--commit", _PD_SHA, "--override-verdict",
+                               "the red was a runner outage, re-run is green"])
+        _rd2 = rd_rows(projrd1)
+        check("rd2 RED-FIRST: an explicit --override-verdict closes it and "
+              "journals the exception - ONE row naming the task, the red run "
+              "and the reason: exit %r, rows %r, %r"
+              % (coderd2, _rd2, txtrd2[-300:]),
+              coderd2 == 0
+              and (task_in(mprd1, "P2.4") or {}).get("status") == "done"
+              and len(_rd2) == 1
+              and (_rd2[0].get("details") or {}).get("runId") == "rd-1"
+              and (_rd2[0].get("details") or {}).get("taskId") == "P2.4"
+              and (_rd2[0].get("details") or {}).get("reason")
+              == "the red was a runner outage, re-run is green")
+
+        projrd3, mprd3 = mk("dn-green-newest", pd_fixture())
+        rd_ledger(projrd3, ["failed", "passed"])
+        coderd3, txtrd3 = run(["done", "P2.4", "--project-dir", projrd3,
+                               "--commit", _PD_SHA])
+        check("rd3 ALLOW: a red retired by a later green closes with no flag, "
+              "says which run it is bound to, and journals no exception: exit "
+              "%r, %r" % (coderd3, txtrd3[-300:]),
+              coderd3 == 0 and "gate: bound to run rd-1" in txtrd3
+              and not rd_rows(projrd3))
+
+        _rd_free = pd_fixture()
+        _rd_free["phases"][1]["testGate"] = []
+        _rd_free["phases"][1]["tasks"][-1]["tests"]["gate"] = []
+        projrd4, mprd4 = mk("dn-no-gate", _rd_free)
+        coderd4, txtrd4 = run(["done", "P2.4", "--project-dir", projrd4,
+                               "--commit", _PD_SHA])
+        check("rd4 ALLOW: a task no gate measures closes and says so in the "
+              "no-gate arm's own sentence: exit %r, %r"
+              % (coderd4, txtrd4[-300:]),
+              coderd4 == 0 and "gate: P2.4 declares no gate" in txtrd4
+              and not rd_rows(projrd4))
+
+        projrd5, mprd5 = mk("dn-nochange-red", pd_fixture())
+        rd_ledger(projrd5, ["failed"])
+        coderd5, txtrd5 = run(["done", "P2.4", "--project-dir", projrd5,
+                               "--no-change", "--reason", "already correct"])
+        check("rd5 a NO-CHANGE close asks the same question: its claim is that "
+              "the code as it stands needed nothing, and the newest measurement "
+              "of that code is red: exit %r, %r" % (coderd5, txtrd5[:300]),
+              coderd5 == 2 and "rd-0" in txtrd5
+              and (task_in(mprd5, "P2.4") or {}).get("status") == "in_progress")
+
+        projrd6, mprd6 = mk("dn-over-red-unneeded", pd_fixture())
+        rd_ledger(projrd6, ["passed"])
+        coderd6, txtrd6 = run(["done", "P2.4", "--project-dir", projrd6,
+                               "--commit", _PD_SHA, "--override-verdict", "x"])
+        check("rd6 SECOND DIRECTION: --override-verdict with nothing to go over "
+              "closes, says the reason was not needed, and journals NO "
+              "exception - an override row with nothing overridden would "
+              "count a gate removal that never happened: exit %r, %r"
+              % (coderd6, txtrd6[-300:]),
+              coderd6 == 0 and "not needed" in txtrd6 and not rd_rows(projrd6))
+
+        # A GREEN OVER BYTES IT NEVER MEASURED: the declared file is written
+        # after the passed run recorded its digest, so the close would vouch for
+        # a measurement of other bytes.
+        projrd7, mprd7 = mk("dn-digest-moved", pd_fixture())
+        rd_ledger(projrd7, ["passed"])
+        os.makedirs(os.path.join(projrd7, "src"), exist_ok=True)
+        with open(os.path.join(projrd7, "src", "fresh.ts"), "w") as _fh:
+            _fh.write("changed after the gate\n")
+        coderd7, txtrd7 = run(["done", "P2.4", "--project-dir", projrd7,
+                               "--commit", _PD_SHA])
+        check("rd7 RED-FIRST: done over a green whose declared files changed "
+              "after the run refuses, names the run, and writes nothing: exit "
+              "%r, %r" % (coderd7, txtrd7[:300]),
+              coderd7 == 2 and "rd-0" in txtrd7
+              and "have changed since it was measured" in txtrd7
+              and (task_in(mprd7, "P2.4") or {}).get("status") == "in_progress")
+
+        projrd8, mprd8 = mk("dn-no-run", pd_fixture())
+        coderd8, txtrd8 = run(["done", "P2.4", "--project-dir", projrd8,
+                               "--commit", _PD_SHA])
+        check("rd8 SECOND DIRECTION: a gate with no run recorded at all closes "
+              "and says so - there is no measurement to vouch for: exit %r, %r"
+              % (coderd8, txtrd8[-300:]),
+              coderd8 == 0 and "no measurement to vouch for" in txtrd8
+              and not rd_rows(projrd8))
+
+        projrd9, mprd9 = mk("dn-journal-off", pd_fixture())
+        _panel_write._atomic_write_json(
+            os.path.join(projrd9, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json",
+             "journal": {"enabled": False}})
+        rd_ledger(projrd9, ["failed"])
+        with open(mprd9, "rb") as _fh:
+            _rd9_before = _fh.read()
+        coderd9, txtrd9 = run(["done", "P2.4", "--project-dir", projrd9,
+                               "--commit", _PD_SHA, "--override-verdict", "x"])
+        check("rd9 RED-FIRST: --override-verdict with journal.enabled false "
+              "refuses BEFORE writing and names journal.enabled - an override "
+              "recorded nowhere is a gate quietly removed: exit %r, %r"
+              % (coderd9, txtrd9[:300]),
+              coderd9 == 2 and "journal.enabled" in txtrd9
+              and open(mprd9, "rb").read() == _rd9_before)
+
         # ---- (ic) a close records the intent answer, or that it received none ---
         # THE FAILURE MODE THIS IS WRITTEN AGAINST: an answer that is yes by
         # default. A close with no `--intent` must not read as one that agreed,
@@ -6531,6 +6680,42 @@ def _cases(check):
                          "--project-dir", s3_proj])
         check("so15 --verdict skipped needs no gate evidence - it says no review "
               "passed anything: exit %r, %s" % (code, txt), code == 0)
+        # A REASON OUTLIVING ITS SIGN-OFF: an earlier review left one behind, and
+        # a later `passed` stands on a bound run with no reason of its own. The
+        # landing honours a recorded reason, so a stale one would excuse a green
+        # this sign-off did stand on.
+        s4_proj, s4_mp, _s4 = gs_fixture("so-stale-reason")
+        _s4m = _mio.load_manifest(s4_mp)
+        _s4m["phases"][0]["review"] = {"status": "failed",
+                                       "noEvidenceReason": "graded by hand"}
+        _panel_write._atomic_write_json(s4_mp, _s4m)
+        gs_gate(s4_proj, s4_mp, "P1")
+        code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", s4_proj])
+        _s4_ph = [p for p in _mio.load_manifest(s4_mp)["phases"]
+                  if p["id"] == "P1"][0]
+        check("so16 RED-FIRST: a sign-off that gives no --no-evidence-reason drops "
+              "the one an earlier review recorded - the reason belongs to the "
+              "sign-off that gave it: exit %r, review %r"
+              % (code, _s4_ph.get("review")),
+              code == 0 and (_s4_ph.get("review") or {}).get("status") == "passed"
+              and "noEvidenceReason" not in (_s4_ph.get("review") or {}))
+        s5_proj, s5_mp, _s5 = gs_fixture("so-stale-reason-group")
+        _s5m = _mio.load_manifest(s5_mp)
+        for _s5p in _s5m["phases"]:
+            _s5p["review"] = {"status": "failed",
+                              "noEvidenceReason": "graded by hand"}
+        _panel_write._atomic_write_json(s5_mp, _s5m)
+        run(["signoff", "P1,P2", "--branch", "combined", "--bind",
+             "--project-dir", s5_proj])
+        gs_gate(s5_proj, s5_mp, "P1", "P2")
+        code, txt = run(["signoff", "P1,P2", "--branch", "combined", "--verdict",
+                         "passed", "--summary", "s", "--project-dir", s5_proj])
+        _s5_reviews = [p.get("review") or {}
+                       for p in _mio.load_manifest(s5_mp)["phases"]]
+        check("so17 RED-FIRST: ...and so does a GROUP sign-off, on every member: "
+              "exit %r, reviews %r, %s" % (code, _s5_reviews, txt[-200:]),
+              code == 0 and all("noEvidenceReason" not in r for r in _s5_reviews))
 
         # ---- (ve) ONE verdict-binding rule: sign-off grades as a task commit does
         def ve_rows(proj):
