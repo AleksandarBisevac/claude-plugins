@@ -18,16 +18,10 @@
   "baseRef": "6d0ef731b5ac60e6bef3c015cf9967583e3625f8",
   "branch": "audit/p107-state-writes-never-lose-each-o",
   "mergedAt": null,
-  "claim": {
-    "sessionId": "6c881c24-c1fd-461f-8c48-abb0170e0a5a",
-    "host": "MacBook-Pro-2",
-    "branch": "audit/p107-state-writes-never-lose-each-o",
-    "at": "2026-10-06T14:44:46Z"
-  },
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P107-R1",
@@ -102,9 +96,43 @@
         "commit": "359a0870"
       }
     ],
-    "outcome": "[findings: 8 - 0 high, 0 med, 8 low; 8 with a recorded fix commit]"
+    "outcome": "[findings: 8 - 0 high, 0 med, 8 low; 8 with a recorded fix commit]",
+    "acceptedCommits": [
+      {
+        "commit": "35c0652331bcfe697d35cdd677963e43f5401bfc",
+        "reason": "orchestrator bookkeeping: each non-merge commit touches only docs/audit/ (state commits taken before merging main or after resolving findings, and index commits), and each merge brings main's already-landed phases into this branch; none carries implementation"
+      },
+      {
+        "commit": "17e046e46c2b1eeb599b9fab807d2cb878db1522",
+        "reason": "orchestrator bookkeeping: each non-merge commit touches only docs/audit/ (state commits taken before merging main or after resolving findings, and index commits), and each merge brings main's already-landed phases into this branch; none carries implementation"
+      },
+      {
+        "commit": "c43eb96d9a9b0b4c56b18ffe1e01bc27d209ba5d",
+        "reason": "orchestrator bookkeeping: each non-merge commit touches only docs/audit/ (state commits taken before merging main or after resolving findings, and index commits), and each merge brings main's already-landed phases into this branch; none carries implementation"
+      },
+      {
+        "commit": "1ea75c74c02ef9c977018b9a918bc300037b1cbe",
+        "reason": "orchestrator bookkeeping: each non-merge commit touches only docs/audit/ (state commits taken before merging main or after resolving findings, and index commits), and each merge brings main's already-landed phases into this branch; none carries implementation"
+      },
+      {
+        "commit": "dd342c9322cc35a57ac874a74e07209aa346da47",
+        "reason": "orchestrator bookkeeping: each non-merge commit touches only docs/audit/ (state commits taken before merging main or after resolving findings, and index commits), and each merge brings main's already-landed phases into this branch; none carries implementation"
+      },
+      {
+        "commit": "475ddf61ed19f795302dc03699c7326b77bb3219",
+        "reason": "orchestrator bookkeeping: each non-merge commit touches only docs/audit/ (state commits taken before merging main or after resolving findings, and index commits), and each merge brings main's already-landed phases into this branch; none carries implementation"
+      },
+      {
+        "commit": "1d9d09af345a6ac4cbfc6ab0d5f4d5f4cd4ceca6",
+        "reason": "orchestrator bookkeeping: each non-merge commit touches only docs/audit/ (state commits taken before merging main or after resolving findings, and index commits), and each merge brings main's already-landed phases into this branch; none carries implementation"
+      },
+      {
+        "commit": "afb134b5e4e8812cf9f6c80742639fd77fae5e8b",
+        "reason": "orchestrator bookkeeping: each non-merge commit touches only docs/audit/ (state commits taken before merging main or after resolving findings, and index commits), and each merge brings main's already-landed phases into this branch; none carries implementation"
+      }
+    ]
   },
-  "summary": null,
+  "summary": "Two plugin writers running at once no longer silently drop each other's write. close-phase stamps mergedAt, mergedHead and the index stub under the index lock with an atomic restore, says when another session took the lock during its write, and reports a rollback that failed as the refused write still standing (exit failure). A stale journal lock is broken by exactly one waiter through an O_EXCL breaker with put-back, and two journal merges reaching one file through a link and its target never share a temp. Usage backfill keeps rows the metering hook appends during its window, including into a month file created during the rebuild, and never double-counts a session spanning a failed and a rewritten month. The import-layer lint refuses an os.replace or os.rename outside the sanctioned STATE_WRITERS, including after `import os.path` and `from os import *`. Phase review: 8 low findings (P107-R1..R8), all fixed by P107.5-gwk, P107.6-gwk and P107.7-gwk and resolved with their commits; the recorded phase gate (selftests, validate, plugin-validate, gate, report, lint, shots, interactive) is green and verify-invariants found no breach.",
   "tasks": [
     {
       "id": "P107.1",
@@ -537,5 +565,10 @@
       }
     }
   ],
-  "startedAt": "2026-10-06T14:44:46Z"
+  "startedAt": "2026-10-06T14:44:46Z",
+  "testEvidence": {
+    "runId": "2026-10-07T00:39:44Z.802b90",
+    "status": "passed",
+    "at": "2026-10-07T00:39:44Z"
+  }
 }
