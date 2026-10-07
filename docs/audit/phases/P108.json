@@ -298,31 +298,39 @@
         "severity": "med",
         "file": "plugins/audit/hooks/guard-secrets-read.py _copy_destinations",
         "issue": "A whole copy or move onto a new directory spelled with a trailing slash is read as landing inside a subdirectory named after the source, while it lands as the destination itself, so cp -r src/ lib/ and mv src/ lib/ are refused against a plan that declares the files they write, where the slashless twins are allowed and both were allowed before this phase.",
-        "resolution": "When the copy is whole and the slash-ended destination does not exist and no earlier clause made it, read it the way the slashless operand is read; allow twins per spelling and a block twin with the directory present; record the platform split for a slash-ended source onto an existing directory as a residual."
+        "resolution": "fixed in P108.20-4gh (104f9847): When the copy is whole and the slash-ended destination does not exist and no earlier clause made it, read it the way the slashless operand is read; allow twins per spelling and a block twin with the directory present; record the platform split for a slash-ended source onto an existing directory as a residual.",
+        "fixTask": "P108.20-4gh",
+        "commit": "104f9847"
       },
       {
         "id": "P108-R32",
         "severity": "low",
         "file": "plugins/audit/hooks/_config.py tree memo; guard-secrets-read.py copy expansion",
         "issue": "A whole copy onto existing directories inside a linked worktree still asks git once per directory, so a wide tree can exceed the hook's timeout, and a killed hook lets the write through.",
-        "resolution": "Answer a directory's descendants by containment under the toplevel already known, or bound the expansion by directory count and report the rest as not established."
+        "resolution": "fixed in P108.20-4gh (104f9847): Answer a directory's descendants by containment under the toplevel already known, or bound the expansion by directory count and report the rest as not established.",
+        "fixTask": "P108.20-4gh",
+        "commit": "104f9847"
       },
       {
         "id": "P108-R33",
         "severity": "low",
         "file": "SECURITY.md copy and residual sentences",
         "issue": "Two sentences still say a whole-directory copy is read as every file inside it, though an out-of-project destination is one destination now; a residual paragraph counts its residuals while a third follows; the lone-slug over- and under-match shapes are not named.",
-        "resolution": "Add the out-of-project clause and the symlinked-subdirectory edge, drop the count, and name the lone-slug residual shapes."
+        "resolution": "fixed in P108.20-4gh (104f9847): Add the out-of-project clause and the symlinked-subdirectory edge, drop the count, and name the lone-slug residual shapes.",
+        "fixTask": "P108.20-4gh",
+        "commit": "104f9847"
       },
       {
         "id": "P108-R34",
         "severity": "low",
         "file": "plugins/audit/tests/test_guard_secrets_read.py t11",
         "issue": "The case fails when its fixture root sits under a path holding a harness slug, because redaction cuts the recorded file.",
-        "resolution": "Build the fixture under a root with no slug shape, or assert relative to the fixture root."
+        "resolution": "fixed in P108.20-4gh (104f9847): Build the fixture under a root with no slug shape, or assert relative to the fixture root.",
+        "fixTask": "P108.20-4gh",
+        "commit": "104f9847"
       }
     ],
-    "outcome": "[findings: 34 - 2 high, 16 med, 16 low; 30 with a recorded fix commit]"
+    "outcome": "[findings: 34 - 2 high, 16 med, 16 low; 34 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1613,7 +1621,7 @@
     {
       "id": "P108.20-4gh",
       "title": "a trailing slash never changes a copy's verdict, and a wide copy stays within the hook budget",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P108-R31 to P108-R34. A trailing slash never changes a copy's verdict, and a wide copy stays within the hook's time budget.\n\n- A whole copy or move (mv, or cp -r/-R/-a) onto a slash-ended destination that does not exist, and that no earlier clause made, lands as the destination itself, so it is read the way the slashless operand is read. Record as a residual the platform split for a slash-ended source onto an existing directory (BSD copies the contents, GNU copies the directory).\n- Directories under a toplevel git has already answered are resolved by containment, with no further git call. If that is not enough, bound the expansion by directory count, and report what is past the bound as not established.\n- SECURITY.md:\n  - an out-of-project destination root is one destination;\n  - the symlinked-subdirectory edge;\n  - no count before the residual list;\n  - the lone-slug residual shapes are named: option or value text read as a slug, and a whitespace-led slug in a value position.\n- t11's fixture root carries no slug shape.\n\nCases:\n- cp -r src/ lib/ and mv src/ lib/ allowed against a plan declaring lib/app.ts, each with a block twin where lib exists;\n- a wide copy into a linked worktree whose git call count is bounded by toplevels;\n- t11 run under a slug-shaped temp root.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -1646,18 +1654,35 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "104f9847",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "guard-secrets-read.py: _lands_as_named(last, whole, is_dir) is used by _copy_destinations. A whole copy or move of one source onto a slash-ended name that is not a directory, either on disk or made by an earlier mkdir or ln -s clause, now lands as that name, so a trailing slash no longer changes the verdict. A plain file copy, or a call with no disk answer, keeps the slash-as-directory reading. _config.py: _inside_known_tree and _tree_of_dir answer a directory under a toplevel git has already named by containment of its resolved path, with no further git call. A directory holding a .git entry on the way (a nested clone, a submodule, a worktree inside the tree) and a symlinked subdirectory still ask git. A wide copy into a linked worktree therefore costs one git call per toplevel instead of one per directory. SECURITY.md says that an out-of-project destination root is one destination, and it states the trailing-slash rule, the containment placement and its nested-repository and symlinked-subdirectory edges, and the platform split for a slash-ended source onto an existing directory. It drops the residual count and names the open lone-slug shapes. t11's failure came from the feed cell bound cutting a long temp root, not from redaction; the cases now use a short root with no slug shape (t14). Red-first proved: sc1 and sc2 (test_guard_secrets_read), lw12, and tm3 and tm4 (test__config) failed at HEAD. Mutations on a scratch copy turned sc1a, sc3, sc4, tm4, lw13 and t14 red in the over-fire direction.",
+        "descriptive": "Copying a folder to a new folder is judged the same with or without a trailing slash, a wide copy no longer slows the guard toward its time limit, and the remaining platform and naming edge cases are written down."
       },
       "startedAt": "2026-10-07T09:04:45Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T10:01:17Z",
+      "verifiedBy": [
+        "sc1",
+        "sc1a",
+        "sc2",
+        "sc3",
+        "sc4",
+        "lw12",
+        "lw13",
+        "t14",
+        "tm3",
+        "tm4"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T09:27:43Z.94cac1",
         "status": "passed",
         "at": "2026-10-07T09:27:43Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "104f9847",
+        "at": "2026-10-07T10:01:17Z",
+        "basis": "orchestrator check: P108-R31..R34 fixed, slash regression reproduced red at HEAD, git calls counted per toplevel, residuals named, mutations proved both directions"
       }
     }
   ],
