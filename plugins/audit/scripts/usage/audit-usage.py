@@ -22,9 +22,12 @@ With `--by`, one focused table. Without it, the full dashboard.
 `--backfill` re-reads every transcript for this project from offset 0 and rebuilds
 the affected monthly files. It is the repair path for a lost cursor or a drifted
 ledger, and it is idempotent — running it twice leaves identical totals. It is also
-the ONLY path that rewrites (and therefore locks); the metering hook only appends.
+the ONLY path that rewrites, and the lock it takes excludes only another backfill:
+the metering hook appends with no lock, so each month's rewrite carries the rows
+appended to it during the rebuild (`usage_ledger.rewrite_month`).
 
-Exit codes: 0 ok - 2 usage error / unreadable ledger.
+Exit codes: 0 ok - 1 a backfill left a month file not rewritten cleanly -
+2 usage error / unreadable ledger.
 
 This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test_audit_usage.py`, byte-identical labels and all - see
@@ -728,8 +731,9 @@ def acquire_lock(project):
     """Take the backfill lock -> `({"held", "release", "why"}, None)` or
     `(None, refusal)`.
 
-    Backfill rewrites monthly ledger files, so it locks; the hook only appends
-    and never does.
+    Backfill rewrites monthly ledger files, so it locks against another
+    backfill; the hook only appends and never takes it, which is why the
+    rewrite carries the rows appended during it rather than relying on this.
 
     THE SHARED CLAIM, NOT A LOCAL ONE OF THE SAME SHAPE. This wrote its own file
     into the very directory the lock library owns, and it wrote it the way the
@@ -804,7 +808,7 @@ def backfill(args, project, ledger_dir, manifest, pricing):
         return 2, err
     refused = None
     try:
-        fresh, sessions, cursors = [], set(), {}
+        fresh, sessions, cursors, failed = [], set(), {}, []
         for path in transcripts:
             sid = os.path.splitext(os.path.basename(path))[0]
             rows, cursor = ul.scan_transcripts(
@@ -820,14 +824,34 @@ def backfill(args, project, ledger_dir, manifest, pricing):
         months = {ul.bucket_month(r.get("ts")) for r in fresh}
         months |= {ul.bucket_month(r.get("ts")) for r in existing
                    if r.get("sessionId") in sessions}
+        # Each month is re-read just before its rewrite, through a descriptor
+        # the rewrite keeps: the metering hook appends with no lock, and a row
+        # it appended after the read above would otherwise be erased by the
+        # replace. The read above only decides WHICH months to rebuild.
         for month in sorted(m for m in months if m and m != "unknown"):
-            keep = [r for r in existing
-                    if ul.bucket_month(r.get("ts")) == month
-                    and r.get("sessionId") not in sessions]
+            keep, tail = ul.open_month(ledger_dir, month, sessions)
             add = [r for r in fresh if ul.bucket_month(r.get("ts")) == month]
-            ul.rewrite_month(ledger_dir, month, keep + add)
+            if not ul.rewrite_month(ledger_dir, month, keep + add, tail=tail):
+                failed.append(month)
+        # A cursor claims its session's rows are in the ledger, and the next
+        # metering pass resumes from it. A session whose every month failed to
+        # rewrite keeps its old cursor, which matches the ledger when the
+        # replaces were refused. A session with rows in a month that WAS
+        # rewritten gets its new cursor: that month already holds all of the
+        # session's rows, and an old cursor would have the metering hook append
+        # them there a second time. The price is the failed months of such a
+        # session, which miss its rows past the old cursor until the next
+        # --backfill - the one the answer below exits non-zero asking for.
+        spans = {}
+        for r in fresh + existing:
+            if r.get("sessionId") in sessions:
+                spans.setdefault(r.get("sessionId"), set()).add(
+                    ul.bucket_month(r.get("ts")))
+        held_back = {sid for sid, spanned in spans.items()
+                     if spanned and spanned <= set(failed)}
         for sid, cursor in cursors.items():
-            ul.save_cursor(ledger_dir, sid, cursor)
+            if sid not in held_back:
+                ul.save_cursor(ledger_dir, sid, cursor)
     finally:
         refused = release_lock(project, lock)
 
@@ -837,6 +861,15 @@ def backfill(args, project, ledger_dir, manifest, pricing):
     # above reports, and a reader who is told the row counts without either of
     # them is reading a stronger sentence than the one that is true.
     notes = [n for n in (lock.get("why"), refused) if n]
+    if failed:
+        return 1, ("[FAIL] backfill: month file(s) %s were not rewritten cleanly "
+                   "- either left as they were or missing rows carried during "
+                   "the rewrite; cursors of the %d session(s) with rows only "
+                   "there were not saved; a session also in a rewritten month "
+                   "had its cursor saved, so its rows in these months wait for "
+                   "the next backfill. Run --backfill again.\n     ledger %s%s" % (
+                       ", ".join(failed), len(held_back), ledger_dir,
+                       "".join("\n     note: %s" % (n,) for n in notes)))
     return 0, ("[OK] backfill: %d transcript(s), %d session(s), %s rows, "
                "%s tokens\n     ledger %s%s" % (
                    len(transcripts), len(sessions), fmt_int(len(fresh)),

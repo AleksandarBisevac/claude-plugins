@@ -445,6 +445,14 @@ TABLE = (
   "def json_encoding_violations(script_dir=None, hooks_dir=None):",
   "def json_encoding_violations(script_dir=None, hooks_dir=None):\n    return []",
   DEP, "je2"),
+ # The one-way-to-replace rule, crippled. It is what keeps a state file from being
+ # replaced by code that shares its temp name with another writer, and a version
+ # reporting nothing reads exactly like a tree that replaces only at its writers.
+ ("state_write_violations", S + "_deps.py", "replace",
+  "def state_write_violations(script_dir=None, hooks_dir=None, table=None):",
+  "def state_write_violations(script_dir=None, hooks_dir=None, table=None):\n"
+  "    return []",
+  DEP, "sw3"),
  # The one-tree rule, crippled. It is what keeps a hook from reading the main
  # checkout's plan for work in a linked worktree, and a version reporting
  # nothing reads exactly like hooks that all ask `_config.tree_for`.
@@ -1346,6 +1354,14 @@ ALLOW = (
   "                if _called_name(node) not in JSON_WRITER_NAMES "
   "+ _JSON_DUMP_NAMES:",
   DEP, "je5"),
+ # The one-way-to-replace rule, widened from the os module's two functions to any
+ # method of those names. A string's `.replace` is the commonest call in the tree
+ # and replaces no file, so the widened rule convicts every string edit - `sw4`'s
+ # fixture holds a string's, a path's and an unbound str method's.
+ ("state_write_violations", S + "_deps.py", "replace",
+  "            and isinstance(func.value, ast.Name) and func.value.id in modules:",
+  "            and isinstance(func.value, (ast.Name, ast.Attribute)):",
+  DEP, "sw4"),
  # The one-tree rule, widened to every `repo_root`. The config and the
  # session's own state live with the project on purpose, so a hook resolving
  # the project for those alone is honest code this would convict.

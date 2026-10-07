@@ -4270,6 +4270,138 @@ def _cases(check):
                      _je_blind, _je_torn):
             shutil.rmtree(_dir, ignore_errors=True)
 
+    # --- one way to replace a state file -----------------------------------
+    # `sw*`. Every lost write between two plugin writers running at once was a
+    # state file replaced somewhere other than a writer built for it. The rule is
+    # a table of the sites allowed to call `os.replace`/`os.rename`, each with a
+    # reason, and these cases keep both the rule and the table honest.
+    _sw_reason = ("a reason long enough to say why this site replaces a file "
+                  "itself rather than through the plugin's sanctioned writer")
+    _sw_real = M.state_write_violations()
+    check("sw1 the real tree replaces a state file only at a sanctioned site, "
+          "and every row of the table still names a live site with a reason: "
+          "%r" % (_sw_real,),
+          _sw_real == [])
+    _sw_live = M.state_write_sites()
+    check("sw2 ...and that answer is about a scan that found the sites: the "
+          "writers this rule exists to keep sanctioned are among them, so the "
+          "empty list above is not a scan that read nothing: %r"
+          % (sorted(set((f, fn) for f, fn, _l, _c in _sw_live)),),
+          set([("scripts/manifest/_manifest_io.py", "atomic_write_text"),
+               ("hooks/_config.py", "atomic_write_text"),
+               ("scripts/panel/_panel_write.py", "restore"),
+               ("scripts/governance/_locks.py", "_write_lock")])
+          <= set((f, fn) for f, fn, _l, _c in _sw_live)
+          and len(M.STATE_WRITERS) == len(set((r[0], r[1])
+                                              for r in M.STATE_WRITERS)))
+
+    _sw_src = ("import os\n"
+               "from os import rename as _mv\n"
+               "import os as _os\n\n\n"
+               "def sanctioned(tmp, path):\n"
+               "    os.replace(tmp, path)\n\n\n"
+               "def save(tmp, path):\n"
+               "    text = 'a.tmp'.replace('.tmp', '')\n"
+               "    os.replace(tmp, path)\n"
+               "    return text\n\n\n"
+               "def move(a, b):\n"
+               "    os.rename(a, b)\n\n\n"
+               "def aliased(a, b):\n"
+               "    _os.replace(a, b)\n"
+               "    _mv(a, b)\n")
+    _sw_tree = _ck_tree((("writer.py", _sw_src),))
+    _sw_quiet = _ck_tree((
+        ("writer.py",
+         "import os\n\n\n"
+         "def sanctioned(tmp, path):\n"
+         "    os.replace(tmp, path)\n\n\n"
+         "def strings(path, text):\n"
+         "    path.replace('.tmp', '')\n"
+         "    text.rename('x')\n"
+         "    return str.replace(text, 'a', 'b')\n"),))
+    _sw_torn = _ck_tree((("torn.py", "def f(:\n"),))
+    _sw_ok_row = (("scripts/writer.py", "sanctioned", _sw_reason),)
+    # `import os.path` binds the name `os` exactly as `import os` does, and a
+    # star import from os binds `replace` and `rename` bare - two spellings a
+    # reader of the plain `import os` alone never sees.
+    _sw_dotted = _ck_tree((
+        ("dotted.py",
+         "import os.path\n\n\n"
+         "def save(tmp, path):\n"
+         "    os.replace(tmp, path)\n"),
+        ("starred.py",
+         "from os import *\n\n\n"
+         "def move(a, b):\n"
+         "    rename(a, b)\n"),
+        ("writer.py",
+         "import os\n\n\n"
+         "def sanctioned(tmp, path):\n"
+         "    os.replace(tmp, path)\n"),))
+    try:
+        _sw_hits = M.state_write_violations(_sw_tree, _je_nohooks(_sw_tree),
+                                            _sw_ok_row)
+        _sw_lines = sorted(h[1].split(":", 1)[0] for h in _sw_hits)
+        check("sw3 an os.replace or os.rename in a function the table does not "
+              "name is reported by FILE, FUNCTION and LINE - through `os.`, "
+              "through a module alias and through a name imported from os - "
+              "while the sanctioned function in the same file is not: %r"
+              % (_sw_hits,),
+              [h[0] for h in _sw_hits] == ["scripts/writer.py"] * 4
+              and sorted(int(x.split()[1]) for x in _sw_lines)
+              == [12, 17, 21, 22]
+              and sum("in save()" in h[1] for h in _sw_hits) == 1
+              and sum("in move()" in h[1] for h in _sw_hits) == 1
+              and sum("in aliased()" in h[1] for h in _sw_hits) == 2
+              and not any("sanctioned()" in h[1] for h in _sw_hits),
+              "lines %r" % (_sw_lines,))
+        _sw_q = M.state_write_violations(_sw_quiet, _je_nohooks(_sw_quiet),
+                                         _sw_ok_row)
+        check("sw4 ...and a `.replace`/`.rename` that is NOT the os module's - "
+              "a string's, a path's, an unbound str method - is not a file "
+              "replace and is not reported (the twin of sw3: a rule reading "
+              "the method name alone would convict every string edit): %r"
+              % (_sw_q,),
+              _sw_q == [])
+        _sw_bad = M.state_write_violations(
+            _sw_quiet, _je_nohooks(_sw_quiet),
+            (("scripts/writer.py", "sanctioned", ""),
+             ("scripts/writer.py", "gone", _sw_reason),
+             ("scripts/nowhere.py", "sanctioned", _sw_reason)))
+        _sw_texts = [h[1] for h in _sw_bad]
+        check("sw5 a sanctioned row with no reason is reported, and so is a row "
+              "naming a site that no longer exists - a function that stopped "
+              "replacing, or a file that is gone - so the table cannot carry "
+              "permission for code nobody wrote: %r" % (_sw_bad,),
+              len(_sw_bad) == 3
+              and sum("no reason" in t for t in _sw_texts) == 1
+              and sum("no longer exists" in t for t in _sw_texts) == 2
+              and sorted(h[0] for h in _sw_bad)
+              == ["scripts/nowhere.py", "scripts/writer.py", "scripts/writer.py"])
+        _sw_t = M.state_write_violations(_sw_torn, _je_nohooks(_sw_torn), ())
+        check("sw6 ...and a file that will not parse is NAMED rather than "
+              "dropped, because a file nothing could read is not a file with no "
+              "replace in it: %r" % (_sw_t,),
+              [k for k, _p in _sw_t] == ["scripts/torn.py"]
+              and "does not parse" in _sw_t[0][1])
+        _sw_d = M.state_write_violations(_sw_dotted, _je_nohooks(_sw_dotted),
+                                         _sw_ok_row)
+        _sw_dk = sorted((k, p.split(":", 1)[0]) for k, p in _sw_d)
+        check("sw7 an os.replace after `import os.path` is reported - that "
+              "statement binds the name `os` - and so is a bare `rename` after "
+              "a star import from os, each by file and line: %r" % (_sw_d,),
+              _sw_dk == [("scripts/dotted.py", "line 5"),
+                         ("scripts/starred.py", "line 5")]
+              and sum("in save()" in p for _k, p in _sw_d) == 1
+              and sum("in move()" in p for _k, p in _sw_d) == 1)
+        check("sw8 ...while the same call through a plain `import os` in the "
+              "sanctioned function of the same tree is not (the twin of sw7: "
+              "a binding read so widely that it convicts a sanctioned site "
+              "would fail here): %r" % (_sw_d,),
+              not any(k == "scripts/writer.py" for k, _p in _sw_d))
+    finally:
+        for _dir in (_sw_tree, _sw_quiet, _sw_torn, _sw_dotted):
+            shutil.rmtree(_dir, ignore_errors=True)
+
 
 def _selftest():
     return _harness.run(_cases)

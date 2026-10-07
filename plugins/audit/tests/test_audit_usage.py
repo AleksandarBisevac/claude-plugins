@@ -761,6 +761,468 @@ def _cases(check):
               "nothing was taken", M.release_lock(_nogit, got4) is None)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+    _harness.stage(check, "bw0 the backfill-window block", _backfill_window_cases)
+
+
+# --- backfill against concurrent appenders -------------------------------------
+# The metering hook appends to a month file with no lock while a backfill reads
+# that file and then replaces it. Every case below puts a write INSIDE that
+# window - deterministically through a seam, or by real concurrent processes -
+# because a backfill run on a quiet ledger is green whether or not the window
+# loses rows.
+_BW_MONTH = "2026-10"
+_BW_SID = "S-BF"
+_BW_ENTRIES = 40
+
+
+def _bw_entry(sid, mid, hour):
+    return {"type": "assistant", "sessionId": sid,
+            "timestamp": "%s-05T%02d:00:00Z" % (_BW_MONTH, hour),
+            "gitBranch": "main",
+            "message": {"id": mid, "model": "claude-sonnet-5",
+                        "usage": {"input_tokens": 1, "output_tokens": 1,
+                                  "cache_read_input_tokens": 0,
+                                  "cache_creation_input_tokens": 0}}}
+
+
+def _bw_probe(sid, probe):
+    return {"ts": "%s-05T12" % _BW_MONTH, "sessionId": sid,
+            "attr": "unattributed", "model": "claude-sonnet-5", "msgs": 1,
+            "in": 0, "out": 1, "cacheW5m": 0, "cacheW1h": 0, "cacheR": 0,
+            "probeId": probe}
+
+
+def _bw_fixture(root, old_rows):
+    """A project with no repository (so no lock scheme to set up), one backfill
+    transcript of `_BW_ENTRIES` one-token messages, and `old_rows` ledger rows
+    of sessions the backfill does not re-read."""
+    import types
+    project = os.path.join(root, "proj")
+    tdir = os.path.join(root, "transcripts")
+    ledger = os.path.join(project, ".claude", "usage")
+    os.makedirs(tdir)
+    os.makedirs(project)
+    with open(os.path.join(tdir, _BW_SID + ".jsonl"), "w", encoding="utf-8") as fh:
+        for i in range(_BW_ENTRIES):
+            fh.write(json.dumps(_bw_entry(_BW_SID, "%s-m%04d" % (_BW_SID, i),
+                                          10 + i % 8)) + "\n")
+    M.ul.append_rows(ledger, [dict(_bw_probe("S-OLD-%d" % (i % 7), "old-%d" % i))
+                              for i in range(old_rows)])
+    args = types.SimpleNamespace(transcript_dir=tdir, author_mode="none")
+    return project, ledger, args
+
+
+def _bw_probes(ledger):
+    return [r.get("probeId") for r in M.ul.read_ledger(ledger) if r.get("probeId")]
+
+
+def _bw_out(ledger, sid):
+    return sum(int(r.get("out") or 0) for r in M.ul.read_ledger(ledger)
+               if r.get("sessionId") == sid)
+
+
+def _bw_with_seam(owner, name, wrapper, fn):
+    """Run `fn()` with `owner.name` replaced by `wrapper(original)`, restored in
+    `finally` so a case that raises cannot leave the seam installed.
+
+    An attribute the module does not have is installed and then removed again,
+    so a case run against code without it fails on its assertion rather than
+    raising here and taking every later case with it."""
+    missing = not hasattr(owner, name)
+    original = getattr(owner, name, None)
+    setattr(owner, name, wrapper(original))
+    try:
+        return fn()
+    finally:
+        if missing:
+            delattr(owner, name)
+        else:
+            setattr(owner, name, original)
+
+
+def _bw_append_before_rewrite(ledger, sid, probe):
+    """A `rewrite_month` seam: another session appends a row once the backfill
+    has read the month and before its rewrite runs."""
+    fired = []
+
+    def wrapper(original):
+        def rewrite(ledger_dir, month, rows, *a, **kw):
+            if month == _BW_MONTH and not fired:
+                fired.append(M.ul.append_rows(ledger, [_bw_probe(sid, probe)]))
+            return original(ledger_dir, month, rows, *a, **kw)
+        return rewrite
+    return wrapper, fired
+
+
+def _bw_append_across_replace(ledger, sid, probe):
+    """An `os.replace` seam: a writer OPENS the month file before the replace
+    and writes its row after it - the shape of a metering hook descheduled
+    between its open and its write. Its row lands in the file the replace just
+    retired, which a re-read of the path can never see."""
+    fired = []
+    target = os.path.join(ledger, "%s.jsonl" % _BW_MONTH)
+
+    def wrapper(original):
+        def replace(src, dst, *a, **kw):
+            if os.path.abspath(dst) != os.path.abspath(target) or fired:
+                return original(src, dst, *a, **kw)
+            fh = open(dst, "a", encoding="utf-8")
+            try:
+                return original(src, dst, *a, **kw)
+            finally:
+                fh.write(json.dumps(_bw_probe(sid, probe),
+                                    separators=(",", ":"), sort_keys=True) + "\n")
+                fh.close()
+                fired.append(1)
+        return replace
+    return wrapper, fired
+
+
+_BW_APPENDER = r"""
+import json, os, sys, time
+sys.path.insert(0, sys.argv[1])
+import usage_ledger as ul
+ledger, k, stop, ready, out = sys.argv[2], int(sys.argv[3]), sys.argv[4], sys.argv[5], sys.argv[6]
+ids, i = [], 0
+while not os.path.exists(stop):
+    pid = "f%d-%06d" % (k, i)
+    row = {"ts": "2026-10-05T12", "sessionId": "S-FOREIGN-%d" % k,
+           "attr": "unattributed", "model": "claude-sonnet-5", "msgs": 1,
+           "in": 0, "out": 1, "cacheW5m": 0, "cacheW1h": 0, "cacheR": 0,
+           "probeId": pid}
+    if ul.append_rows(ledger, [row]) == 1:
+        ids.append(pid)
+        if len(ids) == 1:
+            open(ready, "w").close()
+    i += 1
+    time.sleep(0.001)
+with open(out, "w") as fh:
+    json.dump(ids, fh)
+"""
+
+
+def _bw_foreign_trial(root, appenders, old_rows):
+    """One trial of appender PROCESSES writing rows for sessions the backfill
+    does not re-read, for the whole of a backfill. -> (appended, lost, code)."""
+    import subprocess as _sp
+    project, ledger, args = _bw_fixture(root, old_rows)
+    usage_dir = os.path.dirname(os.path.abspath(M.ul.__file__))
+    stop = os.path.join(root, "stop")
+    procs, outs, readies = [], [], []
+    for k in range(appenders):
+        out = os.path.join(root, "app%d.json" % k)
+        ready = os.path.join(root, "ready%d" % k)
+        outs.append(out)
+        readies.append(ready)
+        procs.append(_sp.Popen([sys.executable, "-c", _BW_APPENDER, usage_dir,
+                                ledger, str(k), stop, ready, out]))
+    try:
+        deadline = time.time() + 30
+        while (not all(os.path.exists(r) for r in readies)
+               and time.time() < deadline and all(p.poll() is None for p in procs)):
+            time.sleep(0.01)
+        code, _msg = M.backfill(args, project, ledger, None, None)
+        time.sleep(0.2)
+    finally:
+        open(stop, "w").close()
+        for p in procs:
+            try:
+                p.wait(30)
+            except _sp.TimeoutExpired:
+                p.kill()
+    appended = []
+    for out in outs:
+        try:
+            with open(out, "r", encoding="utf-8") as fh:
+                appended += json.load(fh)
+        except (OSError, ValueError):
+            pass
+    present = set(_bw_probes(ledger))
+    return len(appended), len([x for x in appended if x not in present]), code
+
+
+def _backfill_window_cases(check):
+    import ast
+    import inspect
+    root = _harness.fixture_root("audit-usage-bw-")
+
+    # A row another session appends after the read and before the rewrite.
+    r1 = os.path.join(root, "bw1")
+    os.makedirs(r1)
+    project, ledger, args = _bw_fixture(r1, 20)
+    wrapper, fired = _bw_append_before_rewrite(ledger, "S-OTHER", "window-row")
+    code, _msg = _bw_with_seam(M.ul, "rewrite_month", wrapper,
+                               lambda: M.backfill(args, project, ledger, None, None))
+    check("bw1 a row another session appends between backfill's read and its "
+          "rewrite is in the ledger afterwards: fired=%r probes=%r"
+          % (fired, sorted(p for p in _bw_probes(ledger) if p == "window-row")),
+          code == 0 and fired == [1]
+          and _bw_probes(ledger).count("window-row") == 1)
+
+    # The same row, written through a descriptor opened before the replace.
+    r2 = os.path.join(root, "bw2")
+    os.makedirs(r2)
+    project, ledger, args = _bw_fixture(r2, 20)
+    wrapper, fired = _bw_append_across_replace(ledger, "S-OTHER", "late-row")
+    code, _msg = _bw_with_seam(os, "replace", wrapper,
+                               lambda: M.backfill(args, project, ledger, None, None))
+    check("bw2 a row written to the month file through a descriptor opened "
+          "before the replace survives the replace: fired=%r count=%d"
+          % (fired, _bw_probes(ledger).count("late-row")),
+          code == 0 and fired == [1]
+          and _bw_probes(ledger).count("late-row") == 1)
+
+    # Concurrent appender processes for foreign sessions, over repeated trials.
+    totals = {"appended": 0, "lost": 0, "codes": []}
+    for t in range(3):
+        rt = os.path.join(root, "bw3-%d" % t)
+        os.makedirs(rt)
+        # The settle is raised for this case alone, so a loaded machine
+        # descheduling an appender past the production settle cannot read as
+        # a lost row: this case measures the carry, bw2 is the exact proof.
+        appended, lost, code = _bw_with_seam(
+            M.ul, "TAIL_SETTLE_S", lambda _orig: 0.3,
+            lambda: _bw_foreign_trial(rt, 3, 4000))
+        totals["appended"] += appended
+        totals["lost"] += lost
+        totals["codes"].append(code)
+    check("bw3 appenders for sessions outside the backfill set, running during "
+          "a backfill, lose no row across repeated trials: %r" % (totals,),
+          totals["appended"] > 0 and totals["lost"] == 0
+          and totals["codes"] == [0, 0, 0])
+
+    # ALLOW TWINS. The carry must take only what the backfill did not re-read,
+    # and only what arrived after its read: the mutations these catch are a
+    # carry that keeps the backfill's own sessions (double count) and a carry
+    # that re-reads the old file from its start (every old row twice).
+    r4 = os.path.join(root, "bw4")
+    os.makedirs(r4)
+    project, ledger, args = _bw_fixture(r4, 20)
+    wrapper, fired = _bw_append_before_rewrite(ledger, _BW_SID, "inset-row")
+    code, _msg = _bw_with_seam(M.ul, "rewrite_month", wrapper,
+                               lambda: M.backfill(args, project, ledger, None, None))
+    check("bw4 a row of a session the backfill re-read, appended in the window, "
+          "is not counted twice: out=%d of %d, carried=%d"
+          % (_bw_out(ledger, _BW_SID), _BW_ENTRIES,
+             _bw_probes(ledger).count("inset-row")),
+          code == 0 and fired == [1] and _bw_out(ledger, _BW_SID) == _BW_ENTRIES
+          and "inset-row" not in _bw_probes(ledger))
+    old = [p for p in _bw_probes(ledger) if p.startswith("old-")]
+    check("bw5 rows the backfill read before its rewrite are kept exactly once: "
+          "%d of 20, %d distinct" % (len(old), len(set(old))),
+          len(old) == 20 and len(set(old)) == 20)
+
+    def _snapshot(path):
+        return sorted(json.dumps(r, sort_keys=True) for r in M.ul.read_ledger(path))
+    before = _snapshot(ledger)
+    code2, _msg = M.backfill(args, project, ledger, None, None)
+    check("bw6 a second backfill is still a no-op: %d rows before, %d after"
+          % (len(before), len(_snapshot(ledger))),
+          code2 == 0 and _snapshot(ledger) == before)
+
+    # The Stop hook runs this every turn, so it stays lock-free. Read the
+    # function rather than trust its docstring: any name carrying "lock", or an
+    # OS locking module, in its body is a lock on that path.
+    tree = ast.parse(inspect.getsource(M.ul.append_rows).lstrip())
+    names = sorted({n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+                   | {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+                   | {a.name for n in ast.walk(tree)
+                      if isinstance(n, (ast.Import, ast.ImportFrom))
+                      for a in n.names})
+    lockish = [n for n in names if "lock" in n.lower() or n in ("fcntl", "msvcrt",
+                                                               "flock", "lockf")]
+    check("bw7 append_rows still takes no lock: %r" % (lockish,),
+          bool(names) and not lockish)
+
+    _bw_settle_cases(check, root)
+    _bw_failed_rewrite_cases(check, root)
+
+
+def _bw_replaces_open_file(root):
+    """Whether this platform moves a file over one that is still open - the
+    mechanism the held descriptor needs, probed rather than named."""
+    a, b = os.path.join(root, "probe-a"), os.path.join(root, "probe-b")
+    for path in (a, b):
+        with open(path, "w") as fh:
+            fh.write("x")
+    held = open(b, "a")
+    try:
+        os.replace(a, b)
+        return True
+    except PermissionError:
+        return False
+    finally:
+        held.close()
+
+
+def _bw_settle_run(root, name, chunks):
+    """Backfill with a writer that opened the month file before the replace and
+    writes `chunks[i]` into it during the settle's i-th wait. -> (code, probes)."""
+    import types
+    rd = os.path.join(root, name)
+    os.makedirs(rd)
+    project, ledger, args = _bw_fixture(rd, 20)
+    target = os.path.join(ledger, "%s.jsonl" % _BW_MONTH)
+    writer = []
+    waits = []
+
+    def replace_wrapper(original):
+        def replace(src, dst, *a, **kw):
+            if os.path.abspath(dst) == os.path.abspath(target) and not writer:
+                writer.append(open(dst, "ab"))
+            return original(src, dst, *a, **kw)
+        return replace
+
+    def sleep(_seconds):
+        if writer and len(waits) < len(chunks):
+            writer[0].write(chunks[len(waits)])
+            writer[0].flush()
+        waits.append(1)
+
+    fake_time = types.SimpleNamespace(sleep=sleep)
+    try:
+        code, _msg = _bw_with_seam(
+            M.ul, "time", lambda _orig: fake_time,
+            lambda: _bw_with_seam(os, "replace", replace_wrapper,
+                                  lambda: M.backfill(args, project, ledger,
+                                                     None, None)))
+    finally:
+        for fh in writer:
+            fh.close()
+    return code, _bw_probes(ledger)
+
+
+def _bw_line(sid, probe):
+    return (json.dumps(_bw_probe(sid, probe), separators=(",", ":"),
+                       sort_keys=True) + "\n").encode("utf-8")
+
+
+def _bw_settle_cases(check, root):
+    if not _bw_replaces_open_file(root):
+        _harness.skip(check, "bw8 the settle's quiet test", "this platform "
+                      "refuses to replace an open file, so no descriptor is held "
+                      "across the replace and there is no settle", True)
+        _harness.skip(check, "bw9 the settle's partial line", "as bw8", True)
+        return
+    # A row of a session the backfill re-read lands in the retired file first:
+    # it is dropped, but it is progress, so the settle must keep watching for
+    # the foreign row that follows it.
+    code, probes = _bw_settle_run(root, "bw8", [_bw_line(_BW_SID, "dropped"),
+                                                _bw_line("S-OTHER", "after")])
+    check("bw8 a dropped session's row during the settle does not end it - the "
+          "foreign row after it is carried: %r" % (sorted(probes)[-3:],),
+          code == 0 and probes.count("after") == 1 and "dropped" not in probes)
+    line = _bw_line("S-OTHER", "halved")
+    # The empty middle chunk is a wait in which nothing is written: no byte
+    # arrives, but a line is still waiting for its newline, so it is not quiet.
+    code, probes = _bw_settle_run(root, "bw9", [line[:20], b"", line[20:]])
+    check("bw9 a half-written line during the settle does not end it, even "
+          "across a wait with no byte - the row is carried whole once its "
+          "newline lands: %d" % probes.count("halved"),
+          code == 0 and probes.count("halved") == 1)
+
+
+def _bw_failed_rewrite_cases(check, root):
+    rd = os.path.join(root, "bw10")
+    os.makedirs(rd)
+    project, ledger, args = _bw_fixture(rd, 20)
+    target = os.path.join(ledger, "%s.jsonl" % _BW_MONTH)
+
+    def refuse(original):
+        def replace(src, dst, *a, **kw):
+            if os.path.abspath(dst) == os.path.abspath(target):
+                raise OSError("simulated: the replace was refused")
+            return original(src, dst, *a, **kw)
+        return replace
+    code, msg = _bw_with_seam(os, "replace", refuse,
+                              lambda: M.backfill(args, project, ledger, None, None))
+    cursor = M.ul.cursor_path(ledger, _BW_SID)
+    strays = sorted(n for n in os.listdir(ledger) if n.endswith(".tmp"))
+    check("bw10 a month whose rewrite failed is named, exits non-zero, leaves "
+          "its sessions' cursors unsaved and no temp file: code=%r cursor=%r "
+          "strays=%r msg=%r" % (code, os.path.exists(cursor), strays, msg),
+          code != 0 and _BW_MONTH in (msg or "") and "[OK]" not in (msg or "")
+          and not os.path.exists(cursor) and not strays
+          and _bw_out(ledger, _BW_SID) == 0)
+    # ALLOW TWIN: the same fixture with nothing refused succeeds, saves the
+    # cursor and says OK - the mutation it catches is a backfill that holds
+    # every cursor back, or reports failure, whatever happened.
+    code, msg = M.backfill(args, project, ledger, None, None)
+    check("bw11 the same backfill with nothing refused exits 0, says OK and "
+          "saves the cursor: code=%r" % (code,),
+          code == 0 and (msg or "").startswith("[OK]")
+          and os.path.exists(cursor) and _bw_out(ledger, _BW_SID) == _BW_ENTRIES)
+    _bw_spanning_cases(check, root)
+
+
+_BW_PRIOR = "2026-09"
+
+
+def _bw_meter_pass(ledger, transcript, sid):
+    """What the metering hook does on its next turn: resume from the saved
+    cursor (a missing one means a first sight, read from the start), append
+    the rows it found, save the cursor it reached."""
+    cursor = M.ul.load_cursor(ledger, sid)
+    rows, cursor = M.ul.scan_transcripts(
+        transcript, sid, cursor, None,
+        {"backfillOnFirstRun": True, "maxScanBytes": float("inf")})
+    M.ul.append_rows(ledger, rows)
+    M.ul.save_cursor(ledger, sid, cursor)
+
+
+def _bw_month_out(ledger, sid, month):
+    return sum(int(r.get("out") or 0) for r in M.ul.read_ledger(ledger)
+               if r.get("sessionId") == sid
+               and M.ul.bucket_month(r.get("ts")) == month)
+
+
+def _bw_spanning_cases(check, root):
+    """A session with rows in two months, where one month's rewrite fails and
+    the other's lands. The rewritten month already holds every row of the
+    session, so its cursor is saved: holding it back sends the next metering
+    pass over the whole transcript again, and the rewritten month counts the
+    session twice. The failed month misses the session's rows until the next
+    --backfill, which the failure message asks for."""
+    rd = os.path.join(root, "bw12")
+    os.makedirs(rd)
+    project, ledger, args = _bw_fixture(rd, 20)
+    transcript = os.path.join(args.transcript_dir, _BW_SID + ".jsonl")
+    prior = 6
+    with open(transcript, "a", encoding="utf-8") as fh:
+        for i in range(prior):
+            entry = _bw_entry(_BW_SID, "%s-p%04d" % (_BW_SID, i), 10 + i)
+            entry["timestamp"] = "%s-20T%02d:00:00Z" % (_BW_PRIOR, 10 + i)
+            fh.write(json.dumps(entry) + "\n")
+    target = os.path.join(ledger, "%s.jsonl" % _BW_PRIOR)
+
+    def refuse(original):
+        def replace(src, dst, *a, **kw):
+            if os.path.abspath(dst) == os.path.abspath(target):
+                raise OSError("simulated: the replace was refused")
+            return original(src, dst, *a, **kw)
+        return replace
+    code, msg = _bw_with_seam(os, "replace", refuse,
+                              lambda: M.backfill(args, project, ledger, None, None))
+    _bw_meter_pass(ledger, transcript, _BW_SID)
+    rewritten = _bw_month_out(ledger, _BW_SID, _BW_MONTH)
+    check("bw12 a session spanning a month that failed to rewrite and one that "
+          "was rewritten is not counted twice in the rewritten month by the "
+          "next metering pass: code=%r out=%d of %d msg=%r"
+          % (code, rewritten, _BW_ENTRIES, msg),
+          code != 0 and _BW_PRIOR in (msg or "") and _BW_MONTH not in (msg or "")
+          and rewritten == _BW_ENTRIES)
+    # The failed month's half of the trade: it waits for the next backfill,
+    # and that backfill makes both months whole without doubling either.
+    waiting = _bw_month_out(ledger, _BW_SID, _BW_PRIOR)
+    code2, _msg2 = M.backfill(args, project, ledger, None, None)
+    check("bw13 ...the failed month lacks the session's rows until the next "
+          "--backfill, which restores them and leaves the rewritten month "
+          "single-counted: before=%d after=%d/%d code=%r"
+          % (waiting, _bw_month_out(ledger, _BW_SID, _BW_PRIOR),
+             _bw_month_out(ledger, _BW_SID, _BW_MONTH), code2),
+          waiting == 0 and code2 == 0
+          and _bw_month_out(ledger, _BW_SID, _BW_PRIOR) == prior
+          and _bw_month_out(ledger, _BW_SID, _BW_MONTH) == _BW_ENTRIES)
 
 
 def _selftest():

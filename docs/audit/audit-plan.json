@@ -678,7 +678,7 @@
     {
       "id": "P107",
       "title": "state writes never lose each other",
-      "status": "pending",
+      "status": "done",
       "shard": "phases/P107.json"
     },
     {
@@ -1120,7 +1120,8 @@
       "P105.10-m32",
       "P110.4-exo",
       "P112.1-uce",
-      "P112.3-uce"
+      "P112.3-uce",
+      "P107.5-gwk"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1683,7 +1684,8 @@
       "P31.2",
       "P107.3",
       "P103.14-xi3",
-      "P112.2-uce"
+      "P112.2-uce",
+      "P107.5-gwk"
     ],
     "plugins/audit/commands/version.md": [
       "P67.2"
@@ -2169,7 +2171,8 @@
       "P109.9",
       "P102.3",
       "P107.4",
-      "P100.2"
+      "P100.2",
+      "P107.7-gwk"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -2307,7 +2310,8 @@
       "P100.2",
       "P102.10",
       "P107.1",
-      "P100.3-zxo"
+      "P100.3-zxo",
+      "P107.6-gwk"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -2423,7 +2427,8 @@
       "P86.1",
       "P87.2",
       "P87.3-bpl",
-      "P107.2"
+      "P107.2",
+      "P107.7-gwk"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -3331,7 +3336,8 @@
       "P102.10",
       "P107.3",
       "P104.5",
-      "P112.2-uce"
+      "P112.2-uce",
+      "P107.5-gwk"
     ],
     "plugins/audit/scripts/usage/usage_ledger.py": [
       "P14.1",
@@ -3340,7 +3346,8 @@
       "P61.2",
       "P107.3",
       "P107.4",
-      "P104.8"
+      "P104.8",
+      "P107.5-gwk"
     ],
     "plugins/audit/templates/audit-plan.starter.json": [
       "P1.5"
@@ -3426,7 +3433,8 @@
       "P72.2-ttl",
       "P72.5-ttl",
       "P86.4",
-      "P107.4"
+      "P107.4",
+      "P107.7-gwk"
     ],
     "plugins/audit/tests/test__deps.py: a field added to one copy of the explorer return contract and not the other is a finding": [
       "P32.5"
@@ -3616,7 +3624,8 @@
       "P74.10-qq5",
       "P87.2",
       "P87.3-bpl",
-      "P107.2"
+      "P107.2",
+      "P107.7-gwk"
     ],
     "plugins/audit/tests/test__locks.py": [
       "P22.11",
@@ -4097,7 +4106,8 @@
       "P53.7",
       "P107.3",
       "P104.5",
-      "P112.2-uce"
+      "P112.2-uce",
+      "P107.5-gwk"
     ],
     "plugins/audit/tests/test_audit_version.py": [
       "P67.1",
@@ -4130,7 +4140,8 @@
       "P94.4",
       "P100.2",
       "P107.1",
-      "P100.3-zxo"
+      "P100.3-zxo",
+      "P107.6-gwk"
     ],
     "plugins/audit/tests/test_commit_audit_state.py": [
       "P28.2",
@@ -4493,7 +4504,8 @@
       "P59.13",
       "P61.2",
       "P107.4",
-      "P104.8"
+      "P104.8",
+      "P107.5-gwk"
     ],
     "plugins/audit/tests/test_validate_config.py": [
       "P47.1"
@@ -4628,7 +4640,8 @@
       "P93.2",
       "P93.4-287",
       "P109.9",
-      "P112.2-uce"
+      "P112.2-uce",
+      "P107.4"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"

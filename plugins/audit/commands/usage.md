@@ -32,8 +32,38 @@ model routed somewhere it shouldn't be. Otherwise say nothing.
 Read-only: this never takes the audit lock and never touches the manifest. The one exception is
 `--backfill`, which rewrites the monthly ledger files and takes the shared `usage` lock for the
 duration — the same claim, in the same place, that `audit-lock.py status` and `/audit:doctor`
-report. A project with no git repository has no lock scheme at all; there the backfill says so in
-its own output rather than inventing a guard nothing else can see.
+report. That lock excludes only another backfill. The metering hook runs on every turn and never
+takes it: it appends without a lock, so a backfill re-reads each month file just before replacing
+it, and after the replace reads the rows appended to the old file since — through a descriptor it
+held across the replace — and keeps those of sessions it did not re-read. A project with no git
+repository has no lock scheme at all; there the backfill says so in its own output rather than
+inventing a guard nothing else can see.
+
+What that still leaves open, stated rather than implied closed:
+
+- **A session the backfill re-reads, metered while it runs** — another session of this project
+  ending a turn in the window. Its rows from the window are dropped with the rest of that
+  session's old rows, and whichever of the hook's cursor and the backfill's is saved last decides
+  whether its next turn re-reads them or skips them, so that session's spend can come out short
+  or doubled. Run `--backfill` again once no other session of the project is active; it rebuilds
+  every session it reads from the transcripts. The session running the backfill is exposed only
+  through a subagent of its own finishing in the window: its own `Stop` metering runs when the
+  turn ends, after the backfill has finished.
+- **A writer that opened the month file before the replace and writes after the backfill stopped
+  watching the old file.** The backfill keeps reading it until a short settle period passes with
+  no byte added and no half-written line waiting, with a bounded number of re-checks.
+- **A platform that refuses to replace an open file.** There the backfill reads the old file one
+  last time, closes it and replaces it; a row written between that read and the replace is lost.
+
+A month with no file yet is created empty before its rebuild and held the same way, so a row the
+hook appends while the backfill writes that month is carried like any other.
+
+A month file the backfill could not rewrite cleanly is named in its output, and the backfill
+exits non-zero. A session whose rows all sit in months that failed keeps its old cursor, which
+matches a month whose replace was refused. A session that also has rows in a month that was
+rewritten has its cursor saved, because that month already holds every row of the session and
+an old cursor would have the next metering pass append them there again; its rows in the failed
+month are missing until the next `--backfill`. Run it again.
 
 ## Arguments
 
