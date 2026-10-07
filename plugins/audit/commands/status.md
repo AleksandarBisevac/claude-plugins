@@ -41,24 +41,33 @@ lock is still held while that phase has ready work of its own left — or when h
 much it has left could not be counted from the copy that holds it live.
 
 **A phase in flight elsewhere is shown as its live copy holds it, on every surface.**
-In flight means a `phase-<id>` lock is on disk for it, whether its holder is there or
-gone. Such a phase is read once, through one reader, from the copy that holds it live
-(the order is under *Each line counts its own phase* below), and that copy is what the
+In flight means either a `phase-<id>` lock is on disk for it, whether its holder is
+there or gone, or — with no lock — `git worktree list` shows its branch checked out in
+another worktree and that branch's tip is not an ancestor of this checkout's `HEAD`.
+Such a phase is read once, through one reader, from the copy that holds it live (the
+order is under *Each line counts its own phase* below), and that copy is what the
 READY NOW list, the phase table, the progress counts, `--short` and `--json` all show —
 so tasks a linked worktree has finished are counted done and are not listed as ready.
 A row read from a copy other than this checkout's own says which, on a `copy:` line
 under the phase in the table, on a line in READY NOW, and under `copy` on the phase's
 row in `--json`. When the live copy cannot be read, the row says it shows this
-checkout's copy and that this may not be current. A phase whose run gave its lock back
-while its branch is still unmerged is not in flight by this rule, and is shown from this
-checkout's copy. With no phase lock on disk, the only git call this costs is the one
-that finds the lock directory.
+checkout's copy and that this may not be current. An unfinished phase whose unmerged
+branch exists with no lock and no worktree holding it is not read, and its row says
+so: the branch exists and was not read. A branch with no commit of its own past `HEAD`
+reads as merged by that rule, so a linked worktree whose work is still only
+uncommitted, with no lock, shows this checkout's copy until its first commit.
+
+**The gate, the bug counts and RESUMABLE read this checkout**, because they certify it
+or advise about it. A bug stays open until its fix lands here; when a live copy
+elsewhere shows the fix done, the BUGS block names that copy on the line under the bug,
+and `--json` lists it under `bugs.elsewhere`.
 
 **RESUMABLE and UNFINISHED are two lines about two different facts**, and each can
-be true without the other. RESUMABLE reads the phase status the plan wrote down;
-UNFINISHED reads the lock on disk. A phase left `in_progress` by a command that
-died is not the same state as a lock nobody gave back, and one heading over both
-pieces of evidence is how a reader stops trusting either.
+be true without the other. RESUMABLE reads the phase status this checkout's plan wrote
+down, and is not printed for a phase whose lock is held by a live holder — that is a
+run going on, not one to resume; UNFINISHED reads the lock on disk. A phase left
+`in_progress` by a command that died is not the same state as a lock nobody gave back,
+and one heading over both pieces of evidence is how a reader stops trusting either.
 
 This used to be prose telling you how to lay the rollup out. That cost tokens on every
 call and produced a different layout each time — the same self-defeating shape
@@ -118,7 +127,11 @@ fourth spelling here would be a fourth only here.
 ## Gate mode (`--gate`, `--fail-on`)
 
 The same rollup, turned into a pass/fail signal — this is the half of the command a
-pipeline runs with no Claude session involved. `--gate` prints one
+pipeline runs with no Claude session involved. **The gate reads this checkout's own
+copy of every phase**: a phase in flight elsewhere is shown from its live copy in the
+human render and in `--json`, but every condition is evaluated over this checkout's
+files, so a fix that exists only in another worktree still fails `open-bugs`, and work
+another worktree has running does not trip `in-progress` here. `--gate` prints one
 `GATE FAILED: <condition> (<detail>)` line per tripped condition and exits **1**, or
 `GATE PASSED: <conditions>` and exits **0**. `docs/examples/azure-pipelines.yml` runs
 exactly this to block a merge on manifest state.
@@ -388,16 +401,17 @@ silent. A lock directory that could not be *read* is the other thing entirely an
 **fails** the condition, the same three-state reading `invariant-breach` uses.
 
 **This command still takes no lock.** It reads which ones are held — a
-`rev-parse` and a directory listing, the same read `/audit:doctor` already makes —
-and never acquires, releases or takes over one. **The count costs git calls only
-when a phase lock is held**, so a checkout with no run in flight pays nothing more:
-with a lock held, `git worktree list` and `git config user.name` once, then per held
-phase a `git rev-parse --verify` for its branch, a read of its copy (the worktree's
-file, or `git show` of the branch) and one `git diff --quiet <branch>...HEAD` of the
-phase's file; only when that says the file changed, a `git merge-base` and a `git show`
-of each copy, to compare what readiness reads. Each runs with a timeout, and the total
-grows with the locks held, not
-with the plan.
+`rev-parse` and a directory listing, the same read `/audit:doctor` already makes, made
+once per invocation — and never acquires, releases or takes over one. In a git
+repository every invocation also pays `git worktree list`, `git config user.name` and
+one `git for-each-ref` over the local branches, then a `git merge-base --is-ancestor`
+per phase no lock names whose branch another worktree has out, or whose unfinished
+phase has a branch at all. Per phase read: a `git rev-parse --verify` for its branch,
+a read of its copy (the worktree's file, or `git show` of the branch) and, for the
+branch's copy, one `git diff --quiet <branch>...HEAD` of the phase's file; only when
+that says the file changed, a `git merge-base` and a `git show` of each copy, to
+compare what readiness reads. Each runs with a timeout, and the per-phase calls grow
+with the phase branches that exist, not with the plan.
 
 `invariant-breach` is out of the default for a different reason: it reads git several
 times per started phase, and a default that slow is a default somebody replaces. What
@@ -432,7 +446,8 @@ act on what the output says.
 ## If the output reports a problem
 
 - **INVALID MANIFEST** — relay it and stop. `/audit:doctor` names the findings.
-- **RESUMABLE** — offer `/audit:resume`.
+- **RESUMABLE** — offer `/audit:resume`. It names a phase this checkout's plan says is
+  running while no live holder has its lock.
 - **UNFINISHED** — a phase run stopped with work of its own still ready, or a held
   lock whose ready work could not be counted from the copy that holds it live. Each
   line names the phase, the copy its count came from (or why there is no count),

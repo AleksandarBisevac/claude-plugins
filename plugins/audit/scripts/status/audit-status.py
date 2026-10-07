@@ -325,15 +325,20 @@ def locks_block(manifest, project, manifest_path=None, flight=None):
 
     `flight` is `in_flight`'s answer when the caller already has one - `main`
     reads it once for the rollup, and this block counts from the same reads
-    rather than asking git for every copy a second time. Without it, or when
-    that answer carries an error, the block reads the locks itself.
+    rather than asking git for every copy, or for the lock directory, a second
+    time. Without it the block reads the locks itself. An answer carrying an
+    error is that error here: the lock directory was asked for once, and a
+    second lookup would be a second answer to the same question.
     """
     try:
-        git_root = _invariants.git_root_for(manifest, project)
-        if not _locks.available(git_root):
+        if flight is None:
+            flight = in_flight(manifest, manifest_path,
+                               _invariants.git_root_for(manifest, project))
+        if flight.get("error"):
+            return {"error": "the audit locks could not be read: %s"
+                             % (flight["error"],)}
+        if not flight.get("scheme"):
             return {"scheme": False, "held": []}
-        if flight is None or flight.get("error"):
-            flight = in_flight(manifest, manifest_path, git_root)
         held = [{"name": r.get("name"), "live": r.get("live"),
                  "basis": r.get("basis")} for r in flight["held"]]
     except Exception as exc:                       # defensive; see the docstring
@@ -605,12 +610,23 @@ def _live_read(manifest, manifest_path, git_root, phase_id, view, user):
             "counted": True, "basis": "%s%s%s" % (source, caveat, note)}
 
 
-def live_reads(manifest, manifest_path, git_root, phase_ids):
+def worktree_view(git_root):
+    """`{"trees", "error", "here"}` - one `git worktree list`, and which of the
+    trees it names is this checkout (so no separate HEAD read)."""
+    listed = _worktrees.list_worktrees(git_root)
+    trees = listed.get("trees") or []
+    return {"trees": trees, "error": listed.get("error") or "",
+            "here": _worktrees.standing_in(trees, git_root)}
+
+
+def live_reads(manifest, manifest_path, git_root, phase_ids, view=None,
+               user=None):
     """`{phase id: _live_read(...)}` for each phase id handed in.
 
-    The worktree list (which also names the branch this checkout has out, so
-    no separate HEAD read) and the identity lookup are asked once, and only
-    when there is a phase to read - an empty list costs nothing.
+    `view` and `user` are `in_flight`'s, which has already asked for both;
+    without them the worktree list and the identity lookup are asked here,
+    once, and only when there is a phase to read - an empty list costs
+    nothing.
 
     One phase's read failing is that phase's sentence, never the whole
     answer's error: the other phases were read, and refusing them all for one
@@ -620,11 +636,10 @@ def live_reads(manifest, manifest_path, git_root, phase_ids):
     """
     if not phase_ids:
         return {}
-    listed = _worktrees.list_worktrees(git_root)
-    trees = listed.get("trees") or []
-    view = {"trees": trees, "error": listed.get("error") or "",
-            "here": _worktrees.standing_in(trees, git_root)}
-    user = _worktrees.git_user_name(git_root)
+    if view is None:
+        view = worktree_view(git_root)
+    if user is None:
+        user = _worktrees.git_user_name(git_root)
     out = {}
     for pid in phase_ids:
         try:
@@ -639,9 +654,120 @@ def live_reads(manifest, manifest_path, git_root, phase_ids):
     return out
 
 
+def _held_locks(ld):
+    """`_locks.collect`'s rows for a lock directory already found.
+
+    `collect` takes a project and looks the directory up itself, and
+    `in_flight` needs that lookup's answer on its own too - whether this
+    project has a lock scheme at all - so the one lookup is made there and
+    the listing and judging are done here with `_locks`' own `read_lock` and
+    `judge`, in `collect`'s order.
+    """
+    if not ld or not os.path.isdir(ld):
+        return []
+    try:
+        names = sorted(n for n in os.listdir(ld) if n.endswith(".lock"))
+    except OSError:
+        return []
+    rows = []
+    for n in names:
+        path = os.path.join(ld, n)
+        info = _locks.read_lock(path)
+        live, basis = _locks.judge(info, path)
+        rows.append({"name": n[:-len(".lock")], "live": live,
+                     "basis": basis, "info": info})
+    return rows
+
+
+def _branch_names(git_root):
+    """`(set of local branch names, None)`, or `(None, why)` - one
+    `git for-each-ref` for every branch, so asking whether a phase's branch
+    exists costs nothing per phase."""
+    code, out, err = _scoped_commit.run_git(
+        git_root, ["for-each-ref", "--format=%(refname)", "refs/heads/"])
+    if code != 0:
+        return None, "git for-each-ref refs/heads/ answered %s: %s" % (
+            code, " ".join((err or "").split())[:160] or "no output")
+    prefix = "refs/heads/"
+    return set(ln.strip()[len(prefix):] for ln in (out or "").splitlines()
+               if ln.strip().startswith(prefix)), None
+
+
+def _worked_elsewhere(manifest, git_root, view, user, locked):
+    """`{"worked", "unread", "note"}` - the phases no lock names whose branch
+    is being worked on somewhere this checkout cannot see.
+
+    `worked` lists each phase whose branch another worktree has out and whose
+    tip is not an ancestor of this checkout's HEAD: that worktree's file is
+    read like a locked phase's. `unread` is `{phase id: {"live", "basis"}}`
+    for each unfinished phase whose unmerged branch exists while no worktree
+    has it out - the branch is not read, and its row says so. A phase with no
+    branch is not named at all; this checkout's copy is the only one there
+    is. `note` says what could not be asked, or is empty.
+
+    A FINISHED PHASE'S IDLE BRANCH IS NOT NAMED. A `done` or `cancelled` phase
+    has no ready work this checkout's copy could be wrong about, and a branch
+    squash-merged or abandoned after such a phase is ordinary residue.
+
+    A BRANCH WHOSE TIP HAS NOT MOVED PAST HEAD READS AS MERGED. A linked
+    worktree whose branch has no commit of its own yet has its work only in
+    uncommitted files, and the ancestor question cannot tell that branch from
+    one that landed; such a phase is shown from this checkout's copy until its
+    first commit, or until its run takes a lock.
+    """
+    notes = []
+    names, why = _branch_names(git_root)
+    if names is None:
+        notes.append("which phase branches exist could not be asked (%s)"
+                     % (why,))
+    if view.get("error"):
+        notes.append("which worktrees have a phase branch out could not be "
+                     "asked (%s)" % (view["error"],))
+    here = (view.get("here") or {}).get("branch")
+    worked, unread = [], {}
+    for phase, answer in _branch.plan_branches(manifest, user):
+        pid = str(phase.get("id"))
+        branch = answer["name"]
+        if pid in locked or not branch or branch == here:
+            continue
+        holder = (None if view.get("error")
+                  else _worktrees.holder_of(view.get("trees"), branch)["tree"])
+        if holder is None and (names is None or branch not in names):
+            continue
+        if holder is None and (phase.get("mergedAt") or (
+                _mio.effective_phase_status(phase) in _mio.TERMINAL)):
+            continue
+        merged = _worktrees.merged_into(git_root, "refs/heads/%s" % (branch,),
+                                        "HEAD")
+        if merged["answer"] == _worktrees.CONTAINED:
+            continue
+        if merged["answer"] == _worktrees.UNKNOWN:
+            unread[pid] = {"live": False, "basis": (
+                "shows this checkout's copy - whether branch `%s` is merged "
+                "into this checkout's HEAD could not be asked (%s: %s), so it "
+                "was not read and this may not be current"
+                % (branch, merged["basis"], merged["detail"] or "no output"))}
+        elif holder is not None:
+            worked.append(pid)
+        else:
+            unread[pid] = {"live": False, "basis": (
+                "shows this checkout's copy - branch `%s` exists and is not "
+                "merged into this checkout's HEAD (%s), but no lock is held "
+                "for the phase and no worktree has it out, so the branch was "
+                "not read and this may not be current"
+                % (branch, merged["basis"]))}
+    note = ""
+    if notes:
+        note = ("%s, so a phase worked on there without a lock shows this "
+                "checkout's copy, which may not be current" % "; ".join(notes))
+    return {"worked": worked, "unread": unread, "note": note}
+
+
 def in_flight(manifest, manifest_path, git_root):
-    """`{"held", "reads"}` - every lock this clone holds, and a read of each
-    phase in flight from the copy that holds it live.
+    """`{"held", "reads", "scheme", "unread", "note"}` - every lock this clone
+    holds, a read of each phase in flight from the copy that holds it live,
+    whether this project has a lock scheme at all, the rows `_worked_elsewhere`
+    names as not read, and what could not be asked.
 
     THE ONE READER. The READY NOW list, the phase table, the progress counts,
     `--short`, `--json` and the UNFINISHED block all take an in-flight phase
@@ -650,43 +776,53 @@ def in_flight(manifest, manifest_path, git_root):
     and `locks_block` counts from the same reads. The copy order lives in
     `_live_read` and nowhere else.
 
-    IN FLIGHT MEANS A `phase-<id>` LOCK IS ON DISK FOR THE PHASE, live holder
-    or gone. The lock is the plugin's own record that a run of the phase
-    started and has not given it back, and a run is what moves a phase's state
-    into a copy this checkout does not have. A gone holder counts for
-    `unfinished_runs`' reason: an abandoned run's work still sits in its
-    worktree. What this does NOT see is a phase whose run gave its lock back
-    while its branch is still unmerged - a run paused between sessions; that
-    phase is shown from this checkout's copy with no word about another one.
-    Asking every plan phase whether its branch exists and is merged would cover
-    it, at a ref probe per phase on every invocation whether or not anything
-    is running, which is the cost the next paragraph refuses.
+    IN FLIGHT MEANS ONE OF TWO THINGS. A `phase-<id>` lock is on disk for the
+    phase, live holder or gone - the plugin's own record that a run started
+    and has not given it back; a gone holder counts for `unfinished_runs`'
+    reason, since an abandoned run's work still sits in its worktree. Or, with
+    no lock, the worktree list shows the phase's branch out in another
+    worktree and that branch is not merged into this checkout's HEAD - a run
+    paused between sessions, or work done by hand, is still work this
+    checkout's copy does not have (`_worked_elsewhere`). Both kinds are read
+    the same way, through `live_reads`.
 
-    WHAT IT COSTS. With no phase lock on disk: the lock directory lookup alone
-    - one `git rev-parse --git-common-dir` inside `_locks.collect`, to find
-    the directory every worktree of a clone shares, and its listing - and
-    nothing else: no worktree list, no identity lookup, no ref probe. That
-    lookup is the floor; finding the shared directory without git would be a
-    second spelling of where locks live. With a lock held: `live_reads`'
-    worktree list and identity lookup once, then per held phase a ref probe, a
-    read of its copy and one content diff of its file since the fork - and,
-    only when that diff says the file changed, its fork point and a read of
-    each copy, to ask whether the change moved readiness. Each call goes
-    through a runner with a timeout, the calls scale with the locks held
-    rather than with the plan, and a held lock is exactly the state these
-    surfaces exist to describe correctly.
+    THE LOCK DIRECTORY IS LOOKED UP HERE, ONCE, and `scheme` carries the
+    answer to `locks_block`, which used to ask again. No lock directory means
+    no git repository, and then nothing can be in flight anywhere.
+
+    WHAT IT COSTS, in a git repository: the lock directory lookup (one
+    `git rev-parse --git-common-dir`) and its listing, one worktree list, one
+    identity lookup and one `git for-each-ref` over the local branches, on
+    every invocation. Then one `git merge-base --is-ancestor` per phase no
+    lock names whose branch another worktree has out, or whose unfinished
+    phase has a branch at all; and per phase read, a ref probe, a read of its
+    copy and, for a branch's committed copy, one content diff of its file
+    since the fork - and, only when that diff says the file changed, its fork
+    point and a read of each copy, to ask whether the change moved readiness.
+    Each call goes through a runner with a timeout, and the per-phase calls
+    scale with the phase branches that exist rather than with the plan.
     """
-    held = _locks.collect(git_root)
+    ld = _locks.lock_dir(git_root)
+    if not ld:
+        return {"held": [], "reads": {}, "scheme": False, "unread": {},
+                "note": ""}
+    held = _held_locks(ld)
     prefix = _status_facts.PHASE_LOCK_PREFIX
-    phase_ids = []
+    locked = []
     for r in held:
         name = r.get("name")
         if isinstance(name, str) and name.startswith(prefix):
             pid = name[len(prefix):]
-            if pid not in phase_ids:
-                phase_ids.append(pid)
+            if pid not in locked:
+                locked.append(pid)
+    view = worktree_view(git_root)
+    user = _worktrees.git_user_name(git_root)
+    found = _worked_elsewhere(manifest, git_root, view, user, locked)
     return {"held": held,
-            "reads": live_reads(manifest, manifest_path, git_root, phase_ids)}
+            "reads": live_reads(manifest, manifest_path, git_root,
+                                locked + found["worked"], view=view,
+                                user=user),
+            "scheme": True, "unread": found["unread"], "note": found["note"]}
 
 
 def flight_for(manifest, manifest_path, project):
@@ -698,21 +834,23 @@ def flight_for(manifest, manifest_path, project):
         return in_flight(manifest, manifest_path,
                          _invariants.git_root_for(manifest, project))
     except Exception as exc:                       # defensive; see the docstring
-        return {"held": None, "reads": {},
+        return {"held": None, "reads": {}, "unread": {}, "note": "",
                 "error": "which phases are in flight elsewhere could not be "
                          "asked (%s), so every row shows this checkout's copy, "
                          "which may not be current" % (exc,)}
 
 
-def row_copies(reads):
+def row_copies(reads, unread=None):
     """`{phase id: {"live", "basis"}}` - the copy each row says it came from.
 
     Only a row that is NOT this checkout's own live copy says anything: a
     phase read from another copy says which, and a phase that fell back to
     this checkout's copy says it shows that copy and that this may not be
     current. A phase this plan does not hold has no row to say it on.
+    `unread` is `in_flight`'s rows for branches that exist and were not read,
+    carried as they are.
     """
-    out = {}
+    out = dict((str(k), dict(v)) for k, v in (unread or {}).items())
     for pid, read in (reads or {}).items():
         if not isinstance(read, dict) or (read.get("own") and read.get("live")):
             continue
@@ -1225,7 +1363,7 @@ def _evidence_cell(holder):
 
 
 def render_status(manifest, summary, width=18, only_phase=None, pt=None,
-                  view=None):
+                  view=None, own=None):
     """Plain-ASCII status report. Printed verbatim by /audit:status.
 
     Pure ASCII, no ANSI, no box-drawing — the same constraint audit-usage.py's
@@ -1238,15 +1376,21 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None,
     Three of them used to be written out inline here — the header, the phase
     table and READY NOW — which made this function four times the length of any
     block it sits beside and hid that they are all the same kind of thing.
+
+    `own` is this checkout's own plan when `manifest` has live copies laid
+    over it; the BUGS block and RESUMABLE read it, because a bug is open until
+    its fix lands here and RESUMABLE offers to resume a run here. None means
+    `manifest` is this checkout's own.
     """
     pt = pt or _cli_fmt.PLAIN
+    here = own if own is not None else manifest
     lines = _header_lines(manifest, summary, width, pt=pt)
     lines += _phase_table_lines(manifest, summary, only_phase, view)
     lines += _ready_lines(manifest, summary, pt=pt)
     lines += _area_lines(summary, pt=pt)
-    lines += _bug_lines(manifest, summary, pt=pt)
+    lines += _bug_lines(here, summary, pt=pt)
     lines += _proposal_lines(manifest, summary, pt=pt)
-    lines += _resumable_lines(manifest, summary, pt=pt)
+    lines += _resumable_lines(here, summary, pt=pt)
     lines += _unfinished_lines(summary, pt=pt)
     return "\n".join(lines)
 
@@ -1836,6 +1980,13 @@ def _bug_lines(manifest, summary, pt=None):
     out = ["", pt.paint("  BUGS  %d total - %d open (%d high severity)"
                         % (summary["bugs"]["total"], summary["bugs"]["open"],
                            summary["bugs"]["openHighSeverity"]), "header")]
+    # A fix a live copy elsewhere shows done, named on the line under its bug
+    # (`_status_facts.bugs_fixed_elsewhere`): the bug stays open here, and the
+    # copy that holds the fix is the news. Never clipped, for the copy line's
+    # reason - the end of the sentence says which file it was.
+    shown = dict((e.get("id"), e) for e in
+                 (summary["bugs"].get("elsewhere") or [])
+                 if isinstance(e, dict))
     for b in bugs:
         eff = effective_bug_status(b, tasks)
         if eff in CLOSED_BUG:
@@ -1847,6 +1998,11 @@ def _bug_lines(manifest, summary, pt=None):
                    % (b.get("id") or "?", _theme.label(eff) or "?",
                       b.get("severity") or "-",
                       _one_line(b.get("title"))[:44], flag))
+        there = shown.get(b.get("id"))
+        if there:
+            out.append("             %s elsewhere by task %s - %s"
+                       % (there.get("status"), there.get("taskId"),
+                          there.get("copy") or "which copy could not be named"))
     return out
 
 
@@ -1914,10 +2070,23 @@ def _resumable_lines(manifest, summary, pt=None):
 
     `_mio.phase_running` is that question and the rest of it, asked where the plan
     gate asks it: a phase whose every task is finished and whose sign-off is not
-    recorded still reads in_progress, and has no run in it to resume."""
+    recorded still reads in_progress, and has no run in it to resume.
+
+    `manifest` is THIS CHECKOUT'S OWN PLAN, never one with live copies laid
+    over it: `/audit:resume` resumes a run from here, and a phase another
+    worktree has running is not interrupted because its copy says
+    in_progress. For the same reason a phase whose lock is held by a live
+    holder (`summary["locks"]`, `judge`'s verdict) is skipped - that is a run
+    going on, not one that stopped. A gone holder's phase still prints."""
     pt = pt or _cli_fmt.PLAIN
+    prefix = _status_facts.PHASE_LOCK_PREFIX
+    running_live = set(
+        str(r.get("name"))[len(prefix):]
+        for r in ((summary or {}).get("locks") or {}).get("held") or []
+        if isinstance(r, dict) and r.get("live") is True
+        and str(r.get("name")).startswith(prefix))
     for p in ((manifest or {}).get("phases") or []):
-        if not isinstance(p, dict):
+        if not isinstance(p, dict) or str(p.get("id")) in running_live:
             continue
         if _mio.phase_running(p):
             where = " on %s" % p["branch"] if p.get("branch") else ""
@@ -1953,10 +2122,12 @@ def _unfinished_lines(summary, pt=None):
     `_status_facts` so the render and the exit code cannot disagree.
 
     NOT FOLDED INTO `RESUMABLE`, which sits directly above it. That block reads
-    the PHASE STATUS the plan wrote down; this one reads the LOCK on disk. A
-    phase left `in_progress` by an interrupted command is a different fact from a
-    lock nobody gave back, they can each be true without the other, and one
-    heading over two pieces of evidence is how a reader stops trusting either.
+    the PHASE STATUS this checkout's plan wrote down, and consults a lock only
+    to stay quiet while a live holder is running the phase; this one reads the
+    LOCK on disk. A phase left `in_progress` by an interrupted command is a
+    different fact from a lock nobody gave back, they can each be true without
+    the other, and one heading over two pieces of evidence is how a reader
+    stops trusting either.
     """
     pt = pt or _cli_fmt.PLAIN
     block = (summary or {}).get("locks")
@@ -2368,20 +2539,38 @@ def main(argv):
     # plan, and that plan - not this checkout's files alone - is what the
     # rollup counts and the renders print: READY NOW, the phase table, the
     # counts, --short and --json alike, and the UNFINISHED block counts from
-    # the same reads. The validator above still reads this checkout's files,
-    # because those are what it is asked to validate, and so do the gate-only
-    # blocks below, which ask git about this checkout's own history.
+    # the same reads.
+    #
+    # THREE READERS STAY ON THIS CHECKOUT'S OWN COPY, because they certify it
+    # or advise about it. The bug counts: a fix that exists only in another
+    # worktree has not landed here, so `own=` counts the bugs from this
+    # checkout and names, beside each, the copy that shows its fix. RESUMABLE
+    # (`render_status`'s `own`): it offers to resume THIS checkout's run. And
+    # --gate: every condition is evaluated over a rollup of this checkout's
+    # own copy (`gate_view` below), never over the overlay - a gate that
+    # passed on work sitting uncommitted in somebody else's worktree would be
+    # certifying a tree it never read. The validator reads this checkout's
+    # files too, because those are what it is asked to validate, and so do
+    # the gate-only blocks below, which ask git about this checkout's history.
     project = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
     flight = flight_for(manifest, manifest_path, project)
     plan = _status_facts.with_live_bodies(manifest, flight["reads"])
+    # Whether any read laid a body over the plan. Only then is `plan` a
+    # different plan from this checkout's own; with none it is the same one,
+    # and the payload stays the one a plan with nothing in flight always had.
+    laid = any(isinstance(r, dict) and isinstance(r.get("body"), dict)
+               for r in flight["reads"].values())
+    boundary = boundary_for(manifest_path) if want_boundary else None
     summary = rollup(plan, findings, warnings,
                      usage=usage_summary(plan, manifest_path,
                                          full=(want_json or want_gate)),
-                     boundary=boundary_for(manifest_path) if want_boundary
-                     else None,
-                     copies=row_copies(flight["reads"]))
-    if flight.get("error"):
-        summary["liveCopyError"] = flight["error"]
+                     boundary=boundary,
+                     copies=row_copies(flight["reads"], flight.get("unread")),
+                     own=manifest if laid else None)
+    rolled_keys = set(summary)
+    unasked = [w for w in (flight.get("error"), flight.get("note")) if w]
+    if unasked:
+        summary["liveCopyError"] = "; ".join(unasked)
 
     if want_discovery:
         # CLAUDE_PROJECT_DIR is how Claude Code names the project on every
@@ -2411,10 +2600,11 @@ def main(argv):
     # waves and the state sat on disk, knowable, until a human asked a day later, so the
     # surface a human actually opens has to carry it. The three other injected
     # blocks are gate-only because each costs git calls per phase or a walk of
-    # the repository; this one is a `rev-parse` and a directory listing, which is
-    # what `/audit:doctor` already pays to answer the same question. Each held
-    # phase's own ready work is counted from the reads `in_flight` already took
-    # above, so no copy is read twice.
+    # the repository; this one costs nothing further - the lock directory was
+    # found and listed by `in_flight` above, once, which is what `/audit:doctor`
+    # already pays to answer the same question. Each held phase's own ready work
+    # is counted from the reads `in_flight` already took, so no copy is read
+    # twice.
     #
     # `--json` IS DELIBERATELY NOT ON THIS LIST. The bare payload is pinned byte
     # for byte against the pure rollup (case dv1) of a plan with nothing in
@@ -2443,8 +2633,18 @@ def main(argv):
             manifest, manifest_path,
             os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 
+    gate_view = summary
+    if want_gate and laid:
+        # This checkout's own rollup, with every block injected above carried
+        # over as it is: those were asked of this checkout already.
+        gate_view = rollup(manifest, findings, warnings,
+                           usage=usage_summary(manifest, manifest_path,
+                                               full=True),
+                           boundary=boundary)
+        gate_view.update((k, v) for k, v in summary.items()
+                         if k not in rolled_keys)
     if want_gate:
-        failed = evaluate_gate(summary, conditions)
+        failed = evaluate_gate(gate_view, conditions)
         summary["gate"] = {
             "conditions": conditions,
             "failed": failed,
@@ -2501,7 +2701,7 @@ def main(argv):
                 view = ("active" if (segs_present & set(("active", "pending")))
                         else "all")
             print(render_status(plan, summary, only_phase=only_phase, pt=pt,
-                                view=view))
+                                view=view, own=manifest))
 
     if want_gate:
         # WHERE THE VERDICT GOES. The machine-readable verdict is already whole in
@@ -2518,35 +2718,39 @@ def main(argv):
         # since the whole point of the boundary is to turn a fail into a pass -
         # and it is emitted only when `no-test-evidence` was actually asked for,
         # so a gate that never read the boundary stays byte-for-byte as it was.
+        # Every sentence below reads `gate_view`, the rollup the verdict was
+        # taken from, so a detail cannot count a different copy than its
+        # condition did.
+        gv = gate_view
         if "no-test-evidence" in conditions:
-            note = _evidence_excuse_note(summary)
+            note = _evidence_excuse_note(gv)
             if note:
                 say(note)
         if "invariant-breach" in conditions:
-            note = _invariant_baseline_note(summary)
+            note = _invariant_baseline_note(gv)
             if note:
                 say(note)
         failed = summary["gate"]["failed"]
         if failed:
             for c in failed:
                 detail = {
-                    "invalid": "%d validator finding(s)" % summary["findings"],
+                    "invalid": "%d validator finding(s)" % gv["findings"],
                     "open-high-bugs": "%d open high-severity bug(s)"
-                                      % summary["bugs"]["openHighSeverity"],
-                    "open-bugs": "%d open bug(s)" % summary["bugs"]["open"],
+                                      % gv["bugs"]["openHighSeverity"],
+                    "open-bugs": "%d open bug(s)" % gv["bugs"]["open"],
                     "blocked-tasks": "%d blocked task(s)"
-                                     % summary["tasks"]["byStatus"].get("blocked", 0),
+                                     % gv["tasks"]["byStatus"].get("blocked", 0),
                     "in-progress": "work in progress",
-                    "over-budget": _budget_detail(summary, 100.0),
-                    "budget-80": _budget_detail(summary, BUDGET_WARN_PCT),
-                    "invariant-breach": _invariant_detail(summary),
-                    "failing-tests": _failing_tests_detail(summary),
-                    "no-test-evidence": _no_evidence_detail(summary),
-                    "stranded-skills": _stranded_detail(summary),
-                    "unfinished-run": _unfinished_detail(summary),
-                    "provisional": _provisional_detail(summary),
-                    "stale-full-run": _stale_full_run_detail(summary),
-                    "unknown-full-run": _unknown_full_run_detail(summary),
+                    "over-budget": _budget_detail(gv, 100.0),
+                    "budget-80": _budget_detail(gv, BUDGET_WARN_PCT),
+                    "invariant-breach": _invariant_detail(gv),
+                    "failing-tests": _failing_tests_detail(gv),
+                    "no-test-evidence": _no_evidence_detail(gv),
+                    "stranded-skills": _stranded_detail(gv),
+                    "unfinished-run": _unfinished_detail(gv),
+                    "provisional": _provisional_detail(gv),
+                    "stale-full-run": _stale_full_run_detail(gv),
+                    "unknown-full-run": _unknown_full_run_detail(gv),
                 }.get(c, "")
                 say("GATE FAILED: %s (%s)" % (c, detail))
             return 1

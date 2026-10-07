@@ -1949,6 +1949,28 @@ def _live_body_cases(check):
           "always was: %r" % (empty if not isinstance(empty, dict) else "",),
           all("copy" not in r for r in M.rollup(plan, [], [])["phases"])
           and M.rollup(plan, [], []) == empty)
+    plan["bugs"] = [{"id": "BUG-1", "title": "b", "severity": "high",
+                     "status": "open", "taskId": "P1.1"},
+                    {"id": "BUG-2", "title": "b", "severity": "low",
+                     "status": "open", "taskId": "P2.1"}]
+    laid = lay(plan, {"P1": {"body": live}}) if callable(lay) else plan
+    _ok, own = _harness.attempt(M.rollup, laid, [], [], copies=copies,
+                                own=plan)
+    bugs = own.get("bugs") if isinstance(own, dict) else {}
+    check("lv5 with this checkout's own plan handed over, the bug counts are "
+          "this checkout's - a fix only a live copy shows done leaves its bug "
+          "open - and that bug names the copy showing the fix: %r" % (bugs,),
+          isinstance(bugs, dict) and bugs.get("open") == 2
+          and bugs.get("openHighSeverity") == 1
+          and bugs.get("elsewhere") == [{
+              "id": "BUG-1", "taskId": "P1.1", "status": "fixed",
+              "copy": copies["P1"]["basis"]}]
+          and isinstance(own, dict) and own["phases"][0]["done"] == 2)
+    check("lv6 ...and its twin: without it the rollup counts the plan it was "
+          "handed, as it always did, and carries no `elsewhere` key: %r"
+          % (M.rollup(laid, [], [])["bugs"],),
+          M.rollup(laid, [], [])["bugs"].get("open") == 1
+          and "elsewhere" not in M.rollup(laid, [], [])["bugs"])
 
 
 def _selftest():

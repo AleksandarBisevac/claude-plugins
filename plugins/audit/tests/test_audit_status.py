@@ -2626,14 +2626,14 @@ def _cases(_record):
                 _c5, _o5, _e5 = _cli_io([_uf_path])
                 check("uf6 ...and the HUMAN RENDER says it too, which is the half "
                       "the fault was actually about: no gate had failed and nobody "
-                      "was going to run one. RESUMABLE is on the same page and is a "
-                      "DIFFERENT line from a different fact - the phase status the "
-                      "plan wrote down, against the lock on disk: %r"
+                      "was going to run one. RESUMABLE is a DIFFERENT line from a "
+                      "different fact, and it stays quiet here: a lock whose holder "
+                      "is alive is a run going on, not one to resume: %r"
                       % (_o5.strip()[-200:],),
                       _c5 == 0 and "UNFINISHED" in _o5
                       and "held phase lock(s) to look at" in _o5
                       and "phase P5 holds a lock"
-                      in _o5 and "RESUMABLE" in _o5)
+                      in _o5 and "RESUMABLE" not in _o5)
                 # THE TRANSITION, at the CLI. Nothing about the plan changes; the
                 # lock goes back and the verdict has to go with it.
                 _lockmod.release(_uf_repo, "phase-P5", session=_uf_sid,
@@ -2646,11 +2646,14 @@ def _cases(_record):
                       "PASSES while the render goes silent. That state is the "
                       "ordinary one of every planned phase there has ever been, so "
                       "a condition that fired here would be noise inside a day - "
-                      "and uf4 is the case that fails if it stops firing at all: %r"
-                      % (_o6.strip()[-120:],),
+                      "and uf4 is the case that fails if it stops firing at all. "
+                      "With the live holder gone, the phase the plan still says is "
+                      "in progress is RESUMABLE again - uf6's silence was the lock's: "
+                      "%r" % (_o6.strip()[-120:],),
                       _c6 == 0 and "GATE PASSED: unfinished-run" in _o6
                       and _c7 == 0 and "UNFINISHED" not in _o7
-                      and "READY NOW  2 task(s)" in _o7)
+                      and "READY NOW  2 task(s)" in _o7
+                      and "RESUMABLE" in _o7)
 
         _harness.stage(check, "uf", _uf_wired)
     finally:
@@ -3891,6 +3894,256 @@ def _every_surface_cases(check):
         _harness.remove_tree(root)
 
 
+def _worked_elsewhere_cases(check):
+    """A phase worked on in a linked worktree is read live whether or not it
+    holds a lock, while the gate, the bug counts and RESUMABLE read this
+    checkout - they certify it, or advise about it.
+
+    One repository, this checkout on `main`, whose copy of every shard says
+    nothing has started:
+
+        P1  live lock, branch out in a linked worktree whose UNCOMMITTED file
+            has P1.1 done; a high bug is fixed by P1.1, a low one by P1.2,
+            which is pending everywhere
+        P2  NO lock, branch out in a linked worktree that COMMITTED P2.1 done
+        P3  live lock, branch out in a linked worktree that has it running
+        P4  no lock, no branch
+        P5  no lock, an unmerged branch with a commit of its own, no worktree
+        P6  no lock, branch out in a linked worktree that says P6.1 is done,
+            but the branch is merged into HEAD - and HEAD reopened P6.1 after
+    """
+    labels = ("we1", "we2", "we3", "we4", "we5", "we6", "we7", "we8", "we9",
+              "we10", "we11", "we12", "we13")
+    if not shutil.which("git"):
+        for lbl in labels:
+            _harness.skip(check, lbl, "git is not on PATH, and the locks, the "
+                          "branches and the worktrees all live in git", True)
+        return
+    root = _harness.fixture_root("audit-status-worked-elsewhere-")
+    repo = os.path.join(root, "proj")
+    shard_dir = os.path.join("docs", "audit", "phases")
+    os.makedirs(os.path.join(repo, shard_dir))
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+           "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+
+    def sh(*args, **kw):
+        subprocess.run(git + list(args), cwd=kw.get("cwd", repo), check=True,
+                       capture_output=True)
+
+    def write_shard(base, pid, title, status, statuses):
+        rows = [{"id": "%s.%d" % (pid, i + 1), "title": "t", "status": s}
+                for i, s in enumerate(statuses)]
+        with open(os.path.join(base, shard_dir, "%s.json" % (pid,)), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"id": pid, "title": title, "status": status,
+                       "tasks": rows}, fh)
+
+    phases = [("P1", "fixer", 2), ("P2", "lockless", 1), ("P3", "resumer", 2),
+              ("P4", "nobranch", 1), ("P5", "idle", 1), ("P6", "landed", 1)]
+    manifest_path = os.path.join(repo, "docs", "audit", "audit-plan.json")
+    with open(os.path.join(repo, "README"), "w", encoding="utf-8") as fh:
+        fh.write("x\n")
+    with open(manifest_path, "w", encoding="utf-8") as fh:
+        json.dump({"meta": {"version": 3, "title": "worked elsewhere"},
+                   "phases": [{"id": p, "title": t, "status": "pending",
+                               "shard": "phases/%s.json" % (p,)}
+                              for p, t, _n in phases],
+                   "bugs": [{"id": "BUG-1", "title": "high one",
+                             "severity": "high", "status": "open",
+                             "taskId": "P1.1"},
+                            {"id": "BUG-2", "title": "low one",
+                             "severity": "low", "status": "open",
+                             "taskId": "P1.2"}]}, fh)
+    for p, t, n in phases:
+        write_shard(repo, p, t, "pending", ["pending"] * n)
+    sh("init", "-q")
+    sh("add", "-A")
+    sh("commit", "-qm", "the plan")
+    trees = {}
+    for p, t, _n in phases:
+        if p == "P4":
+            continue
+        branch = "audit/%s-%s" % (p.lower(), t)
+        sh("branch", branch)
+        trees[p] = os.path.join(root, "%s-tree" % (p.lower(),))
+        sh("worktree", "add", "-q", trees[p], branch)
+    write_shard(trees["P1"], "P1", "fixer", "in_progress", ["done", "pending"])
+    write_shard(trees["P3"], "P3", "resumer", "in_progress",
+                ["in_progress", "pending"])
+    for p, t in (("P2", "lockless"), ("P5", "idle"), ("P6", "landed")):
+        write_shard(trees[p], p, t, "in_progress", ["done"])
+        sh("commit", "-qam", "%s.1 done" % (p,), cwd=trees[p])
+    sh("worktree", "remove", trees["P5"])
+    sh("merge", "--no-ff", "-q", "-m", "land P6", "audit/p6-landed")
+    write_shard(repo, "P6", "landed", "pending", ["pending"])
+    sh("commit", "-qam", "P6.1 reopened")
+
+    quiet = lambda *_a, **_k: None                  # noqa: E731
+    sid = "worked-elsewhere-fixture"
+    locked = ["P1", "P3"]
+    took = [_lockmod.held(_lockmod.acquire(
+        repo, "phase-%s" % (p,), note="/audit:phase %s" % (p,), session=sid,
+        pid=os.getpid(), out=quiet)) for p in locked]
+    import contextlib as _ctx_we
+    import io as _io_we
+
+    def cli(argv):
+        _o, _e = _io_we.StringIO(), _io_we.StringIO()
+        with _ctx_we.redirect_stdout(_o), _ctx_we.redirect_stderr(_e):
+            _c = M.main([manifest_path] + list(argv))
+        return _c, _o.getvalue(), _e.getvalue()
+
+    def ready_ids(text):
+        return [ln.split()[0] for ln in text.splitlines()
+                if "run: /audit:run" in ln]
+
+    def under(text, pid):
+        lines = text.splitlines()
+        heads = [i for i, ln in enumerate(lines)
+                 if re.match(r"^  P\d+\s", ln)]
+        mine = [i for i in heads if lines[i].split()[0] == pid]
+        if not mine:
+            return []
+        nxt = [i for i in heads if i > mine[0]]
+        return lines[mine[0]:(nxt[0] if nxt else len(lines))]
+
+    def copy_lines(text, pid):
+        return [ln for ln in under(text, pid) if "copy:" in ln]
+
+    def bug_block(text):
+        lines = text.splitlines()
+        at = [i for i, ln in enumerate(lines) if ln.startswith("  BUGS")]
+        if not at:
+            return []
+        out = []
+        for ln in lines[at[0]:]:
+            if not ln.strip():
+                break
+            out.append(ln)
+        return out
+
+    def resumable(text):
+        return [ln for ln in text.splitlines() if "RESUMABLE" in ln]
+
+    lookups = []
+    real_lock_dir = M._locks.lock_dir
+
+    def counted_lock_dir(project):
+        lookups.append(project)
+        return real_lock_dir(project)
+
+    try:
+        with _own_project(repo):
+            M._locks.lock_dir = counted_lock_dir
+            try:
+                c_full, full, _e = cli(["--color", "never", "--view", "all"])
+            finally:
+                M._locks.lock_dir = real_lock_dir
+            c_json, raw, _e = cli(["--json"])
+            c_gate, gate_out, _e = cli(["--gate", "--fail-on",
+                                        "open-bugs,open-high-bugs"])
+        doc = json.loads(raw) if c_json == 0 else {}
+        rows = {p.get("id"): p for p in doc.get("phases") or []}
+        ids = ready_ids(full)
+        p2_copy = copy_lines(full, "P2")
+        p2_json = (rows.get("P2") or {}).get("copy") or {}
+        check("we1 a phase holding no lock whose linked worktree committed its "
+              "task done is not in READY NOW, and its row names the worktree "
+              "file it was read from, in the table and in --json: ready=%r "
+              "table=%r json=%r" % (ids, p2_copy, p2_json),
+              all(took) and c_full == 0 and "P2.1" not in ids
+              and len(p2_copy) == 1 and "read from the worktree file" in p2_copy[0]
+              and "p2-tree" in p2_copy[0]
+              and "p2-tree" in str(p2_json.get("basis"))
+              and (rows.get("P2") or {}).get("done") == 1)
+        check("we2 ...and its twin: a phase with no lock and no branch is read "
+              "from this checkout as before - its task ready, no copy named: "
+              "ready=%r copy=%r" % (ids, copy_lines(full, "P4")),
+              "P4.1" in ids and copy_lines(full, "P4") == []
+              and "copy" not in rows.get("P4", {"copy": 1}))
+        p5_copy = copy_lines(full, "P5")
+        check("we3 a phase whose unmerged branch exists with no worktree and no "
+              "lock says on its row that the branch exists and was not read, "
+              "and still lists this checkout's task: ready=%r copy=%r"
+              % (ids, p5_copy),
+              "P5.1" in ids and len(p5_copy) == 1
+              and "audit/p5-idle" in p5_copy[0]
+              and "exists" in p5_copy[0] and "was not read" in p5_copy[0]
+              and (rows.get("P5") or {}).get("copy", {}).get("live") is False)
+        check("we4 ...and its twin: a branch out in a worktree but merged into "
+              "this checkout's HEAD is not in flight, so HEAD's reopened task "
+              "is listed and the row names no copy: ready=%r copy=%r"
+              % (ids, copy_lines(full, "P6")),
+              "P6.1" in ids and copy_lines(full, "P6") == []
+              and "copy" not in rows.get("P6", {"copy": 1}))
+        check("we5 a gate whose bug fixes exist only in a linked worktree's "
+              "file still fails open-bugs and open-high-bugs, because the gate "
+              "certifies this checkout: exit=%r out=%r" % (c_gate, gate_out),
+              c_gate == 1
+              and "GATE FAILED: open-bugs (2 open bug(s))" in gate_out
+              and "GATE FAILED: open-high-bugs (1 open high-severity bug(s))"
+              in gate_out)
+        bugs = bug_block(full)
+        b1 = [ln for ln in bugs if "BUG-1" in ln]
+        named = [ln for ln in bugs if "p1-tree" in ln]
+        check("we6 the bug counts come from this checkout - both bugs open - "
+              "in the overall line, the BUGS block and --json: bugs=%r json=%r"
+              % (bugs, doc.get("bugs")),
+              "2 open bug(s)" in full
+              and bugs[:1] == ["  BUGS  2 total - 2 open (1 high severity)"]
+              and len(b1) == 1
+              and (doc.get("bugs") or {}).get("open") == 2
+              and (doc.get("bugs") or {}).get("openHighSeverity") == 1)
+        elsewhere = (doc.get("bugs") or {}).get("elsewhere")
+        check("we7 a bug whose fix a live copy shows done names that copy beside "
+              "it, in the BUGS block and in --json: bugs=%r json=%r"
+              % (bugs, elsewhere),
+              len(named) == 1 and bugs.index(named[0]) == bugs.index(b1[0]) + 1
+              and isinstance(elsewhere, list) and len(elsewhere) == 1
+              and elsewhere[0].get("id") == "BUG-1"
+              and elsewhere[0].get("taskId") == "P1.1"
+              and "p1-tree" in str(elsewhere[0].get("copy")))
+        check("we8 ...and its twin: the bug whose fix is pending everywhere "
+              "names no copy: bugs=%r" % (bugs,),
+              not [ln for ln in bugs if "BUG-2" in ln and "tree" in ln]
+              and all(e.get("id") != "BUG-2" for e in (elsewhere or [])))
+        check("we9 a phase whose lock is held live and which runs in its "
+              "worktree prints no RESUMABLE line on the development branch: %r"
+              % (resumable(full),),
+              resumable(full) == [])
+        check("we10 the lock directory is looked up once per invocation: %r"
+              % (lookups,),
+              len(lookups) == 1)
+        write_shard(repo, "P3", "resumer", "in_progress",
+                    ["in_progress", "pending"])
+        with _own_project(repo):
+            _c, held_live, _e = cli(["--color", "never", "--view", "all"])
+        check("we11 ...nor when this checkout's own copy says it is running: "
+              "a lock held live is a run going on, not an interrupted one: %r"
+              % (resumable(held_live),),
+              resumable(held_live) == [])
+        _lockmod.release(repo, "phase-P3", session=sid, out=quiet)
+        with _own_project(repo):
+            _c, released, _e = cli(["--color", "never", "--view", "all"])
+        check("we12 ...and its twin: with that lock given back, this checkout's "
+              "running phase is RESUMABLE again: %r" % (resumable(released),),
+              len(resumable(released)) == 1
+              and "phase P3" in resumable(released)[0])
+        write_shard(repo, "P1", "fixer", "pending", ["done", "done"])
+        with _own_project(repo):
+            c_fixed, fixed_out, _e = cli(["--gate", "--fail-on",
+                                          "open-bugs,open-high-bugs"])
+        check("we13 ...and we5's twin: with both fixes done in this checkout's "
+              "own copy the same gate passes: exit=%r out=%r"
+              % (c_fixed, fixed_out),
+              c_fixed == 0 and "GATE PASSED" in fixed_out)
+    finally:
+        M._locks.lock_dir = real_lock_dir
+        for p in locked:
+            _lockmod.release(repo, "phase-%s" % (p,), session=sid, out=quiet)
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(record):
         _cases(record)
@@ -3900,6 +4153,7 @@ def _selftest():
         _harness.stage(record, "lw", _live_copy_cases)
         _harness.stage(record, "wp", _worktree_post_fork_cases)
         _harness.stage(record, "es", _every_surface_cases)
+        _harness.stage(record, "we", _worked_elsewhere_cases)
     return _harness.run(body)
 
 

@@ -936,8 +936,41 @@ def unevidenced(summary):
     return out
 
 
+def bugs_fixed_elsewhere(own, live, copies):
+    """`[{"id", "taskId", "status", "copy"}]` - each bug `own` still holds open
+    whose fix task `live` shows finished, with the copy that shows it.
+
+    `own` is this checkout's plan and `live` the same plan with every phase in
+    flight elsewhere laid over it (`with_live_bodies`). A bug's status is this
+    checkout's, because a fix that exists only in another worktree has not
+    landed here; the fix shown elsewhere is still news, so it is named beside
+    the bug rather than counted. `copy` is the basis `copies` holds for the
+    phase that owns the fix task in `live`, or None when no copy is named for
+    it.
+    """
+    own_tasks = _mio.tasks_by_id(own)
+    live_tasks = _mio.tasks_by_id(live)
+    phase_of_task = {t.get("id"): p.get("id") for p, t in _mio.iter_tasks(live)
+                     if isinstance(t, dict)}
+    out = []
+    for b in (own.get("bugs") or []) if isinstance(own, dict) else []:
+        if not isinstance(b, dict):
+            continue
+        if effective_bug_status(b, own_tasks) in CLOSED_BUG:
+            continue
+        there = effective_bug_status(b, live_tasks)
+        if there not in CLOSED_BUG:
+            continue
+        copy = (copies or {}).get(str(phase_of_task.get(b.get("taskId"))))
+        out.append({"id": b.get("id"), "taskId": b.get("taskId"),
+                    "status": there,
+                    "copy": copy.get("basis") if isinstance(copy, dict)
+                    else None})
+    return out
+
+
 def rollup(manifest, findings, warnings, usage=None, boundary=None,
-           copies=None):
+           copies=None, own=None):
     """The machine-readable summary --json, render-report and the panel consume.
 
     `usage` is the optional block from `usage_summary()`; it is passed in rather
@@ -950,6 +983,12 @@ def rollup(manifest, findings, warnings, usage=None, boundary=None,
     gets no key, so a plan with nothing in flight elsewhere rolls up exactly
     as it always did.
 
+    `own` is this checkout's own plan, handed over when `manifest` has live
+    copies laid over it. The bug block is then counted from `own` - a bug is
+    open until its fix lands here - and carries `elsewhere`, each open bug
+    whose fix a live copy shows (`bugs_fixed_elsewhere`). Without `own` the
+    bugs are counted from `manifest` and no `elsewhere` key is written.
+
     `boundary` is `_evidence_io`'s block and arrives the same way for the same
     reason, with one extra: that module is this one's LAYER-MATE, so reading it
     here is not merely impure, it is an import the layer lint refuses. It is
@@ -960,8 +999,9 @@ def rollup(manifest, findings, warnings, usage=None, boundary=None,
         manifest = {}  # non-object root -> empty rollup, never an AttributeError
     phases = [p for p in (manifest.get("phases") or []) if isinstance(p, dict)]
     tasks = [t for _p, t in _mio.iter_tasks(manifest)]
-    bugs = [b for b in (manifest.get("bugs") or []) if isinstance(b, dict)]
-    task_by_id = _mio.tasks_by_id(manifest)
+    here = own if isinstance(own, dict) else manifest
+    bugs = [b for b in (here.get("bugs") or []) if isinstance(b, dict)]
+    task_by_id = _mio.tasks_by_id(here)
     bug_eff = [effective_bug_status(b, task_by_id) for b in bugs]
     open_bugs = [b for b, s in zip(bugs, bug_eff) if s not in CLOSED_BUG]
     # Where each phase sits in EXECUTION order, computed over `phases` — the same
@@ -1121,6 +1161,8 @@ def rollup(manifest, findings, warnings, usage=None, boundary=None,
     # state `unevidenced` refuses to excuse anything in.
     if boundary is not None:
         out["evidenceBoundary"] = boundary
+    if isinstance(own, dict):
+        out["bugs"]["elsewhere"] = bugs_fixed_elsewhere(own, manifest, copies)
     return out
 
 
