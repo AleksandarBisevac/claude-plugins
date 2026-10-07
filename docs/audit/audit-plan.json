@@ -710,6 +710,12 @@
       "title": "the README demo shows a user's Claude Code session, not the plugin's internals",
       "status": "done",
       "shard": "phases/P112.json"
+    },
+    {
+      "id": "P113",
+      "title": "every command and reference hands scripts no manifest placeholder",
+      "status": "pending",
+      "shard": "phases/P113.json"
     }
   ],
   "fileIndex": {
@@ -6178,17 +6184,17 @@
     {
       "id": "PROP-11-uce",
       "name": "every command and reference hands scripts no manifest placeholder",
-      "status": "proposed",
+      "status": "materialized",
       "origin": "audit-task add-phase --park",
       "createdISO": "2026-10-07T02:21:40Z",
       "branch": "audit/p112-the-readme-demo-shows-a-user-s",
       "benefit": "no command or reference document asks the model to fill in a manifest path a script can resolve, and the rule for where the manifest is lives in one resolver",
       "openQuestions": [],
-      "materializedAs": null,
-      "materializedAt": null,
+      "materializedAs": "P113",
+      "materializedAt": "2026-10-07T06:04:56Z",
       "payload": {
         "phase": {
-          "id": "P113-uce",
+          "id": "P113",
           "title": "every command and reference hands scripts no manifest placeholder",
           "status": "pending",
           "description": "The orchestrator-driven commands and reference documents still hand the model a <manifestPath> placeholder to fill in, and three of them hand it to a script that now resolves the manifest itself. Remaining sites, as recorded when the first-contact commands were fixed:\n- commands/phase.md:110 (audit-status.py)\n- commands/task.md:171 (audit-status.py)\n- reference/orchestrator.md:92, 102 and 723 (audit-status.py)\n- commands/status.md:346 (verify-invariants.py, which does not resolve)\n\nThe rule is also copied in two places: plugins/audit/scripts/manifest/audit-task.py:96-97 and :1479, and plugins/audit/scripts/panel/_panel_paths.py:139. Default-path constants exist in _journal_io.py:337, hooks/_config.py:153, _doctor_setup.py:773 and _doctor_trail.py:944.\n\nRoute every script a command or reference document hands a manifest through _manifest_io.resolve_manifest, drop the placeholders, and fold the copies of the rule into the one resolver where the layer rule allows. The acceptance includes one of two things: either manifest_placeholder_drift scans reference/ as well as commands/, or explicit pending rows cover orchestrator.md. MANIFEST_PLACEHOLDER_PENDING empties as each command is repaired.",
