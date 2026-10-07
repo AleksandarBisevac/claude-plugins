@@ -21,7 +21,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P106-R1",
@@ -287,7 +287,7 @@
     ],
     "outcome": "[findings: 29 - 1 high, 6 med, 22 low; 29 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "Several rules the orchestrator prose asked the model to follow are now decided by audit-task start, each with tests:\n- Start refuses a task that is not ready.\n- Start writes the phase claim with the session id and branch.\n- The spawn brief resolves the executor's gate rule.\n- The phase claim is bound to the phase lock, and _locks owns the lock's liveness: one public predicate decides whether the holder is gone.\n\nThe phase lock follows its session through the whole run:\n- A resumed session's acquire re-records its own gone-pid lock under the live process and releases it at the end.\n- A start honours another run's live lock.\n- The lock stays held through the merge.\n- A failed start gives back only a lock it took under its own note.\n- Every release message says truthfully who holds the lock.\n\nThe prose these rules replaced is either deleted or reduced to one pointer. The rule for relaying a refusal is stated once, in manifest-conventions.md. task.md, status.md and orchestrator.md describe the takeover, refusal and resume conditions as the code decides them.\n\nThe review ran six rounds, each lock defect reproduced in separate processes, and every finding is fixed. The phase gate is green, with screenshots and the interactive check, and the invariants check found no breach. Whether the bytes an execution command reads went down across the phase was not measured as one figure; individual tasks reported both increases and decreases.",
   "tasks": [
     {
       "id": "P106.1",
@@ -1004,5 +1004,10 @@
       }
     }
   ],
-  "startedAt": "2026-10-06T22:17:03Z"
+  "startedAt": "2026-10-06T22:17:03Z",
+  "testEvidence": {
+    "runId": "2026-10-07T08:39:30Z.8bd403",
+    "status": "passed",
+    "at": "2026-10-07T08:39:30Z"
+  }
 }
