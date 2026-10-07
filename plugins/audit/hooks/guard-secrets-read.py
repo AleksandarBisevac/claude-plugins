@@ -63,15 +63,25 @@ it. SECURITY.md says the same thing in the same words; keep the two in step.
 Plan-first backstop for Bash WRITES (this is the only hook that sees Bash).
 GRADED, and the ONLY graded rule in this file: both forms below are judged on
 the plan gate's tier for the file (`_config.plan_gate_mode` — require-plan's own
-resolver), so one file gets one verdict whether it is written through `Edit`,
-through `sed -i`, or through `python3 -c`. `_plan_gate_write_verdict` is the one
-place a tier is read, and no Rule #1 or Rule #2 branch calls it.
+resolver), after the session's free-file slot (`_config.trivial_slot` —
+require-plan's own slot), so one file gets one verdict whether it is written
+through `Edit`, through `sed -i`, or through `python3 -c` - except a shell write
+whose command does not state its content, which cannot be measured and takes
+the slot unmeasured: `_slot_write_verdict` says what that decision is and what
+it leaves. Every file one command writes is graded in that one call.
+`_plan_gate_write_verdict` is the one place a tier is read, and no Rule #1 or
+Rule #2 branch calls it.
   - the write CALLS inside an interpreter — `python -c`, `node -e`, and the
     heredoc spelling of either — naming a non-exempt source path;
   - the high-signal shell write forms into a non-exempt source file: `sed -i`,
-    `tee <file>`, and `>`/`>>` redirects (which also catches
-    `cat > file <<EOF` heredocs). The block message steers to the Edit/Write
-    tools, which the plan gate governs.
+    `tee <file>`, `>`/`>>` redirects (which also catches
+    `cat > file <<EOF` heredocs) and the destination of `cp`, `mv` and
+    `install`. The block message names the path and the
+    remedy: widen the running task's `files`, or stop and ask the operator.
+    A write inside a subshell, a `$( )` substitution or backticks is the same
+    write and is read the same way (`_shell_states`), and so is a command
+    handed to a shell's `-c` or to `eval` as a quoted argument
+    (`_write_views`).
   Both arms ask `_ungoverned_write_target` the same questions — can the
   destination be established at all, source extension, inside the repository
   or a linked worktree of it (judged against THAT tree's plan,
@@ -86,6 +96,12 @@ place a tier is read, and no Rule #1 or Rule #2 branch calls it.
     exactly as `require-plan` refuses them to `Edit`. Not by calling `.json` a
     source extension: that would refuse every package.json in a consumer's repo.
     `_manifest_write_hit` and `_manifest_write_verdict` hold the two halves.
+  - those same shell write forms aimed at the JOURNAL (`_config.in_journal`,
+    the predicate guard-edits asks), refused at every tier and to every
+    session, as guard-edits refuses the edit tools - and refused before the
+    slot, so the command takes none. `_journal_write_hit` holds it. A journal
+    write through an interpreter call is not seen here: that arm reads source
+    paths only.
 
 Trade-off (accepted): the matchers are text-based and may over-block an innocent
 one-liner that merely mentions `.env` (e.g. `cp .env.example .env`). We accept
@@ -320,8 +336,18 @@ _EVAL_SHAPE = {
 _PERL_OPEN3 = (
     r"|open\s*\(\s*[^,)]+?\s*,\s*['\"](?:\+?>>?|\+<)['\"]\s*,\s*([^,)]+?)\s*[,)]"
 )
+#
+# THE MODE IS READ AS A KEYWORD TOO. `open(p, mode='a')` and
+# `open(p, encoding='utf-8', mode='a')` are the positional `open(p, 'a')`
+# spelled another way, and reading only the positional form let an append to
+# the journal through at every tier while `open(p, 'a')` was refused. Keyword
+# arguments before `mode=` are stepped over; a quoted value that is not the
+# mode (`newline=''`) is never read as one, because the bare string must follow
+# the path's comma directly and a keyword's value must be spelled `mode=`.
 _WRITE_CALL_EXPR = re.compile(
-    r"(?:open\s*\(\s*([^,)]+?)\s*,\s*['\"](?:w|a|wb|ab|w\+|a\+|r\+)['\"]"
+    r"(?:open\s*\(\s*([^,)]+?)\s*,"
+    r"(?:\s*(?:[A-Za-z_]\w*\s*=\s*[^,)=]+?\s*,\s*)*mode\s*=)?"
+    r"\s*['\"](?:w|a|wb|ab|w\+|a\+|r\+)['\"]"
     # `(?:fs\.)?` USED TO BE OPTIONAL AROUND A BARE `write`/`append`, and
     # nothing in any of these languages puts a path first in a call spelled that
     # way: Python's `f.write(data)` and Node's `fs.write(fd, buf)` both take the
@@ -618,16 +644,120 @@ _READ_CALL_EXPR = re.compile(
 # the path is the string without it.
 _PERL_READ_MODE = re.compile(r"^(['\"])\s*<\s*(.*)\1$")
 
+# --- string literals no interpreter runs ---------------------------------------
+# A read call SPELLED INSIDE A STRING LITERAL is text: `DOC = "the guard refuses
+# open(...) of a dotenv file"` performs no read, and the patterns above matched it
+# anyway because they read the program's text. The literal is found by the Python
+# parser rather than by a quote scan, because a hand scan is wrong about where a
+# literal starts - a triple quote, a quote in a comment - and every such mistake
+# hides real code inside a "literal". So the narrowing reaches only a body that
+# parses as Python; any other body is graded exactly as strictly as before.
+#
+# A body that parses as Python may still be run by another interpreter, so a
+# literal counts as inert only where NO language this guard grades would run
+# anything inside it: one line, a plain single- or double-quoted string with no
+# prefix (an f-string is code), its quote character only at its two ends, and
+# none of the marks that make a double-quoted string live elsewhere - `#{` in
+# Ruby, `$` and `@` in Perl and PHP, a backtick, a backslash.
+_LIVE_IN_SOME_LANGUAGE = re.compile(r"[\\$@`\n]|#\{")
+# A literal HANDED TO SOMETHING THAT RUNS TEXT is code, not text: `exec("...")`,
+# a shell-out, a dynamic attribute lookup that could reach either. Any call whose
+# name holds one of these fragments - or whose callee is not a plain name or
+# attribute at all - turns the narrowing off for the whole body. Fragments, not
+# names: the list is of what a name DOES, so `popen3`, `execFileSync` and
+# `instance_eval` are reached without being listed. KNOWN LIMIT: a runner whose
+# name holds none of them is not recognised, and the literal it is handed is then
+# read as text.
+_RUNS_TEXT = ("exec", "eval", "spawn", "popen", "system", "compile", "import",
+              "run", "call", "capture", "pipeline", "send", "attr", "load",
+              "fork", "shell", "script", "function", "method", "globals", "vars",
+              "locals", "context")
 
-def _eval_read_targets(clause):
+
+def _runs_text(func):
+    """True when a call to `func` (an AST node) could run a string as code."""
+    import ast
+    if isinstance(func, ast.Name):
+        name = func.id
+    elif isinstance(func, ast.Attribute):
+        name = func.attr
+    else:
+        return True
+    name = name.lower()
+    return any(part in name for part in _RUNS_TEXT)
+
+
+def _inert_literal(segment):
+    """True when the source `segment` of one literal is text in every language."""
+    quote = segment[:1]
+    return (len(segment) >= 2 and quote in ("'", '"') and segment[-1] == quote
+            and segment.count(quote) == 2
+            and not _LIVE_IN_SOME_LANGUAGE.search(segment))
+
+
+def _inert_literal_spans(body):
+    """[(start, end)] of every string literal in `body` no interpreter runs.
+
+    Empty - which leaves every read-call match standing - when `body` is not a
+    Python program, when it hands any text to something that runs it
+    (`_runs_text`), or when a carriage return could make the parser's line count
+    disagree with this one. Each of those is the strict side of not knowing, so
+    the broad catch below cannot loosen a verdict, only keep the old one."""
+    if "\r" in body:
+        return []
+    import ast
+    import warnings
+    try:
+        # The parser warns on stderr about an escape it dislikes, and a hook's
+        # stderr is shown to the operator as if it were the guard speaking.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            tree = ast.parse(body)
+    except Exception:  # noqa: BLE001 - unparseable is graded as before, strictly
+        return []
+    nodes = list(ast.walk(tree))
+    if any(isinstance(n, ast.Call) and _runs_text(n.func) for n in nodes):
+        return []
+    in_fstring = set(id(sub) for n in nodes if isinstance(n, ast.JoinedStr)
+                     for sub in ast.walk(n))
+    lines = body.split("\n")
+    starts = [0]
+    for line in lines:
+        starts.append(starts[-1] + len(line) + 1)
+    spans = []
+    for n in nodes:
+        if not (isinstance(n, ast.Constant) and isinstance(n.value, str)
+                and id(n) not in in_fstring
+                and getattr(n, "end_lineno", None) == n.lineno):
+            continue
+        line = lines[n.lineno - 1]
+        raw = line.encode("utf-8")
+        # The parser counts columns in UTF-8 bytes; the patterns count characters.
+        lo = len(raw[:n.col_offset].decode("utf-8", "replace"))
+        hi = len(raw[:n.end_col_offset].decode("utf-8", "replace"))
+        if _inert_literal(line[lo:hi]):
+            base = starts[n.lineno - 1]
+            spans.append((base + lo, base + hi))
+    return spans
+
+
+def _in_spans(spans, pos):
+    """True when `pos` falls strictly inside one of `spans`."""
+    return any(lo < pos < hi for lo, hi in spans)
+
+
+def _eval_read_targets(clause, inert=()):
     """Every path this clause actually READS, from the read calls themselves.
 
     `_eval_write_targets`' twin, resolving a bound name the same way, so
-    `p = '.env'` followed by `open(p)` is the one read it plainly is.
+    `p = '.env'` followed by `open(p)` is the one read it plainly is. A call
+    starting inside one of `inert` (`_inert_literal_spans`) is text and skipped.
     """
     out = []
     bindings = None
     for m in _READ_CALL_EXPR.finditer(clause):
+        if _in_spans(inert, m.start()):
+            continue
         expr = next((g for g in m.groups() if g), None)
         if expr is None:
             continue
@@ -658,7 +788,7 @@ _SHELL_OUT_CALL = re.compile(
 )
 
 
-def _shell_out_arguments(clause):
+def _shell_out_arguments(clause, inert=()):
     """The argument text of every call in `clause` that hands something to a shell.
 
     Balanced to the closing parenthesis rather than to the next one, so a nested
@@ -669,6 +799,8 @@ def _shell_out_arguments(clause):
     """
     out = []
     for m in _SHELL_OUT_CALL.finditer(clause):
+        if _in_spans(inert, m.start()):
+            continue
         depth, start = 1, m.end()
         i = start
         while i < len(clause) and depth:
@@ -681,7 +813,7 @@ def _shell_out_arguments(clause):
     return out
 
 
-def _unestablished_read_target(clause):
+def _unestablished_read_target(clause, inert=()):
     """A read call whose target this cannot resolve but which NAMES a secret.
 
     -> the argument expression, or None
@@ -704,6 +836,8 @@ def _unestablished_read_target(clause):
     all and is the residual this cannot reach, stated where the limit is paid."""
     bindings = None
     for m in _READ_CALL_EXPR.finditer(clause):
+        if _in_spans(inert, m.start()):
+            continue
         expr = next((g for g in m.groups() if g), None)
         if expr is None:
             continue
@@ -767,11 +901,12 @@ def _eval_reads_a_secret(clause, extras):
     - a guard that fires on prose, or on data, is one people route around, and this
     register already carries that lesson under its own entry.
     """
-    targets = _eval_read_targets(clause)
+    inert = _inert_literal_spans(clause)
+    targets = _eval_read_targets(clause, inert)
     if any(SECRET_TOKEN_RE.search(t) for t in targets):
         return "a read call names it"
     seqs = None
-    for argument in _shell_out_arguments(clause):
+    for argument in _shell_out_arguments(clause, inert):
         if seqs is None:
             seqs = _eval_sequence_bindings(clause)
         # Every NAME in the argument list, resolved against the sequences bound in
@@ -788,7 +923,7 @@ def _eval_reads_a_secret(clause, extras):
             return "a shell read of it is handed to something that runs commands"
     if targets and _hits_extra(" ".join(targets), extras):
         return "a read target matches this project's own secretPatterns.extra"
-    unplaced = _unestablished_read_target(clause)
+    unplaced = _unestablished_read_target(clause, inert)
     if unplaced:
         return ("a read call names it in an argument this cannot resolve (%s), "
                 "and a guard refuses what it cannot classify" % (unplaced,))
@@ -1246,42 +1381,109 @@ def _clauses(cmd):
 # WHAT CANNOT BE TOKENISED FALLS BACK TO THE WIDER HARVEST. An unbalanced quote is
 # a clause this cannot read, and the old harvest over-reports, which on a write
 # guard is the safe side of not knowing.
-def _quote_walk(text, start, stop):
-    """(position, open quote) after walking `text` from `start` by the shell's quoting
-    rules - nothing escapes inside single quotes, a backslash escapes the next
-    character elsewhere - up to `stop`, or to the first UNQUOTED character in `stop`
-    when it is a string of separators."""
-    quote = None
-    i = start
-    limit = stop if isinstance(stop, int) else len(text)
-    while i < limit:
+#
+# A GROUP THE SHELL RUNS IS NOT PART OF THE WORD BEFORE ITS CLOSER. A subshell
+# `( ... )`, a substitution `$( ... )` and backticks each run their body as a
+# command, so a write inside one writes the same file it writes alone. The
+# closer was read as the last character of the target, so the redirect, `tee`
+# and `sed -i` arms graded `src/a.py)` - no source extension, so no verdict -
+# and the same write outside the group was refused. The walk below tracks the
+# groups as the shell nests them: a substitution reopens the unquoted state
+# inside double quotes, a parenthesis inside quotes is a character, and only
+# a closer that pairs with an opener ends a word. A command handed to a shell's
+# `-c` or to `eval` as a QUOTED ARGUMENT is text at this level, which is why
+# `_inplace_targets` skips a match inside quotes; `_write_views` reads it again
+# as a command of its own, so it is graded where it runs.
+_ESCAPED = "\\"
+
+
+def _shell_states(text):
+    """(quotes, depths): the open quote (None, `'` or `"`, or `_ESCAPED` for an
+    unquoted character a backslash escapes) and the group nesting
+    depth in force BEFORE each character of `text`, plus one entry after the last.
+
+    The shell's quoting rules - nothing escapes inside single quotes, a backslash
+    escapes the next character elsewhere - and its grouping: an unquoted `(`, a
+    `$(` inside double quotes and a backtick each open a group whose body is
+    unquoted, and the closer that pairs with it restores the quote it opened in.
+    A closer that pairs with nothing (a `case` pattern's `)`) changes nothing."""
+    quotes, depths = [], []
+    quote, nest = None, []
+    i, n = 0, len(text)
+    while i < n:
+        quotes.append(quote)
+        depths.append(len(nest))
         ch = text[i]
+        step = 1
         if quote == "'":
             if ch == "'":
                 quote = None
         elif ch == "\\":
-            i += 1
+            step = 2
+        elif ch == "`":
+            if quote is None and nest and nest[-1][0] == "`":
+                quote = nest.pop()[1]
+            else:
+                nest.append(("`", quote))
+                quote = None
         elif quote == '"':
             if ch == '"':
                 quote = None
+            elif text.startswith("$(", i):
+                nest.append((")", quote))
+                quote = None
+                step = 2
         elif ch in ("'", '"'):
             quote = ch
-        elif not isinstance(stop, int) and ch in stop:
-            break
-        i += 1
-    return min(i, len(text)), quote
+        elif ch == "(":
+            nest.append((")", None))
+        elif ch == ")" and nest and nest[-1][0] == ")":
+            quote = nest.pop()[1]
+        if step == 2 and i + 1 < n:
+            # An escaped character is no separator and no quote of its own.
+            quotes.append(_ESCAPED if ch == "\\" and quote is None else quote)
+            depths.append(len(nest))
+        i += step
+    quotes.append(quote)
+    depths.append(len(nest))
+    return quotes[:n + 1], depths[:n + 1]
 
 
-def _in_quote(text, pos):
-    """True when `pos` in `text` sits inside a single- or double-quoted word."""
-    return _quote_walk(text, 0, pos)[1] is not None
+def _closes_group(depths, pos):
+    """True when the character at `pos` is the closer of a group it pairs with."""
+    return depths[pos + 1] < depths[pos]
 
 
-def _clause_end(text, start):
-    """Where the clause starting at `start` ends: the first separator the SHELL sees.
+def _word_end(depths, start, end):
+    """`end`, or the first group closer in `text[start:end]` when one sits there:
+    a word taken by a pattern that knows no grouping stops at it."""
+    for pos in range(start, end):
+        if _closes_group(depths, pos):
+            return pos
+    return end
+
+
+def _in_quote(text, pos, states=None):
+    """True when `pos` in `text` sits inside a single- or double-quoted word -
+    and not inside a group the shell runs there, whose body is unquoted."""
+    quotes = (states or _shell_states(text))[0]
+    return quotes[min(pos, len(text))] not in (None, _ESCAPED)
+
+
+def _clause_end(text, start, states=None):
+    """Where the clause starting at `start` ends: the first separator the SHELL sees
+    at the clause's own depth, or the closer of the group the clause sits in.
     The clause patterns stop at any `|`, and a sed script is routinely delimited by
     one (`'s|a|b|'`), which cut the clause inside its own script."""
-    return _quote_walk(text, start, "|&;\n")[0]
+    quotes, depths = states or _shell_states(text)
+    level = depths[start]
+    for pos in range(start, len(text)):
+        if depths[pos + 1] < level:
+            return pos
+        if (quotes[pos] is None and depths[pos] == level
+                and text[pos] in "|&;\n"):
+            return pos
+    return len(text)
 
 
 def _clause_words(span):
@@ -1382,10 +1584,11 @@ def _interp_file_operands(words):
 def _inplace_targets(text, clause_re, operands):
     """Every file an in-place clause of `clause_re` in `text` rewrites."""
     out = []
+    states = _shell_states(text)
     for m in clause_re.finditer(text):
-        if _in_quote(text, m.start()):
+        if _in_quote(text, m.start(), states):
             continue
-        span = text[m.start():_clause_end(text, m.start())]
+        span = text[m.start():_clause_end(text, m.start(), states)]
         words = _clause_words(span)
         if words is None:
             out.extend(_PATHY_TOKEN.findall(span))
@@ -1394,20 +1597,637 @@ def _inplace_targets(text, clause_re, operands):
     return out
 
 
-def _shell_write_targets(cmd):
-    """Best-effort extraction of file paths a shell command WRITES to."""
+def _simple_command_spans(text, states=None):
+    """[(start, end)] of the spans the shell runs as commands in `text`: cut
+    at a separator outside quotes, and at every group opener and closer, so
+    the body of `( )`, `$( )` or backticks is a span of its own."""
+    quotes, depths = states or _shell_states(text)
+    out, start = [], 0
+    for pos, ch in enumerate(text):
+        cut = (quotes[pos] is None and ch in "|&;\n"
+               or depths[pos + 1] != depths[pos]
+               or (ch == "(" and pos and depths[pos] != depths[pos - 1]))
+        if cut:
+            out.append((start, pos))
+            start = pos + 1
+    out.append((start, len(text)))
+    return [(a, b) for a, b in out if text[a:b].strip()]
+
+
+def _simple_commands(text):
+    """`text` cut into the spans the shell runs as commands
+    (`_simple_command_spans`). A span left holding half of a quoted word is
+    unreadable to the word split after it, and reads as nothing rather than
+    as a command."""
+    return [text[a:b] for a, b in _simple_command_spans(text)]
+
+
+# A QUOTED WORD IS TEXT ONLY WHERE NOTHING RUNS IT. The redirect and `tee` arms
+# read the whole view, quotes included, and that read is what refused
+# `git commit -m "echo x > src/a.py"` as a write and graded the redirect of
+# `bash -c "cd src && echo x > a.py"` a second time, at the outer directory,
+# under the bare word `a.py`. A handed command is already graded through its own
+# view (`_write_views`), at its own directory, so its quoted word is skipped
+# here. Beyond that, a quoted match is skipped only in a command whose program
+# is one of the few known to run none of its arguments: an unknown program
+# (`watch`, `find -exec`, `su -c`, an interpreter's code) keeps the quoted read,
+# because over-reporting is the safe side of not knowing on a write guard, and
+# dropping the read there would open a write that only this read saw.
+#
+# AN ASSIGNMENT AHEAD OF THE PROGRAM IS LIVE, bare or through `env`: the
+# program reads its environment, and git runs what `GIT_EDITOR`,
+# `GIT_EXTERNAL_DIFF` or a `core.editor` inside `GIT_CONFIG_PARAMETERS` names.
+# Reading it as text let an editor variable holding a redirect into a source
+# file through at the deny tier, ahead of a bare `git commit`. Only the
+# prefix's words are live, though (`_program_offset`): the program's own
+# arguments keep the reading below, so an env-prefixed commit message or grep
+# pattern that mentions a redirect is the text it was without the prefix.
+_QUOTED_DATA_PROGRAMS = ("echo", "printf", "grep", "egrep", "fgrep", "rg")
+# The git subcommands whose quoted words are a message, a pattern or a path.
+# A global `-c` (or `--config-env`) can name a pager, an editor or an alias the
+# subcommand then runs, so any of them makes git's quoted words live again.
+_GIT_DATA_SUBCOMMANDS = ("commit", "tag", "notes", "log", "show", "grep",
+                         "diff", "status", "add")
+_GIT_VALUE_OPTIONS = ("-C", "--git-dir", "--work-tree", "--namespace")
+# `git grep`'s option naming a program it runs on the matching files. git takes
+# a long option by any unambiguous prefix, and `--op` is the shortest one no
+# other `git grep` option shares.
+_GIT_GREP_PAGER = "--open-files-in-pager"
+_GIT_GREP_PAGER_PREFIX = len("--op")
+# `git grep`'s short options that take a value: in a cluster the rest of the
+# word is that value, and alone the next word is.
+_GIT_GREP_VALUE_SHORTS = "efABCm"
+
+
+def _git_grep_runs_a_pager(words):
+    """True when `git grep`'s own `words` (past the subcommand) carry its
+    pager option in any spelling git accepts: `-O` alone, stuck to its value
+    (`-Ocmd`) or inside a cluster of short options (`-iO`), and the long name
+    or any prefix of it git still resolves, with or without `=value`. A
+    separate word after the option is git's pattern, not the pager, but it is
+    read as live all the same - this reader does not follow git's optional-
+    value rule, and over-reporting is the safe side on a write guard.
+
+    A cluster is read only up to its first value-taking option: in `-eOpen`
+    the `O` is the first letter of a pattern, not the pager, and a word that
+    follows a value-taking option on its own is its value."""
+    index = 0
+    while index < len(words):
+        word = words[index]
+        index += 1
+        if word == "--":
+            return False
+        name = word.split("=", 1)[0]
+        if (len(name) >= _GIT_GREP_PAGER_PREFIX
+                and _GIT_GREP_PAGER.startswith(name)):
+            return True
+        if not word.startswith("-") or word.startswith("--"):
+            continue
+        for at, letter in enumerate(word[1:]):
+            if letter == "O":
+                return True
+            if letter in _GIT_GREP_VALUE_SHORTS:
+                if at == len(word) - 2:
+                    index += 1
+                break
+    return False
+
+
+def _git_quoted_words_are_data(rest):
+    """True when the git call `rest` runs a subcommand whose quoted words are
+    data and no option that could make git run one of them - a global `-c`, or
+    `git grep`'s pager option."""
+    index = 1
+    while index < len(rest):
+        word = rest[index]
+        if word == "-c" or word.startswith("--config-env"):
+            return False
+        if word in _GIT_VALUE_OPTIONS:
+            index += 2
+            continue
+        if word.startswith("-"):
+            index += 1
+            continue
+        if word == "grep" and _git_grep_runs_a_pager(rest[index + 1:]):
+            return False
+        return word in _GIT_DATA_SUBCOMMANDS
+    return False
+
+
+def _program_offset(span):
+    """Where, in the simple command `span`, the words past an assignment
+    prefix begin - 0 when the command sets no variable for its program, and
+    `len(span)` when the prefix cannot be located in the raw text, so the
+    whole span is read as the prefix and stays live.
+
+    The prefix is `_config.program_candidates`' (assignments, and the
+    wrappers it steps over), counted in words; the raw text is cut into words
+    at whitespace outside quotes, which is the split `shell_words` makes of a
+    command that carries no line continuation."""
+    words = _config.shell_words(_config.join_continuations(span).strip())
+    if not words or not _config.leading_assignments(words):
+        return 0
+    rest, _candidates = _config.program_candidates(words)
+    if not rest or "\\\n" in span:
+        return len(span)
+    wanted = len(words) - len(rest)
+    quotes = _shell_states(span)[0]
+    seen, inside = 0, False
+    for pos, ch in enumerate(span):
+        blank = ch.isspace() and quotes[pos] is None
+        if not blank and not inside:
+            if seen == wanted:
+                return pos
+            seen += 1
+        inside = not blank
+    return len(span)
+
+
+def _quoted_words_are_data(span):
+    """True when a quoted word in the program part of the simple command
+    `span` is never run as a command by it: the handed command of `eval` or a
+    shell's `-c` (graded in its own view), or an argument of a program that
+    runs no argument. A span that will not tokenise is not data. An
+    assignment prefix is not judged here: `_program_offset` keeps it live."""
+    words = _config.shell_words(_config.join_continuations(span).strip())
+    if not words:
+        return False
+    rest, _candidates = _config.program_candidates(words)
+    if not rest:
+        return False
+    program = _config.program_name(rest[0])
+    if program in _QUOTED_DATA_PROGRAMS:
+        return True
+    if program == "git":
+        return _git_quoted_words_are_data(rest)
+    handed = _config.handed_commands(span)
+    if program == "eval":
+        return bool(handed)
+    # A shell's positional arguments after its `-c` command are the command's
+    # `$1`, `$2` ... and may be run by it, so only a handed command that is the
+    # last word leaves nothing else quoted to read.
+    return len(handed) == 1 and rest[-1] == handed[0]
+
+
+def _quoted_text_skipper(text):
+    """A predicate over positions in `text`: True when the character there is
+    inside a quoted word of a program's arguments that
+    `_quoted_words_are_data` calls text - never inside the assignment prefix
+    ahead of the program, which `_program_offset` marks."""
+    states = _shell_states(text)
+    spans = _simple_command_spans(text, states)
+    verdicts = {}
+
+    def skip(pos):
+        if not _in_quote(text, pos, states):
+            return False
+        for start, end in spans:
+            if start <= pos < end:
+                if (start, end) not in verdicts:
+                    span = text[start:end]
+                    verdicts[(start, end)] = (_program_offset(span),
+                                              _quoted_words_are_data(span))
+                offset, data = verdicts[(start, end)]
+                return pos - start >= offset and data
+        return False
+    return skip
+
+
+# The programs whose last operand is the file they write. Their sources are
+# read, never written - `mv` removes its source, which is a deletion and not a
+# change of content, and is outside what this arm grades.
+_COPY_PROGRAMS = ("cp", "mv", "install")
+_COPY_VALUE_OPTIONS = ("-S", "--suffix", "-m", "--mode", "-o", "--owner",
+                       "-g", "--group")
+# What makes `cp` copy a directory whole rather than refuse it.
+_COPY_RECURSIVE_LONG = ("--recursive", "--archive")
+_COPY_RECURSIVE_SHORT = "rRa"
+# How many files of a directory copied whole are listed before the rest is said
+# as a destination not established - a bound on the walk a hook makes on every
+# such command, never a silent stop.
+_COPY_WALK_LIMIT = 2000
+
+
+def _copy_destinations(words, is_dir=None, files_of=None):
+    """The files a `cp`/`mv`/`install` call, given as its words, writes.
+
+    The last operand, or - when it is spelled as a directory (a trailing
+    slash), when more than one source precedes it, when `-t` names the
+    directory, or when `is_dir` says the last operand is a directory that
+    exists - each source's name inside that directory. `install -d` creates
+    directories and writes no file, and `-T` (`--no-target-directory`) makes
+    the last operand the file written whatever is on the disk.
+
+    A DIRECTORY SPELLED WITHOUT ITS SLASH IS STILL A DIRECTORY. Whether the
+    last operand is one is a fact about the disk, so the caller asks it there
+    (`is_dir`, at the command's own directory): read as the file it names,
+    `cp notes.py src` graded a write to `src`, which is no source file, while
+    `cp notes.py src/` and `cp -t src notes.py` - the same write - were
+    refused.
+
+    A DIRECTORY COPIED WHOLE WRITES EVERY FILE IN IT. `mv` of a directory, and
+    `cp` under `-r`, `-R`, `-a` or their long names, land each file of the
+    source under the destination; `files_of`, asked of a source and the
+    destination it lands as, lists them - or answers None, and the
+    destination is the one word written - and each is a file written. Read as
+    the one directory name, a recursive copy of source files into the tree
+    wrote no source file this arm could see.
+
+    A TRAILING SLASH DOES NOT MAKE A DIRECTORY EXIST. A whole copy or move
+    of one source onto a slash-ended name that is no directory - not on the
+    disk, not made by an earlier clause (`is_dir` answers both) - creates
+    that name and lands as it, exactly as the slashless spelling does: read
+    as landing inside it, `cp -r src/ lib/` was refused naming
+    `lib/src/app.ts` against a plan declaring the `lib/app.ts` it writes.
+    With no `is_dir` nothing is known about the disk, and the slash is read
+    as a directory, as it always was."""
+    operands, directory, index = [], None, 1
+    as_file = False
+    whole = words[0] == "mv"
+    while index < len(words):
+        word = words[index]
+        if word == "--":
+            operands.extend(words[index + 1:])
+            break
+        if words[0] == "cp" and (word in _COPY_RECURSIVE_LONG or (
+                word.startswith("-") and not word.startswith("--")
+                and any(ch in word[1:] for ch in _COPY_RECURSIVE_SHORT))):
+            whole = True
+        if word in ("-t", "--target-directory"):
+            directory = words[index + 1] if index + 1 < len(words) else None
+            index += 2
+            continue
+        if word.startswith("--target-directory="):
+            directory = word.split("=", 1)[1]
+        elif word == "--no-target-directory" or (
+                word.startswith("-") and not word.startswith("--")
+                and "T" in word[1:]):
+            as_file = True
+        elif word in ("-d", "--directory") and words[0] == "install":
+            return []
+        elif word in _COPY_VALUE_OPTIONS:
+            index += 1
+        elif not (word.startswith("-") and len(word) > 1):
+            operands.append(word)
+        index += 1
+    if directory is not None:
+        sources = operands
+    elif len(operands) < 2:
+        return []
+    elif len(operands) == 2 and (as_file or _lands_as_named(
+            operands[1], whole, is_dir)):
+        directory, sources = None, operands[:1]
+    else:
+        directory, sources = operands[-1], operands[:-1]
+    if directory is None:
+        landed = [(operands[1].rstrip("/\\") or operands[1], operands[0])]
+    else:
+        base = directory.rstrip("/\\")
+        landed = [("%s/%s" % (base, s.replace("\\", "/").rstrip("/")
+                              .rsplit("/", 1)[-1]), s) for s in sources]
+    out = []
+    for dest, source in landed:
+        inside = (files_of(source, dest) if whole and files_of is not None
+                  else None)
+        out.extend([dest] if inside is None else
+                   ["%s/%s" % (dest.rstrip("/\\"), rel) for rel in inside])
+    return out
+
+
+def _lands_as_named(last, whole, is_dir):
+    """True when a two-operand copy writes its last operand `last` itself
+    rather than a file inside it: a slashless name that is no directory, or
+    - for a whole copy - a slash-ended one `is_dir` says is no directory."""
+    if is_dir is not None and is_dir(last):
+        return False
+    if not last.endswith(("/", "\\")):
+        return True
+    return whole and is_dir is not None
+
+
+def _existing_directory(word, cwd):
+    """True when `word`, placed at `cwd`, names a directory on the disk. A word
+    only the shell can resolve, or a relative one with no `cwd`, is no answer
+    and reads as False - the file it names is then what is graded, and placed,
+    by the caller."""
+    if not _config.resolvable_destination(word):
+        return False
+    placed = _placed_target(word, cwd)
+    if placed is None:
+        return False
+    try:
+        return os.path.isdir(placed)
+    except Exception:
+        return False
+
+
+def _directory_files(word, cwd):
+    """The files under the directory `word` names at `cwd`, relative to it
+    and in a stable order - or None when it names no directory this process
+    can find. Past `_COPY_WALK_LIMIT` the listing ends in `*`, which every
+    reader here says as a destination not established."""
+    if not _existing_directory(word, cwd):
+        return None
+    top = _placed_target(word, cwd)
+    found = []
+    for at, dirs, files in os.walk(top):
+        dirs.sort()
+        for name in sorted(files):
+            if len(found) >= _COPY_WALK_LIMIT:
+                return found + ["*"]
+            found.append(os.path.relpath(os.path.join(at, name), top)
+                         .replace(os.sep, "/"))
+    return found
+
+
+def _operands(words, value_options):
+    """`words`' operands past the program and its options, `value_options`'
+    values stepped over. Nothing after `--` is an option."""
+    out, index = [], 1
+    while index < len(words):
+        word = words[index]
+        if word == "--":
+            return out + list(words[index + 1:])
+        if word in value_options:
+            index += 2
+            continue
+        if not (word.startswith("-") and len(word) > 1):
+            out.append(word)
+        index += 1
+    return out
+
+
+def _made_by(words, made, cwd):
+    """`made` with what one command's `words` create added: each directory
+    `mkdir` makes (and, under `-p`, every parent it makes on the way), as
+    None, and the link `ln -s` makes, as the path it points to - placed
+    beside the link, which is where a relative link resolves."""
+    program = _config.program_name(words[0])
+    flags = [w for w in words[1:] if w.startswith("-") and len(w) > 1]
+    out = dict(made)
+    if program == "mkdir":
+        parents = any(w == "--parents" or (not w.startswith("--") and "p" in w)
+                      for w in flags)
+        for name in _operands(words, ("-m", "--mode", "-Z")):
+            name = name.rstrip("/\\")
+            parts = name.split("/")
+            for upto in range(1 if parents else len(parts), len(parts) + 1):
+                if "/".join(parts[:upto]):
+                    out["/".join(parts[:upto])] = None
+        return out
+    symbolic = any(w == "--symbolic" or (not w.startswith("--") and "s" in w)
+                   for w in flags)
+    if program != "ln" or not symbolic or any(
+            w in ("-t", "--target-directory")
+            or w.startswith("--target-directory=") for w in flags):
+        return out
+    names = _operands(words, ("-S", "--suffix", "-t", "--target-directory"))
+    if len(names) == 1:
+        target, link = names[0], names[0].rstrip("/\\").rsplit("/", 1)[-1]
+    elif len(names) == 2:
+        target, link = names
+        if link.rstrip("/\\") in made or _existing_directory(link, cwd):
+            return out
+    else:
+        return out
+    link = link.rstrip("/\\")
+    beside = link.rsplit("/", 1)[0] if "/" in link else ""
+    out[link] = (target if not beside or _looks_absolute(target)
+                 else "%s/%s" % (beside, target))
+    return out
+
+
+def _through_links(word, made):
+    """`word` with a link an earlier clause made replaced by the path it
+    points to, its trailing slash kept: a copy onto the link writes there."""
+    name = word.rstrip("/\\")
+    if made.get(name) is None:
+        return word
+    return made[name] + word[len(name):]
+
+
+def _copy_targets(text, cwd=None, expands=None):
+    """Every file a `cp`, `mv` or `install` command in `text` writes, found in
+    command position past the wrappers `_config.program_candidates` steps over -
+    never in a quoted argument of another program. `cwd` is where the command
+    stands, for asking the disk whether a slashless last operand is a
+    directory.
+
+    A DIRECTORY COPIED WHOLE OUT OF EVERY PLAN IS ONE DESTINATION, NOT ITS
+    FILES. `expands`, asked of the placed destination root, says whether the
+    tree it lands in is a plan's business; where it says no, the copy's files
+    are not listed, because every one of them would be placed - and git asked
+    about its directory - only to be skipped as outside the project. A root
+    nobody can place is expanded as it always was. With no `expands` every
+    whole copy is expanded.
+
+    THE DISK IS NOT THE ONLY THING THAT MAKES A DIRECTORY. A directory an
+    earlier clause of the same command creates with `mkdir`, or a link it
+    makes with `ln -s`, does not exist yet when this hook runs, so asking the
+    disk read `mkdir src/new && cp a.py src/new` as a write to the file
+    `src/new` - no source file - while the copy lands as `src/new/a.py`. What
+    each clause makes is carried to the clauses after it, in command order."""
+    def files_of(source, dest):
+        placed = _placed_target(dest, cwd) if expands is not None else None
+        if placed is not None and not expands(placed):
+            return None
+        return _directory_files(source, cwd)
+
+    out, made = [], {}
+    for span in _simple_commands(text):
+        words = _config.shell_words(_config.join_continuations(span).strip())
+        if not words:
+            continue
+        rest, _candidates = _config.program_candidates(words)
+        if not rest:
+            continue
+        program = _config.program_name(rest[0])
+        if program in _COPY_PROGRAMS:
+            out.extend(_copy_destinations(
+                [program] + [_through_links(w, made) for w in rest[1:]],
+                lambda word: (made.get(word.rstrip("/\\"), 0) is None
+                              or _existing_directory(word, cwd)),
+                files_of))
+        made = _made_by(rest, made, cwd)
+    return out
+
+
+def _shell_write_targets(cmd, cwd=None, expands=None):
+    """Best-effort extraction of file paths a shell command WRITES to - inside a
+    subshell, a substitution or backticks as outside one. `cwd` is the
+    directory the command stands in, which only a copy's slashless directory
+    operand needs; `expands` is `_copy_targets`'.
+
+    A redirect or `tee` inside a quoted word that nothing runs, or that a
+    shell or `eval` is handed, is skipped (`_quoted_text_skipper`): the first is
+    text and the second is graded in its own view, at its own directory."""
     targets = []
+    depths = _shell_states(cmd)[1]
+    skip = _quoted_text_skipper(cmd)
     for m in _SHELL_REDIRECT.finditer(cmd):
-        t = m.group(1).strip("'\"")
+        if skip(m.start()):
+            continue
+        t = cmd[m.start(1):_word_end(depths, m.start(1), m.end(1))].strip(
+            _TARGET_QUOTES)
         if t and not t.startswith(("&", "(")) and t != "/dev/null":
             targets.append(t)
     for m in _TEE_CLAUSE.finditer(cmd):
-        for tok in m.group(1).split():
-            tok = tok.strip("'\"")
+        if skip(m.start()):
+            continue
+        operands = cmd[m.start(1):_word_end(depths, m.start(1), m.end(1))]
+        for tok in operands.split():
+            tok = tok.strip(_TARGET_QUOTES)
             if tok and not tok.startswith("-"):
                 targets.append(tok)
     targets.extend(_inplace_targets(cmd, _SED_INPLACE_CLAUSE, _sed_file_operands))
+    targets.extend(_copy_targets(cmd, cwd, expands))
+    targets.extend(_git_output_targets(cmd))
     return targets
+
+
+# What the redirect and `tee` readings strip from a target's ends: the quote
+# closing the word it sits in, and the backslash that escapes such a quote
+# inside a double-quoted word - `"... > src/a.py\"'"` named `src/a.py\`, which
+# is no source file, when only the quotes were stripped.
+_TARGET_QUOTES = "'\"\\"
+
+
+def _git_output_files(words):
+    """The files a git call, given as its words past `git`, writes through
+    its diff-family `--output` option (`--output=f` or `--output f`), placed
+    under the directory its global `-C` options name. Nothing after `--` is an
+    option."""
+    directory, index = "", 0
+    while index < len(words):
+        word = words[index]
+        if word == "-C" and index + 1 < len(words):
+            step = words[index + 1]
+            directory = (step if _looks_absolute(step) or not directory
+                         else "%s/%s" % (directory.rstrip("/"), step))
+            index += 2
+            continue
+        if word == "-c" or word in _GIT_VALUE_OPTIONS:
+            index += 2
+            continue
+        if not word.startswith("-"):
+            break
+        index += 1
+    out, index = [], index + 1
+    while index < len(words):
+        word = words[index]
+        if word == "--":
+            break
+        named = None
+        if word.startswith("--output="):
+            named = word.split("=", 1)[1]
+        elif word == "--output" and index + 1 < len(words):
+            named = words[index + 1]
+            index += 1
+        if named:
+            out.append(named if not directory or _looks_absolute(named)
+                       else "%s/%s" % (directory.rstrip("/"), named))
+        index += 1
+    return out
+
+
+def _git_output_targets(text):
+    """Every file a git command in `text` writes through `--output`, found in
+    command position past the wrappers `_config.program_candidates` steps
+    over. `git diff --output=f` writes the patch to `f` - a write that no
+    redirect spells, so the redirect reading never saw it."""
+    out = []
+    for span in _simple_commands(text):
+        words = _config.shell_words(_config.join_continuations(span).strip())
+        if not words:
+            continue
+        rest, _candidates = _config.program_candidates(words)
+        if rest and _config.program_name(rest[0]) == "git":
+            out.extend(_git_output_files(rest[1:]))
+    return out
+
+
+# How deep a command handed inside a handed command is followed: a bound, not
+# a feature - `sh -c "eval '...'"` is two levels. A command handed past it is
+# not walked and not dropped either: `_handed_walk` returns it, its own write
+# shapes are read flat (`_past_bound_writers`), and the plan gate grades one
+# that writes, or hands on a command of its own, as a write it cannot place.
+_MAX_HANDED = 3
+
+
+def _write_views(text, cwd, depth=0):
+    """[(text, the directory its relative writes land in)]: `text` itself at
+    `cwd`, and every command it hands to `eval` or a shell's `-c`, each at the
+    directory that command stands in when its writes run.
+
+    A HANDED COMMAND IS A COMMAND. Each of the write grammars reads a quoted
+    argument as text, which is right for `git commit -m "sed -i ..."` and was
+    the whole of the bypass for `bash -c "sed -i ..."`: one file, written, and
+    graded only in the bare spelling. `_config.handed_commands` says which
+    quoted words a shell runs, past the same wrappers every reader here steps
+    over, and each is graded as if typed alone.
+
+    A `cd` INSIDE IT PLACES THE WRITES AFTER IT: the command's own walk starts
+    where the outer shell stood (`_config.effective_cwd` with `cwd` as the
+    payload directory), so `bash -c "cd src && sed -i ... a.py"` names
+    `src/a.py`. An outer directory nobody could establish stays unestablished
+    inside."""
+    return _handed_walk(text, cwd, depth)[0]
+
+
+def _handed_walk(text, cwd, depth=0):
+    """(`_write_views`' views, [(a handed command past `_MAX_HANDED`, the
+    directory it stands in)]).
+
+    A COMMAND HANDED PAST THE BOUND IS NOT NOTHING. The walk stops at the
+    bound, and what it stopped in front of used to be read as no write at all:
+    a `sed -i` nested one `bash -c`/`sh -c`/`eval` past the bound was allowed
+    at the deny tier while the same write one level shallower was refused.
+    The command the walk did not follow is returned, at its own directory, so
+    the caller can read its write shapes without walking further."""
+    views, beyond = [(text, cwd)], []
+    for span in _simple_commands(text):
+        for handed in _config.handed_commands(span):
+            inner = _config.effective_cwd(handed, cwd) if cwd else None
+            if depth >= _MAX_HANDED:
+                beyond.append((handed, inner))
+                continue
+            more, past = _handed_walk(handed, inner, depth + 1)
+            views += more
+            beyond += past
+    return views, beyond
+
+
+def _carries_a_write(text, cwd):
+    """True when the command `text`, read flat at `cwd`, carries a write shape
+    a reader here knows - a redirect, `tee`, `sed -i`, a copy, `git --output`,
+    an interpreter's write call - or hands a command on to a shell or `eval`,
+    which is past what any reader here follows and so cannot be read at all."""
+    if _config.handed_commands(text) or _shell_write_targets(text, cwd):
+        return True
+    return any(_eval_write_targets(clause) for clause in _clauses(text)
+               if _INLINE_EVAL.search(clause))
+
+
+def _past_bound_writers(text, cwd):
+    """[(command, directory)]: the commands `text` hands past `_MAX_HANDED`
+    that carry a write or hand on a command (`_carries_a_write`).
+
+    A READ PAST THE BOUND IS STILL A READ. Every command past the bound used
+    to be graded as a write nobody could place, so `ls` nested one level too
+    deep was refused at the deny tier. Its own words are read now, flat, and
+    only one that writes - or that this reader cannot see into - is graded as
+    a write."""
+    return [(handed, at) for handed, at in _handed_walk(text, cwd)[1]
+            if _carries_a_write(handed, at)]
+
+
+def _every_write_view(text, cwd):
+    """`_write_views` and, after them, each command handed past the bound,
+    read flat at its own directory: the views an arm that refuses at every
+    tier reads, so an append nested one level too deep is not a tier's
+    question."""
+    walked, beyond = _handed_walk(text, cwd)
+    return walked + beyond
 
 
 # shared with guard-bash-writes.py — ONE definition of "source file"
@@ -1461,7 +2281,26 @@ def _placed_target(t, cwd):
         return None
 
 
-def _ungoverned_write_target(targets, root, cfg, cwd):
+def _tree_placer(root, cfg):
+    """(place, expands) for one arm's pass over one command: `place(path)` is
+    `_config.tree_for` for `path` under `root`, asking git about each
+    directory outside the project once at most - and not at all for one
+    under a toplevel already named (`tree_for`'s `cache`) - and
+    `expands(path)` says whether a directory copied whole onto `path` lands in
+    a tree some plan governs - or in one nobody can place - so its files are
+    worth listing (`_copy_targets`)."""
+    cache = {}
+
+    def place(path):
+        return _config.tree_for(None, path, cfg, project=root, cache=cache)
+
+    def expands(path):
+        tree = place(path)
+        return bool(tree["inside"]) or not tree["placed"]
+    return place, expands
+
+
+def _ungoverned_write_target(targets, root, cfg, cwd, place=None):
     """What the plan gate has to say about `targets`.
 
     -> {"hit", "unresolved"}
@@ -1536,10 +2375,16 @@ def _ungoverned_write_target(targets, root, cfg, cwd):
     `root` in the answer is the tree the hit was judged in, so the verdict reads
     THAT tree's running phase; `hit` names the worktree beside the path when
     the two differ, because "src/app.ts" alone says which file and not which
-    checkout of it."""
-    graded = {"hit": None, "unresolved": [], "root": root}
+    checkout of it.
+
+    `hits` is EVERY such file, in command order, as {"rel", "shown", "root"}:
+    `rel` is the key the session's free-file slot stores, `shown` is `hit`'s
+    spelling. The slot is one file, so a command writing two uncovered files
+    has a second one to grade even when the first is free."""
+    graded = {"hit": None, "unresolved": [], "root": root, "hits": []}
     if not targets:
         return graded
+    place = place or _tree_placer(root, cfg)[0]
     exts = _source_exts(cfg)
     exempt = cfg.get("exemptGlobs") or _config.DEFAULTS["exemptGlobs"]
     manifest_rel = cfg.get("manifestPath") or _config.DEFAULTS["manifestPath"]
@@ -1557,7 +2402,7 @@ def _ungoverned_write_target(targets, root, cfg, cwd):
         low = t.lower()
         if not any(low.endswith(e) for e in exts):
             continue
-        tree = _config.tree_for(None, placed, cfg, project=root)
+        tree = place(placed)
         if not tree["placed"]:
             if t not in graded["unresolved"]:
                 graded["unresolved"].append(t)
@@ -1574,26 +2419,47 @@ def _ungoverned_write_target(targets, root, cfg, cwd):
             rel.startswith(f) for f in in_prog[key] if f.endswith("/")
         ):
             continue
+        shown = (rel if not tree["moved"] else
+                 "%s (in the linked worktree %s)" % (rel, key))
+        if not any(h["shown"] == shown for h in graded["hits"]):
+            graded["hits"].append({"rel": rel, "shown": shown,
+                                   "root": tree["root"]})
         if graded["hit"] is None:
-            graded["hit"] = (rel if not tree["moved"] else
-                             "%s (in the linked worktree %s)" % (rel, key))
+            graded["hit"] = shown
             graded["root"] = tree["root"]
     return graded
 
 
 def _source_write_hit(cmd, root, cfg, cwd):
     """What the plan gate says about the files `cmd` writes via sed -i / tee /
-    a >(>) redirect - `_ungoverned_write_target`'s pair. The shell half of the
+    a >(>) redirect / a copy - `_ungoverned_write_target`'s pair. The shell half of the
     plan gate's write arm. `cwd` is `_effective_cwd`'s answer for this same
     command - the directory a bare relative target is placed against, rather
-    than the repository root every target used to be assumed to sit in."""
-    return _ungoverned_write_target(_shell_write_targets(cmd), root, cfg, cwd)
+    than the repository root every target used to be assumed to sit in.
+
+    Asked of every `_write_views` view, each at its own directory, and merged
+    in command order: a handed command's file is one more file of the same
+    command, graded beside the rest."""
+    merged = {"hit": None, "unresolved": [], "root": root, "hits": []}
+    place, expands = _tree_placer(root, cfg)
+    for text, at in _write_views(cmd, cwd):
+        seen = _ungoverned_write_target(_shell_write_targets(text, at, expands),
+                                        root, cfg, at, place)
+        merged["unresolved"] += [t for t in seen["unresolved"]
+                                 if t not in merged["unresolved"]]
+        merged["hits"] += [h for h in seen["hits"]
+                           if not any(h["shown"] == k["shown"]
+                                      for k in merged["hits"])]
+        if merged["hit"] is None and seen["hit"]:
+            merged["hit"], merged["root"] = seen["hit"], seen["root"]
+    return merged
 
 
 def _eval_write_hit(graded, root, cfg, cwd):
     """(the ungoverned source file an interpreter clause WRITES, how that clause
     was spelled, the destinations none of them could establish, the tree the
-    file was judged in).
+    file was judged in, every ungoverned file the clauses write - in
+    `_ungoverned_write_target`'s `hits` shape).
 
     The interpreter half of the same arm, and it is the same question asked of a
     different grammar: `_eval_write_targets` resolves what a write CALL names,
@@ -1612,6 +2478,7 @@ def _eval_write_hit(graded, root, cfg, cwd):
     verdict, so one lost to an early return is a silence with nothing behind
     it."""
     unresolved = []
+    hits = []
     first = (None, None, root)
     for cl, is_eval, how in graded:
         if not is_eval:
@@ -1620,23 +2487,47 @@ def _eval_write_hit(graded, root, cfg, cwd):
         for spelling in seen["unresolved"]:
             if spelling not in unresolved:
                 unresolved.append(spelling)
+        hits += [dict(h, surface="A source-file write from %s"
+                      % (_EVAL_SHAPE[how],))
+                 for h in seen["hits"]
+                 if not any(h["shown"] == k["shown"] for k in hits)]
         if seen["hit"] and first[0] is None:
             first = (seen["hit"], how, seen["root"])
-    return (first[0], first[1], unresolved, first[2])
+    return (first[0], first[1], unresolved, first[2], hits)
 
 
 _PLAN_WRITE_DENY = (
-    "%s bypasses the plan-first gate: %s\n%s Use the Edit/Write tools "
-    "(guard-edits + require-plan review the change), or cover the file with an "
-    "in_progress task. Exempt paths (docs, tests, .claude/**) are unaffected."
+    "%s bypasses the plan-first gate: %s\n%s This path is outside the running "
+    "task's `files` - widen it with `/audit:task scope <taskId> --files ...`, "
+    "or stop and ask the operator. Exempt paths (docs, tests, .claude/**) are "
+    "unaffected."
 )
 _PLAN_WRITE_ASK = (
     "%s outside the plan: %s\n"
     "planGate is set to \"ask\" in .claude/audit.config.json, so this write waits "
-    "for your approval - approving covers this one command. Prefer the Edit/Write "
-    "tools (guard-edits + require-plan review the change), or cover the file with "
-    "an in_progress task."
+    "for your approval - approving covers this one command. Widen the running "
+    "task's `files` with `/audit:task scope <taskId> --files ...`, or stop and "
+    "ask the operator."
 )
+
+
+def _plan_gate_cause(cfg, root, manifest_rel, state=None):
+    """Why the plan gate is at the deny tier, in the sentence a refusal ends
+    with. The refusal names its ACTUAL cause, mirroring require-plan word for
+    word: "a phase is in_progress" was printed even when the denial came from
+    enforce:true in an empty repo."""
+    if _config.plan_gate_knob(cfg) == "deny":
+        return ("planGate is set to \"deny\" in "
+                ".claude/audit.config.json - refused regardless "
+                "of what is running.")
+    if _config.enforce_always(cfg):
+        return ("enforce: true is set in .claude/audit.config.json "
+                "(legacy; planGate: \"deny\" says the same) - "
+                "refused regardless of what is running.")
+    if state is None:
+        state = _config.manifest_state(root, manifest_rel)
+    return ("Phase %s is in_progress, so edits are held to "
+            "the plan." % (state.get("runningPhase") or "?"))
 
 
 def _plan_gate_write_verdict(root, cfg, hit, surface):
@@ -1664,27 +2555,158 @@ def _plan_gate_write_verdict(root, cfg, hit, surface):
     state = _config.manifest_state(root, manifest_rel)
     mode = _config.plan_gate_mode(cfg, state)
     if mode == "deny":
-        # The refusal names its ACTUAL cause, mirroring require-plan word
-        # for word: "a phase is in_progress" was printed here even when the
-        # denial came from enforce:true in an empty repo.
-        knob = _config.plan_gate_knob(cfg)
-        if knob == "deny":
-            cause = ("planGate is set to \"deny\" in "
-                     ".claude/audit.config.json - refused regardless "
-                     "of what is running.")
-        elif _config.enforce_always(cfg):
-            cause = ("enforce: true is set in .claude/audit.config.json "
-                     "(legacy; planGate: \"deny\" says the same) - "
-                     "refused regardless of what is running.")
-        else:
-            cause = ("Phase %s is in_progress, so edits are held to "
-                     "the plan." % (state.get("runningPhase") or "?"))
-        return ("block", _PLAN_WRITE_DENY % (surface, hit, cause))
+        return ("block", _PLAN_WRITE_DENY % (
+            surface, hit, _plan_gate_cause(cfg, root, manifest_rel, state)))
     if mode == "ask":
         # planGate:"ask" parity with require-plan: the same file must be treated
         # the same whether the agent reaches for Edit, sed -i or python3 -c.
         return ("ask", _PLAN_WRITE_ASK % (surface, hit))
     return ("allow", "bash: source write, plan gate %s: %s" % (mode, hit))
+
+
+_VERDICT_RANK = {"allow": 0, "ask": 1, "block": 2}
+
+_BEYOND_SHOWN = "a command handed deeper than %d levels: %s"
+_BEYOND_DENY = (
+    "A command handed to a shell or `eval` is nested deeper than this guard "
+    "follows, and it writes or hands on a command of its own, so the files it "
+    "writes cannot be graded: %s\n%s A write the plan "
+    "gate cannot place is refused at this tier rather than read as nothing. "
+    "Run the inner command with less nesting, so the files it writes are "
+    "graded, or stop and ask the operator."
+)
+_BEYOND_ASK = (
+    "A command handed to a shell or `eval` is nested deeper than this guard "
+    "follows, and it writes or hands on a command of its own, so the files it "
+    "writes cannot be graded: %s\n"
+    "planGate is set to \"ask\" in .claude/audit.config.json, so this command "
+    "waits for your approval."
+)
+
+
+def _snippet(text, limit=120):
+    """`text` on one line, cut to `limit` characters for a refusal."""
+    flat = " ".join(str(text).split())
+    return flat if len(flat) <= limit else flat[:limit - 3] + "..."
+
+
+def _beyond_bound_verdict(root, cfg, beyond):
+    """The verdict on a command whose `beyond` - the commands handed past
+    `_MAX_HANDED` that carry a write (`_past_bound_writers`), as (command,
+    directory) - this guard did not follow: a refusal at the deny tier, an
+    ask at ask, None (said by the caller as unestablished) at observe and
+    warn, where a write it could name would be allowed too."""
+    manifest_rel = (cfg.get("manifestPath")
+                    or _config.DEFAULTS["manifestPath"])
+    mode = _config.plan_gate_mode(cfg, _config.manifest_state(root, manifest_rel))
+    shown = "; ".join(_BEYOND_SHOWN % (_MAX_HANDED, _snippet(b))
+                      for b, _at in beyond)
+    if mode == "deny":
+        return ("block", _BEYOND_DENY % (shown, _plan_gate_cause(cfg, root,
+                                                                 manifest_rel)))
+    if mode == "ask":
+        return ("ask", _BEYOND_ASK % (shown,))
+    return None
+
+
+def _slot_write_verdict(data, project, cfg, hits, magnitude):
+    """The verdict on a shell command whose ungoverned files are `hits` -
+    EVERY one it writes, from the interpreter arm and the shell grammar alike,
+    each carrying the `surface` its refusal is worded in - read against the
+    session's free-file slot before any tier is.
+
+    CALLED ONCE PER COMMAND, AND THAT IS THE POINT. Each arm used to return its
+    own verdict, so an interpreter write that took the slot ended the grading:
+    the `sed -i` of a second file after it, and a subagent's manifest write
+    after it, were never asked about. Merging the hits first means the slot is
+    spent at most once and every other file is graded.
+
+    ONE SLOT, WHICHEVER TOOL SPENDS IT. `trivialLineThreshold` allows the first
+    uncovered source file of a session for free, and require-plan grants that
+    to `Edit`. This arm used to grade the tier alone, so the one-line `sed -i`
+    that `Edit` would have been allowed was refused at the deny tier - one file,
+    two verdicts, decided by the tool. The slot is `_config.trivial_slot`, the
+    reader require-plan uses, so a file spent here is spent there and the
+    other way round; the decision below is require-plan's step 5 in the same
+    order: the slot's own file is being worked, an empty slot takes the file,
+    anything else is graded by `_plan_gate_write_verdict`.
+
+    WHAT THE COMMAND STATES IS MEASURED; WHAT IT DOES NOT STATE IS DECIDED.
+    `magnitude` is `_config.text_magnitude` of the command's own text - the
+    formula require-plan applies to an edit's new text - and that text is the
+    most content a command can carry: a heredoc body, a literal redirected into
+    the file, a program that writes a literal. Over `trivialLineThreshold` the
+    write is not trivial and takes no slot, exactly as a large `Write` takes
+    none. It over-counts a long command that writes little (the slot is then
+    graded rather than spent - the stricter direction) and cannot count
+    content the command computes or fetches: a write whose size the command
+    does not state takes the slot as an `Edit` within the threshold would
+    (decided 2026-10-06), because PreToolUse sees the command and not the
+    change. The PostToolUse arm is where that change is visible, and it is
+    measured there: `guard-bash-writes.py` reads the slot, sizes the diff the
+    write left with `_config.change_magnitude`, and reports a slot file over
+    `trivialLineThreshold` with its magnitude and the threshold - a report
+    after the write has landed, never a refusal.
+
+    TAKEN AT PRE, by both hooks: this one has no Post pass for Bash, and
+    require-plan takes the same slot at its own Pre (its Post confirms, and
+    takes the slot only when its Pre did not). So a write some sibling hook or
+    the operator's prompt then refuses has still spent the slot - the stricter
+    direction, since the next uncovered file is graded rather than freed. A
+    write this verdict refuses records nothing; an `ask` records, because an
+    approval leaves no trace this hook could read.
+
+    One command naming two uncovered files is two files, as two `Edit`s are:
+    the first may take an empty slot, the second is graded.
+
+    A LOST RACE IS GRADED, NOT FREED. The slot is taken by an exclusive create
+    (`_config.take_trivial_slot`), so a write that read the slot empty and then
+    finds it taken re-reads it and is judged against the winner's file - the
+    second pass below. Only an unwritable state directory leaves the door open,
+    and that function's docstring says so."""
+    sid = (data or {}).get("session_id")
+    state = _config.state_dir(project, cfg)
+    threshold = int(cfg.get("trivialLineThreshold") or 80)
+    large = magnitude > threshold
+    for _pass in (0, 1):
+        spent = _config.trivial_slot(state, sid)
+        fresh = [h for h in hits if h["rel"] not in spent]
+        if not fresh:
+            return ("allow", "bash: source write to this session's free "
+                    "file: %s" % ", ".join(h["shown"] for h in hits))
+        taker = fresh[0] if not spent and not large and _pass == 0 else None
+        graded = fresh[1:] if taker else fresh
+        verdict = None
+        for hit in graded:
+            # EVERY graded file is asked, each in its own tree: one command can
+            # write the main checkout (warn) and a linked worktree (deny), and
+            # grading the second under the first tree's tier let it through.
+            # The strictest answer wins and names the file that decided it.
+            shown = hit["shown"]
+            if large and not spent:
+                shown = "%s (change magnitude %d > %d)" % (
+                    shown, magnitude, threshold)
+            one = _plan_gate_write_verdict(hit["root"], cfg, shown,
+                                           hit["surface"])
+            if verdict is None or _VERDICT_RANK[one[0]] > _VERDICT_RANK[verdict[0]]:
+                verdict = one
+        if taker is None:
+            return verdict
+        if verdict is not None and verdict[0] == "block":
+            return verdict
+        took = _config.take_trivial_slot(state, sid, [taker["rel"]])
+        if took is False:
+            continue
+        if verdict is not None:
+            return verdict
+        if took is None:
+            # The open door `take_trivial_slot` names, in require-plan's words:
+            # nothing was recorded, so nothing is claimed as recorded.
+            return ("allow", "bash: first trivial code file, but the slot "
+                    "could not be recorded: %s" % taker["shown"])
+        return ("allow", "bash: first trivial code file of the session: %s"
+                % taker["shown"])
+    return verdict
 
 
 # --- the manifest, reached by shell instead of by Edit ---------------------------
@@ -1726,7 +2748,8 @@ _SHELL_MANIFEST_LOCK = (
 
 def _manifest_write_hit(cmd, root, cfg, cwd):
     """First manifest path `cmd` writes to via sed -i / tee / a `>`(`>>`) redirect
-    - the index, its lockfile, or one of its phase shards - or None.
+    / a copy, bare or handed to a shell or `eval` - the index, its lockfile, or
+    one of its phase shards - or None.
 
     `cwd` (`_effective_cwd`'s answer) places a RELATIVE target before it is
     compared against `manifest_rel`, for the same reason the source arm one
@@ -1782,19 +2805,21 @@ def _manifest_write_placed(cmd, root, cfg, cwd):
     target outside the project pays for the git call that asks."""
     manifest_rel = str(cfg.get("manifestPath")
                        or _config.DEFAULTS["manifestPath"])
-    for t in _shell_write_targets(cmd):
-        if not _config.resolvable_destination(t):
-            continue
-        placed = _placed_target(t, cwd)
-        if placed is None:
-            continue
-        tree = _config.tree_for(None, placed, cfg, project=root)
-        if not tree["inside"]:
-            continue
-        rel = tree["rel"]
-        if (rel == manifest_rel or rel == manifest_rel + ".lock"
-                or _config.governing_lock(manifest_rel, rel)):
-            return (rel, tree["root"])
+    place, expands = _tree_placer(root, cfg)
+    for text, at in _every_write_view(cmd, cwd):
+        for t in _shell_write_targets(text, at, expands):
+            if not _config.resolvable_destination(t):
+                continue
+            placed = _placed_target(t, at)
+            if placed is None:
+                continue
+            tree = place(placed)
+            if not tree["inside"]:
+                continue
+            rel = tree["rel"]
+            if (rel == manifest_rel or rel == manifest_rel + ".lock"
+                    or _config.governing_lock(manifest_rel, rel)):
+                return (rel, tree["root"])
     return None
 
 
@@ -1828,6 +2853,57 @@ def _manifest_write_verdict(data, root, cfg, rel):
         return ("block", _SHELL_MANIFEST_LOCK % (
             rel, conflict["lock"], conflict["holder"], conflict["note"],
             conflict["basis"], conflict["lock"]))
+    return None
+
+
+# --- the journal, reached by shell instead of by Edit ----------------------------
+_SHELL_JOURNAL = (
+    "The audit journal is append-only: %s\n"
+    "It is written by the plugin (panel saves, the journal-writes hook, "
+    "audit-journal.py append) and never by hand - an edit here is what "
+    "`audit-journal.py verify` exists to detect. The Edit tool already refuses "
+    "this file; a redirect, `tee`, `sed -i`, a copy and a program's append "
+    "are the same write spelled "
+    "differently, so they are refused here too. To record something, run "
+    "audit-journal.py append; to stop recording, set journal.enabled false."
+)
+
+
+def _journal_write_hit(cmd, root, cfg, cwd, program_targets=()):
+    """The repo-relative path of the first journal file `cmd` writes via a
+    `>`(`>>`) redirect, `tee`, `sed -i` or a copy - in a command handed to a
+    shell or `eval` as in the bare one, and in one handed past the walk's
+    bound, read flat (`_every_write_view`) - or that `program_targets` names,
+    or None.
+
+    `program_targets` are the files the interpreter clauses' write calls
+    name (`_eval_write_targets`), placed at `cwd` as that arm places them. An
+    append through `open(path, 'a')` is the shell's `>>` spelled in another
+    language; reading the journal through one is no write call and no target.
+
+    THE SAME TARGETS AND THE SAME PLACEMENT AS `_manifest_write_placed`, and the
+    same predicate guard-edits asks: `_config.in_journal`, which resolves the
+    directory from `journal.dir` or from beside `manifestPath`. A project that
+    moved its journal is covered because the resolution moves with it, and a
+    target the shell alone can resolve is skipped rather than walked onto the
+    directory by a normalising join.
+
+    A read of the journal is no hit - a `<` redirect is not among the targets -
+    and neither is the plugin's own writer, which is a script that opens the
+    file itself rather than a redirect the shell performs."""
+    place, expands = _tree_placer(root, cfg)
+    sites = [(t, at) for text, at in _every_write_view(cmd, cwd)
+             for t in _shell_write_targets(text, at, expands)]
+    sites += [(t, cwd) for t in program_targets]
+    for t, at in sites:
+        if not _config.resolvable_destination(t):
+            continue
+        placed = _placed_target(t, at)
+        if placed is None:
+            continue
+        tree = place(placed)
+        if tree["inside"] and _config.in_journal(tree["root"], cfg, placed):
+            return tree["rel"]
     return None
 
 
@@ -2116,11 +3192,15 @@ def _decide_core(data, root, cfg):
         # an in_progress task declared was refused through `python3 -c` and
         # allowed through `echo >`, by a message that blamed the plan-first gate
         # while consulting no plan at all.
-        ehit, ehow, eunplaced, eroot = _eval_write_hit(graded, root, cfg, cwd)
-        if ehit:
-            return _plan_gate_write_verdict(
-                eroot, cfg, ehit,
-                "A source-file write from %s" % (_EVAL_SHAPE[ehow],))
+        #
+        # NO ARM RETURNS AN ALLOW EARLY. The interpreter arm used to return its
+        # own verdict here, before the manifest arm and the shell arm had run,
+        # so a `python3 -c` write that took the free slot let a `sed -i` of a
+        # second file - and a subagent's write to the plan - ride the same
+        # command ungraded. The manifest refusal is asked first, and every
+        # file both arms find is graded in one `_slot_write_verdict` call.
+        _ehit, _ehow, eunplaced, _eroot, ehits = _eval_write_hit(
+            graded, root, cfg, cwd)
         # BEFORE the source-write gate, and before any exempt glob is consulted,
         # because the manifest is not a source file and is not this gate's subject
         # under either heading: `.json` is no source extension and the default
@@ -2133,7 +3213,9 @@ def _decide_core(data, root, cfg):
         #
         # ITS TARGET SET IS THE SHELL GRAMMAR ALONE, and that is a residual, not
         # a decision this line can defend: `_manifest_write_hit` reads redirects,
-        # `tee` and `sed -i`, so a subagent writing its own phase shard through
+        # `tee`, `sed -i` and copies, bare or handed to a shell or `eval` - and
+        # not the interpreter's write calls, which the journal arm below does
+        # read - so a subagent writing its own phase shard through
         # `python3 -c "open('docs/audit/phases/P1.json','w')"` reaches neither
         # this arm nor the source arm above it - `docs/audit/**` is exempt there
         # and `.json` is no source extension. Driven, at this line and before it:
@@ -2145,18 +3227,42 @@ def _decide_core(data, root, cfg):
             refusal = _manifest_write_verdict(data, mhit[1], cfg, mhit[0])
             if refusal is not None:
                 return refusal
+        # THE JOURNAL IS REFUSED AT EVERY TIER, to everybody, and before the
+        # slot is consulted. guard-edits refuses the edit tools this file with no
+        # tier and no exemption, so the shell spelling of the same write gets the
+        # same answer - and a command that also writes a source file is refused
+        # as a whole, so it neither takes nor spends the free-file slot.
+        jhit = _journal_write_hit(
+            runnable, root, cfg, cwd,
+            [t for cl, is_eval, _how in graded if is_eval
+             for t in _eval_write_targets(cl)])
+        if jhit:
+            return ("block", _SHELL_JOURNAL % (jhit,))
         # Over what runs, not over the raw text - a `>` inside prose being
         # written into a file is not a redirect the shell performs. An interpreter
         # body stays in this view: a `sed -i` inside one is still a shell write.
         shell_write = _source_write_hit(runnable, root, cfg, cwd)
-        if shell_write["hit"]:
-            # The same grading, through the same function, as the interpreter arm
-            # above. Otherwise `Edit src/x.ts` would be merely observed while
-            # `sed -i src/x.ts` still denied — same file, same rule, opposite
-            # verdict, decided by which tool the agent happened to reach for.
-            return _plan_gate_write_verdict(
-                shell_write["root"], cfg, shell_write["hit"],
-                "Shell write into a source file")
+        # A command handed deeper than the walk follows, which writes or hands
+        # on a command, writes files nobody here can name, so it is graded as
+        # such a write: refused at the deny tier and asked at ask, before the
+        # slot - which only a file it can name may take - and said, below,
+        # everywhere else. One that only reads is no write at all.
+        beyond = _past_bound_writers(runnable, cwd)
+        if beyond:
+            refusal = _beyond_bound_verdict(root, cfg, beyond)
+            if refusal is not None:
+                return refusal
+        hits = list(ehits)
+        hits += [dict(h, surface="Shell write into a source file")
+                 for h in shell_write["hits"]
+                 if not any(h["shown"] == k["shown"] for k in hits)]
+        if hits:
+            # Both arms through one function, once. Otherwise `Edit src/x.ts`
+            # would be merely observed while `sed -i src/x.ts` still denied —
+            # same file, same rule, opposite verdict, decided by which tool
+            # the agent happened to reach for.
+            return _slot_write_verdict(data, root, cfg, hits,
+                                       _config.text_magnitude(cmd))
         # WHAT COULD NOT BE ESTABLISHED IS SAID, and it is said as an allow
         # rather than swallowed into the line below. A destination only the
         # shell can resolve is not a file the plan could have named, so there is
@@ -2166,7 +3272,8 @@ def _decide_core(data, root, cfg):
         # mistaken for a clean bill. Both write arms contribute, because a
         # command can spell one destination each way.
         unplaced = list(eunplaced)
-        for spelling in shell_write["unresolved"]:
+        for spelling in shell_write["unresolved"] + [
+                _BEYOND_SHOWN % (_MAX_HANDED, _snippet(b)) for b, _at in beyond]:
             if spelling not in unplaced:
                 unplaced.append(spelling)
         if unplaced:

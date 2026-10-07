@@ -92,9 +92,18 @@ def _journal_append_sites(path):
             name = func.id
         else:
             continue
-        if name in ("append", "_append", "append_from_cli"):
+        if name in _JOURNAL_APPENDS:
             sites.append((node.lineno, name))
     return sites
+
+
+# Every journal append's name, the `_why` siblings included: a writer that
+# appended only through a sibling this walk did not know would drop out of
+# pw6 - and its anchors - without anyone removing it.
+_JOURNAL_APPENDS = ("append", "_append", "append_from_cli", "append_why",
+                    "append_from_cli_why")
+# The appends that file the write guard's claim themselves.
+_CLAIMING_APPENDS = ("append_from_cli", "append_from_cli_why")
 
 
 def _names_used(path):
@@ -143,7 +152,7 @@ def _unclaimed_journal_writers(owner):
             continue
         claims = "record_plugin_write" in _names_used(path)
         for line, name in found:
-            if name != "append_from_cli" and not claims:
+            if name not in _CLAIMING_APPENDS and not claims:
                 findings.append("%s:%d" % (os.path.basename(path), line))
     return findings, sites
 
@@ -2828,6 +2837,7 @@ def _gone_cases(check):
 
     _worktree_writer_cases(check)
     _details_key_cases(check)
+    _free_text_cases(check)
     _stale_lock_cases(check)
 
 
@@ -3597,6 +3607,417 @@ def _details_key_cases(check):
     check("dk5 ...and the allow-list is still an allow-list: a key it does not "
           "hold is dropped, so listing one key did not turn the filter off: %r"
           % (_invented,), _invented == {"phaseId": "P1"})
+
+
+# --- ft: free text a caller hands over never carries a machine path ------------
+def _journal_bytes(directory):
+    """Every journal file under `directory` and its bytes, so "unchanged" is a
+    comparison of the whole trail rather than of the one file a row was aimed at."""
+    out = {}
+    if not os.path.isdir(directory):
+        return out
+    for name in sorted(os.listdir(directory)):
+        with open(os.path.join(directory, name), "rb") as fh:
+            out[name] = fh.read()
+    return out
+
+
+def _written(project, entry, config):
+    """The row `_append` wrote, or an empty dict when it refused - so a case
+    whose row is lost fails its own assertion rather than raising out of the
+    whole block and taking every later case with it."""
+    try:
+        return M._append(project, entry, config=config)[0]
+    except ValueError:
+        return {}
+
+
+def _pii_tool():
+    """`tools/check-committed-pii.py`, loaded by path: it is not on any import path."""
+    import importlib.util
+    path = os.path.join(_output.REPO_ROOT, "tools", "check-committed-pii.py")
+    spec = importlib.util.spec_from_file_location("check_committed_pii_ft", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _free_text_cases(check):
+    """A note, an outcome, a reason: text a verb takes from its caller and chains."""
+    tmp = tempfile.mkdtemp(prefix="journal-free-text-")
+    try:
+        proj = os.path.join(tmp, "repo")
+        os.makedirs(os.path.join(proj, "docs", "audit"))
+        jdir = os.path.join(proj, "journal")
+        cfg = {"journal": {"enabled": True, "dir": jdir}}
+
+        def entry(summary, reason=None):
+            row = {"action": "task.note", "target": "", "summary": summary,
+                   "actor": {"sessionId": "s-free", "via": "cli"}}
+            if reason is not None:
+                row["details"] = {"taskId": "P1.1", "reason": reason}
+            return row
+
+        # A row first, so "unchanged" compares a trail holding something.
+        M.append(proj, entry("P1.1 started"), config=cfg)
+        before = _journal_bytes(jdir)
+        # Neutral, and built so this file never spells one whole.
+        home = "/" + "/".join(("Users", "someone", "notes", "scratch.md"))
+        said = "kept the probe at %s for later" % (home,)
+        row1 = _written(proj, entry("P1.1 note", reason=said), cfg)
+        check("ft1 a reason quoting a home-directory path is WRITTEN, with the "
+              "path's token redacted in place - a writer never loses its own row "
+              "over what a value holds, and the row never carries the path: %r"
+              % (row1.get("details"),),
+              (row1.get("details") or {}).get("reason")
+              == "kept the probe at %s for later" % (M.OUTSIDE_TOKEN,)
+              and "someone" not in M.canonical(row1)
+              and _journal_bytes(jdir) != before)
+        check_ft = getattr(M, "check_free_text", None)
+        msg = (check_ft(proj, "--reason", said) if check_ft else None) or ""
+        check("ft2 the CALLER's check names the field and the shape, says how to "
+              "say it instead, and never echoes the value - a refusal that "
+              "printed the path would publish it in whatever log caught it: %r"
+              % (msg,),
+              "--reason" in msg and "posix-home" in msg
+              and "repo-relative" in msg and "<home>" in msg
+              and "someone" not in msg and home not in msg)
+        check("ft2b ALLOW twin: the same check answers None for prose that "
+              "names no machine - the mutation this catches is a check that "
+              "refuses every value",
+              check_ft is not None
+              and check_ft(proj, "--reason", "kept the probe in docs/x.md")
+              is None)
+        win = "C:\\" + "\\".join(("Users", "someone", "proj", "a.ts"))
+        row3 = _written(proj, entry("saw %s fail" % (win,)), cfg)
+        check("ft3 a Windows user directory in the SUMMARY is redacted the "
+              "same way and the row still lands: %r" % (row3.get("summary"),),
+              row3.get("summary") == "saw %s fail" % (M.OUTSIDE_TOKEN,)
+              and "someone" not in M.canonical(row3))
+
+        inside = os.path.join(proj, "docs", "audit", "notes.md")
+        row = _written(proj, entry("P1.1 wrote %s" % (inside,),
+                                   reason="see %s twice" % (inside,)), cfg)
+        check("ft4 ALLOW: an absolute path INSIDE the repo is written as its "
+              "repo-relative spelling, in the summary and in a details value, "
+              "and the checkout's root appears nowhere in the row: %r / %r"
+              % (row.get("summary"), row.get("details", {}).get("reason")),
+              row.get("summary") == "P1.1 wrote docs/audit/notes.md"
+              and row["details"]["reason"] == "see docs/audit/notes.md twice"
+              and proj not in M.canonical(row)
+              and os.path.realpath(proj) not in M.canonical(row))
+
+        prose = ("the Users list and the home page both moved; see "
+                 "src/users/home.ts and docs/home/readme.md")
+        row2 = _written(proj, entry(prose, reason=prose), cfg)
+        check("ft5 ALLOW: prose using 'home' and 'Users' as words, and "
+              "repo-relative paths that merely resemble a home directory, is "
+              "written byte for byte - the mutation this catches is a check that "
+              "refuses every row mentioning either word: %r"
+              % (row2.get("summary"),),
+              row2.get("summary") == prose
+              and row2["details"]["reason"] == prose)
+
+        # The root reached through something that is not a path of its own: a
+        # search path joins it to a directory outside the repo, so no token
+        # resolves inside and the root is still spelled out.
+        joined = "PATH=/opt/bin:%s/bin" % (proj,)
+        row6 = _written(proj, entry("ran with %s" % (joined,)), cfg)
+        msg_r = (check_ft(proj, "--reason", joined) if check_ft else None) or ""
+        check("ft6 the checkout's absolute root, where no token can be rewritten "
+              "to repo-relative, is redacted out of the row that lands, and the "
+              "caller's check refuses it without echoing it: %r / %r"
+              % (row6.get("summary"), msg_r),
+              bool(row6) and proj not in M.canonical(row6)
+              and os.path.realpath(proj) not in M.canonical(row6)
+              and M.OUTSIDE_TOKEN in row6.get("summary", "")
+              and proj not in msg_r
+              and (os.name == "nt" or "checkout-root" in msg_r))
+
+        # A scoped commit's withdrawal quotes git's own refusal, and from a
+        # linked worktree that names the MAIN checkout's `.git` - outside this
+        # tree, and here under a home directory. Program output: redacted.
+        git_dir = "/" + "/".join(("Users", "someone", "main", ".git",
+                                  "worktrees", "x", "index.lock"))
+        refusal = "fatal: Unable to create '%s': File exists." % (git_dir,)
+        row8 = _written(proj, {
+            "action": "commit.withdrawn", "target": "P1.1",
+            "summary": "the commit was not made: %s" % (refusal,),
+            "details": {"taskId": "P1.1", "reason": refusal},
+            "actor": {"sessionId": "s-free", "via": "cli"}}, cfg)
+        check("ft8 a withdrawal reason quoting an outside .git path is WRITTEN "
+              "tokenised, in the summary and in details.reason: %r"
+              % ((row8.get("details") or {}).get("reason"),),
+              (row8.get("details") or {}).get("reason")
+              == "fatal: Unable to create '%s': File exists." % (M.OUTSIDE_TOKEN,)
+              and "someone" not in M.canonical(row8)
+              and ".git/worktrees" not in M.canonical(row8))
+
+        # A checkout rooted at a SHORT path - a container's /src - must not
+        # turn every relative path or URL holding that segment into its root.
+        short = ("/src",)
+        rel_url = "touched lib/src/foo.ts, see https://example.com/src/x"
+        redact = getattr(M, "redacted_free_text", None)
+        check("ft9 ALLOW: under a short checkout root, a relative path and a URL "
+              "carrying the same segment are neither refused nor rewritten: %r"
+              % ((M.machine_path_shape(rel_url, short),
+                  redact(None, rel_url, short) if redact else None),),
+              M.machine_path_shape(rel_url, short) is None
+              and check_ft is not None
+              and check_ft(None, "--text", rel_url, short) is None
+              and redact is not None and redact(None, rel_url, short) == rel_url)
+        check("ft9b ...and the root itself, at a token start, is still the "
+              "checkout's root - the twin a check that never fires would pass",
+              M.machine_path_shape("ran /src/foo.ts", short) == "checkout-root"
+              and M.machine_path_shape("X=/src", short) == "checkout-root")
+
+        # A relative `home/<x>` at a token start: a repository may hold a
+        # `home/` directory, so the WRITER takes it; the committed-bytes
+        # detector still reads it, because a human reviews what that flags.
+        rel_home = "/".join(("home", "someone", "notes.md"))
+        detector = dict(M.MACHINE_PATH_SHAPES)["posix-home"]
+        check("ft10 a relative home/<x> is flagged by the detector's pattern and "
+              "NOT refused by the writer's check; the absolute spelling is "
+              "refused: %r" % (M.machine_path_shape(rel_home),),
+              detector.search(rel_home) is not None
+              and M.machine_path_shape(rel_home) is None
+              and check_ft is not None
+              and check_ft(None, "--text", rel_home) is None
+              and M.machine_path_shape("/" + rel_home) == "posix-home")
+
+        # A root holding a space is split in two by the token grammar, so no
+        # single token carries it: the whole value falls to the constant.
+        spaced = ("/srv/my repo",)
+        check("ft12 a machine path no single token carries is still never "
+              "written: the whole value becomes the outside token: %r"
+              % ((redact(None, "ran /srv/my repo/x", spaced)
+                  if redact else None),),
+              redact is not None
+              and redact(None, "ran /srv/my repo/x", spaced) == M.OUTSIDE_TOKEN
+              and redact(None, "ran /srv/other/x", spaced)
+              == "ran /srv/other/x")
+
+        why = getattr(M, "append_why", None)
+        off = {"journal": {"enabled": False, "dir": jdir}}
+        got_off = why(proj, entry("P1.1 x"), config=off) if why else None
+        got_on = why(proj, entry("P1.1 y"), config=cfg) if why else None
+        check("ft11 an append that still fails says WHY, and one that lands "
+              "says nothing: %r / %r" % (got_off, got_on),
+              got_off is not None and got_off[0] is False
+              and "disabled" in (got_off[1] or "")
+              and got_on is not None and bool(got_on[0]) and got_on[1] is None)
+
+        # The ROW tuples are compared by identity, not the patterns: `re`
+        # caches compiled patterns by their text, so a detector that re-spelled
+        # the same regex would hand back the very same pattern object and an
+        # identity check on the pattern would pass over a copy.
+        tool = _pii_tool()
+        rows = dict((r[0], r) for r in tool.DETECTORS)
+        shared = M.MACHINE_PATH_SHAPES
+        check("ft7 the detector's rows for the writer's shapes ARE the writer's "
+              "rows - one definition, two readers - and the patterns agree too: "
+              "%r" % ([r[0] for r in shared],),
+              [r[0] for r in shared]
+              == ["posix-home", "windows-user-path", "session-slug",
+                  "escaped-path", "tempdir-session", "unexpanded-home"]
+              and all(rows.get(r[0]) is r for r in shared)
+              and all(rows[r[0]][1].pattern == r[1].pattern for r in shared))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    _shape_parity_cases(check)
+
+
+def _shape_parity_cases(check):
+    """Every shape the commit-time detector flags, judged by the writer too.
+
+    Each sample is built so this file never spells one whole, and each has an
+    allow twin a widened shape would wrongly catch."""
+    tmp = tempfile.mkdtemp(prefix="journal-shape-parity-")
+    try:
+        proj = os.path.join(tmp, "repo")
+        os.makedirs(os.path.join(proj, "src", "real"))
+        tool = _pii_tool()
+        samples = (
+            ("session-slug", "/x/" + "-".join(("", "Users", "someone",
+                                               "Desktop", "x")) + "/s",
+             "see docs/users-guide.md"),
+            ("escaped-path", "%2F".join(("q=", "Users", "someone", "x")),
+             "q=%2Fdocs%2Fx"),
+            ("tempdir-session", "/".join(("", "private", "tmp", "claude-501",
+                                          "probe")),
+             "src/tmp/claude-7.ts"),
+            ("unexpanded-home", "cwd=" + "~" + "/probe/notes.md",
+             "costs ~5% more, see src/~/x"),
+        )
+        got = []
+        for name, raw, allow in samples:
+            said = "probe at %s here" % (raw,)
+            red = M.redacted_free_text(proj, said)
+            msg = M.check_free_text(proj, "--text", said) or ""
+            got.append((name, M.machine_path_shape(said), name in msg,
+                        raw not in red and M.OUTSIDE_TOKEN in red
+                        and M.machine_path_shape(red) is None,
+                        M.machine_path_shape(allow),
+                        M.redacted_free_text(proj, allow) == allow))
+        check("sp1 each detector shape is named by the writer, refused at the "
+              "caller's door by that name, and redacted out of a plugin value: %r"
+              % (got,),
+              all(g[1] == g[0] and g[2] and g[3] for g in got))
+        check("sp2 ALLOW twins: a kebab file name, an encoded repo path, a "
+              "nested tmp directory and a tilde that is no home are neither "
+              "named nor rewritten - the mutation this catches is a shape "
+              "widened past its detector: %r" % (got,),
+              all(g[4] is None and g[5] for g in got))
+
+        slug = "-".join(("", "Users", "someone", "Desktop", "x"))
+        placed = ("dir %s here" % (slug,),
+                  "/".join(("~", ".claude", "projects", slug, "s.jsonl")),
+                  "/".join(("", "private", "tmp", "claude-501", slug, "s")),
+                  "/projects/" + "-".join(("", "home", "someone", "src")),
+                  "/projects/" + "-".join(("", "private", "tmp", "probe")),
+                  '"%s"' % (slug,),
+                  "\\".join(("D:", "data", ".claude", "projects",
+                              "C-" + slug)))
+        got_slug = [(p, M.machine_path_shape(p)) for p in placed]
+        check("sp7 a session slug is named by the writer at every placement a "
+              "real one takes - a token start, the projects directory, a "
+              "scratch tempdir, quoted, and the Windows drive spelling: %r"
+              % (got_slug,),
+              all(g[1] == "session-slug" for g in got_slug))
+        kebab = ("the my-home-page component, the add-Users-list view and "
+                 "go-home-now")
+        check("sp8 ALLOW twin: kebab prose holding -home-<word> and "
+              "-Users-<word> mid-word is neither named, refused nor "
+              "rewritten - the mutation this catches is a slug shape with no "
+              "token start: %r" % (M.machine_path_shape(kebab),),
+              M.machine_path_shape(kebab) is None
+              and M.check_free_text(proj, "--text", kebab) is None
+              and M.redacted_free_text(proj, kebab) == kebab)
+        # A WORD THAT STARTS A TOKEN AFTER WHITESPACE is the placement sp8
+        # leaves open: an option name or a bare user name in prose, no second
+        # segment and no separator beside it. Mixed with a kebab word, because
+        # the redactor's fallback replaced such a whole sentence at once.
+        # Each placement sp10 takes has its whitespace-led twin here: the same
+        # lone segment inside a quoted value, after a key and `=`, inside
+        # parentheses and on an indented line, but with a space before it -
+        # plus a single-dash drive spelling and a markdown code span.
+        lone_u = "-".join(("", "Users", "bob"))
+        lone_h = "-".join(("", "home", "dir"))
+        proses = (
+            "fix the go-home-now button; rename " + lone_h
+            + " option, abc " + lone_u + " here",
+            '{"b":"see %s here"}' % (lone_u,),
+            "set HOME = " + lone_h + " for it",
+            "( see " + lone_u + " )",
+            "first line\n  " + lone_h + " is an option",
+            "the C" + lone_u + " page",
+            "an option named `" + lone_h + "`",
+        )
+        got_prose = [(p, M.machine_path_shape(p),
+                      M.check_free_text(proj, "--text", p),
+                      M.redacted_free_text(proj, p) == p,
+                      tool.scan_text("x.md", p, "plan")) for p in proses]
+        check("sp9 ALLOW: prose naming a -home-<word> option and a -Users-<name> "
+              "led by whitespace, at every placement sp10 convicts, is neither "
+              "named, refused, rewritten nor flagged - the mutation this "
+              "catches is a slug shape that takes the user segment alone "
+              "wherever it stands: %r"
+              % ([g for g in got_prose
+                  if not (g[1] is None and g[2] is None and g[3]
+                          and g[4] == [])],),
+              all(g[1] is None and g[2] is None and g[3] and g[4] == []
+                  for g in got_prose))
+        lone = ("/projects/" + lone_u,
+                "-".join(("", "home", "bob")) + "/s.jsonl",
+                "\\".join(("D:", "p", "C-" + lone_u)),
+                '{"b":"%s"}' % (lone_u,),
+                "HOME=" + lone_u,
+                "cwd (" + lone_u + ")",
+                "first line\n" + lone_u + " here",
+                "dir C-" + lone_u + " here",
+                "path:" + lone_u)
+        got_lone = [(p, M.machine_path_shape(p)) for p in lone]
+        check("sp10 ...and the same lone user segment bounded by a separator, "
+              "a quote, a key's `=`, a colon, a parenthesis, a line start or "
+              "a drive letter IS a slug - the mutation this catches is a "
+              "narrowing that demands a second segment or a separator: %r"
+              % ([g for g in got_lone if g[1] != "session-slug"],),
+              all(g[1] == "session-slug" for g in got_lone))
+        tilde = "use " + "~" + "/.config"
+        check("sp11 a home tilde in prose stays refused at the door, because "
+              "the commit-time detector fails the build on it: %r"
+              % (M.check_free_text(proj, "--text", tilde),),
+              "unexpanded-home" in (M.check_free_text(proj, "--text", tilde)
+                                    or ""))
+
+        hosted = "file://localhost" + "/".join(("", "Users", "someone",
+                                                "r.html"))
+        said = "open %s now" % (hosted,)
+        hits = [h[2] for h in tool.scan_text("x.md", said, "plan")]
+        check("sp12 a file URL naming a host before a home directory is "
+              "refused, redacted and flagged: %r"
+              % ((M.check_free_text(proj, "--text", said),
+                  M.redacted_free_text(proj, said), hits),),
+              "posix-home" in (M.check_free_text(proj, "--text", said) or "")
+              and M.redacted_free_text(proj, said)
+              == "open %s now" % (M.OUTSIDE_TOKEN,)
+              and "posix-home" in hits)
+        web = "open https://localhost" + "/".join(("", "Users", "someone",
+                                                   "r.html")) + " now"
+        check("sp13 ALLOW twin: an https URL with the very same host and path "
+              "is neither refused, rewritten nor flagged - the mutation this "
+              "catches is a host start granted to every scheme: %r"
+              % ((M.check_free_text(proj, "--text", web),
+                  tool.scan_text("x.md", web, "plan")),),
+              M.check_free_text(proj, "--text", web) is None
+              and M.redacted_free_text(proj, web) == web
+              and tool.scan_text("x.md", web, "plan") == [])
+
+        url = "file://" + "/".join(("", "Users", "someone", "r.html"))
+        said = "open %s now" % (url,)
+        hits = [h[2] for h in tool.scan_text("x.md", said, "plan")]
+        check("sp3 a file URL into a home directory is refused, redacted and "
+              "flagged by the detector: %r"
+              % ((M.check_free_text(proj, "--text", said),
+                  M.redacted_free_text(proj, said), hits),),
+              "posix-home" in (M.check_free_text(proj, "--text", said) or "")
+              and M.redacted_free_text(proj, said)
+              == "open %s now" % (M.OUTSIDE_TOKEN,)
+              and "posix-home" in hits)
+        web = "open https://example.com/Users/guide now"
+        check("sp4 ALLOW twin: an https URL whose path merely holds the word is "
+              "neither refused, rewritten nor flagged: %r"
+              % ((M.check_free_text(proj, "--text", web),
+                  tool.scan_text("x.md", web, "plan")),),
+              M.check_free_text(proj, "--text", web) is None
+              and M.redacted_free_text(proj, web) == web
+              and tool.scan_text("x.md", web, "plan") == [])
+
+        try:
+            os.symlink("real", os.path.join(proj, "src", "link"))
+            os.symlink(tmp, os.path.join(proj, "src", "out"))
+        except (OSError, NotImplementedError, AttributeError) as exc:
+            _harness.skip(check, "sp5", "os.symlink is refused here (%s: %s)"
+                          % (type(exc).__name__, exc), True)
+            return
+        through = os.path.join(proj, "src", "link", "x.py")
+        check("sp5 a path through a symlinked directory inside the repo keeps "
+              "the spelling the writer used: %r"
+              % (M.repo_relative_or_token(proj, through),),
+              M.repo_relative_or_token(proj, through) == "src/link/x.py"
+              and M.repo_relative_or_token(
+                  proj, os.path.join(proj, "src", "real", "x.py"))
+              == "src/real/x.py")
+        check("sp6 ...and a link spelled under the root that resolves OUTSIDE it "
+              "is still the outside token - inside or outside is the realpath's "
+              "answer: %r"
+              % (M.repo_relative_or_token(proj, os.path.join(proj, "src", "out",
+                                                             "x")),),
+              M.repo_relative_or_token(proj, os.path.join(proj, "src", "out",
+                                                          "x"))
+              == M.OUTSIDE_TOKEN)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _selftest():

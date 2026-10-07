@@ -9225,6 +9225,152 @@ def _cases(check):
               % ((_nt_empty[0], _nt_phase[0]),),
               _nt_empty[0] == 2 and _nt_phase[0] == 2 and _nt_after == _nt_before)
 
+        # A note is caller free text: a machine path in it is refused at the
+        # verb's door, before the lock, so neither the shard nor the journal
+        # takes it. Neutral, and built so this file never spells one whole.
+        _nt_home = "/" + "/".join(("Users", "someone", "notes", "probe.md"))
+        _nt_rows_before = len([r for r in _journal_io.read_all(projnt)])
+        _nt_mp = run(["note", "P2.4", "--text", "probe kept at %s" % (_nt_home,),
+                      "--project-dir", projnt])
+        _nt_mp_in = run_on_stdin(["note", "P2.4", "--text", "-",
+                                  "--project-dir", projnt],
+                                 "probe kept at %s\n" % (_nt_home,))
+        with open(mpnt, "rb") as _fh:
+            _nt_mp_after = _fh.read()
+        _nt_rows_after = len([r for r in _journal_io.read_all(projnt)])
+        check("nt3 a note carrying a home path - on argv or on stdin - exits "
+              "non-zero, leaves the shard and the journal unchanged, and names "
+              "the field and the shape without echoing the path: %r"
+              % ((_nt_mp[0], _nt_mp_in[0], _nt_mp[1][:160]),),
+              _nt_mp[0] != 0 and _nt_mp_in[0] != 0
+              and _nt_mp_after == _nt_before
+              and _nt_rows_after == _nt_rows_before
+              and "--text" in _nt_mp[1] and "posix-home" in _nt_mp[1]
+              and "--text" in _nt_mp_in[1]
+              and "someone" not in _nt_mp[1] + _nt_mp_in[1])
+        _nt_ok = run(["note", "P2.4", "--text",
+                      "probe kept at docs/probe.md, see https://example.com/x",
+                      "--project-dir", projnt])
+        check("nt4 ALLOW twin: a note naming a repo-relative path and a URL is "
+              "written - the mutation this catches is a door that refuses "
+              "every path-shaped note: %r" % (_nt_ok,),
+              _nt_ok[0] == 0
+              and [n.get("text") for n in
+                   ((task_in(mpnt, "P2.4") or {}).get("notes") or [])][-1:]
+              == ["probe kept at docs/probe.md, see https://example.com/x"])
+
+        # Every shape the commit-time detector flags is refused at the same
+        # door, and a file URL into a home directory with them. Each sample is
+        # built so this file never spells one whole.
+        _nt_shapes = (
+            ("session-slug", "/x/" + "-".join(("", "Users", "someone",
+                                               "Desktop", "x")) + "/s"),
+            ("escaped-path", "%2F".join(("q=", "Users", "someone", "x"))),
+            ("tempdir-session", "/".join(("", "private", "tmp", "claude-501",
+                                          "probe"))),
+            ("unexpanded-home", "cwd=" + "~" + "/probe/notes.md"),
+            ("posix-home", "file://" + "/".join(("", "Users", "someone",
+                                                  "r.html"))),
+        )
+        with open(mpnt, "rb") as _fh:
+            _nt5_before = _fh.read()
+        _nt5 = [(name, run(["note", "P2.4", "--text", "probe at %s" % (raw,),
+                            "--project-dir", projnt]))
+                for name, raw in _nt_shapes]
+        with open(mpnt, "rb") as _fh:
+            _nt5_after = _fh.read()
+        check("nt5 a note carrying any detector shape, or a file URL into a home "
+              "directory, is refused at the door by that shape's name and the "
+              "shard is unchanged: %r" % ([(n, r[0]) for n, r in _nt5],),
+              all(r[0] == 2 and n in r[1] and "someone" not in r[1]
+                  for n, r in _nt5)
+              and _nt5_after == _nt5_before)
+        _nt6_text = ("probe at https://example.com/Users/guide, "
+                     "docs/users-guide.md and q=%2Fdocs%2Fx")
+        _nt6 = run(["note", "P2.4", "--text", _nt6_text, "--project-dir", projnt])
+        check("nt6 ALLOW twin: an https URL whose path merely holds the word, a "
+              "kebab file name and an encoded repo path are written verbatim - "
+              "the mutation this catches is a shape that refuses every URL: %r"
+              % (_nt6,),
+              _nt6[0] == 0
+              and [n.get("text") for n in
+                   ((task_in(mpnt, "P2.4") or {}).get("notes") or [])][-1:]
+              == [_nt6_text])
+        # Prose naming an option and a bare user name, each a dash-led word
+        # at a token start with nothing after it, is not a session slug.
+        _nt7_text = ("fix the go-home-now button; rename " + "-home-dir"
+                     + " option, abc " + "-Users-bob")
+        _nt7 = run(["note", "P2.4", "--text", _nt7_text, "--project-dir", projnt])
+        check("nt7 ALLOW: a note naming a -home-<word> option and a "
+              "-Users-<name> in prose is written verbatim - the mutation this "
+              "catches is a slug shape that takes the user segment alone: %r"
+              % (_nt7,),
+              _nt7[0] == 0
+              and [n.get("text") for n in
+                   ((task_in(mpnt, "P2.4") or {}).get("notes") or [])][-1:]
+              == [_nt7_text])
+        _nt8_path = "/".join(("", "Users", "someone", "r.html"))
+        with open(mpnt, "rb") as _fh:
+            _nt8_before = _fh.read()
+        _nt8 = run(["note", "P2.4", "--text",
+                    "open file://localhost%s now" % (_nt8_path,),
+                    "--project-dir", projnt])
+        with open(mpnt, "rb") as _fh:
+            _nt8_after = _fh.read()
+        _nt8_web = "open https://localhost%s now" % (_nt8_path,)
+        _nt8_ok = run(["note", "P2.4", "--text", _nt8_web,
+                       "--project-dir", projnt])
+        check("nt8 a file URL naming a host before a home directory is refused "
+              "at the door as posix-home, nothing written, and its https twin "
+              "with the same host and path is written verbatim: %r"
+              % ((_nt8[0], _nt8[1][:160], _nt8_ok[0]),),
+              _nt8[0] == 2 and "posix-home" in _nt8[1]
+              and "someone" not in _nt8[1] and _nt8_after == _nt8_before
+              and _nt8_ok[0] == 0
+              and [n.get("text") for n in
+                   ((task_in(mpnt, "P2.4") or {}).get("notes") or [])][-1:]
+              == [_nt8_web])
+
+        # ---- (md) a gate command and a test name pass the same door ----------------
+        projgd, mpgd = mk("gd-gate-door", pd_fixture())
+        _gd_home = "python3 " + "/".join(("", "Users", "someone", "repo", "tools",
+                                          "t.py"))
+        with open(mpgd, "rb") as _fh:
+            _gd_before = _fh.read()
+        _gd = [
+            ("--gate", run(["retarget", "P3", "--gate", _gd_home,
+                            "--project-dir", projgd])),
+            ("--gate-set", run(["retarget", "P3", "--gate-set", "test", _gd_home,
+                                "--project-dir", projgd])),
+            ("--gate", run(["scope", "P2.3", "--gate", _gd_home,
+                            "--project-dir", projgd])),
+            ("--verified-by", run(["done", "P2.4", "--commit", "abc1234",
+                                   "--verified-by", "t_ok," + _gd_home,
+                                   "--project-dir", projgd])),
+        ]
+        with open(mpgd, "rb") as _fh:
+            _gd_after = _fh.read()
+        check("md1 a home path in retarget's --gate and --gate-set, scope's "
+              "--gate and done's --verified-by is refused before the lock, by "
+              "flag and shape and without the path, and nothing is written: %r"
+              % ([(f, r[0], r[1][:120]) for f, r in _gd],),
+              all(r[0] == 2 and f in r[1] and "posix-home" in r[1]
+                  and "someone" not in r[1] for f, r in _gd)
+              and _gd_after == _gd_before)
+        _gd_ok = run(["retarget", "P3", "--gate", "python3 tools/t.py",
+                      "--project-dir", projgd])
+        _gd_ok_set = run(["retarget", "P3", "--gate-set", "test",
+                          "python3 tools/u.py", "--project-dir", projgd])
+        _gd_phase = [p for p in (_mio.load_manifest(mpgd).get("phases") or [])
+                     if p.get("id") == "P3"]
+        check("md2 ALLOW twin: a plain repo-relative gate command is written by "
+              "both spellings - the mutation this catches is a door that refuses "
+              "every gate value: %r" % ((_gd_ok[0], _gd_ok_set[0],
+                                         _gd_phase[:1]),),
+              _gd_ok[0] == 0 and _gd_ok_set[0] == 0
+              and [p.get("testGate") for p in _gd_phase]
+              == [["test", "python3 tools/u.py"]])
+
         # ---- (rv) review findings: recorded by a verb, the tally derived ----------
         # Sign-off step 1 records the reviewer's findings, and until these verbs
         # that record was a hand edit of the phase shard - no lock, no journal row,

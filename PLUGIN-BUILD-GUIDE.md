@@ -604,9 +604,12 @@ The warn tier deliberately does NOT emit a `permissionDecision` — there is no 
 this hook, and adding one would auto-approve the tool call and skip the user's own prompt.
 `_config.manifest_state` reads the ASSEMBLED manifest: sharded index stubs carry no `status`,
 so a raw index read would miss every running phase.
-**Transactional state**: PreToolUse only observes (the edit may still be denied by a sibling
-hook or the user); PostToolUse — which fires only after a successful edit — consumes the
-bypass (logged), records the free-file slot, and appends to the observe tally. All tunables
+**Transactional state**: PreToolUse takes the session's free-file slot — the one slot
+`guard-secrets-read.py` takes for a shell write at its own Pre, read and written through
+`_config.trivial_slot` / `take_trivial_slot` — and does not consume the bypass (the edit may
+still be denied by a sibling hook or the user, so a refused edit has still spent the slot).
+PostToolUse — which fires only after a successful edit — consumes the bypass (logged),
+confirms the slot (taking it only when Pre did not), and appends to the observe tally. All tunables
 from config (`manifestPath`, `exemptGlobs`, `enforce`, `trivialLineThreshold`, `stateDir`,
 `logsDir`, `bypassKeyword`).
 `--selftest`.
