@@ -734,6 +734,12 @@
       "title": "a whole feature in an existing codebase shows where each way of working fails and what it costs",
       "status": "pending",
       "shard": "phases/P116.json"
+    },
+    {
+      "id": "P117",
+      "title": "a pipeline run's fixed cost is measured stage by stage and cut by infrastructure",
+      "status": "pending",
+      "shard": "phases/P117.json"
     }
   ],
   "fileIndex": {
@@ -1014,7 +1020,8 @@
       "P104.13-tog",
       "P112.1-uce",
       "P112.5-uce",
-      "P112.7-uce"
+      "P112.7-uce",
+      "P117.1"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -1167,7 +1174,8 @@
       "P114.2-ffv",
       "P102.12-ptn",
       "P108.4",
-      "P101.4-1cb"
+      "P101.4-1cb",
+      "P117.1"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -4920,7 +4928,8 @@
       "P93.4-287",
       "P109.9",
       "P107.4",
-      "P112.2-uce"
+      "P112.2-uce",
+      "P117.1"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -5558,7 +5567,9 @@
     ],
     "docs/README.md": [
       "P101.3",
-      "P116.1"
+      "P116.1",
+      "P117.1",
+      "P117.2"
     ],
     "plugins/audit/evals/feature/case.yaml": [
       "P101.3"
@@ -5835,6 +5846,18 @@
     ],
     "docs/research/benchmark-feature-results.md": [
       "P116.2"
+    ],
+    "tools/measure-context.py": [
+      "P117.1"
+    ],
+    "tools/stream-cost.py": [
+      "P117.1"
+    ],
+    "docs/research/pipeline-cost-analysis.md": [
+      "P117.1"
+    ],
+    "docs/research/pipeline-cost-design.md": [
+      "P117.2"
     ]
   },
   "bugs": [
