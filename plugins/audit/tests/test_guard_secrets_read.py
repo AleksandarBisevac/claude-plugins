@@ -389,6 +389,105 @@ def _ts_no_links(check, root, cfg, shell, edit):
           and _slot_file(root, cfg, "ts-r2") == ["src/m1.py"])
 
 
+def _journal_cases(check):
+    """A shell write into the append-only journal is refused like an Edit of it.
+
+    One operation, one verdict: guard-edits refuses the edit tools the journal at
+    every tier, so the shell spelling of the same append is refused at every tier
+    too - and refused BEFORE the free-file slot is consulted, so a command that
+    appends to the journal and writes a source file takes no slot. The fixture
+    runs a phase, which is the deny tier by evidence; the other tiers are pinned
+    through the knob, and a second fixture with no manifest is the observe tier by
+    evidence."""
+    root = Path(_harness.fixture_root("guard-secrets-journal-"))
+    bare = Path(_harness.fixture_root("guard-secrets-journal-bare-"))
+    (root / "src").mkdir(parents=True)
+    (root / "docs" / "audit" / "journal").mkdir(parents=True)
+    (bare / "docs" / "audit" / "journal").mkdir(parents=True)
+    (root / "docs" / "audit" / "audit-plan.json").write_text(json.dumps(
+        {"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "in_progress",
+                 "files": ["src/declared.py"]}]}]}), encoding="utf-8")
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    held = os.environ.get("CLAUDE_PROJECT_DIR")
+    journal = "docs/audit/journal/2026-10.s.jsonl"
+
+    def shell(at, sid, cmd, use_cfg=None, agent=None):
+        os.environ["CLAUDE_PROJECT_DIR"] = str(at)
+        data = {"tool_name": "Bash", "session_id": sid, "cwd": str(at),
+                "tool_input": {"command": cmd}}
+        if agent:
+            data["agent_id"] = agent
+        ok, got = _harness.attempt(M.decide, data, cfg=use_cfg or cfg)
+        return got if ok else ("raised", str(got))
+
+    try:
+        tiers = [(t, _config._deep_merge(cfg, {"planGate": t}))
+                 for t in _config.PLAN_GATE_TIERS]
+        for tier, tcfg in tiers:
+            got = shell(root, "sj-%s" % tier, "echo '{}' >> " + journal,
+                        use_cfg=tcfg)
+            check("sj1 a shell append to the journal is refused at planGate %r, "
+                  "naming the journal and the plugin's own writer: %r"
+                  % (tier, got),
+                  got[0] == "block" and journal in got[1]
+                  and "append-only" in got[1]
+                  and "audit-journal.py append" in got[1])
+        got = shell(bare, "sj-bare", "echo '{}' > " + journal)
+        check("sj2 ...and with no manifest at all, the observe tier by evidence, "
+              "a plain redirect over it is refused too: %r" % (got,),
+              got[0] == "block" and journal in got[1])
+        for form, spelled in (("tee -a", "echo '{}' | tee -a " + journal),
+                              ("sed -i", "sed -i 's/a/b/' " + journal)):
+            got = shell(root, "sj-forms", spelled)
+            check("sj3 `%s` into the journal is the same act and gets the same "
+                  "refusal: %r" % (form, got), got[0] == "block")
+        got = shell(root, "sj-sub", "echo '{}' >> " + journal, agent="agent-sj")
+        check("sj4 ...from a subagent as from the orchestrator - nobody writes "
+              "the journal by hand: %r" % (got,), got[0] == "block")
+        got = shell(root, "sj-slot", "echo '{}' >> %s; sed -i '' 's/A = 1/A = 2/' "
+                    "src/first.py" % journal)
+        check("sj5 a command appending to the journal and writing an uncovered "
+              "source file is refused on the journal, and spends no free-file "
+              "slot - nothing was written: %r, slot %r"
+              % (got, _slot_file(root, cfg, "sj-slot")),
+              got[0] == "block" and journal in got[1]
+              and _slot_file(root, cfg, "sj-slot") == [])
+        moved = _config._deep_merge(cfg, {"journal": {"dir": "trail"}})
+        got = shell(root, "sj-moved", "echo '{}' >> trail/x.jsonl", use_cfg=moved)
+        check("sj6 a project that MOVED the journal is covered: the directory "
+              "comes from the config, never spelled here: %r" % (got,),
+              got[0] == "block" and "trail/x.jsonl" in got[1])
+        # THE ALLOW TWINS. Each is what an over-block would take: the journal
+        # READ, a write beside it, the moved-away default, and the plugin's own
+        # writer, which is a script and not a redirect.
+        allows = [
+            ("sj7 reading the journal is not writing it",
+             root, "cat " + journal, cfg),
+            ("sj8 ...nor is feeding it to a command on stdin",
+             root, "wc -l < " + journal, cfg),
+            ("sj9 ...nor copying its rows into a file outside it",
+             root, "cat %s > rows.txt" % journal, cfg),
+            ("sj10 a write to a file in the plan's directory that is not the "
+             "journal stays allowed", root, "echo hi > docs/audit/notes.md", cfg),
+            ("sj11 the plugin's own journal writer runs as a script and is not "
+             "refused", root, "python3 scripts/governance/audit-journal.py "
+             "append --event x", cfg),
+            ("sj12 once the journal MOVED, the default directory is an ordinary "
+             "one - the set moved, it did not grow", root,
+             "echo '{}' >> " + journal, moved),
+        ]
+        for name, at, cmd, use_cfg in allows:
+            got = shell(at, "sj-allow", cmd, use_cfg=use_cfg)
+            check("%s: %r" % (name, got), got[0] == "allow")
+    finally:
+        if held is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = held
+
+
 def _two_tree_cases(check):
     """One command writing uncovered files in two trees is graded in each."""
     lw = _harness.worktree_pair("gsr-two-trees-")
@@ -435,6 +534,7 @@ def _cases(check):
     """Exercise the decision core with fictional secret paths (never real files)."""
     _harness.stage(check, "gs-live", _refresh_cases)
     _harness.stage(check, "ts", _slot_cases)
+    _harness.stage(check, "sj", _journal_cases)
     _harness.stage(check, "tt", _two_tree_cases)
     cfg = _config._deep_merge(_config.DEFAULTS, {})
     tmp = Path(_harness.fixture_root("guard-secrets-selftest-"))
@@ -1100,7 +1200,7 @@ def _cases(check):
     _expect("sm12 ...nor is a shell write to an exempt path that is not the "
           "manifest, which is where the manifest clause running FIRST could "
           "have cost something", "allow",
-          sub("echo hi > docs/audit/journal/2026-09.jsonl"))
+          sub("echo hi > docs/audit/notes/2026-09.md"))
     cfg_moved = _config._deep_merge(_config.DEFAULTS,
                                     {"manifestPath": "plan/my-plan.json"})
     _expect("sm13 a project that MOVED the manifest is covered: the path comes "

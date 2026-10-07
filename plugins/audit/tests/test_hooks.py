@@ -349,11 +349,7 @@ ROWS = (
      "input": _bash("echo '{}' >> " + JOURNAL),
      "why": "shell append to the journal",
      "decided": "deny - " + OPERATOR_DECISION + "; the edit tools already "
-                "refuse the journal, and one operation gets one verdict",
-     "today": _all("allow"),
-     "contradicts": "the operator's decided verdict (deny), and b09: Edit of "
-                    "the same journal is refused at every tier while no "
-                    "PreToolUse hook refuses the shell append"},
+                "refuse the journal, and one operation gets one verdict"},
     # manifest edits
     {"id": "b11", "class": "manifest-edit-orchestrator", "tool": "Edit",
      "input": _edit(MANIFEST, "\"title\": \"r\"", "\"title\": \"renamed\""),
@@ -620,7 +616,7 @@ def _verdict_word(decided):
 
 
 # --- the cases ----------------------------------------------------------------------
-KNOWN_DIVERGENCE = ("b10", "g06")
+KNOWN_DIVERGENCE = ("g06",)
 OPERATOR_DECIDED = ("b06", "b10", "g06")
 
 

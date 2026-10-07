@@ -91,6 +91,12 @@ Rule #2 branch calls it.
     exactly as `require-plan` refuses them to `Edit`. Not by calling `.json` a
     source extension: that would refuse every package.json in a consumer's repo.
     `_manifest_write_hit` and `_manifest_write_verdict` hold the two halves.
+  - those same shell write forms aimed at the JOURNAL (`_config.in_journal`,
+    the predicate guard-edits asks), refused at every tier and to every
+    session, as guard-edits refuses the edit tools - and refused before the
+    slot, so the command takes none. `_journal_write_hit` holds it. A journal
+    write through an interpreter call is not seen here: that arm reads source
+    paths only.
 
 Trade-off (accepted): the matchers are text-based and may over-block an innocent
 one-liner that merely mentions `.env` (e.g. `cp .env.example .env`). We accept
@@ -1954,6 +1960,44 @@ def _manifest_write_verdict(data, root, cfg, rel):
     return None
 
 
+# --- the journal, reached by shell instead of by Edit ----------------------------
+_SHELL_JOURNAL = (
+    "The audit journal is append-only: %s\n"
+    "It is written by the plugin (panel saves, the journal-writes hook, "
+    "audit-journal.py append) and never by hand - an edit here is what "
+    "`audit-journal.py verify` exists to detect. The Edit tool already refuses "
+    "this file; a redirect, `tee` and `sed -i` are the same write spelled "
+    "differently, so they are refused here too. To record something, run "
+    "audit-journal.py append; to stop recording, set journal.enabled false."
+)
+
+
+def _journal_write_hit(cmd, root, cfg, cwd):
+    """The repo-relative path of the first journal file `cmd` writes via a
+    `>`(`>>`) redirect, `tee` or `sed -i`, or None.
+
+    THE SAME TARGETS AND THE SAME PLACEMENT AS `_manifest_write_placed`, and the
+    same predicate guard-edits asks: `_config.in_journal`, which resolves the
+    directory from `journal.dir` or from beside `manifestPath`. A project that
+    moved its journal is covered because the resolution moves with it, and a
+    target the shell alone can resolve is skipped rather than walked onto the
+    directory by a normalising join.
+
+    A read of the journal is no hit - a `<` redirect is not among the targets -
+    and neither is the plugin's own writer, which is a script that opens the
+    file itself rather than a redirect the shell performs."""
+    for t in _shell_write_targets(cmd):
+        if not _config.resolvable_destination(t):
+            continue
+        placed = _placed_target(t, cwd)
+        if placed is None:
+            continue
+        tree = _config.tree_for(None, placed, cfg, project=root)
+        if tree["inside"] and _config.in_journal(tree["root"], cfg, placed):
+            return tree["rel"]
+    return None
+
+
 def _append_verdict_event(root, cfg, data, verdict, msg):
     """One line into the gate events feed for a deny/ask verdict (v0.36 A4).
 
@@ -2272,6 +2316,14 @@ def _decide_core(data, root, cfg):
             refusal = _manifest_write_verdict(data, mhit[1], cfg, mhit[0])
             if refusal is not None:
                 return refusal
+        # THE JOURNAL IS REFUSED AT EVERY TIER, to everybody, and before the
+        # slot is consulted. guard-edits refuses the edit tools this file with no
+        # tier and no exemption, so the shell spelling of the same write gets the
+        # same answer - and a command that also writes a source file is refused
+        # as a whole, so it neither takes nor spends the free-file slot.
+        jhit = _journal_write_hit(runnable, root, cfg, cwd)
+        if jhit:
+            return ("block", _SHELL_JOURNAL % (jhit,))
         # Over what runs, not over the raw text - a `>` inside prose being
         # written into a file is not a redirect the shell performs. An interpreter
         # body stays in this view: a `sed -i` inside one is still a shell write.

@@ -211,7 +211,7 @@
     {
       "id": "P108.4",
       "title": "Give a shell write the same plan-gate verdict as Edit of the same change",
-      "status": "in_progress",
+      "status": "done",
       "description": "Make a shell write and Edit of the same change get the same plan-gate verdict. The shell-write arm of guard-secrets-read reads the session's first-trivial-file slot the way require-plan does, through one reader moved into _config so the two cannot drift. The human decides how a shell write's magnitude is measured when the command does not state it, and once the verdicts agree, restores the one-verdict docstring sentences the message task qualified. Precondition, without which this task does not start: sort the shell-write refusals recorded since 3.0.0 into covered, first-trivial and uncovered, and record the result on this task with /audit:task note together with the command that produced it. An executor attempts the guard-reading code first, because the maintainer wants code written by agents; Claude also supplies the tests and the corpus rows. This step may be stopped by the model's safeguard; if so, record the refusal verbatim and hand it to the human.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -248,14 +248,35 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "51032cbc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "A shell write and an Edit of the same change now get the same plan-gate verdict. hooks/_config.py holds the one reader and writer of the session's first-trivial slot: trivial_slot returns [] only for an absent slot file and [SLOT_UNREADABLE] for an unreadable, unparseable or nameless one (spent on a file nobody can name, so the write is graded by both tools); take_trivial_slot publishes atomically (mkstemp temp named plan-gate-tmp-*, os.link onto the slot name, temp removed in finally); on a volume without hard links (an os.link OSError other than FileExistsError) it falls back to _take_slot_exclusive, an O_CREAT|O_EXCL create plus the JSON dump, whose half-written file reads as spent; it returns True (taken), False (lost the race) or None (neither publish could write: the documented open door, every uncovered file allowed at deny too, worded 'could not be recorded' by both hooks); _slot_path keeps only [A-Za-z0-9_.-] of the session id, capped; text_lines / text_char_lines / text_magnitude are the one magnitude formula, shared with require-plan's _change_magnitude.\nguard-secrets-read.py: _decide_core asks the manifest arm first, then merges interpreter and shell-write hits (deduplicated by shown) and grades them in ONE _slot_write_verdict call, so no arm returns an allow early and the slot is spent at most once per command; a shell write is measured by the command's whole text and, over trivialLineThreshold, takes no slot and is graded; every graded hit is graded in its own tree and the strictest verdict (block > ask > allow) wins, naming the file that decided it; a lost race re-reads the slot and is graded against the winner. Content a command computes or fetches still takes the slot unmeasured, and nothing reports an oversized one yet (the guard-bash-writes follow-up task builds that report).\nrequire-plan.py: step 5 takes the slot at Pre for the trivial allowance, as the shell arm does (Post only confirms, taking it if Pre did not); allow.trivial is logged and 'recorded first trivial code file' said only when the take returns True; False re-reads and grades; None allows with 'the slot could not be recorded' and logs nothing. The header names this as the one exception to decide-at-Pre, commit-at-Post.\nSECURITY.md: the same-verdict sentence names the free-file slot and its exceptions (unmeasured computed/fetched content, no after-the-fact report yet, the unwritable-slot open door), in step with the guard header and plan_gate_mode's docstring.\nPrecondition (task note 1): shell-write refusals recorded since v3.0.0, sorted from the dogfood plan-gate events feed: covered 1, first-trivial 2, uncovered 25, unestablished 4. Magnitude decision and its correction: task notes 2 and 3.\nTests: test_guard_secrets_read ts1-ts25 and ts21b, tt1-tt3; test_require_plan ss0-ss3 (b2-b5 rewritten for the Pre-take contract); test_hooks b17h plus b02/b17s/b03o unmarked (known divergence now b10 and g06 only). Red-first: helper at HEAD b1094019 proved the guard suite (12 of 21 failing before HEAD's run stops at the missing take_trivial_slot), test_hooks (hk1/hk2/hk4) and test_require_plan (b2, b3, ss1); the cases HEAD cannot reach (ts20-ts23, tt1-tt3, ss3) were proved by scratch mutation rows (mutate_slot.py, mutate_round2.py), each red. Suites 423/423, 202/202, 131/131, plus test__config, test_guard_bash_writes, test_detect_plan_skip and the doc-reading suites; ruff, vermin, check-prohibitions and bench-hooks --gate green. Three review rounds, every finding fixed; no model or classifier refusal met. One hook refusal: the INSTALLED 3.1.0 guard placed a heredoc write to a scratchpad file (after `cd <scratchpad>`) inside the worktree; the executor used the Edit tool the refusal names, on the real out-of-repo path, and drove this branch's decide() to show it places the same command correctly.\nPII baseline: the precondition note's journal row (task.note, chained) quoted an operator command whose argument was an absolute path under the operator's home; the plan's copy was corrected to a repository-relative spelling, and tools/check-committed-pii.py gains one forward-only BASELINE row for the chained journal row, which cannot be rewritten. The write-time refusal that would have prevented it is filed separately.",
+        "descriptive": "Writing a file through a shell command and editing it with the Edit tool now get the same answer from the plan gate, including the one free uncovered file a session gets, and the remaining exceptions are written down in SECURITY.md."
       },
       "startedAt": "2026-10-06T22:04:13Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T01:08:37Z",
+      "verifiedBy": [
+        "ts1",
+        "ts11",
+        "ts12",
+        "ts13",
+        "ts15",
+        "ts17",
+        "ts18",
+        "ts20",
+        "ts21",
+        "ts21b",
+        "ts22",
+        "ts23",
+        "tt1",
+        "tt2",
+        "tt3",
+        "ss1",
+        "ss3",
+        "b17h",
+        "ts24",
+        "ts25"
+      ],
       "notes": [
         {
           "at": "2026-10-06T22:06:38Z",
@@ -274,12 +295,18 @@
         "runId": "2026-10-07T01:01:42Z.2b09ea",
         "status": "passed",
         "at": "2026-10-07T01:01:42Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "51032cbc",
+        "at": "2026-10-07T01:08:37Z",
+        "basis": "orchestrator check: one slot reader and writer in _config used by both hooks, b02/b03o/b17s match their Edit twins at every tier, precondition recorded as note 1, magnitude decision and its correction recorded as notes 2-3; review rounds 1-2 findings fixed and proved"
       }
     },
     {
       "id": "P108.5-4gh",
       "title": "a shell append to the journal is refused like an Edit of it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix BUG-18-4gh: a shell append to the audit journal (echo '{}' >> docs/audit/journal/<file>.jsonl) passes every PreToolUse hook while Edit of the same journal is refused by guard-edits. Decided 2026-10-06: the shell write is deny at every tier, one operation one verdict. The shell-write arm that grades plan coverage (guard-secrets-read's write arm) refuses a shell write whose resolved target is a journal file, with a refusal that names the journal and the sanctioned writer, the same way guard-edits refuses the edit tools; the plugin's own journal writer, which runs as a script rather than a shell redirect, is unaffected. test_hooks.py's b10 loses its known-divergence mark.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -312,17 +339,22 @@
       "dependsOn": [
         "P108.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T01:08:51Z",
       "completedAt": null,
       "verifiedBy": [],
-      "bugId": "BUG-18-4gh"
+      "bugId": "BUG-18-4gh",
+      "testEvidence": {
+        "runId": "2026-10-07T01:32:28Z.ed1ee1",
+        "status": "passed",
+        "at": "2026-10-07T01:32:28Z"
+      }
     },
     {
       "id": "P108.6-4gh",
@@ -375,7 +407,7 @@
     {
       "id": "P108.7-4gh",
       "title": "an oversized shell write that took the free slot is reported after it lands",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A shell write now takes the session's first-trivial slot at PreToolUse exactly as an Edit within trivialLineThreshold would, because the change cannot be seen before it happens (decided 2026-10-06). The PostToolUse arm that sees the change, guard-bash-writes, must therefore report a shell write that took the slot when the change it made exceeded trivialLineThreshold, measured the way require-plan measures an Edit's magnitude (one shared reader, not a second copy), naming the file, the measured magnitude and the threshold, and the remedy (put the file on an in_progress task, or ask the operator). It reports and never refuses, as guard-bash-writes does today. The docstrings that name this as an open residual (guard-secrets-read's header, _config's plan_gate_mode) are corrected once it holds.",
       "files": [
         "plugins/audit/hooks/guard-bash-writes.py",
@@ -407,14 +439,14 @@
       "dependsOn": [
         "P108.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T01:08:51Z",
       "completedAt": null,
       "verifiedBy": []
     },
