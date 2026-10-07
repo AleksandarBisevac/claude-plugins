@@ -1,7 +1,7 @@
 {
   "id": "P108",
   "title": "the same operation gets the same verdict, and a refusal says what to do",
-  "status": "in_progress",
+  "status": "done",
   "description": "Tasks: (1) A verdict table (operation class x tier) that the hook corpus asserts; the operator decides three undefined boundary cases. (2) Shell-write refusal text names what to do (the file is outside the running task; scope it or ask) instead of 'use the Edit/Write tools'. (3) The orchestrator recognizes the auto-mode classifier's no-verdict text and records could-not-run. (4) Only after measuring the 3.0.x refusals: the same verdict for Edit and a shell write of the same change - guard-reading code, written by the human maintainer.",
   "desiredOutcome": "for every documented operation class the plan gate's verdict is written down per tier, a refusal never tells the model to use a tool the harness steers away from, and a classifier that gives no verdict is recorded as could-not-run, not as a failed attempt",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "cd6933ada1f214a0af05fdb63330bdc94aeafa55",
   "branch": "audit/p108-the-same-operation-gets-the-sa",
-  "mergedAt": null,
+  "mergedAt": "2026-10-07T10:39:48Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -1691,5 +1691,6 @@
     "runId": "2026-10-07T10:38:35Z.b7ddea",
     "status": "passed",
     "at": "2026-10-07T10:38:35Z"
-  }
+  },
+  "mergedHead": "7f6905a26207634d229fc7564a94706f16bbe879"
 }
