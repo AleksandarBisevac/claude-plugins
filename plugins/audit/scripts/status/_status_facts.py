@@ -272,6 +272,48 @@ def ready_tasks(manifest):
     return _priority.rank_ready(rows)
 
 
+def readiness_projection(phase):
+    """The part of one phase body that `ready_tasks` reads, and nothing else.
+
+    Two copies of a phase whose projections are equal give the same ready set
+    for that phase whatever else differs between them - a title, a
+    description, an outcome or a note moves no task into or out of readiness.
+    So a comparison of projections answers "did this edit move readiness",
+    which a comparison of whole files, or a count of commits to the file,
+    cannot: either reads a reworded description, or a merge that brought the
+    file no content, as a change.
+
+    Kept beside `ready_tasks` because it has to name the same fields: the
+    task's id and status, its own `blockedBy` and `dependsOn`, and the phase's
+    `status` and `blockedBy`, which `status_index` and the phase gate read.
+    A field added to the readiness rule belongs here too.
+    """
+    if not isinstance(phase, dict):
+        return None
+    return {"id": phase.get("id"), "status": phase.get("status"),
+            "blockedBy": phase.get("blockedBy"),
+            "tasks": [{"id": t.get("id"), "status": t.get("status"),
+                       "blockedBy": t.get("blockedBy"),
+                       "dependsOn": t.get("dependsOn")}
+                      if isinstance(t, dict) else t
+                      for t in (phase.get("tasks") or [])]}
+
+
+def ready_by_phase(manifest):
+    """`{phase id: [ready task ids]}` - `ready_tasks` grouped by the owning phase.
+
+    The ONE ready list, partitioned rather than re-derived, so a phase's own
+    count can never disagree with the plan-wide list it is a share of. Order
+    within a phase is the list's own order; a phase with nothing ready has no
+    key, which a caller reads as zero.
+    """
+    owner = _mio.phase_of_task(manifest)
+    out = {}
+    for tid in ready_tasks(manifest):
+        out.setdefault(owner.get(tid), []).append(tid)
+    return out
+
+
 def priority_note(manifest, ready=None):
     """The one sentence about a pin that could not be honoured, or None.
 
@@ -1353,6 +1395,13 @@ UNFINISHED_LIVE = ("its holder is still there, so the run is either working or "
 UNFINISHED_STALE = ("its holder is gone, so nothing is going to finish it - "
                     "`/audit:resume` continues it, and `audit-lock.py release "
                     "phase-%s` gives the lock back")
+# A zero from a copy that is not the live one says nothing about waves left -
+# it says the count is not the run's - so its repair is about the reading, and
+# it is the same whether the lock's holder is there or gone.
+UNFINISHED_UNREAD = ("that zero is not from the copy holding phase %s live, "
+                     "so it says nothing about work left - re-read the count "
+                     "from the copy named, or check the branch, before acting "
+                     "on the lock")
 
 
 def unfinished_runs(summary):
@@ -1360,16 +1409,36 @@ def unfinished_runs(summary):
 
     THREE STATES, AND THE THIRD IS WHY THIS IS WORTH HAVING:
 
-        lock held   + ready work left    a run that has not finished
-        no lock     + no ready work      a finished plan
-        NO LOCK     + ready work left    every planned phase there has ever
-                                         been, and the state this must be
-                                         silent in
+        lock held   + own ready work left   a run that has not finished
+        lock held   + none of its own left  a sign-off in flight, or a lock to
+                                            give back - `/audit:doctor` names it
+        NO LOCK     + ready work left       every planned phase there has ever
+                                            been, and the state this must be
+                                            silent in
 
     Get that last row wrong and the signal fires on every plan in the world,
     which turns it into noise and gets it switched off inside a day. So the lock
-    is the half that decides, and the ready list is what says the run had
-    somewhere left to go.
+    is the half that decides, and the phase's OWN ready work is what says the
+    run had somewhere left to go.
+
+    THE COUNT IS PER PHASE AND ARRIVES WITH THE LOCK ROW. A plan-wide ready list
+    is one figure for every lock held, so with several phases locked each line
+    printed the same number and none of them described its own phase. And the
+    copy that holds a phase live may not be this checkout's: a phase run on its
+    own branch leaves the development branch's shard stale. Reading a branch is
+    a git call and this module opens nothing, so `audit-status.py` counts each
+    held phase from the copy it judged live and hands over `readyCount` with
+    `readyBasis`, the sentence naming that copy - which this line prints
+    verbatim, because the copy is the claim's basis - and `readyLive`, True only
+    when that copy IS the one holding the phase live.
+
+    A ZERO IS SILENT ONLY WHEN IT WAS COUNTED FROM THE LIVE COPY. A zero read
+    off a fallback copy is a stale reading of a phase whose real state lives
+    elsewhere, so it prints, with its basis saying it is not current. Its
+    repair is `UNFINISHED_UNREAD` rather than a resume: it says nothing about
+    work left, only that the count must be re-read from the copy named. An
+    absent `readyLive` is not a claim that the copy was live, so it is read as
+    False.
 
     THE SAME THREE STATES `invariant_breaches` AND `stranded_skills` HAVE, plus
     the reading of a lock this one adds. The `locks` block is INJECTED by
@@ -1377,7 +1446,9 @@ def unfinished_runs(summary):
     may open nothing - so an ABSENT block means nobody asked, and a gate that
     read that as clean would pass every run where the injection silently failed.
     `evaluate_gate` therefore trips on `is not None`, which reads oddly until you
-    see that it is the only spelling under which the missing block fails.
+    see that it is the only spelling under which the missing block fails. A held
+    phase lock whose row carries no count is refused for the same reason: zero
+    is the silent row, so a count nobody computed must not read as one.
 
     A STALE LOCK COUNTS, AND THAT IS A DECISION RATHER THAN AN OVERSIGHT.
     `_locks.judge` resolves every uncertainty to LIVE, so `live: False` is not an
@@ -1401,26 +1472,40 @@ def unfinished_runs(summary):
     if not all(isinstance(row, dict) for row in block["held"]):
         return ["the lock list carries an entry that is not a lock, so what is "
                 "held could not be graded - this is not a pass"]
-    ready = (summary or {}).get("ready")
-    ready = ready if isinstance(ready, list) else []
-    # THE SILENT ROW. No ready work means the run had nowhere left to go, so a
-    # lock still on disk is a sign-off in flight or a lock to give back - and
-    # `/audit:doctor` is the surface for that. Nothing to say here.
-    if not ready:
-        return None
     out = []
     for row in block["held"]:
         name = row.get("name")
         if not isinstance(name, str) or not name.startswith(PHASE_LOCK_PREFIX):
             continue
         phase = name[len(PHASE_LOCK_PREFIX):]
-        repair = (UNFINISHED_LIVE if row.get("live") else UNFINISHED_STALE) % (
-            phase,)
-        out.append("phase %s holds a lock with %d task(s) still ready: %s. %s"
-                   % (phase, len(ready), row.get("basis")
+        count = row.get("readyCount")
+        if not _is_count(count) or not row.get("readyBasis"):
+            out.append("phase %s holds a lock, and how much of its own work is "
+                       "still ready was never counted (%s) - this is not a pass"
+                       % (phase, row.get("readyBasis")
+                          or "no count and no reason were handed over"))
+            continue
+        # THE SILENT ROW. Nothing of its own is ready in the copy that holds
+        # it live, so the run had nowhere left to go - whatever the rest of the
+        # plan still has ready.
+        if count == 0 and row.get("readyLive") is True:
+            continue
+        if count == 0:
+            repair = UNFINISHED_UNREAD % (phase,)
+        else:
+            repair = (UNFINISHED_LIVE if row.get("live")
+                      else UNFINISHED_STALE) % (phase,)
+        out.append("phase %s holds a lock with %d task(s) still ready, %s: %s. %s"
+                   % (phase, count, row["readyBasis"], row.get("basis")
                       or "no basis was recorded for the lock, which is itself a "
                          "reason to look at it", repair))
     return out or None
+
+
+def _is_count(value):
+    """A non-negative int that is not a bool - the shape a count of tasks has."""
+    return (isinstance(value, int) and not isinstance(value, bool)
+            and value >= 0)
 
 
 # `_budget_detail` sat here between these two and went back to `audit-status.py`

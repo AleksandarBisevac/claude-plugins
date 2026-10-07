@@ -2631,7 +2631,8 @@ def _cases(_record):
                       "plan wrote down, against the lock on disk: %r"
                       % (_o5.strip()[-200:],),
                       _c5 == 0 and "UNFINISHED" in _o5
-                      and "stopped mid-phase" in _o5 and "phase P5 holds a lock"
+                      and "held phase lock(s) to look at" in _o5
+                      and "phase P5 holds a lock"
                       in _o5 and "RESUMABLE" in _o5)
                 # THE TRANSITION, at the CLI. Nothing about the plan changes; the
                 # lock goes back and the verdict has to go with it.
@@ -2998,7 +2999,11 @@ def _cases(_record):
               and "Done phase" not in _sh_short and "Next phase" not in _sh_short,
               repr(_sh_short))
 
-        _sh_c1, _sh_o1, _sh_e1 = _sh_cli([_sh_path, "--short"])
+        # Pinned at a project of its own: the bare render injects the locks of
+        # whatever checkout the suite runs in, and a lock held there for a phase
+        # this fixture does not hold is a refusal line the direct render lacks.
+        with _own_project():
+            _sh_c1, _sh_o1, _sh_e1 = _sh_cli([_sh_path, "--short"])
         check("sh2 CLI: --short selects the condensed render, byte for byte "
               "the same text render_short produced directly",
               _sh_c1 == 0 and _sh_o1 == _sh_short + "\n", repr(_sh_o1[:200]))
@@ -3155,10 +3160,554 @@ def _resolve_cases(check):
         _harness.remove_tree(root)
 
 
+def _locked_copy_cases(check):
+    """Each held phase lock is counted from the copy of the plan that holds its
+    phase live, and the line names that copy.
+
+    A REAL repository with real branches, because the defect was a read of the
+    wrong copy: a checkout on the development branch carrying a stale shard for a
+    phase whose work lives on its own branch. The phase branches here are named
+    by the literal the default `branchPrefix` convention produces, so a reader
+    that composed a different name would find no branch and fail lb1.
+    """
+    if not shutil.which("git"):
+        for _lbl in ("lb1", "lb2", "lb3", "lb4", "lb5", "lb6", "lb7"):
+            _harness.skip(check, _lbl, "git is not on PATH, and both the "
+                          "locks and the branch copies live in git", True)
+        return
+    root = _harness.fixture_root("audit-status-locked-copy-")
+    repo = os.path.join(root, "proj")
+    os.makedirs(os.path.join(repo, "docs", "audit", "phases"))
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+           "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+
+    def sh(*args, **kw):
+        subprocess.run(git + list(args), cwd=kw.get("cwd", repo), check=True,
+                       capture_output=True)
+
+    def tasks(pid, done, pending):
+        return ([{"id": "%s.%d" % (pid, i + 1), "title": "t", "status": "done"}
+                 for i in range(done)]
+                + [{"id": "%s.%d" % (pid, done + i + 1), "title": "t",
+                    "status": "pending"} for i in range(pending)])
+
+    def write_shard(pid, title, done, pending):
+        with open(os.path.join(repo, "docs", "audit", "phases",
+                               "%s.json" % (pid,)), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"id": pid, "title": title, "status": "in_progress",
+                       "tasks": tasks(pid, done, pending)}, fh)
+
+    # P5 has a branch whose copy is AHEAD of main's: three ready on main, one on
+    # the branch. P6 has no branch at all. P7's branch predates its shard, so
+    # the branch holds no copy to read. P8 has no ready task of its own.
+    phases = [("P5", "waves", 0, 3), ("P6", "other", 0, 2),
+              ("P7", "stale", 0, 4), ("P8", "finished", 2, 0)]
+    with open(os.path.join(repo, "README"), "w", encoding="utf-8") as fh:
+        fh.write("x\n")
+    sh("init", "-q")
+    sh("add", "-A")
+    sh("commit", "-qm", "before the plan")
+    sh("branch", "audit/p7-stale")
+    index = {"meta": {"version": 3, "title": "locked copies"},
+             "phases": [{"id": p, "title": t, "status": "in_progress",
+                         "shard": "phases/%s.json" % (p,)}
+                        for p, t, _d, _n in phases]}
+    manifest_path = os.path.join(repo, "docs", "audit", "audit-plan.json")
+    with open(manifest_path, "w", encoding="utf-8") as fh:
+        json.dump(index, fh)
+    for p, t, d, n in phases:
+        write_shard(p, t, d, n)
+    sh("add", "-A")
+    sh("commit", "-qm", "the plan")
+    sh("checkout", "-q", "-b", "audit/p5-waves")
+    write_shard("P5", "waves", 2, 1)
+    sh("commit", "-qam", "two P5 tasks done on the phase branch")
+    sh("checkout", "-q", "main")
+
+    quiet = lambda *_a, **_k: None                  # noqa: E731
+    sid = "locked-copy-fixture"
+    took = [_lockmod.held(_lockmod.acquire(
+        repo, "phase-%s" % (p,), note="/audit:phase %s" % (p,), session=sid,
+        pid=os.getpid(), out=quiet)) for p, _t, _d, _n in phases]
+    try:
+        manifest = _mio.load_manifest(manifest_path)
+        # Through `attempt`, so a reader that cannot take the manifest's path
+        # reports as these cases failing rather than as the block raising.
+        _ok, block = _harness.attempt(M.locks_block, manifest, repo,
+                                      manifest_path)
+        block = block if isinstance(block, dict) else {"error": block}
+        rows = {str(r.get("name"))[len("phase-"):]: r
+                for r in block.get("held") or []}
+
+        def row(pid):
+            return rows.get(pid) or {}
+
+        p5 = row("P5")
+        check("lb1 a phase whose own branch exists is counted from THAT "
+              "branch's copy of its shard - one ready task there, three in the "
+              "checkout's stale copy - and the basis names the branch and the "
+              "file: %r" % (p5,),
+              all(took) and p5.get("readyCount") == 1
+              and "audit/p5-waves" in str(p5.get("readyBasis"))
+              and "docs/audit/phases/P5.json" in str(p5.get("readyBasis"))
+              and "could not be read" not in str(p5.get("readyBasis")))
+        p6 = row("P6")
+        check("lb2 ...and its twin: a phase with no branch of its own is counted "
+              "from this checkout's copy, and the basis says which branch was "
+              "looked for and not found rather than naming a branch copy: %r"
+              % (p6,),
+              p6.get("readyCount") == 2
+              and "this checkout's copy" in str(p6.get("readyBasis"))
+              and "audit/p6-other" in str(p6.get("readyBasis"))
+              and "'s copy of" not in str(p6.get("readyBasis")))
+        p7 = row("P7")
+        check("lb3 a branch whose copy cannot be read falls back to this "
+              "checkout's copy on `main`, and says that the phase branch holds "
+              "the live state, so the count is not presented as current: %r"
+              % (p7,),
+              p7.get("readyCount") == 4
+              and "could not be read" in str(p7.get("readyBasis"))
+              and "`main`" in str(p7.get("readyBasis"))
+              and "audit/p7-stale" in str(p7.get("readyBasis"))
+              and "not current" in str(p7.get("readyBasis")))
+        p8 = row("P8")
+        lines = M.unfinished_runs(dict(M.rollup(manifest, [], []),
+                                       locks=block)) or []
+        check("lb4 a locked phase with no ready task of its own is counted as "
+              "zero and gets no line, while every other locked phase gets "
+              "exactly one carrying its own count: %r" % (lines,),
+              p8.get("readyCount") == 0
+              and sum("phase P8 " in ln for ln in lines) == 0
+              and [sum("phase %s holds" % (p,) in ln for ln in lines)
+                   for p in ("P5", "P6", "P7")] == [1, 1, 1]
+              and any("phase P5 holds a lock with 1 task(s)" in ln
+                      for ln in lines)
+              and any("phase P7 holds a lock with 4 task(s)" in ln
+                      for ln in lines))
+
+        import contextlib as _ctx_lb
+        import io as _io_lb
+
+        def cli(argv):
+            _o, _e = _io_lb.StringIO(), _io_lb.StringIO()
+            with _ctx_lb.redirect_stdout(_o), _ctx_lb.redirect_stderr(_e):
+                _c = M.main(argv)
+            return _c, _o.getvalue()
+
+        def p5_lines(text):
+            return [ln.strip() for ln in text.splitlines()
+                    if "phase P5 holds a lock" in ln]
+
+        with _own_project(repo):
+            c_full, o_full = cli([manifest_path, "--color", "never"])
+            c_short, o_short = cli([manifest_path, "--short", "--color",
+                                    "never"])
+        check("lb5 the --short entry view and the full view print the SAME "
+              "sentence for a locked phase, counted from its branch copy: "
+              "full=%r short=%r" % (p5_lines(o_full), p5_lines(o_short)),
+              c_full == 0 and c_short == 0
+              and len(p5_lines(o_full)) == 1
+              and p5_lines(o_full) == p5_lines(o_short)
+              and "1 task(s) still ready" in p5_lines(o_full)[0]
+              and "audit/p5-waves" in p5_lines(o_full)[0])
+        check("lb6 ...and its twin: with no lock read the short view carries no "
+              "UNFINISHED block, so lb5's line came from the lock and not from "
+              "an unconditional block",
+              "UNFINISHED" not in M.render_short(
+                  manifest, M.rollup(manifest, [], [])))
+
+        tree = os.path.join(root, "p5-tree")
+        sh("worktree", "add", "-q", tree, "audit/p5-waves")
+        tree_path = os.path.join(tree, "docs", "audit", "audit-plan.json")
+        _ok, on_branch = _harness.attempt(
+            M.locks_block, _mio.load_manifest(tree_path), tree, tree_path)
+        on_branch = on_branch if isinstance(on_branch, dict) else {}
+        p5b = {str(r.get("name")): r for r in on_branch.get("held") or []}.get(
+            "phase-P5") or {}
+        check("lb7 a checkout that has the phase branch checked out counts that "
+              "phase from its own copy and says so, without asking git for a "
+              "second copy of the same branch: %r" % (p5b,),
+              p5b.get("readyCount") == 1
+              and "checked out" in str(p5b.get("readyBasis"))
+              and "audit/p5-waves" in str(p5b.get("readyBasis")))
+    finally:
+        for p, _t, _d, _n in phases:
+            _lockmod.release(repo, "phase-%s" % (p,), session=sid, out=quiet)
+        _harness.remove_tree(root)
+
+
+def _unfinished_header_cases(check):
+    """The UNFINISHED heading covers every row under it - a refusal included.
+
+    The rows are `unfinished_runs`' sentences, and one of them may be a held
+    lock whose ready work was never counted. A heading asserting that every row
+    is a run with ready work of its own left would then claim, about that row,
+    the one thing nobody measured.
+    """
+    def summary(*held):
+        return {"locks": {"scheme": True, "held": list(held)}, "ready": []}
+
+    uncounted = {"name": "phase-P3", "live": True, "basis": "held here",
+                 "readyCount": None,
+                 "readyBasis": "this checkout's plan holds no phase P3"}
+    counted = {"name": "phase-P2", "live": True, "basis": "held here",
+               "readyCount": 1, "readyLive": True,
+               "readyBasis": "counted from this checkout's copy"}
+    only = M._unfinished_lines(summary(uncounted))
+    head = only[1] if len(only) > 1 else ""
+    check("uh1 a block holding only an uncounted lock is headed by the number "
+          "of held locks it lists, and the heading does not say that phase "
+          "has ready work of its own left: %r" % (only,),
+          len(only) == 3 and "1 held phase lock(s)" in head
+          and "ready work of its own left" not in head
+          and "phase P3" in only[2])
+    both = M._unfinished_lines(summary(uncounted, counted))
+    check("uh2 ...and its twin: a counted row beside it raises the heading's "
+          "number to the rows it lists, so uh1's number is the row count and "
+          "not a constant: %r" % (both,),
+          len(both) == 4 and "2 held phase lock(s)" in both[1])
+
+
+def _live_copy_cases(check):
+    """Each held lock is counted from the copy that holds its phase LIVE - a
+    linked worktree's file, uncommitted state included, before the branch tip -
+    and a count nobody could take from that copy never reads as a silent zero.
+
+    One repository, five phases and one lock for a phase this checkout's index
+    does not hold:
+
+        P1  branch tip three ready, its linked worktree's file none ready
+        P2  branch tip three ready, its linked worktree's file one ready
+        P3  locked, absent from this checkout's index
+        P4  no branch of its own, nothing of its own ready
+        P5  branch predates the shard, this checkout's copy none ready
+        P6  branch two ready, and this checkout changed a task's status in
+            the shard after the branch forked
+        P7  branch none ready, and this checkout retitled a task in the shard
+            after the branch forked - an edit that moves no readiness
+        P8  branch none ready, and the only commit this checkout gained after
+            the branch forked is a --no-ff landing of a branch that predates
+            the shard, which brings the shard no content at all
+    """
+    labels = ("lw1", "lw2", "lw3", "lw4", "lw5", "lw6", "lw7", "lw8", "lw9",
+              "lw10", "lw11")
+    if not shutil.which("git"):
+        for _lbl in labels:
+            _harness.skip(check, _lbl, "git is not on PATH, and the locks, the "
+                          "branches and the worktrees all live in git", True)
+        return
+    root = _harness.fixture_root("audit-status-live-copy-")
+    repo = os.path.join(root, "proj")
+    shard_dir = os.path.join("docs", "audit", "phases")
+    os.makedirs(os.path.join(repo, shard_dir))
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+           "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+
+    def sh(*args):
+        subprocess.run(git + list(args), cwd=repo, check=True,
+                       capture_output=True)
+
+    def write_shard(base, pid, title, done, pending, last="t"):
+        rows = ([{"id": "%s.%d" % (pid, i + 1), "title": "t", "status": "done"}
+                 for i in range(done)]
+                + [{"id": "%s.%d" % (pid, done + i + 1), "title": "t",
+                    "status": "pending"} for i in range(pending)])
+        if rows:
+            rows[-1]["title"] = last
+        with open(os.path.join(base, shard_dir, "%s.json" % (pid,)), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"id": pid, "title": title, "status": "in_progress",
+                       "tasks": rows}, fh)
+
+    phases = [("P1", "worktree", 0, 3), ("P2", "dirty", 0, 3),
+              ("P4", "alone", 2, 0), ("P5", "stalezero", 2, 0),
+              ("P6", "behind", 0, 4), ("P7", "retitled", 0, 2),
+              ("P8", "merged", 0, 2)]
+    with open(os.path.join(repo, "README"), "w", encoding="utf-8") as fh:
+        fh.write("x\n")
+    sh("init", "-q")
+    sh("add", "-A")
+    sh("commit", "-qm", "before the plan")
+    sh("branch", "audit/p5-stalezero")
+    sh("checkout", "-q", "-b", "predates-the-plan")
+    with open(os.path.join(repo, "OTHER"), "w", encoding="utf-8") as fh:
+        fh.write("y\n")
+    sh("add", "-A")
+    sh("commit", "-qm", "work that never touched a shard")
+    sh("checkout", "-q", "main")
+    manifest_path = os.path.join(repo, "docs", "audit", "audit-plan.json")
+    with open(manifest_path, "w", encoding="utf-8") as fh:
+        json.dump({"meta": {"version": 3, "title": "live copies"},
+                   "phases": [{"id": p, "title": t, "status": "in_progress",
+                               "shard": "phases/%s.json" % (p,)}
+                              for p, t, _d, _n in phases]}, fh)
+    for p, t, d, n in phases:
+        write_shard(repo, p, t, d, n)
+    sh("add", "-A")
+    sh("commit", "-qm", "the plan")
+    sh("branch", "audit/p1-worktree")
+    sh("branch", "audit/p2-dirty")
+    sh("checkout", "-q", "-b", "audit/p6-behind")
+    write_shard(repo, "P6", "behind", 2, 2)
+    sh("commit", "-qam", "two P6 tasks done on the phase branch")
+    sh("checkout", "-q", "main")
+    for pid, title in (("P7", "retitled"), ("P8", "merged")):
+        sh("checkout", "-q", "-b", "audit/%s-%s" % (pid.lower(), title))
+        write_shard(repo, pid, title, 2, 0)
+        sh("commit", "-qam", "every %s task done on the phase branch" % (pid,))
+        sh("checkout", "-q", "main")
+    # The landing sits directly on the commit every phase branch forked from:
+    # that is the shape under which a commit count over the shard's path
+    # counts the merge although it changed nothing there.
+    sh("merge", "-q", "--no-ff", "predates-the-plan", "-m",
+       "land a branch that predates every shard")
+    write_shard(repo, "P6", "behind", 1, 3)
+    sh("commit", "-qam", "this checkout's copy of P6 closes a task the branch "
+                         "never saw")
+    write_shard(repo, "P7", "retitled", 0, 2, last="retitled on main")
+    sh("commit", "-qam", "this checkout's copy of P7 retitles a task")
+    tree1 = os.path.join(root, "p1-tree")
+    tree2 = os.path.join(root, "p2-tree")
+    sh("worktree", "add", "-q", tree1, "audit/p1-worktree")
+    sh("worktree", "add", "-q", tree2, "audit/p2-dirty")
+    write_shard(tree1, "P1", "worktree", 3, 0)
+    write_shard(tree2, "P2", "dirty", 2, 1)
+
+    quiet = lambda *_a, **_k: None                  # noqa: E731
+    sid = "live-copy-fixture"
+    locked = ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8"]
+    took = [_lockmod.held(_lockmod.acquire(
+        repo, "phase-%s" % (p,), note="/audit:phase %s" % (p,), session=sid,
+        pid=os.getpid(), out=quiet)) for p in locked]
+    try:
+        manifest = _mio.load_manifest(manifest_path)
+        _ok, block = _harness.attempt(M.locks_block, manifest, repo,
+                                      manifest_path)
+        block = block if isinstance(block, dict) else {"error": block}
+        rows = {str(r.get("name"))[len("phase-"):]: r
+                for r in block.get("held") or []}
+
+        def row(pid):
+            return rows.get(pid) or {}
+
+        def basis(pid):
+            return str(row(pid).get("readyBasis"))
+
+        p1, p2 = row("P1"), row("P2")
+        check("lw1 a phase whose branch is checked out in a linked worktree is "
+              "counted from THAT worktree's file - none ready there, three at "
+              "the branch tip - and the basis names the file it read: %r"
+              % (p1,),
+              all(took) and p1.get("readyCount") == 0
+              and p1.get("readyLive") is True
+              and "p1-tree" in basis("P1")
+              and "docs/audit/phases/P1.json" in basis("P1").replace("\\", "/"))
+        check("lw2 ...and its twin: the worktree's UNCOMMITTED file is what is "
+              "counted - one ready there, three at the tip and in this "
+              "checkout - so lw1's zero is the file and not a constant: %r"
+              % (p2,),
+              p2.get("readyCount") == 1 and "p2-tree" in basis("P2"))
+        p3 = row("P3")
+        check("lw3 a held lock for a phase this checkout's index does not hold "
+              "carries NO count, and its basis says this plan holds no such "
+              "phase: %r" % (p3,),
+              p3.get("readyCount") is None
+              and "holds no phase P3" in basis("P3"))
+        p4, p5 = row("P4"), row("P5")
+        check("lw4 a phase with no branch of its own and nothing of its own "
+              "ready is a zero counted from the only copy there is, marked as "
+              "the live one: %r" % (p4,),
+              p4.get("readyCount") == 0 and p4.get("readyLive") is True)
+        check("lw5 a branch that exists but whose copy could not be read falls "
+              "back to this checkout's zero, marks it as not the live copy, says "
+              "the count is not current, and no longer asserts the branch holds "
+              "the phase live: %r" % (p5,),
+              p5.get("readyCount") == 0 and p5.get("readyLive") is False
+              and "not current" in basis("P5")
+              and "exists" in basis("P5")
+              and "could not be read" in basis("P5")
+              and "holds the phase live" not in basis("P5"))
+        p6 = row("P6")
+        moved = "in a way that moves readiness"
+        check("lw6 a branch whose shard this checkout changed in a way that "
+              "moves readiness - a task's status - after the branch forked is "
+              "still counted from the branch, and the basis says this "
+              "checkout's copy changed after the fork: %r" % (p6,),
+              p6.get("readyCount") == 2 and moved in basis("P6")
+              and "forked" in basis("P6") and p6.get("readyLive") is False)
+        check("lw7 ...and its twin: a branch this checkout has not moved past "
+              "carries no such note: %r" % (p2,),
+              moved not in basis("P2") and p2.get("readyLive") is True)
+        p7, p8 = row("P7"), row("P8")
+        check("lw10 a landed edit to the shard that moves no readiness - a "
+              "task retitled - carries no note and leaves the zero live; lw6, "
+              "the same shape with a status changed, is its twin: %r" % (p7,),
+              p7.get("readyCount") == 0 and p7.get("readyLive") is True
+              and moved not in basis("P7") and "forked" not in basis("P7"))
+        check("lw11 a --no-ff landing of a branch that predates the shard, "
+              "after the phase branch committed to it, brings the shard no "
+              "content, so it carries no note and the zero is live; lw6 is "
+              "its twin: %r" % (p8,),
+              p8.get("readyCount") == 0 and p8.get("readyLive") is True
+              and moved not in basis("P8") and "forked" not in basis("P8"))
+
+        summary = dict(M.rollup(manifest, [], []), locks=block)
+        lines = M.unfinished_runs(summary) or []
+        per = [sum(("phase %s holds" % (p,)) in ln for ln in lines)
+               for p in locked]
+        p5_line = [ln for ln in lines if "phase P5 holds" in ln]
+        check("lw8 the live zeros (P1, P4, P7, P8) are silent, and the "
+              "uncounted lock, the stale zero, the worktree's one and the "
+              "branch behind each get exactly one line, the stale zero's "
+              "repair sends the reader back to the copy rather than to the "
+              "waves, so the gate fails: %r" % (lines,),
+              per == [0, 1, 1, 0, 1, 1, 0, 0]
+              and any("phase P5 holds a lock with 0 task(s)" in ln
+                      for ln in lines)
+              and len(p5_line) == 1 and "waves" not in p5_line[0]
+              and "re-read" in p5_line[0]
+              and M.evaluate_gate(summary, ["unfinished-run"])
+              == ["unfinished-run"])
+        quiet_block = dict(block, held=[r for r in block.get("held") or []
+                                        if r.get("name") in (
+                                            "phase-P1", "phase-P4",
+                                            "phase-P7", "phase-P8")])
+        calm = dict(summary, locks=quiet_block)
+        check("lw9 ...and its twin: the live zeros alone pass the gate and print "
+              "nothing, so lw8's failure is the other rows: %r"
+              % (M.unfinished_runs(calm),),
+              len(quiet_block["held"]) == 4
+              and M.unfinished_runs(calm) is None
+              and M.evaluate_gate(calm, ["unfinished-run"]) == [])
+    finally:
+        for p in locked:
+            _lockmod.release(repo, "phase-%s" % (p,), session=sid, out=quiet)
+        _harness.remove_tree(root)
+
+
+def _worktree_post_fork_cases(check):
+    """The worktree that holds the branch IS the live copy - reading its own
+    file already captures the branch's current state, uncommitted edits
+    included. So a readiness-moving edit this checkout lands on its own
+    shard after the fork is nothing that copy is missing; only the
+    branch-tip path reads a COMMITTED copy the fork-point diff is actually
+    about, and only that path has a question to ask.
+
+    `_readiness_moved` used to run on both paths and name 'the branch's
+    copy' even when the worktree's file, not the branch's committed tip,
+    was what got counted.
+    """
+    labels = ("wp1", "wp2")
+    if not shutil.which("git"):
+        for lbl in labels:
+            _harness.skip(check, lbl, "git is not on PATH, and the locks, "
+                          "the branches and the worktrees all live in git",
+                          True)
+        return
+    root = _harness.fixture_root("audit-status-worktree-postfork-")
+    repo = os.path.join(root, "proj")
+    shard_dir = os.path.join("docs", "audit", "phases")
+    os.makedirs(os.path.join(repo, shard_dir))
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+           "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+
+    def sh(*args):
+        subprocess.run(git + list(args), cwd=repo, check=True,
+                       capture_output=True)
+
+    def write_shard(base, pid, title, done, pending):
+        rows = ([{"id": "%s.%d" % (pid, i + 1), "title": "t",
+                  "status": "done"} for i in range(done)]
+                + [{"id": "%s.%d" % (pid, done + i + 1), "title": "t",
+                    "status": "pending"} for i in range(pending)])
+        with open(os.path.join(base, shard_dir, "%s.json" % (pid,)), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"id": pid, "title": title, "status": "in_progress",
+                       "tasks": rows}, fh)
+
+    with open(os.path.join(repo, "README"), "w", encoding="utf-8") as fh:
+        fh.write("x\n")
+    sh("init", "-q")
+    sh("add", "-A")
+    sh("commit", "-qm", "before the plan")
+    manifest_path = os.path.join(repo, "docs", "audit", "audit-plan.json")
+    phases = [("P1", "worktree"), ("P2", "tiponly")]
+    with open(manifest_path, "w", encoding="utf-8") as fh:
+        json.dump({"meta": {"version": 3, "title": "worktree post-fork"},
+                   "phases": [{"id": p, "title": t, "status": "in_progress",
+                               "shard": "phases/%s.json" % (p,)}
+                              for p, t in phases]}, fh)
+    for p, t in phases:
+        write_shard(repo, p, t, 0, 2)
+    sh("add", "-A")
+    sh("commit", "-qm", "the plan")
+    sh("branch", "audit/p1-worktree")
+    sh("branch", "audit/p2-tiponly")
+    # Main lands a readiness-moving edit to BOTH shards after the fork - a
+    # task closed, which neither branch's own history ever saw.
+    write_shard(repo, "P1", "worktree", 1, 1)
+    write_shard(repo, "P2", "tiponly", 1, 1)
+    sh("commit", "-qam", "this checkout closes a task in both shards")
+    tree = os.path.join(root, "p1-tree")
+    sh("worktree", "add", "-q", tree, "audit/p1-worktree")
+    # The worktree's own file is already live - both tasks done, uncommitted.
+    write_shard(tree, "P1", "worktree", 2, 0)
+
+    quiet = lambda *_a, **_k: None                  # noqa: E731
+    sid = "worktree-postfork-fixture"
+    locked = ["P1", "P2"]
+    took = [_lockmod.held(_lockmod.acquire(
+        repo, "phase-%s" % (p,), note="/audit:phase %s" % (p,), session=sid,
+        pid=os.getpid(), out=quiet)) for p in locked]
+    try:
+        manifest = _mio.load_manifest(manifest_path)
+        _ok, block = _harness.attempt(M.locks_block, manifest, repo,
+                                      manifest_path)
+        block = block if isinstance(block, dict) else {"error": block}
+        rows = {str(r.get("name"))[len("phase-"):]: r
+                for r in block.get("held") or []}
+
+        def row(pid):
+            return rows.get(pid) or {}
+
+        def basis(pid):
+            return str(row(pid).get("readyBasis"))
+
+        w1 = row("P1")
+        moved = "in a way that moves readiness"
+        check("wp1 a worktree holding the branch is counted from its own "
+              "file - both tasks done there, uncommitted - so a "
+              "readiness-moving edit this checkout lands on its shard after "
+              "the fork is not read back, the count stays live, and the "
+              "basis never says the branch's copy may be missing anything: "
+              "%r" % (w1,),
+              all(took) and w1.get("readyCount") == 0
+              and w1.get("readyLive") is True
+              and "p1-tree" in basis("P1")
+              and moved not in basis("P1") and "forked" not in basis("P1"))
+        w2 = row("P2")
+        check("wp2 ...and its twin: the SAME edit, with no worktree holding "
+              "the branch so the branch's committed tip is what gets "
+              "counted, still carries the note and is marked not live - the "
+              "fix narrows which path asks the question, it does not drop "
+              "the question: %r" % (w2,),
+              w2.get("readyCount") == 2 and moved in basis("P2")
+              and "forked" in basis("P2") and w2.get("readyLive") is False)
+    finally:
+        for p in locked:
+            _lockmod.release(repo, "phase-%s" % (p,), session=sid, out=quiet)
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(record):
         _cases(record)
         _resolve_cases(record)
+        _harness.stage(record, "lb", _locked_copy_cases)
+        _unfinished_header_cases(record)
+        _harness.stage(record, "lw", _live_copy_cases)
+        _harness.stage(record, "wp", _worktree_post_fork_cases)
     return _harness.run(body)
 
 

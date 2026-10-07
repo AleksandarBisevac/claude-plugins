@@ -1,7 +1,7 @@
 {
   "id": "P114",
   "title": "status names each locked phase's own remaining work and the copy it read",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "every UNFINISHED line in /audit:status counts the ready tasks of its own phase, read from the copy that holds that phase live, says which copy that was, and is silent for a phase with no ready task of its own",
   "testGate": [
@@ -15,27 +15,120 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "fe76a5557946f6095033af04d6978eabc598449d",
+  "branch": "audit/p114-status-names-each-locked-phase",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P114-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/audit-status.py _phase_ready_count",
+        "issue": "A phase branch checked out in a linked worktree - how every phase here runs - is counted from its committed tip, while its live state is that worktree's uncommitted shard, so the line names a copy that is not the live one and the gate can fail on work that is no longer ready.",
+        "resolution": "fixed in P114.2-ffv (43d9f606): When the branch is checked out in a linked worktree, count from that worktree's shard file and name the path in the basis; a case with uncommitted shard state that differs from the tip.",
+        "fixTask": "P114.2-ffv",
+        "commit": "43d9f606"
+      },
+      {
+        "id": "P114-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/audit-status.py; plugins/audit/scripts/status/_status_facts.py unfinished_runs",
+        "issue": "A held lock for a phase this checkout's index does not hold is given a count of zero, which is the silent row, so no line prints and the gate passes; a fallback row whose stale local count is zero is silent too and never prints its not-current basis.",
+        "resolution": "fixed in P114.2-ffv (43d9f606): Return no count with the basis that this checkout's plan holds no such phase so the refusal line names it, and treat zero as silent only when counted from the live copy; a case for each with a twin.",
+        "fixTask": "P114.2-ffv",
+        "commit": "43d9f606"
+      },
+      {
+        "id": "P114-R3",
+        "severity": "med",
+        "file": "plugins/audit/commands/status.md",
+        "issue": "The command's contract for UNFINISHED and --fail-on unfinished-run still describes the plan-wide rule, so a CI user predicts the wrong gate verdict.",
+        "resolution": "fixed in P114.2-ffv (43d9f606): Rewrite those passages for the per-phase count, the copy it is read from, the uncounted refusal and the extra git calls when a lock is held.",
+        "fixTask": "P114.2-ffv",
+        "commit": "43d9f606"
+      },
+      {
+        "id": "P114-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/audit-status.py _phase_ready_count",
+        "issue": "The branch copy is preferred without regard to ancestry, so a shard the development branch changed after the cut is missed with no note, and the unreadable fallback asserts the branch holds the phase live for any existing branch.",
+        "resolution": "fixed in P114.2-ffv (43d9f606): Say in the basis when this checkout's copy has commits to the shard the branch lacks, and word the fallback as 'exists but its copy could not be read'.",
+        "fixTask": "P114.2-ffv",
+        "commit": "43d9f606"
+      },
+      {
+        "id": "P114-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/audit-status.py _head_branch",
+        "issue": "_head_branch duplicates _id_shape.current_branch and reaches into the private _worktrees._git.",
+        "resolution": "fixed in P114.2-ffv (43d9f606): Reuse one public head reader.",
+        "fixTask": "P114.2-ffv",
+        "commit": "43d9f606"
+      },
+      {
+        "id": "P114-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/audit-status.py UNFINISHED header",
+        "issue": "The header counts refusal rows as phases with ready work of their own, which nobody counted.",
+        "resolution": "fixed in P114.2-ffv (43d9f606): Count only rows that carry a count, or word the header to cover refusals.",
+        "fixTask": "P114.2-ffv",
+        "commit": "43d9f606"
+      },
+      {
+        "id": "P114-R7",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/audit-status.py _commits_branch_lacks",
+        "issue": "The behind-check counts commits with rev-list, so a no-content --no-ff landing merge marks a live zero not live: on the real main checkout P102 and P111 print an UNFINISHED line with nothing ready and fail --fail-on unfinished-run, though their shards are unchanged since the branch forked.",
+        "resolution": "fixed in P114.3-ffv (aa61e9a5): Ask about content: git diff --quiet refs/heads/<branch>...HEAD -- <shard> first, and only when it changed compare the readiness projection (task ids, status, dependencies) of the merge-base copy and HEAD's copy, marking the row not live only when that differs; a twin with a no-content landing merge after the branch committed to its shard gives no note and a silent live zero.",
+        "fixTask": "P114.3-ffv",
+        "commit": "aa61e9a5"
+      },
+      {
+        "id": "P114-R8",
+        "severity": "low",
+        "file": "plugins/audit/commands/status.md",
+        "issue": "The list of zeros that print omits the unreadable linked worktree, and 'the count is still the branch's' is wrong when the count came from a worktree file.",
+        "resolution": "fixed in P114.3-ffv (aa61e9a5): Add that case and say the count is the one from the copy named.",
+        "fixTask": "P114.3-ffv",
+        "commit": "aa61e9a5"
+      },
+      {
+        "id": "P114-R9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/status/_status_facts.py unfinished_runs",
+        "issue": "A non-live zero prints with the live repair, telling the reader to resume waves for a phase with nothing counted ready.",
+        "resolution": "fixed in P114.3-ffv (aa61e9a5): When the count is zero and not live, word the repair around the caveat: re-read from the copy named or check the branch.",
+        "fixTask": "P114.3-ffv",
+        "commit": "aa61e9a5"
+      },
+      {
+        "id": "P114-R10",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/audit-status.py _phase_ready_count and _readiness_moved; plugins/audit/commands/status.md",
+        "issue": "The readiness-moved check runs even when the count was read from the linked worktree that holds the branch, so an accurate live reading is marked not live and its note blames 'the branch's copy', which is not the copy that was read.",
+        "resolution": "fixed in P114.4-ffv (fcdf5f76): Treat a linked worktree's file as the live copy: skip the check there (readyLive stays true), keep it for the branch-tip read, and word the note and status.md around the copy actually read; a twin of the worktree fixtures with a post-fork readiness-moving edit on the checkout.",
+        "fixTask": "P114.4-ffv",
+        "commit": "fcdf5f76"
+      }
+    ],
+    "outcome": "[findings: 10 - 0 high, 5 med, 5 low; 10 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "Every UNFINISHED line in /audit:status now counts the ready tasks of its own phase rather than the whole plan's. It reads them from the copy that holds the phase live, in this order:\n- this checkout, when it has the phase branch out;\n- the linked worktree that has the branch out, uncommitted state included;\n- the branch tip;\n- this checkout, when no branch exists.\n\nThe line names the copy it read. A phase with nothing ready of its own is silent. A held lock for a phase this checkout's plan does not hold is refused rather than counted as zero. A zero that is not live prints a re-read prompt instead of advice to resume. A branch-tip count is flagged only when this checkout's copy changed after the fork in a way that moves readiness; a no-content merge or a reworded title does not count. The --short entry view prints the same lines. commands/status.md states the contract, including the git calls made while a lock is held.\n\nThe review ran four rounds and every finding is fixed. The phase gate is green, with screenshots and the interactive check. Run read-only against the development branch, the lines print only for the two phases that have genuinely ready work. BUG-19 is fixed. The same stale-copy class in the ready list and the phase table is BUG-20, and phase P115 takes it next.",
   "tasks": [
     {
       "id": "P114.1",
       "title": "each UNFINISHED line counts its own phase's ready tasks from the copy that holds the phase live",
-      "status": "pending",
+      "status": "done",
       "description": "Fixes BUG-19. In _status_facts.py, the UNFINISHED line for a held phase lock counts only the ready tasks of that phase. A phase with no ready task of its own gets no ready-work line; /audit:doctor still names a lock held with nothing left to run.\n\naudit-status.py injects the locks block. On the development branch, a phase whose own branch exists in this repository is read from that branch's copy of its shard: git show <branch>:<shard path>, which opens no file outside the git dir. The line names the copy it counted from. When that copy cannot be read, the line says the count is the development branch's copy and that the phase branch holds the live state. It does not present a stale count as current.\n\nThe --short entry view and the full view print the same sentence. Every claim carries its basis, and no number is written into prose.\n\nCases, each with its twin:\n- Two locked phases with different ready counts print different counts.\n- A locked phase whose own tasks are all done prints no ready-work line.\n- A phase whose branch copy has fewer ready tasks than the development branch's copy is counted from the branch copy, and the line names it.\n- An unreadable branch copy falls back to the development branch's copy, and the line says so.",
       "files": [
         "plugins/audit/scripts/status/_status_facts.py",
         "plugins/audit/scripts/status/audit-status.py",
         "plugins/audit/tests/test__status_facts.py",
-        "plugins/audit/tests/test_audit_status.py"
+        "plugins/audit/tests/test_audit_status.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -58,17 +151,244 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e04e7557",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_status_facts.py: ready_by_phase(manifest) splits the ready list by owning phase, and unfinished_runs reads each held phase lock row's readyCount and readyBasis instead of the plan-wide list; a zero count is silent, and a missing or non-integer count is refused as never counted, naming its basis. The sentence now reads: phase X holds a lock with N task(s) still ready, <copy basis>: <lock basis>. <repair>. audit-status.py: locks_block takes the manifest path, and phase_ready_counts gives each held phase lock its count through _phase_ready_count. That function counts this checkout's copy when the phase branch is checked out here or does not exist, naming the branch it looked for. Otherwise it reads the branch's copy with git show refs/heads/<branch>:<shard or manifest path> in either layout and says so. If that read fails, it falls back to this checkout's copy and says the branch holds the phase live and the count is not current. One phase's failure stays in that phase's sentence. The branch name comes from _branch.branch_of, because the development branch's shards of phases in flight record no branch. render_short now prints the same UNFINISHED lines as the full view. PLUGIN-BUILD-GUIDE's module map names the two new imports (_branch, _worktrees). Red-first proved: ul1-ul9 in test__status_facts and lb1-lb7 in test_audit_status failed at HEAD and pass with the change; lb builds a real repo with phase branches ahead of, behind and absent from main, a phase with nothing ready, and a worktree with its branch checked out. Known limit: a lock for a phase this checkout's index does not hold is counted as zero and stays silent, with its basis only in the payload.",
+        "descriptive": "The status view now says how much work each locked phase really has left, read from that phase's own branch when the work lives there, and says which copy it counted; a phase with nothing left gets no warning."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": [],
-      "bugId": "BUG-19"
+      "startedAt": "2026-10-07T06:46:49Z",
+      "completedAt": "2026-10-07T07:05:50Z",
+      "verifiedBy": [
+        "ul1",
+        "ul2",
+        "ul3",
+        "ul4",
+        "ul5",
+        "ul6",
+        "ul7",
+        "ul8",
+        "ul9",
+        "lb1",
+        "lb2",
+        "lb3",
+        "lb4",
+        "lb5",
+        "lb6",
+        "lb7"
+      ],
+      "bugId": "BUG-19",
+      "testEvidence": {
+        "runId": "2026-10-07T07:05:36Z.7bcd63",
+        "status": "passed",
+        "at": "2026-10-07T07:05:36Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "e04e7557",
+        "at": "2026-10-07T07:05:50Z",
+        "basis": "orchestrator check: BUG-19 fixed, per-phase count with its copy named, silent at zero, refused when uncounted, red-first proved on both suites with real branches, live check on the real tree silent for the phases whose branch copies have nothing ready"
+      }
+    },
+    {
+      "id": "P114.2-ffv",
+      "title": "every UNFINISHED count comes from the live copy, and an uncounted phase is never a silent zero",
+      "status": "done",
+      "description": "Fixes review findings P114-R1 to P114-R6. Each UNFINISHED count must come from the copy that holds the phase live, and a count nobody computed must never read as zero.\n\n- When a phase branch is checked out in a linked worktree (_worktrees.list_worktrees), the count comes from that worktree's shard file, uncommitted state included, and the basis names the path. Reading a worktree's file is a read, not a write. audit-status.py is the entry point, so this read belongs there; the fact module stays pure.\n- A held lock for a phase this checkout's index does not hold carries no count. Its basis says this checkout's plan holds no such phase, so the refusal line names it and the gate fails rather than passing on a silent zero. A zero is silent only when it was counted from the live copy. A fallback row says its count is not current even when that count is zero.\n- When the development branch's copy has commits to the shard that the branch lacks, the basis says so. The unreadable fallback says the branch exists but its copy could not be read. It no longer asserts that the branch holds the phase live.\n- One public head reader replaces _head_branch, with no reach into a private _worktrees helper.\n- The UNFINISHED header counts only the rows that carry a count, or is worded to cover refusals too.\n- commands/status.md's UNFINISHED and --fail-on unfinished-run passages describe the per-phase count, the copy it is read from, the uncounted refusal, and the git calls made when a lock is held.\n\nCases, each with its twin:\n- a linked worktree whose uncommitted shard differs from the tip;\n- a lock for a phase the index does not hold;\n- a fallback with a stale zero;\n- a branch behind the development branch's shard.",
+      "files": [
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/commands/status.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "43d9f606",
+      "outcome": {
+        "technical": "_status_facts.py stays pure. unfinished_runs is silent on a zero only when the row carries readyLive True. A zero from a copy that is not the live one prints a line and fails the gate, and a row without readyLive reads as not live. audit-status.py's _phase_ready_count reads copies in this order: this checkout's own file when it has the branch out; otherwise the file in the linked worktree that has the branch out, read from disk with its uncommitted state (_tree_copy, the path named in the basis); otherwise the branch tip through git show; otherwise this checkout's copy when no branch of that name exists, which is live because it is the only copy. A lock for a phase this checkout's plan does not hold gets no count, and its basis says so, so the refusal line names it and the gate fails. The fallback says the branch exists but its copy could not be read and the count is not current. _commits_branch_lacks (git rev-list --count refs/heads/<b>..HEAD -- <shard>) adds a note when this checkout's HEAD has commits to the shard the branch lacks, and that row is not live. The private head reader is gone: the current branch and the worktree holding each branch come from one public _worktrees.list_worktrees call, and git show and rev-list go through the public _scoped_commit.run_git. With no phase lock held, no git call runs. The UNFINISHED heading covers refusal rows, and the --help text matches. commands/status.md describes the per-phase count, the copy order, the uncounted refusal and the stale zero, and the git calls made while a lock is held. PLUGIN-BUILD-GUIDE names the new import. Red-first proved: ul10 and ul11 in test__status_facts, and uf6, uh1, uh2 and lw1-lw6 in test_audit_status, failed at HEAD and pass with the change. Allow halves are ul3, lw4, lw7 and lw9. sh2 now runs in its own project rather than reading the shared checkout's locks.",
+        "descriptive": "The status view now counts a phase's remaining work from the worktree where it is being done, uncommitted changes included, and warns instead of staying silent when it could not count a phase or the count may be out of date."
+      },
+      "startedAt": "2026-10-07T07:05:56Z",
+      "completedAt": "2026-10-07T07:25:43Z",
+      "verifiedBy": [
+        "ul10",
+        "ul11",
+        "uf6",
+        "uh1",
+        "uh2",
+        "lw1",
+        "lw2",
+        "lw3",
+        "lw4",
+        "lw5",
+        "lw6",
+        "lw7",
+        "lw8",
+        "lw9"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T07:25:28Z.b5effa",
+        "status": "passed",
+        "at": "2026-10-07T07:25:28Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "43d9f606",
+        "at": "2026-10-07T07:25:43Z",
+        "basis": "orchestrator check: P114-R1..R6 fixed, live worktree copy read by the entry point with the fact module kept pure, uncounted and stale zeros refused, reviewer cases reproduced red at HEAD with allow halves, status.md contract rewritten"
+      }
+    },
+    {
+      "id": "P114.3-ffv",
+      "title": "a row is not live only when the phase's readiness changed after its branch forked",
+      "status": "done",
+      "description": "Fixes review findings P114-R7, P114-R8 and P114-R9. A row is marked not live only when the phase's readiness changed after its branch forked, never because a merge brought no content.\n\nReplace the rev-list commit count with a content question: git diff --quiet refs/heads/<branch>...HEAD -- <shard>. This is one call, the same cost as before.\n- Unchanged: no note, and the row stays live.\n- Changed: compare the readiness projection (task ids, status, dependency fields) of the merge-base copy with HEAD's copy. Mark the row not live, with the note, only when that projection differs. A description edit that landed does not count.\n- Unknown: the existing not-current wording.\n\nA non-live zero's repair sentence says to re-read from the copy named or to check the branch. It never says to resume waves.\n\nIn status.md:\n- The list of zeros that print includes an unreadable linked worktree.\n- The count is described as the one from the copy named.\n- The behind note is described as \"this checkout's copy of the phase's file changed after the branch forked, in a way that moves readiness\".\n\nCases, each with its twin:\n- A no-content --no-ff landing merge, after the branch committed to its shard, gives no note and a silent live zero.\n- A landed description-only edit gives no note.\n- A landed status change gives the note.\n- A non-live zero's repair wording.",
+      "files": [
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/commands/status.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "aa61e9a5",
+      "outcome": {
+        "technical": "audit-status.py: _readiness_moved replaces the commit count. The common path is one git diff --quiet refs/heads/<branch>...HEAD -- <shard>. If that says unchanged, there is no note and the row stays live. If it says changed, git merge-base runs and the fork-point copy and HEAD's copy are read (through the shared _show_phase, which _branch_copy now uses too); the row gets the note \"changed after the branch forked, in a way that moves readiness\" only when _status_facts.readiness_projection differs between them. If the diff or a read cannot be answered, the row gets the not-current wording. _status_facts.py adds the pure readiness_projection: phase id, status and blockedBy, and per task id, status, blockedBy and dependsOn, beside ready_tasks. It also adds an UNFINISHED_UNREAD repair for any printed zero, which says to re-read the count from the copy named or check the branch and never to resume waves; a non-live count that is not zero keeps the live/stale repair. status.md describes the count as the one from the copy named, gives the readiness rule (a reworded title or a no-content --no-ff merge earns no note), lists every zero that prints, and names the diff and the conditional reads in the cost paragraph. Red-first proved for ul12, ul14 and ul15 (test__status_facts) and lw6 and lw8-lw11 (test_audit_status); the fixture adds a phase retitled on main and a no-content --no-ff landing on the fork point. A read-only run against the main checkout now prints lines only for two phases. Each is counted live from its own linked worktree and has a genuinely ready task. The two phases that printed false lines before are silent zeros.",
+        "descriptive": "The status warning now ignores merges and wording changes that do not affect which tasks are ready, so it only fires for phases with real work left, and a stale zero tells the reader to re-check instead of resuming."
+      },
+      "startedAt": "2026-10-07T07:32:15Z",
+      "completedAt": "2026-10-07T07:48:39Z",
+      "verifiedBy": [
+        "ul12",
+        "ul13",
+        "ul14",
+        "ul15",
+        "lw6",
+        "lw7",
+        "lw8",
+        "lw9",
+        "lw10",
+        "lw11"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T07:48:33Z.eb5656",
+        "status": "passed",
+        "at": "2026-10-07T07:48:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "aa61e9a5",
+        "at": "2026-10-07T07:48:39Z",
+        "basis": "orchestrator check: P114-R7..R9 fixed with a content diff then a readiness projection, reviewer scratch case reproduced, live main checkout now flags only phases with genuinely ready tasks"
+      }
+    },
+    {
+      "id": "P114.4-ffv",
+      "title": "a count read from the worktree that holds the branch is live",
+      "status": "done",
+      "description": "Fixes review finding P114-R10. A linked worktree's file that holds the branch is the copy that holds the phase live, so a count read from it is live.\n\n_readiness_moved runs only when the count was read from the branch's committed copy. On the worktree path it does not run, and readyLive stays true. The note and status.md's paragraph name the copy that was actually read. They do not say 'the branch's copy' when a worktree file was counted.\n\nCases, each with its twin:\n- A worktree holding the branch, with a post-fork readiness-moving edit on this checkout: a silent live zero.\n- The same edit with only the branch tip readable: the note, and the row is not live.",
+      "files": [
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/commands/status.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "fcdf5f76",
+      "outcome": {
+        "technical": "audit-status.py: _phase_ready_count asks _readiness_moved only on the branch-tip path, inside the fallback that reads the branch's committed copy with git show. When a linked worktree's file was read, the row keeps readyLive true, and its basis makes no claim about the branch's copy, which was never read. _readiness_moved's docstring says it applies to the branch-tip path only, because a worktree's file is already the live state. status.md's readiness paragraph now says the note asks only about the branch's committed copy and is silent when a worktree file was counted. New fixture _worktree_post_fork_cases. wp1: a worktree holds the branch and main lands a readiness-moving edit to the same shard after the fork; the count is a silent live zero. wp2, its twin: the same edit with no worktree holding the branch, so the tip is read and the note fires. lw1, lw2, lw6, lw10 and lw11 are unchanged. Red-first proved for wp1 at HEAD.",
+        "descriptive": "When a phase's remaining work is counted from the worktree where it is being done, the status no longer marks that count as possibly out of date because of an unrelated change on the main branch."
+      },
+      "startedAt": "2026-10-07T07:58:27Z",
+      "completedAt": "2026-10-07T08:21:55Z",
+      "verifiedBy": [
+        "wp1",
+        "wp2"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T08:21:49Z.e1c1a4",
+        "status": "passed",
+        "at": "2026-10-07T08:21:49Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "fcdf5f76",
+        "at": "2026-10-07T08:21:55Z",
+        "basis": "orchestrator check: P114-R10 fixed by asking the readiness question only on the branch-tip path, reviewer case reproduced red at HEAD, twin keeps the branch-tip note"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-10-07T06:46:49Z",
+  "testEvidence": {
+    "runId": "2026-10-07T08:28:53Z.02456b",
+    "status": "passed",
+    "at": "2026-10-07T08:28:53Z"
+  }
 }
