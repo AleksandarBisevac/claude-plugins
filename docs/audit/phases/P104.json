@@ -706,7 +706,7 @@
     {
       "id": "P104.11-tog",
       "title": "every cost names its rate date and source, and every per-task figure its coverage",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P104-R1, P104-R3, P104-R4 and P104-R6. Every surface that prints a cost names its basis: the one rate-basis phrase the report, its Markdown twin, /audit:usage and /audit:status print becomes date and source, built by one Python helper from what the shared resolver reports (the shipped table's date and source URL, or the project's own declared table and its date), and the panel shows the same phrase from its payload rather than retyping it; when the shipped table priced the rows and the project declared no date, the shipped table's date is shown, never 'rates undated'. The HTML report's unit-economics projection and band note, and the panel's projection, carry the coverage sentence. The coverage sentence becomes a public coverage_sentence re-exported with its peers, its four importers updated, and one parity case compares Python's sentence with the panel's for the same inputs. CONTRIBUTING.md's native-cost pilot entry says the ledger miscount as history and points at _scan_file's provisional count. The panel screenshots are re-captured by the orchestrator.",
       "files": [
         "plugins/audit/scripts/report/_usage_overview.py",
@@ -791,18 +791,43 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "308189d6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "One rate-basis phrase, one builder: _usage_economics.rate_basis_phrase(pricing_basis) takes resolve_pricing's {basis, asOf, source} and never resolves a table itself. shipped -> 'rates as of <PRICING_AS_OF>, the plugin's shipped table (<PRICING_SOURCE_URL>)'; manifest -> 'rates as of <d>, the plan's own table in meta.usage.pricing', or 'rates undated, ... - set meta.usage.pricingAsOf'; config -> 'rates as of <d>, the project's usage.pricing in .claude/audit.config.json', or '... - set usage.pricingAsOf'; a whitespace-only date is no date; a missing or unknown basis gives 'rate basis not recorded'. The shipped table's date is never shown as 'rates undated'. coverage_sentence is now public; usage_ledger re-exports both with their peers.\nSurfaces: the HTML report (_usage_overview._usage_context) and its Markdown twin print the phrase from load_usage's pricingBasis; _usage_detail prints the coverage sentence under the projection (when showCost is on) and at the end of the band note in both branches; /audit:usage prints 'costs priced at <phrase>' from the resolver answer main() already holds, and --json gains pricingBasis and rateBasis (pricingAsOf kept); /audit:status's usage block carries pricingBasis and rateBasis and its line prints the phrase or 'rate basis not served'; the panel payload gains pricingBasis and rateBasis and usage-view.js shows the served phrase with no wording of its own, offers 'date them in Settings' only for an undated config table, and the projection carries the coverage line. A vitest parity case compares the panel's coverage sentence with Python's coverage_sentence for the same inputs. CONTRIBUTING.md: the rate-basis bullet describes the one phrase and the resolver; the native-cost pilot entry states the ledger miscount as history and points at _scan_file's provisional count.\nDecisions: renderers keep their existing _usage_economics edge; audit-status takes the phrase from the block rather than a new static import (the module map is unchanged, checked against `_deps.py --render`); the payload keeps pricingAsOf/pricingAsOfDeclared for existing pins; the panel projection's coverage line is not gated on showCost because the panel prints the projection's dollars regardless (pre-existing).\nWidened scope: test__panel_usage up1 (22 keys, the two named) + up1a/up1b; test_audit_status s15a-e, u10b, u10c, u13; test__report_usage u4, u4b, u4d-u4g, u4i, u4j - all asserting rate_basis_phrase's own words. The four committed renders regenerated with the recipes check-rendered-artifacts --how prints (examples/report.sh, the docs/index.html copy, the demo-large generated fixture); check-rendered-artifacts --before-commit exit 0. Panel and report screenshots re-captured by the orchestrator.\nRed-first: helper at HEAD 59285dfe proved test__usage_overview (uo1, uo1a); the vitest parity case was could-not-prove in the throwaway (no node_modules) and failed in the shared tree before the fix. Suites green (each listed in the hand-back), npx vitest 711/711, node --check on the assembled panel script exit 0, ruff and vermin clean.\nBench: test__usage_bench's untimed passes are one table, _UNTIMED (name, reason), holding the earlier exclusions plus coverage_sentence and rate_basis_phrase (both format from values the caller holds and read no rows); bn5 compares against it and bn5b derives its counts from it, so neither carries a count a later name would stale; _usage_bench's docstring names the two. Full sweep 305/305 files ok.",
+        "descriptive": "Every place the plugin prints a cost now says which price table it used and from when - the shipped table's date and source, or the project's own table - and every per-task figure and projection says how much of the work it covers, with the panel showing the same words as the report."
       },
       "startedAt": "2026-10-07T00:18:02Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T01:08:38Z",
+      "verifiedBy": [
+        "uo1",
+        "uo1a",
+        "uo2",
+        "rb1",
+        "rb2",
+        "rb3",
+        "rb4",
+        "rb5",
+        "um7",
+        "um8",
+        "ud19a",
+        "ud19d",
+        "up1a",
+        "s15a",
+        "u10b",
+        "u10c",
+        "u4i",
+        "u4j"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T01:08:27Z.1ee158",
         "status": "passed",
         "at": "2026-10-07T01:08:27Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "308189d6",
+        "at": "2026-10-07T01:08:38Z",
+        "basis": "orchestrator check: P104-R1, R3, R4, R6 addressed; one Python builder for the phrase served to the panel; coverage sentence public with a cross-language parity case; renders regenerated and screenshots re-captured"
       }
     }
   ],
