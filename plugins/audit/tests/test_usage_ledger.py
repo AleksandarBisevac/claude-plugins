@@ -659,6 +659,62 @@ def _cases(check):
     finally:
         shutil.rmtree(_ig_tmp, ignore_errors=True)
 
+    # --- tw: a replace's temp file is this writer's own --------------------
+    # A temp name derived from the target alone is shared by every writer of
+    # that target: a second writer's half-written temp is truncated, or moved
+    # into place as if it were this one's. Each writer takes a name nobody else
+    # can hold, so a file planted under the derived name is left as it was.
+    _tw_tmp = tempfile.mkdtemp(prefix="ledger-temp-")
+    try:
+        _tw = os.path.join(_tw_tmp, "ledger")
+        os.makedirs(os.path.join(_tw, ".cursors"))
+        _tw_month_foreign = os.path.join(_tw, "2026-08.jsonl.tmp")
+        _tw_cursor_foreign = M.cursor_path(_tw, "s-tw") + ".tmp"
+        for _p in (_tw_month_foreign, _tw_cursor_foreign):
+            with open(_p, "w", encoding="utf-8") as fh:
+                fh.write("FOREIGN WRITER IN FLIGHT\n")
+        _tw_row = {"ts": "2026-08-01T09", "out": 5}
+        _tw_ok_month = M.rewrite_month(_tw, "2026-08", [_tw_row])
+        _tw_ok_cursor = M.save_cursor(_tw, "s-tw", {"pos": 7})
+
+        def _tw_read(path):
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    return fh.read()
+            except OSError:
+                return None
+        check("tw1 rewrite_month neither overwrites nor consumes a foreign "
+              "`<month>.jsonl.tmp` beside the ledger: it is still there, byte "
+              "for byte",
+              _tw_read(_tw_month_foreign) == "FOREIGN WRITER IN FLIGHT\n",
+              "got %r" % (_tw_read(_tw_month_foreign),))
+        check("tw2 ...and save_cursor leaves a foreign cursor temp file the "
+              "same way",
+              _tw_read(_tw_cursor_foreign) == "FOREIGN WRITER IN FLIGHT\n",
+              "got %r" % (_tw_read(_tw_cursor_foreign),))
+        # The allow twin: a writer that kept its hands off the foreign file by
+        # not writing at all would pass both cases above.
+        _tw_month_text = _tw_read(os.path.join(_tw, "2026-08.jsonl"))
+        _tw_cursor_text = _tw_read(M.cursor_path(_tw, "s-tw"))
+        check("tw3 ...while both writes still land: the month holds exactly the "
+              "row handed over, the cursor reads back, and both writers say so",
+              _tw_ok_month is True and _tw_ok_cursor is True
+              and _tw_month_text is not None
+              and [json.loads(x) for x in _tw_month_text.splitlines()] == [_tw_row]
+              and M.load_cursor(_tw, "s-tw") == {"pos": 7},
+              "month=%r cursor=%r ok=%r/%r" % (_tw_month_text, _tw_cursor_text,
+                                               _tw_ok_month, _tw_ok_cursor))
+        _tw_left = sorted(os.listdir(_tw)) + sorted(
+            os.listdir(os.path.join(_tw, ".cursors")))
+        check("tw4 ...and leave no temp file of their own behind - only the "
+              "planted pair, the two targets and the ignore marker: %r"
+              % (_tw_left,),
+              _tw_left == sorted([".cursors", ".gitignore", "2026-08.jsonl",
+                                  "2026-08.jsonl.tmp"])
+              + sorted(["s-tw.json", "s-tw.json.tmp"]))
+    finally:
+        shutil.rmtree(_tw_tmp, ignore_errors=True)
+
     # --- rx: the re-export this module exists to keep serving ---------------
     # Nothing imports `usage_ledger` by name: every consumer loads it BY PATH and
     # reads attributes off the module object. A name that quietly stopped being

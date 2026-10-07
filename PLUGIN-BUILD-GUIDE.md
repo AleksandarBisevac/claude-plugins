@@ -1352,6 +1352,16 @@ asset they could not read and a directory they could not list, rather than skipp
 `.py` side had already reported a file it could not *tokenize* while quietly swallowing one it
 could not *open*, and the `ui/` side returned an empty list for a missing `scripts/ui/` — the whole
 report and panel UI gone, printing exactly what a clean tree prints. `--selftest`.
+`state_write_violations()` holds the rule that a state file is replaced only through a sanctioned
+writer: every `os.replace`/`os.rename` under `scripts/` and `hooks/` — through `os.`, a module
+alias, or a name imported from `os` — must sit in a function `STATE_WRITERS` names, and each row
+carries a reason and must still name a live site, so the table cannot excuse code nobody wrote.
+The writers a new site routes through are `_manifest_io.atomic_write_text` (which
+`atomic_write_json` writes through) and, on the hooks side, `_config.atomic_write_text`; both take
+a temp name of their own, which is what a fixed `<target>.tmp` shared between two writers running
+at once did not. `state_write_sites()` prints the corpus the rule judged. A method of the same name
+on a string or a path is not the `os` module's and is not read — the allow row in
+`tools/prove-gates.py` holds that line.
 
 ### `plugins/audit/scripts/_refs.py`
 The other half of the same idea, aimed at paths rather than at imports: roughly 150 places

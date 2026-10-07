@@ -230,7 +230,8 @@
         "plugins/audit/scripts/manifest/_manifest_io.py",
         "plugins/audit/scripts/usage/usage_ledger.py",
         "plugins/audit/tests/test_usage_ledger.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/gate-parity.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -264,7 +265,12 @@
       },
       "startedAt": "2026-10-06T22:06:25Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T00:05:45Z.e28f7f",
+        "status": "passed",
+        "at": "2026-10-07T00:05:45Z"
+      }
     }
   ],
   "startedAt": "2026-10-06T14:44:46Z"

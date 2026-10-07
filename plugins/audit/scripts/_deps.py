@@ -1958,6 +1958,224 @@ def json_encoding_violations(script_dir=None, hooks_dir=None):
     return violations
 
 
+# --- one way to replace a state file --------------------------------------------
+# The calls that move a finished file onto a name another process reads.
+_STATE_WRITE_CALLS = ("replace", "rename")
+
+# Every site under scripts/ + hooks/ allowed to call one of them, as
+# (file, function, reason). The file is spelled the way a violation names it and
+# the function is the innermost `def` holding the call. A row is a statement about
+# code that EXISTS: one naming a function that no longer replaces anything is
+# reported, so the table cannot carry permission for a site nobody wrote.
+STATE_WRITERS = (
+    ("scripts/manifest/_manifest_io.py", "atomic_write_text",
+     "the sanctioned text writer itself: a temp name of its own from mkstemp, in "
+     "the target's directory, replaced into place and removed on any failure. "
+     "atomic_write_json writes through it, so JSON has no second implementation."),
+    ("hooks/_config.py", "atomic_write_text",
+     "the same writer on the hooks/ side of the layer rule. hooks/ may import "
+     "nothing from scripts/, so the pattern is stated a second time here rather "
+     "than shared; both take a temp name of their own."),
+    ("scripts/panel/_panel_write.py", "restore",
+     "the panel's rollback puts snapshotted BYTES back, including files that are "
+     "not text; a text writer would re-encode them. Its temp name is mkstemp's "
+     "own, so it shares nothing with a concurrent writer."),
+    ("scripts/governance/_locks.py", "_write_lock",
+     "the lock primitive: it writes the record every other writer serialises "
+     "on, so it cannot depend on a writer above it in the layers. Its temp name "
+     "is mkstemp's own."),
+    ("scripts/governance/_journal_io.py", "_clear_stale_breaker",
+     "the journal-lock primitive: a rename CLAIMS a stale breaker so exactly one "
+     "waiter judges it. That is an atomic take of a name, not a file written, "
+     "and no writer could express it."),
+    ("scripts/governance/_journal_io.py", "write_merged",
+     "the journal merge replaces the file an append writes THROUGH (the resolved "
+     "link target), inside the journal lock every append takes; that hold is "
+     "what makes its fixed temp name unshared."),
+    ("scripts/manifest/merge-manifest.py", "_write",
+     "the merge driver writes the file git hands it and reads back on exit, and "
+     "takes a newline argument so .gitattributes and the shim are written byte "
+     "for byte - which the platform-text writer does not offer. Its temp name is "
+     "mkstemp's own."),
+    ("scripts/manifest/migrate-manifest.py", "_retire_shard_dir",
+     "moves a whole shard DIRECTORY aside in one rename so a migration can never "
+     "leave half a shard set; no file is written, and a file writer cannot move "
+     "a directory."),
+    ("scripts/governance/audit-journal.py", "cmd_archive",
+     "archive moves an untracked month file into archive/ unchanged, because the "
+     "hash chain survives only untouched bytes; a move is the operation, and "
+     "rewriting the file through a writer would be the defect."),
+    ("scripts/governance/import-evidence.py", "import_shard",
+     "an imported evidence shard is copied as raw BYTES, verified before the "
+     "write, and a text writer would translate its line endings and break what "
+     "was verified. Its temp name is mkstemp's own."),
+    ("scripts/governance/_invariants.py", "clone_id",
+     "publishes the clone token whole: a link for the first writer and a "
+     "replace only for an empty or truncated file; the link half is "
+     "what lets two first writers race without either losing."),
+    ("scripts/panel/panel-server.py", "_write_pidfile",
+     "the pidfile carries a live session token, so its temp is created O_EXCL at "
+     "owner-only mode before a byte is written - a permission no general writer "
+     "takes. Its temp name is random and its own."),
+)
+
+# A minimum long enough that a label cannot pass as a reason. Same instrument as
+# `_MIN_ROUTE_REASON`, for the same failure: a table of one-word excuses reads as
+# coverage.
+_MIN_STATE_WRITER_REASON = 80
+
+
+def _os_bindings(tree):
+    """(names bound to the os module, {local name: os function}) in one module.
+
+    `import os`, `import os as x` and `from os import replace as r` are the three
+    spellings that reach the call, and a rule reading only the first is a rule a
+    file passes by choosing the second."""
+    modules, functions = set(), {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "os":
+                    modules.add(alias.asname or "os")
+        elif isinstance(node, ast.ImportFrom) and node.module == "os" \
+                and not node.level:
+            for alias in node.names:
+                if alias.name in _STATE_WRITE_CALLS:
+                    functions[alias.asname or alias.name] = alias.name
+    return modules, functions
+
+
+def _state_write_call(call, modules, functions):
+    """The os function a Call reaches (`replace`/`rename`), or None. A
+    `.replace` on anything that is not the os module - a string, a path - is a
+    different method that happens to share the name."""
+    func = call.func
+    if isinstance(func, ast.Attribute) and func.attr in _STATE_WRITE_CALLS \
+            and isinstance(func.value, ast.Name) and func.value.id in modules:
+        return func.attr
+    if isinstance(func, ast.Name) and func.id in functions:
+        return functions[func.id]
+    return None
+
+
+def _calls_by_function(tree):
+    """(function name, Call) for every Call, named by its innermost enclosing
+    `def`; a call at module level is under `<module>`."""
+    found = []
+    stack = [("<module>", tree)]
+    while stack:
+        owner, node = stack.pop()
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                stack.append((child.name, child))
+                continue
+            if isinstance(child, ast.Call):
+                found.append((owner, child))
+            stack.append((owner, child))
+    return found
+
+
+def _state_write_scan(script_dir, hooks_dir):
+    """([(file, function, line, call)], [unreadable file]) over scripts/ + hooks/,
+    in file and line order; None for either directory means the real one.
+
+    Both arguments are required so the two public functions below are the only
+    entry points - this is their shared walk, not a third verdict."""
+    script_dir = script_dir or _output.SCRIPTS_DIR
+    hooks_dir = hooks_dir if hooks_dir is not None else _output.HOOKS_DIR
+    sites, unreadable = [], []
+    for kind, directory in (("scripts", script_dir), ("hooks", hooks_dir)):
+        if not os.path.isdir(directory):
+            continue
+        for rel, path in _output.lint_py_files(directory):
+            named = "%s/%s" % (kind, rel)
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    tree = ast.parse(fh.read(), filename=rel)
+            except (OSError, SyntaxError, ValueError):
+                unreadable.append(named)
+                continue
+            modules, functions = _os_bindings(tree)
+            hits = [(owner, call.lineno, _state_write_call(call, modules,
+                                                           functions))
+                    for owner, call in _calls_by_function(tree)]
+            sites.extend(sorted(((named, owner, line, name)
+                                 for owner, line, name in hits if name),
+                                key=lambda site: site[2]))
+    return sites, unreadable
+
+
+def state_write_sites(script_dir=None, hooks_dir=None):
+    """Every `os.replace`/`os.rename` under scripts/ + hooks/ as
+    (file, function, line, call) - the corpus `state_write_violations()` judges,
+    printed so a reader can see what the rule found rather than only its verdict."""
+    return _state_write_scan(script_dir, hooks_dir)[0]
+
+
+def state_write_violations(script_dir=None, hooks_dir=None, table=None):
+    """(file, what) for every state file replaced outside a sanctioned writer, and
+    for every row of the sanctioned table that is no longer true.
+
+    WHY A LINT AND NOT A SENTENCE. Each lost write between two plugin writers
+    running at once was the same thing in a new place: a file replaced by code
+    that was not built to share it - a fixed temp name two writers both open, or
+    a replace taken outside the lock the other writer holds. A writer built for
+    it gives every call a temp name of its own, and the rule that keeps new code
+    on one is only as good as the place it is checked.
+
+    THREE THINGS, each naming its own violation:
+
+      * A REPLACE OUTSIDE THE TABLE. An `os.replace` or `os.rename` - through
+        `os.`, a module alias, or a name imported from os - in a function
+        `STATE_WRITERS` does not name is reported by file, function and line.
+        The repair is `_manifest_io.atomic_write_text` (in hooks/,
+        `_config.atomic_write_text`), or a row saying why that cannot fit.
+      * A ROW WITH NO REASON. Shorter than `_MIN_STATE_WRITER_REASON` is a label.
+      * A ROW NAMING NO SITE. A file or function that no longer replaces
+        anything. This is also what keeps the scan from going quiet: a scanner
+        that found nothing would report every row of the real table here, so an
+        empty answer is never a scan that read nothing.
+
+    WHAT IT CANNOT SEE. `shutil.move`, `os.renames`, `os.link`, a
+    `getattr(os, ...)`, and a `Path.replace`/`Path.rename` - the last because a
+    method call on a path cannot be told from one on a string without types,
+    and a rule convicting every `str.replace` would be routed around in a day.
+    A write that truncates a file in place (`open(path, "w")`) is not a replace
+    and is outside the rule too.
+
+    SCOPED TO `scripts/` + `hooks/` - the product. A file that will not parse is
+    named rather than dropped, and a row naming it is not also reported stale.
+    """
+    table = STATE_WRITERS if table is None else table
+    sites, unreadable = _state_write_scan(script_dir, hooks_dir)
+    sanctioned = set((row[0], row[1]) for row in table)
+    violations = [(named, "file does not parse; cannot be scanned for state "
+                          "file writes") for named in unreadable]
+    for named, owner, line, name in sites:
+        if (named, owner) in sanctioned:
+            continue
+        violations.append(
+            (named, "line %d: os.%s in %s() replaces a file outside the "
+                    "sanctioned writers - route it through "
+                    "_manifest_io.atomic_write_text (hooks: "
+                    "_config.atomic_write_text), or add a STATE_WRITERS row "
+                    "saying why that cannot fit" % (line, name, owner)))
+    live = set((named, owner) for named, owner, _line, _name in sites)
+    for named, owner, reason in table:
+        if len((reason or "").strip()) < _MIN_STATE_WRITER_REASON:
+            violations.append(
+                (named, "STATE_WRITERS row for %s() has no reason - fewer than "
+                        "%d characters is a label, and a label reads as "
+                        "coverage" % (owner, _MIN_STATE_WRITER_REASON)))
+        if (named, owner) not in live and named not in unreadable:
+            violations.append(
+                (named, "STATE_WRITERS row for %s() names a site that no longer "
+                        "exists - nothing there calls os.replace or os.rename, "
+                        "so the row is permission for code nobody wrote"
+                 % (owner,)))
+    return violations
+
+
 # --- rendering ----------------------------------------------------------------
 def render(script_dir=None, layers=None):
     """A deterministic module map: every layer, its members, each member's STATIC

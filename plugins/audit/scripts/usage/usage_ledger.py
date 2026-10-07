@@ -641,16 +641,14 @@ def ensure_ledger_dir(ledger_dir):
 
 
 def save_cursor(ledger_dir, session_id, cursor):
-    """Atomic (temp + os.replace) so a killed hook can never leave a half-written
-    cursor that would re-scan from zero and double-count."""
+    """Atomic, through `_manifest_io.atomic_write_text`, so a killed hook can never
+    leave a half-written cursor that would re-scan from zero and double-count -
+    and its temp file is this call's own, so a second writer of the same cursor
+    cannot truncate it or move it into place."""
     path = cursor_path(ledger_dir, session_id)
     try:
         ensure_ledger_dir(ledger_dir)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(cursor, fh)
-        os.replace(tmp, path)
+        _manifest_io.atomic_write_text(path, json.dumps(cursor))
         return True
     except Exception:
         return False
@@ -820,10 +818,15 @@ TAIL_SETTLE_S = 0.02
 TAIL_MAX_POLLS = 50
 
 
+def _row_line(row):
+    """One ledger row as the line every writer of a monthly file spells it."""
+    return json.dumps(row, separators=(",", ":"), sort_keys=True) + "\n"
+
+
 def _write_rows(path, mode, rows):
     with open(path, mode, encoding="utf-8") as fh:
         for row in rows:
-            fh.write(json.dumps(row, separators=(",", ":"), sort_keys=True) + "\n")
+            fh.write(_row_line(row))
 
 
 def _parse_rows(data, drop):
@@ -949,20 +952,11 @@ def rewrite_month(ledger_dir, month, rows, tail=None):
 
 
 def _replace_rows(path, rows):
-    """Write `rows` to a temp file beside `path` and move it over `path` - the
-    one write-and-replace a month rewrite makes. A failure removes the temp
-    file and re-raises, so a refused replace leaves the old file standing and
-    nothing beside it."""
-    tmp = path + ".tmp"
-    try:
-        _write_rows(tmp, "w", rows)
-        os.replace(tmp, path)
-    except Exception:
-        try:
-            os.remove(tmp)
-        except OSError:
-            pass
-        raise
+    """Replace `path` with `rows` - the one write-and-replace a month rewrite
+    makes, through `_manifest_io.atomic_write_text`, whose temp file is this
+    call's own. A failure removes that temp file and re-raises, so a refused
+    replace leaves the old file standing and nothing beside it."""
+    _manifest_io.atomic_write_text(path, "".join(_row_line(row) for row in rows))
 
 
 
