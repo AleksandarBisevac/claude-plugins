@@ -738,7 +738,7 @@
     {
       "id": "P117",
       "title": "a pipeline run's fixed cost is measured stage by stage and cut by infrastructure",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P117.json"
     }
   ],
