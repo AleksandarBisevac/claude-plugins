@@ -154,24 +154,30 @@
         "severity": "med",
         "file": "CHANGELOG.md [Unreleased]; plugins/audit/scripts/usage/audit-usage.py --json",
         "issue": "The [Unreleased] entry says without qualification that /audit:usage prints no dollar figure when showCost is false, but `--json` on a showCost-false plan still carries costUSD on totals and every row, the band thresholds, routing atFromRates/atToRates/saving and planCost dollar fields; only the rendered md and ascii output is dollar-free.",
-        "resolution": "showCost is a render setting (the schema: 'Render equivalent API cost alongside token counts'), so the machine-readable payload keeps its cost data and carries the plan's showCost so a consumer can honour it; the CHANGELOG entry and usage.md's --json line say exactly that, and a case pins that the rendered output is dollar-free while --json names showCost false."
+        "resolution": "fixed in P112.8-uce (fde75e14): showCost is a render setting (the schema: 'Render equivalent API cost alongside token counts'), so the machine-readable payload keeps its cost data and carries the plan's showCost so a consumer can honour it; the CHANGELOG entry and usage.md's --json line say exactly that, and a case pins that the rendered output is dollar-free while --json names showCost false.",
+        "fixTask": "P112.8-uce",
+        "commit": "fde75e14"
       },
       {
         "id": "P112-R16",
         "severity": "low",
         "file": "tools/capture-demo-gif.py after-take report",
         "issue": "When a take against the operator's own config left nothing, the line names only the config directory as where the search ran, while the trust entry was looked for in the global config file outside it.",
-        "resolution": "Name both places the search covered: the trust file and the config directory."
+        "resolution": "fixed in P112.8-uce (fde75e14): Name both places the search covered: the trust file and the config directory.",
+        "fixTask": "P112.8-uce",
+        "commit": "fde75e14"
       },
       {
         "id": "P112-R17",
         "severity": "low",
         "file": "tools/capture-demo-gif.py isolated report",
         "issue": "The isolated report says the take's own config was removed with the kit before the removal runs, and the removal swallows any failure, so the line states an unchecked future event as done.",
-        "resolution": "Remove the isolated config first, check it is gone, and report the observed result; or word the line as what will happen when the run ends."
+        "resolution": "fixed in P112.8-uce (fde75e14): Remove the isolated config first, check it is gone, and report the observed result; or word the line as what will happen when the run ends.",
+        "fixTask": "P112.8-uce",
+        "commit": "fde75e14"
       }
     ],
-    "outcome": "[findings: 17 - 0 high, 7 med, 10 low; 14 with a recorded fix commit]"
+    "outcome": "[findings: 17 - 0 high, 7 med, 10 low; 17 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -632,7 +638,7 @@
     {
       "id": "P112.8-uce",
       "title": "usage --json carries showCost beside its cost data, and the recorder reports only what it observed",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P112-R15, P112-R16 and P112-R17.\n\nshowCost is a render setting; the schema describes it as 'Render equivalent API cost alongside token counts'. /audit:usage --json therefore keeps its cost data, and the payload carries the plan's showCost at top level so that a consumer can honour it. If the payload already carries it, do not add a second copy.\n\nThe CHANGELOG [Unreleased] entry and commands/usage.md's --json line say exactly this: the rendered dashboard prints no dollar figure when showCost is false, and --json keeps the cost fields beside showCost.\n\nThe demo recorder's after-take report:\n- When nothing was left behind, it names both places the search covered: the trust file and the config directory.\n- In isolated mode, it removes the take's own config before reporting, checks that it is gone, and reports the observed result.\n\nCases:\n- On a showCost-false plan, the rendered usage output has no dollar figure, and --json carries showCost false.\n- Its showCost-true twin carries showCost true.\n- The empty-report line names the trust file.\n- The isolated report states the removal only after observing it.",
       "files": [
         "CHANGELOG.md",
@@ -664,18 +670,31 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fde75e14",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-usage.py's --json payload carries a top-level showCost read off the plan's meta.usage (default true), independent of the render-only switch, and keeps every cost field, so a machine consumer can honour the setting itself; the rendered dashboard stays dollar-free under showCost false. commands/usage.md's --json row and the CHANGELOG [Unreleased] entry say exactly that. capture-demo-gif.py: under an isolated plan, remove_isolated_config removes the take's own config before the report is built and returns whether it is observed gone, and _isolated_lines reports that observation (confirmed gone, or still on disk) instead of asserting a removal still to come; the empty after-take line names both places the search covered, the trust file and the config directory. Cases: mn3c/mn3d (showCost false and true --json twins) and the default-true case in test_audit_usage, red at HEAD via the throwaway helper and green with the change; ir0/ir1 (removal observed, and a removal that fails) and er0 (empty line names the trust file) in the recorder's inline selftest, seen red before the fix and green after.",
+        "descriptive": "The usage command's machine-readable output now says whether the project shows costs, the documentation says the dashboard hides dollars while the JSON keeps them, and the demo recorder reports cleanup it has actually checked."
       },
       "startedAt": "2026-10-07T05:31:50Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T05:51:19Z",
+      "verifiedBy": [
+        "mn3c",
+        "mn3d",
+        "json showCost default",
+        "ir0",
+        "ir1",
+        "er0"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T05:51:04Z.e35d44",
         "status": "passed",
         "at": "2026-10-07T05:51:04Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "fde75e14",
+        "at": "2026-10-07T05:51:19Z",
+        "basis": "orchestrator check: P112-R15 decided as a render setting (schema wording), payload carries showCost, docs narrowed to the truth; R16/R17 report observed state only; red seen before each fix with twins"
       }
     }
   ],
