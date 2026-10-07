@@ -1783,6 +1783,145 @@ def _ledger_failure_cases(check):
         shutil.rmtree(root, ignore_errors=True)
 
 
+# --- check_ttl_trade ------------------------------------------------------------
+# A plain pricing table, shaped like `usage_ledger`'s own (model -> rates) - the
+# two rates the trade actually reads.
+_TTL_PRICING = {"claude-sonnet-5": {"in": 2.0, "out": 10.0, "cacheW5m": 2.5,
+                                    "cacheW1h": 4.0, "cacheR": 0.2}}
+
+_TTL_BASE_TS = 1760000000  # arbitrary epoch; only the GAPS between entries matter
+
+
+def _ttl_iso(epoch):
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(epoch)) + ".000Z"
+
+
+def _ttl_assistant_line(mid, epoch, cache_w1h, model="claude-sonnet-5",
+                        stop_reason="end_turn"):
+    return json.dumps({
+        "type": "assistant",
+        "timestamp": _ttl_iso(epoch),
+        "message": {
+            "id": mid, "model": model, "stop_reason": stop_reason,
+            "usage": {
+                "input_tokens": 100, "output_tokens": 50,
+                "cache_creation_input_tokens": cache_w1h,
+                "cache_creation": {"ephemeral_5m_input_tokens": 0,
+                                  "ephemeral_1h_input_tokens": cache_w1h},
+                "cache_read_input_tokens": 0}}})
+
+
+def _ttl_write(path, lines):
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(lines) + "\n")
+
+
+def _ttl_trade_cases(check):
+    ul = _loader.load_script("usage_ledger.py", modname="dt_ttl_ledger")
+    tmp = _harness.fixture_root("doctor-trail-ttl-")
+    try:
+        rep = base.Report()
+        M.check_ttl_trade(rep, None)
+        check("dt55 no transcript named is a documentation-only OK that names "
+              "the flag, never a guess: %r" % (_detail(rep, "ttl trade"),),
+              _levels(rep, "ttl trade") == ["OK"]
+              and "nothing to measure" in _detail(rep, "ttl trade")
+              and "--transcript" in _detail(rep, "ttl trade"))
+
+        rep = base.Report()
+        M.check_ttl_trade(rep, os.path.join(tmp, "missing.jsonl"))
+        check("dt56 a transcript that cannot be read is a WARNING naming the "
+              "path, not a silent zero: %r" % (_detail(rep, "ttl trade"),),
+              _levels(rep, "ttl trade") == ["WARNING"]
+              and "could not be read" in _detail(rep, "ttl trade"))
+
+        one = os.path.join(tmp, "one.jsonl")
+        _ttl_write(one, [_ttl_assistant_line("m1", _TTL_BASE_TS, 1000)])
+        rep = base.Report()
+        M.check_ttl_trade(rep, one, _TTL_PRICING)
+        check("dt57 a single main-loop request has no gap to measure: %r"
+              % (_detail(rep, "ttl trade"),),
+              _levels(rep, "ttl trade") == ["OK"]
+              and "fewer than two" in _detail(rep, "ttl trade"))
+
+        zero = os.path.join(tmp, "zero.jsonl")
+        _ttl_write(zero, [
+            _ttl_assistant_line("m1", _TTL_BASE_TS, 0),
+            _ttl_assistant_line("m2", _TTL_BASE_TS + 60, 0)])
+        rep = base.Report()
+        M.check_ttl_trade(rep, zero, _TTL_PRICING)
+        check("dt58 two requests with no one-hour write at all have no TTL "
+              "trade to show, and the gap is still named: %r"
+              % (_detail(rep, "ttl trade"),),
+              _levels(rep, "ttl trade") == ["OK"]
+              and "no one-hour cache writes" in _detail(rep, "ttl trade"))
+
+        under = os.path.join(tmp, "under.jsonl")
+        _ttl_write(under, [
+            _ttl_assistant_line("m1", _TTL_BASE_TS, 1000),
+            _ttl_assistant_line("m2", _TTL_BASE_TS + 60, 1000),
+            _ttl_assistant_line("m3", _TTL_BASE_TS + 180, 1000)])
+        rep = base.Report()
+        M.check_ttl_trade(rep, under, None)
+        check("dt59 no pricing table given is a WARNING naming the token "
+              "count it could not price, never a guessed dollar figure: %r"
+              % (_detail(rep, "ttl trade"),),
+              _levels(rep, "ttl trade") == ["WARNING"]
+              and "no pricing table was given" in _detail(rep, "ttl trade"))
+
+        rep = base.Report()
+        M.check_ttl_trade(rep, under, _TTL_PRICING)
+        detail_under = _detail(rep, "ttl trade")
+        check("dt60 every gap under five minutes prints THAT longest gap "
+              "(120s) and says a five-minute TTL would have cost nothing "
+              "extra here: %r" % (detail_under,),
+              _levels(rep, "ttl trade") == ["OK"]
+              and "120s" in detail_under
+              and "would not have forced an extra cache write" in detail_under
+              and "$0.0120" in detail_under and "$0.0075" in detail_under)
+
+        over = os.path.join(tmp, "over.jsonl")
+        _ttl_write(over, [
+            _ttl_assistant_line("m1", _TTL_BASE_TS, 1000),
+            _ttl_assistant_line("m2", _TTL_BASE_TS + 60, 1000),
+            _ttl_assistant_line("m3", _TTL_BASE_TS + 400, 1000)])
+        rep = base.Report()
+        M.check_ttl_trade(rep, over, _TTL_PRICING)
+        detail_over = _detail(rep, "ttl trade")
+        check("dt61 a gap over five minutes prints THAT longest gap (340s) "
+              "and says a five-minute TTL would have missed the cache here - "
+              "the pair differs only in the gap and its implication, same "
+              "tokens, same prices: %r" % (detail_over,),
+              _levels(rep, "ttl trade") == ["OK"]
+              and "340s" in detail_over
+              and "would have missed the cache at least once" in detail_over
+              and "$0.0120" in detail_over and "$0.0075" in detail_over)
+
+        check("dt62 the twin pair differs ONLY in the gap and its implication "
+              "- token counts and prices are byte-identical between them",
+              detail_under.replace("120s", "X").replace(
+                  "every gap in this session stayed under five minutes, so a "
+                  "five-minute TTL would not have forced an extra cache write "
+                  "here", "Y")
+              == detail_over.replace("340s", "X").replace(
+                  "the longest gap exceeds five minutes, so a five-minute TTL "
+                  "would have missed the cache at least once here, re-writing "
+                  "context the one-hour TTL kept warm", "Y"))
+
+        dup = os.path.join(tmp, "dup.jsonl")
+        _ttl_write(dup, [
+            _ttl_assistant_line("m1", _TTL_BASE_TS, 1000),
+            _ttl_assistant_line("m1", _TTL_BASE_TS, 1000, stop_reason=None),
+            _ttl_assistant_line("m2", _TTL_BASE_TS + 60, 2000)])
+        entries = M.main_loop_requests(dup, ul)
+        check("dt63 a repeated message id (the streaming-partial/final pair) "
+              "is folded to ONE request, not counted twice: %r" % (entries,),
+              entries is not None and len(entries) == 2
+              and entries[0]["cacheW1h"] == 1000)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _coupling_cases(check):
     """`check_couplings` - a learned coupling that points at a file git no
     longer tracks is NAMED with the command that drops it, and one that has
@@ -2295,6 +2434,7 @@ def _selftest():
     def body(check):
         _cases(check)
         _ledger_failure_cases(check)
+        _ttl_trade_cases(check)
         _coupling_cases(check)
     return _harness.run(body)
 

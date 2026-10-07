@@ -183,7 +183,7 @@
     {
       "id": "P118.3",
       "title": "agent briefs are computed by a script and agent returns are filed write-once",
-      "status": "in_progress",
+      "status": "done",
       "description": "Design section 6, T3. brief writes the whole brief to a file. A write-once filing verb takes the task id and the role, and no path; it derives the one file it writes, refuses a second filing in one start, and leaves the first byte-identical, with allow halves. The reviewer's brief refuses while the executor's return for the current start is unfiled. done --from-return closes from the filed returns and carries the red-first block onto task.redFirst (internal fault F561). The phase reviewer's computed brief carries the saved request text and, for each task, its SHA, files, filed return, recorded run and tests.gate. Every case the design lists is shown red first.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -233,18 +233,30 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ae1e47d7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Design T3.\n\nNew verbs and rules:\n- audit-task file-return <task> --role executor|reviewer reads a return as JSON on stdin and checks its shape for the role. It writes the return once, to the committed evidence directory under returns/<task>/<startedAt>.<role>.json, and refuses a second filing in one start, leaving the first byte-identical. It takes no path and refuses a path-like task id or role.\n- Every done that passes --commit, inside _locked_done, needs the reviewer's filed return for the current start or --intent not-asked with its basis. A filed answer is what gets recorded, and a typed word that differs from it is refused. --no-change is unchanged. _close_intent is the seam T6 reads.\n- done --from-return takes the outcome, verifiedBy and redFirst from the executor's filed return, writes task.redFirst (internal fault F561), and refuses beside typed outcome flags.\n- audit-lookup brief --role executor|reviewer|phase writes the whole brief to stateDir/briefs and prints its path.\n  - The reviewer brief refuses, with exit 4, until the executor's return is filed, then carries it byte-identical.\n  - The phase brief carries phase.request (or says none is saved), plus each task's SHA, files, filed return, recorded run and tests.gate.\n\nSupporting changes:\n- A new layer-1 module, manifest/_filed_returns.py, owns the return vocabulary, the path derivation, the shape check, the write-once create and the claims reader. audit-task, audit-lookup and commit-task-work all use it, so there is no duplicate.\n- commit-task-work appends a filed return's claims text as its own paragraph before the trailers. _scoped_commit keeps the Audit-Row trailer in a trailer-only paragraph.\n- Docs and lints are updated: the /audit:task hint, the README row, task.md, COMPATIBILITY.md (\"Outside this document entirely\"), both agent prompts, execute-task.md, the build guide and the module map, and the test__output lists.\n\nTests: fr1-fr5, fc1-fc9, bf1-bf9, bf11, rp1-rp10 (with fr6 and fr7 moved), cl1-cl3 and sc25b, each shown red first. The sweep is green (314/314 files). The phase reviewer's own filed return is T6's.",
+        "descriptive": "Agents now get their brief as a file a script writes and file their result once through a checked command; closing a task reads those filed results instead of words the main loop types, and an executor's red-first proof lands in its own field."
       },
       "startedAt": "2026-10-07T22:38:44Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T23:51:50Z",
+      "verifiedBy": [
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/tests/test_audit_lookup.py",
+        "plugins/audit/tests/test__filed_returns.py",
+        "plugins/audit/tests/test_commit_task_work.py",
+        "plugins/audit/tests/test__scoped_commit.py"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T23:44:46Z.b0d3f1",
         "status": "passed",
         "at": "2026-10-07T23:44:46Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ae1e47d7",
+        "at": "2026-10-07T23:51:50Z",
+        "basis": "orchestrator check: every design case has its test, each shown red first; the shared path module removes the duplicate; the wider done refusal is in COMPATIBILITY.md; sweep green"
       }
     },
     {

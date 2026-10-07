@@ -1,6 +1,6 @@
 ---
 description: 'Audit pipeline: diagnose the setup before it bites — interpreter the hooks will use, git root, config, manifest + shard integrity, which plan-gate tier is active, submodule conflicts, build runners, whether the skills the plan names would resolve from a clone or only here, whether hooks have ever fired and which copy of the plugin ran them, the usage ledger, whether the audit trail still holds, and whether the capability policy is inert, contradicted by the plan, or never enforced. Read-only, no locks, no mutations.'
-argument-hint: '[--deep] [--json] [--color auto|always|never]'
+argument-hint: '[--deep] [--json] [--color auto|always|never] [--transcript <path>]'
 allowed-tools: Bash
 ---
 
@@ -36,6 +36,14 @@ file that records it` — so it cannot turn a passing run into a failing one; a 
 exits 0 today still exits 0 with `--deep`. Reach for it when the question is about the
 **audit trail** rather than the setup: the journal's git anchor only pins the journal files
 the task commits actually carry, and the default run never looks at that.
+
+## `--transcript <path>` — the main-loop cache TTL trade
+
+Off by default, and the row prints no figure without it: name a session's own transcript
+`.jsonl` and the `ttl trade` line reports that session's longest gap between main-loop
+requests, its one-hour cache writes, and what those same writes would have cost at a
+five-minute TTL instead. Documentation only — it recommends nothing the gaps do not
+support, and the setting stays yours.
 
 ## The `evidence` line — the plan's pointers against the ledger, both ways
 
