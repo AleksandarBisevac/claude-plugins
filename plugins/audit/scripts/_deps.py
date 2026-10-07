@@ -166,6 +166,12 @@ LAYERS = (
      # teardown, and a second copy is a second answer to "is it stopped". It
      # reaches nothing but `_output`.
      "_proc_group",
+     # `_runner_output` reads what a test runner printed - its summary line and
+     # the lines naming a failing check. L1 for `_proc_group`'s reason: two entry
+     # points, `run-test-gate` and `stamp-verification`, ask the same output the
+     # same questions, and an entry point may not import another. It reaches
+     # nothing but `_output`.
+     "_runner_output",
      # `_worktrees` answers "which worktrees exist, whose phase is each, and what
      # may be reaped". At L1 for `_commit_trail`'s reason word for word: FOUR
      # surfaces need the SAME answer - `_doctor_hygiene` and `_doctor_policy` (both

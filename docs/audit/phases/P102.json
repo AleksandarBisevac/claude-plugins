@@ -84,7 +84,7 @@
     {
       "id": "P102.2",
       "title": "design note: how red reads, credits, baselines and provisions a jest or vitest run",
-      "status": "in_progress",
+      "status": "done",
       "description": "Before any code, write the design as a section of stamp-verification.py's module docstring; every implementation task below depends on it. It settles four things. (1) One runner-output module at layer 1, scripts/governance/_runner_output.py. It holds run-test-gate's summary and failure readers, moved and not copied, and red reads through it. It carries a per-case assertion flag that tells an expect failure apart from 'Test suite failed to run'. (2) Per-runner case identity and credit for jest and vitest: the FAIL <path> header plus the title chain. HEAD's case is the same chain with an identical body in HEAD's copy. Because ast is Python-only, choose between a text-level reading and a small stdlib tokenizer. (3) A per-runner baseline in which a new test file is absent rather than an empty stub. Settle it by first driving jest with and without --passWithNoTests on an empty suite, and vitest on an empty file (vitest was never driven), and record the results as dated history. (4) --deps-from <dir>, defaulting to --project, which links ignored dependency directories (node_modules at any depth, .venv) into the throwaway. Name the leaks a link opens: a workspace link into the shared tree, which is refused by name, and runner caches written back through the link. Also say how the project's .npmrc reaches the fresh HOME, or that it is named as dropped.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py"
@@ -107,30 +107,37 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "dd4ccd39",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The design for red-first under jest and vitest is written as a section at the end of stamp-verification.py's module docstring, headed as design not yet built; no behaviour changes. (1) One runner-output module, scripts/governance/_runner_output.py at layer 1, takes run-test-gate's summary and failure readers by move (each name checked to exist there; failing_suites stays because it reads the evidence layer) plus red's own tally and case readers; the two pytest summary patterns merge into their union; a per-case assertion flag is read from the runners' own shapes (jest's matcher hint or AssertionError under a bullet sets it, a thrown error or 'Test suite failed to run' does not; vitest's AssertionError under a FAIL chain sets it, 'Failed Suites' does not), and a crashed suite reads as a collection error, never red. (2) A case is its FAIL header path plus its title chain; a small stdlib tokenizer, failing closed, finds which test call sits inside which describe; run-time titles are refused credit by name; credit is refused when any HEAD test file holds the same chain with an identical body, matching the Python rule. (3) Driven on 2026-10-06 (node v22.22.3, jest 30.4.2 from an existing local install read-only, vitest 4.1.10 from this repo), recorded as dated history, measured once each: an empty test file fails both runners with or without --passWithNoTests, and a missing file exits 1 unless --passWithNoTests; so under jest and vitest a new test file is left absent from HEAD's run, while the empty stub stays the rule for Python runners. (4) --deps-from links ignored node_modules and .venv directories at any depth into the throwaway as real directories of per-entry symlinks, because vitest writes its results cache into node_modules; workspace links are refused by name; caches written back through a link are kept local or named as unwatched; git clean and rmtree must never follow a link, with a sentinel case owed; an untracked or user .npmrc is named as dropped and NPM_CONFIG_USERCONFIG is removed from the run. Of the session's red-helper findings, vitest without node_modules is addressed; the inline tools/ suite, the SIGTERM/SIGKILL cases red inside the throwaway and the stamp going stale on ledger creation are left to later tasks.",
+        "descriptive": "The plan for making the red-first proof work for JavaScript test runners is written down, with both runners' actual behaviour measured first, so the tasks that build it share one design."
       },
       "startedAt": "2026-10-06T21:52:37Z",
-      "completedAt": null,
+      "completedAt": "2026-10-06T22:19:03Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-06T22:18:57Z.e1338d",
         "status": "passed",
         "at": "2026-10-06T22:18:57Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "dd4ccd39",
+        "at": "2026-10-06T22:19:03Z",
+        "basis": "orchestrator check: the four questions the description names are settled in the docstring, both runners were driven and recorded as dated history, and no behaviour changed"
       }
     },
     {
       "id": "P102.3",
       "title": "run-test-gate's runner readers move to one shared module",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Move _SUMMARY_READERS, _FAILURE_READERS, jest_failures and their helpers out of run-test-gate.py into the new layer-1 module the design names, and import them back. No behaviour changes. This avoids the layer debt of one entry point importing another. The new file owes every registration in CLAUDE.md's 'Adding a .py': the migrated --selftest pointer with its cases in tests/test__runner_output.py; safe_stdio first in __main__; a _deps.LAYERS entry at layer 1 with its reason; a tree line and a section in PLUGIN-BUILD-GUIDE.md plus the regenerated module map (`python3 plugins/audit/scripts/_deps.py --render`); and the PATH_PREAMBLE.",
       "files": [
         "plugins/audit/scripts/governance/_runner_output.py",
         "plugins/audit/scripts/governance/run-test-gate.py",
         "plugins/audit/scripts/_deps.py",
         "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__output.py",
         "plugins/audit/tests/test__runner_output.py",
         "plugins/audit/tests/test_run_test_gate.py"
       ],
@@ -154,16 +161,21 @@
       "dependsOn": [
         "P102.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T22:19:15Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T00:19:04Z.8b68f1",
+        "status": "passed",
+        "at": "2026-10-07T00:19:04Z"
+      }
     },
     {
       "id": "P102.4",

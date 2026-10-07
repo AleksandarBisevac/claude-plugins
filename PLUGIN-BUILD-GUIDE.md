@@ -156,6 +156,7 @@ claude-plugins/                           # this repo (personal, public)
           record-outside-run.py           # a suite that ran where this plugin could not see it, so a gate run in the same window is not credited with its effects
           import-evidence.py              # a CI build's own evidence ledger file, brought in whole after its chain verifies - never rewrites a row, never re-chains; prints (never runs) the full-gate.py --learn-from command for each red full row it brought in
           full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, then a coupling and a bug per named selection miss of a red run (the red still blocks), or the sentence and exit 0 when no meta.fullGate is declared; --learn-from <runId> runs nothing and learns from an imported row through the same function
+          _runner_output.py               # every reading of what a test runner printed: its summary line (how many checks ran) and the lines naming a failing check
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs; the one POSIX sh (and its PATH) every plan command runs under, or a refusal - never cmd.exe
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
           _verdict_binding.py             # the ONE rule for whether a recorded gate verdict binds the declared work now - a task commit's, a sign-off's, and whether `done` or close-phase may close over the newest verdict (one that no longer holds refuses)
@@ -302,6 +303,7 @@ L1:
   _priority -> _output
   _proc_group -> _output
   _refs -> _output
+  _runner_output -> _output
   _task_outputs -> _output
   _ui_theme -> _output
   _usage_core -> _output
@@ -412,7 +414,7 @@ L7:
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
-  run-test-gate -> _evidence_io, _fmt, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _status_facts, _tree_stamp
+  run-test-gate -> _evidence_io, _fmt, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _tree_stamp
   set-priority -> _manifest_io, _output, _panel_write, _priority, _warning_groups
   stamp-verification -> _evidence_io, _locks, _manifest_io, _output, _proc_group, _tree_stamp, _worktrees
   validate-config -> _config_rules, _output
@@ -3980,6 +3982,17 @@ from aiming at its own caller), `drain` reads what was written after the group i
 naming the signal. What it cannot cover is SIGKILL, which no handler sees. Layer 1; its cases are
 in `plugins/audit/tests/test__proc_group.py`, and `run-test-gate.py`'s names are this module's
 objects.
+
+### `plugins/audit/scripts/governance/_runner_output.py`
+Every reading of what a test runner printed: `_SUMMARY_READERS` and `summary_count` for how many
+checks a runner's own summary says executed (`None`, never zero, for output no reader recognises),
+and `_FAILURE_READERS`, `jest_failures` and `_VITEST_FAIL_LINE` for which checks failed. They were
+written in `run-test-gate.py`; `stamp-verification.py red` asks the same output the same questions,
+and an entry point may not import another, so they moved here rather than being written twice.
+`failing_suites` and its path filters stayed in the gate, because they read `_evidence_io`'s
+limits and that module sits above this one. Layer 1; it reaches nothing but `_output`. Its cases
+are in `plugins/audit/tests/test__runner_output.py`, and `run-test-gate.py`'s names are this
+module's objects.
 
 **It also owns the shell a plan command runs under.** A plan's commands are POSIX shell, and
 `shell=True` is `cmd.exe` on Windows, which reads none of `export`, single quotes or `${VAR}`
