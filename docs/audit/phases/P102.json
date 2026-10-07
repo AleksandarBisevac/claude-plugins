@@ -1,7 +1,7 @@
 {
   "id": "P102",
   "title": "red-first proves a red outside Python",
-  "status": "in_progress",
+  "status": "done",
   "description": "Tasks: (1) When no runner-output reader matches, say so and quote nothing as decisive (the npm update banner was quoted as the cause). (2) Design first, then build: a shared runner-output module (jest/vitest tallies and case identity), a per-runner baseline that tolerates a new empty suite, and dependency provision for the throwaway tree (node_modules) with its two leaks named. (3) Every entry point's usage error names its own version and, through one shared hook, the newer installed copy for this project; orchestrator docs resolve the plugin root per spawn and re-resolve after an update.",
   "desiredOutcome": "stamp-verification red proves a red in a jest or vitest project as it does under pytest, and an older cached copy that is asked for a newer verb names the newer installed copy",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "cd6933ada1f214a0af05fdb63330bdc94aeafa55",
   "branch": "audit/p102-red-first-proves-a-red-outside",
-  "mergedAt": null,
+  "mergedAt": "2026-10-07T11:36:05Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -999,5 +999,6 @@
     "runId": "2026-10-07T11:35:06Z.5df767",
     "status": "passed",
     "at": "2026-10-07T11:35:06Z"
-  }
+  },
+  "mergedHead": "871ab1d8b107be136717367a85d3d4cbe403033c"
 }
