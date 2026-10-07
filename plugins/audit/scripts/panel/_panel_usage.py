@@ -41,7 +41,6 @@ import _panel_paths as _paths  # noqa: E402  (the shared base, at layer 3)
 # Carried by module-level alias so every body below reads exactly as it did in
 # `_panel_state`, where these were siblings rather than imports.
 _load = _paths._load
-_declared_as_of = _paths._declared_as_of
 _manifest_path = _paths._manifest_path
 read_config = _paths.read_config
 
@@ -89,7 +88,6 @@ def _usage_shape(**overrides):
         "ledgerDir": "",
         "showCost": True,
         "pricingAsOf": None,
-        "pricingAsOfDeclared": False,
         # Which place priced the ledger's rows (`resolve_pricing`'s `{basis,
         # asOf, source}`) and the phrase every other cost surface prints for
         # it, so the tab shows those words rather than retyping them. None on
@@ -373,11 +371,9 @@ def usage_state(project):
     ledger_dir = str(cfg_mod.ledger_dir(project, config))
     # THE RATE BASIS, TRIMMED AT THE DOOR - the one surface reaching
     # `pricingAsOf` through `usage_cfg` that an earlier trim of the same key
-    # missed. The `pricingAsOfDeclared` line below already DECIDES on the trimmed
-    # value and this served the merged one AS TYPED, so the two disagreed about
-    # one config value inside one dict literal: a padded date reached the tab as
-    # `rates as of` followed by the padding, and a whitespace-only one shipped a
-    # truthy empty string beside a flag saying the project had declared nothing.
+    # missed: it served the merged value AS TYPED, so a padded date reached the
+    # tab as `rates as of` followed by the padding, and a whitespace-only one
+    # shipped a truthy empty string.
     # The trim `report/_usage_load`, `status/audit-status` and
     # `usage/audit-usage` apply to `meta.usage`'s copy of this key, applied here
     # where the CONFIG file's copy becomes plugin data: whitespace collapses to
@@ -393,7 +389,6 @@ def usage_state(project):
                 "showCost": bool(ucfg.get("showCost", True)),
                 "pricingAsOf": (as_of_raw.strip() or None)
                 if isinstance(as_of_raw, str) else None,
-                "pricingAsOfDeclared": _declared_as_of(config),
                 "bands": ucfg.get("bands") or {},
                 "gateCatches": _gate_catches_payload(project, config)}
     try:

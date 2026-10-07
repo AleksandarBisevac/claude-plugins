@@ -1056,7 +1056,9 @@
         "COMPATIBILITY.md",
         "plugins/audit/README.md",
         "plugins/audit/scripts/panel/_panel_usage.py",
-        "plugins/audit/tests/test__panel_usage.py"
+        "plugins/audit/tests/test__panel_usage.py",
+        "plugins/audit/tests/test__deps.py",
+        "plugins/audit/scripts/_deps.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1087,12 +1089,17 @@
       },
       "startedAt": "2026-10-07T02:01:53Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T02:42:05Z.6e0f6d",
+        "status": "passed",
+        "at": "2026-10-07T02:42:05Z"
+      }
     },
     {
       "id": "P104.15-tog",
       "title": "with showCost off the panel prints no per-task dollar figure",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review finding P104-R9. With showCost off the panel prints no per-task dollar figure anywhere: the cost-per-task tile, the projection fact and the routing table's cost/task column (header and cells) are gated on USAGE.showCost exactly as the report gates them, and the projection's coverage line follows the same gate as the tile's. A vitest case renders the usage view with showCost false and asserts no dollar figure in those three places, with its twin (showCost true shows them, each with its coverage line). The panel screenshots are re-captured by the orchestrator.",
       "files": [
         "plugins/audit/scripts/ui/panel/usage-view.js",
@@ -1146,18 +1153,27 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f9422d8d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/scripts/ui/panel/usage-view.js, inside renderUsage, gated on USAGE.showCost the way the report gates the same figures: the cost-per-task tile as a whole (`if(USAGE.showCost&&unit.perTask!=null)`); the projection fact and its coverage line (gated inside the `if(unit.proj)` branch, as the report's _economics_block does, so a large-enough sample never falls through to the 'Projection needs N' notice); the routing table's cost/task column, header and cells together (header list built with concat so no empty <th> is drawn; cells null, which el() skips). Two more ungated dollar spots in the same file, both gated by the report, are gated too: the retry/blocked spend fact and the routing-advice block. The panel reads USAGE.showCost as truthy, like the tab's existing gates.\nTests: 8 new vitest cases in tools/ui-tests/usage-edges.test.mjs driving renderUsage itself through a recording DOM in the test's vm context - showCost off: the tile is not drawn, the projection and its coverage line are withheld (the sample-size notice does not stand in), the routing table drops its cost/task column and coverage line, no dollar figure anywhere on the tab; each with its showCost-on twin. test__panel_page.py's pin 'if(adv.length){' becomes 'if(USAGE.showCost&&adv.length){', relabelled as a construct pin. Red-first: the helper proved the pin (484/485 at HEAD 209e5937); the vitest cases were could-not-prove in the throwaway (no node_modules) and red in the shared tree before the fix (4 failed / 23 passed, assertion errors), twins green. usage-edges 27/27, test__panel_page 485/485, node --check on the assembled panel script exit 0. Left for other files: usage-cards.js budget amounts and browse-dialog.js uCost uses.\nNavigability: three section markers in tools/ui-tests/usage-edges.test.mjs at real seams (test__deps tn0 green, 307/307).",
+        "descriptive": "When a project turns dollar figures off, the panel's Usage tab no longer shows any per-task cost, projection, routing cost, retry spend or routing advice in dollars, the same as the report."
       },
       "startedAt": "2026-10-07T01:24:22Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T02:19:14Z",
+      "verifiedBy": [
+        "usage-edges showCost-off/on cases",
+        "test__panel_page advice pin"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T02:18:58Z.d00071",
         "status": "passed",
         "at": "2026-10-07T02:18:58Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "f9422d8d",
+        "at": "2026-10-07T02:19:14Z",
+        "basis": "orchestrator check: P104-R9's three places gated plus the two the report also gates, each off case with an on twin, assembled script parses"
       }
     }
   ],

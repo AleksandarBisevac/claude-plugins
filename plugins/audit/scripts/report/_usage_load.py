@@ -169,28 +169,6 @@ def load_usage(manifest, manifest_path, project_dir=None):
         by_model = ul.aggregate(rows, "model")
         by_author = ul.aggregate(rows, "author")
 
-        # THE RATE BASIS, TRIMMED AT THE DOOR. The plan schema asks only
-        # that `meta.usage.pricingAsOf` be non-empty, so a string of spaces
-        # validates - and every renderer below tests it for truth, so `"  "`
-        # reached the page and the terminal as "rates as of" followed by
-        # nothing. A basis with no content is the one thing this project's
-        # output rule forbids, and the honest reading of a whitespace-only
-        # setting is that the project never declared one: it collapses to None
-        # here, which is the shape absence already has, and the renderers then
-        # say "rates undated" without needing to learn a second empty value.
-        # Repaired at the READER rather than at the schema because a `pattern`
-        # would stop an existing manifest validating - a major-release change
-        # under COMPATIBILITY.md - and because nothing revalidates a manifest on
-        # the way into a render anyway. The same normalisation that
-        # `panel/_panel_paths._declared_as_of` applies to the config file's copy
-        # of this key; `_deps.config_read_violations` is what keeps the readers
-        # of one key from drifting apart about whitespace again.
-        # `isinstance` first, because a hand-edited manifest may carry a number
-        # and `.strip()` on one would take the whole usage section down through
-        # the `except` below - silence where a report was expected.
-        as_of_raw = meta_usage.get("pricingAsOf")
-        as_of = (as_of_raw.strip() or None) if isinstance(as_of_raw, str) else None
-
         def slim(agg):
             """The three fields a breakdown renders, out of a finished aggregate."""
             return {k: {"tokens": v["tokens"], "costUSD": v["costUSD"],
@@ -292,14 +270,20 @@ def load_usage(manifest, manifest_path, project_dir=None):
                              "model")
                 for a in sorted({r.get("author") or "unknown" for r in rows})},
             "showCost": bool(meta_usage.get("showCost", True)),
-            "pricingAsOf": as_of,
             # Which place priced every cost above, as data: one of
             # `ul.PRICING_BASES`, with that place's date and source, and how
-            # many rows kept the figure stored when written.
+            # many rows kept the figure stored when written. The ONLY date
+            # this payload carries for the price table: the context line and
+            # the stale notice both read it, so a page cannot date one table
+            # twice. The resolver trims the declared date, so a blank one is
+            # None here, never "rates as of" followed by nothing.
             "pricingBasis": dict(
                 [(k, pricing[k]) for k in ("basis", "asOf", "source")]
                 + [("pricedWhenWritten", priced["pricedWhenWritten"])]),
-            "pricingStale": _pricing_stale(as_of, until),
+            # Dated from the table the resolver CHOSE. A manifest
+            # `pricingAsOf` beside no manifest table dates nothing that priced
+            # a row, so it cannot raise a notice either.
+            "pricingStale": _pricing_stale(pricing["asOf"], until),
             # Orientation, not metrics. These answer "how big is the thing I am
             # looking at" — a question the tiles cannot answer, and one that would
             # cost five more tiles to answer badly.

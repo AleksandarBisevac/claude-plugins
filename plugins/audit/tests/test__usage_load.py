@@ -175,20 +175,25 @@ def _cases(check):
         # The plan schema asks only `minLength: 1`, so a string of spaces
         # VALIDATES and every renderer downstream tests this value for truth.
         # Untrimmed it printed "rates as of" followed by nothing - a basis with
-        # no content, which is this project's founding output rule broken by a
-        # space.
+        # no content. The date reaches the payload ONLY as `pricingBasis.asOf`,
+        # the resolver's, so each fixture declares a table for it to date.
+        _tbl = {"opus": {"in": 1.0, "out": 2.0, "cacheW5m": 1.0,
+                         "cacheW1h": 1.0, "cacheR": 0.1}}
         p5 = os.path.join(root, "p5")
         m5, mp5 = _write_project(p5, [_row("2026-07-01T03")],
-                                 meta_usage={"pricingAsOf": "   "})
+                                 meta_usage={"pricing": _tbl,
+                                             "pricingAsOf": "   "})
         u5 = M.load_usage(m5, mp5, p5)
         check("ul20 a whitespace-only `meta.usage.pricingAsOf` reaches the "
               "payload as None - the shape absence already has, so no renderer "
               "has to learn a second kind of empty and none can print a basis "
-              "with nothing in it: %r" % (u5["pricingAsOf"],),
-              u5["pricingAsOf"] is None)
+              "with nothing in it: %r" % (u5["pricingBasis"],),
+              u5["pricingBasis"]["basis"] == "manifest"
+              and u5["pricingBasis"]["asOf"] is None)
         p6 = os.path.join(root, "p6")
         m6, mp6 = _write_project(p6, [_row("2026-07-01T03")],
-                                 meta_usage={"pricingAsOf": " 2026-07-01 "})
+                                 meta_usage={"pricing": _tbl,
+                                             "pricingAsOf": " 2026-07-01 "})
         u6 = M.load_usage(m6, mp6, p6)
         # A PADDED date, not a blank one, and it is the fixture that separates
         # trimming from merely refusing the blank: a version testing
@@ -196,30 +201,36 @@ def _cases(check):
         # and fails here.
         check("ul21 ...and a padded one is carried through TRIMMED rather than "
               "rejected - the padding is a typo, the date is a declaration: %r"
-              % (u6["pricingAsOf"],),
-              u6["pricingAsOf"] == "2026-07-01")
+              % (u6["pricingBasis"],),
+              u6["pricingBasis"]["asOf"] == "2026-07-01")
         p7 = os.path.join(root, "p7")
         m7, mp7 = _write_project(p7, [_row("2026-07-01T03")],
-                                 meta_usage={"pricingAsOf": 20260701})
+                                 meta_usage={"pricing": _tbl,
+                                             "pricingAsOf": 20260701})
         u7 = M.load_usage(m7, mp7, p7)
         check("ul22 ...and a hand-edited NUMBER is None rather than a raise: "
-              "`.strip()` on one would escape into the payload builder's own "
-              "`except` and take the whole Usage section down, which is a "
-              "missing report where a wrong date was the complaint: %r"
-              % (u7 if u7 is None else u7["pricingAsOf"],),
-              u7 is not None and u7["pricingAsOf"] is None)
+              "a raise would escape into the payload builder's own `except` "
+              "and take the whole Usage section down, which is a missing "
+              "report where a wrong date was the complaint: %r"
+              % (u7 if u7 is None else u7["pricingBasis"],),
+              u7 is not None and u7["pricingBasis"]["asOf"] is None)
         # THE OTHER-DIRECTION CASE, and it is the vacuous-looking one: it
-        # passes on the pre-fix code by construction, and it is the only case
-        # that fails if the trim becomes an unconditional None and every
-        # project is told its rates are undated.
+        # is the only case that fails if the trim becomes an unconditional
+        # None and every project is told its rates are undated.
         p8 = os.path.join(root, "p8")
         m8, mp8 = _write_project(p8, [_row("2026-07-01T03")],
-                                 meta_usage={"pricingAsOf": "2026-06-30"})
+                                 meta_usage={"pricing": _tbl,
+                                             "pricingAsOf": "2026-06-30"})
         u8 = M.load_usage(m8, mp8, p8)
         check("ul23 ...and a declared date survives untouched, so the repair "
               "cannot have been 'never report a basis': %r"
-              % (u8["pricingAsOf"],),
-              u8["pricingAsOf"] == "2026-06-30")
+              % (u8["pricingBasis"],),
+              u8["pricingBasis"]["asOf"] == "2026-06-30")
+        check("ul24 ...and the payload carries no second date for the table: "
+              "`pricingBasis.asOf` is the one the context line and the stale "
+              "notice both read, so a manifest key cannot reach the page "
+              "beside it under another name",
+              "pricingAsOf" not in u8)
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

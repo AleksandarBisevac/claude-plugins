@@ -152,20 +152,21 @@ def _cases(check):
         du = M.usage_state(proj)
         check("usage_state reports metering off so the tab can explain itself",
               du["enabled"] is False and du["showCost"] is False)
-        # The empty branch's own comment requires it: every key the populated
-        # branch returns must appear here too, or a fresh install reads undefined.
-        check("the no-ledger shape carries pricingAsOfDeclared as well, so a "
-              "fresh install does not read undefined",
-              "pricingAsOfDeclared" in du and du["pricingAsOfDeclared"] is False)
+        # No panel script read the declared-or-default flag this payload used
+        # to serve beside the date: the tab words its basis from `rateBasis`
+        # and offers the Settings link off `pricingBasis`. A key with no
+        # reader is a claim nobody checks, so it is gone from both branches.
+        check("pa0 the payload serves no declared-date flag beside the date - "
+              "no panel script reads one: %r" % (sorted(du),),
+              not [k for k in du if k.startswith("pricingAsOf")
+                   and k != "pricingAsOf"])
         with open(_cfg_path, "w", encoding="utf-8") as fh:
             json.dump({"usage": {"pricingAsOf": "2026-01-02"}}, fh)
-        check("a declared date is reported as declared, and travels with it",
-              M.usage_state(proj)["pricingAsOfDeclared"] is True
-              and M.usage_state(proj)["pricingAsOf"] == "2026-01-02")
+        check("a declared date travels with the payload",
+              M.usage_state(proj)["pricingAsOf"] == "2026-01-02")
         # --- the rate basis, trimmed at the door -------------------------------
-        # `_declared_as_of` decides on the TRIMMED config value and this payload
-        # served the MERGED one as typed, so the two disagreed about one config
-        # value inside one dict literal. The fixture is padded rather than clean
+        # This payload served the MERGED config value as typed, padding and
+        # all. The fixture is padded rather than clean
         # on purpose: an unpadded date passes on both versions of the code, so it
         # cannot tell the fix from the bug. The case above is the other half of
         # that pair - it is what fails if the trim ever eats a legitimate date.
@@ -176,31 +177,26 @@ def _cases(check):
               "data, so any reader of `pricingAsOf` gets the date and never "
               "the padding around it: %r"
               % (_pad["pricingAsOf"],),
-              _pad["pricingAsOf"] == "2026-01-02"
-              and _pad["pricingAsOfDeclared"] is True)
+              _pad["pricingAsOf"] == "2026-01-02")
         with open(_cfg_path, "w", encoding="utf-8") as fh:
             json.dump({"usage": {"pricingAsOf": "   "}}, fh)
         _blank = M.usage_state(proj)
         check("pa2 ...and a whitespace-only one collapses to None - the shape "
-              "absence already has - rather than shipping a TRUTHY empty string "
-              "beside a flag saying this project declared nothing, which is the "
-              "second kind of empty the other three readers were taught not to "
-              "serve: %r" % (_blank["pricingAsOf"],),
-              _blank["pricingAsOf"] is None
-              and _blank["pricingAsOfDeclared"] is False)
+              "absence already has - rather than shipping a TRUTHY empty string, "
+              "the second kind of empty the other three readers were taught not "
+              "to serve: %r" % (_blank["pricingAsOf"],),
+              _blank["pricingAsOf"] is None)
         with open(_cfg_path, "w", encoding="utf-8") as fh:
             json.dump({"usage": {"pricingAsOf": 20260102}}, fh)
         check("pa3 a hand-edited NUMBER answers None instead of raising - the "
               "trim sits inside the payload's own dict literal, so an exception "
               "there costs the whole Usage tab and not one line of context",
-              M.usage_state(proj)["pricingAsOf"] is None
-              and M.usage_state(proj)["pricingAsOfDeclared"] is False)
+              M.usage_state(proj)["pricingAsOf"] is None)
         with open(_cfg_path, "w", encoding="utf-8") as fh:
             json.dump({"usage": {"showCost": True}}, fh)
         _dd = M.usage_state(proj)
-        check("an undeclared one still carries the merged default as the VALUE, "
-              "flagged as undeclared - the client decides, the server does not lie",
-              _dd["pricingAsOfDeclared"] is False and _dd["pricingAsOf"])
+        check("an undeclared one still carries the merged default as the VALUE",
+              bool(_dd["pricingAsOf"]))
     finally:
         if _prev_cfg is None:
             os.remove(_cfg_path)
@@ -305,7 +301,7 @@ def _cases(check):
           "hide behind a duplicate: %r"
           % (sorted(set(_up_empty) ^ set(_up_full)),),
           set(_up_empty) == set(_up_full)
-          and len(_up_empty) == len(_up_full) == 22
+          and len(_up_empty) == len(_up_full) == 21
           and {"pricingBasis", "rateBasis"} <= set(_up_empty)
           and _up_full["facts"] and not _up_empty["facts"])
     # The two rate-basis keys, by VALUE on both branches: the populated one
@@ -336,7 +332,7 @@ def _cases(check):
           "so a key added to the shape reaches it without anyone remembering "
           "to add it twice: %r" % (_up_differs,),
           set(_up_differs) <= {"enabled", "ledgerDir", "showCost",
-                               "pricingAsOf", "pricingAsOfDeclared", "bands"})
+                               "pricingAsOf", "bands"})
     _up_ok, _up_msg = _harness.attempt(M._usage_shape, phaseTitle={})
     check("up4 _usage_shape REFUSES a key the payload has no room for - a "
           "typo'd override is the exact defect it exists to prevent, and "

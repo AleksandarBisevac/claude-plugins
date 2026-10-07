@@ -5150,8 +5150,10 @@ KNOWN_CONFIG_MIRRORS = (
     # `minLength: 1`, so a whitespace-only value validated, reached three surfaces
     # as `rates as of` followed by nothing, and was called undeclared by the
     # fourth - and its own revisit trigger named the repair: trim the manifest key
-    # where it is rendered. `_usage_load`, `audit-status` and `audit-usage` now do,
-    # so all four readers answer the same way about whitespace and there is nothing
+    # where it is rendered. `audit-status` and `audit-usage` now do, and the
+    # report's dated basis comes from `_usage_core._declared_as_of`, reached
+    # through `project_pricing`, which trims it the same way - so every reader
+    # answers the same way about whitespace and there is nothing
     # left to declare. The row could not stay: a row whose readers have come to
     # agree fails this module's own check, which is what keeps this table from
     # recording its own history.

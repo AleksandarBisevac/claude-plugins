@@ -24,10 +24,19 @@ claim nobody made.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import calendar
+import io
+import json
+import os
+import re
+import shutil
 import sys
+import tempfile
+import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
+import _usage_load as _load                        # noqa: E402
 import _usage_overview as M                        # noqa: E402
 import _usage_viz as _viz                          # noqa: E402
 import _report_usage as _RU                        # noqa: E402
@@ -38,13 +47,50 @@ def _u(**kw):
                     "cacheHitPct": 50.0},
          "counts": {"phases": 1, "people": 1, "models": 1, "sessions": 1,
                     "days": 2, "from": "2026-07-01", "to": "2026-07-02"},
-         "showCost": True, "pricingAsOf": "2026-06-01", "pricingStale": False,
+         "showCost": True, "pricingStale": False,
          "cache": {"hitPct": 50.0, "inputCostVsFreshPct": 20.0},
          "coverage": {"attributedPct": 90.0, "taskLevelPct": 80.0},
          "unit": {}, "byAuthor": {}, "byPhase": {}, "byModel": {},
          "phaseTitles": {}, "daily": {}, "dailyCost": {}, "budgets": {}}
     u.update(kw)
     return u
+
+
+def _day_after(day, n):
+    """`day` (YYYY-MM-DD) moved `n` days on, as YYYY-MM-DD."""
+    t = calendar.timegm(time.strptime(day, "%Y-%m-%d")) + n * 86400
+    return time.strftime("%Y-%m-%d", time.gmtime(t))
+
+
+def _loaded_page(root, name, meta_usage, ledger_day):
+    """The context line and the notices for a project on disk: a manifest
+    carrying `meta_usage`, and a one-row ledger on `ledger_day`. Loaded through
+    `_usage_load.load_usage`, so the staleness and the basis are the ones a
+    real render computes, not ones a fixture dict asserts."""
+    proj = os.path.join(root, name)
+    mdir = os.path.join(proj, "docs", "audit")
+    ldir = os.path.join(proj, ".claude", "usage")
+    os.makedirs(mdir)
+    os.makedirs(ldir)
+    manifest = {"meta": {"version": 2, "repo": "x", "usage": meta_usage},
+                "phases": [{"id": "P0", "title": "P", "status": "pending",
+                            "tasks": [{"id": "P0.1", "title": "T",
+                                       "status": "done"}]}]}
+    mpath = os.path.join(mdir, "audit-plan.json")
+    with io.open(mpath, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(json.dumps(manifest))
+    row = {"ts": ledger_day + "T03", "model": "claude-opus-5",
+           "author": "a@x.example", "phaseId": "P0", "taskId": "P0.1",
+           "msgs": 1, "in": 1000, "out": 1000, "costUSD": 0.01}
+    with io.open(os.path.join(ldir, ledger_day[:7] + ".jsonl"), "w",
+                 encoding="utf-8", newline="\n") as fh:
+        fh.write(json.dumps(row) + "\n")
+    u = _load.load_usage(manifest, mpath, proj)
+    return u, M._usage_context(u), M._usage_notices(u)
+
+
+def _dates(html):
+    return set(re.findall(r"\b\d{4}-\d{2}-\d{2}\b", html))
 
 
 # --- cases --------------------------------------------------------------------
@@ -113,10 +159,59 @@ def _cases(check):
     # --- notices ---
     check("uo9 a healthy report has no notices at all",
           M._usage_notices(_u()) == "")
-    out = M._usage_notices(_u(pricingStale=True))
-    check("uo10 ...and a stale price table is named with its date, because "
-          "every cost figure below is derived from it",
-          "more than 90 days older" in out and "2026-06-01" in out, out)
+    _stale_pb = {"basis": "manifest", "asOf": "2026-06-01", "source": None}
+    out = M._usage_notices(_u(pricingStale=True, pricingBasis=_stale_pb))
+    check("uo10 ...and a stale price table is named with its date and its "
+          "place in `rate_basis_phrase`'s own words, because every cost "
+          "figure below is derived from it",
+          "more than 90 days older" in out
+          and _viz.e(_ul.rate_basis_phrase(_stale_pb)) in out, out)
+
+    # --- the stale notice and the context line date ONE table ---
+    # Loaded from disk rather than handed a dict, because the defect lived
+    # between the two halves: the load dated the notice from the manifest's
+    # `pricingAsOf` while the context line dated the table the resolver chose,
+    # so a plan carrying a date and no table printed two dates for one table
+    # and warned about a table that priced nothing.
+    _root = tempfile.mkdtemp(prefix="audit-usage-overview-stale-")
+    try:
+        _near = _day_after(_ul.PRICING_AS_OF, 10)
+        _u32, _ctx32, _nt32 = _loaded_page(
+            _root, "dated-no-table", {"pricingAsOf": "2025-01-01"}, _near)
+        check("uo32 a manifest `pricingAsOf` with NO manifest table dates "
+              "nothing: the page names one date for the price table - the "
+              "table that priced the rows - and raises no stale notice about "
+              "a table that priced nothing: dates %r, notices %r"
+              % (sorted(_dates(_ctx32 + _nt32) - {_near}), _nt32),
+              _u32 is not None and _u32["pricingBasis"]["basis"] == "shipped"
+              and _dates(_ctx32 + _nt32) - {_near} == {_ul.PRICING_AS_OF}
+              and "more than 90 days older" not in _nt32)
+        _old_table = {"claude-opus-5": {"in": 1.0, "out": 2.0, "cacheW5m": 1.0,
+                                        "cacheW1h": 1.0, "cacheR": 0.1}}
+        _u33, _ctx33, _nt33 = _loaded_page(
+            _root, "old-own-table",
+            {"pricing": _old_table, "pricingAsOf": "2025-01-01"}, _near)
+        check("uo33 ...while an old DATED table the resolver chose still "
+              "raises the notice, once, naming the same date and the same "
+              "place as the context line - one date for the table across "
+              "the page: dates %r, notices %r"
+              % (sorted(_dates(_ctx33 + _nt33) - {_near}), _nt33),
+              _u33 is not None and _u33["pricingBasis"]["basis"] == "manifest"
+              and _nt33.count("more than 90 days older") == 1
+              and _viz.e(_ul.rate_basis_phrase(_u33["pricingBasis"])) in _nt33
+              and _dates(_ctx33 + _nt33) - {_near} == {"2025-01-01"})
+        _far = _day_after(_ul.PRICING_AS_OF, 200)
+        _u34, _ctx34, _nt34 = _loaded_page(_root, "old-shipped", {}, _far)
+        check("uo34 ...and so does the SHIPPED table, when it is the one that "
+              "priced the rows and the ledger has outrun it - the notice "
+              "follows the resolver's date, not a manifest key: notices %r"
+              % (_nt34,),
+              _u34 is not None and _u34["pricingBasis"]["basis"] == "shipped"
+              and _nt34.count("more than 90 days older") == 1
+              and _viz.e(_ul.rate_basis_phrase(_u34["pricingBasis"])) in _nt34
+              and _dates(_ctx34 + _nt34) - {_far} == {_ul.PRICING_AS_OF})
+    finally:
+        shutil.rmtree(_root, ignore_errors=True)
     out = M._usage_notices(_u(coverage={"attributedPct": 0.4,
                                         "taskLevelPct": 0.0, "warn": True}))
     check("uo11 ...and the low-coverage notice floors its share: it fires "

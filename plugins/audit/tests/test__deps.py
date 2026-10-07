@@ -3733,8 +3733,7 @@ def _cases(check):
           "`usage.pricingAsOf`, which it only can be if a block arriving "
           "through `<root>_cfg(...)` anchors the reads taken off it: %r"
           % (_ck_asof,),
-          "panel/_panel_usage.py" in _ck_asof
-          and "report/_usage_load.py" in _ck_asof)
+          "panel/_panel_usage.py" in _ck_asof)
 
     _ck_block = _ck_tree((
         ("_panel_usage.py",

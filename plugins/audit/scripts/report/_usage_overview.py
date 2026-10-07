@@ -76,6 +76,21 @@ _hover_share = _viz._hover_share
 _tile = _viz._tile
 _tip = _viz._tip
 
+def _stale_remedy(basis):
+    """What the stale-price notice asks for, by the `PRICING_BASES` member
+    that priced the rows: the key declaring THAT table. A basis it does not
+    know has no table of its own to update."""
+    if basis == "manifest":
+        return ("Update <code>meta.usage.pricing</code> and "
+                "<code>meta.usage.pricingAsOf</code>")
+    if basis == "config":
+        return ("Update <code>usage.pricing</code> and "
+                "<code>usage.pricingAsOf</code> in .claude/audit.config.json")
+    if basis == "shipped":
+        return ("Update the plugin, or declare <code>usage.pricing</code> "
+                "with its <code>usage.pricingAsOf</code>")
+    return "Record which table priced these rows"
+
 
 # --- context, tiles + notices --------------------------------------------------
 def _usage_context(u):
@@ -153,11 +168,18 @@ def _usage_notices(u):
     """Warnings that change how every other number should be read."""
     out = []
     if u.get("pricingStale"):
+        # The table is named by `rate_basis_phrase` over the same
+        # `pricingBasis` the context line words, so the notice and the line
+        # carry one date and one place; the remedy is the key that declares
+        # that place's table, never a key for a table that priced nothing.
+        pb = u.get("pricingBasis") if isinstance(u.get("pricingBasis"), dict) \
+            else {}
         out.append(
-            '<p class="notice warn">Price table dated %s is more than 90 days older '
-            "than the newest recorded usage — every cost figure below is derived "
-            "from it. Update <code>usage.pricing</code> before trusting them.</p>"
-            % e(u.get("pricingAsOf") or "?"))
+            '<p class="notice warn">The price table behind every cost figure '
+            "below (%s) is more than 90 days older than the newest recorded "
+            "usage. %s before trusting them.</p>"
+            % (e(rate_basis_phrase(pb)),
+               _stale_remedy(pb.get("basis"))))
     cov = u.get("coverage") or {}
     if cov.get("warn"):
         # Floored: this notice fires precisely when coverage is low, so it is the

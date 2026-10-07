@@ -32,6 +32,42 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `--status` prints is redacted and does not open the page; `commands/panel.md` says so, and
   that the browser was opened with the full one.
 
+- **One price table per project, chosen the same way on every surface, and every printed cost
+  priced at read time by the table its phrase names.**
+  - *One precedence.* The report and its Markdown twin, `/audit:usage` and its `--backfill`,
+    `/audit:status`, the panel and the meter hook all ask `usage_ledger.resolve_pricing`: the
+    plan's `meta.usage.pricing` when it declares a non-empty table, else the config's
+    `usage.pricing`, else the shipped table. **The meter and the panel used to read only the
+    config**, so on a project that declares a table in both places they now price at the plan's
+    table where they priced at the config's.
+  - *The plan's table is laid over the shipped one.* A table in `meta.usage.pricing` used to be
+    taken as written, so a model it did not name was priced at that table's own fallback; it is
+    now laid over the shipped table model by model, the way the config's table already was, and
+    a model it does not name keeps its shipped row.
+  - *The shipped rates changed.* The shipped table carries the official rates as of its
+    `pricingAsOf` (2026-10-06) with the page they were read from, adding rows for models it did
+    not name and lowering `claude-sonnet-5`'s; a project that declares no table sees its costs
+    move with it.
+  - *Costs are priced at read time.* A ledger row still stores the cost it was priced at when
+    written, and the ledger is never rewritten, but every surface now prints the resolved
+    table's price for each row's tokens rather than the stored figure, so changing a table
+    reprices what is printed. A row that cannot be priced again keeps its stored figure, and
+    the rate phrase beside the cost counts those rows.
+  - *One date for the price table on a page.* The report's stale-price notice is dated from the
+    table the resolver chose and names it in the same words as the cost line; a
+    `meta.usage.pricingAsOf` beside no `meta.usage.pricing` no longer raises a notice about a
+    table that priced nothing. The report's usage payload drops its separate `pricingAsOf` and
+    the panel's drops `pricingAsOfDeclared`, which no panel script read.
+
+  **Against `COMPATIBILITY.md`.** No precedence that document had written down changes: its list
+  under *When two keys can express the same thing, which one wins is written down* named only
+  `planGate` over `enforce`, and this release adds the pricing order to it. But its version
+  table names *a changed precedence* as what a MAJOR carries, and on the meter and the panel
+  which of the plan's and the config's tables wins did change, as did how a plan table that
+  omits a model is priced. The shipped-rate change is the case its *Not promised* list names
+  (*That a default value is frozen*), and printed output is outside the document. Whether this
+  release is therefore a major is the operator's call, and is not decided here.
+
 ### Fixed
 - **A stamp now goes stale when a sibling rewrites a file the task does not declare.**
   `stamp-verification.py compare` answered `current`, exit 0, after an already-dirty undeclared

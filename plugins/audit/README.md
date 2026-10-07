@@ -670,9 +670,9 @@ refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 | `usage.authorMode` | How the spender is recorded: `email` \| `name` \| `hash` \| `none` | `email` |
 | `usage.showCost` | Show an equivalent API cost beside the tokens | `true` |
 | `usage.backfillOnFirstRun` / `maxScanBytes` | On first sight of a transcript, read it from the start, up to this many bytes | `true` / `33554432` |
-| `usage.currency` / `pricingAsOf` | Currency label, and the date the rate table was accurate (undated until you set it) | `USD` / the shipped table's date |
+| `usage.currency` / `pricingAsOf` | Currency label, and the date this file's `usage.pricing` was accurate. Every cost names the table that priced it, with that table's date: the shipped table's date and page when the shipped table priced the rows, this date when `usage.pricing` here did, `meta.usage.pricingAsOf` when the plan's own table did. **"Rates undated" is said only of a project table that carries no date**, and a date beside no table dates nothing — the report's stale-price notice reads the same date the cost line does | `USD` / the shipped table's date |
 | `usage.bands` | `{highUSD, outlierUSD}` absolute cost bands; both unset → calibrate from this project's own completed tasks | both unset |
-| `usage.pricing` | Model id → `{in, out, cacheW5m, cacheW1h, cacheR}` in currency per **million** tokens. **Which table prices a project** is one decision every surface shares (`usage_ledger.resolve_pricing` — the report, `/audit:usage` and its `--backfill`, the panel and the meter hook all ask it): the manifest's `meta.usage.pricing` when it declares a non-empty table, used as written; else this key, laid over the shipped table **model by model** — a model named here replaces that model's shipped row whole (so give every rate; an omitted one prices at zero), and every model not named keeps its shipped row; else the shipped table. An empty table declares nothing | shipped table |
+| `usage.pricing` | Model id → `{in, out, cacheW5m, cacheW1h, cacheR}` in currency per **million** tokens. **Which table prices a project** is one decision every surface shares (`usage_ledger.resolve_pricing` — the report, `/audit:usage` and its `--backfill`, the panel and the meter hook all ask it): the manifest's `meta.usage.pricing` when it declares a non-empty table; else this key; else the shipped table. A declared table, from either place, is laid over the shipped table **model by model** — a model it names replaces that model's shipped row whole (so give every rate; an omitted one prices at zero), and every model it does not name keeps its shipped row. An empty table declares nothing. **Every surface prices at read time**: a printed cost is the resolved table's price for each row's tokens, not the figure the row stored when it was written, and a row that cannot be priced again keeps its stored figure — the rate phrase beside the cost counts those rows rather than mixing two tables silently | shipped table |
 | `journal.enabled` | Record every manifest / config write in the tamper-evident audit trail | `true` |
 | `journal.dir` | Where the trail's monthly per-writer `.jsonl` files live; unset → beside the manifest, so one commit carries both the change and the record of it | unset |
 | `journal.strictManifestState` | Opt-in confirmation prompt when an edit changes manifest **state** (a task/phase `status`, `completedAt`, `commit`, `attempts`): `off` \| `ask` — deliberately no `deny`, the orchestrator writes through the same tools | `off` |
@@ -1086,8 +1086,11 @@ page, so handing over a filesystem path would be a button that silently does not
 **Cost is labelled `equiv`.** It is computed from a price table in
 `.claude/audit.config.json` (`usage.pricing`, USD per million tokens), not from a bill —
 subscription plans carry no per-token charge. Keeping the table in config means a rate change is
-a one-line edit in your repo, not a plugin release. Cost is priced and stored when a row is
-written, so changing the table never rewrites history.
+a one-line edit in your repo, not a plugin release. A row stores the cost it was priced at when
+written, and the ledger is never rewritten; every surface that prints a cost prices the row's
+tokens again at read time against the table the resolver chose, so a rate change reprices what
+is printed, and a row that cannot be priced again is counted beside the cost rather than mixed
+in.
 
 **Privacy.** Rows carry counts, model ids, timestamps, branch and author — never prompt content.
 Transcripts are read-only. `usage.authorMode` accepts `email` (default), `name`, `hash`
