@@ -4645,11 +4645,13 @@ def panel_route_violations(server_path=None, js_dir=None, readers=None,
 # top-level block it hands back with defaults filled in.
 #
 # THAT LAST SHAPE WAS ADDED FOR EXACTLY THIS GAP, FOUND ONLY AFTER IT SHIPPED. The
-# panel's Usage payload reaches `usage.pricingAsOf` through `usage_cfg(config)`, so
-# no key on that line was an anchor, so the module was absent from the key's reader
-# list ENTIRELY - and the read it was absent for is the one that served the value as
-# typed while deciding, in the same dict literal, on the trimmed one. A rule added
-# to catch one key read two ways could not see the copy that shipped. It was widened
+# panel's Usage payload takes its `usage` block from `usage_cfg(config)` and reads
+# `usage.bands` and `usage.showCost` off it, so no key on those lines is an anchor
+# and, without this shape, the module is absent from those keys' reader lists
+# ENTIRELY. The read that exposed it was a `usage.pricingAsOf` the payload served
+# as typed while deciding, in the same dict literal, on the trimmed one - a read
+# the payload no longer makes. A rule added to catch one key read two ways could
+# not see the copy that shipped. It was widened
 # rather than merely recorded because widening it convicted exactly that key and
 # nothing else on this tree: a rule that arrives red on unrelated code buys an
 # exemption on day one, and this one arrives red on the defect and green behind its
@@ -4836,8 +4838,8 @@ def _resolve_config_path(node, env, roots):
     A MERGED-BLOCK ACCESSOR IS AN ANCHOR TOO. A block that arrives through
     `usage_cfg(config)` leaves no key on the line, so every read off it used to
     resolve to nothing and the module holding those reads was missing from the
-    key's reader list entirely - including the read that served `pricingAsOf` as
-    typed while the flag beside it was decided on the trimmed value. What that
+    key's reader list entirely - the panel's Usage payload, which reads
+    `usage.bands` and `usage.showCost` off that block, among them. What that
     still does not reach is the section note above: the accessor is recognised by
     NAME, and no other call is followed.
     """

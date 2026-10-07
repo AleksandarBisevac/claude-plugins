@@ -121,21 +121,6 @@ def _config_path(project):
     return os.path.join(project, CONFIG_REL)
 
 
-def _declared_as_of(config):
-    """Did the PROJECT set `usage.pricingAsOf`, or is the effective value a default?
-
-    `usage_cfg()` merges `DEFAULTS`, so `ucfg["pricingAsOf"]` is almost never absent
-    — it falls back to the default table's date. Rendering that as the rate basis
-    would present a date this project never chose as though it had, which is the
-    manufactured basis `render-report._usage_context` refuses for the same reason.
-    The panel needs the raw config to tell the two apart, so it reports the fact
-    separately rather than making the client guess from a value that is always set.
-    """
-    block = (config or {}).get("usage")
-    return isinstance(block, dict) and isinstance(block.get("pricingAsOf"), str) \
-        and bool(block["pricingAsOf"].strip())
-
-
 def _manifest_path(project, config):
     mp = (config or {}).get("manifestPath") or _defaults()["manifestPath"]
     return os.path.normpath(os.path.join(project, mp))

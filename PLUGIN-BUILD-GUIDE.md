@@ -4929,7 +4929,7 @@ import `_help` or `panel-server`.
 
 ### `plugins/audit/scripts/panel/_panel_paths.py`
 The floor the panel's read side stands on: `CONFIG_REL`, `_within`/`_config_path`/
-`_manifest_path`/`_read_json`/`read_config`, `_declared_as_of`, the `_load` wrapper, and the
+`_manifest_path`/`_read_json`/`read_config`, the `_load` wrapper, and the
 three accessors `hooks_config()`/`config_rules()`/`status_facts()`. Those three replaced
 `_cores()`'s positional 4-tuple, and that is the whole reason the U3.1 split fits: the tuple
 also carried `_manifest_rules` (layer 3), so a base module holding it could only sit at layer 4

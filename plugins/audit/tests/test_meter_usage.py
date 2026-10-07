@@ -40,8 +40,16 @@ import _config                                     # noqa: E402
 M = _loader.load(os.path.join(_harness.HOOKS_DIR, "meter-usage.py"),
                  modname="meter_usage")
 
-# The shipped table, which the advisory and the session line price rows at.
-_TBL = dict(M._load_ledger_lib().DEFAULT_PRICING)
+# The ledger library as `meter()` loads it, and the shipped table the advisory
+# and the session line price rows at.
+_UL = M._load_ledger_lib()
+_TBL = dict(_UL.DEFAULT_PRICING)
+
+
+def _ld(ledger):
+    """What `meter()` hands both messages: the ledger read and priced at the
+    shipped table, on demand."""
+    return lambda: M._priced_ledger(_UL, ledger, _TBL)
 
 
 def _in_for(usd):
@@ -196,6 +204,89 @@ def _cases(check):
         finally:
             shutil.rmtree(anon_root, ignore_errors=True)
 
+        # (mt) ONE RUN, ONE READ, ONE PRICING. A SessionEnd that both crosses
+        # the outlier band and closes the session says two things off the same
+        # ledger; each used to read it and price it again for itself. A
+        # counting copy of the ledger library tells one pass from two.
+        _mt_root = Path(tempfile.mkdtemp(prefix="meter-usage-once-"))
+        try:
+            def _mt_run(with_kept):
+                """Meter one SessionEnd over a seeded ledger; -> (notices,
+                read_ledger calls, priced_at_read calls)."""
+                proj = _mt_root / ("kept" if with_kept else "clean")
+                (proj / "docs" / "audit").mkdir(parents=True, exist_ok=True)
+                (proj / "docs" / "audit" / "audit-plan.json").write_text(
+                    json.dumps({"meta": {"version": 2}, "phases": [{
+                        "id": "P1", "title": "Alpha",
+                        "claim": {"sessionId": "sess-mt"},
+                        "tasks": [{"id": "T%d" % i, "status": "done"}
+                                  for i in range(5)]
+                        + [{"id": "P1.HOT", "status": "in_progress",
+                            "startedAt": "2026-08-06T07:00:00Z"}]}]}),
+                    encoding="utf-8")
+                mcfg = _config.load(proj)
+                seed = [{"ts": "2026-08-0%dT10" % (i + 1), "taskId": "T%d" % i,
+                         "sessionId": "old", "model": "claude-opus-5",
+                         "costUSD": 1.0 + i, "msgs": 1, "in": _in_for(1.0 + i),
+                         "out": 0, "cacheW5m": 0, "cacheW1h": 0, "cacheR": 0}
+                        for i in range(5)]
+                seed.append(dict(seed[0], taskId="P1.HOT", sessionId="sess-mt",
+                                 costUSD=90.0, **{"in": _in_for(90.0)}))
+                if with_kept:
+                    # No token fields: it cannot be priced again, so it keeps
+                    # the figure stored when it was written.
+                    seed.append({"ts": "2026-08-06T07:10", "taskId": "P1.HOT",
+                                 "sessionId": "sess-mt", "msgs": 1,
+                                 "costUSD": 3.0})
+                ul.append_rows(str(_config.ledger_dir(proj, mcfg)), seed)
+                tr = proj / "sess-mt.jsonl"
+                tr.write_text(entry("mt1", 40), encoding="utf-8")
+                calls = {"read_ledger": 0, "priced_at_read": 0}
+
+                def counted(name):
+                    real = getattr(ul, name)
+
+                    def call(*a, **kw):
+                        calls[name] += 1
+                        return real(*a, **kw)
+                    return call
+                spy = type(ul)("usage_ledger_spy")
+                spy.__dict__.update(ul.__dict__)
+                spy.read_ledger = counted("read_ledger")
+                spy.priced_at_read = counted("priced_at_read")
+                out = []
+                M.meter({"session_id": "sess-mt", "cwd": str(proj),
+                         "transcript_path": str(tr),
+                         "hook_event_name": "SessionEnd"},
+                        ul=spy, cfg=mcfg, root=proj, notices=out)
+                return out, calls["read_ledger"], calls["priced_at_read"]
+
+            _mt_notes, _mt_reads, _mt_prices = _mt_run(True)
+            check("mt1 one meter run that says both things reads the ledger "
+                  "once and prices it once (notes %r, reads %d, pricings %d)"
+                  % (_mt_notes, _mt_reads, _mt_prices),
+                  len(_mt_notes) == 2 and _mt_reads == 1 and _mt_prices == 1)
+            _mt_adv = [n for n in _mt_notes if "not a gate" in n]
+            _mt_sum = [n for n in _mt_notes if "this session:" in n]
+            check("mt2 the outlier advisory names the ledger row that kept the "
+                  "figure stored when written: %r" % (_mt_adv,),
+                  len(_mt_adv) == 1 and "1 ledger row(s) keep the cost stored "
+                  "when written" in _mt_adv[0])
+            check("mt3 the session line names its row that kept the figure "
+                  "stored when written: %r" % (_mt_sum,),
+                  len(_mt_sum) == 1 and "1 row(s) at the cost stored when "
+                  "written" in _mt_sum[0])
+            # The second direction: a ledger every row of which was priced
+            # again says nothing about stored figures - the clause is not
+            # unconditional.
+            _mt_clean, _r, _p = _mt_run(False)
+            check("mt4 ...and neither note mentions a stored figure when every "
+                  "row was priced again: %r" % (_mt_clean,),
+                  len(_mt_clean) == 2
+                  and not any("stored when written" in n for n in _mt_clean))
+        finally:
+            shutil.rmtree(_mt_root, ignore_errors=True)
+
         # (h) the outlier advisory — the only thing this hook ever says out loud.
         # Driven through `advise` directly so the bands are exact rather than
         # whatever a synthetic transcript happens to price out to.
@@ -221,8 +312,7 @@ def _cases(check):
             ul.append_rows(adv_led, cheap + [hot])
 
             cur = {}
-            msg = M.advise(ul, adv_led, band_man(5), {"showCost": True}, cur, [hot],
-                           _TBL)
+            msg = M.advise(ul, _ld(adv_led), band_man(5), {"showCost": True}, cur, [hot])
             check("h1 an outlier task is called out, with the threshold stated",
                   msg and "HOT" in msg and "$90.00" in msg and "p90" in msg, msg)
             check("h2 the advisory says it is advice, not a gate",
@@ -231,40 +321,37 @@ def _cases(check):
                   cur.get("warnedTasks") == ["HOT"])
             # A warning that repeats every turn for the rest of a long task is a
             # warning nobody reads.
-            again = M.advise(ul, adv_led, band_man(5), {"showCost": True}, cur, [hot],
-                           _TBL)
+            again = M.advise(ul, _ld(adv_led), band_man(5), {"showCost": True}, cur, [hot])
             check("h4 it fires ONCE per task, not on every Stop", again is None)
 
             # A cheap task must never trip it.
-            quiet = M.advise(ul, adv_led, band_man(5), {"showCost": True}, {},
-                             [cheap[0]], _TBL)
+            quiet = M.advise(ul, _ld(adv_led), band_man(5), {"showCost": True}, {},
+                             [cheap[0]])
             check("h5 a typical task says nothing", quiet is None)
 
             # Below the gate there are no bands, so there is nothing to be past.
             few_led = str(adv_root / "few")
             ul.append_rows(few_led, [cheap[0], hot])
             check("h6 below the sample gate the advisory is silent",
-                  M.advise(ul, few_led, band_man(1), {"showCost": True}, {}, [hot],
-                           _TBL)
+                  M.advise(ul, _ld(few_led), band_man(1), {"showCost": True}, {}, [hot])
                   is None)
 
             # showCost=false must not leak a dollar figure.
-            nc = M.advise(ul, adv_led, band_man(5), {"showCost": False}, {}, [hot],
-                          _TBL)
+            nc = M.advise(ul, _ld(adv_led), band_man(5), {"showCost": False}, {}, [hot])
             check("h7 showCost=false states a multiple, never a dollar amount",
                   nc and "$" not in nc and "x past" in nc, nc)
 
             # Rows with no task cannot be attributed to one.
             check("h8 spend with no task in flight says nothing",
-                  M.advise(ul, adv_led, band_man(5), {"showCost": True}, {},
-                           [dict(hot, taskId=None)], _TBL) is None
-                  and M.advise(ul, adv_led, band_man(5), {"showCost": True},
-                               {}, [], _TBL) is None)
+                  M.advise(ul, _ld(adv_led), band_man(5), {"showCost": True}, {},
+                           [dict(hot, taskId=None)]) is None
+                  and M.advise(ul, _ld(adv_led), band_man(5), {"showCost": True},
+                               {}, []) is None)
 
             # A garbled cursor must degrade, not raise — it is user-writable state.
             check("h9 a corrupt warnedTasks value is ignored, not fatal",
-                  M.advise(ul, adv_led, band_man(5), {"showCost": True},
-                           {"warnedTasks": "nonsense"}, [hot], _TBL) is not None)
+                  M.advise(ul, _ld(adv_led), band_man(5), {"showCost": True},
+                           {"warnedTasks": "nonsense"}, [hot]) is not None)
 
             # An outlier task's cost has two causes with OPPOSITE repairs, and
             # the advisory has to say which: HOT above is dominated by NEW
@@ -281,8 +368,8 @@ def _cases(check):
             hot2 = dict(cheap[0], taskId="HOT2", costUSD=90.0,
                        ts="2026-08-07T10", **{"in": 1, "cacheR": 180000000})
             ul.append_rows(adv_led, [hot2])
-            msg2 = M.advise(ul, adv_led, band_man2(5), {"showCost": True}, {},
-                            [hot2], _TBL)
+            msg2 = M.advise(ul, _ld(adv_led), band_man2(5), {"showCost": True}, {},
+                            [hot2])
             check("h10 a task whose cost is dominated by RE-READS gets the "
                   "opposite repair - hand it to a fresh executor - never the "
                   "'split or re-scope' wording an equally expensive but "
@@ -306,20 +393,18 @@ def _cases(check):
                      **{"in": _in_for(1.5)}),
                 dict(cheap[2], sessionId="OTHER", taskId="T9", costUSD=99.0,
                      **{"in": _in_for(99.0)})])
-            summ = M.session_summary(ul, sess_led, {"showCost": True}, "S1",
-                                     _TBL)
+            summ = M.session_summary(ul, _ld(sess_led), {"showCost": True}, "S1")
             check("i1 the summary covers only THIS session", summ
                   and "~$4.00" in summ and "T1, T2" in summ and "99" not in summ,
                   summ)
             check("i2 tokens are compact, messages keep their separators",
                   summ and "tokens" in summ and "$" in summ, summ)
             check("i3 a session that recorded nothing says nothing",
-                  M.session_summary(ul, sess_led, {"showCost": True}, "NOPE",
-                                    _TBL)
+                  M.session_summary(ul, _ld(sess_led), {"showCost": True}, "NOPE")
                   is None)
             check("i4 showCost=false drops the dollar figure entirely",
                   "$" not in (M.session_summary(
-                      ul, sess_led, {"showCost": False}, "S1", _TBL) or "$"))
+                      ul, _ld(sess_led), {"showCost": False}, "S1") or "$"))
             # (rt) A ledger stored at another table: both messages print what
             # the resolved table charges for the tokens, never the stored figure.
             rt_led = str(adv_root / "rt")
@@ -327,13 +412,13 @@ def _cases(check):
                                     for r in cheap + [hot]] + [
                 dict(cheap[0], sessionId="RT", taskId="T0", costUSD=50.0,
                      **{"in": _in_for(1.25)})])
-            rt_msg = M.advise(ul, rt_led, band_man(5), {"showCost": True}, {},
-                              [hot], _TBL)
+            rt_msg = M.advise(ul, _ld(rt_led), band_man(5), {"showCost": True}, {},
+                              [hot])
             check("rt1 the outlier advisory names the resolved table's figure "
                   "for the task, not the one stored at another table: %r"
                   % (rt_msg,),
                   rt_msg and "$90.00" in rt_msg and "$630.00" not in rt_msg)
-            rt_sum = M.session_summary(ul, rt_led, {"showCost": True}, "RT", _TBL)
+            rt_sum = M.session_summary(ul, _ld(rt_led), {"showCost": True}, "RT")
             check("rt2 the session line prices its rows at the resolved table "
                   "too: %r" % (rt_sum,),
                   rt_sum and "~$1.25" in rt_sum and "$50" not in rt_sum)
@@ -344,8 +429,7 @@ def _cases(check):
                  "msgs": 1, "costUSD": 3.0},
                 dict(cheap[0], sessionId="RT2", taskId="T0", costUSD=40.0,
                      **{"in": _in_for(1.0)})])
-            rt_kept = M.session_summary(ul, rt_led, {"showCost": True}, "RT2",
-                                        _TBL)
+            rt_kept = M.session_summary(ul, _ld(rt_led), {"showCost": True}, "RT2")
             check("rt3 ...while a row with no token fields keeps the figure "
                   "stored when written, beside the priced row's 1.00: %r"
                   % (rt_kept,),

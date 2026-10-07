@@ -52,7 +52,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
     written, and the ledger is never rewritten, but every surface now prints the resolved
     table's price for each row's tokens rather than the stored figure, so changing a table
     reprices what is printed. A row that cannot be priced again keeps its stored figure, and
-    the rate phrase beside the cost counts those rows.
+    the rate phrase beside the cost counts those rows; the meter hook's outlier advisory and
+    session line carry no rate phrase and instead say how many of those rows the figure they
+    print rests on.
   - *One date for the price table on a page.* The report's stale-price notice is dated from the
     table the resolver chose and names it in the same words as the cost line; a
     `meta.usage.pricingAsOf` beside no `meta.usage.pricing` no longer raises a notice about a

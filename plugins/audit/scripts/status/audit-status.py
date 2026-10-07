@@ -659,8 +659,8 @@ def usage_summary(manifest, manifest_path, project_dir=None, full=True):
         # `meta.usage.pricingAsOf` be non-empty, so a string of spaces validates.
         # A whitespace-only setting is a typo, not a declaration, so it collapses
         # to the shape absence already has. `isinstance` guards a hand-edited
-        # number, and the same trim is what `panel/_panel_paths._declared_as_of`
-        # applies to the config file's copy of this key.
+        # number, and the same trim is what `_usage_core._declared_as_of`
+        # applies to both copies of this key when the resolver dates a table.
         as_of_raw = meta_usage.get("pricingAsOf") \
             if isinstance(meta_usage, dict) else None
         # One shape for every aggregate, so a key added to one is added to all.

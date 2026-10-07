@@ -143,7 +143,27 @@ def _outlier_action(ul, manifest, all_rows, tid):
     return "splitting it or re-scoping before the next attempt"
 
 
-def advise(ul, ledger, manifest, ucfg, cursor, rows, table):
+def _priced_ledger(ul, ledger, table):
+    """The ledger read once and priced once at `table`, for both messages.
+
+    -> {"rows": `priced_at_read`'s copies, "kept": one bool per row, True where
+        the row kept the figure stored when it was written}
+
+    Each copy is priced with its stored `costUSD` taken off, so a row
+    `priced_at_read` could not price again comes back with no figure at all -
+    that is how a row is known to be kept, by the one predicate that decides
+    it rather than a second copy of it here - and gets its stored figure back.
+    The flags let each message count the kept rows among the rows it sums."""
+    stored = ul.read_ledger(ledger)
+    bare = [{k: v for k, v in r.items() if k != "costUSD"} for r in stored]
+    priced = ul.priced_at_read(bare, table)["rows"]
+    kept = ["costUSD" not in p for p in priced]
+    return {"rows": [dict(r) if k else p
+                     for r, p, k in zip(stored, priced, kept)],
+            "kept": kept}
+
+
+def advise(ul, ledger_priced, manifest, ucfg, cursor, rows):
     """The one thing this hook ever says out loud: that the task in flight has
     crossed the project's own outlier threshold, while there is still time to act.
 
@@ -157,13 +177,17 @@ def advise(ul, ledger, manifest, ucfg, cursor, rows, table):
     repeats on every turn for the rest of a long task is a warning nobody reads.
     A later session warns again, which is intended: that is a fresh chance to act.
 
-    `table` is the resolved rate table: the bands and the figure are summed off
-    `priced_at_read`'s copies, so they are what that table charges for the
-    task's tokens, the same figure every consulted surface prints for it.
+    `ledger_priced` is a zero-argument callable answering `_priced_ledger`'s
+    shape, shared with `session_summary` so one run reads and prices the ledger
+    once. The bands and the figure are summed off those copies, so they are
+    what the resolved table charges for the task's tokens, the same figure
+    every consulted surface prints for it. The bands read every row of the
+    ledger, so the rows that kept their stored figure are counted over all of
+    it and named in the message.
 
-    Returns a message, or None — and None is the common case, so the ledger read
-    is reached only when a warning is actually possible. Measured at 26 ms over a
-    9-month, 8,740-row ledger, which is the cost of at most one Stop per task.
+    Returns a message, or None — and None is the common case, so the ledger is
+    called for only when a warning is actually possible: the guards below need
+    no ledger at all.
     """
     if not rows:
         return None
@@ -176,7 +200,8 @@ def advise(ul, ledger, manifest, ucfg, cursor, rows, table):
     if tid in warned:
         return None
 
-    all_rows = ul.priced_at_read(ul.read_ledger(ledger), table)["rows"]
+    ledger = ledger_priced()
+    all_rows = ledger["rows"]
     bands = ul.cost_bands(manifest, all_rows, ucfg)
     if ul.band_of(bands, tid) != "outlier":
         return None
@@ -202,12 +227,17 @@ def advise(ul, ledger, manifest, ucfg, cursor, rows, table):
                else "this project's p90 completed task")
         mult = spent / bands["outlier"] if bands.get("outlier") else 0
         head = "%s is running %.1fx past %s." % (tid, mult, why)
+    # Said in both branches: the multiple is a ratio of costs too.
+    kept = sum(1 for k in ledger["kept"] if k)
+    if kept:
+        head += (" %d ledger row(s) keep the cost stored when written, at no "
+                 "recorded rate." % kept)
     action = _outlier_action(ul, manifest, all_rows, tid)
     return ("[audit] %s Consider %s. This is advice, not a gate — nothing is "
             "blocked." % (head, action))
 
 
-def session_summary(ul, ledger, ucfg, session_id, table):
+def session_summary(ul, ledger_priced, ucfg, session_id):
     """What this session cost, said once at the end.
 
     Immediate feedback where the work happened, rather than only in a dashboard
@@ -217,9 +247,14 @@ def session_summary(ul, ledger, ucfg, session_id, table):
     Silent when the session recorded nothing, so a read-only session — asking a
     question, reading code — says nothing rather than reporting a row of zeros.
 
-    The figure is priced at `table`, the resolved rate table, as `advise`'s is."""
-    rows = [r for r in ul.priced_at_read(ul.read_ledger(ledger), table)["rows"]
+    The figure is summed off `ledger_priced()`'s copies, the same read and
+    pricing `advise` takes. Beside the cost, and only where the cost is
+    printed, it names how many of this session's rows kept the figure stored
+    when written, since the sum then mixes that figure with the table's."""
+    ledger = ledger_priced()
+    mine = [(r, k) for r, k in zip(ledger["rows"], ledger["kept"])
             if (r.get("sessionId") or "") == session_id]
+    rows = [r for r, _k in mine]
     if not rows:
         return None
     tot = ul.totals(rows)
@@ -229,6 +264,9 @@ def session_summary(ul, ledger, ucfg, session_id, table):
     bits = ["%s tokens" % _compact(tot["tokens"])]
     if ucfg.get("showCost", True):
         bits.append("~$%.2f" % tot["costUSD"])
+        kept = sum(1 for _r, k in mine if k)
+        if kept:
+            bits.append("%d row(s) at the cost stored when written" % kept)
     bits.append("%s messages" % "{:,}".format(tot["msgs"]))
     if tasks:
         bits.append("%d task(s): %s" % (len(tasks), ", ".join(tasks[:4])
@@ -334,13 +372,22 @@ def meter(data, ul=None, cfg=None, root=None, notices=None):
 
     written = ul.append_rows(ledger, rows)
 
+    # Read and priced at most once per run, and only when a message asks: a
+    # Stop that writes nothing and is not SessionEnd never opens the ledger.
+    shared = {}
+
+    def ledger_priced():
+        if "ledger" not in shared:
+            shared["ledger"] = _priced_ledger(ul, ledger, table)
+        return shared["ledger"]
+
     # Both messages are strictly additive: either can raise and metering still
     # stands. `notices` is an out-parameter rather than a changed return type so
     # the existing contract (`meter` -> rows written) survives untouched.
     if notices is not None:
         if written:
             try:
-                note = advise(ul, ledger, manifest, ucfg, cursor, rows, table)
+                note = advise(ul, ledger_priced, manifest, ucfg, cursor, rows)
                 if note:
                     notices.append(note)
             except Exception:
@@ -349,7 +396,7 @@ def meter(data, ul=None, cfg=None, root=None, notices=None):
         # while Stop fires every turn.
         if (data or {}).get("hook_event_name") == "SessionEnd":
             try:
-                summary = session_summary(ul, ledger, ucfg, session_id, table)
+                summary = session_summary(ul, ledger_priced, ucfg, session_id)
                 if summary:
                     notices.append(summary)
             except Exception:

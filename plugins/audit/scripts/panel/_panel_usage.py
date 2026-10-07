@@ -87,11 +87,13 @@ def _usage_shape(**overrides):
         "enabled": True,
         "ledgerDir": "",
         "showCost": True,
-        "pricingAsOf": None,
         # Which place priced the ledger's rows (`resolve_pricing`'s `{basis,
         # asOf, source}`) and the phrase every other cost surface prints for
         # it, so the tab shows those words rather than retyping them. None on
         # the exits with no rows: there is no cost on screen to give a basis.
+        # Its `asOf` is the only date the payload carries: the merged config's
+        # `pricingAsOf` is the shipped default whenever the project set none,
+        # so serving it would date a table that may not have priced anything.
         "pricingBasis": None,
         "rateBasis": None,
         "facts": [],
@@ -369,26 +371,11 @@ def usage_state(project):
     config = read_config(project)
     ucfg = cfg_mod.usage_cfg(config)
     ledger_dir = str(cfg_mod.ledger_dir(project, config))
-    # THE RATE BASIS, TRIMMED AT THE DOOR - the one surface reaching
-    # `pricingAsOf` through `usage_cfg` that an earlier trim of the same key
-    # missed: it served the merged value AS TYPED, so a padded date reached the
-    # tab as `rates as of` followed by the padding, and a whitespace-only one
-    # shipped a truthy empty string.
-    # The trim `report/_usage_load`, `status/audit-status` and
-    # `usage/audit-usage` apply to `meta.usage`'s copy of this key, applied here
-    # where the CONFIG file's copy becomes plugin data: whitespace collapses to
-    # None, the shape absence already has, so no renderer learns a second empty.
-    # `isinstance` before `.strip()`, because a hand-edited config may carry a
-    # number here and a raise inside this dict would cost the whole tab, not one
-    # line of it.
-    as_of_raw = ucfg.get("pricingAsOf")
     # What the CONFIG says, which is answerable with no ledger at all and so is
     # true of every exit below.
     declared = {"enabled": bool(ucfg.get("enabled", True)),
                 "ledgerDir": ledger_dir,
                 "showCost": bool(ucfg.get("showCost", True)),
-                "pricingAsOf": (as_of_raw.strip() or None)
-                if isinstance(as_of_raw, str) else None,
                 "bands": ucfg.get("bands") or {},
                 "gateCatches": _gate_catches_payload(project, config)}
     try:

@@ -1249,7 +1249,7 @@
     {
       "id": "P104.16-tog",
       "title": "with showCost off no dollar figure reaches the Usage tab's dialogs or budget block",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P104-R14 and P104-R15. With showCost off, the panel's Usage tab prints no dollar figure anywhere, its dialogs included.\n\n- The browse dialog drops its cost column, header and cells together, for every dimension.\n- For tasks, the dialog's band note keeps the band names but drops the dollar thresholds.\n- The phase budget block drops its dollar amounts, the way the report's budget block does.\n\nThe existing 'no dollar figure anywhere on the tab' case gets a fixture with a phase budget, so that it can fail on the budget path. A new case opens the browse dialog for tasks with showCost off and asserts no dollar figure; its twin, with showCost on, shows them.\n\nThe orchestrator re-captures the panel screenshots.",
       "files": [
         "plugins/audit/scripts/ui/panel/browse-dialog.js",
@@ -1304,18 +1304,28 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ce3ede07",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "browse-dialog.js: the column list is filtered once (USAGE.showCost or key not cost) and the header and cells are both drawn from it, so the cost column goes for every dimension and the two cannot drift; for tasks the band note keeps its basis and band names and drops the dollar thresholds when showCost is off (unchanged when on). usage-cards.js: uBudgets returns nothing when showCost is off - the whole budget block, as the report's budget block returns nothing (a budget bar is a spend-against-budget comparison). Decision: the band note follows the task (names kept, thresholds dropped) where the report hides its whole note inside the gated most-expensive block.\nTests: tools/ui-tests/usage-edges.test.mjs - the recording builder gains showModal/close so the dialog opens; the render fixture gains a phase budget so 'no dollar figure anywhere on the tab' can fail on the budget path; a browse(showCost, dim) helper opens the dialog over USAGE.facts; new cases for the budget block (off, with its on twin), the tasks browse dialog (off, with its on twin) and every dimension dropping the cost column. test__panel_page.py sc1 (the column filter appears once) and sc2 (uBudgets reads showCost before phaseBudgets), labelled as source pins. Red: the vitest cases failed in the shared tree before the fix (4 failed / 28 passed) with their on twins green; the helper proved the Python pin at HEAD 8c7b7d8e and was could-not-prove for vitest in its throwaway (no node_modules). usage-edges 32/32, full vitest 781/781, test__panel_page 487/487, node --check on the assembled panel script exit 0. Panel screenshots re-captured by the orchestrator.",
+        "descriptive": "When a project turns dollar figures off, the panel's browse dialog and budget block no longer show any, so the Usage tab is dollar-free everywhere, matching the report."
       },
       "startedAt": "2026-10-07T05:03:30Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T05:39:56Z",
+      "verifiedBy": [
+        "usage-edges showCost browse/budget cases",
+        "test__panel_page sc1",
+        "sc2"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T05:36:03Z.4fc4ae",
         "status": "passed",
         "at": "2026-10-07T05:36:03Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ce3ede07",
+        "at": "2026-10-07T05:39:56Z",
+        "basis": "orchestrator check: P104-R14 and R15 fixed, one column filter for header and cells, the budget block matches the report's rule, red seen before the fix with on twins green"
       }
     },
     {

@@ -323,8 +323,9 @@ def rate_basis(usage):
     typo rather than a declaration and collapses to None, the shape absence
     already has. The parameter is named for the block it takes, which is what
     lets `_deps.config_read_violations` see the read and compare it against the
-    other modules that read this key; `panel/_panel_paths._declared_as_of`
-    applies the same trim to the config file's copy.
+    other modules that read this key; `_usage_core._declared_as_of` is the
+    trim the resolver applies to both the manifest's and the config file's
+    copy before a rate phrase dates anything.
 
     `isinstance` before `.strip()`, because a hand-edited manifest may carry a
     number here and a raise inside a render is a report that does not print.
