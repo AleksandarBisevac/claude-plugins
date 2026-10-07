@@ -1,6 +1,6 @@
 ---
 description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — promote one to running, close one that landed, move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `start` promotes a task to in_progress so the plan gate resolves its files, without spawning anything; `done` closes it against the commit its work landed in, writing status, completedAt, commit, outcome and verifiedBy in one write — or, with `--no-change --reason`, closes a task whose answer was that nothing needed to change; `reopen` puts a done task back to pending with the reason recorded; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `block` sets a task blocked with the reason beside the status; `note` appends a dated note, the one addition a started task takes; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
-argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] | start <taskId> | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] [--override-verdict TEXT] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id], or --test <path> --caught <runId> | uncouple --test <path> | mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId> | unmute --test <path> | cancel <id> --reason "<why>"'
+argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] | start <taskId> [--force --reason "<why>"] | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] [--override-verdict TEXT] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id], or --test <path> --caught <runId> | uncouple --test <path> | mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId> | unmute --test <path> | cancel <id> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -404,6 +404,7 @@ spawns, and the hand edit this file forbids everywhere else.
 
 ```
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" start P3.2 [--json]
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" start P3.2 --force --reason "<why>"
 ```
 
 **It performs phase entry first** (`reference/orchestrator.md` → *Phase entry*). On a phase's
@@ -429,7 +430,9 @@ step 2 prescribes as an orchestrator `Edit`:
 - **journal** → one `task.start` row whose `details.changes` names each field with the
   value it held, plus `details.attempt` — both keys the `_journal_io.DETAILS_KEYS`
   allow-list already carries, so nothing is written that the trail would drop in silence.
-  A phase the write promoted is named in the row's summary.
+  A phase the write promoted is named in the row's summary. A **forced** start (below) adds
+  `details.mode: "forced"`, `details.reason` and `details.basis` naming the unmet references,
+  and says `FORCED past unmet ...` in the summary.
 - Same index lock, same revalidate-from-disk, same byte-for-byte rollback on findings as
   `add`.
 
@@ -449,16 +452,23 @@ would freeze the count `blocked` is derived from.
 verb takes a task, and the phase around that task is promoted by the same write; a phase
 with no task to start is entered by the run that enters it); a `done` or `cancelled` task, named
 as such — terminal work is not re-opened by flipping a status, and the follow-up is a new
-task; and a start that would take `attempts` past the task's `maxAttempts`. That last one
+task; a task that is not ready, without `--force --reason` (below); and a start that would
+take `attempts` past the task's `maxAttempts`. That last one
 refuses rather than writing `blocked` itself: that transition also owes an ADO echo and a
 human, both of which belong to the orchestrator, and the refusal names the count and the
 ceiling so the caller can make it.
 
-**Readiness is reported, never enforced.** A task with unmet `blockedBy`/`dependsOn` is
-still promoted, with a `NOTE:` naming what it waits on — `/audit:run` is where readiness
-decides a spawn, and the case this verb exists for is a task whose edits are being denied
-right now. **Nothing refuses a promotion of unready work**, here or in the script; the
-note is the whole of it.
+**Readiness is refused, with one recorded way past it.** A task that is not already
+`in_progress` and still waits on an unmet reference — its own `blockedBy` or `dependsOn`, or
+its phase's `blockedBy` — is refused with exit 2 and nothing written, and the refusal names
+each reference the way `/audit:status` does (`_status_facts.unmet_refs` is the one answer both
+read; a phase-level blocker reads `<id> (phase)`). `--force --reason "<why>"` starts it anyway:
+that is the route for promoting a task by hand so the plan gate resolves its files, and the
+`task.start` row records the exception. The door refuses `--force` without `--reason`, and
+`--reason` without `--force`; `--reason -` reads the text off stdin like every prose flag. A
+re-start of a task already `in_progress` is the retry above and is never refused for
+readiness — it prints a `NOTE:` naming what is still unmet. Under `--json` the result carries
+`ready`, `waitingOn`, `forced` and `forcedReason`.
 
 **The start that enters a phase warns about what sign-off will ask for** — an empty
 `testGate` (sign-off then rests on review alone) and a missing `desiredOutcome` — as

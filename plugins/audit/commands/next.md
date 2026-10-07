@@ -23,7 +23,7 @@ Otherwise run the full preflight (steps 1–5, including acquiring the lock) and
    every ready task, in order, with what the rest are waiting on. Do not re-tabulate it and
    do not re-derive the readiness rule by hand; the first entry under READY NOW is the task
    this command runs.
-1. Find the first **ready** task (phase order, then task-id order) per the Readiness rule.
+1. Take that first READY NOW entry; `audit-task.py start` refuses an unready one, naming why.
 2. If none is ready: the entry view's `waiting on` column already says why, per task —
    relay it rather than restating it. Release the lock and stop.
 3. Otherwise run **Execute the task** (orchestrator), then follow **Reporting** — outcome +

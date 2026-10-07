@@ -33,7 +33,7 @@ Usage:
                 (--plan | --verdict passed|skipped --summary TEXT|-
                  [--review-outcome TEXT|-]) [manifest]
                 [--project-dir DIR] [--takeover] [--json]
-  audit-task.py start <taskId> [manifest]
+  audit-task.py start <taskId> [manifest] [--force --reason TEXT|-]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py done <taskId> (--commit <sha> | --no-change --reason TEXT|-)
                 [manifest] [--descriptive TEXT|-] [--technical TEXT|-]
@@ -2202,7 +2202,7 @@ def _journal_phase_add(project, config, mpath, phase_id, title, outcome,
     return _journal_row(project, config, mpath, "phase.add", summary, details)
 
 
-# --- readiness (report only) ---------------------------------------------------
+# --- readiness: what a task waits on, which `start` refuses on -----------------
 def _waiting_on(assembled, node):
     """What `node` is still waiting on -- `_status_facts.unmet_refs`' answer for
     its id, looked up rather than recomputed.
@@ -3223,7 +3223,7 @@ def _start_changes(tid, was, task):
     return rows
 
 
-def _start_details(task_id, phase_id, was, task):
+def _start_details(task_id, phase_id, was, task, forced=None):
     """The `details` block for a `task.start` row, built where a case can read it.
 
     SEPARATE FROM THE APPEND ON PURPOSE. `_journal_io` drops a key that is not on
@@ -3232,17 +3232,26 @@ def _start_details(task_id, phase_id, was, task):
     invented key beside it -- which means no assertion about the written row can
     see the mistake `_journal_phase_add` records paying for. Built here, the
     handover itself is the thing a case can compare against the allow-list.
+
+    `forced` is {"reason", "waitingOn"} for a start taken past unmet references,
+    and it lands on three keys already on that list: `mode` says it was forced,
+    `reason` is the caller's own words and `basis` names what was unmet. An
+    ordinary start carries none of them, so a forced row is told apart by key.
     """
     details = {"taskId": task_id, "phaseId": phase_id,
                "changes": _start_changes(task_id, was, task)}
     attempt = task.get("attempts")
     if attempt is not None:
         details["attempt"] = attempt
+    if forced:
+        details["mode"] = "forced"
+        details["reason"] = forced["reason"]
+        details["basis"] = "unmet: %s" % ", ".join(forced["waitingOn"])
     return details
 
 
 def _journal_start(project, config, mpath, task_id, phase_id, was, task,
-                   healed=None, entry=None):
+                   healed=None, entry=None, forced=None):
     """The `task.start` row: what the promotion moved, and which attempt it is.
 
     `changes` AND `attempt`, both already on `_journal_io.DETAILS_KEYS` --
@@ -3270,9 +3279,14 @@ def _journal_start(project, config, mpath, task_id, phase_id, was, task,
     else:
         summary = ("%s started in %s: attempt %s, was %s"
                    % (task_id, phase_id, attempt, was["status"]))
+    if forced:
+        # In the summary as well as in `details`, because `audit-journal list`
+        # prints the summary alone and a forced start is the row a reader of a
+        # readiness question is looking for.
+        summary += "; FORCED past unmet %s" % ", ".join(forced["waitingOn"])
     if healed:
         summary += "; " + "; ".join(_panel_write._fmt_change(r) for r in healed)
-    details = _start_details(task_id, phase_id, was, task)
+    details = _start_details(task_id, phase_id, was, task, forced)
     if (entry or {}).get("state") in ("cut", "adopt"):
         summary += "; branch %s %s" % (entry["branch"], "cut from %s" % entry["parent"]
                                        if entry["state"] == "cut" else "recorded")
@@ -3477,6 +3491,23 @@ def _locked_start(args, project, config, mpath, tid, out):
             "gate's reason>\"` - which this verb will not do on its own because "
             "that transition also owes an ADO echo." % (tid, attempts, ceiling, tid))
         return E_USAGE
+    # READINESS IS REFUSED HERE, and read from `_status_facts.unmet_refs` through
+    # `_waiting_on` rather than restated: a second copy of the rule is what let
+    # this file and `/audit:status` disagree before. A task already in_progress
+    # is exempt, because a second start on it is the retry step 4 prescribes and
+    # refusing that would leave the retry with no verb. `--force --reason` is the
+    # one way past, and the `task.start` row records it.
+    waiting = _waiting_on(assembled, node)
+    forced = None
+    if waiting and status != "in_progress":
+        if not args.force:
+            out("[audit-task] %s is not ready -- it waits on %s, so it is not "
+                "started and nothing was written. Finish those first "
+                "(/audit:status lists what is ready now), or start it anyway "
+                "with --force --reason \"<why>\", which the task.start row "
+                "records." % (tid, ", ".join(waiting)))
+            return E_USAGE
+        forced = {"reason": args.reason.strip(), "waitingOn": list(waiting)}
 
     git_root = os.path.abspath(os.path.join(project,
                                             (config or {}).get("gitRoot") or "."))
@@ -3546,18 +3577,16 @@ def _locked_start(args, project, config, mpath, tid, out):
             return E_INVALID
 
     jres = _journal_start(project, config, mpath, tid, phase_id, was, node,
-                          healed, entry)
+                          healed, entry, forced)
     entry_warnings = (_entry_warnings(phase)
                       if healed or entry["state"] in ("cut", "adopt") else [])
     index_note = _index_dirty_note(written, mpath, project, phase_id)
     entry_line = _entry_line(entry, phase_id)
-    # REPORTED, NEVER REFUSED. The plan gate is what this verb serves, and the
-    # case it serves is a task whose edits are being denied -- so a blocker list
-    # is something the operator has to see and `/audit:run` is where readiness
-    # decides a spawn. `_readiness_lines` is deliberately not reused: its other
-    # branch hands back `/audit:run <id>`, which on a task this call has just put
-    # in_progress is advice to trip `run.md`'s interrupted-run warning.
-    waiting = _waiting_on(assembled, node)
+    # `waiting` is still reported after the write: a forced start and a retry of
+    # a running task both reach here with references unmet. `_readiness_lines`
+    # is deliberately not reused: its other branch hands back `/audit:run <id>`,
+    # which on a task this call has just put in_progress is advice to trip
+    # `run.md`'s interrupted-run warning.
     if args.as_json:
         result = {"ok": True, "id": tid, "phase": phase_id,
                   "status": node.get("status"), "startedAt": node.get("startedAt"),
@@ -3572,7 +3601,9 @@ def _locked_start(args, project, config, mpath, tid, out):
                   "healed": healed,
                   "written": written,
                   "warnings": _wg.collapse_machine(warnings, written_manifest),
-                  "ready": not waiting, "waitingOn": waiting}
+                  "ready": not waiting, "waitingOn": waiting,
+                  "forced": forced is not None,
+                  "forcedReason": (forced or {}).get("reason")}
         result.update(jres)
         result.update(stdin_notes_key(args))
         result.update(project_basis_key(args))
@@ -3599,10 +3630,12 @@ def _locked_start(args, project, config, mpath, tid, out):
     out("  the plan gate now resolves this task's `files` -- that is what the "
         "promotion buys, and it is per task: no other pending task in %s moved"
         % (phase_id,))
-    if waiting:
-        out("  NOTE: still waiting on %s -- promoted anyway, because this verb "
-            "does not decide a spawn; /audit:run is where readiness does"
-            % ", ".join(waiting))
+    if forced:
+        out("  FORCED past unmet %s -- reason recorded on the task.start row: %s"
+            % (", ".join(waiting), forced["reason"]))
+    elif waiting:
+        out("  NOTE: still waiting on %s -- a re-start of a running task is the "
+            "retry, which readiness does not refuse" % ", ".join(waiting))
     for line in entry_warnings:
         out("WARNING: " + line)
     for line in _wg.collapse(warnings, written_manifest):
@@ -6295,9 +6328,32 @@ def cmd_start(args, out):
     if not tid:
         out("[audit-task] start needs a task id")
         return E_USAGE
+    refusal = _start_flags_refusal(args)
+    if refusal:
+        out(refusal)
+        return E_USAGE
     return _under_lock(args, project, out,
                        lambda config, mpath: _locked_start(
                            args, project, config, mpath, tid, out))
+
+
+def _start_flags_refusal(args):
+    """Why this combination of `start` flags cannot start anything, or None.
+
+    `--force` and `--reason` are one exception spelled in two flags. A force
+    with no reason writes a `task.start` row nobody can judge afterwards, and a
+    reason with no force explains an exception that was not taken - the parser
+    accepts each alone because `start` reads both, so the door refuses.
+    """
+    reason = (args.reason or "").strip()
+    if args.force and not reason:
+        return ("[audit-task] start --force needs --reason \"<why this task "
+                "starts before what it waits on>\" -- the task.start row records "
+                "the exception, and one with no reason cannot be judged later")
+    if reason and not args.force:
+        return ("[audit-task] start --reason explains an exception, and only "
+                "--force takes one -- pass both, or neither for an ordinary start")
+    return None
 
 
 def cmd_done(args, out):
@@ -9134,14 +9190,11 @@ VERB_FLAGS = {
     "add-phase": ("phase_id", "outcome", "description", "area", "review_skill",
                   "blocked_by", "gate", "gate_clear", "park"),
     "cancel": ("reason",),
-    # EMPTY ON PURPOSE, and it is a row rather than an omission: `start` takes
-    # an id and writes the three fields `reference/orchestrator.md` prescribes,
-    # so every flag on this parser except the universal ones belongs to some
-    # other verb and passing one here is a usage error. A verb ABSENT
-    # from this table would instead be refused every flag including the
-    # universal ones, and `vf6` grades the row against the real dispatch either
-    # way.
-    "start": (),
+    # `start` takes an id and writes the three fields `reference/orchestrator.md`
+    # prescribes; its two flags are the exception to the readiness refusal, and
+    # `cmd_start`'s door requires them together. `vf6` grades the row against
+    # the real dispatch.
+    "start": ("force", "reason"),
     # `done` closes what `start` opened, and `commit` is the row that makes the
     # verb worth having rather than an optional extra -- `cmd_done` refuses
     # without it, which is a different check from this one: this table says which
@@ -9360,6 +9413,13 @@ def build_parser():
     # commit, and `--reason` says why.
     p.add_argument("--no-change", dest="no_change", action="store_true",
                    default=False)
+    # `start` only. Starts a task its references say is not ready, and the door
+    # requires `--reason` beside it: the exception is recorded on the
+    # `task.start` row, and an exception with no reason is one nobody can judge.
+    p.add_argument("--force", action="store_true", default=False,
+                   help="start: promote a task that is still waiting on "
+                        "unmet references; needs --reason, which the "
+                        "task.start row records")
     # `done` only. Why this close stands over a newest gate verdict that refuses
     # it - `commit-task-work.py`'s flag for the same act; the close is journaled
     # with it, and refused without it.

@@ -4029,18 +4029,16 @@ def _cases(check):
                    # `signoff` refuses P2's open task, so every stray flag must
                    # bounce BEFORE that refusal - which is what the grid asks.
                    "signoff": ["signoff", "P2", "--verdict", "passed", "--summary", "s"],
-                   # `next-id` writes nothing and reads no flag of its own, so like
-                   # `start` its row is the bare call and every flag must bounce.
+                   # `next-id` writes nothing and reads no flag of its own, so its
+                   # row is the bare call and every flag must bounce.
                    "next-id": ["next-id", "bug"],
                    "add-phase": ["add-phase", "T", "--outcome", "o"],
                    "cancel": ["cancel", "P2.3", "--reason", "r"],
                    "scope": ["scope", "P2.3", "--files", "src/a.ts"],
                    "retarget": ["retarget", "P2", "--gate", "true"],
-                   # `start` takes an id and NO flag of its own, so its row here
-                   # is the bare call. `vf3` still drives the whole option list
-                   # against it, which is the point: a verb whose `VERB_FLAGS`
-                   # row is empty is the one where a stray flag has nowhere to
-                   # be quietly absorbed.
+                   # `start` reads only `--force` and `--reason`, so its row
+                   # here is the bare call and `vf3` drives every other option
+                   # against it.
                    "start": ["start", "P2.3"],
                    # ...and `done` on the running task the fixture carries, with
                    # the one flag it requires: a base call that could not close
@@ -4052,8 +4050,8 @@ def _cases(check):
                    # running it against the shared fixture still proves the
                    # thing vf3 asks about (a title placeholder is all it needs).
                    "seed": ["seed", "T"],
-                   # `settle` takes no id and no flag of its own, so like `start`
-                   # its row is the bare call and every flag must bounce.
+                   # `settle` takes no id and no flag of its own, so its row is
+                   # the bare call and every flag must bounce.
                    "settle": ["settle"],
                    # `reopen` on the done task the fixture carries, in its open
                    # phase, with the one flag it requires.
@@ -4124,10 +4122,8 @@ def _cases(check):
                  "retarget/--outcome"),
                 (["scope", "P2.3", "--files", "src/a.ts", "--json"],
                  "scope/--json"),
-                # `start` declares NO flag of its own, so the universal ones are
-                # the only thing it can be shown to still take - and a verb with
-                # an empty `VERB_FLAGS` row is exactly where an over-wide
-                # refusal would land first.
+                # `start` on a ready task with a universal flag: the flags it
+                # reads are driven by the `pr` group, which owns their door.
                 (["start", "P2.3", "--json"], "start/--json"),
                 # `done` reads four flags of its own AND the universal ones, and
                 # this is the call that proves the refusal above did not widen
@@ -4760,37 +4756,153 @@ def _cases(check):
               and "RE-STARTED" in (_pr_rows2[1].get("summary") or "")
               and "RE-STARTED" not in (_pr_rows2[0].get("summary") or ""))
 
-        # READINESS IS REPORTED, NEVER ENFORCED: the case this verb exists for
-        # is a task whose edits are being denied right now, and `/audit:run` is
-        # where readiness decides a spawn.
-        _pr_wait = pr_fixture()
-        _pr_wait["phases"][1]["tasks"][-1]["dependsOn"] = ["P2.3"]
-        projwt, mpwt = mk("st-waiting", _pr_wait)
-        codew, txtw = run(["start", "P2.4", "--project-dir", projwt])
-        check("pr10 a task with an unmet `dependsOn` is still promoted, with a "
-              "NOTE naming what it waits on - and the note is the whole of it, "
-              "which is why the status moved anyway: %r" % (txtw[-200:],),
-              codew == 0
-              and (task_in(mpwt, "P2.4") or {}).get("status") == "in_progress"
-              and "NOTE:" in txtw and "P2.3" in txtw.split("NOTE:")[-1])
-        codej, txtj = run(["start", "P2.4", "--project-dir", projwt, "--json"])
-        _pr_json = {}
+        # READINESS IS REFUSED, AND `--force --reason` IS THE RECORDED
+        # EXCEPTION. A start that only REPORTED what a task waited on made
+        # readiness a rule the model followed or did not, and nothing in the plan
+        # could tell which. The refusal reads `_status_facts.unmet_refs` and not a
+        # second copy of the rule, so the expected lists below are asked of that
+        # function AND written out by hand: the hand list is what keeps a case
+        # from going vacuous if the function ever answered `[]` for everything.
+        def pr_rows(proj):
+            jm = _panel_write._journalmod()
+            return [r for r in (jm.read_all(proj) if jm else [])
+                    if r.get("action") == "task.start"]
+
+        def pr_unmet(mp, tid):
+            return M._status_facts.unmet_refs(_mio.load_manifest(mp)).get(tid)
+
+        # Two fixtures, one per place a reference can sit: the task's OWN
+        # `blockedBy` and `dependsOn` (P2.4 waits on a pending phase and a pending
+        # task), and the owning PHASE's `blockedBy` (P3 waits on the running P2,
+        # so its task inherits the wait and `unmet_refs` spells it `(phase)`).
+        _pr_own = pr_fixture()
+        _pr_own["phases"][1]["tasks"][-1]["blockedBy"] = ["P3"]
+        _pr_own["phases"][1]["tasks"][-1]["dependsOn"] = ["P2.3"]
+        _pr_phb = pr_fixture()
+        _pr_phb["phases"][2]["blockedBy"] = ["P2"]
+        _pr_phb["phases"][2]["tasks"] = [dict(_pr_pend["phases"][2]["tasks"][0])]
+        _pr_phb["fileIndex"]["src/parked.ts"] = ["P3.1"]
+        _pr_waits = (("own", _pr_own, "P2.4", ["P3", "P2.3"]),
+                     ("phase", _pr_phb, "P3.1", ["P2 (phase)"]))
+        _pr_refused = {}
+        for _prk, _prfx, _prtid, _prwant in _pr_waits:
+            _prproj, _prmp = mk("st-unready-" + _prk, _prfx)
+            with open(_prmp, "rb") as _fh:
+                _prb = _fh.read()
+            _prc, _prt = run(["start", _prtid, "--project-dir", _prproj])
+            with open(_prmp, "rb") as _fh:
+                _pra = _fh.read()
+            _pr_refused[_prk] = (_prc, _prt, pr_unmet(_prmp, _prtid), _prwant,
+                                 _pra == _prb, len(pr_rows(_prproj)))
+        check("pr10 a start on a pending task whose own `blockedBy`/`dependsOn` "
+              "or whose phase's `blockedBy` is unmet is REFUSED: exit 2, the "
+              "manifest byte identical, no `task.start` row, and the message "
+              "names every unmet reference exactly as `unmet_refs` spells it: %r"
+              % (dict((k, (v[0], v[2], v[1][:140])) for k, v in
+                      _pr_refused.items()),),
+              all(v[0] == 2 and v[4] and v[5] == 0
+                  and sorted(v[2] or []) == sorted(v[3])
+                  and all(ref in v[1] for ref in v[3])
+                  and "--force" in v[1]
+                  for v in _pr_refused.values()))
+        _prjproj, _prjmp = mk("st-unready-json", _pr_own)
+        _prjc, _prjt = run(["start", "P2.4", "--project-dir", _prjproj, "--json"])
+        _prjo = {}
         try:
-            _pr_json = json.loads(txtj)
-        except Exception:
+            _prjo = json.loads(_prjt)
+        except ValueError:
             pass
-        check("pr11 the --json block is the same facts as DATA, with the "
-              "advisory among them rather than printed beside an object a "
-              "caller has to parse: %r" % (sorted(_pr_json),),
-              codej == 0 and _pr_json.get("ok") is True
-              and _pr_json.get("waitingOn") == ["P2.3"]
-              and _pr_json.get("ready") is False
-              and _pr_json.get("restarted") is True
-              and _pr_json.get("was") == "in_progress"
-              and _pr_json.get("attempt") == 2
-              and _pr_json.get("maxAttempts") == 3
-              and _pr_json.get("phase") == "P2"
-              and _pr_json.get("journaled") is True)
+        check("pr10b ...and under --json the refusal is one object a caller can "
+              "parse, still naming what the task waits on: %r" % (_prjo,),
+              _prjc == 2 and _prjo.get("ok") is False
+              and "P2.3" in (_prjo.get("refused") or "")
+              and (task_in(_prjmp, "P2.4") or {}).get("status") == "pending")
+        # THE DOOR'S OTHER HALF: `--force` with no reason is an exception nobody
+        # can read back, so it is refused before anything is written, and a
+        # `--reason` with no `--force` is a why with nothing it explains.
+        _prdproj, _prdmp = mk("st-unready-door", _pr_own)
+        with open(_prdmp, "rb") as _fh:
+            _prdb = _fh.read()
+        _prd = [run(["start", "P2.4", "--force", "--project-dir", _prdproj]),
+                run(["start", "P2.4", "--reason", "why",
+                     "--project-dir", _prdproj])]
+        with open(_prdmp, "rb") as _fh:
+            _prda = _fh.read()
+        check("pr10c `--force` alone and `--reason` alone are each refused with "
+              "exit 2 and no byte written, so a forced start always carries the "
+              "reason its row records: %r" % ([(c, t[:100]) for c, t in _prd],),
+              [c for c, _t in _prd] == [2, 2] and _prda == _prdb
+              and pr_rows(_prdproj) == []
+              and "--reason" in _prd[0][1] and "--force" in _prd[1][1])
+
+        _pr_forced = {}
+        for _prk, _prfx, _prtid, _prwant in _pr_waits:
+            _prproj, _prmp = mk("st-forced-" + _prk, _prfx)
+            _prc, _prt = run(["start", _prtid, "--force", "--reason",
+                              "hand start for the plan gate",
+                              "--project-dir", _prproj])
+            _prr = pr_rows(_prproj)
+            _prdet = (_prr[0].get("details") or {}) if _prr else {}
+            _pr_forced[_prk] = (_prc, (task_in(_prmp, _prtid) or {}).get("status"),
+                                len(_prr), _prdet, _prwant,
+                                (_prr[0].get("summary") or "") if _prr else "", _prt)
+        check("pr11 `--force --reason` on the same tasks starts them, and the "
+              "one `task.start` row records the exception: `mode: forced`, the "
+              "reason verbatim, and every unmet reference in its basis and its "
+              "summary: %r"
+              % (dict((k, (v[0], v[1], v[3].get("mode"), v[3].get("reason"),
+                           v[3].get("basis"))) for k, v in _pr_forced.items()),),
+              all(v[0] == 0 and v[1] == "in_progress" and v[2] == 1
+                  and v[3].get("mode") == "forced"
+                  and v[3].get("reason") == "hand start for the plan gate"
+                  and all(ref in (v[3].get("basis") or "") for ref in v[4])
+                  and "FORCED" in v[5] and all(ref in v[5] for ref in v[4])
+                  and "FORCED" in v[6]
+                  for v in _pr_forced.values()))
+        _prfproj, _prfmp = mk("st-forced-json", _pr_own)
+        _prfc, _prft = run(["start", "P2.4", "--force", "--reason", "r",
+                            "--project-dir", _prfproj, "--json"])
+        _prfo = {}
+        try:
+            _prfo = json.loads(_prft)
+        except ValueError:
+            pass
+        check("pr11b ...and the --json block carries the same facts as DATA: "
+              "`forced` true, the reason, and the references it was forced past: "
+              "%r" % (dict((k, _prfo.get(k)) for k in
+                           ("ok", "forced", "forcedReason", "waitingOn",
+                            "ready")),),
+              _prfc == 0 and _prfo.get("ok") is True
+              and _prfo.get("forced") is True
+              and _prfo.get("forcedReason") == "r"
+              and sorted(_prfo.get("waitingOn") or []) == ["P2.3", "P3"]
+              and _prfo.get("ready") is False)
+
+        # ALLOW TWINS. A ready task starts as it always did, with no `mode` on
+        # its row - the case that goes red if the exception were recorded on
+        # every start - and a task already in_progress is the RETRY of
+        # `reference/orchestrator.md` step 4, which must not need `--force`
+        # even while its references are unmet, or the retry path would be lost.
+        _prrproj, _prrmp = mk("st-ready-allow", pr_fixture())
+        _prrc, _prrt = run(["start", "P2.4", "--project-dir", _prrproj])
+        _prrr = pr_rows(_prrproj)
+        _prre = json.loads(json.dumps(_pr_own))
+        _prre["phases"][1]["tasks"][-1]["status"] = "in_progress"
+        _prre["phases"][1]["tasks"][-1]["attempts"] = 1
+        _prreproj, _prremp = mk("st-retry-allow", _prre)
+        _prrec, _prret = run(["start", "P2.4", "--project-dir", _prreproj])
+        check("pr11c ALLOW CASES: a ready task starts with exit 0 and a row "
+              "carrying no `mode`, and a re-start of an in_progress task whose "
+              "references are unmet is still the retry - exit 0, RE-STARTED, "
+              "attempt 2, no --force asked for: %r"
+              % ((_prrc, [sorted((r.get("details") or {})) for r in _prrr],
+                  _prrec, (task_in(_prremp, "P2.4") or {}).get("attempts"),
+                  _prret[:120]),),
+              _prrc == 0 and len(_prrr) == 1
+              and "mode" not in (_prrr[0].get("details") or {})
+              and _prrec == 0 and "RE-STARTED" in _prret
+              and (task_in(_prremp, "P2.4") or {}).get("attempts") == 2
+              and (task_in(_prremp, "P2.4") or {}).get("status") == "in_progress")
 
         # THE SHARDED LAYOUT, because a promotion writes a TASK and a task lives
         # in its phase's shard: a writer that reached for the index would leave

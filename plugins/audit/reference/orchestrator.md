@@ -228,15 +228,10 @@ never hardcode branch names, package ids, skills, or build tools here:
 
 ## Readiness rule
 
-A task is **ready** when ALL of:
-1. its `status == "pending"`;
-2. its **own** `blockedBy` is fully satisfied;
-3. its **own** `dependsOn` is fully satisfied — every listed task-id must be `status == "done"`;
-4. its **phase's** `blockedBy` is fully satisfied.
-
-"Satisfied": a **task id** → that task's `status == "done"`; a **phase id** → that phase reads
-`done` by its **derived** status (`_manifest_io.effective_phase_status`): a stored `done`, or every
-task terminal with a sign-off verdict recorded and, for a phase with a branch, `mergedAt` stamped.
+Which tasks are ready is computed, not followed: `_status_facts.ready_tasks()` lists them under
+`/audit:status`'s READY NOW, `_status_facts.unmet_refs()` names what each other task waits on, and
+`audit-task.py start` refuses a task with an unmet reference unless `--force --reason`, which
+its `task.start` row records.
 
 A phase becomes `done` only after `reference/phase-signoff.md`'s **Phase sign-off**, whose verb
 records the verdict and then stores the status that verdict derives — `done` at once for a phase

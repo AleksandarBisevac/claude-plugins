@@ -1,7 +1,7 @@
 {
   "id": "P106",
   "title": "rules the model only follows become checks a script makes",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Tasks, one rule per task, each deleting its prose: (1) audit-task start refuses a task that is not ready unless --force, which journals the exception. (2) Phase status and claim are written by a verb, not a hand edit. (3) executor.runsGate is resolved by a script, not by the model reading config. Measure the mandatory-read bytes of /audit:next before and after each. Waits for the pipeline pilot in the measurement phase.",
   "desiredOutcome": "the first rules the orchestrator prose asks the model to follow are made by scripts instead, each with a test and with its prose section deleted, and the bytes an execution command must read go down with each move",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "b6d9a4a31d2a09b7b126553d6d34e78e2114d631",
+  "branch": "audit/p106-rules-the-model-only-follows-b",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,7 +29,7 @@
     {
       "id": "P106.1",
       "title": "audit-task start refuses a task that is not ready unless --force, which journals the exception",
-      "status": "pending",
+      "status": "in_progress",
       "description": "start reports what a task waits on but never refuses ('REPORTED, NEVER REFUSED' in _locked_start), so readiness is a rule the model only follows. Make start refuse a pending task with unmet references, unless --force with --reason, which the task.start row journals. It reads _status_facts.unmet_refs, with no second copy of the rule. Starting a task by hand for the plan gate keeps working through --force. Delete the prose the rule came from: the term list and the 'Satisfied' paragraph under orchestrator.md's '## Readiness rule'. Keep the heading, which _areas.py and _priority.py cite, and keep the priority and parallel-safety paragraphs. Point commands/next.md step 1 at the ready list and the refusal, document the flags in commands/task.md, and move README.md's Readiness row from the 'Followed' table to the enforced one. Record `wc -c` of commands/next.md and the reference files it requires, before and after. This phase waits for P101's pipeline pilot (P101.1), whose findings decide which prose rules move first.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -37,7 +37,8 @@
         "plugins/audit/commands/task.md",
         "plugins/audit/commands/next.md",
         "plugins/audit/reference/orchestrator.md",
-        "plugins/audit/README.md"
+        "plugins/audit/README.md",
+        "plugins/audit/tests/test__refs.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -62,16 +63,21 @@
         "P101.1"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T22:17:03Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T00:21:34Z.7e9a9b",
+        "status": "passed",
+        "at": "2026-10-07T00:21:34Z"
+      }
     },
     {
       "id": "P106.2",
@@ -124,7 +130,7 @@
     {
       "id": "P106.3",
       "title": "the spawn brief resolves executor.runsGate, and the orchestrator no longer reads config for it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "execute-task.md step 3 tells the model to read .claude/audit.config.json through hooks/_config.load() and executor_gate_policy(), and to state the reading in the spawn prompt. Instead, audit-lookup.py brief, whose answer is already pasted into that prompt, resolves it and prints the word with its basis. It calls executor_gate_policy loaded through _loader, the way _gate_feed does, because a script may not import hooks/. An unrecognised value is a refusal, not the default. Delete the prose the rule came from: the bullet 'Resolve executor.runsGate the same way — at spawn, by you' in execute-task.md step 3. The brief bullet carries the line instead. Update audit-lookup's PLUGIN-BUILD-GUIDE.md section and regenerate the module map. Record the mandatory-read bytes of /audit:next before and after. It waits for P101's pipeline pilot.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -154,16 +160,22 @@
         "P101.1"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-06T22:17:04Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T00:23:43Z.14c8aa",
+        "status": "passed",
+        "at": "2026-10-07T00:23:43Z"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-10-06T22:17:03Z"
 }
