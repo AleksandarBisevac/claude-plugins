@@ -1,0 +1,77 @@
+{
+  "id": "P115",
+  "title": "status shows every in-flight phase from the copy that holds it live",
+  "status": "pending",
+  "description": "",
+  "desiredOutcome": "every surface of /audit:status - ready list, phase table, counts, --short and --json - reads an in-flight phase from its live copy through one reader and says which copy it read",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive"
+  ],
+  "blockedBy": [
+    "P114"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P115.1",
+      "title": "every status surface reads an in-flight phase from its live copy through one reader",
+      "status": "pending",
+      "description": "Fixes BUG-20. Every surface of /audit:status reads an in-flight phase from the copy that holds it live: the READY NOW list, the phase table, the progress counts, the --short entry view and the --json payload. All of them use the one reader the UNFINISHED block uses, reached through audit-status.py, while _status_facts stays pure. Every row read from a copy other than this checkout's own says which copy it was. When the live copy cannot be read, the row says it shows this checkout's copy and that this may not be current.\n\nCases, each with its twin:\n- a phase in a linked worktree with tasks done there is not listed as ready, and is counted as done;\n- a phase with no branch is read from this checkout;\n- an unreadable worktree falls back with the stale wording;\n- --short and --json agree with the full view.",
+      "files": [
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/tests/test__status_facts.py",
+        "plugins/audit/commands/status.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "bugId": "BUG-20"
+    }
+  ]
+}

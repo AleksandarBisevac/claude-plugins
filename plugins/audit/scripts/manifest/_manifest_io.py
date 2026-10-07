@@ -323,6 +323,86 @@ def load_manifest_safe(path):
         return {}
 
 
+# --- where the manifest is -------------------------------------------------------
+# One answer to "which file is the plan", for every script a command runs. A command
+# document that handed its script a `<manifestPath>` placeholder made the model fill
+# it in, and a thin command never reads the reference that states the default - so
+# the model guessed, and said out loud that it had. The script answers instead.
+DEFAULT_MANIFEST_REL = "docs/audit/audit-plan.json"
+CONFIG_REL = ".claude/audit.config.json"
+
+
+def _config_manifest_rel(cfg_path):
+    """(rel, finding, problem) for the config file at `cfg_path`.
+
+    `rel` is the `manifestPath` it names, or None. `finding` says what was seen
+    there. `problem` is True - the resolver stops on it - only when the file
+    exists and cannot be read as an object with a usable `manifestPath`: a config
+    the user wrote is never silently swapped for the default.
+    """
+    if not os.path.isfile(cfg_path):
+        return None, "absent", False
+    try:
+        cfg = read_json(cfg_path)
+    except Exception as exc:
+        return None, "unreadable: %s" % (exc,), True
+    if not isinstance(cfg, dict):
+        return None, "not a JSON object", True
+    if "manifestPath" not in cfg:
+        return None, "names no manifestPath", False
+    rel = cfg["manifestPath"]
+    if not isinstance(rel, str) or not rel.strip():
+        return None, "manifestPath is not a non-empty string: %r" % (rel,), True
+    return rel, "names manifestPath %r" % (rel,), False
+
+
+def resolve_manifest(project, explicit=None):
+    """Where the manifest is: the explicit argument, else the config's
+    `manifestPath`, else `DEFAULT_MANIFEST_REL` - read against `project`, except
+    an absolute `manifestPath`, which is used as given.
+
+    Returns {"path", "source", "looked", "problem"}. `path` is None when no
+    manifest exists where the rule points, and `looked` then lists every
+    (place, what was found there) the answer was read from, so a refusal can name
+    them. `source` is "argument", "config" or "default". An explicit argument is
+    returned as given, unchecked: the caller's load reports a missing file with
+    the path the user typed.
+
+    A config naming a path that does not exist is NOT followed by the default:
+    that would render some other plan than the one the project points at.
+    """
+    if explicit:
+        return {"path": explicit, "source": "argument", "looked": [],
+                "problem": None}
+    cfg_path = os.path.join(project, *CONFIG_REL.split("/"))
+    rel, finding, problem = _config_manifest_rel(cfg_path)
+    looked = [(cfg_path, finding)]
+    if problem:
+        return {"path": None, "source": "config", "looked": looked,
+                "problem": "%s: %s" % (cfg_path, finding)}
+    source = "config" if rel is not None else "default"
+    if rel is None:
+        rel = DEFAULT_MANIFEST_REL
+    # An absolute path is used as given - the hooks join it onto the project,
+    # which keeps an absolute path whole - so both readers find the same file.
+    cand = os.path.normpath(rel if os.path.isabs(rel)
+                            else os.path.join(project, *rel.split("/")))
+    if os.path.isfile(cand):
+        return {"path": cand, "source": source, "looked": looked, "problem": None}
+    looked.append((cand, "does not exist"))
+    return {"path": None, "source": source, "looked": looked, "problem": None}
+
+
+def describe_unresolved(resolved):
+    """The refusal a command prints when `resolve_manifest` found nothing: every
+    place it looked and what it saw there, then the two ways forward."""
+    lines = ["no audit manifest found - looked at:"]
+    lines.extend("  %s - %s" % (place, seen) for place, seen in resolved["looked"])
+    lines.append("pass the manifest path as an argument, set manifestPath in %s, "
+                 "or create a plan with /audit:init" % (CONFIG_REL,))
+    return "\n".join(lines)
+
+
 # --- traversal ------------------------------------------------------------------
 # Malformed entries are SKIPPED here, not reported. That is deliberate and it is the
 # behaviour every hand-rolled loop already had: a non-dict phase or a non-dict task is
@@ -1056,14 +1136,42 @@ def json_document(obj, indent=2):
     return json.dumps(obj, indent=indent, ensure_ascii=False) + "\n"
 
 
+def atomic_write_text(path, text):
+    """Replace `path` with `text` atomically: a unique temp file (mkstemp, in the
+    SAME directory as `path` so os.replace stays on one filesystem) is written
+    and closed, then swapped into place with os.replace. No os.fsync is called,
+    so this makes no durability promise across a power loss -- only that a
+    reader never observes a partially-written file. The parent directory is
+    created if missing. On any failure the temp file is removed (never left
+    behind) and the exception propagates.
+
+    THE TEMP NAME IS THIS CALL'S OWN. A name derived from the target alone is
+    shared by every writer of that target, so a second writer running at once
+    truncates the first one's temp, or moves it into place as its own, and one
+    of the two writes is lost with both reporting success. `mkstemp` creates a
+    name nobody else holds, which is the whole reason this is a function rather
+    than three lines repeated beside each state file.
+
+    Text mode, so the platform's line endings -- the shape every state file
+    this plugin writes already has. `_deps.state_write_violations()` refuses an
+    `os.replace` outside the sanctioned writers it lists, this one among them.
+    """
+    d = os.path.dirname(path) or "."
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
 def atomic_write_json(path, obj, indent=2):
-    """Write `obj` as JSON to `path` atomically: a unique temp file (mkstemp, in
-    the SAME directory as `path` so os.replace stays on one filesystem) is
-    written and closed, then swapped into place with os.replace. No os.fsync
-    is called, so this makes no durability promise across a power loss -- only
-    that a reader never observes a partially-written file. The parent
-    directory is created if missing. On any failure the temp file is
-    removed (never left behind) and the exception propagates.
+    """Write `obj` as JSON to `path` atomically, through `atomic_write_text` --
+    the temp file, the replace and the cleanup are that function's, so there is
+    one implementation of them.
 
     This is the ONE atomic-JSON-write implementation for the audit plugin, and it
     takes no encoding argument: the escaping is `json_document`'s, not the
@@ -1072,16 +1180,7 @@ def atomic_write_json(path, obj, indent=2):
     it is a shape a caller may legitimately want (a machine-read sidecar has no
     use for two spaces); every caller in this tree asks for the readable one.
     """
-    d = os.path.dirname(path) or "."
-    os.makedirs(d, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(json_document(obj, indent))
-        os.replace(tmp, path)
-    finally:
-        if os.path.exists(tmp):
-            os.remove(tmp)
+    atomic_write_text(path, json_document(obj, indent))
 
 
 def _atomic_write_json(path, data):

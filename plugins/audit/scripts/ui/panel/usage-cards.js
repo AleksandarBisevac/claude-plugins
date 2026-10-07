@@ -10,11 +10,16 @@
  * Spend against each phase's declared budget.
  * @param {UsageFact[]} facts Rows the filter bar has already narrowed.
  * @returns {Array<HTMLElement>} Nodes for the caller to append, empty when no
- *   phase declares a `budgetUSD` at all. A declared budget is always positive:
- *   the server treats 0, a negative and a non-number alike as "no budget" and
- *   never ships one, which is what makes the percentage here safe to divide.
+ *   phase declares a `budgetUSD` at all, and empty with showCost off. A
+ *   declared budget is always positive: the server treats 0, a negative and a
+ *   non-number alike as "no budget" and never ships one, which is what makes
+ *   the percentage here safe to divide.
  */
 function uBudgets(facts){
+ // Withheld whole with dollars off, as the report's budget block is: a budget
+ // bar IS spend compared against a dollar budget, so there is no dollar-free
+ // claim left to draw.
+ if(!USAGE.showCost)return [];
  const B=USAGE.phaseBudgets||{};
  const ids=Object.keys(B);
  if(!ids.length)return [];

@@ -1723,11 +1723,190 @@ def _graded_by_cases(check):
           and M.evidence_row(carrier, "phase").get("gradedBy") is None)
 
 
+def _own_ready_cases(check):
+    """Each held phase lock is graded on the ready work of ITS OWN phase, as the
+    injecting command counted it and named the copy it counted from - never on
+    the length of the plan-wide ready list, which is the same figure for every
+    phase and so said nothing about any one of them."""
+    def lock(phase, count, basis="counted from this checkout's copy",
+             live=True):
+        row = {"name": "phase-%s" % (phase,), "live": True,
+               "basis": "held by a fixture holder on this host"}
+        if count is not None:
+            row["readyCount"] = count
+            row["readyBasis"] = basis
+        if live is not None:
+            row["readyLive"] = live
+        return row
+
+    # The plan-wide list is LONGER than either phase's own share, and its length
+    # is a figure neither line may carry - that is what tells the two readings
+    # apart.
+    plan_ready = ["P5.1", "P5.2", "P5.3", "P6.1", "P9.1"]
+    plan_wide = "%d task(s)" % (len(plan_ready),)
+    two = M.unfinished_runs({"locks": {"held": [lock("P5", 3), lock("P6", 1)]},
+                             "ready": plan_ready}) or []
+    check("ul1 two locked phases with different counts of their OWN ready work "
+          "print different counts, and neither prints the plan-wide total: %r"
+          % (two,),
+          len(two) == 2
+          and "phase P5 holds a lock with 3 task(s) still ready" in two[0]
+          and "phase P6 holds a lock with 1 task(s) still ready" in two[1]
+          and all(plan_wide not in r for r in two))
+    same = M.unfinished_runs({"locks": {"held": [lock("P5", 2), lock("P6", 2)]},
+                              "ready": plan_ready}) or []
+    check("ul2 ...and its twin: two phases whose own counts are EQUAL print the "
+          "same count, so ul1's difference comes from the rows and not from the "
+          "line's position: %r" % (same,),
+          len(same) == 2 and all("with 2 task(s) still ready" in r for r in same))
+
+    # A phase whose own tasks are all done, while OTHER phases still have ready
+    # work: the plan-wide list is non-empty, and that must not speak for it.
+    idle = {"locks": {"held": [lock("P8", 0)]}, "ready": plan_ready}
+    check("ul3 a locked phase with NO ready task of its own prints no ready-work "
+          "line, however much the rest of the plan has ready - and the gate "
+          "passes, because the run it names had nowhere left to go: %r"
+          % (M.unfinished_runs(idle),),
+          M.unfinished_runs(idle) is None
+          and M.evaluate_gate(idle, ["unfinished-run"]) == [])
+    busy = {"locks": {"held": [lock("P8", 1)]}, "ready": []}
+    check("ul4 ...and its twin: one ready task of its own is a line and a failed "
+          "gate even when the summary's plan-wide list is EMPTY, so ul3's silence "
+          "is the row's count and not a reading of that list: %r"
+          % (M.unfinished_runs(busy),),
+          len(M.unfinished_runs(busy) or []) == 1
+          and M.evaluate_gate(busy, ["unfinished-run"]) == ["unfinished-run"])
+
+    branch_basis = ("counted from branch `audit/p5-waves`'s copy of "
+                    "docs/audit/phases/P5.json")
+    fallback_basis = ("counted from this checkout's copy on `main`, because "
+                      "branch `audit/p5-waves`'s copy could not be read")
+    named = M.unfinished_runs({"locks": {"held": [lock("P5", 1, branch_basis)]},
+                               "ready": plan_ready}) or [""]
+    fell = M.unfinished_runs({"locks": {"held": [lock("P5", 3, fallback_basis)]},
+                              "ready": plan_ready}) or [""]
+    check("ul5 the line names the copy its count came from, verbatim as the "
+          "injecting command recorded it: %r" % (named,),
+          branch_basis in named[0] and "1 task(s) still ready" in named[0])
+    check("ul6 ...and its twin: a count that fell back says so in the same "
+          "place, and does not borrow the branch copy's wording: %r" % (fell,),
+          fallback_basis in fell[0] and branch_basis not in fell[0])
+
+    uncounted = {"locks": {"held": [lock("P5", None)]}, "ready": plan_ready}
+    check("ul7 a held phase lock whose own count was never handed over is "
+          "REFUSED rather than read as zero - zero is the silent row, so an "
+          "injection that forgot the count would otherwise pass every gate: %r"
+          % (M.unfinished_runs(uncounted),),
+          "not a pass" in " ".join(M.unfinished_runs(uncounted) or [])
+          and M.evaluate_gate(uncounted, ["unfinished-run"])
+          == ["unfinished-run"])
+    flag = {"locks": {"held": [lock("P5", True)]}, "ready": plan_ready}
+    check("ul8 ...a boolean is not a count either, though Python would add it as "
+          "one: %r" % (M.unfinished_runs(flag),),
+          "not a pass" in " ".join(M.unfinished_runs(flag) or []))
+
+    by_phase = getattr(M, "ready_by_phase", None)
+    plan = {"meta": {"version": 2}, "phases": [
+        {"id": "P5", "title": "a", "status": "in_progress", "tasks": [
+            {"id": "P5.1", "title": "t", "status": "pending"},
+            {"id": "P5.2", "title": "t", "status": "pending"},
+            {"id": "P5.3", "title": "t", "status": "done"}]},
+        {"id": "P6", "title": "b", "status": "pending", "tasks": [
+            {"id": "P6.1", "title": "t", "status": "pending"}]},
+        {"id": "P8", "title": "c", "status": "in_progress", "tasks": [
+            {"id": "P8.1", "title": "t", "status": "done"}]}]}
+    grouped = by_phase(plan) if callable(by_phase) else None
+    check("ul9 `ready_by_phase` groups the ONE ready list by owning phase, in "
+          "its order, and a phase with nothing ready has no key: %r"
+          % (grouped,),
+          grouped == {"P5": ["P5.1", "P5.2"], "P6": ["P6.1"]}
+          and sum(len(v) for v in grouped.values())
+          == len(M.ready_tasks(plan)))
+
+    # A zero is the silent row only when it was counted from the copy that
+    # holds the phase live. ul3 is this pair's other half: the same zero,
+    # marked live, says nothing and passes.
+    stale_basis = ("counted from this checkout's copy on `main` - branch "
+                   "`audit/p8-done` exists but its copy could not be read, so "
+                   "this count is not current")
+    stale = {"locks": {"held": [lock("P8", 0, stale_basis, live=False)]},
+             "ready": plan_ready}
+    said = M.unfinished_runs(stale) or []
+    check("ul10 a zero counted from a copy that is NOT the live one is a line, "
+          "not a silence - the line carries the zero and the sentence saying "
+          "the count is not current, and the gate fails: %r" % (said,),
+          len(said) == 1
+          and "phase P8 holds a lock with 0 task(s) still ready" in said[0]
+          and stale_basis in said[0]
+          and M.evaluate_gate(stale, ["unfinished-run"]) == ["unfinished-run"])
+    unsaid = {"locks": {"held": [lock("P8", 0, live=None)]},
+              "ready": plan_ready}
+    check("ul11 ...and a zero whose row never said which copy it came from is "
+          "not silent either - an absent mark is not a claim that the copy was "
+          "live: %r" % (M.unfinished_runs(unsaid),),
+          len(M.unfinished_runs(unsaid) or []) == 1
+          and M.evaluate_gate(unsaid, ["unfinished-run"])
+          == ["unfinished-run"])
+
+    # A zero read off a copy that is not the live one says nothing about the
+    # run having waves left - it says the count is not the run's. Its repair
+    # sends the reader to the copy, never to the waves, and that holds whether
+    # the lock's holder is there or gone.
+    gone = dict(lock("P8", 0, stale_basis, live=False), live=False)
+    zeros = [(M.unfinished_runs({"locks": {"held": [row]},
+                                 "ready": plan_ready}) or [""])[0]
+             for row in (lock("P8", 0, stale_basis, live=False), gone)]
+    check("ul12 a non-live zero's repair says to re-read the count from the "
+          "copy named or to check the branch, and never to resume the waves - "
+          "with its holder there or gone: %r" % (zeros,),
+          all("re-read" in z and "check the branch" in z for z in zeros)
+          and not any("waves" in z or "/audit:resume" in z for z in zeros))
+    counted = (M.unfinished_runs({"locks": {"held": [
+        lock("P8", 2, stale_basis, live=False)]}, "ready": plan_ready})
+        or [""])[0]
+    check("ul13 ...and its twin: a non-live count that is NOT zero still names "
+          "the waves to pick up, so ul12's sentence is the zero's and not "
+          "every non-live row's: %r" % (counted,),
+          "picks the remaining waves up" in counted and "re-read" not in counted)
+
+    project = getattr(M, "readiness_projection", None)
+    base = {"id": "P8", "title": "a", "status": "in_progress",
+            "blockedBy": [], "tasks": [
+                {"id": "P8.1", "title": "t", "description": "d",
+                 "status": "done"},
+                {"id": "P8.2", "title": "t", "status": "pending",
+                 "dependsOn": ["P8.1"]}]}
+
+    def edited(**task_two):
+        return dict(base, tasks=[base["tasks"][0],
+                                 dict(base["tasks"][1], **task_two)])
+    worded = dict(edited(title="retitled", description="new words"),
+                  title="renamed phase", description="a phase description")
+    check("ul14 the readiness projection of a phase is unchanged by an edit to "
+          "titles and descriptions alone: %r"
+          % ((project(base), project(worded)) if callable(project) else
+             "no readiness_projection",),
+          callable(project) and project(base) == project(worded))
+    moves = ([edited(status="done"), edited(dependsOn=[]),
+              edited(blockedBy=["P9.1"]), dict(base, status="done"),
+              dict(base, blockedBy=["P9"]),
+              dict(base, tasks=base["tasks"] + [
+                  {"id": "P8.3", "title": "t", "status": "pending"}])]
+             if callable(project) else [])
+    check("ul15 ...and its twin: a status, a dependency, a block, the phase's "
+          "own status or block, or a task added each change it, so ul14's "
+          "equality is the words and not a projection that sees nothing: %r"
+          % ([project(m) == project(base) for m in moves],),
+          len(moves) == 6
+          and all(project(m) != project(base) for m in moves))
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _derived_status_cases(check)
         _graded_by_cases(check)
+        _own_ready_cases(check)
     return _harness.run(body)
 
 

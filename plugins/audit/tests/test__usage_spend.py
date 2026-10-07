@@ -81,6 +81,23 @@ def _cases(check):
           not any("sav" in k.lower() or k.endswith("USD") for k in cp))
     check("cache: per-phase rates and a worst phase for the story",
           "P1" in cp["byPhase"] and cp["worstPhase"] is not None)
+    # `cache_profile`'s rate comparison must price AT a declared table, not
+    # always the shipped `DEFAULT_PRICING` - the same re-pricing-from-tokens
+    # shape `routing` already had to be taught. Zeroing just the cache-read
+    # rate for the model these rows actually use is what proves the table
+    # reached the comparison rather than merely being accepted and ignored.
+    custom_pricing = {"claude-opus-5": {"in": 5.0, "out": 25.0, "cacheW5m": 6.25,
+                                        "cacheW1h": 10.0, "cacheR": 0.0}}
+    cp_custom = M.cache_profile(ar, custom_pricing)
+    check("cache: a declared pricing table moves the rate comparison - the "
+          "shipped DEFAULT_PRICING alone cannot reproduce zeroing just one "
+          "model's cache-read rate: %r vs %r"
+          % (cp["inputCostVsFreshPct"], cp_custom["inputCostVsFreshPct"]),
+          cp_custom["inputCostVsFreshPct"] != cp["inputCostVsFreshPct"])
+    check("cache: ...and the allow twin: pricing=None still reaches the "
+          "shipped table exactly as before this parameter existed",
+          M.cache_profile(ar, None)["inputCostVsFreshPct"]
+          == cp["inputCostVsFreshPct"])
 
     # The alias, not a second definition. `_tokens` and `_cost` sit in
     # `_usage_core` because four modules at layer 2 need them and a layer-2

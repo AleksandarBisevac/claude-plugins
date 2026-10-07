@@ -5,7 +5,10 @@
 // absent.
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
+import { pyCall } from './python-fmt.mjs';
 import { loadPanel, reach } from './sandbox.mjs';
+
+// --- the chart, the payload and the filter chips --------------------------
 
 describe('the axis labels a one-bucket chart draws', () => {
   // The guard read `if (n < 2 && i) return`, over `[0, n-1]`. With one bucket
@@ -78,6 +81,39 @@ describe('a /api/usage response that is JSON but not the usage payload', () => {
     // payload: a real, well-formed, empty ledger must still reach the empty state
     // rather than an error path.
     expect(emptyStateFor({ facts: [], enabled: true, counts: {} })).toBe(null);
+  });
+});
+
+describe('the panel CSV export honours showCost, the way report/exports.js\'s '
+  + 'usageCsv already does', () => {
+  // Mirrors the report's own rule rather than re-deriving one: the costUSD
+  // column leaves the file, header and cells together, whenever the tab is
+  // configured to withhold the figure on screen. `uCsvText` is called
+  // directly - it is the panel's half of the same quoting contract
+  // csv-quote.test.mjs already holds equal to the report's - with no USAGE
+  // payload beyond the one flag under test.
+  function csvFor(showCost) {
+    const { ctx } = loadPanel();
+    vm.runInContext('USAGE = ' + JSON.stringify({ showCost }) + ';', ctx);
+    const { uCsvText, F } = reach(ctx, ['uCsvText', 'F']);
+    const row = [];
+    row[F.ts] = '2026-01-01T00'; row[F.phase] = 'P1'; row[F.task] = 'P1.T1';
+    row[F.model] = 'claude-opus-5'; row[F.author] = 'a';
+    row[F.agent] = 'orchestrator'; row[F.attr] = 'task'; row[F.tokens] = 100;
+    row[F.cost] = 1.234567; row[F.msgs] = 2;
+    return uCsvText([row]);
+  }
+
+  it('drops costUSD, header and cell together, with showCost off', () => {
+    const text = csvFor(false);
+    expect(text.split('\r\n')[0].split(',')).not.toContain('costUSD');
+    expect(text).not.toContain('1.234567');
+  });
+
+  it('...and keeps costUSD, header and cell together, with showCost on', () => {
+    const text = csvFor(true);
+    expect(text.split('\r\n')[0].split(',')).toContain('costUSD');
+    expect(text).toContain('1.234567');
   });
 });
 
@@ -155,4 +191,372 @@ describe('the filters that are on, once the controls fold away', () => {
   // openUsageFilters in tools/capture-screenshots.mjs checks all three against a
   // real browser, and test__panel_page.py's uf3 pins that the state has exactly
   // one home.
+});
+
+// --- coverage beside cost per task ------------------------------------------
+
+describe('attribution coverage beside cost per task', () => {
+  // uUnit/uRouting/uCoverageLine are pure (no DOM), so they are exercised
+  // directly rather than through renderUsage — which, per the note just above,
+  // dies in the chart on any non-empty ledger in this sandbox. That also means
+  // this is the same route that would prove the cost-per-task tile's sub-line
+  // and the routing table's caption, since both call uCoverageLine with the
+  // same uUnit(facts).doneTaskCoverage rather than each computing their own.
+  function panel() {
+    const { ctx } = loadPanel();
+    return { ctx, run: (src) => vm.runInContext(src, ctx) };
+  }
+
+  function withTaskMeta(ctx, taskMeta) {
+    vm.runInContext('USAGE = { taskMeta: ' + JSON.stringify(taskMeta) + ' };', ctx);
+  }
+
+  function fact(F, task, tokens, attr) {
+    const row = [];
+    row[F.ts] = '2026-01-01T00:00:00Z';
+    row[F.phase] = 'P1';
+    row[F.task] = task;
+    row[F.model] = 'sonnet';
+    row[F.author] = 'me';
+    row[F.agent] = 'ag';
+    row[F.attr] = attr || 'task';
+    row[F.tokens] = tokens;
+    row[F.cost] = tokens * 0.001;
+    row[F.msgs] = 1;
+    return row;
+  }
+
+  // Three done tasks in the plan, one with risk 'high' and no row at all below,
+  // plus a pending task that must never enter either count.
+  const TASK_META = {
+    T1: { status: 'done', risk: 'high' },
+    T2: { status: 'done', risk: 'low' },
+    T3: { status: 'done', risk: 'high' },
+    T4: { status: 'pending', risk: 'high' },
+  };
+
+  it('counts the done-task denominator from the WHOLE plan, not the rows', () => {
+    const { ctx } = panel();
+    withTaskMeta(ctx, TASK_META);
+    const { uUnit, F } = reach(ctx, ['uUnit', 'F']);
+    // Only T1 ever appears in the rows handed to uUnit.
+    const facts = [fact(F, 'T1', 10)];
+    expect(uUnit(facts).doneTaskCoverage).toEqual({ done: 3, priced: 1 });
+  });
+
+  it('filtering the rows narrows the numerator only', () => {
+    const { ctx } = panel();
+    withTaskMeta(ctx, TASK_META);
+    const { uUnit, F } = reach(ctx, ['uUnit', 'F']);
+    const all = [fact(F, 'T1', 10), fact(F, 'T2', 20)];
+    expect(uUnit(all).doneTaskCoverage).toEqual({ done: 3, priced: 2 });
+    // Narrowed to T1's own row: the denominator (every done task in the plan)
+    // must not shrink along with the view.
+    const narrowed = all.filter((f) => f[F.task] === 'T1');
+    expect(uUnit(narrowed).doneTaskCoverage).toEqual({ done: 3, priced: 1 });
+  });
+
+  it('never attributes main-loop spend (task id "--") to a done task', () => {
+    const { ctx } = panel();
+    withTaskMeta(ctx, TASK_META);
+    const { uUnit, F } = reach(ctx, ['uUnit', 'F']);
+    const facts = [fact(F, 'T1', 10), fact(F, '--', 999999)];
+    // The huge main-loop row changes neither side of the count.
+    expect(uUnit(facts).doneTaskCoverage).toEqual({ done: 3, priced: 1 });
+  });
+
+  it('is null with no done task in the plan at all [empty-ledger silence]', () => {
+    const { ctx } = panel();
+    withTaskMeta(ctx, { T4: { status: 'pending', risk: 'high' } });
+    const { uUnit, uCoverageLine, F } = reach(ctx, ['uUnit', 'uCoverageLine', 'F']);
+    expect(uUnit([fact(F, 'T4', 10)]).doneTaskCoverage).toBe(null);
+    expect(uCoverageLine(null)).toBe(null);
+  });
+
+  it('pins the sentence for full coverage, exactly as coverage_sentence() words it', () => {
+    const { ctx } = panel();
+    const { uCoverageLine } = reach(ctx, ['uCoverageLine']);
+    expect(uCoverageLine({ done: 2, priced: 2 })).toBe(
+      'Of the plan\'s 2 done task(s), 2 are priced; main-loop spend is not '
+      + 'attributed to a task.');
+  });
+
+  it('pins the same sentence, unconditionally, for partial coverage too '
+    + '[was: a shortfall clause only the panel printed]', () => {
+    const { ctx } = panel();
+    const { uCoverageLine } = reach(ctx, ['uCoverageLine']);
+    // The wording is fixed now (it mirrors coverage_sentence() byte for byte),
+    // so there is no second clause to fire conditionally - this is the case
+    // that would catch one being added back.
+    expect(uCoverageLine({ done: 3, priced: 2 })).toBe(
+      'Of the plan\'s 3 done task(s), 2 are priced; main-loop spend is not '
+      + 'attributed to a task.');
+  });
+
+  // The two cases above pin the panel against a sentence typed into this file,
+  // which proves only that two people agreed. This one asks Python: the
+  // expectation is `coverage_sentence()` itself, fetched through the
+  // `usage_ledger` re-export every other caller reaches it by, for the same
+  // counts. Fixtures where done and priced differ, so a swapped pair fails.
+  it('says exactly what Python coverage_sentence() says for the same done and '
+    + 'priced counts', () => {
+    const { ctx } = panel();
+    const { uCoverageLine } = reach(ctx, ['uCoverageLine']);
+    const covs = [{ done: 1, priced: 0 }, { done: 3, priced: 2 },
+      { done: 7, priced: 7 }, { done: 12, priced: 5 }];
+    const py = pyCall('usage_ledger', covs.map((c) => ['coverage_sentence', [c]]));
+    expect(py.length).toBe(covs.length);
+    covs.forEach((c, i) => {
+      expect(typeof py[i], JSON.stringify(c)).toBe('string');
+      expect(uCoverageLine(c), JSON.stringify(c)).toBe(py[i]);
+    });
+    // Both sides are silent for the same reason: no done task to cover.
+    expect(pyCall('usage_ledger', [['coverage_sentence', [null]]])[0]).toBe(null);
+    expect(uCoverageLine(null)).toBe(null);
+  });
+
+  it('the routing table cannot show a done task its own rows never mention, '
+    + 'which is exactly what the coverage line beside it states', () => {
+    const { ctx } = panel();
+    withTaskMeta(ctx, TASK_META);
+    const { uUnit, uRouting, uCoverageLine, F } = reach(
+      ctx, ['uUnit', 'uRouting', 'uCoverageLine', 'F']);
+    const facts = [fact(F, 'T1', 10), fact(F, 'T2', 20)];
+    const rows = uRouting(facts);
+    const tasksShown = rows.reduce((a, r) => a + r.tasks, 0);
+    expect(tasksShown).toBe(2); // T1 and T2 - T3 has no row at all
+    const cov = uUnit(facts).doneTaskCoverage;
+    expect(cov).toEqual({ done: 3, priced: 2 });
+    expect(uCoverageLine(cov)).toBe(
+      'Of the plan\'s 3 done task(s), 2 are priced; main-loop spend is not '
+      + 'attributed to a task.');
+  });
+});
+
+// --- the showCost gate, driven through renderUsage -------------------------
+
+describe('with showCost off the tab prints no per-task dollar figure', () => {
+  // Driven through renderUsage itself, not through a helper the render is
+  // believed to call: the defect was a render that skipped the gate its
+  // neighbours keep, and only the render can show that. The note above about
+  // renderUsage dying in the chart is about the shared stub, whose append()
+  // keeps nothing and which has no createElementNS. This block swaps in a
+  // recording builder for its own context only, so the tree the tab builds can
+  // be read back as text.
+  function recordingPanel() {
+    const { ctx } = loadPanel();
+    const doc = vm.runInContext('document', ctx);
+    const make = doc.createElement.bind(doc);
+    const keep = (e) => {
+      e.kids = [];
+      e.append = (...k) => { e.kids.push(...k); };
+      e.appendChild = (c) => { e.kids.push(c); return c; };
+      e.prepend = (...k) => { e.kids.unshift(...k); };
+      e.replaceChildren = (...k) => { e.kids = [...k]; };
+      // The browse dialog opens itself modally; the shared stub has no dialog API.
+      e.showModal = () => {};
+      e.close = () => {};
+      return e;
+    };
+    doc.createElement = (t) => keep(make(t));
+    doc.createElementNS = (_ns, t) => keep(make(t));
+    const root = keep(make('div'));
+    doc.querySelector = (s) => (s === '#usage' ? root : keep(make('div')));
+    return { ctx, root };
+  }
+
+  const text = (n) => {
+    if (n == null) return '';
+    if (typeof n === 'string') return n;
+    if (n.nodeType === 3) return n.textContent;
+    return (n.textContent || '') + (n.kids || []).map(text).join('');
+  };
+  const all = (n, pred, out = []) => {
+    if (n && typeof n === 'object' && n.nodeType === 1) {
+      if (pred(n)) out.push(n);
+      (n.kids || []).forEach((k) => all(k, pred, out));
+    }
+    return out;
+  };
+  const hasClass = (c) => (n) => String(n.className || '').split(/\s+/).includes(c);
+  const DOLLAR = /\$\d|<\$0\.01/;
+
+  // Six done tasks: past the projection's sample gate, so the projection fact
+  // is drawn rather than the sample-size notice. One retried task, so the
+  // retry fact has spend to state, and one advice row, so the recommendation
+  // has dollars to state. A budget on the one phase the rows land in, so the
+  // budget block has spend and a budget to compare. Every one of those is a
+  // dollar figure the report withholds with showCost off.
+  function render(showCost) {
+    const { ctx, root } = recordingPanel();
+    const { F } = reach(ctx, ['F']);
+    const fact = (task, cost, day) => {
+      const r = [];
+      r[F.ts] = '2026-01-0' + day + 'T00:00:00Z';
+      r[F.phase] = 'P1'; r[F.task] = task; r[F.model] = 'opus';
+      r[F.author] = 'me'; r[F.agent] = 'ag'; r[F.attr] = 'task';
+      r[F.tokens] = 1000; r[F.cost] = cost; r[F.msgs] = 1;
+      return r;
+    };
+    const taskMeta = { T9: { status: 'pending', risk: 'low' } };
+    const facts = [];
+    for (let i = 1; i <= 6; i++) {
+      taskMeta['T' + i] = { status: 'done', risk: 'high', attempts: i === 1 ? 2 : 1 };
+      facts.push(fact('T' + i, i * 1.25, (i % 5) + 1));
+    }
+    const usage = {
+      facts, enabled: true, counts: { phases: 1 }, taskMeta, showCost,
+      phaseBudgets: { P1: 40 }, phaseTitles: { P1: 'the budgeted phase' },
+      routingAdvice: [{ risk: 'high', from: 'opus', to: 'sonnet', tasks: 6,
+        fromMeanAttempts: 1.2, atToRates: 5, atFromRates: 26.25, saving: 21.25,
+        savingPct: 81, evidenceTasks: 3, evidenceAttempts: 1 }],
+    };
+    // BANDS is a cache the boot may already have filled from another payload.
+    vm.runInContext('USAGE = ' + JSON.stringify(usage) + '; BANDS = null;', ctx);
+    vm.runInContext('renderUsage();', ctx);
+    const { uCoverageLine, uUnit } = reach(ctx, ['uCoverageLine', 'uUnit']);
+    const covLine = uCoverageLine(uUnit(facts).doneTaskCoverage);
+    const tiles = all(root, hasClass('utile'));
+    const costTile = tiles.filter((t) => all(t, hasClass('k'))
+      .some((k) => text(k) === 'cost per task'));
+    const facts_ = all(root, hasClass('ufact')).map(text);
+    const projection = facts_.filter((s) => s.startsWith('Remaining '));
+    const projCov = all(root, (n) => n.getAttribute('data-ucov') === 'projection');
+    const table = all(root, hasClass('utbl'));
+    const heads = table.flatMap((t) => all(t, (n) => n.tagName === 'TH').map(text));
+    const cells = table.flatMap((t) => all(t, (n) => n.tagName === 'TD').map(text));
+    const budgets = all(root, hasClass('bud')).map(text);
+    return { ctx, facts, root, covLine, costTile, projection, projCov, heads,
+      cells, budgets, whole: text(root) };
+  }
+
+  // The browse dialog is opened the way its button opens it, over the same
+  // facts the ranked list was drawn from, and read back off the dialog node.
+  function browse(showCost, dim) {
+    const { ctx, facts } = render(showCost);
+    vm.runInContext('openBrowse(' + JSON.stringify(dim) + ', "Browse", USAGE.facts);', ctx);
+    const dlg = vm.runInContext('BROWSE', ctx);
+    expect(facts.length).toBe(6);
+    const tds = (tr) => all(tr, (c) => c.tagName === 'TD');
+    const heads = all(dlg, (n) => n.tagName === 'TH').map(text);
+    const rows = all(dlg, (n) => n.tagName === 'TR' && tds(n).length > 0);
+    const note = (dlg.kids || []).map(text).filter((s) => s.startsWith('cost band'));
+    const pills = all(dlg, hasClass('bandpill')).map(text);
+    return { heads, rows, tds, note, pills, whole: text(dlg) };
+  }
+
+  it('the cost-per-task tile is not drawn at all', () => {
+    const r = render(false);
+    expect(r.costTile.length).toBe(0);
+  });
+
+  it('...and with showCost on it is drawn once, with its figure and its '
+    + 'coverage line [the twin: a gate that always fires fails here]', () => {
+    const r = render(true);
+    expect(r.covLine).toMatch(/^Of the plan's 6 done task/);
+    expect(r.costTile.length).toBe(1);
+    expect(text(r.costTile[0])).toMatch(DOLLAR);
+    expect(text(r.costTile[0])).toContain(r.covLine);
+  });
+
+  it('the projection fact and its coverage line are withheld, and the '
+    + 'sample-size notice does not stand in for them', () => {
+    const r = render(false);
+    expect(r.projection).toEqual([]);
+    expect(r.projCov.length).toBe(0);
+    // The projection was suppressed by showCost, not by sample size, so a
+    // notice blaming the sample would be a false claim about why.
+    expect(r.whole).not.toContain('Projection needs');
+  });
+
+  it('...and with showCost on the projection states its range and its '
+    + 'coverage line once', () => {
+    const r = render(true);
+    expect(r.projection.length).toBe(1);
+    expect(r.projection[0]).toMatch(DOLLAR);
+    expect(r.projCov.map(text)).toEqual([r.covLine]);
+  });
+
+  it('the routing table drops its cost/task column, header and cells '
+    + 'together, and the coverage line beside it', () => {
+    const r = render(false);
+    expect(r.heads).toEqual(['risk', 'model', 'tasks', 'mean attempts']);
+    expect(r.cells.length).toBe(4);
+    expect(r.cells.filter((c) => DOLLAR.test(c))).toEqual([]);
+  });
+
+  it('...and with showCost on the column is there, one dollar cell per row', () => {
+    const r = render(true);
+    expect(r.heads).toEqual(['risk', 'model', 'tasks', 'cost/task', 'mean attempts']);
+    expect(r.cells.length).toBe(5);
+    expect(r.cells.filter((c) => DOLLAR.test(c)).length).toBe(1);
+    // The table's own coverage line: one in the tile, one for the projection,
+    // one beside the table.
+    expect(r.whole.split(r.covLine).length - 1).toBe(3);
+  });
+
+  it('no dollar figure anywhere on the tab, retry spend and the routing '
+    + 'recommendation included', () => {
+    const r = render(false);
+    expect(r.whole.match(/\$[\d.,]+|<\$0\.01/g)).toBe(null);
+    expect(r.whole).not.toContain(r.covLine);
+    expect(r.whole).not.toContain('What the evidence supports');
+  });
+
+  it('...while with showCost on the retry spend and the recommendation are '
+    + 'there [the twin of the case above]', () => {
+    const r = render(true);
+    expect(r.whole).toMatch(/\$1\.25 on tasks that needed more than one attempt/);
+    expect(r.whole).toContain('What the evidence supports');
+  });
+
+  it('the budget block is not drawn at all, as the report withholds its own', () => {
+    const r = render(false);
+    expect(r.budgets).toEqual([]);
+    expect(r.whole).not.toContain('All budgeted phases');
+  });
+
+  it('...and with showCost on each budgeted phase states its spend of its '
+    + 'budget, and the total row the same [the twin]', () => {
+    const r = render(true);
+    expect(r.budgets.length).toBe(2);
+    expect(r.budgets[0]).toMatch(/\$26\.25 of \$40\.00/);
+    expect(r.budgets[1]).toMatch(/All budgeted phases.*\$26\.25 of \$40\.00/);
+  });
+
+  it('the browse dialog for tasks shows no dollar figure: no cost column, and '
+    + 'a band note that names the bands without their thresholds', () => {
+    const b = browse(false, 'task');
+    expect(b.whole.match(/\$[\d.,]+|<\$0\.01/g)).toBe(null);
+    expect(b.heads).not.toContain('cost');
+    expect(b.heads).toContain('cost band');
+    expect(b.rows.length).toBe(6);
+    b.rows.forEach((tr) => expect(b.tds(tr).length).toBe(b.heads.length));
+    expect(b.note.length).toBe(1);
+    expect(b.note[0]).toMatch(/typical.*high.*outlier/);
+    expect(b.pills.length).toBe(6);
+  });
+
+  it('...and with showCost on the cost column and the dollar thresholds are '
+    + 'there [the twin: a gate that always fires fails here]', () => {
+    const b = browse(true, 'task');
+    expect(b.heads).toContain('cost');
+    expect(b.rows.length).toBe(6);
+    expect(b.rows.filter((tr) => b.tds(tr).some((c) => DOLLAR.test(text(c))))
+      .length).toBe(6);
+    expect(b.note.length).toBe(1);
+    expect(b.note[0]).toMatch(/typical ≤ \$\d.*high ≤ \$\d/);
+  });
+
+  it('every dimension drops the cost column, header and cells together', () => {
+    for (const dim of ['phase', 'model', 'author', 'task']) {
+      const off = browse(false, dim), on = browse(true, dim);
+      expect(off.heads, dim).not.toContain('cost');
+      expect(off.whole.match(/\$[\d.,]+|<\$0\.01/g), dim).toBe(null);
+      expect(off.rows.length, dim).toBeGreaterThan(0);
+      off.rows.forEach((tr) => expect(off.tds(tr).length, dim).toBe(off.heads.length));
+      expect(on.heads, dim).toContain('cost');
+      expect(on.heads.length, dim).toBe(off.heads.length + 1);
+    }
+  });
 });

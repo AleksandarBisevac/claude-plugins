@@ -20,6 +20,15 @@ transcript entry that shares its `message.id` (measured: 1543 assistant entries 
 ~2.4x. Everything here dedups by `message.id` — within a scan, and across scans via
 a bounded ring carried in the cursor. `_selftest` pins this.
 
+The repeats are not always identical. A message can be written first as a streaming
+partial (`stop_reason` null, the output count of the first few streamed tokens) and
+then again as the final entry carrying the real count; keeping the first entry for an
+id counted the partial and lost nearly all of that message's output. So a message
+counted while every entry seen for it was a partial stays PROVISIONAL: its counted
+figures ride in the cursor beside the ring, and a later entry for the same id adds
+only what it exceeds them by. See `_scan_file` for why that, and not "count only the
+final entry".
+
 Attribution, highest precision first (nothing is ever dropped):
 
   1. task          - the subagent's `.meta.json` description starts with a task id.
@@ -90,6 +99,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -122,17 +132,19 @@ import _manifest_io  # noqa: E402  (one home for reading a manifest's shape)
 # still cover every public name those modules define, so a name added down there and
 # forgotten here fails by name instead of at a call site.
 from _usage_core import (  # noqa: E402,F401  (re-exported, see above)
-    DEFAULT_PRICING, GROUP_KEYS, TOKEN_KEYS, UNTAGGED_AREA, aggregate,
-    aggregate_area, bucket_date, bucket_hour, bucket_month, heatmap, hour_bucket,
-    parse_ts, price, pricing_divergences, rates_for, rows_for_area, task_index,
-    totals)
+    DEFAULT_PRICING, GROUP_KEYS, PRICING_AS_OF, PRICING_BASES,
+    PRICING_SOURCE_URL, TOKEN_KEYS, UNTAGGED_AREA, aggregate, aggregate_area,
+    bucket_date, bucket_hour, bucket_month, heatmap, hour_bucket, parse_ts, price,
+    priced_at_read, pricing_divergences, pricing_provenance_divergences,
+    rates_for, resolve_pricing, rows_for_area, task_index, totals)
 from _usage_coverage import (  # noqa: E402,F401  (re-exported, see above)
     MONTHLY_PLAN_KEYS, POOR_COVERAGE_PCT, coverage, monthly_activity)
 from _usage_economics import (  # noqa: E402,F401  (re-exported, see above)
     BAND_ORDER, CANNOT_COMPARE, COST_BAND_PARAMS, MIN_TASKS_FOR_PROJECTION,
-    SIBLING_GATE, band_of, context_shape, cost_bands, gate_catches,
-    gate_reuse_comparison, gate_scope_comparison, phase_budgets, plan_cost_claim,
-    retry_cost, sibling_spend_comparison, unit_economics)
+    SIBLING_GATE, band_of, context_shape, cost_bands, coverage_sentence,
+    gate_catches, gate_reuse_comparison, gate_scope_comparison, phase_budgets,
+    plan_cost_claim, rate_basis_phrase, retry_cost, sibling_spend_comparison,
+    unit_economics)
 from _usage_routing import (  # noqa: E402,F401  (re-exported, see above)
     ATTEMPT_TOLERANCE, MIN_ADVICE_SAVING_PCT, MIN_ADVICE_SAVING_USD,
     MIN_ROUTING_EVIDENCE, RISK_ORDER, routing)
@@ -450,15 +462,42 @@ def _context_of(counts):
             + int(counts.get(REREAD_KEY) or 0))
 
 
+def _pending_of(raw):
+    """The cursor's provisional counts, keyed by message id, read defensively: a
+    cursor written before this field existed has none, and an id it does not hold is
+    treated as finally counted, exactly as the ring alone treated it."""
+    if not isinstance(raw, dict):
+        return {}
+    out = {}
+    for mid, counts in raw.items():
+        if not isinstance(counts, dict):
+            continue
+        try:
+            out[mid] = dict((k, max(0, int(counts.get(k) or 0))) for k in TOKEN_KEYS)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def _scan_file(path, file_cursor, attributor, agent_meta, opts):
     """Tail one transcript file from its cursor offset.
 
     Returns (groups, new_file_cursor). `groups` maps a row key to accumulated counts.
     Only COMPLETE lines are consumed — a trailing partial line stays unread so the
-    next scan picks it up whole."""
+    next scan picks it up whole.
+
+    A streaming partial is counted when it is read, and its counts are kept in the
+    cursor's `pending` map until an entry for the same id arrives with a stop
+    reason; that entry contributes only its excess over what was already counted,
+    field by field, and adds no second message. Counting final entries only was
+    the other way to do it, and it loses a message whose stream was cut off before
+    any final entry was written, along with every token that partial records. The
+    ledger is append-only and a scan can end between the partial and the final, so
+    a correction has to be an addition: a row already written cannot be edited."""
     groups = {}
     prev = file_cursor if isinstance(file_cursor, dict) else {}
     recent = list(prev.get("recent") or [])
+    pending = _pending_of(prev.get("pending"))
     # The task the last message to this agent named, carried between scans for the
     # reason the ring is: a scan reads only the new bytes, so the message that
     # moved attribution is usually in a chunk already consumed. Forgetting it
@@ -471,6 +510,7 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
     offset = int(prev.get("offset") or 0)
     if size < int(prev.get("size") or 0):
         offset, recent, handoff = 0, [], None   # truncated or rotated -> start over
+        pending = {}
     if offset == 0 and not prev:
         # First sight. Historic backfill is bounded so the 10s hook timeout is safe;
         # the unbounded pass is `audit-usage.py --backfill`, which has no timeout.
@@ -479,7 +519,7 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
             offset = size
     if offset >= size:
         return groups, {"offset": size, "size": size, "recent": recent,
-                        "handoff": handoff}
+                        "pending": pending, "handoff": handoff}
 
     try:
         with open(path, "rb") as fh:
@@ -490,7 +530,7 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
     cut = chunk.rfind(b"\n")
     if cut < 0:
         return groups, {"offset": offset, "size": size, "recent": recent,
-                        "handoff": handoff}
+                        "pending": pending, "handoff": handoff}
     consumed = cut + 1
     seen = set(recent)
 
@@ -519,10 +559,14 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
             continue
         usage = message.get("usage")
         mid = message.get("id")
-        if not isinstance(usage, dict) or not mid or mid in seen:
+        if not isinstance(usage, dict) or not mid:
+            continue
+        provisional = pending.get(mid)
+        if mid in seen and provisional is None:
             continue                     # <- THE dedup. See module docstring.
-        seen.add(mid)
-        recent.append(mid)
+        if provisional is None:
+            seen.add(mid)
+            recent.append(mid)
         model = message.get("model") or ""
         if model.startswith("<"):
             continue                     # `<synthetic>` API-error placeholders
@@ -530,6 +574,20 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
         bucket = hour_bucket(ts)
         if bucket is None:
             continue
+        counts = _usage_counts(usage)
+        if provisional is None:
+            added = counts
+        else:
+            # Only the excess over what the partial already put in the ledger,
+            # never a negative: an earlier row cannot be taken back.
+            added = dict((k, max(0, counts[k] - provisional[k])) for k in TOKEN_KEYS)
+        if message.get("stop_reason") is None:
+            pending[mid] = dict((k, max(counts[k], (provisional or counts)[k]))
+                                for k in TOKEN_KEYS)
+        else:
+            pending.pop(mid, None)
+        if provisional is not None and not any(added.values()):
+            continue                     # a repeat that adds nothing writes no row
         phase_id, task_id, attr = attributor.attribute(agent_meta, parse_ts(ts),
                                                        handoff=handoff)
         key = (bucket, agent_meta.get("_agentId"), agent_meta.get("agentType"),
@@ -539,16 +597,20 @@ def _scan_file(path, file_cursor, attributor, agent_meta, opts):
             slot = groups[key] = {k: 0 for k in TOKEN_KEYS}
             slot["msgs"] = 0
             slot["maxContext"] = 0
-        counts = _usage_counts(usage)
-        for k, v in counts.items():
+        for k, v in added.items():
             slot[k] += v
-        slot["msgs"] += 1
+        if provisional is None:
+            slot["msgs"] += 1
         slot["maxContext"] = max(slot["maxContext"], _context_of(counts))
 
     if len(recent) > RECENT_IDS_CAP:
         recent = recent[-RECENT_IDS_CAP:]
+    # A provisional id that has left the ring can no longer be told apart from a
+    # new message, so carrying its counts would only grow the cursor.
+    kept = set(recent)
+    pending = dict((mid, c) for mid, c in pending.items() if mid in kept)
     return groups, {"offset": offset + consumed, "size": size, "recent": recent,
-                    "handoff": handoff}
+                    "pending": pending, "handoff": handoff}
 
 
 def scan_transcripts(transcript_path, session_id, cursor, manifest, opts):
@@ -593,8 +655,10 @@ def scan_transcripts(transcript_path, session_id, cursor, manifest, opts):
             # on its own, and why an OLD row simply has no such key rather than
             # a zero standing in for "not measured".
             row["maxContext"] = counts["maxContext"]
-            # Price at WRITE time and store the result, so a later rate change never
-            # silently rewrites history.
+            # Price at WRITE time and store the result. The ledger is never
+            # rewritten for a rate change: the surfaces price the token counts
+            # again at read time (`priced_at_read`), and this stored figure is
+            # what a row they cannot price again keeps.
             row["costUSD"] = round(price(counts, model, pricing), 6)
             rows.append(row)
 
@@ -640,16 +704,14 @@ def ensure_ledger_dir(ledger_dir):
 
 
 def save_cursor(ledger_dir, session_id, cursor):
-    """Atomic (temp + os.replace) so a killed hook can never leave a half-written
-    cursor that would re-scan from zero and double-count."""
+    """Atomic, through `_manifest_io.atomic_write_text`, so a killed hook can never
+    leave a half-written cursor that would re-scan from zero and double-count -
+    and its temp file is this call's own, so a second writer of the same cursor
+    cannot truncate it or move it into place."""
     path = cursor_path(ledger_dir, session_id)
     try:
         ensure_ledger_dir(ledger_dir)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(cursor, fh)
-        os.replace(tmp, path)
+        _manifest_io.atomic_write_text(path, json.dumps(cursor))
         return True
     except Exception:
         return False
@@ -777,6 +839,29 @@ def ledger_files(ledger_dir):
         return []
 
 
+def project_pricing(manifest, manifest_path=None, project_dir=None):
+    """`resolve_pricing` for a project on disk: the manifest handed in, and the
+    RAW `.claude/audit.config.json` of the project root `find_ledger_dir` places
+    - an explicit `project_dir` as given, else the walk up from the manifest.
+
+    The config is read as written, not through `hooks/_config.load`: that merge
+    fills in the defaults' table, and the resolver could then no longer tell a
+    project that declared a table from one that declared nothing. An absent,
+    unreadable or non-object config is no config - the shipped table, the same
+    answer `hooks/_config.load` gives the hooks for it."""
+    config = None
+    claude_dir = find_ledger_dir(manifest_path, ".claude", project_dir) \
+        if (manifest_path or project_dir) else None
+    if claude_dir:
+        try:
+            with open(os.path.join(claude_dir, "audit.config.json"),
+                      encoding="utf-8") as fh:
+                config = json.load(fh)
+        except (OSError, ValueError):
+            config = None
+    return resolve_pricing(manifest, config if isinstance(config, dict) else None)
+
+
 def read_ledger(ledger_dir, since=None, until=None):
     """All rows in `ledgerDir`, optionally bounded by `since`/`until` (YYYY-MM-DD).
 
@@ -813,20 +898,155 @@ def read_ledger(ledger_dir, since=None, until=None):
     return rows
 
 
-def rewrite_month(ledger_dir, month, rows):
-    """Replace one monthly file atomically. Used only by `--backfill`."""
+# How long the old file must stay quiet after a replace before its tail is
+# taken as final, and how many quiet-checks a busy writer may extend it by.
+TAIL_SETTLE_S = 0.02
+TAIL_MAX_POLLS = 50
+
+
+def _row_line(row):
+    """One ledger row as the line every writer of a monthly file spells it."""
+    return json.dumps(row, separators=(",", ":"), sort_keys=True) + "\n"
+
+
+def _write_rows(path, mode, rows):
+    with open(path, mode, encoding="utf-8") as fh:
+        for row in rows:
+            fh.write(_row_line(row))
+
+
+def _parse_rows(data, drop):
+    """Ledger rows in `data` (bytes holding whole lines) whose session is not in
+    `drop`. A line that does not parse is skipped, as `read_ledger` skips one."""
+    rows = []
+    for line in data.decode("utf-8", "replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(row, dict) and row.get("sessionId") not in drop:
+            rows.append(row)
+    return rows
+
+
+def _drain(tail, final=False):
+    """What the held old file gained since the last read -> `(rows, nbytes)`.
+
+    Only complete lines are taken; a partial one waits in `tail["pending"]` for
+    its newline, since a writer may be mid-write. `final` takes the remainder
+    too, because after the last read nothing will complete it. `nbytes` is the
+    raw count read, which is what says whether the file is still being written:
+    the rows are filtered, so a dropped session's row or a half-written line
+    reads as no rows while the file is anything but quiet."""
+    fresh = tail["fh"].read()
+    data = tail["pending"] + fresh
+    cut = len(data) if final else data.rfind(b"\n") + 1
+    tail["pending"] = data[cut:]
+    return _parse_rows(data[:cut], tail["drop"]), len(fresh)
+
+
+def _settle(tail):
+    """Drain the retired file until one settle period passes with no byte added
+    and no partial line waiting.
+
+    A writer that opened the month file before the replace writes into the file
+    the replace retired; the held descriptor is the only way left to read it.
+    Bounded by `TAIL_MAX_POLLS`, so a writer that never stops cannot hold the
+    backfill - its rows past the bound are the window this does not close."""
+    rows, _n = _drain(tail)
+    for _ in range(TAIL_MAX_POLLS):
+        time.sleep(TAIL_SETTLE_S)
+        more, nbytes = _drain(tail)
+        rows += more
+        if not nbytes and not tail["pending"]:
+            break
+    return rows + _drain(tail, final=True)[0]
+
+
+def open_month(ledger_dir, month, drop):
+    """Read one monthly file through a descriptor that stays open -> `(rows,
+    tail)`, where `rows` are the rows whose session is not in `drop` and `tail`
+    is what `rewrite_month` needs to keep rows appended after this read.
+
+    When the file does not exist yet, `tail` holds no descriptor and
+    `rewrite_month` creates the file and holds that one, from its start."""
     path = os.path.join(ledger_dir, "%s.jsonl" % month)
-    tmp = path + ".tmp"
+    try:
+        fh = open(path, "rb")
+    except FileNotFoundError:
+        return [], {"fh": None, "pending": b"", "drop": set(drop), "path": path}
+    data = fh.read()
+    cut = data.rfind(b"\n") + 1
+    return (_parse_rows(data[:cut], drop),
+            {"fh": fh, "pending": data[cut:], "drop": set(drop), "path": path})
+
+
+def _close_tail(tail):
+    if tail and tail.get("fh") is not None:
+        try:
+            tail["fh"].close()
+        except OSError:
+            pass
+        tail["fh"] = None
+
+
+def rewrite_month(ledger_dir, month, rows, tail=None):
+    """Replace one monthly file atomically. Used only by `--backfill`.
+
+    The metering hook appends without a lock, so a row it appends after the
+    backfill read the file would be erased by the replace. With `tail` (from
+    `open_month`) the rows appended to the old file since that read, of sessions
+    the backfill did not re-read, are carried: into the new file before the
+    replace, and - through the descriptor still open on the retired file - from
+    a writer that opened the path before the replace and wrote after it.
+
+    A month with no file yet is created empty and held the same way: a writer
+    that creates the path while the month is being rebuilt would otherwise write
+    into a file nothing holds, and the replace would retire it unread. A replace
+    that then fails leaves that empty file behind - it holds no row, so every
+    reader sees the month as it was.
+
+    Where the platform refuses to replace a file that is open, the descriptor is
+    drained and closed and the replace retried once; there the carry is complete
+    up to that last read, and a row written between it and the replace is lost.
+
+    -> True when the file was replaced and every carried row was appended;
+    False when it was not replaced (the old file stands, no temp file is left)
+    or when rows carried after the replace could not be appended."""
+    path = os.path.join(ledger_dir, "%s.jsonl" % month)
     try:
         ensure_ledger_dir(ledger_dir)
-        with open(tmp, "w", encoding="utf-8") as fh:
-            for row in rows:
-                fh.write(json.dumps(row, separators=(",", ":"),
-                                    sort_keys=True) + "\n")
-        os.replace(tmp, path)
+        if tail is not None and tail.get("fh") is None:
+            tail["fh"] = os.fdopen(os.open(path, os.O_RDONLY | os.O_CREAT
+                                           | getattr(os, "O_BINARY", 0), 0o666),
+                                   "rb")
+        rows = list(rows) + (_drain(tail)[0] if tail is not None else [])
+        try:
+            _replace_rows(path, rows)
+        except PermissionError:
+            if tail is None:
+                raise
+            rows += _drain(tail, final=True)[0]
+            _close_tail(tail)
+            _replace_rows(path, rows)
+        if tail is not None and tail.get("fh") is not None:
+            _write_rows(path, "a", _settle(tail))
         return True
     except Exception:
         return False
+    finally:
+        _close_tail(tail)
+
+
+def _replace_rows(path, rows):
+    """Replace `path` with `rows` - the one write-and-replace a month rewrite
+    makes, through `_manifest_io.atomic_write_text`, whose temp file is this
+    call's own. A failure removes that temp file and re-raises, so a refused
+    replace leaves the old file standing and nothing beside it."""
+    _manifest_io.atomic_write_text(path, "".join(_row_line(row) for row in rows))
 
 
 

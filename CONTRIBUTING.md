@@ -59,10 +59,90 @@ plugin ships with: Node (`npx vitest`, `npx ajv-cli`, the browser gates), `ruff`
 and `vermin` (pip-installed; CI's lint job pins their versions), and the Claude
 Code CLI (`claude plugin validate`; CI installs it with `npm install -g`). None
 of these ship with the plugin's own stdlib-only hooks and scripts — they're
-tooling the gate set reaches for, not a product dependency. Pillow is not
-needed by `tools/verify.sh` or CI at all; it's only for manually regenerating
-the demo GIF itself with `tools/capture-demo-gif.py` (no `--check`), a release
-step the one pre-PR command above does not run.
+tooling the gate set reaches for, not a product dependency.
+
+**Re-recording the demo GIF** is the one step here that needs more than that, and
+neither `tools/verify.sh` nor CI ever takes it. `docs/screenshots/demo-gate.gif` is a
+recording of a real Claude Code session, so making a new one needs
+[VHS](https://github.com/charmbracelet/vhs) (with the `ttyd` and `ffmpeg` it drives) and
+a `claude` CLI you are logged in to:
+
+```bash
+python3 tools/capture-demo-gif.py --record --dry-run   # builds and validates everything, starts no session
+python3 tools/capture-demo-gif.py --record             # records tools/demo-gate.tape
+```
+
+It builds the demo project at `/tmp/acme-store-demo` and a copy of this checkout's
+plugin with an isolated settings file at `/tmp/acme-store-demo-kit`, runs the tape, and
+writes the GIF and its record in `docs/screenshots/captured-at.json` only when the
+refused edit replays to the refusal on screen and no frame of VHS's text output
+carries your user name, any home directory path, your machine name, git identity, an
+email address, or the account email and organisation name `claude auth status
+--json` reports. **The scan reads text, not pixels:** it reads the text output VHS
+writes beside the GIF, frame by frame, and never the GIF itself; a take whose Wait
+timed out is refused before the scan, on VHS's exit and the screens its log keeps. A
+take for which `claude auth status --json` names no account is refused before it
+starts, because without the account's own values the scan could look only for the
+email pattern. The session runs with Claude Code's documented recording mode (`IS_DEMO`),
+which hides that email and organisation and keeps the model and plan line, so the
+header is shown as a user sees it and the scan checks that the mode did its job.
+
+**Which Claude Code config the take writes into.** A session writes into its config:
+the answer to the folder-trust question, its transcript, and any plugin a dialog
+installs. Nothing the demo loads sets a permission mode, so the footer shows Claude
+Code's own starting mode - auto mode from v2.1.283, per the
+[permission-modes page](https://code.claude.com/docs/en/permission-modes). Hooks - the
+plan gate among them - load only in a folder Claude Code trusts, and the recording
+mode skips that question without granting it, so the tape first launches once
+without it and answers "Yes, I trust this folder".
+
+- **With `CLAUDE_CODE_OAUTH_TOKEN` set** (the token `claude setup-token` prints, per
+  Claude Code's [authentication page](https://code.claude.com/docs/en/authentication)),
+  the take gets a config of its own, `CLAUDE_CONFIG_DIR` pointed under
+  `/tmp/acme-store-demo-kit`, removed with the kit. Trust, transcripts and plugin
+  installs stay in it; that page documents that each config directory has its own
+  settings, session history and login, with its own macOS Keychain entry. Whether a
+  session authenticated by the token alone writes a Keychain entry is not documented,
+  and neither is that entry's name, so after the take the tool does not say nothing
+  was left: it names the Keychain entry that may remain for the removed config
+  directory and says to look for it in Keychain Access. **No isolated take has been
+  observed yet.** It also depends on `claude auth status --json`, asked under the
+  token alone, naming the account; that is unverified, and when it names nobody the
+  take is refused before it starts.
+- **Without it**, the take runs against your own config, because that is where it can
+  log in. The tool then prints what the take left there - the trust entry for
+  `/tmp/acme-store-demo` (a whole project key) and the file it sits in, the transcript
+  directory, the count of `history.jsonl` lines whose project is the demo folder, the
+  per-session directories under `file-history/` and `session-env/` that the take's
+  sessions wrote to, and any file that appeared in `shell-snapshots/` during the take -
+  each with the step that removes it. That list is what the tool knows to look for,
+  not everything a session writes, and the report says so.
+
+Either way it reads your installed plugins before and after the take - `claude plugin
+list --json`, and the install records in the config's `plugins/installed_plugins.json`,
+which also hold a local-scope install into the demo folder that a list run from
+another folder does not show - and refuses a take that changed them, naming each
+change and the command that undoes it. Under the isolated config it also refuses a
+take that left a trust entry, a transcript directory or a history line for the demo
+folder in your own config, since that means the isolation leaked. A plugin list or
+install record it cannot read, before or after, refuses the take as well.
+
+**The LSP-recommendation dialog.** When a session reads a file in a language with a
+language-server plugin in a known marketplace (the demo's `.ts` files do), Claude Code
+may open an *LSP plugin recommendation* at the end of a turn: "Would you like to
+install this LSP plugin?" with numbered options, the first of them *Yes, install*. It
+has the keys while it is open, so a stray Enter, or that option's digit, from the tape
+installs that plugin into the **user** scope of whatever config the take runs in -
+yours, unless the token above isolated it. The tape presses Escape before every prompt and types no digit
+into one for that reason, and the plugin comparison refuses a take where it got
+through anyway. The undo is the one the refusal names, for example
+`claude plugin uninstall typescript-lsp@claude-plugins-official --scope user`.
+
+A refused recording is kept in a temp directory it names. **What a re-record costs:**
+one short Sonnet session - the
+prompts `tools/demo-gate.tape` types - billed to whatever account the `claude` CLI is
+logged in to, and the model can answer differently each time, so a take may need
+repeating. Re-record when `--check` says the gate's refusal moved.
 
 Writing a change a *user* will see? [COMPATIBILITY.md](COMPATIBILITY.md) is the
 contract over the manifest and the config file they own, and
@@ -283,6 +363,9 @@ python3 tools/check-rendered-artifacts.py
 # cmp and goes red when one stops carrying it.
 cmp docs/index.html examples/acme-store/acme-store-audit.html
 
+# the demo GIF is a recorded session, so this starts none: it replays the edit the
+# recording refused against require-plan and fails naming the GIF when the refusal
+# moved from the recorded text, or the committed bytes from the recorded sha256.
 python3 tools/capture-demo-gif.py --check
 
 # the same committed files, asked the other question: does any of them carry the
@@ -448,13 +531,27 @@ the windows leg proves the `python3` → `python` → `py` interpreter fallback
   example is cost: a dollar figure is a claim, and its basis is the rate table
   it was priced from, so all five surfaces that render one — HTML report,
   Markdown twin, `/audit:usage`, `/audit:status`, the panel's Usage tab —
-  print `rates as of <date>`, or `rates undated (set usage.pricingAsOf)`.
-  - **Never fall back to a default to fill the gap.** `usage_cfg()` merges a
-    default `pricingAsOf`, so a fallback would nearly always render a plausible
-    date the project never chose. That is the argument against it. Where the
-    merged value is all that is available (the panel), the server reports
-    *whether the project declared it* as a separate fact rather than letting the
-    client mistake a default for a declaration.
+  print one phrase, `rate_basis_phrase()` in `scripts/usage/_usage_economics.py`,
+  built from what `resolve_pricing()` answers: the shipped table's date and
+  source page when no project declares a table, or the project's own table
+  (laid over the shipped one model by model) and its date, with `rates
+  undated` and the key that dates it only when a project's own table carries
+  none. The panel shows the phrase from its payload rather than retyping it.
+  - **The figure is priced by the table the phrase names, at read time.** A
+    ledger row's stored `costUSD` was priced when the row was written, at a
+    rate the ledger does not record, so a sum of stored figures beside a phrase
+    naming today's table claims a basis it does not have. Each surface sums
+    `priced_at_read()`'s copies (`scripts/usage/_usage_core.py`), which price
+    every row's token counts with the resolved table; the ledger itself is
+    never rewritten. A row whose token fields are not all present cannot be
+    priced again, keeps its stored figure, and the phrase says how many such
+    rows the sum holds (its `pricedWhenWritten`) rather than mixing two tables
+    silently.
+  - **Never fall back to a default to fill the gap.** The basis is the
+    resolver's answer about the table that actually priced the rows — never a
+    merged default's `pricingAsOf`, which would render a plausible date the
+    project never chose for a table it may not use. A payload that carries no
+    resolver answer says the basis is not recorded rather than guessing one.
   - **A basis with no claim is noise** — the same rule backwards. All five stay
     silent under `showCost: false` and when there is no spend to price. The
     first version of this shipped a bug of exactly that kind, caught by an
@@ -465,7 +562,7 @@ the windows leg proves the `python3` → `python` → `py` interpreter fallback
     report and run a command; a hook line arrives uninvited and already hedged,
     and growing it is how it becomes the message people learn to skip.
   - A new surface that renders a number someone acts on inherits all of this,
-    and the pattern to copy is `render-report._usage_context`.
+    and the pattern to copy is `_usage_overview._usage_context`.
 
 ### Adding a new script
 
@@ -1027,9 +1124,10 @@ that a probe which could only pass was not mistaken for evidence:
   fetch of `/ui/panel.js` answers 403 without the session token and 404 with it, and `/api/state`
   cannot double as a module because module scripts are strictly MIME-checked.
 - A **relative specifier inherits the path but never the `?t=` query**, so a token-guarded module
-  graph must either be open (host-check only — which is what `/` already is, and `/` already hands
-  the token to any loopback client) or chain the credential through `import.meta.url`. Both were
-  confirmed working.
+  graph must either be open (host-check only — now the only route that would leave unguarded,
+  since `/` is token-guarded the same way `/api/*` is) or chain the credential through
+  `import.meta.url`. Both were confirmed working at the time of this measurement, when `/` was
+  still host-check only.
 - The panel's script is still a **classic** `<script>`, not `type="module"` like the report's. It
   boots unchanged as a module — measured by rewriting only the response body through route
   interception, so no tracked file was touched and every `/api` call still went to the real
@@ -1138,6 +1236,74 @@ the reversals above are about.
 their first hour is answered in none of the reading order's stops, or is answered in
 two of them differently. Both are observable the next time someone new lands here,
 which is what makes this able to fire at all.
+
+### Claude Code's own cost instead of the price table (evaluated 2026-10-06, CLI 2.1.291): keep the table
+
+The question was whether the cost Claude Code reports itself could replace the price
+table in `hooks/_config.py`, so the plugin would stop carrying rates that go stale.
+The answer is no, for one reason that is about grain rather than accuracy: **every
+native source found is per session and per model, and per-task attribution needs cost
+per subagent.** A session total cannot be split across the tasks its subagents ran.
+
+What each source turned out to be, on the CLI version above:
+
+- **`claude -p --output-format json`** prints `total_cost_usd` and a `modelUsage` map
+  whose entries carry `costUSD` and a `costBasis`. Both are keyed by model, never by
+  agent: the run below spawned one subagent on the same model as the main agent, and
+  `modelUsage` held a single entry covering both. The same object carries
+  `subagent_stats`, which counts subagents by type and carries no cost.
+- **The transcript** gains one `cost-state` row at session end, with `totalCostUSD`
+  and the same per-model `modelUsage`. No `assistant` entry carries a cost field, in
+  the main transcript or in a subagent's, so the file `meter-usage.py` tails has no
+  per-message cost to read.
+- **OpenTelemetry.** Neither `claude --help` nor `claude -p --help` names
+  `CLAUDE_CODE_ENABLE_TELEMETRY`, `OTEL_METRICS_EXPORTER` or the
+  `claude_code.cost.usage` metric; the strings occur only inside the binary. With the
+  console exporter enabled, the run below printed nothing on stderr and nothing on
+  stdout beyond the result JSON, so **the metric and its `agent.name` attribute were
+  not observed** on this run. That is a gap in the measurement, not evidence that the
+  attribute is absent.
+
+**The measurement**, taken once on 2026-10-06 against a scratch repository holding one
+text file, with a `summarizer` subagent (tools: `Read`, model: haiku) defined through
+`--agents`, a settings file allowing only `Read`, `Task` and `Agent` and setting the
+three telemetry variables above, and no permission bypass. The session was
+`claude -p "<ask the summarizer to summarise notes.txt>" --model haiku
+--max-budget-usd 0.50 --max-turns 8 --output-format json --settings <file> --agents
+'<the summarizer>'`; the ledger side was this tree's `meter-usage.py` fed a hook
+payload naming that session's `transcript_path`, `session_id` and `cwd` on stdin, with
+`CLAUDE_PROJECT_DIR` set to the scratch repository and `usage.ledgerDir` pointed at an
+empty directory. This is a measurement to repeat by hand, not a gate, which is why it
+is written as prose rather than as a block to run.
+
+That day the native `total_cost_usd` read 0.042306 USD and the ledger rows summed to
+0.040881 USD, with the subagent on a row of its own (`agentType: summarizer`) that
+no native source could have produced. **The prices agreed:** input, cache-read and
+one-hour cache-write tokens matched exactly between `modelUsage` and the ledger, and
+the table's haiku rates applied to `modelUsage`'s token counts reproduce the native
+figure to the microdollar. **The whole difference was output tokens the ledger did
+not count.** A subagent transcript writes each message twice under one message id —
+first a streaming partial with a near-zero `output_tokens` and no `stop_reason`, then
+the final entry — and the ledger of that day kept the first entry it saw per id.
+The main transcript's duplicate entries carried equal counts, so only the subagent
+row lost tokens. That miscount was a ledger defect and is history now: a streaming
+partial's counts are held as provisional per message id, and the final entry adds
+whatever it carries beyond them (`_scan_file` in `scripts/usage/usage_ledger.py`,
+where `pending` holds the provisional count).
+It was never a reason to adopt native cost: it was found *by* comparing against the
+native total.
+
+**Decided:** keep the price table and the ledger's own arithmetic as the source of
+per-task cost. The native session total is a reconciliation check — the ledger's sum
+for a session should match it, and a mismatch is either a stale rate or a counting
+defect, as above.
+
+**Revisit trigger:** a native source that reports cost per subagent — an agent-keyed
+cost in the `-p` result JSON or the transcript's `cost-state` row, or
+`claude_code.cost.usage` observed carrying `agent.name` in a run you can read back.
+Any of those would let per-task attribution ride on Claude Code's own figure, and
+the table could shrink to a fallback. Re-check on the next CLI version that changes
+the shape of `modelUsage` or `cost-state`.
 
 ### Optional modules take fixes only (decided 2026-10-06): no new UI shape pins, no new prose lints
 

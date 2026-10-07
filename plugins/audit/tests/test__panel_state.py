@@ -173,6 +173,81 @@ def _cases(check):
     finally:
         _harness.remove_tree(_np)
 
+    # --- an existing manifest the panel still cannot read ------------------------
+    # Two shapes reach `build_state` with `exists` true and NOTHING assembled, and
+    # the unreadable-plan branch on the client can only print a reason the server
+    # sent it - so both have to leave a named finding behind rather than an empty
+    # list standing in for "nothing to say".
+    _unread = tempfile.mkdtemp(prefix="panel-unreadable-")
+    try:
+        _umpath = M._manifest_path(_unread, M.read_config(_unread))
+        os.makedirs(os.path.dirname(_umpath), exist_ok=True)
+
+        # (a) not valid JSON at all - the exception branch, already wired before
+        # this task; pinned here so the non-dict branch next to it cannot regress
+        # back onto the same empty-findings shape.
+        with open(_umpath, "w", encoding="utf-8") as fh:
+            fh.write("{not json")
+        _ubad = M.build_state(_unread)
+        check("pu1 a manifest file that is not valid JSON is served with "
+              "manifestExists true, rollup null, and a finding naming the parse "
+              "failure rather than silence: %r" % (_ubad["manifestFindings"],),
+              _ubad["manifestExists"] is True and _ubad["rollup"] is None
+              and len(_ubad["manifestFindings"]) == 1
+              and _ubad["manifestFindings"][0].startswith("cannot parse "
+                                                           "manifest:"))
+
+        # (b) valid JSON, but not an object - parses clean, so `load_manifest`
+        # raises nothing; this is the silent case the task closes. A list and a
+        # string are both fixtures the description names explicitly, and both
+        # are valid JSON that is also not a dict - content asserted, not merely
+        # counted, so a mutation that swaps in any unrelated one-element finding
+        # cannot pass this: it must say "not a JSON object" AND name the parsed
+        # type the fixture actually produced.
+        with open(_umpath, "w", encoding="utf-8") as fh:
+            json.dump([1, 2, 3], fh)
+        _ulist = M.build_state(_unread)
+        _ulist_finding = (_ulist["manifestFindings"][0]
+                          if _ulist["manifestFindings"] else "")
+        check("pu2 a manifest that parses to a list is served with a finding "
+              "naming that it is not a JSON object and naming the parsed type, "
+              "never an empty findings list beside a null rollup: %r"
+              % (_ulist["manifestFindings"],),
+              _ulist["manifestExists"] is True and _ulist["rollup"] is None
+              and len(_ulist["manifestFindings"]) == 1
+              and "not a JSON object" in _ulist_finding
+              and "list" in _ulist_finding)
+
+        with open(_umpath, "w", encoding="utf-8") as fh:
+            json.dump("not a plan", fh)
+        _ustr = M.build_state(_unread)
+        _ustr_finding = (_ustr["manifestFindings"][0]
+                        if _ustr["manifestFindings"] else "")
+        check("pu2b ...and the same for a manifest that parses to a string - "
+              "the description names both shapes, and a single fixture could "
+              "pass a mutation hard-coded to the word 'list': %r"
+              % (_ustr["manifestFindings"],),
+              _ustr["manifestExists"] is True and _ustr["rollup"] is None
+              and len(_ustr["manifestFindings"]) == 1
+              and "not a JSON object" in _ustr_finding
+              and "str" in _ustr_finding)
+
+        # ALLOW twin: an ordinary readable manifest still carries a rollup and
+        # no such finding - the guard above must not fire on the happy path.
+        _atomic_write_json(_umpath, {
+            "meta": {"version": 2}, "phases": [
+                {"id": "P1", "title": "A", "status": "done", "tasks": [
+                    {"id": "P1.1", "title": "t", "status": "done"}]}]})
+        _uok = M.build_state(_unread)
+        check("pu3 ALLOW: an ordinary dict manifest keeps carrying a rollup and "
+              "no 'not an object' finding - the new branch must not fire on a "
+              "manifest it can already read: %r" % (_uok["manifestFindings"],),
+              _uok["rollup"] is not None
+              and not any("not" in f and "object" in f
+                         for f in _uok["manifestFindings"]))
+    finally:
+        _harness.remove_tree(_unread)
+
     # --- the basename, and where it is asked -----------------------------------------
     # `report_paths` used to reach `render-report.py` - an ENTRY POINT at layer 7 -
     # for `_report_basename`, a pure naming rule `_report_html` owns at layer 2.
@@ -279,7 +354,7 @@ def _cases(check):
     _panel_src = open(_loader.script_path("panel-server.py"),
                       encoding="utf-8").read()
     _moved = ["_load", "_cores", "_defaults", "_within", "_config_path",
-              "_declared_as_of", "_manifest_path", "_viewer", "_read_json",
+              "_manifest_path", "_viewer", "_read_json",
               "read_config", "_areas_of", "_bugs_view", "_skills_of",
               "_composition_view", "areas_state", "_JOURNAL", "_journalmod",
               "JOURNAL_PAGE", "journal_state", "help_state", "help_field",

@@ -9,10 +9,11 @@ disclosure (`_usage_detail.py`). Showing all of it at once was the old failure
 mode, and the two modules are that decision made structural.
 
 EVERY NUMBER STATES ITS BASIS, which is why the context line is here rather than
-in the tiles: the rate date behind every cost figure renders beside them or the
-figures do not render, and when costs are shown with no date declared it says
-THAT instead of falling back to the default table's date - a fallback would
-manufacture a basis rather than state one.
+in the tiles: the date and source of the table behind every cost figure render
+beside them, worded by `rate_basis_phrase` from the shared resolver's answer -
+the shipped table's own date and page when it priced the rows, "rates undated"
+only for a project's own table that carries no date, and "not recorded" when
+the payload holds no answer, never a date guessed in for one.
 
 The trend's axis labels live OUTSIDE the SVG, as absolutely-positioned HTML at
 the same percentage offsets. The columns stretch to fill the width, which is the
@@ -58,6 +59,8 @@ import _fmt  # noqa: E402  (the one token/cost/share formatter)
 import _ui_theme as _theme  # noqa: E402  (the one place a machine value gets its words)
 
 import _usage_viz as _viz  # noqa: E402  (the section's number formatting and marks)
+from _usage_economics import (  # noqa: E402  (the one coverage sentence, the one rate basis)
+    coverage_sentence, rate_basis_phrase)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `_report_usage.py` unchanged, and an alias keeps them reading the same names
@@ -72,6 +75,21 @@ _fmt_tokens = _viz._fmt_tokens
 _hover_share = _viz._hover_share
 _tile = _viz._tile
 _tip = _viz._tip
+
+def _stale_remedy(basis):
+    """What the stale-price notice asks for, by the `PRICING_BASES` member
+    that priced the rows: the key declaring THAT table. A basis it does not
+    know has no table of its own to update."""
+    if basis == "manifest":
+        return ("Update <code>meta.usage.pricing</code> and "
+                "<code>meta.usage.pricingAsOf</code>")
+    if basis == "config":
+        return ("Update <code>usage.pricing</code> and "
+                "<code>usage.pricingAsOf</code> in .claude/audit.config.json")
+    if basis == "shipped":
+        return ("Update the plugin, or declare <code>usage.pricing</code> "
+                "with its <code>usage.pricingAsOf</code>")
+    return "Record which table priced these rows"
 
 
 # --- context, tiles + notices --------------------------------------------------
@@ -93,32 +111,19 @@ def _usage_context(u):
     if c.get("from") and c.get("to"):
         bits.append(c["from"] if c["from"] == c["to"]
                     else "%s to %s" % (c["from"], c["to"]))
-    # The date behind every cost figure below. It used to appear in HTML only via
-    # _usage_notices, i.e. only once the table was more than 90 days stale — so the
-    # ordinary case showed dollars with no way to see what priced them, while the
-    # Markdown twin printed "rates as of" every time. Same report, two different
-    # answers to "on what basis". A cost is a claim; this is its basis, and the
-    # threshold for stating it is not "when it has already gone bad".
-    # Withheld when showCost is off, in both renderers: with no dollars on screen
-    # this dates a table nothing visible was derived from. A basis without its
-    # claim is noise, which is the same rule read backwards.
-    #
-    # And when costs ARE shown with no date declared, say THAT rather than nothing.
-    # The default table carries a `pricingAsOf`, so falling back to it would almost
-    # always produce a plausible date — which is exactly why it is not done. The
-    # ledger stores `costUSD` priced at write time and no rate vintage, so a report
-    # whose manifest omits the declaration genuinely does not know it, and printing
-    # the default's date would manufacture a basis rather than state one. Silence
-    # is worse still: it renders dollars that look pinned to a table nobody named.
-    # Same rule the routing advisory follows when it refuses to recommend a move
-    # onto a `_default` guess.
-    # Gated on there being spend to price, not merely on showCost. u21 caught the
-    # first version of this emitting "rates undated" for an EMPTY usage block —
-    # a basis announced for a claim that was never made, which is the same noise
-    # this branch exists to prevent, produced by the fix for it.
+    # The basis behind every cost figure below: the date and source of the table
+    # that priced them, as `rate_basis_phrase` words the shared resolver's
+    # answer (`pricingBasis`). Stated every time, not only once the table has
+    # gone stale - a cost is a claim, and this is its basis.
+    # When the shipped table priced the rows that IS a dated, sourced basis, so
+    # it is named; "rates undated" is said only of a project's own table that
+    # carries no date. A payload with no resolver answer says the basis is not
+    # recorded - never the shipped table's date guessed in for it.
+    # Withheld when showCost is off, and gated on there being spend to price:
+    # with no dollars on screen this would date a table nothing visible was
+    # derived from, and a basis without its claim is noise.
     if u.get("showCost", True) and (u.get("totals") or {}).get("tokens"):
-        bits.append("rates as of %s" % u["pricingAsOf"] if u.get("pricingAsOf")
-                    else "rates undated (set usage.pricingAsOf)")
+        bits.append(rate_basis_phrase(u.get("pricingBasis")))
     if not bits:
         return ""
     return '<p class="uctx">%s</p>' % e(" · ".join(bits))
@@ -145,9 +150,14 @@ def _usage_tiles(u):
         "cache hit", _fmt_pct(cache.get("hitPct", 0)),
         "input side bills at %s of fresh-token rates"
         % e(_fmt_pct(cache.get("inputCostVsFreshPct", 100)))))
-    if unit.get("costPerTask") is not None:
+    # Gated on showCost too, not merely on there being a cost to show: with no
+    # dollars on screen this tile would be the one dollar figure that slipped
+    # the gate, and its basis note would be a basis for a claim never made.
+    if u.get("showCost", True) and unit.get("costPerTask") is not None:
+        note = coverage_sentence(unit.get("doneTaskCoverage"))
+        sub = note if note else "%d task(s) completed" % unit.get("completed", 0)
         tiles.append(_tile("cost per task", _fmt_cost(unit["costPerTask"]),
-                           "%d task(s) completed" % unit.get("completed", 0)))
+                           e(sub)))
     tiles.append(_tile("attributed", _fmt_pct(cov.get("attributedPct", 0)),
                        "%s down to a specific task"
                        % e(_fmt_pct(cov.get("taskLevelPct", 0)))))
@@ -158,11 +168,18 @@ def _usage_notices(u):
     """Warnings that change how every other number should be read."""
     out = []
     if u.get("pricingStale"):
+        # The table is named by `rate_basis_phrase` over the same
+        # `pricingBasis` the context line words, so the notice and the line
+        # carry one date and one place; the remedy is the key that declares
+        # that place's table, never a key for a table that priced nothing.
+        pb = u.get("pricingBasis") if isinstance(u.get("pricingBasis"), dict) \
+            else {}
         out.append(
-            '<p class="notice warn">Price table dated %s is more than 90 days older '
-            "than the newest recorded usage — every cost figure below is derived "
-            "from it. Update <code>usage.pricing</code> before trusting them.</p>"
-            % e(u.get("pricingAsOf") or "?"))
+            '<p class="notice warn">The price table behind every cost figure '
+            "below (%s) is more than 90 days older than the newest recorded "
+            "usage. %s before trusting them.</p>"
+            % (e(rate_basis_phrase(pb)),
+               _stale_remedy(pb.get("basis"))))
     cov = u.get("coverage") or {}
     if cov.get("warn"):
         # Floored: this notice fires precisely when coverage is low, so it is the
@@ -276,7 +293,16 @@ def _budget_block(u):
     at 130%" is the kind of fact that should not need looking for.
 
     Phases with no budget are counted and named as a footnote, never rendered as a
-    0% bar — an unbudgeted phase is not a phase at zero."""
+    0% bar — an unbudgeted phase is not a phase at zero.
+
+    GATED ON `showCost` INSIDE THIS FUNCTION, not by its caller: `_report_usage.py`
+    calls this unconditionally, so a reader turning dollars off has no other place
+    it can be withheld. Nothing here survives the gate as a reworded, dollar-free
+    fact — a budget bar IS a spend-versus-budget comparison, so with no dollars to
+    compare there is no claim left to make, the same silence `_usage_context`
+    chooses over a basis with no claim beside it."""
+    if not u.get("showCost", True):
+        return ""
     pb = u.get("budgets") or {}
     rows_in = [p for p in (pb.get("phases") or []) if p.get("budget")]
     if not rows_in:

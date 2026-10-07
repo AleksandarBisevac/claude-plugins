@@ -8,10 +8,15 @@ any Claude session involved.
 
 Usage:
   audit-status.py --help
-  audit-status.py <manifest> [--json [--discovery]] [--gate] [--phase <id>]
-                             [--short] [--color auto|always|never]
-                             [--fail-on <c1,c2,...>]
+  audit-status.py [<manifest>] [--json [--discovery]] [--gate] [--phase <id>]
+                               [--short] [--color auto|always|never]
+                               [--fail-on <c1,c2,...>]
   audit-status.py --selftest
+
+With no <manifest>, the plan is the one `.claude/audit.config.json`'s manifestPath
+names under the project (CLAUDE_PROJECT_DIR, else the cwd), else
+docs/audit/audit-plan.json there - `_manifest_io.resolve_manifest`, the rule every
+script a command runs shares. When neither exists it exits 2 naming where it looked.
 
 Modes: a bare invocation renders a human report; --json is for machines.
   --json    print the rollup as JSON
@@ -96,6 +101,9 @@ import _evidence_io  # noqa: E402  (where a run's record lives - and WHEN this
 #                                   plan could first have recorded one at all)
 import _locks  # noqa: E402  (which phase locks are held, and whether a holder is
 #                             alive - the evidence behind --fail-on unfinished-run)
+import _branch  # noqa: E402  (what a phase's own branch is called - one answer for every surface)
+import _worktrees  # noqa: E402  (which worktree has a phase branch out, and the ref probe)
+import _scoped_commit  # noqa: E402  (the stderr-keeping git runner a branch copy is read through)
 
 # --- the facts, under the names this command has always called them --------------
 # NOT copies. `_status_facts` (layer 2) owns every one of these; the aliases exist
@@ -267,7 +275,7 @@ def portability_block(manifest, project):
         return {"error": "the portability scan could not run: %s" % (msg[:200],)}
 
 
-def locks_block(manifest, project):
+def locks_block(manifest, project, manifest_path=None):
     """Which audit locks this clone holds — the evidence `unfinished-run` grades.
 
     `{"scheme": bool, "held": [{"name", "live", "basis"}]}`, or a block with NO
@@ -305,17 +313,324 @@ def locks_block(manifest, project):
     repository is a subdirectory keeps its locks in THAT repository's git dir.
     Third caller of one spelling of "where git runs", which is what that
     function's own docstring asks for.
+
+    EACH HELD PHASE LOCK ALSO CARRIES `readyCount`, `readyLive` AND
+    `readyBasis` - that phase's own ready work, whether it was counted from the
+    copy holding the phase live, and the sentence naming that copy, all decided
+    by `phase_ready_counts`. `manifest_path` is what lets it name the file to
+    read from a phase branch or the worktree that has it out; without it no
+    such copy can be located and the sentence says the count fell back to this
+    checkout's.
     """
     try:
         git_root = _invariants.git_root_for(manifest, project)
         if not _locks.available(git_root):
             return {"scheme": False, "held": []}
-        return {"scheme": True,
-                "held": [{"name": r.get("name"), "live": r.get("live"),
-                          "basis": r.get("basis")}
-                         for r in _locks.collect(git_root)]}
+        held = [{"name": r.get("name"), "live": r.get("live"),
+                 "basis": r.get("basis")} for r in _locks.collect(git_root)]
     except Exception as exc:                       # defensive; see the docstring
         return {"error": "the audit locks could not be read: %s" % (exc,)}
+    prefix = _status_facts.PHASE_LOCK_PREFIX
+    phase_ids = [str(r["name"])[len(prefix):] for r in held
+                 if isinstance(r.get("name"), str)
+                 and r["name"].startswith(prefix)]
+    counts = phase_ready_counts(manifest, manifest_path, git_root, phase_ids)
+    return {"scheme": True,
+            "held": [dict(r, **counts.get(
+                str(r.get("name"))[len(prefix):], {})) for r in held]}
+
+
+def _phase_body(doc, phase_id):
+    """The phase dict with this id in a parsed shard or single-file manifest.
+
+    Both shapes are read so the layout a copy keeps does not decide whether it
+    can be counted: a shard IS one phase, a single file lists every phase.
+    """
+    candidates = [doc] if isinstance(doc, dict) and "tasks" in doc else (
+        (doc.get("phases") or []) if isinstance(doc, dict) else [])
+    for body in candidates:
+        if isinstance(body, dict) and str(body.get("id")) == str(phase_id):
+            return body
+    return None
+
+
+def _branch_copy(git_root, branch, rel, phase_id):
+    """`(phase body, None)` as `branch` commits `rel`, or `(None, why)`.
+
+    `git show <branch>:<rel>` reads the blob out of the object store, so no
+    checkout of the branch is needed - which is the copy to read when no
+    worktree has the branch out, because then nothing uncommitted can exist.
+    """
+    return _show_phase(git_root, "refs/heads/%s" % (branch,), rel, phase_id)
+
+
+def _tree_copy(path, phase_id):
+    """`(phase body, None)` as the file at `path` holds it right now, or
+    `(None, why)`.
+
+    THE FILE IN THE WORKTREE THAT HAS THE PHASE BRANCH OUT, uncommitted edits
+    included. A run marks a task done in that file before any commit carries
+    it, so the branch tip lags the run by up to a whole wave - and a count off
+    the tip reports work as ready that the run has already finished. Opening
+    another checkout's file is a read; nothing here writes to it.
+    """
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as exc:
+        return None, "%s could not be read (%s)" % (path, exc)
+    body = _phase_body(doc, phase_id)
+    if body is None:
+        return None, "%s holds no phase %s" % (path, phase_id)
+    return body, None
+
+
+def _show_phase(git_root, rev, rel, phase_id):
+    """`(phase body, None)` as commit `rev` holds `rel`, or `(None, why)`."""
+    spec = "%s:%s" % (rev, rel)
+    code, out, err = _scoped_commit.run_git(git_root, ["show", spec])
+    if code != 0:
+        return None, "git show %s answered %s: %s" % (
+            spec, code, " ".join((err or "").split())[:160] or "no output")
+    try:
+        body = _phase_body(json.loads(out), phase_id)
+    except ValueError as exc:
+        return None, "git show %s is not readable JSON (%s)" % (spec, exc)
+    if body is None:
+        return None, "git show %s holds no phase %s" % (spec, phase_id)
+    return body, None
+
+
+def _readiness_moved(git_root, branch, rel, phase_id):
+    """`(note, known)` - whether this checkout's copy of `rel` changed after
+    `branch` forked, in a way that moves the phase's readiness.
+
+    CALL THIS ONLY WHEN THE COUNT CAME FROM THE BRANCH'S COMMITTED COPY - no
+    worktree holds `branch` out, so `git show` is the only copy there was to
+    read. That copy is the branch tip, but the development branch may have
+    moved the same file on since the fork - a task added, a dependency
+    rewritten - and a count off the tip alone would then miss that. So the
+    count stays the branch's, and the sentence says what it may be missing.
+
+    A worktree that holds `branch` out is read for its own file instead
+    (`_tree_copy`), uncommitted edits included - that copy already IS
+    whatever is live there, so it has nothing this question could be about,
+    and the caller must not run this check over it.
+
+    THE QUESTION IS ABOUT CONTENT, NOT COMMITS. A count of commits to the file
+    reads a `--no-ff` landing of a branch that predates the file as a commit to
+    it, although the merge brought the file nothing, and a landed reword of a
+    description as a change although no task moved. So the common path is one
+    `git diff --quiet <branch>...HEAD` - the file at the fork point against
+    HEAD's - which costs what the count did. Only when that says the file
+    changed are both copies read and their `readiness_projection`s compared.
+
+    `known` is False whenever the note is not empty: a count that may be
+    missing a readiness change, or whose divergence git could not report, is
+    not one a zero may be silent on.
+    """
+    spec = "refs/heads/%s...HEAD" % (branch,)
+    code, _out, err = _scoped_commit.run_git(
+        git_root, ["diff", "--quiet", spec, "--", rel])
+    if code == 0:
+        return "", True
+    why = "git diff --quiet %s answered %s: %s" % (
+        spec, code, " ".join((err or "").split())[:160] or "no output")
+    if code == 1:
+        why = None
+        mcode, mout, merr = _scoped_commit.run_git(
+            git_root, ["merge-base", "refs/heads/%s" % (branch,), "HEAD"])
+        fork = (mout or "").strip()
+        if mcode != 0 or not fork:
+            why = "git merge-base answered %s: %s" % (
+                mcode, " ".join((merr or "").split())[:160] or "no output")
+        if why is None:
+            was, why = _show_phase(git_root, fork, rel, phase_id)
+        if why is None:
+            now, why = _show_phase(git_root, "HEAD", rel, phase_id)
+        if why is None:
+            if (_status_facts.readiness_projection(was)
+                    == _status_facts.readiness_projection(now)):
+                return "", True
+            return ("; this checkout's copy of %s changed after branch `%s` "
+                    "forked, in a way that moves readiness, so the branch's "
+                    "copy may be missing that change" % (rel, branch), False)
+    return ("; whether this checkout's copy of %s changed after branch `%s` "
+            "forked could not be asked (%s), so this count is not current"
+            % (rel, branch, why), False)
+
+
+def _fallback(local, on, branch, why):
+    """This checkout's count, marked as NOT the live copy.
+
+    The branch exists, and that is all this sentence asserts about it: its copy
+    could not be read, so which copy holds the phase live is exactly what is
+    unknown. A zero here is a stale reading, and it prints.
+    """
+    return {"readyCount": local, "readyLive": False,
+            "readyBasis": "counted from this checkout's copy %s - branch `%s` "
+                          "exists but its copy could not be read (%s), so this "
+                          "count is not current" % (on, branch, why)}
+
+
+def _shard_rel(manifest_path, git_root, phase):
+    """The phase's file as a path under the git root, or None.
+
+    Every worktree of a clone lays its files out at the same paths relative to
+    its own root, so this one path names the file in the branch's commits and
+    in any worktree that has the branch out.
+    """
+    if not manifest_path:
+        return None
+    _index, phase_file = _invariants.manifest_files(manifest_path, phase)
+    try:
+        rel = _output.posix_rel(os.path.abspath(phase_file),
+                                os.path.abspath(git_root))
+    except ValueError:
+        return None
+    return None if rel.startswith("..") else rel
+
+
+def _here_words(view):
+    """How the sentence names the branch this checkout has out."""
+    here = view.get("here")
+    if here and here.get("branch"):
+        return "on `%s`" % (here["branch"],)
+    if here and here.get("detached"):
+        return "on a detached HEAD"
+    return "on a branch the worktree list could not name (%s)" % (
+        view.get("error") or "this checkout is in none of the trees it lists")
+
+
+def _phase_ready_count(manifest, manifest_path, git_root, phase_id, view, user):
+    """`{"readyCount", "readyLive", "readyBasis"}` for one held phase - its OWN
+    ready tasks, counted from the copy judged to hold the phase live, whether
+    that copy is the live one, and the sentence naming it.
+
+    WHICH COPY, in order:
+
+    - this checkout, when it has the phase branch out;
+    - the file in another worktree that has the branch out, uncommitted state
+      included (`_tree_copy` says why the tip is not enough);
+    - the branch's committed copy, when no worktree has it out;
+    - this checkout's copy, when no branch of that name exists - then it is the
+      only copy there is.
+
+    The branch name comes from `_branch.branch_of`, the one answer every
+    surface gives, because the development branch's copy of a shard need not
+    record the branch its phase later ran on.
+
+    A PHASE THIS CHECKOUT'S PLAN DOES NOT HOLD GETS NO COUNT. A lock names it,
+    so a run of it exists somewhere - on a branch whose phase this checkout's
+    index never learned of - and zero would be the silent row. `readyCount`
+    None is what `unfinished_runs` refuses.
+    """
+    phase = _invariants.phase_of(manifest, phase_id)
+    if phase is None:
+        return {"readyCount": None, "readyLive": False,
+                "readyBasis": "this checkout's plan holds no phase %s, so the "
+                              "copy that holds it live cannot be named from "
+                              "here" % (phase_id,)}
+    local = len(_status_facts.ready_by_phase(manifest).get(phase_id) or [])
+    on = _here_words(view)
+    branch = _branch.branch_of((manifest or {}).get("meta") or {}, phase,
+                               user)["name"]
+    here = view.get("here") or {}
+    if here.get("branch") == branch:
+        return {"readyCount": local, "readyLive": True,
+                "readyBasis": "counted from this checkout, which has `%s` "
+                              "checked out" % (branch,)}
+    probe = _worktrees.ref_exists(git_root, branch)
+    if probe["exists"] is False:
+        return {"readyCount": local, "readyLive": True,
+                "readyBasis": "counted from this checkout's copy %s - no "
+                              "branch `%s` exists in this repository (%s)"
+                              % (on, branch, probe["basis"])}
+    if probe["exists"] is None:
+        return _fallback(local, on, branch, probe["basis"])
+    rel = _shard_rel(manifest_path, git_root, phase)
+    if rel is None:
+        return _fallback(local, on, branch,
+                         "the phase's file could not be placed under the git "
+                         "root, so the file to read is unknown")
+    caveat = ""
+    live = True
+    holder = (None if view.get("error")
+              else _worktrees.holder_of(view.get("trees"), branch)["tree"])
+    body = None
+    if view.get("error"):
+        live = False
+        caveat = ("; which worktree has the branch out could not be asked (%s), "
+                  "so uncommitted work there is not in this count"
+                  % (view["error"],))
+    elif holder is not None:
+        path = os.path.join(holder.get("path") or "", *rel.split("/"))
+        body, why = _tree_copy(path, phase_id)
+        source = "the worktree file %s, which has `%s` checked out" % (
+            path, branch)
+        if body is None:
+            live = False
+            caveat = ("; the worktree that has the branch out could not be "
+                      "read (%s), so its uncommitted work is not in this count"
+                      % (why,))
+    note, current = "", True
+    if body is None:
+        body, why = _branch_copy(git_root, branch, rel, phase_id)
+        source = "branch `%s`'s copy of %s" % (branch, rel)
+        if body is None:
+            return _fallback(local, on, branch, why)
+        # Only the branch's COMMITTED copy is what the fork-point diff is
+        # about. A worktree's file already carries whatever is live there,
+        # uncommitted edits included, so a readiness-moving edit this
+        # checkout lands on its own history afterwards is not a gap in that
+        # copy - there is nothing for this question to ask.
+        note, current = _readiness_moved(git_root, branch, rel, phase_id)
+    counted = dict(manifest)
+    counted["phases"] = [dict(p, **body) if p is phase else p
+                         for p in (manifest.get("phases") or [])]
+    return {"readyCount": len(
+                _status_facts.ready_by_phase(counted).get(phase_id) or []),
+            "readyLive": live and current,
+            "readyBasis": "counted from %s%s%s" % (source, caveat, note)}
+
+
+def phase_ready_counts(manifest, manifest_path, git_root, phase_ids):
+    """`{phase id: {"readyCount", "readyLive", "readyBasis"}}` for each held
+    phase lock.
+
+    WHAT IT COSTS, AND WHY THAT IS ACCEPTABLE. Nothing at all when no phase lock
+    is held - the early return below - so the everyday status view of a
+    checkout with no run in flight pays no git call here. With a lock held: the
+    worktree list (which also names the branch this checkout has out, so no
+    separate HEAD read) and the identity lookup once, then per held phase a ref
+    probe, a read of its copy and one content diff of its file since the fork
+    - and, only when that diff says the file changed, its fork point and a
+    read of each copy, to ask whether the change moved readiness. Each call goes through a
+    runner with a timeout, the calls scale with the locks held rather than with
+    the plan, and a held lock is exactly the state this view exists to describe
+    correctly.
+
+    One phase's read failing is that phase's sentence, never the whole block's
+    error: the other locks were read, and refusing them all for one unreadable
+    branch would hide every answer that was available.
+    """
+    if not phase_ids:
+        return {}
+    listed = _worktrees.list_worktrees(git_root)
+    trees = listed.get("trees") or []
+    view = {"trees": trees, "error": listed.get("error") or "",
+            "here": _worktrees.standing_in(trees, git_root)}
+    user = _worktrees.git_user_name(git_root)
+    out = {}
+    for pid in phase_ids:
+        try:
+            out[pid] = _phase_ready_count(manifest, manifest_path, git_root,
+                                          pid, view, user)
+        except Exception as exc:                   # defensive; see the docstring
+            out[pid] = {"readyCount": None, "readyLive": False,
+                        "readyBasis": "the count of phase %s's own ready work "
+                                      "could not be taken: %s" % (pid, exc)}
+    return out
 
 
 def _unfinished_detail(summary):
@@ -617,6 +932,18 @@ def usage_summary(manifest, manifest_path, project_dir=None, full=True):
     if not rows:
         return None
     try:
+        # Which place prices these rows - the resolver every cost surface
+        # asks, over this manifest and the raw config beside the ledger. Every
+        # sum below is of `priced_at_read`'s copies, priced at that table,
+        # because the phrase `_usage_line` prints beside them names it; the
+        # rows that kept the figure stored when written are counted into the
+        # basis the phrase is worded from.
+        pricing = ul.project_pricing(
+            manifest, manifest_path,
+            project_dir or os.environ.get("CLAUDE_PROJECT_DIR"))
+        priced = ul.priced_at_read(rows, pricing["table"])
+        rows = priced["rows"]
+        pricing = dict(pricing, pricedWhenWritten=priced["pricedWhenWritten"])
         total = ul.totals(rows)
         # WHICH OPTIONAL SWEEPS ARE WORTH THEIR PASS, asked of the MANIFEST so the
         # answer is a function of the plan and the flag alone: the same plan
@@ -644,14 +971,11 @@ def usage_summary(manifest, manifest_path, project_dir=None, full=True):
             and p.get("budgetUSD") > 0
             for p in dicts)
         # Trimmed at the door: the plan schema asks only that
-        # `meta.usage.pricingAsOf` be non-empty, so a string of spaces validates
-        # and `_usage_line` below printed "rates as of" followed by nothing - a
-        # basis with no content, beside a cost figure the budget preflight acts
-        # on. A whitespace-only setting is a typo, not a declaration, so it
-        # collapses to the shape absence already has and the line says "rates
-        # undated" instead. `isinstance` guards a hand-edited number, and the
-        # same trim is what `panel/_panel_paths._declared_as_of` applies to the
-        # config file's copy of this key.
+        # `meta.usage.pricingAsOf` be non-empty, so a string of spaces validates.
+        # A whitespace-only setting is a typo, not a declaration, so it collapses
+        # to the shape absence already has. `isinstance` guards a hand-edited
+        # number, and the same trim is what `_usage_core._declared_as_of`
+        # applies to both copies of this key when the resolver dates a table.
         as_of_raw = meta_usage.get("pricingAsOf") \
             if isinstance(meta_usage, dict) else None
         # One shape for every aggregate, so a key added to one is added to all.
@@ -659,10 +983,15 @@ def usage_summary(manifest, manifest_path, project_dir=None, full=True):
             return {k: {"tokens": v["tokens"], "costUSD": v["costUSD"],
                         "msgs": v["msgs"]} for k, v in grouped.items()}
 
+        # The resolver's answer as data, and as the one phrase
+        # `rate_basis_phrase` words it in, which `_usage_line` prints.
         block = {
             "ledgerDir": ledger_dir,
             "pricingAsOf": (as_of_raw.strip() or None)
             if isinstance(as_of_raw, str) else None,
+            "pricingBasis": {k: pricing[k] for k in
+                             ("basis", "asOf", "source", "pricedWhenWritten")},
+            "rateBasis": ul.rate_basis_phrase(pricing),
             "showCost": bool(meta_usage.get("showCost", True))
             if isinstance(meta_usage, dict) else True,
             "totals": total,
@@ -820,8 +1149,9 @@ SHORT_FULL_VIEW_POINTER = "/audit:status"
 
 def render_short(manifest, summary, width=18, pt=None):
     """The condensed render an automated run echoes mid-flight: the overall
-    line, the usage line, the READY NOW block (with the command to type), and
-    a closing line naming the command for the full view.
+    line, the usage line, the READY NOW block (with the command to type), the
+    UNFINISHED block when a lock was read, and a closing line naming the
+    command for the full view.
 
     NOT THE DEFAULT, and never substituted for it: `render_status` is what a
     typed `/audit:status` renders, unchanged — `sh0` pins its bytes against
@@ -845,6 +1175,9 @@ def render_short(manifest, summary, width=18, pt=None):
     if usage:
         lines.append("  " + _usage_line(summary, usage))
     lines += _ready_lines(manifest, summary, pt=pt)
+    # The same block the full view ends on, so a run stopped mid-phase reads the
+    # same sentence in the view an automated run echoes between waves.
+    lines += _unfinished_lines(summary, pt=pt)
     lines.append("")
     lines.append("  Full view: %s" % SHORT_FULL_VIEW_POINTER)
     return "\n".join(lines)
@@ -1246,13 +1579,12 @@ def _usage_line(summary, usage):
     # The rate table behind this cost AND behind the budget lines under it, which
     # is why it belongs here rather than only in the report: those percentages are
     # what the preflight budget check acts on, and a number that can stop a phase
-    # should say what priced it. No fallback to the default table's date — see
-    # render-report._usage_context; manufacturing a basis is worse than stating
-    # that the manifest declared none.
+    # should say what priced it. The phrase is the one `usage_summary` recorded
+    # (`rate_basis_phrase` over the resolver's answer), the same words the
+    # report and `/audit:usage` print; a block that arrived without it says so
+    # rather than guessing the shipped table's date into it.
     if usage.get("showCost") and (totals.get("tokens") or 0):
-        parts.append("rates as of %s" % usage["pricingAsOf"]
-                     if usage.get("pricingAsOf")
-                     else "rates undated (set usage.pricingAsOf)")
+        parts.append(usage.get("rateBasis") or "rate basis not served")
     return " - ".join(parts)
 
 
@@ -1464,7 +1796,8 @@ def _resumable_lines(manifest, summary, pt=None):
 
 
 def _unfinished_lines(summary, pt=None):
-    """UNFINISHED — a phase lock still held while the plan has work ready to run.
+    """UNFINISHED — a phase lock still held while that phase has work of its own
+    ready, or whose ready work could not be counted from the live copy.
 
     THE OTHER HALF OF A RUN STOPPING MID-PHASE. The condition makes the state
     gradeable; this is what makes it VISIBLE, and visibility is what the defect
@@ -1500,8 +1833,13 @@ def _unfinished_lines(summary, pt=None):
     rows = unfinished_runs(summary)
     if rows is None:
         return []
-    out = ["", pt.paint("  UNFINISHED  %d phase run(s) stopped mid-phase - the "
-                        "lock is still held and there is ready work left"
+    # The heading counts every row it lists, and a row may be a lock whose
+    # ready work could not be counted from the live copy - so it promises what
+    # each line says rather than that every one is a run with work left.
+    out = ["", pt.paint("  UNFINISHED  %d held phase lock(s) to look at - each "
+                        "line says how much of that phase's own work is still "
+                        "ready and which copy it was counted from, or why it "
+                        "could not be counted"
                         % len(rows), "warn")]
     out += ["    %s" % r for r in rows]
     return out
@@ -1612,8 +1950,11 @@ CONDITION_HELP = {
                       "(a run that stopped mid-phase: "
                       "a wave committed, the next wave was named, and the turn "
                       "ended. THREE STATES, and the third is the reason this is "
-                      "worth having - a lock held with ready work left is an "
-                      "unfinished run, no lock and no ready work is a finished "
+                      "worth having - a lock held while its own phase has "
+                      "ready work left, counted from the copy holding that "
+                      "phase live, is an unfinished run, and so is a held lock "
+                      "whose count could not be taken from that copy; no lock "
+                      "and no ready work is a finished "
                       "plan, and NO LOCK with ready work left is every planned "
                       "phase there has ever been, which is why it must not "
                       "trip. A STALE lock counts as readily as a live one: the "
@@ -1715,8 +2056,10 @@ def build_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description="Headless status rollup + CI gate for the audit manifest.",
         epilog=_conditions_epilog())
-    p.add_argument("manifest", help="path to the audit manifest (single-file or "
-                                    "sharded index)")
+    p.add_argument("manifest", nargs="?", default=None,
+                   help="path to the audit manifest (single-file or sharded "
+                        "index); omitted, the project's configured "
+                        "manifestPath, else docs/audit/audit-plan.json")
     p.add_argument("--json", action="store_true", dest="as_json",
                    help="print the rollup as JSON instead of the human render")
     p.add_argument("--discovery", action="store_true",
@@ -1815,7 +2158,12 @@ def main(argv):
                              % (", ".join(unknown), ", ".join(CONDITIONS)))
             return 2
 
-    manifest_path = args.manifest
+    resolved = _mio.resolve_manifest(
+        os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd(), args.manifest)
+    manifest_path = resolved["path"]
+    if manifest_path is None:
+        sys.stderr.write(_mio.describe_unresolved(resolved) + "\n")
+        return 2
     try:
         manifest = _mio.load_manifest(manifest_path)
     except Exception as exc:
@@ -1914,8 +2262,10 @@ def main(argv):
     # waves and the state sat on disk, knowable, until a human asked a day later, so the
     # surface a human actually opens has to carry it. The three other injected
     # blocks are gate-only because each costs git calls per phase or a walk of
-    # the repository; this one is a single `rev-parse` and a directory listing,
-    # which is what `/audit:doctor` already pays to answer the same question.
+    # the repository; this one is a `rev-parse` and a directory listing, which is
+    # what `/audit:doctor` already pays to answer the same question - plus, only
+    # when a phase lock IS held, a few git calls per held phase to count its own
+    # ready work from the copy that holds it live (`phase_ready_counts`).
     #
     # `--json` IS DELIBERATELY NOT ON THIS LIST. The bare payload is pinned byte
     # for byte against the pure rollup (case dv1), and a lock is a fact about
@@ -1924,7 +2274,8 @@ def main(argv):
     if ((want_gate and "unfinished-run" in conditions)
             or not (want_json or want_gate)):
         summary["locks"] = locks_block(
-            manifest, os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+            manifest, os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd(),
+            manifest_path)
 
     # THE THIRD PLACE'S OWN ANSWER, injected on the SAME asymmetry as `locks`
     # above and for a sibling reason: the human render's `tests` column names it

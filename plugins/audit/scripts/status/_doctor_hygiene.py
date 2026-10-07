@@ -27,6 +27,8 @@ This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__doctor_hygiene.py` - see
 `plugins/audit/tests/_harness.py`.
 """
+import fnmatch
+import glob
 import os
 import pathlib
 import shutil
@@ -110,7 +112,45 @@ _PANEL_FILES = (
      "launch died of - tracebacks naming absolute paths on this machine",
      "git rm --cached it and commit; the panel empties the file on every start "
      "that reaches listening, but emptying a file does not empty the history"),
+    # A PATTERN row: the pidfile is written to a temp sibling and renamed into
+    # place, and a launch killed between the two leaves the sibling behind.
+    ("audit-panel.json.tmp-*", "panel pidfile temp file",
+     "a launch killed while writing its pidfile left it, holding that "
+     "launch's session token",
+     "git rm --cached it and commit; the launch that wrote it is gone, so its "
+     "token died with it, and the panel's next launch or stop deletes the file "
+     "from disk"),
 )
+
+
+def _is_pattern(base):
+    """A `_PANEL_FILES` row naming a family of files rather than one file."""
+    return any(ch in base for ch in "*?[")
+
+
+def _base_matches(name, base):
+    """Does the basename `name` belong to the row keyed `base`?
+
+    EQUALITY for a literal row, never `endswith` - `audit-panel.json` is a
+    suffix of `stale-audit-panel.json`, which is somebody's own file. A pattern
+    row is matched by fnmatch over the whole basename, case-sensitively, which
+    is how git matches the same pattern in `.gitignore` on a case-sensitive
+    filesystem."""
+    if _is_pattern(base):
+        return fnmatch.fnmatchcase(name, base)
+    return name == base
+
+
+def _ls_files_spec(base, path):
+    """The pathspec `git ls-files` is handed for one panel row.
+
+    A literal row passes its absolute path, as it always has. A pattern row is
+    passed as `:(glob)` RELATIVE to the project (the cwd git runs in), so the
+    glob is the row's own and a metacharacter in the project's path is never
+    read as part of it."""
+    if _is_pattern(base):
+        return ":(glob).claude/" + base
+    return path
 
 
 # --- checks: an empty record is two different facts -------------------------------
@@ -393,8 +433,9 @@ def check_local_artifacts(rep, project, cfg, cfg_mod, manifest, git_root):
     Every artifact it looks at is per-machine by design: the usage ledger
     (person identities, transcript cursors), stateDir (session scratch),
     logsDir (gate telemetry), and the panel's own files in `_PANEL_FILES` —
-    the pidfile (a LIVE session token) and the launch log (a dead launch's
-    stderr, so absolute machine paths). From 0.35 every dir-creating writer
+    the pidfile (a LIVE session token), the launch log (a dead launch's
+    stderr, so absolute machine paths) and the pidfile's temp siblings a
+    killed launch leaves (a pattern row, matched as one). From 0.35 every dir-creating writer
     drops a `*` .gitignore inside and the panel writes a targeted rule for
     each of its files — this check catches what those cannot reach: files
     committed BEFORE the markers existed, and dirs made by older versions
@@ -419,26 +460,31 @@ def check_local_artifacts(rep, project, cfg, cfg_mod, manifest, git_root):
     panel = [(base, label, why, fix,
               os.path.join(project, ".claude", base))
              for base, label, why, fix in _PANEL_FILES]
-    panel_bases = set(row[0] for row in panel)
     try:
         out = subprocess.run(
-            ["git", "ls-files", "--"] + [row[4] for row in panel]
+            ["git", "ls-files", "--"]
+            + [_ls_files_spec(row[0], row[4]) for row in panel]
             + sorted(dirs.values()),
             cwd=project, capture_output=True, text=True, timeout=30)
         tracked = [ln for ln in (out.stdout or "").splitlines() if ln.strip()]
     except Exception:
         rep.ok("hygiene", "git unavailable for the tracked-files check")
         return
-    # BASENAME EQUALITY, not `endswith`. `audit-panel.json` is a suffix of
-    # `stale-audit-panel.json`, which is somebody's own file and not this
-    # plugin's - and the two rows below PARTITION the tracked list, so a name
-    # matched loosely here is a name silently dropped from `others`.
+    # `_base_matches`, never `endswith`: the two rows below PARTITION the
+    # tracked list, so a name matched loosely here is a name silently dropped
+    # from `others`. A pattern row names the files it matched, since its key
+    # is not a file anybody can `git rm`.
     for base, label, why, fix, _path in panel:
-        if any(os.path.basename(ln) == base for ln in tracked):
+        hits = [ln for ln in tracked
+                if _base_matches(os.path.basename(ln), base)]
+        if hits:
             rep.warn("hygiene",
-                     "the %s (.claude/%s) is TRACKED in git - %s"
-                     % (label, base, why), fix)
-    others = [ln for ln in tracked if os.path.basename(ln) not in panel_bases]
+                     "the %s (%s) is TRACKED in git - %s"
+                     % (label, ", ".join(hits) if _is_pattern(base)
+                        else ".claude/" + base, why), fix)
+    others = [ln for ln in tracked
+              if not any(_base_matches(os.path.basename(ln), row[0])
+                         for row in panel)]
     if others:
         rep.warn("hygiene",
                  "%d local file(s) tracked in git (ledger/state/logs are "
@@ -467,8 +513,10 @@ def check_local_artifacts(rep, project, cfg, cfg_mod, manifest, git_root):
                  "inside); or add them to .gitignore yourself")
     if not tracked and not unprotected:
         seen = sorted(n for n, d in dirs.items() if os.path.isdir(d))
-        seen += [label for _base, label, _why, _fix, path in panel
-                 if os.path.exists(path)]
+        seen += [label for base, label, _why, _fix, path in panel
+                 if (glob.glob(os.path.join(glob.escape(os.path.dirname(path)),
+                                            base))
+                     if _is_pattern(base) else os.path.exists(path))]
         if seen:
             rep.ok("hygiene", "local artifacts stay out of git (%s)"
                    % ", ".join(seen))

@@ -119,17 +119,6 @@ def _cases(check):
           M._manifest_path(proj, {})
           == os.path.normpath(os.path.join(proj, M._defaults()["manifestPath"])))
 
-    # --- what the config declares, and what merely defaults ---------------------
-    # `usage_cfg()` merges a default `pricingAsOf`, so the merged value is almost
-    # never absent; rendering it as the rate basis would present a date the project
-    # never chose as though it had. Only the RAW config can tell the two apart.
-    check("pp11 _declared_as_of separates a project's own value from the default",
-          M._declared_as_of({"usage": {"pricingAsOf": "2026-01-02"}}) is True
-          and M._declared_as_of({"usage": {"showCost": True}}) is False
-          and M._declared_as_of({}) is False
-          and M._declared_as_of({"usage": {"pricingAsOf": "   "}}) is False
-          and M._declared_as_of({"usage": {"pricingAsOf": 20260102}}) is False)
-
     # --- reading the config ------------------------------------------------------
     check("pp12 read_config on a project with no config file is {} rather than a "
           "raise - a fresh install is a state the panel renders",

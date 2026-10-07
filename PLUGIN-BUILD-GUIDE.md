@@ -250,6 +250,7 @@ claude-plugins/                           # this repo (personal, public)
       templates/
         audit.config.example.json         # per-repo hook config template
         audit-plan.starter.json           # minimal manifest skeleton with $schema
+        permissions-deny.example.json     # optional Claude Code permissions.deny fragment
       README.md                           # end-user install/config/extend docs
 ```
 
@@ -358,10 +359,10 @@ L4:
   _panel_usage -> _areas, _evidence_io, _manifest_io, _output, _panel_paths
   _panel_viewer -> _loader, _output, _panel_discovery, _panel_paths
   _proposals -> _fmt, _id_refs, _id_shape, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output
-  _usage_detail -> _output, _ui_theme, _usage_viz
+  _usage_detail -> _output, _ui_theme, _usage_economics, _usage_viz
   _usage_load -> _loader, _output, _report_html
-  _usage_markdown -> _output, _ui_theme, _usage_viz
-  _usage_overview -> _fmt, _output, _ui_theme, _usage_viz
+  _usage_markdown -> _output, _ui_theme, _usage_economics, _usage_viz
+  _usage_overview -> _fmt, _output, _ui_theme, _usage_economics, _usage_viz
 
 L5:
   _panel_state -> _evidence_io, _help, _journal_io, _manifest_io, _manifest_rules, _output, _panel_composition, _panel_discovery, _panel_paths, _panel_policy, _panel_runstate, _panel_usage, _panel_viewer, _proposals, _report_html
@@ -380,9 +381,9 @@ L7:
   audit-lock -> _locks, _output
   audit-logs -> _gate_feed, _output
   audit-lookup -> _evidence_io, _journal_io, _manifest_io, _manifest_vocab, _output
-  audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
+  audit-status -> _areas, _branch, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _scoped_commit, _status_facts, _ui_theme, _worktrees
   audit-task -> _areas, _branch, _commit_trail, _evidence_io, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
-  audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme
+  audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
   close-phase -> _branch, _evidence_io, _journal_io, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _tree_stamp, _verdict_binding, _worktrees
@@ -990,9 +991,20 @@ Sign-off steps 5c–5e as one command. It merges the phase branch into its resol
 before the first write, and each result read back by asking a *different* question than the write
 answered. The merge is an input of the phase's derived status, so the stamp stores that status in
 the same write (`done`, for a signed-off phase with every task terminal) and `mirror_stub`
-re-mirrors the index stub from the shard under the index lock. Both writes are revalidated, and a
-finding the write introduced restores the prior bytes (`_revalidated_write`). Any failure of the
-mirror, the lock's own included, is a sentence naming `audit-task.py settle`, never a failed merge.
+re-mirrors the index stub from the shard. Each of the three plan writes here — the stamp, the
+`mergedHead` backfill (`record_merged_head`) and the mirror — reads the plan and writes it while
+holding the index lock every other plan writer takes (`under_index_lock`, through
+`_panel_write.acquire_index_lock`). On the single-file layout, two closes or a close and a panel
+save used to each write the copy they had read, and one write was lost while both answered ok.
+A stamp or a backfill whose lock is not taken writes nothing; it says why and names the re-run of
+close-phase that writes it. A stamp not written exits 1 with the cleanup held back. A backfill
+not written prints `mergedHead NOT recorded` with that sentence. Every write is
+revalidated, and a finding the write introduced restores the prior bytes through
+`_panel_write.restore`'s temp file and replace (`_revalidated_write`), so the rollback is as
+atomic as the write it undoes. Any failure of the mirror, the lock's own included, is a sentence
+naming `audit-task.py settle`, never a failed merge. `test_close_phase.py` covers this with a
+held lock and an inode check, plus two races between real processes: two closes released
+together, and a close against a panel save with each in turn caught mid-write.
 
 **It never runs `git switch`.** Not as a preference: `git switch <parent>` from inside the worktree
 a phase ran in fails with `fatal: '<parent>' is already used by worktree at '<the main tree>'`, so
@@ -1340,6 +1352,16 @@ asset they could not read and a directory they could not list, rather than skipp
 `.py` side had already reported a file it could not *tokenize* while quietly swallowing one it
 could not *open*, and the `ui/` side returned an empty list for a missing `scripts/ui/` — the whole
 report and panel UI gone, printing exactly what a clean tree prints. `--selftest`.
+`state_write_violations()` holds the rule that a state file is replaced only through a sanctioned
+writer: every `os.replace`/`os.rename` under `scripts/` and `hooks/` — through `os.`, a module
+alias, or a name imported from `os` — must sit in a function `STATE_WRITERS` names, and each row
+carries a reason and must still name a live site, so the table cannot excuse code nobody wrote.
+The writers a new site routes through are `_manifest_io.atomic_write_text` (which
+`atomic_write_json` writes through) and, on the hooks side, `_config.atomic_write_text`; both take
+a temp name of their own, which is what a fixed `<target>.tmp` shared between two writers running
+at once did not. `state_write_sites()` prints the corpus the rule judged. A method of the same name
+on a string or a path is not the `os` module's and is not read — the allow row in
+`tools/prove-gates.py` holds that line.
 
 ### `plugins/audit/scripts/_refs.py`
 The other half of the same idea, aimed at paths rather than at imports: roughly 150 places
@@ -1460,9 +1482,13 @@ than per run, because `--only report` rewrites some images and leaves others, an
 version would then claim the new build for pictures nobody re-shot. The hash is what stops the
 sidecar being edited into agreement without the pictures being the ones captured; it does not
 make the claim unforgeable, only impossible to break by accident. `demo-gate.gif` is out of
-scope on purpose — its record lives in the same sidecar under its own `gifs` key, written by
-`tools/capture-demo-gif.py` when it records, and it is graded by that tool's `--check`, not by
-this rule.
+scope on purpose — it is a VHS recording of a real Claude Code session (`tools/demo-gate.tape`,
+driven by `tools/capture-demo-gif.py --record`), not a picture of a surface this tree
+assembles. Its record lives in the same sidecar under its own `gifs` key: the GIF's sha256,
+the CLI version and model it was recorded with, the out-of-plan edit Claude sent, and the
+plan gate's refusal as the session showed it. It is graded by that tool's `--check`, which
+replays the recorded edit against `require-plan.py` without a session and fails when the
+refusal or the bytes moved, not by this rule.
 
 **That version answered only half the question, and the source digest below is the other half.**
 "Was this captured at this release" is not "does this picture still show the current UI", and
@@ -1515,23 +1541,39 @@ does not carry is `HANDBOOK_ABSENT_VERBS` / `HANDBOOK_FOREIGN_OPTIONS`, each row
 reason and checked in **both** directions: a row for a verb that has since been built, or for
 something the page no longer names, is reported exactly as a violation is.
 
+`manifest_placeholder_drift()` asks whether a command file still hands a script the
+`<manifestPath>` placeholder after that script learned to find the manifest itself.
+`self_resolving_scripts()` reads the AST of every `.py` under `plugins/audit/scripts/` for a CALL
+to `<module>.resolve_manifest(...)` — not the string or the docstring naming it, which this file
+and `_manifest_io.py` both carry — and returns the basenames that make the call. The drift check
+then walks `commands/*.md` for a line handing one of those scripts the placeholder right after its
+name and reports it: the command still types the path for a script that would find it alone.
+`MANIFEST_PLACEHOLDER_PENDING` excuses the two command files that still hand the placeholder to an
+orchestrator-driven step reading `reference/orchestrator.md` rather than calling the resolver
+directly, each row carrying the reason; a row whose document no longer carries that line is itself
+a finding, so the excuse cannot go stale quietly either.
+
 `--selftest`.
 
 ### `plugins/audit/scripts/usage/_usage_core.py`
 The arithmetic the whole metering stack stands on, and nothing else: the `DEFAULT_PRICING`
 table plus `rates_for`/`price`, one ISO parser and one hour-bucket rule, the roll-ups
 (`totals`, `aggregate`, `aggregate_area`, `rows_for_area`, `heatmap`) the CLI, the report and
-the panel all read, and — since U3.2 — the three readers every analytics pass starts from
-(`task_index`, `_tokens`, `_cost`). Values in, values out — no file, no process, no transcript
-— which is why its cases need no fixture directory. `pricing_divergences()` lives here too:
-`hooks/_config.py` must price a model with no config present and may import nothing from
-`scripts/`, so its copy of the 13 x 5 rate table is deliberate and the `pp` cases are what
-keep the two identical.
+the panel all read, `priced_at_read` which prices the rows those roll-ups sum at the resolved
+table and counts the ones it cannot, and the three readers every analytics pass starts from (`task_index`,
+`_tokens`, `_cost`) — here because the four analytics modules sit at one layer and may not
+import a peer. Values in, values out — no file, no process, no transcript — which is why its
+cases need no fixture directory. `pricing_divergences()` lives here too: `hooks/_config.py`
+must price a model with no config present and may import nothing from `scripts/`, so its copy
+of the rate table is deliberate and the `pp` cases are what keep the two identical. The
+table's as-of date and source URL are mirrored the same way (`PRICING_AS_OF`,
+`PRICING_SOURCE_URL`), and `pricing_provenance_divergences()` with the `pv6` case holds them
+equal.
 `--selftest`.
 
 ### `plugins/audit/scripts/usage/_usage_spend.py`, `_usage_economics.py`, `_usage_routing.py`, `_usage_coverage.py`
 What the ledger MEANS, as `rows -> dict` functions. One file until v0.40.x, when it reached 955
-lines and was cut on its own section markers (U3.2) — every body moved by line range, so each
+lines and was cut on its own section markers — every body moved by line range, so each
 module does exactly what its section did:
 
 * **`_usage_spend.py`** — `series`, `compare`, `cache_profile`. A first-run dashboard has no
@@ -2524,7 +2566,9 @@ has recorded a run, so an unchanged plan renders exactly as it did before.
 `--submodules <.gitmodules> [--git-root
 <prefix>]` (v0.6.2) is the submodule preflight guard — exit 1 when any `task.files` entry lives
 inside a git submodule (which the parent repo cannot stage/commit). Exit 0/1/2. `--selftest`
-.
+. Its `<manifest>` positional is optional, resolved the same way as every other first-contact
+command: `_manifest_io.resolve_manifest` against the argument, else the config's `manifestPath`,
+else `docs/audit/audit-plan.json`.
 
 ### `plugins/audit/scripts/status/audit-doctor.py`
 `/audit:doctor`'s "is this working?" diagnostics — every check reuses an existing
@@ -4502,13 +4546,18 @@ drawing, no ANSI, no emoji) so the command file can print it verbatim without pa
 to reformat a JSON rollup. With `--by phase|task|model|author|agent|day|hour|session|branch|
 attr` it prints one focused table; without it, the full dashboard. `--backfill` re-reads every
 transcript for the project from offset 0 and rebuilds the ledger — idempotent, and the only
-path that rewrites (and therefore locks) rather than only appending. `--json`'s payload also
+path that rewrites rather than only appending. The lock it takes excludes only another backfill:
+the metering hook appends with no lock, so each month's rewrite carries the rows appended to it
+during the rebuild (`usage_ledger.rewrite_month`), a month with no file yet included. `--json`'s payload also
 carries `planCost` (since P56.6): `_usage_economics.plan_cost_claim`, read against BOTH ledgers
 this command's project has — the usage ledger already loaded for everything else, and
 `_evidence_io.read_rows(project)` for the gate-scope and gate-reuse comparisons, which live in
 the OTHER, evidence, ledger. Unfiltered by the CLI's own `--since`/`--phase`/etc: the three
 comparisons it folds together are already narrow, so a window on top would only thin them
-further.
+further. It finds the manifest through `_manifest_io.resolve_manifest` (its own `resolve_manifest`
+wraps that call with the CLI's `--manifest` argument) rather than requiring one: the ledger still
+renders with no plan at all, so a missing manifest is a note on stderr naming
+`describe_unresolved`'s places-looked, never a refusal.
 
 ### `plugins/audit/scripts/manifest/_manifest_io.py` + `migrate-manifest.py` + `commands/layout.md` + `commands/migrate.md` (v0.15.0)
 The **sharded manifest layout**. `_manifest_io.py` is the dependency-free dual-format loader/writer:
@@ -4538,6 +4587,13 @@ restoring the index does not undo. No lock is taken in the script: the index loc
 command driving it. Locks moved to the shared git dir(two-tier: index + per-phase-shard); ids allocate under the index lock; bug status is derived from the
 linked task (so runs never write `bugs[]`). Schema bumped to v3 (phase requires only `id`/`title`; adds
 `shard`/`claim`). Fully back-compat — v2 manifests keep working, migration is opt-in.
+
+The module also owns WHERE the manifest is: `resolve_manifest(project, explicit)` answers the
+explicit argument when one was given, else `.claude/audit.config.json`'s `manifestPath`, else
+`docs/audit/audit-plan.json`, and returns every place it looked so `describe_unresolved()` can
+name them in a refusal. A config naming a path that does not exist is never followed by the
+default — that would silently render some other plan than the one the project points at — so
+`resolve_manifest` reports no path found there instead of falling through.
 
 ### `plugins/audit/scripts/manifest/_manifest_merge.py` + `merge-manifest.py` + `_merge_install.py`
 **The manifest merged by record, so appends stop conflicting.** Every structural writer appends at
@@ -4642,7 +4698,11 @@ What is left in this file after the split is `main()` — argument parsing, the 
 read, the theme resolve, the files it writes — plus `_verdict`, and the cases that
 read a report `main()` actually wrote into a temp directory. Those cases pin the emitted
 DOCUMENT (its markup, its emission order, the stylesheet, the embedded script), so they can
-live nowhere else: a fragment module cannot render one. `--selftest` (includes XSS cases).
+live nowhere else: a fragment module cannot render one. Its `<manifest>` positional is optional
+too, resolved through `_manifest_io.resolve_manifest` the same way the other first-contact
+commands are; `describe_unresolved` is what it prints to stderr, then exits 2, when neither the
+argument nor the config nor the default names a file that exists. `--selftest` (includes XSS
+cases).
 
 ### `plugins/audit/scripts/report/_report_page.py`
 The report as a whole document, moved out of `render-report.py`: the report's vocabulary
@@ -4754,9 +4814,11 @@ nobody computed one, which is exactly what every caller rendered before the para
 ### `plugins/audit/scripts/report/_usage_overview.py`
 What the Usage section shows on **first paint** (layer 4): the context line, the five-tile metric
 strip, the notices, the one dominant trend chart, the budget block, the author chips and the three
-ranked lists. The context line is where the rate basis lives — with costs shown and no date
-declared it says *that* rather than falling back to the default table's date, because the ledger
-prices at write time and records no vintage. The trend's axis labels live **outside** the SVG:
+ranked lists. The context line is where the rate basis lives: every cost in the section is
+priced at read time by the resolved table (`priced_at_read`), so the phrase names that table and
+its date. A project table declared with no date is said to be undated rather than given the
+shipped table's date, and the rows that kept the figure stored when written, at a rate the
+ledger never recorded, are counted in the same phrase. The trend's axis labels live **outside** the SVG:
 the columns stretch to fill the width, which scales the coordinate system non-uniformly, and the
 labels once came out 49% too wide. The budget block renders nothing when no phase declares one,
 and names unbudgeted phases in a footnote rather than drawing them at 0% — an unbudgeted phase is
@@ -4793,11 +4855,18 @@ server (the UI's HTML/CSS/JS lives as `scripts/ui/panel.html` plus the ordered p
 byte-identically — the served page is still one self-contained HTML file, the source just is not.
 It reuses the plugin's pure cores — `validate-manifest.py`, `validate-config.py`,
 `audit-status.py`, `hooks/_config.py` — via importlib). It binds `127.0.0.1`, checks the Host header, and requires a random per-launch token
-on every `/api/*` call (`X-Audit-Token`/`?t=`); it tracks **one panel per project** via a
-`.claude/audit-panel.json` pidfile (open/stop/status; stale pidfiles auto-cleaned), which
-carries a **build stamp** as well — written by `_write_pidfile` rather than by `serve()`, so
-every pidfile this plugin writes has it and `--status` always holds both halves of the
-comparison below.
+on every `/api/*` call AND on the page itself (`X-Audit-Token`/`?t=`) — `do_GET`'s `/` route
+makes the same Host and token checks inline, so reaching the Host check alone is not enough to
+read the token the served HTML carries, but it answers a refusal differently: a person in a
+browser tab reads plain text naming where the real URL lives, while `/api/*` stays JSON for the
+script calling it. It tracks **one panel per project** via a
+`.claude/audit-panel.json` pidfile (open/stop/status; stale pidfiles auto-cleaned), written
+owner-only from the instant it exists, on POSIX, through a temp file in the same directory and an
+`os.replace`, never through a plain write followed by a `chmod` — that order leaves a window,
+on every launch, during which another local user could hold a readable descriptor on a live
+credential. The pidfile carries a **build stamp** as well — written by `_write_pidfile` rather
+than by `serve()`, so every pidfile this plugin writes has it and `--status` always holds both
+halves of the comparison below.
 
 **The pidfile is no longer the panel's only per-project artifact.** A detached launch
 that discarded stderr left a launch that FAILED looking exactly like one that succeeded and
@@ -4892,7 +4961,7 @@ import `_help` or `panel-server`.
 
 ### `plugins/audit/scripts/panel/_panel_paths.py`
 The floor the panel's read side stands on: `CONFIG_REL`, `_within`/`_config_path`/
-`_manifest_path`/`_read_json`/`read_config`, `_declared_as_of`, the `_load` wrapper, and the
+`_manifest_path`/`_read_json`/`read_config`, the `_load` wrapper, and the
 three accessors `hooks_config()`/`config_rules()`/`status_facts()`. Those three replaced
 `_cores()`'s positional 4-tuple, and that is the whole reason the U3.1 split fits: the tuple
 also carried `_manifest_rules` (layer 3), so a base module holding it could only sit at layer 4
@@ -5063,6 +5132,19 @@ No client identifiers.
 ### `plugins/audit/templates/audit-plan.starter.json`
 Minimal manifest with `$schema`, a `meta` showing all new fields, one phase + one task. **TODO:**
 set the `$schema` URL to your published raw path and fill `repo`/`createdISO`.
+
+### `plugins/audit/templates/permissions-deny.example.json`
+Byte-for-byte the JSON block `docs/research/guard-ownership-design.md` derives. An optional
+`.claude/settings.json` fragment for users who also want Claude Code's own sandbox and
+`permissions.deny` layer to refuse secret reads — it sits alongside this plugin's guards and
+replaces no rule in them. `plugins/audit/tests/test_guard_secrets_read.py` parses `SECRET_PATH`'s
+own compiled alternation rather than reading it by line, so a grouped extension or two
+alternatives written on one source line are not merged or dropped; it pins that the template
+parses and is byte-identical to the design doc's block, that every top-level alternative is
+matched against an anchored shape for one of its known families (an unmatched alternative is
+reported as drift unless named, with a reason, in the suite's own `_OMITTED_ALTS`), and that
+EVERY member of every matched family — not only the first — carries its own `Read(...)` entry
+in the template, individually.
 
 ### `plugins/audit/README.md`
 End-user docs: install, run, the config table, the three-layer extensibility model, and a
