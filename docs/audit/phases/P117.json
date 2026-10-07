@@ -1,7 +1,7 @@
 {
   "id": "P117",
   "title": "a pipeline run's fixed cost is measured stage by stage and cut by infrastructure",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "the tokens and time a pipeline run spends are attributed to stages and to the files each stage reads, by offline tools with tests, and an infrastructure design that cuts the fixed part is chosen on that evidence with its saving predicted and a benchmark that will confirm or refute it",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "a73b836a9e8c79ff993ba7f371f9b749fe3349c1",
   "branch": "audit/p117-a-pipeline-run-s-fixed-cost-is",
-  "mergedAt": null,
+  "mergedAt": "2026-10-07T21:16:14Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -997,5 +997,6 @@
     "runId": "2026-10-07T21:15:49Z.4537ca",
     "status": "passed",
     "at": "2026-10-07T21:15:49Z"
-  }
+  },
+  "mergedHead": "c23eace4f4d2a9f0e830b558a804131950393ce1"
 }
