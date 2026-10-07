@@ -5861,14 +5861,16 @@
       "P117.3-2sz",
       "P117.4-2sz",
       "P117.5-2sz",
-      "P117.6-2sz"
+      "P117.6-2sz",
+      "P117.7-2sz"
     ],
     "docs/research/pipeline-cost-design.md": [
       "P117.2",
       "P117.3-2sz",
       "P117.4-2sz",
       "P117.5-2sz",
-      "P117.6-2sz"
+      "P117.6-2sz",
+      "P117.7-2sz"
     ]
   },
   "bugs": [
