@@ -955,6 +955,14 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
  // above the phases it may have left showing this checkout's copy.
  if(r.liveCopyError)card.append(el('div',{class:'findings warn','data-ovcopyerror':'1'},
    '⚠ '+r.liveCopyError));
+ // The totals, the pills and the phases-and-tasks summary below all read the
+ // plan with whatever live copies the server laid over it, so the one sentence
+ // saying that belongs beside the live-copy error, before the strips it
+ // explains. Off the same `copyHeadline` key the report's hero prints, so
+ // neither surface composes its own words from `liveCopyError` or a row's
+ // `copy` note.
+ if(r.copyHeadline)card.append(el('div',{class:'findings warn','data-ovcopyheadline':'1'},
+   r.copyHeadline));
  const rs=RUNSTATUS||STATE.runStatus||{index:null,phases:{}};
  if(rs.index){const h=rs.index.hostname||'?';const dead=rs.index.live===false;
   card.append(el('div',{class:'findings warn',title:rs.index.liveBasis||''},

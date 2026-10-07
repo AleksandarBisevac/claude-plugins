@@ -20,8 +20,44 @@
 // the browser gate in `tools/ui-checks/stage-tabs.mjs`.
 import fs from 'node:fs';
 import path from 'node:path';
+import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { REPO_ROOT, loadPanel, reach } from './sandbox.mjs';
+
+// A minimal but COMPLETE rollup: every key `renderOver` reads before it ever
+// reaches the copyHeadline line, so a case can set STATE once and trust that
+// nothing upstream of the assertion throws. `copyHeadline` itself is the one
+// key each case below varies.
+function baseRollup() {
+  return {
+    valid: true, findings: 0, warnings: 0, areas: {}, phases: [], ready: [],
+    tasks: { total: 0, byStatus: {} },
+    bugs: { total: 0, byStatus: {}, open: 0, openHighSeverity: 0 },
+  };
+}
+
+function setState(ctx, state) {
+  vm.runInContext('STATE = ' + JSON.stringify(state) + ';', ctx);
+}
+
+// Collects every string `el()` turned into a text node, the same technique
+// `plan-unreadable.test.mjs` uses: the sandbox's stub elements do not
+// accumulate appended children, so a rendered sentence is only visible as a
+// text node it created.
+function renderedTexts(ctx, fn) {
+  const texts = [];
+  const orig = ctx.document.createTextNode;
+  ctx.document.createTextNode = (t) => {
+    texts.push(String(t));
+    return orig(t);
+  };
+  try {
+    fn();
+  } finally {
+    ctx.document.createTextNode = orig;
+  }
+  return texts.join('\n');
+}
 
 const P = reach(loadPanel().ctx, ['ovExcerpt', 'ovShownText', 'ovOutcomeIsBasis']);
 
@@ -242,5 +278,35 @@ describe('ovPhaseStatus is the strip filter\'s counts, off the pills\' plan', ()
     const per = C().ovPhaseStatus({ phaseTaskStatus: { constructor: { done: 2 } } });
     expect(per.constructor.done).toBe(2);
     expect(C().ovPhaseStatus({}).toString).toBe(undefined);
+  });
+});
+
+// The COPY HEADLINE. `copyHeadline` is the one sentence `_status_facts.rollup`
+// writes beside the counts and Next when a phase in flight elsewhere was laid
+// over this checkout's plan — the report's hero prints it off the same key
+// (`_report_page._copy_headline_html`), so the panel renders exactly the string
+// the server sent rather than composing its own words from `liveCopyError` or
+// the per-phase `copy` notes.
+describe('renderOver draws the payload\'s copyHeadline beside the live-copy error', () => {
+  it('a payload carrying the sentence renders it', () => {
+    const { ctx } = loadPanel();
+    const headline = 'These counts and Next take a phase in flight elsewhere '
+      + "from this checkout's copy, which may not be current; each such phase "
+      + 'says why.';
+    setState(ctx, { manifestExists: true,
+      rollup: Object.assign(baseRollup(), { copyHeadline: headline }) });
+    const { renderOver } = reach(ctx, ['renderOver']);
+    expect(renderedTexts(ctx, renderOver)).toContain(headline);
+  });
+
+  it('the twin: a payload with no copyHeadline renders nothing for it', () => {
+    // The over-fire direction. A branch that rendered unconditionally would
+    // still pass the case above.
+    const { ctx } = loadPanel();
+    setState(ctx, { manifestExists: true, rollup: baseRollup() });
+    const { renderOver } = reach(ctx, ['renderOver']);
+    const texts = renderedTexts(ctx, renderOver);
+    expect(texts).not.toContain('in flight elsewhere');
+    expect(texts).not.toContain('take a phase');
   });
 });

@@ -1973,6 +1973,40 @@ def _live_body_cases(check):
           and "elsewhere" not in M.rollup(laid, [], [])["bugs"])
 
 
+def _copy_headline_cases(check):
+    """`copy_headline`'s two sentences are different news, not one fact worded
+    twice: a phase READ from another copy puts that copy's work into the
+    counts (`read` truthy on its `copy`), while a phase that fell back to this
+    checkout's own copy (`read` absent or false) leaves work out that may
+    exist. The fallback-only sentence is the one a reader never sees unless
+    every named copy is a fallback.
+    """
+    read = {"copy": {"live": True, "read": True,
+                      "basis": "read from the worktree file x"}}
+    fallback = {"copy": {"live": False,
+                         "basis": "shows this checkout's copy - may not be current"}}
+    check("ch1 only fallback copies named: the fallback-only sentence, not "
+          "the read sentence: %r" % (M.copy_headline({"phases": [fallback]}),),
+          M.copy_headline({"phases": [fallback]})
+          == "These counts and Next take a phase in flight elsewhere from "
+             "this checkout's copy, which may not be current; each such "
+             "phase says why.")
+    check("ch2 ...and its twin: ANY named copy actually read flips the whole "
+          "sentence, even beside a fallback one - a reader must not be told "
+          "every copy is stale when one of them is live: %r"
+          % (M.copy_headline({"phases": [fallback, read]}),),
+          M.copy_headline({"phases": [fallback, read]})
+          == "These counts and Next include work read from another copy "
+             "than this checkout's: a phase in flight elsewhere is shown as "
+             "that copy holds it, and each such phase names its copy.")
+    check("ch3 ...and the other twin: no phase names a copy at all - nothing "
+          "to say, not the fallback sentence by default: %r"
+          % (M.copy_headline({"phases": [{"id": "P1"}]}),),
+          M.copy_headline({"phases": [{"id": "P1"}]}) is None
+          and M.copy_headline({"phases": []}) is None
+          and M.copy_headline({}) is None)
+
+
 def _selftest():
     def body(check):
         _cases(check)
@@ -1980,6 +2014,7 @@ def _selftest():
         _graded_by_cases(check)
         _own_ready_cases(check)
         _harness.stage(check, "lv", _live_body_cases)
+        _harness.stage(check, "ch", _copy_headline_cases)
     return _harness.run(body)
 
 
