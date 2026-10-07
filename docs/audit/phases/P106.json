@@ -37,7 +37,9 @@
         "severity": "med",
         "file": "plugins/audit/reference/execute-task.md:11-13; reference/orchestrator.md:386-398,669-690; commands/task.md:480; scripts/manifest/audit-task.py:3276-3287,3611-3615",
         "issue": "The orchestrator flow says nothing about what to do on the new readiness and claim refusals, while both refusal texts offer --force --reason as the next step and task.md calls --force the route for promoting a task by hand, inviting a model mid-run to add --force with a reason in its own words rather than the operator's.",
-        "resolution": "On a readiness or claim refusal the orchestrator stops and relays the refusal verbatim; --force only on the human's instruction with the human's words as --reason (the operator's-words rule); reword both refusal texts to name the operator's decision before the flag; task.md describes --force as the operator's exception."
+        "resolution": "fixed in P106.5-b6f (c3482e27): On a readiness or claim refusal the orchestrator stops and relays the refusal verbatim; --force only on the human's instruction with the human's words as --reason (the operator's-words rule); reword both refusal texts to name the operator's decision before the flag; task.md describes --force as the operator's exception.",
+        "fixTask": "P106.5-b6f",
+        "commit": "c3482e27"
       },
       {
         "id": "P106-R3",
@@ -62,14 +64,18 @@
         "severity": "low",
         "file": "plugins/audit/commands/run.md:56",
         "issue": "run.md step 4 'Unmet blockers -> refuse and list them' still asks the model to apply the readiness rule by hand, a second copy of the rule start now enforces.",
-        "resolution": "Point it at the start refusal and say to relay it."
+        "resolution": "fixed in P106.5-b6f (c3482e27): Point it at the start refusal and say to relay it.",
+        "fixTask": "P106.5-b6f",
+        "commit": "c3482e27"
       },
       {
         "id": "P106-R6",
         "severity": "low",
         "file": "plugins/audit/reference/execute-task.md:11-18",
         "issue": "Deleting sub-steps a and d left step 1 as a paragraph followed by a lone 'b.-c.' sub-item.",
-        "resolution": "Fold the b-c text into step 1 or re-letter it, keeping the citations that point at it true."
+        "resolution": "fixed in P106.5-b6f (c3482e27): Fold the b-c text into step 1 or re-letter it, keeping the citations that point at it true.",
+        "fixTask": "P106.5-b6f",
+        "commit": "c3482e27"
       },
       {
         "id": "P106-R7",
@@ -79,9 +85,37 @@
         "resolution": "fixed in P106.4-b6f (fca3219f): Have sign-off and cancel also drop a stub claim on the index under the index lock, or stop reading stub claims once a shard exists.",
         "fixTask": "P106.4-b6f",
         "commit": "fca3219f"
+      },
+      {
+        "id": "P106-R8",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:3251-3298,3351-3357,3424-3427",
+        "issue": "start reads an absent phase lock as proof nobody runs the phase, so a live session that started by hand (/audit:task start takes no phase lock) has its claim silently taken over by the next session, the orchestrated path too (its acquire succeeds because the hand starter holds no lock), and a claim pulled from another clone is always read as unheld; the takeover line says the holder 'holds no live run', which an absent lock cannot establish.",
+        "resolution": "Give every claim readable liveness: start takes a hand-off phase-<id> lock (recording CLAUDE_PID as audit-lock acquire does) when it writes a claim and none is held, so a hand start leaves the evidence an orchestrated one does; until a claim carries that evidence, treat none under another session's claim as unaskable unless this run holds the lock; word the takeover as its basis ('no live phase-<id> lock in this clone'); a case where a hand start with a live pid and no lock makes the next session refuse."
+      },
+      {
+        "id": "P106-R9",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:3290-3291,3301",
+        "issue": "A holder judged dead by the age rule alone (a lock with no pid, or from another host, older than the age limit) is taken over with no human involved, while audit-lock acquire treats the same verdict as exit 4 and its protocol asks the human before --takeover.",
+        "resolution": "Map a not-live verdict whose basis is the age fallback (no pid probed) to unaskable; keep dead for a pid gone on this host and the empty interrupted take; cases for a no-pid and an other-host lock past the age limit, both refusing."
+      },
+      {
+        "id": "P106-R10",
+        "severity": "low",
+        "file": "plugins/audit/commands/task.md:468,490-501",
+        "issue": "task.md's claim prose drifted from the code: an unconditional refusal still listed, 'only when that other session still runs a live lock' where the code refuses any live lock this run does not hold, no mention of the no-session keep, and the --json keys omit claimKept and claimHolder.",
+        "resolution": "Make each sentence true of _claim_plan and _claim_refusal, and list every --json key the start result carries."
+      },
+      {
+        "id": "P106-R11",
+        "severity": "low",
+        "file": "plugins/audit/reference/execute-task.md:11-16,26-28; reference/orchestrator.md:401-404",
+        "issue": "The relay-and-force rule is written three times in the files /audit:next must read (plus run.md and task.md), raising those bytes, while no script can tell an operator's --reason from the model's - a prose-only rule in the phase that exists to remove them.",
+        "resolution": "State it once where the operator's-words rule lives and point to it elsewhere, recovering the bytes; record that it is a prose-only rule until a mechanism reads the reason from the operator's own prompt."
       }
     ],
-    "outcome": "[findings: 7 - 1 high, 1 med, 5 low; 4 with a recorded fix commit]"
+    "outcome": "[findings: 11 - 1 high, 2 med, 8 low; 7 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -360,7 +394,7 @@
     {
       "id": "P106.5-b6f",
       "title": "the orchestrator relays start's refusals and leaves --force to the operator",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P106-R2, P106-R5 and P106-R6. The orchestrator flow says what to do on start's readiness and claim refusals: stop and relay the refusal verbatim; pass --force only on the human's instruction, with the human's words as --reason (the operator's-words rule in manifest-conventions). execute-task.md step 1/2, orchestrator.md's Phase entry and its Resume steps carry that one sentence each, pointing at the verb rather than restating the rule. commands/task.md describes --force as the operator's exception, not a route for promoting a task by hand. commands/run.md step 4 stops restating the readiness rule and points at start's refusal. execute-task.md's step 1 no longer carries an orphaned 'b.-c.' sub-item; every citation of it (README, _invariants) stays true. Record the bytes /audit:next must read before and after.",
       "files": [
         "plugins/audit/reference/execute-task.md",
@@ -387,19 +421,108 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c3482e27",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The orchestrator flow now says what to do on start's two refusals, pointing at the verb rather than restating its rule: execute-task.md step 1 (claim refusal) and step 2 (readiness refusal) say to stop and relay the refusal verbatim and to pass --force --reason only on the human's own instruction with the human's words as the reason (manifest-conventions' operator's-words rule); orchestrator.md's Phase entry gains one bullet saying the same, and Resume step 3 points at those steps. commands/task.md: the readiness paragraph describes --force as the operator's exception, never a route for promoting a task by hand; the claim paragraph states the takeover/liveness rule (refused only while the holder may still be live or liveness cannot be asked; otherwise start takes the claim over and records it), and the documented claimAction values gain takeover, which _claim_plan returns. commands/run.md step 4 relays start's refusal instead of restating the readiness rule. execute-task.md step 1's orphaned 'b.-c.' sub-item gets its 'a.' so the README and _invariants citations of step 1b stay true. Bytes /audit:next must read (wc -c of next.md, orchestrator.md, manifest-conventions.md, execute-task.md): 151193 before, 152089 after - this task adds pointer sentences where the flow said nothing, so it raises the count; the phase's total is still below where it began (153475 before P106.1). Doc lints: test__refs 304/304, test__output 182/182, test__deps 307/307.",
+        "descriptive": "The orchestrator's instructions now tell it to stop and pass a refusal from starting a task to the user word for word, and to use the override only when the user says so in their own words, instead of inviting it to add the override itself."
       },
       "startedAt": "2026-10-07T02:22:44Z",
-      "completedAt": null,
+      "completedAt": "2026-10-07T02:31:54Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-07T02:31:46Z.4d331b",
         "status": "passed",
         "at": "2026-10-07T02:31:46Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c3482e27",
+        "at": "2026-10-07T02:31:54Z",
+        "basis": "orchestrator check: P106-R2, R5 and R6 addressed, the claim paragraph matches the takeover code, the step-1b citations stay true; the bytes rise is stated, the phase total remains below its start"
       }
+    },
+    {
+      "id": "P106.6-b6f",
+      "title": "every phase claim carries readable liveness, so a takeover never overwrites a live session",
+      "status": "in_progress",
+      "description": "Fixes review findings P106-R8 (med) and P106-R9.\n\nEvery phase claim carries readable liveness, so that a takeover never overwrites a live session's claim. When start writes a claim and this run holds no phase-<id> lock, it takes one: a hand-off lock recording CLAUDE_PID the way `audit-lock.py acquire` does, through the same _locks writer. A hand-typed start then leaves the same evidence an orchestrated one does. The orchestrator's own lock (held_by_us) is reused, never doubled. Sign-off and cancel release it as they release the phase lock today; say where, in code.\n\nUntil a claim carries that evidence, `none` under another session's claim is read as `unaskable` unless this run holds the lock. That covers a claim pulled from another clone and one written before this change.\n\nA holder judged not live only by the age rule is `unaskable`, not `dead`. That covers no pid recorded, another host, and a probe that answered nothing. `dead` stays for a pid gone on this host and for the empty file an interrupted take leaves.\n\nThe takeover line and the summary state the basis itself (\"no live phase-<id> lock in this clone\"). They never conclude that the holder \"holds no live run\".\n\nCases:\n- A hand start by session A, with a live pid and no prior lock, makes session B's start refuse.\n- A then ends (its pid is gone) and B's start takes the claim over.\n- Locks with no pid, or from another host, past the age limit both refuse.\n- A claim with no lock at all, from another clone, refuses.\n- The orchestrator path (its own lock held) still takes over without --force.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a hand start by a live session leaves a phase lock so the next session's start refuses, the same claim is taken over once that pid is gone, no-pid and other-host locks past the age limit refuse, and a claim with no lock from another clone refuses"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "validate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-07T02:41:07Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T05:11:18Z.2208ac",
+        "status": "passed",
+        "at": "2026-10-07T05:11:18Z"
+      }
+    },
+    {
+      "id": "P106.7-b6f",
+      "title": "the claim prose matches the code and the relay rule is stated once",
+      "status": "pending",
+      "description": "Fixes review findings P106-R10 and P106-R11.\n\ncommands/task.md's claim paragraph is true of _claim_plan and _claim_refusal as they stand after the liveness fix:\n- A claim refuses only while its holder may still be live, or liveness cannot be asked.\n- Any live phase lock this run does not hold refuses.\n- With no session id, the claim is kept and claimAction is no-session.\n- Every --json key the start result carries is listed, including claimKept and claimHolder.\n\nThe rule \"stop and relay start's refusal verbatim; --force --reason only on the human's instruction, with the human's words as the reason\" is stated once, beside manifest-conventions' \"The operator's words go in unchanged\". execute-task.md steps 1-2, orchestrator.md's Phase entry, run.md and task.md point to it instead of restating it. Say there, in one sentence, that it is a rule the model follows: no script can tell an operator's --reason from the model's. Record the bytes /audit:next must read before and after; the restatements' removal should bring them back down.",
+      "files": [
+        "plugins/audit/commands/task.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/commands/run.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P106.6-b6f"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-06T22:17:03Z"

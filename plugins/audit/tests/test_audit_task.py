@@ -5229,40 +5229,45 @@ def _cases(check):
                         "same": before == after, "rows": rows, "det": det,
                         "crow": crow, "mp": mp}
 
+            # A CLAIM WITH NO LOCK BEHIND IT IS NOT EVIDENCE OF A FINISHED RUN:
+            # it may have been pulled from another clone, whose lock directory
+            # this clone cannot read, or written before a start took a lock. So
+            # it refuses, and says the basis rather than a verdict on the holder.
             tk1 = tk_start("tk-nolock", dict(_PC_OTHER))
-            check("tk1 a sequential second session starting the next task of a "
-                  "phase whose previous session left NO phase lock takes the "
-                  "claim over without --force, and the task.start row records "
-                  "the takeover: the replaced session as `from`, this one as "
-                  "`to`, and a claim.takeover row carrying the liveness basis: %r"
-                  % ((tk1["code"], tk1["claim"], tk1["crow"],
-                      tk1["json"].get("claimAction"), tk1["txt"][-200:]),),
-                  tk1["code"] == 0
-                  and (tk1["claim"] or {}).get("sessionId") == "s-mine-session"
-                  and tk1["json"].get("claimAction") == "takeover"
-                  and tk1["json"].get("forced") is False
-                  and len(tk1["rows"]) == 1
-                  and tk1["det"].get("mode") is None
-                  and (tk1["crow"].get("claim.sessionId") or {}).get("from")
-                  == "s-other-session"
-                  and (tk1["crow"].get("claim.sessionId") or {}).get("to")
-                  == "s-mine-session"
-                  and (tk1["crow"].get("claim.takeover") or {}).get("from")
-                  == "s-other-session"
-                  and "no phase-P3 lock"
-                  in ((tk1["crow"].get("claim.takeover") or {}).get("to") or "")
-                  and "taken over" in (tk1["rows"][0].get("summary") or ""))
+            check("tk1 another session's claim with NO phase lock in this clone "
+                  "is REFUSED - exit 2, the shard byte identical, no row - and "
+                  "the refusal says liveness could not be asked because no "
+                  "phase-P3 lock is held here: %r"
+                  % ((tk1["code"], tk1["txt"][:400]),),
+                  tk1["code"] == 2 and tk1["same"] and tk1["rows"] == []
+                  and "could not be asked" in tk1["txt"]
+                  and "no phase-P3 lock" in tk1["txt"]
+                  and "in this clone" in tk1["txt"])
             tk2 = tk_start("tk-deadlock", dict(_PC_OTHER),
                            lock_pid=pc_gone_pid())
-            check("tk2 ...and so does one whose phase lock is still on disk but "
-                  "names a pid that is gone, with `_locks.judge`'s own basis on "
-                  "the row: %r" % ((tk2["code"], tk2["claim"],
-                                    tk2["crow"].get("claim.takeover")),),
+            check("tk2 a sequential second session whose predecessor's phase "
+                  "lock is still on disk but names a pid that is gone takes the "
+                  "claim over without --force, and the task.start row records "
+                  "the takeover: the replaced session as `from`, this one as "
+                  "`to`, and a claim.takeover row carrying `_locks.judge`'s own "
+                  "basis behind the clone-scoped wording: %r"
+                  % ((tk2["code"], tk2["claim"], tk2["crow"],
+                      tk2["json"].get("claimAction")),),
                   tk2["code"] == 0
                   and (tk2["claim"] or {}).get("sessionId") == "s-mine-session"
                   and tk2["json"].get("claimAction") == "takeover"
+                  and tk2["json"].get("forced") is False
+                  and len(tk2["rows"]) == 1
+                  and tk2["det"].get("mode") is None
+                  and (tk2["crow"].get("claim.sessionId") or {}).get("from")
+                  == "s-other-session"
+                  and (tk2["crow"].get("claim.takeover") or {}).get("from")
+                  == "s-other-session"
+                  and "no live phase-P3 lock in this clone"
+                  in ((tk2["crow"].get("claim.takeover") or {}).get("to") or "")
                   and "is gone on this host"
-                  in ((tk2["crow"].get("claim.takeover") or {}).get("to") or ""))
+                  in ((tk2["crow"].get("claim.takeover") or {}).get("to") or "")
+                  and "taken over" in (tk2["rows"][0].get("summary") or ""))
             tk3 = tk_start("tk-livelock", dict(_PC_OTHER), lock_pid=os.getpid())
             _tk3_op = tk3["txt"].find("operator")
             check("tk3 SECOND DIRECTION: the same start with a LIVE phase lock "
@@ -5312,7 +5317,8 @@ def _cases(check):
                   and tk6["json"].get("claimKept") == _PC_OTHER
                   and "kept" in (tk6["det"].get("basis") or "")
                   and not tk6["crow"])
-            tk7 = tk_start("tk-dead-nosession", dict(_PC_OTHER))
+            tk7 = tk_start("tk-dead-nosession", dict(_PC_OTHER),
+                           lock_pid=pc_gone_pid())
             check("tk7 ...and with no live holder an unforced start runs, "
                   "keeping the claim it cannot replace: %r"
                   % ((tk7["code"], tk7["claim"], tk7["json"].get("claimKept")),),
@@ -5377,6 +5383,205 @@ def _cases(check):
                       and "claim" not in _tk_stub.get("P2", {})
                       and "claim" not in pc_phase(_tk_mp, "P2")
                       and _tk_stub.get("P3", {}).get("claim") == _PC_OTHER)
+
+            # ---- (hl) the hand-off lock a hand-typed start takes ----------------
+            # A start nobody orchestrated used to write a claim and no lock, so the
+            # next session read "no lock" as "no live run" and took the phase over
+            # from a session that was still working it. The start now takes the
+            # `phase-<id>` lock `audit-lock.py acquire` takes, through the same
+            # `_locks.acquire`, recording $CLAUDE_PID as the holder.
+            def hl_lock_path(proj):
+                return os.path.join(_locks.lock_dir(proj), "phase-P3.lock")
+
+            def hl_plant(proj, info):
+                ld = _locks.lock_dir(proj)
+                os.makedirs(ld, exist_ok=True)
+                _panel_write._atomic_write_json(hl_lock_path(proj), info)
+
+            def hl_start(proj, session, pid, extra=()):
+                os.environ["CLAUDE_CODE_SESSION_ID"] = session
+                os.environ["CLAUDE_PID"] = str(pid)
+                path = pc_shard_path(pc_repo_mp[proj], "P3")
+                with open(path, "rb") as fh:
+                    before = fh.read()
+                code, txt = run(["start", "P3.1", "--json", "--project-dir", proj]
+                                + list(extra))
+                with open(path, "rb") as fh:
+                    after = fh.read()
+                return {"code": code, "txt": txt, "json": pc_json(txt),
+                        "same": before == after,
+                        "claim": (pc_shard(pc_repo_mp[proj], "P3") or {})
+                        .get("claim")}
+
+            pc_repo_mp = {}
+            _hl_tokens_was = os.environ.get(_locks.TOKEN_ENV)
+            _hl_child = subprocess.Popen([sys.executable, "-c",
+                                          "import time; time.sleep(120)"])
+            try:
+                hl_proj, hl_mp = pc_repo("hl-hand")
+                pc_repo_mp[hl_proj] = hl_mp
+                hl_a = hl_start(hl_proj, "s-hand-a", _hl_child.pid)
+                hl_info = _locks.read_lock(hl_lock_path(hl_proj))
+                check("hl1 a hand-typed start by session A with a live $CLAUDE_PID "
+                      "and no prior lock takes the phase-P3 lock in "
+                      "`_locks.acquire`'s own format - handed off, A's session, "
+                      "A's pid, this host, a token: %r"
+                      % ((hl_a["code"], sorted(hl_info),
+                          hl_info.get("sessionId"), hl_info.get("pid")),),
+                      hl_a["code"] == 0
+                      and (hl_a["claim"] or {}).get("sessionId") == "s-hand-a"
+                      and hl_info.get("sessionId") == "s-hand-a"
+                      and hl_info.get("pid") == _hl_child.pid
+                      and hl_info.get("handedOff") is True
+                      and hl_info.get("hostname") == platform.node()
+                      and bool(hl_info.get("token"))
+                      and sorted(hl_info) == ["handedOff", "hostname", "note",
+                                              "pid", "sessionId", "startedAt",
+                                              "token"])
+                hl_b = hl_start(hl_proj, "s-hand-b", os.getpid())
+                check("hl2 ...so session B's start, while A's pid runs, is "
+                      "REFUSED: exit 2, the shard byte identical, A's lock "
+                      "untouched, and the refusal names A's live pid: %r"
+                      % ((hl_b["code"], hl_b["txt"][:300]),),
+                      hl_b["code"] == 2 and hl_b["same"]
+                      and _locks.read_lock(hl_lock_path(hl_proj)) == hl_info
+                      and "is running on this host" in hl_b["txt"])
+                _hl_child.kill()
+                _hl_child.wait()
+                hl_c = hl_start(hl_proj, "s-hand-b", os.getpid())
+                hl_cinfo = _locks.read_lock(hl_lock_path(hl_proj))
+                check("hl3 ...and once A's pid is gone the same start by B takes "
+                      "the claim over without --force, takes the lock over too "
+                      "(B's session and pid on it now), and its line states the "
+                      "basis rather than a verdict on A: %r"
+                      % ((hl_c["code"], hl_c["json"].get("claimAction"),
+                          hl_cinfo.get("sessionId"), hl_cinfo.get("pid")),),
+                      hl_c["code"] == 0
+                      and hl_c["json"].get("claimAction") == "takeover"
+                      and (hl_c["claim"] or {}).get("sessionId") == "s-hand-b"
+                      and hl_cinfo.get("sessionId") == "s-hand-b"
+                      and hl_cinfo.get("pid") == os.getpid()
+                      and "no live phase-P3 lock in this clone"
+                      in (hl_c["json"].get("claimTakeoverBasis") or "")
+                      and (hl_c["json"].get("phaseLock") or {}).get("state")
+                      == "took")
+                # The text line, in the plain (non-JSON) output.
+                hl_tp, hl_tmp = pc_repo("hl-text", claim=dict(_PC_OTHER))
+                pc_lock(hl_tp, pc_gone_pid())
+                os.environ["CLAUDE_CODE_SESSION_ID"] = "s-hand-b"
+                hl_tcode, hl_ttxt = run(["start", "P3.1", "--project-dir", hl_tp])
+                check("hl4 the takeover line says `no live phase-P3 lock in this "
+                      "clone` and never that the holder holds no live run: %r"
+                      % ((hl_tcode, [ln for ln in hl_ttxt.splitlines()
+                                     if "claim:" in ln]),),
+                      hl_tcode == 0
+                      and "no live phase-P3 lock in this clone" in hl_ttxt
+                      and "holds no live run" not in hl_ttxt)
+
+                # AGE ALONE IS NOT DEATH: a lock with no pid, or one from another
+                # host, past the age limit says nothing about whether its run still
+                # holds the phase, so it refuses like a live one.
+                hl_cases = (("hl5", "hl-nopid",
+                             {"sessionId": "s-other-session",
+                              "hostname": platform.node(),
+                              "startedAt": "2026-01-01T00:00:00Z",
+                              "handedOff": True, "note": "phase run"}),
+                            ("hl6", "hl-otherhost",
+                             {"sessionId": "s-other-session", "pid": os.getpid(),
+                              "hostname": "not-" + platform.node(),
+                              "startedAt": "2026-01-01T00:00:00Z",
+                              "handedOff": True, "note": "phase run"}))
+                for _hl_id, _hl_name, _hl_lock in hl_cases:
+                    _hp, _hmp = pc_repo(_hl_name, claim=dict(_PC_OTHER))
+                    pc_repo_mp[_hp] = _hmp
+                    hl_plant(_hp, _hl_lock)
+                    _hr = hl_start(_hp, "s-hand-b", os.getpid())
+                    check("%s a %s lock past the age limit under another "
+                          "session's claim is REFUSED as unaskable, not taken "
+                          "over as dead, and the lock is left as it was: %r"
+                          % (_hl_id, _hl_name, (_hr["code"], _hr["txt"][:300]),),
+                          _hr["code"] == 2 and _hr["same"]
+                          and "could not be asked" in _hr["txt"]
+                          and "threshold" in _hr["txt"]
+                          and _locks.read_lock(hl_lock_path(_hp)) == _hl_lock)
+
+                # THE ORCHESTRATOR'S OWN LOCK IS REUSED, NEVER DOUBLED: the claim is
+                # taken over and the lock file is the orchestrator's, byte for byte.
+                hl_op, hl_omp = pc_repo("hl-orch", claim=dict(_PC_OTHER))
+                pc_repo_mp[hl_op] = hl_omp
+                pc_lock(hl_op, os.getpid(), "s-hand-b")
+                with open(hl_lock_path(hl_op), "rb") as _fh:
+                    _hl_obefore = _fh.read()
+                hl_o = hl_start(hl_op, "s-hand-b", os.getpid())
+                with open(hl_lock_path(hl_op), "rb") as _fh:
+                    _hl_oafter = _fh.read()
+                check("hl7 ALLOW: with the orchestrator's own phase lock held the "
+                      "start takes the claim over without --force and leaves that "
+                      "lock byte for byte - reused, not doubled or replaced: %r"
+                      % ((hl_o["code"], hl_o["json"].get("claimAction"),
+                          hl_o["json"].get("phaseLock")),),
+                      hl_o["code"] == 0
+                      and hl_o["json"].get("claimAction") == "takeover"
+                      and _hl_oafter == _hl_obefore
+                      and (hl_o["json"].get("phaseLock") or {}).get("state")
+                      == "ours")
+
+                # WHERE THE HAND-OFF LOCK GOES BACK: sign-off and a phase cancel
+                # release the lock a start took, and leave anybody else's.
+                for _hl_id, _hl_verb in (("hl8", "signoff"), ("hl9", "cancel")):
+                    _hp, _hmp = pc_repo("hl-rel-" + _hl_verb)
+                    pc_repo_mp[_hp] = _hmp
+                    _hs = hl_start(_hp, "s-hand-a", os.getpid())
+                    _had = os.path.exists(hl_lock_path(_hp))
+                    if _hl_verb == "signoff":
+                        run(["cancel", "P3.1", "--reason", "fixture",
+                             "--project-dir", _hp])
+                        _hc, _ht = run(["signoff", "P3", "--verdict", "passed",
+                                        "--summary", "s", "--no-evidence-reason",
+                                        "fixture", "--project-dir", _hp])
+                    else:
+                        _hc, _ht = run(["cancel", "P3", "--reason", "fixture",
+                                        "--project-dir", _hp])
+                    check("%s %s releases the phase lock the hand start took, and "
+                          "says so: %r" % (_hl_id, _hl_verb,
+                                           (_hs["code"], _had, _hc, _ht[-300:]),),
+                          _hs["code"] == 0 and _had and _hc == 0
+                          and not os.path.exists(hl_lock_path(_hp))
+                          and "released phase-P3" in _ht)
+                for _hl_id, _hl_verb in (("hl10", "signoff"), ("hl11", "cancel")):
+                    _hp, _hmp = pc_repo("hl-keep-" + _hl_verb)
+                    pc_repo_mp[_hp] = _hmp
+                    pc_lock(_hp, os.getpid(), "s-hand-a")
+                    with open(hl_lock_path(_hp), "rb") as _fh:
+                        _hb = _fh.read()
+                    _hs = hl_start(_hp, "s-hand-a", os.getpid())
+                    if _hl_verb == "signoff":
+                        run(["cancel", "P3.1", "--reason", "fixture",
+                             "--project-dir", _hp])
+                        _hc, _ht = run(["signoff", "P3", "--verdict", "passed",
+                                        "--summary", "s", "--no-evidence-reason",
+                                        "fixture", "--project-dir", _hp])
+                    else:
+                        _hc, _ht = run(["cancel", "P3", "--reason", "fixture",
+                                        "--project-dir", _hp])
+                    _ha = b""
+                    if os.path.exists(hl_lock_path(_hp)):
+                        with open(hl_lock_path(_hp), "rb") as _fh:
+                            _ha = _fh.read()
+                    check("%s ALLOW: %s leaves a phase lock the start did NOT "
+                          "take - the orchestrator's, which it releases after "
+                          "the merge - byte for byte: %r"
+                          % (_hl_id, _hl_verb, (_hs["code"], _hc, _ht[-200:]),),
+                          _hs["code"] == 0 and _hc == 0 and _ha == _hb)
+            finally:
+                if _hl_child.poll() is None:
+                    _hl_child.kill()
+                    _hl_child.wait()
+                if _hl_tokens_was is None:
+                    os.environ.pop(_locks.TOKEN_ENV, None)
+                else:
+                    os.environ[_locks.TOKEN_ENV] = _hl_tokens_was
+                os.environ.pop("CLAUDE_PID", None)
         finally:
             if _pc_pid_was is not None:
                 os.environ["CLAUDE_PID"] = _pc_pid_was

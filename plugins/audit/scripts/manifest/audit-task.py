@@ -3066,6 +3066,9 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
     git_root = os.path.abspath(os.path.join(project,
                                             (config or {}).get("gitRoot") or "."))
     branch_note = _phase_branch_note(git_root, phase, cwd=git_root)
+    # The phase's claim was dropped above, so the lock a start took for it goes too.
+    lock_note = (_release_start_lock(git_root, phase_id)
+                 if kind == "phase" else None)
     if args.as_json:
         result = {"ok": True, "id": tid, "kind": kind, "phase": phase_id,
                   "reason": reason, "at": now, "cascaded": cascaded,
@@ -3076,6 +3079,7 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
         result.update(project_basis_key(args))
         result.update(_index_dirty_key(index_note))
         result.update(_phase_branch_key(branch_note))
+        result["phaseLockReleased"] = lock_note
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] %s %s cancelled -- %s" % (kind, tid, reason))
@@ -3090,6 +3094,8 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
         out(index_note)
     if branch_note:
         out(branch_note)
+    if lock_note:
+        out(lock_note)
     return 0
 
 
@@ -3261,11 +3267,14 @@ def _phase_holder(git_root, phase_id):
     orchestrator takes before it starts a task, which is a live run of the
     phase that is not the claim's holder.
 
-    `unaskable` is every case where no lock could be read: no git common
-    directory to keep locks in (outside a repository, or git not runnable), a
-    phase id no lock can be named after, or a lock directory that exists and
-    cannot be listed. A directory that does not exist is `none` - it is where
-    no lock has ever been taken, and `status` answers "no locks held" there.
+    `dead` is a lock whose run was observed to end (`_holder_gone`). `unaskable`
+    is every case where no lock could be read - no git common directory to keep
+    locks in (outside a repository, or git not runnable), a phase id no lock can
+    be named after, a lock directory that exists and cannot be listed - and a
+    lock `judge` called not live by its age alone. A directory that does not
+    exist is `none` - it is where no lock has ever been taken, and `status`
+    answers "no locks held" there; `_holder_under_claim` says what `none` is
+    worth under another session's claim.
     """
     name = _status_facts.PHASE_LOCK_PREFIX + str(phase_id)
     if not _locks.valid_name(name):
@@ -3287,8 +3296,17 @@ def _phase_holder(git_root, phase_id):
     path = os.path.join(ld, name + ".lock")
     info = _locks.read_lock(path)
     live, basis = _locks.judge(info, path)
-    if not live:
+    if not live and _holder_gone(info, path):
         return {"state": "dead", "basis": "%s lock: %s" % (name, basis)}
+    if not live:
+        # AGE ALONE IS NOT DEATH. `judge` falls back to the lock's age when no
+        # pid was recorded, the lock is another host's, or the probe answered
+        # nothing; past the threshold that says the lock is old, not that its run
+        # stopped, and a takeover on it is the double run the claim exists to stop.
+        return {"state": "unaskable",
+                "basis": "%s lock: %s -- judged by its age alone, which does not "
+                         "say whether its run still holds the phase"
+                         % (name, basis)}
     ours = _locks.held_by_us(info)
     if ours["ours"]:
         return {"state": "ours",
@@ -3297,11 +3315,156 @@ def _phase_holder(git_root, phase_id):
     return {"state": "live", "basis": "%s lock: %s" % (name, basis)}
 
 
+def _holder_gone(info, path):
+    """True only where `_locks.judge`'s not-live verdict observed an end: an
+    empty file an interrupted take left, or a pid gone on this host. The two
+    `_locks` predicates are the ones `judge` and `release` already decide by."""
+    return bool(_locks._interrupted_take(info, path)
+                or (info and _locks._holder_dead_here(info)))
+
+
 # The holder states under which a claim is still someone else's to give up.
 _HOLDER_BLOCKS = ("live", "unaskable")
 
+# The `note` the lock a start takes carries. Sign-off and a phase cancel release
+# a phase lock only when it carries this note (`_release_start_lock`), so the
+# orchestrator's own phase lock - which it holds past sign-off, through the
+# merge, and releases itself - is never given back by a verb that did not take it.
+_START_LOCK_NOTE = "audit-task start: the phase claim's liveness"
 
-def _claim_plan(sharded, held, session, branch, now, holder_of):
+
+def _holder_under_claim(holder, phase_id, held):
+    """`holder` as a claim another session holds must read it.
+
+    `none` - no phase lock in this clone - is not evidence the claim's session
+    stopped: the claim may have been pulled from another clone, whose lock
+    directory this one cannot read, or written before a start took a lock. Only
+    a lock tells, so with none the holder is `unaskable`.
+    """
+    if holder.get("state") != "none":
+        return holder
+    return {"state": "unaskable",
+            "basis": "no %s%s lock is held in this clone, and a claim carries no "
+                     "liveness of its own - session %s may hold it from another "
+                     "clone, or have written it before a start took a lock (%s)"
+                     % (_status_facts.PHASE_LOCK_PREFIX, phase_id,
+                        held.get("sessionId") or "(none)", holder.get("basis"))}
+
+
+def _takeover_basis(phase_id, holder):
+    """The basis a takeover states: what was observed in THIS clone's lock
+    directory, never a conclusion about the replaced session's run."""
+    if holder.get("state") == "ours":
+        return holder.get("basis")
+    return ("no live %s%s lock in this clone (%s)"
+            % (_status_facts.PHASE_LOCK_PREFIX, phase_id, holder.get("basis")))
+
+
+def _take_phase_lock(git_root, phase_id, force):
+    """Take the `phase-<id>` lock for a start that writes a claim.
+
+    {"state": "took"|"ours"|"held"|"none", "basis": str, "name": str}.
+
+    THROUGH `_locks.acquire`, THE WRITER `audit-lock.py acquire` IS, with
+    `handed_off` as that command passes it: the lock outlives this process, so
+    its holder is the run that invoked the verb, recorded from $CLAUDE_PID by
+    `_locks._holder_pid`. A hand-typed start then leaves the evidence an
+    orchestrated one does, in the one format every reader of the directory reads.
+
+    `ours` is a phase lock this run already holds - the orchestrator's - and it
+    is reused, never doubled (`_locks.E_OURS`). `held` is another run's lock that
+    is live, or judged by age alone; the caller refuses on it unless forced, and a
+    forced start does not seize it. `none` is a lock that could not be written or
+    a project with no lock directory: the lock is advisory, so that refuses the
+    lock and not the start, and the caller says no lock was taken.
+
+    A lock whose holder is GONE (`_holder_gone`) is taken over, and so is one a
+    forced start was told to go past while not live.
+    """
+    name = _status_facts.PHASE_LOCK_PREFIX + str(phase_id)
+    lines = []
+    code = _locks.acquire(git_root, name, note=_START_LOCK_NOTE, wait=0,
+                          handed_off=True, out=lines.append)
+    if code == 0:
+        return {"state": "took", "name": name, "basis": " ".join(lines)}
+    if code == _locks.E_OURS:
+        return {"state": "ours", "name": name,
+                "basis": (lines[0] if lines else "already this run's")}
+    if code in (_locks.E_LIVE, _locks.E_STALE):
+        holder = _phase_holder(git_root, phase_id)
+        if code == _locks.E_STALE and (holder["state"] == "dead" or force):
+            again = []
+            code = _locks.acquire(git_root, name, note=_START_LOCK_NOTE, wait=0,
+                                  handed_off=True, takeover=True,
+                                  out=again.append)
+            if code == 0:
+                return {"state": "took", "name": name,
+                        "basis": "taken over: %s" % (holder["basis"],)}
+            lines = again
+        else:
+            return {"state": "held", "name": name, "basis": holder["basis"]}
+    return {"state": "none", "name": name,
+            "basis": " ".join(ln.strip() for ln in lines) or "exit %s" % (code,)}
+
+
+def _lock_refusal(phase_id, lock):
+    """The refusal for a start whose phase lock another run holds, and no
+    claim told this start about it."""
+    return ("[audit-task] phase %s's %s lock is held by another run -- %s. "
+            "Nothing was started or written. Whether that run is finished with "
+            "the phase is the operator's decision, not this verb's; once it is "
+            "made, start again with --force --reason \"<why>\" (the lock stays "
+            "that run's), or release it: `audit-lock.py release %s --force`."
+            % (phase_id, lock["name"], lock["basis"], lock["name"]))
+
+
+def _phase_lock_line(lock):
+    """The line `start` prints about the phase lock, or None when it took none."""
+    if lock is None:
+        return None
+    state = lock["state"]
+    if state == "took":
+        return ("  phase lock: %s taken for this session (%s) -- sign-off or a "
+                "phase cancel gives it back" % (lock["name"], lock["basis"]))
+    if state == "ours":
+        return "  phase lock: %s reused -- %s" % (lock["name"], lock["basis"])
+    if state == "held":
+        return ("  phase lock: %s NOT taken, it stays another run's -- %s"
+                % (lock["name"], lock["basis"]))
+    return ("  phase lock: none taken -- %s; the claim carries no liveness "
+            "another session can read" % (lock["basis"],))
+
+
+def _release_start_lock(git_root, phase_id):
+    """Give back the phase lock a start took -> a line to print, or None.
+
+    THIS IS WHERE THE HAND-OFF LOCK `_take_phase_lock` TAKES IS RELEASED: sign-off
+    (`_locked_signoff`) and a phase cancel (`_locked_cancel`) call it once their
+    write has validated, the moments a phase's claim is dropped. Only a lock
+    carrying `_START_LOCK_NOTE` is touched; the orchestrator's own phase lock is
+    held through the merge and released by the orchestrator. `_locks.release`
+    decides whether this run may give it back, and its refusal is reported.
+    """
+    name = _status_facts.PHASE_LOCK_PREFIX + str(phase_id)
+    if not _locks.valid_name(name):
+        return None
+    ld = _locks.lock_dir(git_root)
+    if not ld:
+        return None
+    path = os.path.join(ld, name + ".lock")
+    if not os.path.isfile(path):
+        return None
+    if _locks.read_lock(path).get("note") != _START_LOCK_NOTE:
+        return None
+    lines = []
+    code = _locks.release(git_root, name, out=lines.append)
+    if code == 0:
+        return "  phase lock: released %s, the lock the start took" % (name,)
+    return ("  phase lock: %s NOT released -- %s"
+            % (name, _locks.release_refusal(code, name)))
+
+
+def _claim_plan(sharded, held, session, branch, now, holder_of, phase_id=None):
     """What this start does to `phase.claim`, decided before any write.
 
     {"action", "held", "claim", "holder"}; `action` is one of
@@ -3318,9 +3481,11 @@ def _claim_plan(sharded, held, session, branch, now, holder_of):
 
     A CLAIM HAS NO LIVENESS OF ITS OWN, so another session's claim refuses only
     while that session may still be running the phase: a live `phase-<id>` lock
-    that is not this run's, or a lock nobody could ask about. Otherwise the
-    claim is a sequential session's leftover - the next `/audit:next`, any
-    resume - and this start takes it over (`takeover`), recorded with the basis.
+    that is not this run's, a lock nobody could ask about, or no lock at all in
+    this clone (`_holder_under_claim`). A claim whose lock's run was observed to
+    end, or one this run's own phase lock covers, is a sequential session's
+    leftover - the next `/audit:next`, any resume - and this start takes it over
+    (`takeover`), recorded with the basis `_takeover_basis` states.
 
     NO SESSION, NO CLAIM. A claim whose `sessionId` is empty names nobody, so no
     later start could tell its own claim from somebody else's; the caller says
@@ -3348,7 +3513,7 @@ def _claim_plan(sharded, held, session, branch, now, holder_of):
     if held is None:
         return dict(plan, action="take" if session else "no-session",
                     claim=fresh)
-    holder = holder_of()
+    holder = _holder_under_claim(holder_of(), phase_id, held)
     if holder.get("state") in _HOLDER_BLOCKS:
         return dict(plan, action="contested", held=held, claim=fresh,
                     holder=holder)
@@ -3375,7 +3540,7 @@ def _claim_replaced(plan):
 def _claim_changes(phase_id, held, claim, holder=None):
     """The phase-keyed `changes` rows a claim write adds to the `task.start` row:
     one per field the claim carries, each with the value it replaced - and, for
-    a claim taken over from a holder with no live run, a `claim.takeover` row
+    a claim taken over with no live lock of its holder's, a `claim.takeover` row
     from the replaced session to the liveness basis the takeover stood on."""
     held = held or {}
     rows = [{"id": phase_id, "field": "claim." + key,
@@ -3383,7 +3548,8 @@ def _claim_changes(phase_id, held, claim, holder=None):
             for key in ("sessionId", "branch", "at")]
     if held and holder and holder.get("state") not in _HOLDER_BLOCKS:
         rows.append({"id": phase_id, "field": "claim.takeover",
-                     "from": held.get("sessionId"), "to": holder.get("basis")})
+                     "from": held.get("sessionId"),
+                     "to": _takeover_basis(phase_id, holder)})
     return rows
 
 
@@ -3423,9 +3589,10 @@ def _claim_line(plan, phase_id):
     basis = (plan.get("holder") or {}).get("basis")
     if action == "takeover":
         return ("  claim: phase %s taken over from session %s for session %s, "
-                "branch %s -- it holds no live run of the phase (%s)"
+                "branch %s -- %s"
                 % (phase_id, held.get("sessionId"), claim.get("sessionId"),
-                   claim.get("branch") or "(none)", basis))
+                   claim.get("branch") or "(none)",
+                   _takeover_basis(phase_id, plan.get("holder") or {})))
     if action == "take" or (action == "contested" and claim):
         return ("  claim: phase %s claimed for session %s, branch %s"
                 % (phase_id, claim.get("sessionId"),
@@ -3781,12 +3948,26 @@ def _locked_start(args, project, config, mpath, tid, out):
     session = _journal_io.env_session_id()
     claim = _claim_plan(_mio.is_sharded(raw_index), phase.get("claim"), session,
                         entry.get("branch") or _id_shape.current_branch(git_root),
-                        now, lambda: _phase_holder(git_root, phase.get("id")))
+                        now, lambda: _phase_holder(git_root, phase.get("id")),
+                        phase.get("id"))
     contested = claim["action"] == "contested"
     if contested and not args.force:
         out(_claim_refusal(phase.get("id"), claim["held"], session,
                            claim["holder"]))
         return E_USAGE
+    # A CLAIM THIS START WRITES CARRIES READABLE LIVENESS: the phase lock, taken
+    # BEFORE the write so a refusal leaves nothing behind, and given back on every
+    # path below that rolls the write back. Without it the next session read "no
+    # lock" as "no live run" and took the phase from a session still working it.
+    lock = (_take_phase_lock(git_root, phase.get("id"), args.force)
+            if claim["claim"] else None)
+    if lock and lock["state"] == "held" and not args.force:
+        out(_lock_refusal(phase.get("id"), lock))
+        return E_USAGE
+
+    def undo_lock():
+        if lock and lock["state"] == "took":
+            _locks.release(git_root, lock["name"], out=lambda _line: None)
     forced = None
     if args.force and (unmet or contested):
         forced = {"reason": args.reason.strip(), "waitingOn": unmet,
@@ -3823,6 +4004,7 @@ def _locked_start(args, project, config, mpath, tid, out):
         written = _write_add(project, mpath, raw_index, assembled, phase_id, False)
     except Exception as exc:
         _restore(snap)
+        undo_lock()
         out("[audit-task] write failed -- manifest restored: %s" % exc)
         return E_INVALID
     written_manifest = {}
@@ -3833,6 +4015,7 @@ def _locked_start(args, project, config, mpath, tid, out):
         findings, warnings = ["cannot re-read the written manifest: %s" % exc], []
     if findings:
         _restore(snap)
+        undo_lock()
         out("[audit-task] REFUSED: the start would leave the manifest invalid "
             "-- every written file rolled back, nothing kept:")
         for line in findings:
@@ -3852,6 +4035,7 @@ def _locked_start(args, project, config, mpath, tid, out):
             cut_ok, cut_err = False, str(exc)
         if not cut_ok:
             _restore(snap)
+            undo_lock()
             out("[audit-task] REFUSED: git would not cut %s for phase %s -- the "
                 "start is rolled back, nothing kept: %s"
                 % (entry["branch"], phase_id, cut_err))
@@ -3891,7 +4075,11 @@ def _locked_start(args, project, config, mpath, tid, out):
                   "claimAction": claim["action"],
                   "claimReplaced": _claim_replaced(claim),
                   "claimKept": _claim_kept(claim),
-                  "claimHolder": claim["holder"]}
+                  "claimHolder": claim["holder"],
+                  "claimTakeoverBasis": (
+                      _takeover_basis(phase_id, claim["holder"] or {})
+                      if claim["action"] == "takeover" else None),
+                  "phaseLock": lock}
         result.update(jres)
         result.update(stdin_notes_key(args))
         result.update(project_basis_key(args))
@@ -3921,6 +4109,9 @@ def _locked_start(args, project, config, mpath, tid, out):
     claim_line = _claim_line(claim, phase_id)
     if claim_line:
         out(claim_line)
+    lock_line = _phase_lock_line(lock)
+    if lock_line:
+        out(lock_line)
     if forced:
         out("  FORCED past %s -- reason recorded on the task.start row: %s"
             % ("; ".join(_forced_past(forced)), forced["reason"]))
@@ -6909,6 +7100,10 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
     jres = _journal_row(project, config, mpath, "phase.verdict",
                         "%s signed off (%s): %s" % (pid, args.verdict, summary),
                         {"phaseId": pid})
+    # The phase's claim was dropped above, so the lock a start took for it goes too.
+    lock_note = _release_start_lock(
+        os.path.abspath(os.path.join(project, (config or {}).get("gitRoot") or ".")),
+        pid)
     effective = _mio.effective_phase_status(phase)
     branch = phase.get("branch")
     awaiting = "merge" if effective not in _mio.TERMINAL and branch else None
@@ -6929,6 +7124,7 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
         result.update(stdin_notes_key(args))
         result.update(project_basis_key(args))
         result.update(_index_dirty_key(index_note))
+        result["phaseLockReleased"] = lock_note
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     if awaiting:
@@ -6950,6 +7146,8 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
     out("  written: %s" % ", ".join(written))
     if index_note:
         out(index_note)
+    if lock_note:
+        out(lock_note)
     return 0
 
 
