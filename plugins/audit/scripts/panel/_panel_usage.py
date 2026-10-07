@@ -235,8 +235,20 @@ def _usage_manifest_slice(manifest):
     return (titles, task_meta, budgets)
 
 
-def _usage_derived(ul, manifest, rows, ucfg):
+def _usage_pricing(ul, manifest, config):
+    """The project's price table and which place priced it, `{table, basis,
+    asOf, source}` - `usage_ledger.resolve_pricing` over the manifest and the
+    RAW config this tab already read, the resolver the report, `/audit:usage`
+    and the meter hook ask too. The config must be the file as written:
+    `usage_cfg`'s merge fills in the shipped table, and the basis could then
+    not tell a project that declared one from a project that declared none."""
+    return ul.resolve_pricing(manifest, config)
+
+
+def _usage_derived(ul, manifest, rows, pricing):
     """The blocks that need the assembled MANIFEST, keyed by payload key.
+
+    `pricing` is the resolved rate table (`_usage_pricing(...)["table"]`).
 
     Returned as payload keys so the caller hands them straight to `_usage_shape`
     and no name is spelled twice on the way. Each is independently fail-soft:
@@ -245,8 +257,7 @@ def _usage_derived(ul, manifest, rows, ucfg):
     # Needs the assembled manifest and the per-tier counts, so it cannot be done
     # on the client. Fail-soft: no advice is the normal outcome anyway.
     try:
-        advice = ul.routing(manifest, rows,
-                            ucfg.get("pricing")).get("advice") or []
+        advice = ul.routing(manifest, rows, pricing).get("advice") or []
     except Exception:
         advice = []
 
@@ -403,7 +414,8 @@ def usage_state(project):
     titles, task_meta, budgets = _usage_manifest_slice(manifest)
 
     payload = dict(declared)
-    payload.update(_usage_derived(ul, manifest, rows, ucfg))
+    payload.update(_usage_derived(
+        ul, manifest, rows, _usage_pricing(ul, manifest, config)["table"]))
     payload.update({"fields": list(_FACT_FIELDS), "facts": facts,
                     "phaseTitles": titles, "taskMeta": task_meta,
                     "phaseBudgets": budgets, "counts": _ledger_counts(rows),

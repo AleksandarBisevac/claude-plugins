@@ -23,7 +23,6 @@ stale price table does not rot into a warning on its own.
 This module carries no `--selftest` of its own; its cases live in
 `plugins/audit/tests/test__usage_load.py` - see `plugins/audit/tests/_harness.py`.
 """
-import json
 import os
 import sys
 import time
@@ -78,40 +77,22 @@ def _pricing_stale(as_of, until, max_days=90):
         return False
 
 
-def _project_pricing(manifest_path, project_dir, ul):
-    """The project's own declared `usage.pricing`, or `None` when it declares
-    none - the table `routing` must price AT rather than silently re-pricing
-    from `DEFAULT_PRICING`, which is the shipped table and moves out from under
-    a committed report the day it does.
+def _project_pricing(manifest, manifest_path, project_dir, ul):
+    """The project's price table and which place priced it - `usage_ledger.
+    project_pricing`'s answer, `{table, basis, asOf, source}`.
 
-    THE ROOT COMES FROM `find_ledger_dir`, NOT A SECOND WALK. `.claude/usage`
-    and `.claude/audit.config.json` are siblings under the same project root,
-    and that root's resolution - an explicit `project_dir` wins outright,
-    otherwise walk upward from the manifest bounded by `.git` and never
-    answering out of `~/.claude` - is exactly what finding the ledger already
-    does. Asking it for `.claude` instead of `.claude/usage` reuses the one
-    home that logic has rather than re-deriving where a project's root is a
-    second time.
+    One resolver for every surface: the manifest's `meta.usage.pricing` when it
+    declares one, else the config's `usage.pricing` laid over the shipped table
+    model by model, else the shipped table. This module used to resolve the
+    first two itself and hand `None` onward for the third, while
+    `/audit:usage`, the panel and the meter each chose differently - so one
+    project's spend read differently depending on which surface printed it.
 
-    THE CONFIG READ ITSELF IS NOT SHARED. `gen-demo-usage.py` reads the same
-    file the same way, through the same `hooks/_config.usage_cfg()` merge, but
-    it sits ABOVE this module in the layer order (it is a command that builds
-    a fixture; this is read by every render) - so the one file both could
-    import without inverting that order is `hooks/_config.py` itself, reached
-    here through `_loader.load_hooks_config()` exactly as `panel/_panel_paths`
-    already does, rather than through either side's own reader.
+    The project root is the one the ledger's own lookup places (`project_dir`
+    when given, else the walk up from the manifest bounded by `.git`), so the
+    config read is the file beside the ledger this report plots.
     """
-    claude_dir = ul.find_ledger_dir(manifest_path, ".claude", project_dir)
-    if not claude_dir:
-        return None
-    try:
-        with open(os.path.join(claude_dir, "audit.config.json"),
-                  encoding="utf-8") as fh:
-            cfg = json.load(fh)
-    except (OSError, ValueError):
-        return None
-    hooks_cfg = _loader.load_hooks_config(modname="report_usage_hooks_config")
-    return hooks_cfg.usage_cfg(cfg if isinstance(cfg, dict) else {}).get("pricing")
+    return ul.project_pricing(manifest, manifest_path, project_dir)
 
 
 def _hourly(rows, ul):
@@ -199,20 +180,10 @@ def load_usage(manifest, manifest_path, project_dir=None):
         as_of_raw = meta_usage.get("pricingAsOf")
         as_of = (as_of_raw.strip() or None) if isinstance(as_of_raw, str) else None
 
-        # `None` unless the manifest itself declares a non-empty table - the
-        # schema names no such field today, but a hand-edited manifest can
-        # still carry one, and COMPATIBILITY.md's promise that an explicitly
-        # set value wins is read here before `_project_pricing` ever runs.
-        _raw_pricing = meta_usage.get("pricing")
-        declared_pricing = (_raw_pricing
-                            if isinstance(_raw_pricing, dict) and _raw_pricing
-                            else None)
-        # Read ONCE and shared by every re-pricing pass below (`cache_profile`,
-        # `routing`) rather than re-opened per caller - a second read could only
-        # ever repeat the same answer, since nothing between the two calls
-        # changes the file on disk.
-        resolved_pricing = (declared_pricing if declared_pricing
-                            else _project_pricing(manifest_path, project_dir, ul))
+        # Resolved ONCE and shared by every re-pricing pass below
+        # (`cache_profile`, `routing`): the table, and which place priced it.
+        pricing = _project_pricing(manifest, manifest_path, project_dir, ul)
+        resolved_pricing = pricing["table"]
 
         def slim(agg):
             """The three fields a breakdown renders, out of a finished aggregate."""
@@ -306,12 +277,7 @@ def load_usage(manifest, manifest_path, project_dir=None):
             "bands": ul.cost_bands(manifest, rows, meta_usage),
             "budgets": ul.phase_budgets(manifest, rows),
             "retry": ul.retry_cost(manifest, rows),
-            # The manifest's own `meta.usage.pricing` wins when it is declared -
-            # unchanged from before this fallback existed. Only when it is NOT
-            # declared does this reach for the project's `.claude/audit.
-            # config.json` table (the table the rows were actually priced with);
-            # a project with neither still reaches `DEFAULT_PRICING` inside
-            # `ul.routing`/`ul.cache_profile` themselves, exactly as before.
+            # Priced at the resolver's table - see `_project_pricing`.
             "routing": ul.routing(manifest, rows, resolved_pricing),
             "coverage": ul.coverage(rows),
             "monthly": ul.monthly_activity(manifest, rows),
@@ -321,6 +287,9 @@ def load_usage(manifest, manifest_path, project_dir=None):
                 for a in sorted({r.get("author") or "unknown" for r in rows})},
             "showCost": bool(meta_usage.get("showCost", True)),
             "pricingAsOf": as_of,
+            # Which place priced `cache` and `routing` above, as data: one of
+            # `ul.PRICING_BASES`, with that place's date and source.
+            "pricingBasis": {k: pricing[k] for k in ("basis", "asOf", "source")},
             "pricingStale": _pricing_stale(as_of, until),
             # Orientation, not metrics. These answer "how big is the thing I am
             # looking at" — a question the tiles cannot answer, and one that would

@@ -28,7 +28,51 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P104-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/report/_usage_overview.py:100-122; _usage_markdown.py:85-86; audit-usage.py:352-361; ui/panel/usage-view.js:80-90; status/audit-status.py:1253-1255",
+        "issue": "The phase outcome says every cost is printed with its date and source, but no surface prints the source: PRICING_SOURCE_URL and pricing_provenance_divergences() are read only by tests, and the report, its Markdown twin, /audit:usage, the panel and /audit:status print only 'rates as of <date>' or 'rates undated'.",
+        "resolution": "Extend the one rate-basis phrase each surface prints so it names the source beside the date (the shipped table's source URL, or the project's own usage.pricing), built in one Python helper the report, twin, CLI and status call, served to the panel in its payload, with a pin per surface."
+      },
+      {
+        "id": "P104-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/report/_usage_load.py:426-461; usage/audit-usage.py:459-460,969; panel/_panel_usage.py:248-249",
+        "issue": "The surfaces resolve three different rate tables for one project: the report takes the manifest's meta.usage.pricing then the config overlay, /audit:usage routing takes the manifest's then the shipped table and never the config, and the panel takes only the config overlay; usage_cfg() overlays the config table on the shipped one model by model, and no user document states the precedence. Backfill prices with the manifest's or shipped table while the meter hook prices live rows with the config overlay.",
+        "resolution": "One resolver in the usage layer (manifest table if declared, else the config overlay, else shipped), called by the report loader, the CLI, the panel and backfill, with a case proving all agree on a config-only project, and the precedence documented next to usage.pricing."
+      },
+      {
+        "id": "P104-R3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/report/_usage_detail.py:336-351; ui/panel/usage-view.js:349-352",
+        "issue": "The HTML report's unit-economics projection and band note, and the panel's projection fact, print per-task dollar figures with no coverage sentence.",
+        "resolution": "Print the coverage sentence once at the head of the HTML economics block and under the panel's projection, gated on showCost, and pin both."
+      },
+      {
+        "id": "P104-R4",
+        "severity": "low",
+        "file": "CONTRIBUTING.md:1084-1151",
+        "issue": "The pilot's Decision record entry says in the present tense that the ledger keeps the first entry per id, in scan_transcripts, and that the defect is still to be fixed; the phase fixed it, and the check was in _scan_file.",
+        "resolution": "Rewrite it as history and point at _scan_file's provisional-count mechanism."
+      },
+      {
+        "id": "P104-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/report/_usage_load.py:383-416; scripts/demo/gen-demo-usage.py:192-208",
+        "issue": "Both docstrings say they return None when no pricing table is declared, but both return the merged shipped table whenever the config parses; a comment beside them is wrong for the same reason.",
+        "resolution": "Fold into the single resolver, or correct the docstrings and comment to the overlay they return."
+      },
+      {
+        "id": "P104-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/ui/panel/usage-metrics.js:633-648; tools/ui-tests/usage-edges.test.mjs:241-254; usage/_usage_economics.py:860-883",
+        "issue": "The panel retypes the coverage sentence, guarded only by a comment that names the wrong function; each suite pins its own literal, so a wording change on one side leaves both green; _coverage_sentence is private but imported by four modules.",
+        "resolution": "Make it a public coverage_sentence re-exported with its peers, fix the comment, and add one parity case comparing Python's sentence with the panel's for the same inputs."
+      }
+    ],
+    "outcome": "[findings: 6 - 0 high, 2 med, 4 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -473,7 +517,7 @@
     {
       "id": "P104.8",
       "title": "retire the shipped price table if the pilot shows native cost covers it",
-      "status": "pending",
+      "status": "done",
       "description": "Only if the pilot's recorded decision says native cost holds at per-agent grain: meter-usage records Claude Code's own cost where the source carries it and keeps the table for rows without one (backfill of old transcripts), each row saying which priced it. COMPATIBILITY.md promises that a config key the plugin reads keeps being read, so usage.pricing stays honoured; retiring means the plugin stops maintaining shipped rows, not that it stops reading the key. If the pilot says it does not hold, close with /audit:task done --no-change --reason citing the Decision record entry. Rescope files and cases with /audit:task scope before starting, since the pilot decides the shape; risk is high because every cost the plugin prints and the Stop-hook path change.",
       "files": [
         "plugins/audit/hooks/meter-usage.py",
@@ -505,21 +549,25 @@
         "P104.7",
         "P104.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "The price table stays, because Claude Code's own cost figure is only per session; nothing was changed.",
+        "noChange": {
+          "reason": "The native-cost pilot recorded in CONTRIBUTING.md's Decision record (2026-10-06) found that every source of Claude Code's own cost - total_cost_usd and modelUsage in a headless run, the cost-state row in the transcript - is per session and per model, never per subagent, and the OTel metric with agent.name was not observed. Per-task attribution needs per-agent cost, so native cost does not hold at the grain this task requires, and the shipped price table stays. No change is made; the Decision record entry names the revisit trigger.",
+          "examinedAt": "c38330bf45c21cc1198a4c485bfe4f14e2d6d1f6"
+        }
       },
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-10-06T22:14:24Z",
+      "completedAt": "2026-10-06T22:14:24Z",
       "verifiedBy": []
     },
     {
       "id": "P104.9-tog",
       "title": "the ledger counts a message at its final entry, not its streaming partial",
-      "status": "in_progress",
+      "status": "done",
       "description": "The usage ledger undercounts output tokens. A transcript can write one assistant message twice under the same message id: first a streaming partial (stop_reason null, a small output_tokens count), then the final entry with the real count. usage_ledger's dedup keeps the first entry it sees for an id, so it counts the partial. Measured on one headless run with a subagent (2026-10-06, CLI 2.1.291): the ledger counted 4 output tokens for the subagent against 289 in its final entries; that shortfall was the whole gap between Claude Code's own total_cost_usd and the ledger's sum, while input and cache tokens matched exactly. The ledger must count each message id once at its final entry. That includes the incremental tail, where a scan can read the partial before the final entry is written: a partial must never be counted in a way a later final entry for the same id cannot correct, and the seen-id memory the cursor keeps must not freeze the partial's count. Decide the mechanism (count the final entry only, or replace a counted partial when its final arrives) from how the tail and the cursor work today, and say which and why.",
       "files": [
         "plugins/audit/scripts/usage/usage_ledger.py",
@@ -551,20 +599,153 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c38330bf",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The usage ledger now counts a streamed message once, at its final entry's figures. A transcript can write a streaming partial (stop_reason null) and then the final entry under one message id; the dedup kept the first. _scan_file now keeps a per-file cursor field, pending, holding message ids whose entries so far were all partials with the figures already counted; a later entry for a pending id adds only how far it exceeds what was counted, field by field and never below zero, without adding to msgs, and an entry with a stop reason clears the id. Because the ledger is append-only and a scan can end between the partial and the final, the correction across scans is its own row with msgs 0, which every reader sums and the linear price() prices correctly; a partial whose final never arrives is still counted. An older cursor without the field behaves as before, and pending is trimmed with the recent-ids list and reset with it. Re-metering the native-cost pilot's transcript gives 822 output tokens against 822 in Claude Code's own modelUsage (the subagent at 289, where it had counted 4), with input and cache tokens equal as before. Cases sf1-sf5 in test_usage_ledger.py; red-first proved 80/82 at HEAD (sf1, sf2); mutations (final entries only, pending not carried, msgs counted twice, the old dedup, pending never cleared) each reddened their named cases.",
+        "descriptive": "The plugin's own record of token use now matches Claude Code's: a message Claude Code writes twice while streaming is counted once, at its final size, so costs are no longer understated."
       },
       "startedAt": "2026-10-06T21:30:00Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-06T22:14:23Z",
+      "verifiedBy": [
+        "sf1",
+        "sf2",
+        "sf3",
+        "sf4",
+        "sf5"
+      ],
       "bugId": "BUG-18-tog",
       "testEvidence": {
         "runId": "2026-10-06T22:14:08Z.7e3e5f",
         "status": "passed",
         "at": "2026-10-06T22:14:08Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c38330bf",
+        "at": "2026-10-06T22:14:23Z",
+        "basis": "orchestrator check: the fix matches the bug's expected behaviour, re-metering the pilot transcript equals the native totals exactly, red-first proved and mutations red"
       }
+    },
+    {
+      "id": "P104.10-tog",
+      "title": "one resolver chooses a project's price table for every surface",
+      "status": "in_progress",
+      "description": "Fixes review findings P104-R2 and P104-R5. One function in the usage layer resolves the price table for a project - the manifest's meta.usage.pricing when declared, else the config's usage.pricing overlaid model by model on the shipped table (what usage_cfg does), else the shipped table - and returns which of the three priced it, so a surface can name its basis. The report loader, /audit:usage (its text advice, --json routing and --backfill), the panel's usage payload and the meter hook's live pricing all call it, so one project gets one table everywhere. The docstrings in _usage_load.py and gen-demo-usage.py, and the comment beside them, say what is now returned. The precedence, including the per-model overlay, is documented next to usage.pricing where the config keys are documented.",
+      "files": [
+        "plugins/audit/scripts/usage/_usage_core.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/scripts/report/_usage_load.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/scripts/demo/gen-demo-usage.py",
+        "plugins/audit/hooks/meter-usage.py",
+        "plugins/audit/README.md",
+        "plugins/audit/tests/test__usage_core.py",
+        "plugins/audit/tests/test_audit_usage.py",
+        "plugins/audit/tests/test__usage_load.py",
+        "plugins/audit/tests/test__panel_usage.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__usage_core.py: a project with a config-only table, a manifest table, and neither resolves the same table and basis whichever surface asks",
+          "plugins/audit/tests/test_audit_usage.py: /audit:usage routing and backfill price a config-only project with the config overlay, as the report does"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-06T22:20:15Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T00:16:56Z.a381f5",
+        "status": "passed",
+        "at": "2026-10-07T00:16:56Z"
+      }
+    },
+    {
+      "id": "P104.11-tog",
+      "title": "every cost names its rate date and source, and every per-task figure its coverage",
+      "status": "pending",
+      "description": "Fixes review findings P104-R1, P104-R3, P104-R4 and P104-R6. Every surface that prints a cost names its basis: the one rate-basis phrase the report, its Markdown twin, /audit:usage and /audit:status print becomes date and source, built by one Python helper from what the shared resolver reports (the shipped table's date and source URL, or the project's own declared table and its date), and the panel shows the same phrase from its payload rather than retyping it; when the shipped table priced the rows and the project declared no date, the shipped table's date is shown, never 'rates undated'. The HTML report's unit-economics projection and band note, and the panel's projection, carry the coverage sentence. The coverage sentence becomes a public coverage_sentence re-exported with its peers, its four importers updated, and one parity case compares Python's sentence with the panel's for the same inputs. CONTRIBUTING.md's native-cost pilot entry says the ledger miscount as history and points at _scan_file's provisional count. The panel screenshots are re-captured by the orchestrator.",
+      "files": [
+        "plugins/audit/scripts/report/_usage_overview.py",
+        "plugins/audit/scripts/report/_usage_markdown.py",
+        "plugins/audit/scripts/report/_usage_detail.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/scripts/ui/panel/usage-view.js",
+        "plugins/audit/scripts/ui/panel/usage-metrics.js",
+        "plugins/audit/scripts/usage/_usage_economics.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "CONTRIBUTING.md",
+        "tools/ui-tests/usage-edges.test.mjs",
+        "plugins/audit/tests/test__usage_overview.py",
+        "plugins/audit/tests/test__usage_markdown.py",
+        "plugins/audit/tests/test__usage_detail.py",
+        "plugins/audit/tests/test_audit_usage.py",
+        "plugins/audit/tests/test__usage_economics.py",
+        "plugins/audit/tests/test__panel_page.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__usage_overview.py: the report's rate basis names the source and the date, and the shipped table's date when the project declared none",
+          "tools/ui-tests/usage-edges.test.mjs: the panel's coverage sentence equals Python's coverage_sentence for the same done and priced counts"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P104.10-tog"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-06T14:46:28Z"

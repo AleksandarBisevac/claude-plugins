@@ -283,6 +283,28 @@ def apply_filters(rows, args, tags_by_phase=None):
     return kept
 
 
+def project_pricing(manifest, manifest_path, project_dir):
+    """The project's price table and which place priced it, `{table, basis,
+    asOf, source}` - `usage_ledger.project_pricing`, the resolver the report,
+    the panel and the meter hook ask too, so this command prices a project at
+    the table every other surface prices it at.
+
+    `project_dir` None means "walk up from the manifest", the rule
+    `pricing_root` applies for a manifest named from another directory."""
+    return ul.project_pricing(manifest, manifest_path, project_dir)
+
+
+def pricing_root(args, project):
+    """Where the project's config is looked for: `project`, unless a manifest
+    was named with no `--project-dir` or CLAUDE_PROJECT_DIR - then None, so the
+    lookup walks up from that manifest. The same rule `resolve_ledger` applies,
+    so the config read is the one beside the ledger this command reads."""
+    if args.manifest and not args.project_dir \
+            and not os.environ.get("CLAUDE_PROJECT_DIR"):
+        return None
+    return project
+
+
 # --- rendering ------------------------------------------------------------------
 def rate_basis(usage):
     """`meta.usage.pricingAsOf` as a BASIS, or None when the manifest declares none.
@@ -310,7 +332,11 @@ def rate_basis(usage):
     return (value.strip() or None) if isinstance(value, str) else None
 
 
-def render(rows, args, manifest, window, show_cost, pt=None):
+def render(rows, args, manifest, window, show_cost, pt=None, pricing=None):
+    """The dashboard. `pricing` is the resolved table the routing advice is
+    priced at; None resolves it from the manifest alone (no config read)."""
+    if pricing is None:
+        pricing = ul.resolve_pricing(manifest, None)["table"]
     phase_titles, task_titles = titles_of(manifest)
     tot = ul.totals(rows)
     repo = next((r.get("repo") for r in rows if r.get("repo")), "-")
@@ -456,8 +482,7 @@ def render(rows, args, manifest, window, show_cost, pt=None):
             if cov:
                 out.append(("" if md else "  ") + pt.paint(cov, "dim"))
         out += routing_advice_lines(
-            ul.routing(manifest, rows,
-                       (meta_usage or {}).get("pricing")).get("advice") or [],
+            ul.routing(manifest, rows, pricing).get("advice") or [],
             fmt=fmt, pt=pt)
     out += render_monthly(manifest, rows, show_cost, fmt=fmt, pt=pt)
     out += render_trend(rows, fmt=fmt, pt=pt)
@@ -934,9 +959,11 @@ def main(argv):
     show_cost = not args.no_cost and bool(
         meta_usage.get("showCost", True) if isinstance(meta_usage, dict) else True)
 
+    pricing = project_pricing(manifest, manifest_path,
+                              pricing_root(args, project))["table"]
+
     if args.backfill:
-        code, message = backfill(args, project, ledger_dir, manifest,
-                                 meta_usage.get("pricing"))
+        code, message = backfill(args, project, ledger_dir, manifest, pricing)
         (sys.stdout if code == 0 else sys.stderr).write(message + "\n")
         return code
 
@@ -966,7 +993,7 @@ def main(argv):
             "monthly": ul.monthly_activity(manifest, rows),
             "bands": ul.cost_bands(
                 manifest, rows, meta_usage if isinstance(meta_usage, dict) else {}),
-            "routing": ul.routing(manifest, rows, meta_usage.get("pricing")),
+            "routing": ul.routing(manifest, rows, pricing),
             # The claim `plugins/audit/README.md`'s Token usage section makes
             # about the plan itself, re-derived from THIS project's own two
             # ledgers rather than asserted: `_evidence_io.read_rows` is the
@@ -982,7 +1009,7 @@ def main(argv):
         return 0
 
     print(render(rows, args, manifest, window, show_cost,
-                 pt=_cli_fmt.painter(args.color)))
+                 pt=_cli_fmt.painter(args.color), pricing=pricing))
     return 0
 
 

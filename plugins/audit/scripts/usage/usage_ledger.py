@@ -131,10 +131,11 @@ import _manifest_io  # noqa: E402  (one home for reading a manifest's shape)
 # still cover every public name those modules define, so a name added down there and
 # forgotten here fails by name instead of at a call site.
 from _usage_core import (  # noqa: E402,F401  (re-exported, see above)
-    DEFAULT_PRICING, GROUP_KEYS, PRICING_AS_OF, PRICING_SOURCE_URL, TOKEN_KEYS,
-    UNTAGGED_AREA, aggregate, aggregate_area, bucket_date, bucket_hour,
-    bucket_month, heatmap, hour_bucket, parse_ts, price, pricing_divergences,
-    pricing_provenance_divergences, rates_for, rows_for_area, task_index, totals)
+    DEFAULT_PRICING, GROUP_KEYS, PRICING_AS_OF, PRICING_BASES,
+    PRICING_SOURCE_URL, TOKEN_KEYS, UNTAGGED_AREA, aggregate, aggregate_area,
+    bucket_date, bucket_hour, bucket_month, heatmap, hour_bucket, parse_ts, price,
+    pricing_divergences, pricing_provenance_divergences, rates_for,
+    resolve_pricing, rows_for_area, task_index, totals)
 from _usage_coverage import (  # noqa: E402,F401  (re-exported, see above)
     MONTHLY_PLAN_KEYS, POOR_COVERAGE_PCT, coverage, monthly_activity)
 from _usage_economics import (  # noqa: E402,F401  (re-exported, see above)
@@ -834,6 +835,29 @@ def ledger_files(ledger_dir):
         return sorted(glob.glob(os.path.join(ledger_dir, "[0-9]*.jsonl")))
     except Exception:
         return []
+
+
+def project_pricing(manifest, manifest_path=None, project_dir=None):
+    """`resolve_pricing` for a project on disk: the manifest handed in, and the
+    RAW `.claude/audit.config.json` of the project root `find_ledger_dir` places
+    - an explicit `project_dir` as given, else the walk up from the manifest.
+
+    The config is read as written, not through `hooks/_config.load`: that merge
+    fills in the defaults' table, and the resolver could then no longer tell a
+    project that declared a table from one that declared nothing. An absent,
+    unreadable or non-object config is no config - the shipped table, the same
+    answer `hooks/_config.load` gives the hooks for it."""
+    config = None
+    claude_dir = find_ledger_dir(manifest_path, ".claude", project_dir) \
+        if (manifest_path or project_dir) else None
+    if claude_dir:
+        try:
+            with open(os.path.join(claude_dir, "audit.config.json"),
+                      encoding="utf-8") as fh:
+                config = json.load(fh)
+        except (OSError, ValueError):
+            config = None
+    return resolve_pricing(manifest, config if isinstance(config, dict) else None)
 
 
 def read_ledger(ledger_dir, since=None, until=None):

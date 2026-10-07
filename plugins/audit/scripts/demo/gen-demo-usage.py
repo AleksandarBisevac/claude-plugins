@@ -39,14 +39,15 @@ records the concrete id Claude Code actually ran ("claude-opus-5"). This generat
 maps the former to the latter exactly as the runtime does, which is why analytics
 must join on taskId and read the model from the LEDGER — never map tiers.
 
-A ROW IS PRICED ONCE, WITH THE PROJECT'S OWN TABLE, NEVER THE SHIPPED DEFAULT.
-`main()` reads `usage.pricing` out of the `.claude/audit.config.json` that sits
-beside the manifest — the same file `meter-usage.py` reads for a real session —
-and hands it to `generate()`, which passes it straight through to `ul.price()`.
-A project that declares no table still prices every row: `ul.price()` falls back
-to the shipped `DEFAULT_PRICING` exactly as it always has. The difference is
-that a project that DOES declare one stops moving when the shipped table does,
-which is what a committed, regenerate-to-verify ledger requires.
+A ROW IS PRICED ONCE, WITH THE PROJECT'S OWN TABLE.
+`main()` asks `usage_ledger.project_pricing` - the resolver the report,
+`/audit:usage`, the panel and `meter-usage.py` ask - for the project's table:
+the manifest's `meta.usage.pricing` when it declares one, else the `usage.pricing`
+of the `.claude/audit.config.json` found walking up from the manifest, laid over
+the shipped table model by model, else the shipped `DEFAULT_PRICING`. It hands
+that table to `generate()`, which passes it straight through to `ul.price()`. A
+project that declares a table stops moving when the shipped table does, which
+is what a committed, regenerate-to-verify ledger requires.
 """
 import argparse
 import json
@@ -91,23 +92,13 @@ def _load_manifest_io():
                                 cache=False)
 
 
-def _load_pricing(manifest_path):
-    """The project's own `usage.pricing`, read from the `.claude/audit.config.json`
-    that sits beside `manifest_path` - the same file and the same merge
-    `meter-usage.py` applies, so a model this table does not name still resolves
-    through the shipped `_default` row rather than failing. `None` when the
-    project declares no config, or no `usage` block, or no `pricing` table inside
-    it: `ul.price()` already treats `None` as "use the shipped table", so this
-    does not need a second fallback of its own."""
-    cfg_path = os.path.join(os.path.dirname(os.path.abspath(manifest_path)),
-                            ".claude", "audit.config.json")
-    try:
-        with open(cfg_path, encoding="utf-8") as fh:
-            cfg = json.load(fh)
-    except (OSError, ValueError):
-        return None
-    hooks_cfg = _loader.load_hooks_config(modname="gen_demo_usage_hooks_config")
-    return hooks_cfg.usage_cfg(cfg if isinstance(cfg, dict) else {}).get("pricing")
+def _load_pricing(manifest, manifest_path):
+    """The project's price table and which place priced it, `{table, basis,
+    asOf, source}` - `usage_ledger.project_pricing` for `manifest`, with the
+    config looked for by walking up from `manifest_path` (bounded by `.git`), the
+    same lookup the report makes for a manifest it is handed. `main()` prices
+    rows at the `table`; a project declaring nothing gets the shipped one."""
+    return _load_ledger_lib().project_pricing(manifest, manifest_path)
 
 
 # --- vocab + scale --------------------------------------------------------------
@@ -310,7 +301,7 @@ def main(argv):
     rows = generate(manifest, seed=args.seed,
                     authors=tuple(a.strip() for a in args.authors.split(",") if a.strip()),
                     adhoc_days=args.adhoc_days, repo=repo,
-                    pricing=_load_pricing(args.manifest))
+                    pricing=_load_pricing(manifest, args.manifest)["table"])
     if not rows:
         sys.stderr.write(
             "ERROR: no rows generated — every task in %s lacks startedAt, so there "

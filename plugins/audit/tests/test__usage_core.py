@@ -557,6 +557,139 @@ def _cases(check):
           _ag_eager_day == 5, "got %d" % _ag_eager_day)
 
 
+    _resolver_cases(check)
+
+
+# --- rp: one price table per project, whichever surface asks -------------------
+def _rp_ask(fn):
+    """A surface's answer, or the exception it raised as a value - so a surface
+    that cannot answer fails its case instead of aborting the suite."""
+    try:
+        return fn()
+    except Exception as exc:  # noqa: BLE001 - surfaced as the case's detail
+        return {"error": repr(exc)}
+
+
+def _rp_key(answer):
+    """The part of an answer every surface must agree on."""
+    if not isinstance(answer, dict) or "error" in answer:
+        return answer
+    return (answer.get("table"), answer.get("basis"), answer.get("asOf"),
+            answer.get("source"))
+
+
+def _resolver_cases(check):
+    import json
+    import shutil
+    import tempfile
+    import _loader
+
+    ul = _loader.load_script("usage_ledger.py", modname="rp_usage_ledger",
+                             cache=False)
+    rl = _loader.load_script("_usage_load.py", modname="rp_usage_load",
+                             cache=False)
+    au = _loader.load_script("audit-usage.py", modname="rp_audit_usage",
+                             cache=False)
+    pu = _loader.load_script("_panel_usage.py", modname="rp_panel_usage",
+                             cache=False)
+    gd = _loader.load_script("gen-demo-usage.py", modname="rp_gen_demo_usage",
+                             cache=False)
+    mu = _loader.load(os.path.join(_harness.HOOKS_DIR, "meter-usage.py"),
+                      "rp_meter_usage")
+
+    # Every rate differs from the shipped sonnet row, and the manifest's row
+    # differs from the config's, so no wrong precedence can match by accident.
+    cfg_sonnet = {"in": 3.0, "out": 15.0, "cacheW5m": 3.75, "cacheW1h": 6.0,
+                  "cacheR": 0.3}
+    man_table = {"_default": {"in": 7.0, "out": 35.0, "cacheW5m": 8.75,
+                              "cacheW1h": 14.0, "cacheR": 0.7},
+                 "claude-sonnet-5": {"in": 1.5, "out": 7.5, "cacheW5m": 1.875,
+                                     "cacheW1h": 3.0, "cacheR": 0.15}}
+    shipped = dict((k, dict(v)) for k, v in M.DEFAULT_PRICING.items())
+    overlay = dict(shipped)
+    overlay["claude-sonnet-5"] = dict(cfg_sonnet)
+
+    projects = (
+        # name, meta.usage, raw config (None = no file), expected answer
+        ("config-only", {"pricingAsOf": "2026-07-01"},
+         {"usage": {"pricingAsOf": " 2026-08-06 ",
+                    "pricing": {"claude-sonnet-5": cfg_sonnet}}},
+         (overlay, "config", "2026-08-06", None)),
+        ("manifest", {"pricingAsOf": "2026-09-01", "pricing": man_table},
+         {"usage": {"pricingAsOf": "2026-08-06",
+                    "pricing": {"claude-sonnet-5": cfg_sonnet}}},
+         (man_table, "manifest", "2026-09-01", None)),
+        ("neither", {}, None,
+         (shipped, "shipped", M.PRICING_AS_OF, M.PRICING_SOURCE_URL)),
+    )
+    root = tempfile.mkdtemp(prefix="usage-core-resolver-")
+    try:
+        for name, meta_usage, raw_cfg, want in projects:
+            proj = os.path.join(root, name)
+            for d in (".git", os.path.join(".claude", "usage"),
+                      os.path.join("docs", "audit")):
+                os.makedirs(os.path.join(proj, d))
+            manifest = {"meta": {"version": 2, "repo": name,
+                                 "usage": meta_usage}, "phases": []}
+            mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+            with open(mpath, "w", encoding="utf-8") as fh:
+                json.dump(manifest, fh)
+            if raw_cfg is not None:
+                with open(os.path.join(proj, ".claude", "audit.config.json"),
+                          "w", encoding="utf-8") as fh:
+                    json.dump(raw_cfg, fh)
+
+            def _bind(m=manifest, p=mpath, d=proj, c=raw_cfg):
+                return (
+                    ("core", lambda: M.resolve_pricing(m, c)),
+                    ("usage_ledger", lambda: ul.project_pricing(m, p, d)),
+                    ("report", lambda: rl._project_pricing(m, p, d, ul)),
+                    ("/audit:usage", lambda: au.project_pricing(m, p, d)),
+                    ("panel", lambda: pu._usage_pricing(ul, m, c or {})),
+                    ("meter hook", lambda: mu._pricing(ul, m, d)),
+                    ("demo generator", lambda: gd._load_pricing(m, p)),
+                )
+
+            answers = [(surface, _rp_key(_rp_ask(fn))) for surface, fn in _bind()]
+            core = answers[0][1]
+            check("rp-%s the resolver answers the %s table, dated %r, for a "
+                  "project declaring %s: %r"
+                  % (name, want[1], want[2], name, core),
+                  core == want)
+            apart = [(s, a) for s, a in answers if a != want]
+            check("rp-%s ...and every surface that prices this project asks it "
+                  "and gets the same table and basis back - apart: %r"
+                  % (name, apart),
+                  apart == [] and len(answers) == 7)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+    # The config overlay replaces a NAMED row whole and leaves every other row
+    # shipped - the merge `hooks/_config.usage_cfg` applies.
+    hooks_cfg = _loader.load_hooks_config(modname="rp_hooks_config", cache=False)
+    raw = {"usage": {"pricing": {"claude-sonnet-5": {"in": 9.0}}}}
+    got = _rp_ask(lambda: M.resolve_pricing({}, raw))
+    check("rp-overlay a partial config row replaces the shipped row whole, "
+          "exactly as usage_cfg merges it, and leaves the other rows shipped",
+          isinstance(got, dict)
+          and got.get("table") == hooks_cfg.usage_cfg(raw).get("pricing")
+          and got.get("table", {}).get("claude-haiku-4-5")
+          == M.DEFAULT_PRICING["claude-haiku-4-5"])
+    # The second direction: a declared-but-empty table is no declaration.
+    got_e = _rp_ask(lambda: M.resolve_pricing(
+        {"meta": {"usage": {"pricing": {}}}}, {"usage": {"pricing": {}}}))
+    check("rp-empty an empty table in either place is not a declaration - the "
+          "basis stays `shipped`: %r" % (_rp_key(got_e),),
+          isinstance(got_e, dict) and got_e.get("basis") == "shipped")
+    got_s = _rp_ask(lambda: M.resolve_pricing(None, None))
+    check("rp-mutate the shipped answer is a copy - writing to it does not "
+          "reprice the next caller",
+          isinstance(got_s, dict) and isinstance(got_s.get("table"), dict)
+          and got_s["table"] == M.DEFAULT_PRICING
+          and got_s["table"] is not M.DEFAULT_PRICING
+          and got_s["table"].get("_default") is not M.DEFAULT_PRICING["_default"])
+
+
 def _selftest():
     return _harness.run(_cases)
 

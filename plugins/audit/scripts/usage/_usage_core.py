@@ -223,6 +223,76 @@ def pricing_provenance_divergences(mine, theirs, mine_name="mine",
     return out
 
 
+# Which of the three places a project's table can come from priced it. Data, not
+# a sentence: a surface that names its basis words it from these.
+PRICING_BASES = ("manifest", "config", "shipped")
+
+
+def _declared_table(block):
+    """`block["pricing"]` when it is a non-empty dict, else None. An empty table
+    declares nothing: it would price every model at the zero row a lookup with
+    nothing in it falls back past."""
+    if not isinstance(block, dict):
+        return None
+    table = block.get("pricing")
+    return table if isinstance(table, dict) and table else None
+
+
+def _declared_as_of(block):
+    """`block["pricingAsOf"]` trimmed, or None - a whitespace-only date is no
+    date, the same normalisation every reader of this key applies."""
+    value = block.get("pricingAsOf") if isinstance(block, dict) else None
+    return (value.strip() or None) if isinstance(value, str) else None
+
+
+def _copy_table(table):
+    return dict((k, dict(v) if isinstance(v, dict) else v)
+                for k, v in table.items())
+
+
+def resolve_pricing(manifest, config):
+    """The one price table a project is priced at, and which place it came from.
+
+    -> {"table":  the rate table, a copy the caller may keep,
+        "basis":  one of PRICING_BASES,
+        "asOf":   the date the declaring place gives its rates, or None,
+        "source": the page the rates were read from, or None}
+
+    Precedence, first match wins:
+      * `manifest` - the plan's `meta.usage.pricing`, used as written;
+      * `config`   - `usage.pricing` of the RAW `.claude/audit.config.json`
+        (as parsed, not merged with defaults), laid over the shipped table
+        model by model: a named row replaces the shipped row whole, every
+        other row stays shipped. That is `hooks/_config.usage_cfg`'s merge;
+      * `shipped`  - DEFAULT_PRICING, dated PRICING_AS_OF from
+        PRICING_SOURCE_URL.
+
+    `asOf` is the declaring place's own `pricingAsOf`, None when it gives
+    none - a config overlay's unnamed rows are still the shipped ones, but the
+    date names what the project declared. Only the shipped table carries a
+    source; a project's own table answers to whatever page it was copied from,
+    which neither file names.
+
+    The config must be the raw file: a config already merged with defaults
+    always carries a table, and the basis would read `config` for a project
+    that declared nothing. Never raises."""
+    meta = (manifest or {}).get("meta") if isinstance(manifest, dict) else None
+    meta_usage = meta.get("usage") if isinstance(meta, dict) else None
+    declared = _declared_table(meta_usage)
+    if declared is not None:
+        return {"table": _copy_table(declared), "basis": "manifest",
+                "asOf": _declared_as_of(meta_usage), "source": None}
+    cfg_usage = config.get("usage") if isinstance(config, dict) else None
+    overlay = _declared_table(cfg_usage)
+    table = _copy_table(DEFAULT_PRICING)
+    if overlay is not None:
+        table.update(_copy_table(overlay))
+        return {"table": table, "basis": "config",
+                "asOf": _declared_as_of(cfg_usage), "source": None}
+    return {"table": table, "basis": "shipped", "asOf": PRICING_AS_OF,
+            "source": PRICING_SOURCE_URL}
+
+
 # --- timestamps -----------------------------------------------------------------
 # Hand-rolled so the parse is identical on Python 3.8+ (datetime.fromisoformat only
 # learned to accept a trailing `Z` in 3.11, and is picky about fractional digits).

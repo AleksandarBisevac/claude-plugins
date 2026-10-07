@@ -812,6 +812,143 @@ def _cases(check):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    _config_only_pricing_cases(check)
+
+
+# --- one price table per project, whichever surface asks (cp) ------------------
+def _cp_run_main(argv):
+    """`main(argv)` -> (exit code, stdout text, stderr text). An exception is
+    returned as the code so a case reads it as a failure rather than aborting."""
+    import contextlib
+    import io as _io
+    out, err = _io.StringIO(), _io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = M.main(argv)
+    except Exception as exc:  # noqa: BLE001 - surfaced as the case's detail
+        code = "raised %r" % (exc,)
+    return code, out.getvalue(), err.getvalue()
+
+
+def _config_only_pricing_cases(check):
+    """/audit:usage prices a project whose only table is in its config file the
+    way the report prices it: the config's rows laid over the shipped table.
+
+    Sonnet is the cheaper model in the shipped table and the costlier one in this
+    fixture's config, so the direction of the routing advice says which table
+    priced it - a CLI still reading the shipped table recommends the opposite
+    move, and a backfill still reading it writes a different costUSD."""
+    import shutil
+    import tempfile
+    rl = _loader.load_script("_usage_load.py", modname="cp_usage_load")
+    expensive_sonnet = {"in": 300.0, "out": 1500.0, "cacheW5m": 375.0,
+                        "cacheW1h": 600.0, "cacheR": 30.0}
+    root = tempfile.mkdtemp(prefix="audit-usage-config-pricing-")
+    try:
+        proj = os.path.join(root, "proj")
+        for d in (".git", os.path.join(".claude", "usage"),
+                  os.path.join("docs", "audit")):
+            os.makedirs(os.path.join(proj, d))
+        tasks, rows = [], []
+        for i in range(3):
+            for model, tid in (("claude-opus-5", "O%d" % i),
+                               ("claude-sonnet-5", "S%d" % i)):
+                tasks.append({"id": tid, "title": tid, "status": "done",
+                              "risk": "high", "attempts": 1})
+                rows.append({"ts": "2026-07-01T03", "sessionId": "s1",
+                             "model": model, "taskId": tid, "phaseId": "P9",
+                             "attr": "task", "msgs": 1, "in": 10000,
+                             "out": 200000, "cacheW5m": 0, "cacheW1h": 0,
+                             "cacheR": 0, "costUSD": 1.0})
+        manifest = {"meta": {"version": 2, "repo": "x",
+                             "usage": {"pricingAsOf": "2026-07-01"}},
+                    "phases": [{"id": "P9", "title": "P", "status": "pending",
+                                "tasks": tasks}]}
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh)
+        with open(os.path.join(proj, ".claude", "usage", "2026-07.jsonl"),
+                  "w", encoding="utf-8") as fh:
+            for r in rows:
+                fh.write(json.dumps(r) + "\n")
+        with open(os.path.join(proj, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"usage": {"pricing":
+                                 {"claude-sonnet-5": expensive_sonnet}}}, fh)
+
+        report = rl.load_usage(manifest, mpath, proj) or {}
+        code, out, err = _cp_run_main(["--json", "--project-dir", proj])
+        try:
+            payload = json.loads(out)
+        except ValueError:
+            payload = {}
+        cli_routing = payload.get("routing") or {}
+        advice = cli_routing.get("advice") or [{}]
+        check("cp1 /audit:usage --json routing on a project whose only table is "
+              "its config's prices sonnet at the CONFIG's rate - the advice "
+              "moves off sonnet, which the shipped table (sonnet cheaper) "
+              "cannot produce: code=%r advice=%r err=%r"
+              % (code, advice[:1], err[-300:]),
+              code == 0 and advice[0].get("from") == "claude-sonnet-5"
+              and advice[0].get("to") == "claude-opus-5")
+        check("cp2 ...and it is the report's routing, figure for figure, for "
+              "the same project: cli=%r report=%r"
+              % (cli_routing.get("advice"),
+                 (report.get("routing") or {}).get("advice")),
+              bool(cli_routing) and cli_routing == report.get("routing"))
+        # The allow twin: a project with no config table still gets the shipped
+        # table's advice, so cp1 is not passing on a CLI that always inverts.
+        os.remove(os.path.join(proj, ".claude", "audit.config.json"))
+        code_s, out_s, _err_s = _cp_run_main(["--json", "--project-dir", proj])
+        try:
+            shipped = (json.loads(out_s).get("routing") or {}).get("advice")
+        except ValueError:
+            shipped = None
+        check("cp3 ...while the same project with no config table is priced "
+              "at the shipped table and is advised the other way: %r"
+              % (shipped,),
+              code_s == 0 and bool(shipped)
+              and shipped[0].get("from") == "claude-opus-5")
+        with open(os.path.join(proj, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"usage": {"pricing":
+                                 {"claude-sonnet-5": expensive_sonnet}}}, fh)
+
+        code_t, text, err_t = _cp_run_main(["--project-dir", proj,
+                                            "--color", "never"])
+        check("cp4 the text dashboard's advice is priced the same way: %r"
+              % ((text.split("WHAT THE EVIDENCE SUPPORTS") + [""])[1][:160],),
+              code_t == 0
+              and "high work is running on claude-sonnet-5" in text
+              and "high work is running on claude-opus-5" not in text)
+
+        # --backfill writes costUSD at write time, so the table it reads is
+        # the one every later surface inherits from the ledger itself.
+        tdir = os.path.join(root, "transcripts")
+        os.makedirs(tdir)
+        with open(os.path.join(tdir, "sess-bf.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(json.dumps({
+                "type": "assistant", "timestamp": "2026-08-06T07:20:10Z",
+                "message": {"id": "msg-bf", "model": "claude-sonnet-5",
+                            "usage": {"input_tokens": 1000,
+                                      "output_tokens": 2000,
+                                      "cache_creation_input_tokens": 0,
+                                      "cache_read_input_tokens": 0}}}) + "\n")
+        code_b, _out_b, err_b = _cp_run_main([
+            "--backfill", "--project-dir", proj, "--transcript-dir", tdir,
+            "--author-mode", "none"])
+        bf = [r for r in M.ul.read_ledger(os.path.join(proj, ".claude", "usage"))
+              if r.get("sessionId") == "sess-bf"]
+        want = round((1000 * 300.0 + 2000 * 1500.0) / 1000000.0, 6)
+        got = [r.get("costUSD") for r in bf]
+        check("cp5 --backfill prices a config-only project's rows at the "
+              "config's rate (%r), not the shipped one: code=%r got=%r err=%r"
+              % (want, code_b, got, err_b[-300:]),
+              code_b == 0 and got == [want])
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
 
 def _selftest():
     return _harness.run(_cases)

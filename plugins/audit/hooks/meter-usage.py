@@ -26,7 +26,10 @@ Config: `.claude/audit.config.json` -> `usage` (see _config.DEFAULTS):
                              does the unbounded pass instead.
   pricing             obj  — USD per million tokens; cost is computed and stored
                              at write time so a later rate change cannot rewrite
-                             history.
+                             history. The table is the one every surface prices
+                             this project at (`_pricing` below): the manifest's
+                             `meta.usage.pricing` when declared, else this key
+                             laid over the shipped table model by model.
 
 State: `<ledgerDir>/.cursors/<session_id>.json` — per-file offsets plus the
 resolved author. Deliberately NOT under `stateDir`: that tree is GC'd after 7 days
@@ -92,6 +95,19 @@ def _load_ledger_lib():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _pricing(ul, manifest, root):
+    """The project's price table and which place priced it, `{table, basis,
+    asOf, source}` - `usage_ledger.project_pricing`, the resolver the report,
+    `/audit:usage` and the panel ask too.
+
+    Reached through the `usage_ledger` this hook already loads by path, so the
+    layer wall is crossed exactly where it already was and no import is added.
+    The config is re-read RAW from `root` rather than taken from `_config.load`:
+    that merge fills in the shipped table, so a project that declared nothing
+    would read as one that declared a table."""
+    return ul.project_pricing(manifest, None, str(root))
 
 
 # --- advisory + session summary -----------------------------------------------
@@ -282,7 +298,7 @@ def meter(data, ul=None, cfg=None, root=None, notices=None):
         transcript, session_id, cursor, manifest,
         {
             "repo": os.path.basename(str(root)) or "repo",
-            "pricing": ucfg.get("pricing"),
+            "pricing": _pricing(ul, manifest, root)["table"],
             "backfillOnFirstRun": bool(ucfg.get("backfillOnFirstRun", True)),
             # `if is None`, NOT `or`, and the difference is a setting the user can
             # write and this hook could not read. `_config_rules` accepts a
