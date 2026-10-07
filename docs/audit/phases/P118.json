@@ -1,7 +1,7 @@
 {
   "id": "P118",
   "title": "the plugin pipeline costs at most 2x plain per task",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Implements the cost design in docs/research/pipeline-cost-design.md, section 6, on the user's decisions of 2026-10-07: G1 (the per-task intent review, the red-first grade and the inherited-test question move into the phase review, with a deferred close and a sign-off refusal), the phase-overhead budget raised to 1.00, and the main loop's cache TTL documented but not changed. The order is fixed by the user: implement, run each task's micro-test, and only then one single-task paid probe and the full benchmark, both run by the orchestrator. Each task's design section gives its mechanism, targets and micro-test; the task text below names what it owns.",
   "desiredOutcome": "a task run through the plugin pipeline costs at most 2x plain Claude Code doing the same task, measured like for like, with the phase overhead within 1.00 USD-equivalent a phase, each fix confirmed by its offline micro-test before any paid session",
   "testGate": [
@@ -15,8 +15,8 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "b0adcd8e03d3f565851a7a24332865453ab33402",
+  "branch": "audit/p118-the-plugin-pipeline-costs-at-m",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -29,7 +29,7 @@
     {
       "id": "P118.1",
       "title": "the cost instruments read spans, injected command bodies and background agents as the design predicts",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Design section 6, T1. measure-context gains --sections and entries for /audit:phase add, /audit:task add and the phase run form before and at sign-off. stream-cost gains: the task cycle as its own section, read off the verb and its operand; the planning row; sign-off, its fix task and the close as three parts; the longest gap per context; each dispatch's start read and written by agent type; injected command bodies sized as their own source; and no phantom final for a background-launched agent (internal fault F563). Targets are T1's, on feature-C-1, whole-C-1, whole-C-2, whole-C-3 and the twin fixtures. whole-C-2-r's remaining unattributed amount is investigated and named before any target is set for it. Every new case is shown red first.",
       "files": [
         "tools/measure-context.py",
@@ -56,21 +56,26 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T21:17:01Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T22:31:30Z.0f0087",
+        "status": "passed",
+        "at": "2026-10-07T22:31:30Z"
+      }
     },
     {
       "id": "P118.2",
       "title": "plugin verbs print one success line by default and the long form on --verbose",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Design section 6, T7. One shared helper in _output.py prints the success line. Each verb the driver or the main loop calls prints, on success, one line of at most 200 bytes naming what was done and the record it wrote. --verbose prints today's text unchanged, and a refusal always prints in full. Micro-test: each verb's success path on its selftest fixture, shown red against a verb that still prints the long form.",
       "files": [
         "plugins/audit/scripts/_output.py",
@@ -94,7 +99,8 @@
         "plugins/audit/tests/test_close_phase.py",
         "plugins/audit/tests/test_validate_manifest.py",
         "plugins/audit/tests/test_audit_lookup.py",
-        "plugins/audit/tests/test_audit_status.py"
+        "plugins/audit/tests/test_audit_status.py",
+        "tools/check-git-pipeline.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -117,16 +123,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T21:17:01Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T22:38:21Z.654369",
+        "status": "passed",
+        "at": "2026-10-07T22:38:21Z"
+      }
     },
     {
       "id": "P118.3",
@@ -527,5 +538,6 @@
       "completedAt": null,
       "verifiedBy": []
     }
-  ]
+  ],
+  "startedAt": "2026-10-07T21:17:01Z"
 }
