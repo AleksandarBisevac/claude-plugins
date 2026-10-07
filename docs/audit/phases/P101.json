@@ -18,15 +18,10 @@
   "baseRef": "6d0ef731b5ac60e6bef3c015cf9967583e3625f8",
   "branch": "audit/p101-the-plugin-s-value-is-measured",
   "mergedAt": null,
-  "claim": {
-    "sessionId": "6c881c24-c1fd-461f-8c48-abb0170e0a5a",
-    "branch": "audit/p101-the-plugin-s-value-is-measured",
-    "at": "2026-10-06T14:44:44Z"
-  },
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P101-R1",
@@ -103,7 +98,7 @@
     ],
     "outcome": "[findings: 8 - 0 high, 2 med, 6 low; 8 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "The plugin's value is measured on a fixture rather than asserted. docs/research/pipeline-pilot.md reports one paid /audit:run on the bench fixture, with cost, tokens, requests and wall clock per stage, and where the pipeline stalled. docs/research/benchmark-design.md fixes the with/without protocol. docs/research/benchmark-results.md reports the outcome-first comparison agreed with the user on one feature task, graded by hidden acceptance tests. Two plain Claude Code sessions and one plugin-pipeline session all solved it fully and within scope, with no intervention. The plugin session cost and took more, and left a branch, a commit, the plan, evidence and the journal behind. Every figure is re-derivable from the session records, and the document lists where the run departed from the design and what the task did not exercise; the plugin arm's red-first step, in particular, did not run. The bugfix and guard eval cases are written against the CLI's case format but are marked not runnable until their scaffold scripts exist.\n\nNot covered within the agreed budget: arm B, a second plugin session, and the bugfix, interrupted-plus-resume and guard scenarios. The review ran two rounds, and every finding is fixed. The phase gate is green, and the invariants check found no breach.",
   "tasks": [
     {
       "id": "P101.1",
@@ -325,8 +320,8 @@
   ],
   "startedAt": "2026-10-06T14:44:44Z",
   "testEvidence": {
-    "runId": "2026-10-07T10:57:27Z.a167cf",
-    "status": "failed",
-    "at": "2026-10-07T10:57:27Z"
+    "runId": "2026-10-07T11:05:55Z.1f1de2",
+    "status": "passed",
+    "at": "2026-10-07T11:05:55Z"
   }
 }
