@@ -3257,7 +3257,7 @@ def _cases(check):
           _pf_checked != [] and "--gate-clear" in _pf_checked
           and _pf_verbs == ["add", "add-phase", "block", "cancel", "couple",
                             "done", "move", "mute", "note", "reopen", "scope",
-                            "uncouple", "unmute"]
+                            "start", "uncouple", "unmute"]
           and _pf_same != "" and _pf_same == _at_src
           and _at_dest.get("--gate-clear") == "gate_clear"
           and _at_dest.get("--blocked-by") == "blocked_by")

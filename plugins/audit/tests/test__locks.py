@@ -31,6 +31,7 @@ import threading
 import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402  (SCRIPTS_DIR, HOOKS_DIR, py_files: the private-name scan)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _locks as M                                 # noqa: E402
@@ -44,9 +45,10 @@ def _cases(check):
     # Every name `audit-lock.py` spells must BE this module's object. A copy
     # pasted back there passes every behavioural case in both suites and fails
     # only here.
-    _shared = ("STALE_MINUTES", "pid_alive", "_age_minutes", "judge", "lock_dir",
-               "valid_name", "read_lock", "collect", "acquire", "release",
-               "_identity", "_write_lock")
+    # Public names only: a private helper is this module's own business, and
+    # `hg4` holds that no other module reaches one.
+    _shared = ("STALE_MINUTES", "pid_alive", "judge", "lock_dir",
+               "valid_name", "read_lock", "collect", "acquire", "release")
     _forked = sorted(n for n in _shared
                      if getattr(_CMD, n, None) is not getattr(M, n))
     check("b1 audit-lock.py re-exports all %d shared names as THIS module's own "
@@ -595,6 +597,256 @@ def _cases(check):
     _harness.stage(check, "re-block", _reentry_cases)
     _harness.stage(check, "wt-block", _wait_cases)
     _harness.stage(check, "rk-block", _token_cases)
+    _harness.stage(check, "hg-block", _gone_cases)
+    _harness.stage(check, "rf-block", _refresh_cases)
+
+
+# --- one predicate for "the holder is gone" -----------------------------------
+def _private_reaches():
+    """Every `_locks._<name>` attribute read outside `_locks.py`, as path:line."""
+    import ast
+    found = []
+    for root in (_output.SCRIPTS_DIR, _output.HOOKS_DIR):
+        for _rel, path in _output.py_files(root):
+            if os.path.basename(path) == "_locks.py":
+                continue
+            with open(path, "r", encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), filename=path)
+            found.extend("%s:%s %s" % (os.path.relpath(path, _output.PLUGIN_ROOT),
+                                       node.lineno, node.attr)
+                         for node in ast.walk(tree)
+                         if isinstance(node, ast.Attribute)
+                         and isinstance(node.value, ast.Name)
+                         and node.value.id == "_locks"
+                         and node.attr.startswith("_")
+                         and not node.attr.startswith("__"))
+    return sorted(found)
+
+
+def _gone_cases(check):
+    """`holder_gone` is public, and the three readers that decide by it ask it."""
+    gone = getattr(M, "holder_gone", None)
+    here = platform.node()
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    tmp = tempfile.mkdtemp(prefix="audit-locks-gone-")
+    try:
+        empty = os.path.join(tmp, "empty.lock")
+        open(empty, "w").close()
+        junk = os.path.join(tmp, "junk.lock")
+        with open(junk, "w", encoding="utf-8") as fh:
+            fh.write("{not json")
+        check("hg1 `holder_gone` is public and says GONE for the two ends this "
+              "module observes: a pid gone on this host, and an empty claim",
+              callable(gone)
+              and gone({"pid": dead.pid, "hostname": here}) is True
+              and gone({}, empty) is True, repr(gone))
+        check("hg2 ALLOW: a live pid here, a dead pid on another host, no pid at "
+              "all, and bytes that will not parse are NOT gone - each is an "
+              "uncertainty or a live run, and those resolve to live",
+              callable(gone)
+              and gone({"pid": os.getpid(), "hostname": here}) is False
+              and gone({"pid": dead.pid, "hostname": "not-" + here}) is False
+              and gone({"hostname": here}) is False
+              and gone({}, junk) is False, repr(gone))
+        live_info = {"pid": os.getpid(), "hostname": here, "sessionId": "s-HOLD"}
+        had = hasattr(M, "holder_gone")
+        M.holder_gone = lambda *_a, **_k: True
+        try:
+            j_live, _j_basis = M.judge(live_info, empty, host=here)
+            conflict = M._release_conflict(live_info, "s-OTHER", 1)
+        finally:
+            if had:
+                M.holder_gone = gone
+            else:
+                del M.holder_gone
+        check("hg3 `judge` and the release conflict decide through "
+              "`holder_gone`: forced true, a live holder reads dead to both",
+              j_live is False and conflict["mismatch"] is False,
+              repr((j_live, conflict)))
+        reaches = _private_reaches()
+        check("hg4 no module under scripts/ or hooks/ other than `_locks.py` reads "
+              "a private `_locks` name: %r" % (reaches,), reaches == [])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# --- a hand-off hold re-recorded under the live process -----------------------
+def _refresh_cases(check):
+    """A same-session claim naming a dead process is refreshed, never answered
+    as already held; a start's lock yields to its own session's hold."""
+    if not shutil.which("git"):
+        _harness.skip(check, "rf1 the refresh is read back off disk",
+                      "git provides the shared directory a lock lives in", True)
+        return
+    here = platform.node()
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    sleeper = subprocess.Popen([sys.executable, "-c",
+                                "import time; time.sleep(120)"])
+    proj = tempfile.mkdtemp(prefix="audit-locks-refresh-")
+    pid_was = os.environ.pop("CLAUDE_PID", None)
+    tokens_was = os.environ.get(M.TOKEN_ENV)
+    try:
+        subprocess.call(["git", "init", "-q", proj])
+        ld = M.lock_dir(proj)
+        os.makedirs(ld, exist_ok=True)
+        path = os.path.join(ld, "phase-P1.lock")
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+        def plant(pid, extra=None):
+            info = {"sessionId": "s-A", "pid": pid, "hostname": here,
+                    "handedOff": True, "token": "not-carried",
+                    "note": "a phase run", "startedAt": stamp}
+            info.update(extra or {})
+            M._write_lock(path, info)
+            return info
+
+        check("rf1 `held_by_us` flags a same-session hand-off claim whose pid is "
+              "gone for refreshing, and not one whose pid runs",
+              M.held_by_us(plant(dead.pid), session="s-A").get("refresh") is True
+              and not M.held_by_us(plant(sleeper.pid),
+                                   session="s-A").get("refresh"),
+              repr(M.held_by_us(plant(dead.pid), session="s-A")))
+
+        plant(dead.pid)
+        os.environ.pop(M.TOKEN_ENV, None)
+        lines = []
+        code = M.acquire(proj, "phase-P1", note="a start", session="s-A",
+                         pid=sleeper.pid, handed_off=True, wait=0,
+                         out=lines.append)
+        got = M.read_lock(path)
+        check("rf2 a HAND-OFF acquire by the same session over its own claim "
+              "naming a dead pid re-records it under the live pid - the hold "
+              "kept, its note kept - and the hold is THIS call's: exit 0, the "
+              "claim's token carried, and a line saying the pid it replaced is "
+              "gone, so the resumed run releases it at the end: %r"
+              % ((code, got, lines),),
+              code == 0 and M.took(code) and got.get("pid") == sleeper.pid
+              and got.get("sessionId") == "s-A"
+              and got.get("note") == "a phase run"
+              and "not-carried" in M.carried_tokens()
+              and any("gone" in x for x in lines)
+              and not any("already yours" in x or "not this call's" in x
+                          for x in lines))
+
+        # The twin: a caller that is not handed off gives the lock back before
+        # it returns, so a re-recorded hold it did not take stays not its own.
+        plant(dead.pid)
+        os.environ.pop(M.TOKEN_ENV, None)
+        code = M.acquire(proj, "phase-P1", note="a write", session="s-A",
+                         pid=sleeper.pid, wait=0, out=lambda *_a, **_k: None)
+        got = M.read_lock(path)
+        check("rf2b ALLOW: the same re-record by a caller that is NOT handed "
+              "off still answers already held (E_OURS), carrying no token: %r"
+              % ((code, got),),
+              code == M.E_OURS and got.get("pid") == sleeper.pid
+              and "not-carried" not in M.carried_tokens())
+
+        before = plant(sleeper.pid)
+        before_stamp = M._claim_stamp(path)
+        code = M.acquire(proj, "phase-P1", note="a start", session="s-A",
+                         pid=sleeper.pid, handed_off=True, wait=0,
+                         out=lambda *_a, **_k: None)
+        check("rf3 ALLOW: the same acquire over its own claim naming a LIVE pid "
+              "is answered as already held and leaves the claim file as it was",
+              code == M.E_OURS and M._claim_stamp(path) == before_stamp
+              and M.read_lock(path) == before, repr(M.read_lock(path)))
+
+        plant(dead.pid)
+        lines = []
+        code = M.acquire(proj, "phase-P1", session="s-A", handed_off=True,
+                         wait=0, out=lines.append)
+        check("rf4 with no live process to name the dead claim is NOT answered "
+              "as already held: the caller is told it looks abandoned: %r"
+              % ((code, lines),),
+              code == M.E_STALE and not any("already yours" in x for x in lines))
+
+        plant(sleeper.pid, {"yields": True, "note": "a start"})
+        code = M.acquire(proj, "phase-P1", note="phase run", session="s-A",
+                         pid=sleeper.pid, handed_off=True, wait=0,
+                         out=lambda *_a, **_k: None)
+        got = M.read_lock(path)
+        check("rf5 a hand-off acquire by the same session over its own claim "
+              "marked `yields` re-takes it under ITS note and no longer "
+              "yielding, so a verb that releases by the start's note leaves "
+              "it: %r" % ((code, got),),
+              code == 0 and got.get("note") == "phase run"
+              and not got.get("yields") and got.get("sessionId") == "s-A")
+
+        before = plant(sleeper.pid, {"yields": True, "note": "a start"})
+        code = M.acquire(proj, "phase-P1", note="one write", session="s-A",
+                         pid=sleeper.pid, wait=0, out=lambda *_a, **_k: None)
+        check("rf6 ALLOW: an in-process take by the same session - one that "
+              "gives the lock back before it returns - does not supersede the "
+              "yielding claim; it is answered as already held",
+              code == M.E_OURS and M.read_lock(path) == before,
+              repr((code, M.read_lock(path))))
+        code = M.acquire(proj, "phase-P1", note="phase run", session="s-B",
+                         pid=os.getpid(), handed_off=True, wait=0,
+                         out=lambda *_a, **_k: None)
+        check("rf7 ALLOW: another session's hand-off acquire over the yielding "
+              "claim is refused like any live claim - yielding is to its own "
+              "session only",
+              code == M.E_LIVE and M.read_lock(path) == before,
+              repr((code, M.read_lock(path))))
+
+        # `refresh` RE-RECORDS ONLY A HOLDER THAT IS GONE OR UNNAMED: a live
+        # recorded pid is the process whose release gives the hold back, and
+        # moving the claim off it refuses that release as a takeover.
+        before = plant(sleeper.pid)
+        before_stamp = M._claim_stamp(path)
+        lines = []
+        code = M.refresh(proj, "phase-P1", session="s-A", pid=os.getpid(),
+                         out=lines.append)
+        check("rf8 `refresh` over a LIVE recorded pid leaves the claim as it "
+              "is and says so: %r" % ((code, M.read_lock(path), lines),),
+              code == M.E_OURS and M.read_lock(path) == before
+              and M._claim_stamp(path) == before_stamp
+              and any("running" in x for x in lines))
+        plant(dead.pid)
+        code = M.refresh(proj, "phase-P1", session="s-A", pid=os.getpid(),
+                         out=lambda *_a, **_k: None)
+        got_dead = M.read_lock(path)
+        nopid = plant(None)
+        nopid.pop("pid", None)
+        M._write_lock(path, nopid)
+        code2 = M.refresh(proj, "phase-P1", session="s-A", pid=os.getpid(),
+                          out=lambda *_a, **_k: None)
+        got_none = M.read_lock(path)
+        check("rf9 ALLOW: `refresh` over a recorded pid that is gone, or a "
+              "claim recording none, re-records it under the run asking: %r"
+              % ((code, got_dead, code2, got_none),),
+              code == M.E_OURS and got_dead.get("pid") == os.getpid()
+              and code2 == M.E_OURS and got_none.get("pid") == os.getpid())
+
+        # THE $CLAUDE_PID RULE excludes another session, as the token rule does.
+        shared = {"sessionId": "s-A", "pid": sleeper.pid, "hostname": here,
+                  "handedOff": True, "token": "not-carried", "startedAt": stamp}
+        check("rf10 another session sharing the holder's pid is NOT the holder",
+              M.held_by_us(shared, session="s-B", pid=sleeper.pid)["ours"]
+              is False, repr(M.held_by_us(shared, session="s-B",
+                                          pid=sleeper.pid)))
+        check("rf11 ALLOW: the holder's own session with that pid is the "
+              "holder, and so is the pid alone where no session is named",
+              M.held_by_us(shared, session="s-A", pid=sleeper.pid)["ours"]
+              is True
+              and M.held_by_us({"pid": sleeper.pid, "hostname": here,
+                                "handedOff": True, "token": "not-carried",
+                                "startedAt": stamp},
+                               session="s-B", pid=sleeper.pid)["ours"] is True,
+              repr(M.held_by_us(shared, session="s-A", pid=sleeper.pid)))
+    finally:
+        if pid_was is not None:
+            os.environ["CLAUDE_PID"] = pid_was
+        if tokens_was is None:
+            os.environ.pop(M.TOKEN_ENV, None)
+        else:
+            os.environ[M.TOKEN_ENV] = tokens_was
+        if sleeper.poll() is None:
+            sleeper.kill()
+        sleeper.wait()
+        shutil.rmtree(proj, ignore_errors=True)
 
 
 # --- what a caller may do with the answer -------------------------------------
