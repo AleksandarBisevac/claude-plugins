@@ -648,7 +648,7 @@
     {
       "id": "P102",
       "title": "red-first proves a red outside Python",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P102.json"
     },
     {
