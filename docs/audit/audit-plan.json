@@ -648,7 +648,7 @@
     {
       "id": "P102",
       "title": "red-first proves a red outside Python",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P102.json"
     },
     {
@@ -1146,7 +1146,8 @@
       "P100.2",
       "P100.3-zxo",
       "P103.8",
-      "P108.4",
+      "P102.6",
+      "P102.7",
       "P105.10-m32",
       "P110.4-exo",
       "P107.5-gwk",
@@ -1158,6 +1159,8 @@
       "P112.3-uce",
       "P114.1",
       "P114.2-ffv",
+      "P102.12-ptn",
+      "P108.4",
       "P101.4-1cb"
     ],
     "QUICKSTART.md": [
@@ -1223,10 +1226,10 @@
       "P103.1",
       "P103.3",
       "P103.14-xi3",
-      "P108.4",
-      "P108.7-4gh",
       "P110.4-exo",
       "P110.5-exo",
+      "P108.4",
+      "P108.7-4gh",
       "P108.12-4gh",
       "P108.15-4gh",
       "P108.16-4gh",
@@ -1494,7 +1497,9 @@
       "P102.7",
       "P102.8",
       "P108.3",
-      "P100.4-zxo"
+      "P100.4-zxo",
+      "P102.6",
+      "P102.12-ptn"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -2056,8 +2061,10 @@
       "P106.2",
       "P106.3",
       "P108.3",
+      "P102.6",
       "P106.5-b6f",
-      "P106.7-b6f"
+      "P106.7-b6f",
+      "P102.12-ptn"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -2301,7 +2308,9 @@
       "P75.5-j5h",
       "P109.9",
       "P102.10",
-      "P100.3-zxo"
+      "P100.3-zxo",
+      "P102.13-ptn",
+      "P102.14-ptn"
     ],
     "plugins/audit/scripts/_refs.py": [
       "P23.1",
@@ -2761,7 +2770,9 @@
       "P102.5",
       "P102.6",
       "P102.7",
-      "P102.9"
+      "P102.9",
+      "P102.12-ptn",
+      "P102.14-ptn"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -3000,13 +3011,13 @@
       "P102.10",
       "P106.1",
       "P106.2",
-      "P108.10-4gh",
-      "P108.13-4gh",
       "P106.4-b6f",
       "P106.6-b6f",
       "P106.8-b6f",
       "P106.10-b6f",
-      "P106.11-b6f"
+      "P106.11-b6f",
+      "P108.10-4gh",
+      "P108.13-4gh"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -3945,7 +3956,10 @@
       "P80.5",
       "P80.10",
       "P102.10",
-      "P100.3-zxo"
+      "P100.3-zxo",
+      "P102.3",
+      "P102.13-ptn",
+      "P102.14-ptn"
     ],
     "plugins/audit/tests/test__panel_composition.py": [
       "P18.7",
@@ -4061,10 +4075,10 @@
       "P109.7",
       "P102.8",
       "P108.3",
-      "P108.12-4gh",
       "P106.1",
       "P112.2-uce",
-      "P112.4-uce"
+      "P112.4-uce",
+      "P108.12-4gh"
     ],
     "plugins/audit/tests/test__report_html.py": [
       "P25.1",
@@ -4307,14 +4321,14 @@
       "P100.2",
       "P106.1",
       "P106.2",
-      "P108.10-4gh",
-      "P108.13-4gh",
-      "P108.17-4gh",
       "P106.4-b6f",
       "P106.6-b6f",
       "P106.8-b6f",
       "P106.10-b6f",
-      "P106.11-b6f"
+      "P106.11-b6f",
+      "P108.10-4gh",
+      "P108.13-4gh",
+      "P108.17-4gh"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -4512,11 +4526,11 @@
       "P108.4",
       "P103.2",
       "P103.15-xi3",
+      "P110.4-exo",
+      "P110.5-exo",
       "P108.5-4gh",
       "P108.6-4gh",
       "P108.8-4gh",
-      "P110.4-exo",
-      "P110.5-exo",
       "P108.11-4gh",
       "P108.14-4gh",
       "P108.16-4gh",
@@ -4740,7 +4754,9 @@
       "P102.4",
       "P102.5",
       "P102.6",
-      "P102.7"
+      "P102.7",
+      "P102.12-ptn",
+      "P102.14-ptn"
     ],
     "plugins/audit/tests/test_usage_ledger.py": [
       "P47.6",
@@ -4825,13 +4841,13 @@
       "P90.1",
       "P91.1",
       "P91.2-htp",
+      "P106.2",
       "P108.4",
       "P108.9-4gh",
       "P108.10-4gh",
       "P108.13-4gh",
       "P108.17-4gh",
-      "P108.19-4gh",
-      "P106.2"
+      "P108.19-4gh"
     ],
     "tools/check-example-ledgers.py": [
       "P32.10",
@@ -5537,6 +5553,9 @@
     "docs/README.md": [
       "P101.3"
     ],
+    "plugins/audit/evals/feature/case.yaml": [
+      "P101.3"
+    ],
     "plugins/audit/evals/bugfix/case.yaml": [
       "P101.3",
       "P101.4-1cb"
@@ -5589,11 +5608,13 @@
     "plugins/audit/scripts/governance/_runner_output.py": [
       "P102.3",
       "P102.4",
-      "P102.5"
+      "P102.5",
+      "P102.12-ptn"
     ],
     "plugins/audit/tests/test__runner_output.py": [
       "P102.3",
-      "P102.4"
+      "P102.4",
+      "P102.12-ptn"
     ],
     "plugins/audit/scripts/manifest/migrate-json-encoding.py": [
       "P102.10"
@@ -5794,6 +5815,13 @@
     "tools/demo-gate.tape": [
       "P112.1-uce",
       "P112.5-uce"
+    ],
+    "plugins/audit/scripts/manifest/materialize-proposal.py": [
+      "P102.13-ptn"
+    ],
+    "plugins/audit/tests/test_materialize_proposal.py": [
+      "P102.13-ptn",
+      "P102.14-ptn"
     ]
   },
   "bugs": [

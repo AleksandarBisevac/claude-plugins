@@ -2868,6 +2868,76 @@ def _cases(check):
     finally:
         shutil.rmtree(_tmp_rs, ignore_errors=True)
 
+    # --- (rl) the runners red reads, named where its reader looks ---------------
+    # "A run whose output carries no tally the helper reads" told an operator the
+    # answer and not which runners the helper reads, so somebody who had just
+    # fixed their dependencies learned nothing about whether their runner was one.
+    # The list now sits in both documents and is DERIVED from red's tally table.
+    # The live case compares against the table as IMPORTED, while the check reads
+    # it by AST - two readings from two places, so the comparison can fail.
+    import _runner_output                          # noqa: E402
+    _rl = M.runner_list_drift()
+    _rl_table = [name for name, _reader in _runner_output.TALLY_READERS]
+    check("rl1 THE ALLOW CASE, on the shipped tree: both documents name exactly "
+          "the runners red's tally table holds, and the list the check read off "
+          "the source is the one the module really carries: %r" % (_rl,),
+          _rl["problems"] == [] and _rl["runners"] == _rl_table
+          and len(_rl_table) > 1)
+
+    _rl_src = M.PLUGIN_REL + "/" + "/".join(M.RUNNER_LIST_SOURCE)
+    _rl_table_src = ('TALLY_READERS = (("house", _a), ("pytest", _b),\n'
+                     '                 ("vitest", _c))\n')
+
+    def _rl_doc(names):
+        return ("Some rule before it. %s %s. Then a sentence naming `other`.\n"
+                % (M.RUNNER_LIST_TRIGGER,
+                   ", ".join("`%s`" % (n,) for n in names)))
+
+    _tmp_rl = tempfile.mkdtemp(prefix="qg-rl-")
+    try:
+        _write(_tmp_rl, _rl_src, _rl_table_src)
+        _write(_tmp_rl, _FX_AGENTS + "audit-executor.md",
+               _rl_doc(["house", "pytest", "nose"]))
+        _write(_tmp_rl, _FX_REFERENCE + "execute-task.md",
+               _rl_doc(["house", "pytest", "vitest"]))
+        _d = M.runner_list_drift(_tmp_rl)
+        check("rl2 THE DENY CASE: a document naming a runner the table does not "
+              "hold, and omitting one it holds, is reported BY DOCUMENT AND "
+              "RUNNER - and the document that agrees is not reported: %r" % (_d,),
+              _d["runners"] == ["house", "pytest", "vitest"]
+              and _d["problems"] == [
+                  "%s: names the runner 'nose', which red's tally table does "
+                  "not hold" % (M.RED_FIRST_EXECUTOR_BRIEF,),
+                  "%s: omits the runner 'vitest', which red's tally table "
+                  "holds" % (M.RED_FIRST_EXECUTOR_BRIEF,)])
+        _write(_tmp_rl, _FX_AGENTS + "audit-executor.md",
+               _rl_doc(["vitest", "house", "pytest"]))
+        _d = M.runner_list_drift(_tmp_rl)
+        # The twin of rl2, there for the mutation that reports every document:
+        # the same table, the same order-free list, and nothing to say. The word
+        # after the sentence (`other`) is outside the list and must stay outside.
+        check("rl3 THE ALLOW TWIN: both documents naming exactly the table's "
+              "runners, in any order, owe nothing, and a backticked word after "
+              "the sentence ends is not read as a runner: %r" % (_d,),
+              _d["problems"] == [])
+        _write(_tmp_rl, _FX_REFERENCE + "execute-task.md",
+               "The helper reads some runners.\n")
+        _d = M.runner_list_drift(_tmp_rl)
+        check("rl4 a document that names no runner list at all is a finding, "
+              "never a clean sheet over a sentence that is not there: %r" % (_d,),
+              len(_d["problems"]) == 1
+              and _d["problems"][0].startswith(M.RETURN_SHAPE_READER + ":"))
+        _write(_tmp_rl, _rl_src, "TALLY_READERS = build_readers()\n")
+        _write(_tmp_rl, _FX_REFERENCE + "execute-task.md",
+               _rl_doc(["house", "pytest", "vitest"]))
+        _d = M.runner_list_drift(_tmp_rl)
+        check("rl5 a table the check cannot read as literals is a finding and "
+              "the documents are not graded against an empty list: %r" % (_d,),
+              _d["runners"] == [] and len(_d["problems"]) == 1
+              and "TALLY_READERS" in _d["problems"][0])
+    finally:
+        shutil.rmtree(_tmp_rl, ignore_errors=True)
+
     # --- the phase verbs: two spellings, one writer ----------------------------
     # WHY HERE. `tools/affected.py` routes an edit under `plugins/audit/commands/`
     # to this suite and to `test__deps.py`, and to nothing else. A pin on a command

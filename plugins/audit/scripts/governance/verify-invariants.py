@@ -88,6 +88,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _invariants  # noqa: E402  (the rule this command carries)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR shards)
 
@@ -256,7 +257,7 @@ def build_parser():
                         help="record this run's breaches as the baseline; later "
                              "runs then print only breaches it does not hold. "
                              "Refused while a phase it covers is in flight")
-    return parser
+    return _claude_home.attach_usage_hint(parser)
 
 
 def _baseline_answer(args, result, manifest, git_root):

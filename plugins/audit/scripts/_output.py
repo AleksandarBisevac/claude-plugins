@@ -1146,6 +1146,272 @@ def entries_missing_guard(dirs=None):
     return sorted(missing)
 
 
+# --- usage-hint check ---------------------------------------------------------
+# Read as a CALL, never as text: the lint that learns which flags argparse adds reads
+# other files' constructions, and the hook's own docstring describes the seam, so a
+# text match would convict two files that build no parser at all.
+_PARSER_CTOR = "ArgumentParser"
+_USAGE_HOOK = "attach_usage_hint"
+_PARSE_CALLS = ("parse_args", "parse_known_args", "parse_intermixed_args",
+                "parse_known_intermixed_args")
+
+
+def _called(call):
+    """The bare name a call reaches, `a.b.f(...)` and `f(...)` alike; '' otherwise."""
+    fn = call.func
+    if isinstance(fn, ast.Attribute):
+        return fn.attr
+    return fn.id if isinstance(fn, ast.Name) else ""
+
+
+def _scope_nodes(scope):
+    """Every node of one scope, stopping at each nested def, class and lambda.
+
+    A parser name is looked up in the scope that built it: `p` hooked in another
+    function is another `p`, and descending would read it as this one's."""
+    stack = list(ast.iter_child_nodes(scope))
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
+                             ast.Lambda)):
+            continue
+        yield node
+        stack.extend(ast.iter_child_nodes(node))
+
+
+def _scope_parsers(scope):
+    """(line, why) per parser built in `scope`; `why` is None when it is hooked."""
+    nodes = list(_scope_nodes(scope))
+    calls = [n for n in nodes if isinstance(n, ast.Call)]
+    hooked, wrapped, templates, parsed = {}, set(), set(), {}
+    for call in calls:
+        name = _called(call)
+        first = call.args[0] if call.args else None
+        if name == _USAGE_HOOK and isinstance(first, ast.Name):
+            hooked[first.id] = min(call.lineno, hooked.get(first.id, call.lineno))
+        elif name == _USAGE_HOOK and isinstance(first, ast.Call):
+            wrapped.add(id(first))
+        elif name in _PARSE_CALLS and isinstance(call.func, ast.Attribute) \
+                and isinstance(call.func.value, ast.Name):
+            held = call.func.value.id
+            parsed[held] = min(call.lineno, parsed.get(held, call.lineno))
+        for kw in call.keywords:
+            if kw.arg == "parents" and isinstance(kw.value, (ast.List, ast.Tuple)):
+                templates |= set(e.id for e in kw.value.elts
+                                 if isinstance(e, ast.Name))
+    held_by = {}
+    for node in nodes:
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call) \
+                and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            held_by[id(node.value)] = node.targets[0].id
+    found = []
+    for call in calls:
+        if _called(call) != _PARSER_CTOR:
+            continue
+        name = held_by.get(id(call))
+        if id(call) in wrapped or name in templates:
+            found.append((call.lineno, None))
+        elif name is None:
+            found.append((call.lineno, "built where no name holds it, so nothing "
+                          "can hand it to %s()" % (_USAGE_HOOK,)))
+        elif name not in hooked:
+            found.append((call.lineno, "`%s` is never handed to %s() in the scope "
+                          "that built it" % (name, _USAGE_HOOK)))
+        elif name in parsed and parsed[name] < hooked[name]:
+            found.append((call.lineno, "`%s` parses argv on line %d, before %s() "
+                          "on line %d - the usage error is raised by then"
+                          % (name, parsed[name], _USAGE_HOOK, hooked[name])))
+        else:
+            found.append((call.lineno, None))
+    return found
+
+
+def parser_sites(files):
+    """(rel, line, why) for every parser built in `files`, hooked or not.
+
+    `files` is `(rel, path)` pairs as `lint_py_files` yields them; `why` is None for
+    a parser handed to the usage hook before it parses, or for a `parents=` template
+    that never parses argv itself. A file that cannot be parsed is one row at line 0
+    with the reason, never skipped."""
+    out = []
+    for rel, path in files:
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), filename=rel)
+        except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+            out.append((rel, 0, "cannot be read or parsed: %s" % (exc,)))
+            continue
+        scopes = [tree] + [n for n in ast.walk(tree) if isinstance(
+            n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda))]
+        for scope in scopes:
+            out.extend((rel, line, why) for line, why in _scope_parsers(scope))
+    return sorted(out, key=lambda row: (row[0], row[1]))
+
+
+def usage_hint_violations(dirs=None):
+    """(rel, line, why) for every parser under `dirs` the usage hook never reaches.
+
+    The hook is `_claude_home.attach_usage_hint`: it makes a usage error name this
+    copy's version and any newer installed copy, which is what tells a caller running
+    an older cached copy that the verb it asked for lives in a newer one. One call
+    beside each construction, never a local copy of the hook. Scoped to `scripts/`:
+    hooks may not import it, and build no parser.
+
+    `parser_sites()` is the argparse half; `verb_dispatch_sites()` is the other
+    shape — a dispatcher that reads its verb by hand (`if verb not in (...):`)
+    rather than through `ArgumentParser`, so nothing there ever calls
+    `parse_args` for `parser_sites()` to find. A caller asking an older cached
+    copy for a verb only a newer one knows must be told the same thing either way,
+    so both shapes are read here."""
+    dirs = dirs if dirs is not None else (SCRIPTS_DIR,)
+    found = []
+    seen = set()
+    for d in dirs:
+        files = lint_py_files(d)
+        for row in parser_sites(files) + verb_dispatch_sites(files):
+            # A file that will not parse is reported by BOTH walks, with the
+            # same (rel, 0, why) row either way - one finding, not two, for one
+            # broken file.
+            if row[2] and row not in seen:
+                seen.add(row)
+                found.append(row)
+    return found
+
+
+# --- verb-dispatch check (the hand-parsed shape) --------------------------------
+# Two signals, both required, because `<name> not in (<literal>, ...)` alone is
+# also how this tree validates an ordinary flag or a manifest field - `_ui_theme.
+# validate_layout`'s `k not in ("density", "order")` and others shaped like it are
+# NOT a verb dispatcher, and a lint that could not tell them apart would be unusable
+# here. A genuine hand-parsed dispatcher is told apart by BOTH of what it does
+# with the same name afterwards: it is DISPATCHED ON (compared with `==` against
+# one of the same literals, elsewhere in the same function - the shape every
+# `if verb == "plan": ... elif verb == "drop":` chain in this tree has), and the
+# branch that refuses an unrecognised value PRINTS the shared usage block (a
+# write naming a module constant called `USAGE` or `_USAGE`, this tree's own
+# naming convention for one) - not merely some other error sentence. Either
+# signal alone over-fired on the real tree before this was narrowed: the panel's
+# `proposal_action` dispatches on `action` but returns a JSON finding, never a
+# USAGE block, because an HTTP action has no "older cached copy" to warn; `ado-
+# connect.py` prints `USAGE` for a bad `--transport` value but never dispatches
+# on it elsewhere. Both are read right by requiring what the review's own finding
+# named: a usage BLOCK, printed because a VERB a dispatcher has code for was not
+# recognised.
+_HINT_CALL = "usage_hint"
+_USAGE_NAMES = ("USAGE", "_USAGE")
+
+
+def _literal_verb_set(node):
+    """Whether `node` is a tuple/list/set of two or more string literals — the
+    shape a hand-parsed dispatcher compares its verb against, never a single
+    flag check (`"--json" in rest`) or a computed membership test."""
+    if not isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        return False
+    elts = node.elts
+    return len(elts) >= 2 and all(isinstance(e, ast.Constant)
+                                  and isinstance(e.value, str) for e in elts)
+
+
+def _unknown_verb_test(node):
+    """`(name, literals)` when `if` node `node`'s test reads
+    `<name> not in (<literal>, ...)` — the shape a hand-parsed dispatcher uses to
+    refuse a verb argparse would otherwise have rejected through `choices=`.
+    `(None, None)` otherwise."""
+    if not isinstance(node, ast.If):
+        return None, None
+    test = node.test
+    if not (isinstance(test, ast.Compare) and isinstance(test.left, ast.Name)
+            and len(test.ops) == 1 and isinstance(test.ops[0], ast.NotIn)
+            and len(test.comparators) == 1
+            and _literal_verb_set(test.comparators[0])):
+        return None, None
+    return test.left.id, set(e.value for e in test.comparators[0].elts)
+
+
+def _dispatches_on(scope_nodes, name, literals):
+    """Whether `name` is compared with `==` to one of `literals` elsewhere in
+    `scope_nodes` — the sign it is really dispatched on afterwards, and not
+    merely validated once and never read again."""
+    for node in scope_nodes:
+        if (isinstance(node, ast.Compare) and isinstance(node.left, ast.Name)
+                and node.left.id == name and len(node.ops) == 1
+                and isinstance(node.ops[0], ast.Eq) and len(node.comparators) == 1):
+            comp = node.comparators[0]
+            if isinstance(comp, ast.Constant) and comp.value in literals:
+                return True
+    return False
+
+
+def _prints_usage_block(node):
+    """Whether `node`'s subtree writes a module-level `USAGE`/`_USAGE` name —
+    this tree's own convention for the shared usage block, as opposed to some
+    other one-line refusal (`"--all applies to plan and materialize only"`) that
+    owes the hint no more than any other error sentence does.
+
+    EACH ARGUMENT'S OWN SUBTREE IS WALKED, not merely tested for being a bare
+    `ast.Name`: a usage name read through a `%`-format expression one level
+    below the argument itself is still a write of the block, and a check that
+    only recognised a bare name missed a shape this tree already writes."""
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Call):
+            for arg in sub.args:
+                for inner in ast.walk(arg):
+                    if isinstance(inner, ast.Name) and inner.id in _USAGE_NAMES:
+                        return True
+    return False
+
+
+def _reaches_usage_hint(node):
+    """Whether any call inside `node` names `usage_hint` — `_claude_home`'s hint,
+    however it is imported (`_claude_home.usage_hint`, or an aliased import)."""
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Call) and _called(sub) == _HINT_CALL:
+            return True
+    return False
+
+
+def verb_dispatch_sites(files):
+    """(rel, line, why) per hand-parsed unknown-verb branch under `files`.
+
+    The companion to `parser_sites()`: an entry point that never builds an
+    `ArgumentParser` is invisible there, so a dispatcher written as
+    `if verb not in ("list", "plan", ...): print(USAGE); return 2` could print a
+    bare usage block forever with nothing catching it. `why` is None when the
+    branch itself calls `_claude_home.usage_hint`, which an unknown-verb branch
+    that only prints the bare usage block does not; otherwise it names the gap
+    the same way `parser_sites` names a parser the hook never reached. A file
+    that will not parse is reported at line 0, same as `parser_sites`."""
+    out = []
+    for rel, path in files:
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), filename=rel)
+        except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+            out.append((rel, 0, "cannot be read or parsed: %s" % (exc,)))
+            continue
+        scopes = [tree] + [n for n in ast.walk(tree) if isinstance(
+            n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda))]
+        for scope in scopes:
+            nodes = list(_scope_nodes(scope))
+            for node in nodes:
+                name, literals = _unknown_verb_test(node)
+                if name is None:
+                    continue
+                if not _dispatches_on(nodes, name, literals):
+                    continue
+                if not _prints_usage_block(node):
+                    continue
+                if _reaches_usage_hint(node):
+                    out.append((rel, node.lineno, None))
+                else:
+                    out.append((rel, node.lineno,
+                                "unknown-verb branch never calls _claude_home."
+                                "usage_hint(), so an older cached copy asked for "
+                                "a verb only a newer one knows prints a bare "
+                                "usage block and names no newer installed copy"))
+    return sorted(out, key=lambda row: (row[0], row[1]))
+
+
 # --- house-style AST checks ---------------------------------------------------
 # The four bans: legal Python 3.8, illegal in this repo, and none of them caught by a
 # version gate (vermin flags syntax the interpreter cannot run at all — every one of

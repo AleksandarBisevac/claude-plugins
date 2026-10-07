@@ -330,6 +330,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _manifest_io as _mio   # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _manifest_vocab as _vocab  # noqa: E402  (_strip_line_suffix: one reading of a
 #                                            `files` entry's `:line-range` suffix -- a
@@ -10161,7 +10162,7 @@ def build_parser():
                    help="mute: the bugs[] id tracking the failure it hides")
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--json", action="store_true", dest="as_json")
-    return p
+    return _claude_home.attach_usage_hint(p)
 
 
 def option_dests(parser=None):

@@ -125,6 +125,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _tree_stamp  # noqa: E402  (the ONE tree identity: porcelain + the three fields)
 import _proc_group  # noqa: E402  (a child tree stopped whole; a stop signal as an exception)
 import _evidence_io as _ev  # noqa: E402  (where a run is recorded, and the pointer)
@@ -145,6 +146,8 @@ import _loader  # noqa: E402  (load_hooks_config: logs_dir/ensure_local_dir, for
 import _status_facts  # noqa: E402  (CLOSED_BUG: the one reading of "not open", for a
 #                                    mute whose bug is closed)
 import _panel_write  # noqa: E402  (project_of_manifest: the project a named manifest is in)
+import _runner_output as _ro  # noqa: E402  (every reading of what a test runner
+#                                         printed: its summary, its failure lines)
 
 E_OK, E_FAIL, E_ASK = 0, 1, 2
 
@@ -244,55 +247,24 @@ _STEP_WORDS = {
 # could not bind a port in a sandbox, the suite died at exit 48 with no test
 # executed, and the ledger recorded GATE RED against the task's name.
 #
-# MATCHED ON THE OUTPUT, NOT ON THE COMMAND, which is the half `_STEP_WORDS`
-# cannot do: a gate entry is as often `npm test`, `yarn test` or `make check` as
-# it is the runner's own name, and the summary line is the runner's signature
-# either way. `_STEP_WORDS` is still asked FIRST, so a `pre-commit` gate that
-# wraps a test hook keeps counting hooks and not the tests inside one of them.
-#
-# THE WORDS ARE THE ONES THAT MEAN A CHECK EXECUTED, and `skipped`, `pending`,
-# `todo`, `deselected` and `total` are deliberately absent from every row. A
-# skipped check is the exact thing `NO CHECK RAN` exists to catch, so counting
-# jest's own `N total` -- which includes them -- would re-open the "gate that did
-# nothing" failure mode one runner along. `error` is out for the same reason from the
-# other end: a pytest collection error is a test that never started.
-_SUMMARY_PAIR = re.compile(r"(\d+) ([a-z]+)")
-# One terminal control sequence of any kind - a colour, and also the cursor
-# moves a live reporter prints before it rewrites a line. `_ANSI` below is the
-# narrower colour-only reading jest's header needs.
-_CSI_TEXT = "\x1b\\[[0-9;]*[A-Za-z]"
-# The phrasing both vitest and pytest use for "there were none", which carries no
-# `N word` pair at all and would otherwise read as a runner this cannot count.
-_NO_TESTS = re.compile(r"\bno tests\b")
-_SUMMARY_READERS = (
-    # jest:   `Tests:       1 failed, 2 skipped, 3 passed, 6 total`
-    ("jest", re.compile(r"^[ \t]*Tests:[ \t]+(.*)$", re.M), ("passed", "failed")),
-    # vitest: `Tests  1 failed | 4 passed (5)`, `Tests  no tests`. No colon, which
-    # is what keeps this off jest's line, and `Test Files` is a different word.
-    ("vitest", re.compile(r"^[ \t]*Tests[ \t]+(.*)$", re.M), ("passed", "failed")),
-    # mocha:  `  5 passing (23ms)` and `  1 failing` on SEPARATE lines, which is
-    # why every match is joined before the pairs are read out of it.
-    ("mocha", re.compile(r"^[ \t]*(\d+ (?:passing|failing|pending).*)$", re.M),
-     ("passing", "failing")),
-    # pytest: `=== 3 passed in 0.12s ===`, and bare under `-q`. `no tests ran` and
-    # `1 error` are both real summaries reporting zero, so both must MATCH here
-    # and count nothing, rather than falling through as "not knowable".
-    ("pytest",
-     re.compile(r"^[=\s]*((?:no tests ran|\d+ \w+(?:, \d+ \w+)*)"
-                r" in [\d.]+m?s.*)$", re.M),
-     ("passed", "failed", "xpassed", "xfailed")),
-    # playwright: `  1 failed`, `  1 flaky` and `  1 passed (590ms)`, each ALONE
-    # on its line and the last with its duration. The line reporter prints
-    # cursor escapes in front of the block, which is why any may lead. `flaky`
-    # counts as ran: the test executed, failed once and passed on its retry.
-    # LAST, because a bare count line is the loosest shape in this table and
-    # every runner above has a signature of its own to be recognised by first.
-    ("playwright",
-     re.compile("^(?:" + _CSI_TEXT + ")*[ \t]*(\\d+ (?:passed|failed|"
-                "flaky|skipped|interrupted|did not run))(?: \\([^)]*\\))?"
-                "[ \t]*$", re.M),
-     ("passed", "failed", "flaky")),
-)
+# SO THE RUNNERS' OWN SUMMARIES ARE READ TOO, and the tables that read them
+# live in `_runner_output`, a module of its own because a second entry point
+# asks the same output the same questions. `_STEP_WORDS` is still asked FIRST,
+# so a `pre-commit` gate that wraps a test hook keeps counting hooks and not
+# the tests inside one of them.
+# The names below ARE that module's objects, not copies of them.
+_SUMMARY_PAIR = _ro._SUMMARY_PAIR
+_CSI_TEXT = _ro._CSI_TEXT
+_SUMMARY_READERS = _ro._SUMMARY_READERS
+summary_reader = _ro.summary_reader
+summary_readers = _ro.summary_readers
+summary_count = _ro.summary_count
+_FAILURE_READERS = _ro._FAILURE_READERS
+JEST_EXEC_ERROR = _ro.JEST_EXEC_ERROR
+_JEST_SUITE_HEADER = _ro._JEST_SUITE_HEADER
+_ANSI = _ro._ANSI
+jest_failures = _ro.jest_failures
+_VITEST_FAIL_LINE = _ro._VITEST_FAIL_LINE
 
 
 # --- whose writes did the bracket catch ---------------------------------------
@@ -572,55 +544,6 @@ def _elapsed_ms(started):
     return int((time.monotonic() - started) * 1000)
 
 
-def summary_reader(text):
-    """`(name, joined, words)` of the reader whose summary this output carries.
-
-    `(None, "", ())` FOR A RUNNER NONE OF THEM RECOGNISES, which is the same
-    answer `summary_count` has always returned as `None` - this is that decision
-    lifted out of it, unchanged, so that "which runner is this" is asked once and
-    answered in one place. It was already asked twice the moment a second reader
-    wanted the names of the checks that failed, and two spellings of one
-    recognition rule drift the first time either table grows a row.
-    """
-    matched = summary_readers(text)
-    return matched[0] if matched else (None, "", ())
-
-
-def summary_readers(text):
-    """Every `(name, joined, words)` whose summary this output carries, in
-    table order. `summary_reader` takes the first; a caller that must know
-    the output is ONE runner's asks whether there is more than one."""
-    out = []
-    for name, line_re, words in _SUMMARY_READERS:
-        found = line_re.findall(text or "")
-        if not found:
-            continue
-        joined = " ".join(found)
-        if _SUMMARY_PAIR.findall(joined) or _NO_TESTS.search(joined):
-            out.append((name, joined, words))
-    return out
-
-
-def summary_count(text):
-    """How many checks a runner's own SUMMARY line says executed, or None.
-
-    Derived from the runner's arithmetic and never from this reader's: counting
-    output lines would go wrong the first time a suite name wrapped or a reporter
-    was configured, and re-adding jest's categories to check its `total` would
-    disagree with jest the first time it grew one.
-
-    None IS STILL THE ANSWER FOR A RUNNER WITH NO SUMMARY HERE, and that is the
-    rule this widening had to keep rather than the rule it replaces. A reader
-    that returned 0 for "I did not recognise this output" would refuse every
-    passing gate whose runner is not in the table above.
-    """
-    name, joined, words = summary_reader(text)
-    if name is None:
-        return None
-    return sum(int(n) for n, word in _SUMMARY_PAIR.findall(joined)
-               if word in words)
-
-
 def wrapper_words(command):
     """The per-sub-run words `command`'s runner prints, or None if it wraps none.
 
@@ -718,45 +641,8 @@ def measured_state(ran):
 # the next run overwrites - so the obvious reflex, re-run and read the output,
 # destroys the evidence. The text was in hand the whole time: `_shell` merges
 # stderr into stdout, `ran_count` reads it and `files_named` scrapes it, and then
-# it reached neither the result nor the row.
-#
-# ONE ROW PER RUNNER `_SUMMARY_READERS` ALREADY COUNTS, AND NO OTHER. A parser
-# for a runner whose summary this file cannot read would be naming failures
-# beside a check count that says "not knowable from this runner" - a claim with
-# no measurement under it, which is the shape this file exists to refuse. `fr0`
-# is the case that reads the two tables against each other, so a reader added to
-# one and not the other fails rather than silently falling through to a tail.
-#
-# MATCHED ON THE OUTPUT, NOT ON THE COMMAND, for the reason `_SUMMARY_READERS`
-# states: a gate entry is as often `npm test` or `make check` as it is the
-# runner's own name, and the failure lines are the runner's signature either way.
-_FAILURE_READERS = {
-    # jest heads each failure block with a bullet. `Console` is a console dump
-    # under the same bullet and not a failing check; `Test suite failed to run`
-    # is one and is deliberately kept.
-    "jest": re.compile("^[ \t]*●[ \t]+(?!Console[ \t]*$)(.+?)[ \t]*$",
-                       re.M),
-    # vitest marks a failure beside a cross in the file tree and again as
-    # `FAIL  <file> > <suite> > <name>` under `Failed Tests`. Both are read
-    # because which of them a reporter prints depends on how it was configured;
-    # the two spell the test differently, so this collapses only EXACT repeats
-    # and a run printing both carries both spellings of the same failure.
-    "vitest": re.compile("^[ \t]*(?:×|FAIL)[ \t]+(.+?)[ \t]*$", re.M),
-    # mocha NUMBERS its failures, and the number is the only mark on the line.
-    "mocha": re.compile(r"^[ \t]*\d+\)[ \t]*(.+?)[ \t]*$", re.M),
-    # pytest's short summary. `ERROR` is here and is NOT the same claim as
-    # `error` being absent from the counting words above: a collection error is
-    # not a check that ran, and it is still the thing the operator has to fix.
-    "pytest": re.compile(r"^(?:FAILED|ERROR)[ \t]+(.+?)[ \t]*$", re.M),
-    # playwright lists each test under the count that names its fate - `N
-    # failed`, `N flaky` - as `<file>:<line>:<col> › <title>` (behind
-    # `[<project>] › ` when projects are configured) and a rule of box-drawing
-    # dashes. This is the ENTRY line; which block it sits under is
-    # `playwright_listed`'s question, because a flaky test and a failed one are
-    # spelled identically and only the heading above tells them apart.
-    "playwright": re.compile(
-        "^[ \t]+((?:\\[[^\\]]+\\] › )?\\S+:\\d+:\\d+ › .+?)(?:[ \t]+─+)?[ \t]*$"),
-}
+# it reached neither the result nor the row. Which lines name a failing
+# check, per runner, is `_runner_output._FAILURE_READERS`.
 
 
 def _distinct(items):
@@ -769,47 +655,10 @@ def _distinct(items):
     return out
 
 
-# jest's heading for a suite that never ran a test (`jest-message-util`'s
-# `EXEC_ERROR_MESSAGE`). The heading alone names neither the suite nor the
-# cause, and both sit on lines of their own: the suite on the `FAIL <path>`
-# header above it, the cause on the first line under it.
-JEST_EXEC_ERROR = "Test suite failed to run"
-# The header jest prints per suite. Colour, where a caller forces it through a
-# pipe, wraps both the word and the path's two halves in escapes, which is why
-# the text is stripped of them before this reads it.
-_JEST_SUITE_HEADER = re.compile(r"^[ \t]*(?:PASS|FAIL)[ \t]+(\S+)")
-_ANSI = re.compile("\x1b\\[[0-9;]*m")
 # `jest-worker`'s own sentence for a worker that died with a request in flight,
 # written only when the child exited on a signal.
 _JEST_WORKER_SIGNAL = re.compile(
     r"was terminated by another process: signal=(SIG[A-Z0-9]+)")
-
-
-def jest_failures(text):
-    """`[(title, suite, reason)]` - each jest failure bullet, in output order.
-
-    `suite` is the path on the nearest `PASS`/`FAIL` header above the bullet,
-    or None when none was printed. `reason` is read for a failed-to-run
-    heading only - the first non-blank line under it - and is None for an
-    ordinary assertion bullet, whose title already names the check.
-    """
-    lines = _ANSI.sub("", text or "").splitlines()
-    out, suite = [], None
-    for i, line in enumerate(lines):
-        header = _JEST_SUITE_HEADER.match(line)
-        if header:
-            suite = header.group(1)
-            continue
-        bullet = _FAILURE_READERS["jest"].match(line)
-        if not bullet:
-            continue
-        title = bullet.group(1)
-        reason = None
-        if title == JEST_EXEC_ERROR:
-            reason = next((ln.strip() for ln in lines[i + 1:] if ln.strip()),
-                          None)
-        out.append((title, suite, reason))
-    return out
 
 
 def _jest_failure_name(title, suite, reason):
@@ -996,13 +845,6 @@ def failing_lines(text, limit):
     return tail, ("%s's summary was read for the check count and its output "
                   "named no failing check, so these are the last %d line(s) of "
                   "it and NOT a list of failing checks" % (name, len(tail)))
-
-
-# vitest's own `FAIL  <file> > <suite> > <name>` line under `Failed Tests`. The
-# cross beside it in the file tree (`× <file> > <name>`) carries no `FAIL` word
-# at all and is deliberately NOT read here - `failing_lines` reads both because
-# either spelling names a failing CHECK, but only this one names a FILE.
-_VITEST_FAIL_LINE = re.compile(r"^[ \t]*FAIL[ \t]+(\S+)", re.M)
 
 
 def _suite_candidates(body):
@@ -4704,6 +4546,7 @@ def main(argv, out=print):
     # <phase,...>` is a DIFFERENT flag on this same parser, and the two must
     # never collide.
     p.add_argument("--own", dest="own", action="store_true")
+    _claude_home.attach_usage_hint(p)
     try:
         args = p.parse_args(argv)
     except SystemExit as exc:

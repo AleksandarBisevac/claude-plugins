@@ -131,6 +131,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _locks  # noqa: E402  (where a lock lives, what it may be called, is it live)
 
 # The read side, spelled here because this file's own commands ask the same
@@ -234,6 +235,7 @@ def main(argv, out=print):
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--force", action="store_true")
     p.add_argument("--json", action="store_true")
+    _claude_home.attach_usage_hint(p)
     try:
         args = p.parse_args(argv)
     except SystemExit as exc:

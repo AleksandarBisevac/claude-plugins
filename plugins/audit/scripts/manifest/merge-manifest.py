@@ -77,6 +77,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _id_refs  # noqa: E402  (rename: a renumbered id with every reference to it)
 import _id_shape  # noqa: E402  (the next free id of each kind)
 import _locks  # noqa: E402  (the index lock a structural write holds)
@@ -529,7 +530,7 @@ def build_parser():
                     help="install/uninstall: print what would be written, write nothing")
     ap.add_argument("--renumber", choices=list(RENUMBER_SIDES), default=None,
                     help="resolve: the side whose colliding ids are renumbered")
-    return ap
+    return _claude_home.attach_usage_hint(ap)
 
 
 def main(argv):

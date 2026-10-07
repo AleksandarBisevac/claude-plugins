@@ -89,6 +89,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _evidence_io  # noqa: E402  (the recorder's own row writer and pointer shape)
 import _journal_io  # noqa: E402  (the canonical line spelling, and which month a row lands in)
 import _manifest_io as _mio  # noqa: E402  (recorded_attempt: one reading of `attempts`, shared with the recorder)
@@ -2412,6 +2413,7 @@ def main(argv):
     ap.add_argument("--repo", default="demo")
     ap.add_argument("--single-file", action="store_true",
                     help="write one file (meta.version 2) instead of index + shards")
+    _claude_home.attach_usage_hint(ap)
     args = ap.parse_args(argv)
 
     if args.phases < 1 or args.tasks < 1:

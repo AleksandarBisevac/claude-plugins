@@ -112,8 +112,11 @@ not need to.
      the `redFirst` block, naming the failing case it rests on — which must be one of the
      task's own. A red counts only against a GREEN baseline: HEAD's own test files, run FIRST
      with the same command on HEAD's code and every declared test file new at HEAD laid
-     over as an empty file, must be green — exit 0 with no failure, or an exit 5 whose one
-     runner's tally counts nothing run and nothing failed — and the fix run (the task's
+     over as an empty file (a jest or vitest one is left absent instead), must be green —
+     exit 0 with no failure, or an exit 5 whose one runner's tally counts nothing run and
+     nothing failed, or, for a file left absent, the runner's own no-test-file sentence
+     with no case or failure counted (step 1 of the `stamp-verification.py` section of
+     `PLUGIN-BUILD-GUIDE.md` is the full rule) — and the fix run (the task's
      test files on the working tree's code) must turn every failure green. A failure is
      the task's own, a new case or an edited one, only where the runner locates it in a
      declared test file (a pytest node id's path, unittest `-v`'s module matched by its
@@ -137,7 +140,21 @@ not need to.
      in the working tree's, a final import/attribute/name error naming it, and a second run
      with the working tree's implementation copied in that loses that error and reaches its
      assertions. The throwaway holds tracked files only and runs with a scrubbed
-     environment, so a suite needing an untracked dependency comes back `could-not-prove`. The executor used to be
+     environment; `--deps-from <dir>` (`--project` by default) links in its ignored
+     dependency directories (`node_modules` at any depth, `.venv`) entry by entry, named
+     on the output's `dependencies:` line. Its leaks are named, not closed: a link landing
+     in the shared tree outside every dependency directory (a workspace package, an
+     editable install) is found by `workspace_links()`, the directory holding it is
+     skipped and named on the `dependencies:` line, and the run goes ahead without it;
+     a runner's write into a linked entry lands in the
+     source checkout unwatched; the user's `~/.npmrc` and an untracked project one never
+     reach the fresh home. Any other untracked dependency still comes back
+     `could-not-prove`. The runners whose tally the helper reads are `house`, `pytest`,
+     `unittest`, `jest` and `vitest`. The output decides rather than the command, so a
+     wrapper counts when the runner it wraps prints its own tally, and a run printing
+     none of theirs is `could-not-prove` whatever was linked in. `runner_list_drift()`
+     in `plugins/audit/scripts/_refs.py` reads that list off `TALLY_READERS` and fails
+     the build when this sentence or the executor's drifts from it. The executor used to be
      told to undo its fix in the shared tree for the length of the run, which is a write
      over ground siblings are editing; a host refused it beside a sibling's uncommitted
      work. Nothing stops an executor overwriting a file anyway — the plan gate grades which
@@ -165,8 +182,12 @@ not need to.
          --project <gitRoot> --manifest <manifestPath> --task <taskId>
      ```
 
-     Resolve `${CLAUDE_PLUGIN_ROOT}` yourself and put the finished command in the spawn prompt —
-     a subagent's prompt is not a hook command string, so the variable may reach it unsubstituted.
+     Resolve `${CLAUDE_PLUGIN_ROOT}` yourself, per spawn, from the copy THIS SESSION is running —
+     a subagent's prompt is not a hook command string, so the variable may reach it unsubstituted —
+     and put the finished command in the spawn prompt. Re-resolve it if the plugin updates mid-run
+     rather than reusing a root a brief resolved before the update, and say in the run's output that
+     you re-resolved and why; `reference/orchestrator.md`'s non-negotiable guardrails say where a
+     session still spawning from the old copy would show up.
    - **It must run whichever reading of `executor.runsGate` you handed it** — the whole of
      `task.tests.gate` on `full` (through `run-test-gate.py`, which applies `meta.nodePreamble`
      itself), only its own added test(s) on `own-tests`, or nothing on `never` — and return **the

@@ -104,6 +104,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _cli_fmt  # noqa: E402  (the one place CLI color lives - mode resolution + paint)
 import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants)
 import _doctor_setup as _setup  # noqa: E402  (interpreter, git, config, manifest)
@@ -331,7 +332,7 @@ def build_parser():
                     help="ANSI color for the terminal render (auto colors "
                          "only a TTY and respects NO_COLOR; --json never "
                          "colors)")
-    return ap
+    return _claude_home.attach_usage_hint(ap)
 
 
 def main(argv):

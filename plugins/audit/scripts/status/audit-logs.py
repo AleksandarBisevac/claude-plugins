@@ -61,6 +61,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _gate_feed  # noqa: E402  (the rule: what still belongs in the gate feed)
 
 # The class names as a reader meets them. `agedOut` is absent on purpose: its
@@ -201,6 +202,7 @@ def main(argv):
     ap.add_argument("--dry-run", action="store_true", dest="dry_run",
                     help="report the same counts and write nothing")
     ap.add_argument("--json", action="store_true", dest="as_json")
+    _claude_home.attach_usage_hint(ap)
     args = ap.parse_args(argv)
 
     project = os.path.abspath(args.project)

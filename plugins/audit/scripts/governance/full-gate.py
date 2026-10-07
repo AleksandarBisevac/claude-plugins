@@ -107,6 +107,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _loader  # noqa: E402  (script_path: resolves run-test-gate.py and
 #                              audit-task.py by basename, never loads either -
 #                              the subprocess boundary below is exactly why
@@ -596,6 +597,7 @@ def main(argv, out=print):
     p.add_argument("--project-dir", dest="project_dir", default=None)
     p.add_argument("--learn-from", dest="learn_from", default=None,
                    metavar="RUNID")
+    _claude_home.attach_usage_hint(p)
     try:
         args = p.parse_args(argv)
     except SystemExit as exc:

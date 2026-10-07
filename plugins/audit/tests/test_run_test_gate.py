@@ -43,6 +43,8 @@ import _manifest_vocab                             # noqa: E402  (FULL_STATUS_WH
 import _fmt as _rtg_fmt                            # noqa: E402  (where human_duration lives now)
 import _manifest_phases as _phases                 # noqa: E402  (the identity pin below: an
 #                                  alias, not a second body)
+import _runner_output as _ro                       # noqa: E402  (the runner readers the
+#                                  gate imports: the identity pin beside fl0)
 import io as _io
 import contextlib as _ctx
 
@@ -2540,6 +2542,20 @@ def _cases(check):
           % (sorted(M._FAILURE_READERS),),
           set(M._FAILURE_READERS)
           == set(name for name, _re, _words in M._SUMMARY_READERS))
+
+    # The readers moved to `_runner_output` so a second entry point can share
+    # them; the gate keeps a NAME for each and no table of its own. Identity,
+    # not equality: an equal copy is the second table this pins against.
+    _shared = [(name, getattr(M, name, None) is getattr(_ro, name))
+               for name in ("_SUMMARY_PAIR", "_CSI_TEXT", "_SUMMARY_READERS",
+                            "summary_reader", "summary_readers",
+                            "summary_count", "_FAILURE_READERS",
+                            "JEST_EXEC_ERROR", "_JEST_SUITE_HEADER", "_ANSI",
+                            "jest_failures", "_VITEST_FAIL_LINE")]
+    check("ro1 the gate's runner readers ARE `_runner_output`'s objects - no "
+          "summary or failure table is defined here: %r"
+          % ([n for n, ok in _shared if not ok],),
+          all(ok for _n, ok in _shared))
 
     _jest_red = (
         " FAIL  src/checkout/total.test.ts\n"

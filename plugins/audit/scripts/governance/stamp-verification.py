@@ -42,7 +42,8 @@ Usage:
                                 [--json]
   stamp-verification.py red     [--project DIR] --manifest M --task T
                                 [--case ID|LABEL ...] [--introduces SYMBOL ...]
-                                [--timeout S] [--json] -- <test command>
+                                [--deps-from DIR] [--timeout S] [--json]
+                                -- <test command>
 
   `compare` reads the stamp from stdin when neither --stamp nor --stamp-file is
   given, so a report or a commit message can be piped straight in.
@@ -77,6 +78,215 @@ git is only read. `red` never writes the working tree it is pointed at; it write
 temp directory and the worktree registration for it, and removes both on every
 path but SIGKILL, which no process can catch - the `red` section says what is
 reported instead.
+
+RED UNDER JEST AND VITEST - THE DESIGN, BUILT. Each part below says it is
+built: `red` reads a jest or vitest tally, names its failing cases, credits one
+to the task by its title chain, runs HEAD's baseline with a new jest or vitest
+test file absent (3), and links the ignored dependency directories in (4). It
+was written here, before the code, so that the tasks that
+build it share one answer to each question below rather than each settling its
+own; a case of the implementing work is what makes each paragraph true, and
+until one exists the paragraph is a plan. Nothing enforces that order; whoever
+builds a part rewrites its paragraph into the present tense in the same change.
+
+(1) ONE READER OF RUNNER OUTPUT, AT LAYER 1 - BUILT.
+`scripts/governance/_runner_output.py` owns every reading of what a test runner
+printed, imported by both entry points and by nothing below them; it reaches
+nothing but `_output`, which is what puts it at layer 1. Moved there, not
+copied, from `run-test-gate.py`: `_SUMMARY_READERS`, `_SUMMARY_PAIR`,
+`_NO_TESTS`, `summary_reader`, `summary_readers`, `summary_count`,
+`_FAILURE_READERS`, `_ANSI`, `_JEST_SUITE_HEADER`, `JEST_EXEC_ERROR`,
+`jest_failures` and `_VITEST_FAIL_LINE`; and from here the tally and case
+readers (`TALLY_READERS`, `CASE_READERS` and their regexes). `failing_suites`
+and its path filters are still `run-test-gate`'s, because they read
+`_evidence_io`'s limits and that module sits above layer 1. The gate's pytest
+summary row and `red`'s pytest tally are two patterns, not one (the end of the
+next paragraph says why). `read_tally`, `failing_cases` and `jest_failures`
+strip every terminal escape from the text once, on entry (`plain_text`), so a
+runner forced into colour through a pipe (`FORCE_COLOR`) reads as it does
+without it.
+
+THE PER-CASE ASSERTION FLAG - BUILT. `_runner_output` now holds the tally and
+case readers, and each jest or vitest case it reads carries `assertion`, true
+only where the runner says an assertion failed, exactly as `failing_cases`
+does for the other runners. Read off this output, observed on 2026-10-06 (the
+versions are in the history below):
+  jest   - a bullet `● outer › inner › adds` under a `FAIL <path>` header. The
+           first non-blank line under it is the matcher hint
+           (`expect(received).toBe(expected)`) for an `expect` failure, a hint
+           naming the call (`assert(received)`,
+           `assert.strictEqual(received, expected)`,
+           `assert.throws(function)`; jest 30.5.2 on 2026-10-07) for
+           `node:assert` - never an `AssertionError` line - and the
+           exception (`TypeError: boom`) for a body that threw. Only the
+           first two set the flag. `● Test suite failed to run` never sets it: the suite
+           did not load, and its cause is the line under the heading.
+  vitest - a `FAIL  <path> > outer > inner > adds` line under `Failed Tests`,
+           followed by the error line: `AssertionError: ...` for an `expect`
+           failure (chai's class) and for `node:assert`, the exception for a
+           throw. Only `AssertionError` sets the flag. A
+           `FAIL  <path> [ <path> ]` line under `Failed Suites` is a suite that
+           never ran a test and never sets it.
+The tally reads jest's `Tests:` line and vitest's `Tests` line through the
+moved summary readers, and counts each suite that failed to run as a failure
+with no case, so a run whose only failure is a crashed suite is
+`collection-error`, never `red`. `command_runner` knows `jest` and `vitest` as
+program basenames; a wrapper (`npm test`, `npx vitest`) names no runner and
+the output decides. The house, pytest and unittest patterns moved unchanged,
+so the two pytest summary patterns are still two: taking their union changes
+what `red` reads, and is left to a change of its own.
+
+(2) WHICH CASE IS THE TASK'S: THE HEADER PATH AND THE TITLE CHAIN - BUILT. A jest or
+vitest case is identified by the suite path its `FAIL` header or line names
+and its title chain - the `describe` titles and the test's own, split on
+jest's ` › ` or vitest's ` > `. The path locates it in a declared test file
+the way `case_site` locates a pytest node: relative to the throwaway's root,
+or, where a config moved the root (a monorepo package), by a suffix that
+matches exactly one declared test file and no other file; none or several
+locate nothing.
+
+The declared file's working-tree copy must define a test with exactly that
+chain, and CREDIT IS REFUSED where any test file in HEAD's tree with a jest or
+vitest test name (`_is_js_test_path`) holds the same title chain whose test
+body is identical - the equivalent of the ast-identical def `credit_problem`
+looks for (`_js_credit_problem`). `ast` reads only Python, so JS/TS source is
+read by a SMALL STDLIB TOKENIZER (`js_test_cases`) rather than a text-level
+reading: a regex cannot find which `test(` call sits inside which
+`describe(` callback, because brackets inside strings, template literals,
+comments and regex literals throw the nesting off; a tokenizer that knows
+those token kinds can. It records each `describe` / `test` / `it` call, with
+its chain, and keeps the test's argument tokens - comments and whitespace
+dropped - as the body two copies are compared by. It fails CLOSED: a
+declared file it cannot read with every literal closed and every bracket
+balanced credits nothing, and such a HEAD file refuses every case whose
+title it may hold (`_js_unread_holding`), because a misread HEAD copy would
+otherwise look like no HEAD copy at all. A title built at run time - `.each`,
+a template literal with `${}`, a variable - has no chain in the source; such
+a case is refused credit by name, and so is a literal case a run-time title
+of the same file could also fill in (a template's literal parts and a
+`.each` format's text are matched; anything else matches every title at its
+depth). JSX text and a regex literal right after `)` are the tokenizer's
+known blind spots: a misreading either unbalances the file, which is refused,
+or misreads HEAD's copy and the working tree's alike, so an unchanged body
+still compares equal.
+
+(3) THE BASELINE: A NEW FILE IS ABSENT, NOT AN EMPTY STUB - BUILT. HEAD's own run
+lays each declared test file new at HEAD over as an empty file, and under
+pytest that is what keeps a command naming the file runnable. Both JS runners
+were driven on 2026-10-06, in a scratch directory outside this repository:
+  jest 30.4.2, an installed copy in another local project, used read-only
+  through `node <copy>/bin/jest.js --ci`, node v22.22.3:
+    an empty test file                   -> `● Test suite failed to run` /
+                                            `Your test suite must contain at
+                                            least one test.`, exit 1
+    the same, with --passWithNoTests     -> the same failure, exit 1
+    no test file at all                  -> `No tests found, exiting with
+                                            code 1`, exit 1
+    no test file, with --passWithNoTests -> `No tests found, exiting with
+                                            code 0`, exit 0
+    a named path with no file behind it  -> `No tests found, exiting with
+                                            code 1`, exit 1
+  vitest 4.1.10, this repository's own `node_modules`, `vitest run`:
+    an empty test file                   -> `FAIL  empty.test.js` /
+                                            `Error: No test suite found in
+                                            file ...`, exit 1
+    the same, with --passWithNoTests     -> `Test Files  1 passed`,
+                                            `Tests  no tests`, exit 0
+    no test file at all                  -> `No test files found, exiting
+                                            with code 1`, exit 1
+    no test file, with --passWithNoTests -> `No test files found, exiting
+                                            with code 0`, exit 0
+    a named path with no file behind it  -> `No test files found, exiting
+                                            with code 1`, exit 1
+So an empty stub is RED under jest whatever the flag, and red under vitest
+unless the command passes `--passWithNoTests`: HEAD's baseline would never be
+green and every proof would be `could-not-prove`. So a new test file
+`_is_js_test_path` reads as jest's or vitest's is left ABSENT in HEAD's run -
+the reset already removes it - and the stub stays the rule for the Python
+runners; the payload's `baseline` names which way each new file went. The
+baseline is then green on exit 0, or on exit 1 with the runner's own
+no-test-file sentence quoted above and no tally counting a case or a failure
+(`_js_none_found`), read only when a file was left absent: the JS counterpart
+of pytest's exit 5, and read off the sentence for the same reason - the exit
+code alone is the one a crash gives too. `--passWithNoTests` is NOT added to
+the command: under jest it does not rescue an empty stub, the absent file
+makes the stub question moot for both runners, and a flag appended to a
+wrapper's argv (`npm test`) reaches the wrapper rather than the runner.
+Measured once per runner and version, on one machine.
+
+(4) DEPENDENCIES: `--deps-from <dir>`, DEFAULTING TO `--project` - BUILT. The
+throwaway holds tracked files only, so a suite that imports from
+`node_modules` or runs from an in-repo `.venv` cannot load there. `red` asks
+git, in `--deps-from`, for its ignored directories
+(`ls-files --others --ignored --exclude-standard --directory`) and takes each
+named `node_modules` or `.venv`, at any depth, whose parent directory exists
+at HEAD and holds no link into the tree (`dependency_plan`). A dependency
+directory is reproduced in the
+throwaway as a real directory of per-entry symlinks into the source, rebuilt
+after each reset, and never as one link to the whole directory: the cache
+entries a runner writes (`.cache`; `.vite`, where vitest 4.1.10 was seen on
+2026-10-06 to write `vitest/<hash>/results.json` after every run; and
+`.vite-temp`, which this repository's own `node_modules` holds) are left out of
+the links, so a runner that writes one creates it in the throwaway's real
+directory. The basis names every directory linked and every one skipped, with
+the reason (`deps_clause`).
+
+THE LEAKS A LINK OPENS, each named and none left implicit:
+  - a WORKSPACE LINK - an entry whose real path lands inside `--deps-from` or
+    the project but outside every dependency directory (an npm or pnpm
+    workspace package, a `pip install -e` path in a `.pth` file or an
+    editable finder) - would load the SHARED tree's implementation into a
+    run that is meant to see HEAD's. The directory holding one is not linked
+    (`workspace_links`): its reason, naming the entry, goes into the plan's
+    skipped list, which the basis prints, and the run is made without it. A
+    command that never needed the directory - a unittest run by the system
+    python beside an in-repo `.venv` - still proves; one that did fails for
+    want of it, and the basis says which directory was left out and why. The
+    scan reads only the entries that can be such a link - each top-level
+    entry and each entry of a top-level `@scope` directory, and the `.pth` and
+    `__editable__` files directly under a site-packages directory - never a
+    walk of every installed file, and it stops at the deadline. The
+    directory is not re-pointed at the throwaway's own copy of the package,
+    because that copy lacks the package's own ignored build output, and the
+    run would then fail for a reason that is not the test's.
+  - CACHES WRITTEN BACK THROUGH A LINK. The cache directories above stay in
+    the throwaway; jest's `cacheDirectory` follows `TMPDIR` (its
+    `--showConfig` said so on 2026-10-06), which is the per-run directory
+    `_isolated_env` already makes; bytecode under a linked `.venv`
+    is not written, because every run already carries
+    `PYTHONDONTWRITEBYTECODE`. Anything else a runner writes into a linked
+    package lands in the shared tree, and the basis says that this is not
+    watched.
+  - REMOVAL MUST NOT FOLLOW A LINK. The reset's `git clean -ffdx` and the
+    final `shutil.rmtree` both unlink a symlink rather than descend through
+    it, or a cleanup would delete the shared tree's dependencies; the case
+    that holds it keeps a sentinel file behind a link and asserts it survives
+    every reset and the removal.
+
+`.npmrc`. The jest and vitest binaries read none; npm, npx and pnpm, wrapping
+them, do. A TRACKED project `.npmrc` arrives with HEAD. An untracked one, and
+the user's own, do NOT reach the fresh home: the user's file carries registry
+credentials and this helper does not read or copy a credential file. Each is
+named as dropped in the basis when it exists - an existence check, never a
+read - and `NPM_CONFIG_USERCONFIG`, in either case, is dropped from the run's
+environment so that sentence stays true. A wrapper that then needs the
+registry fails, and the result is `could-not-prove`.
+
+WHAT THIS DESIGN ADDRESSES, from what was observed on 2026-10-06:
+  - vitest's red being `could-not-prove` for want of `node_modules` in the
+    throwaway: (4), with (1) to (3) to read the run once it can start.
+  - a new jest or vitest test file turning HEAD's baseline red as an empty
+    suite: (3).
+  - an inline suite under `tools/`, whose test file is its implementation
+    file, so no HEAD-versus-fix split exists: NOT addressed; left to a later
+    task.
+  - the removal cases that kill a run (SIGTERM, SIGKILL) failing inside the
+    helper's own throwaway, so HEAD reads red there: NOT addressed, and its
+    cause is not diagnosed here; left to a later task.
+  - a stamp compare going stale because the evidence ledger the first
+    `--record` creates is left out of `content` but still moves the dirty
+    digest: NOT addressed - it is a `_tree_stamp` question, not a `red` one;
+    left to a later task.
 """
 import argparse
 import ast
@@ -120,6 +330,8 @@ import _manifest_io as _mio  # noqa: E402  (dual-format loader: single file OR s
 import _proc_group  # noqa: E402  (a child tree stopped whole; a stop signal as an exception)
 import _locks  # noqa: E402  (pid_alive: whether a leftover throwaway's owner still runs)
 import _worktrees  # noqa: E402  (git's worktree list read, and two spellings of one tree compared)
+import _runner_output  # noqa: E402  (every reading of what a test runner printed, shared with run-test-gate)
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 
 USAGE = ("usage: stamp-verification.py take|compare|red [--project DIR] ...\n")
 
@@ -244,12 +456,15 @@ def read_stamp_text(args, stdin=None):
 # directory, with the working tree's copy of the task's TEST files laid over it
 # and its implementation files left at HEAD. HEAD's own test files run FIRST,
 # before any file of the task's is laid over - each declared test file new at
-# HEAD written as an EMPTY file, so the same command reaches what the task's run
-# reaches minus the new files' content - and must be green; then the task's run
+# HEAD written as an EMPTY file, or left absent where it is a jest or vitest
+# one, so the same command reaches what the task's run reaches minus the new
+# files' content - and must be green; then the task's run
 # must be red, the fix run - the task's tests on the working tree's
 # implementation - green, and only a failure the runner locates in a declared
 # test file, whose named class defines it with no ast-identical def of that class
-# chain and name anywhere in HEAD's test files, is the task's. Every run is made in the throwaway reset to HEAD with an isolated
+# chain and name anywhere in HEAD's test files (for jest and vitest: whose
+# title chain it defines, with no identical test body under that chain in
+# HEAD's test files), is the task's. Every run is made in the throwaway reset to HEAD with an isolated
 # environment of its own, so the runs differ only in the files laid over. What
 # that cannot see - state reached by an absolute path or the shared git
 # directory, network state, a flaky HEAD case - is named in the guide.
@@ -326,39 +541,14 @@ _TEST_NAME = re.compile(r"^(test_.+|.+_test\.[^.]+|.+\.(test|spec)\.[^.]+)$")
 
 # --- the tally a verdict is read from ---
 # `red` needs a COUNT and a NAME: at least one test collected, and at least one
-# named case failing an ASSERTION. A non-zero exit alone is not that - a compile
-# error, an import error and a runner that collected nothing all exit non-zero
-# with no assertion ever evaluated - and neither is an exception raised in a test
-# body, which pytest counts as `failed` and unittest as an error. A runner whose
-# tally this does not read is `no-tally` and never promoted to `red`.
-#
-# The house harness marks a block that raised while being BUILT with one of
-# these labels, and a duplicated case id with the third; none of them is an
-# assertion about the code.
-HOUSE_ESCAPES = ("RAISED WHILE ITS CASES WERE BEING BUILT",
-                 "selftest body raised before reaching the end",
-                 "DUPLICATE CASE ID")
-_HOUSE_TALLY = re.compile(r"^(?:ALL PASS|SELFTEST FAILED): (\d+)/(\d+) "
-                          + "cases " + "passed", re.M)
-# pytest frames its summary with `=` by default and prints it bare under -q.
-_PYTEST_SUMMARY = re.compile(
-    r"^(?:=+ )?((?:\d+ (?:failed|passed|errors?|skipped|xfailed|xpassed|"
-    r"warnings?|deselected)(?:, )?)+|no tests ran) in [\d.]+s\b.*$", re.M)
-_PYTEST_COUNT = re.compile(r"(\d+) (failed|passed|errors?|skipped|xfailed|xpassed)")
-_PYTEST_FAILED = re.compile(r"^(FAILED|ERROR) (\S+)(?: - (.*))?$", re.M)
-_UNITTEST_RAN = re.compile(r"^Ran (\d+) tests? in ", re.M)
-_UNITTEST_FAILED = re.compile(r"^FAILED \(([^)]*)\)", re.M)
-# The location is read off the SAME line as the case: two cases of one name in
-# two modules - HEAD's imported class and a subclass inheriting from it - each
-# keep their own.
-_UNITTEST_CASE = re.compile(r"^(FAIL|ERROR): (\S+)(?: \(([\w.]+)\))?", re.M)
-# A house case's id is its label's leading token when that token carries a digit
-# (`me1`, `ga9b`, `pc-sd0`) - the key the harness's `case_id()` hands out and
-# prove-gates attributes a mutation by. A label led by an ordinary word has no id
-# and is named by the whole label: its first word is one some case HEAD's run
-# prints almost always opens with too, so reading it as an id refuses the task's
-# own case.
-_HOUSE_CASE_ID = re.compile(r"^[A-Za-z][A-Za-z_-]*[0-9][A-Za-z0-9_-]*$")
+# named case failing an ASSERTION. Both are read by `_runner_output`, the one
+# reader of what a test runner printed, shared with `run-test-gate`; the names
+# below ARE that module's objects, not copies of them.
+house_case_id = _runner_output.house_case_id
+_unittest_tally = _runner_output._unittest_tally
+failing_cases = _runner_output.failing_cases
+read_tally = _runner_output.read_tally
+
 # With no tally, a traceback ending in one of these is a run that never reached an
 # assertion; any other tally-less failure is `no-tally`, a crash nobody classified.
 _COMPILE_ERROR = re.compile(r"^\s*(?:E\s+)?(SyntaxError|IndentationError|TabError|"
@@ -374,177 +564,6 @@ _FINAL_ERROR = re.compile(r"^\s*(?:E\s+)?([A-Za-z_][\w.]*(?:Error|Exception)):\s
 INTRODUCES_CLASSES = ("ImportError", "ModuleNotFoundError", "AttributeError",
                       "NameError")
 _SYMBOL_SHAPE = re.compile(r"^[A-Za-z_][\w.]*$")
-
-
-def house_case_id(label):
-    """The label's leading token when it is id-shaped, else None."""
-    head = label.split(None, 1)
-    if not head or not _HOUSE_CASE_ID.match(head[0]):
-        return None
-    return head[0]
-
-
-def _house_cases(text):
-    out = []
-    for ln in text.splitlines():
-        if ln.startswith("FAIL ") and not any(m in ln for m in HOUSE_ESCAPES):
-            label = ln[len("FAIL "):].strip()
-            out.append({"id": house_case_id(label), "label": label,
-                        "assertion": True, "why": "house FAIL"})
-    return out
-
-
-def _pytest_cases(text):
-    out = []
-    for kind, node, why in _PYTEST_FAILED.findall(text):
-        why = (why or "").strip()
-        out.append({"id": node.split("::")[-1], "label": node,
-                    "assertion": kind == "FAILED"
-                    and (why.startswith("assert") or why.startswith("AssertionError")),
-                    "why": why or kind})
-    return out
-
-
-def _unittest_site(name, where):
-    """`(module, class, qual)` a unittest line locates a case in: `where` is
-    `mod.Class` or, from 3.11, `mod.Class.test`, the class part a qualified
-    name when classes nest (`mod.Outer.Inner`). `qual` is that dotted path
-    whole, split, since only the declared files can say where the module ends
-    and the class chain begins; `module` and `class` read it as one class
-    deep. Nones when the line gives no location."""
-    parts = where.split(".") if where else []
-    if parts and parts[-1] == name:
-        parts = parts[:-1]
-    if len(parts) < 2:
-        return None, None, []
-    return ".".join(parts[:-1]), parts[-1], parts
-
-
-def _unittest_cases(text):
-    out = []
-    for kind, name, where in _UNITTEST_CASE.findall(text):
-        module, cls, qual = _unittest_site(name, where)
-        out.append({"id": name, "label": name, "assertion": kind == "FAIL",
-                    "why": kind, "module": module, "cls": cls, "qual": qual})
-    return out
-
-
-CASE_READERS = {"house": _house_cases, "pytest": _pytest_cases,
-                "unittest": _unittest_cases}
-
-
-def failing_cases(text, runner=None):
-    """`[{"id", "label", "assertion", "why"}]` - every failing case the runner
-    that ran named; `runner` defaults to the one `read_tally()` selects.
-
-    Only that runner's lines are read, never another's whose tally line merely
-    appears in the output: a passing house case may print
-    `ERROR: <path> is not a directory` because it asserts on that message, or
-    echo a whole captured unittest transcript, `Ran N tests` line included; a
-    test under another runner may print a line that opens with `FAIL `. No
-    tally, no runner, no cases. `label` is the whole name as printed; `id` is
-    the part a case is keyed by, None for a house label with no id-shaped lead.
-
-    `assertion` is True only where the runner says the case failed an assertion:
-    a house `FAIL` line that is not an escape, a pytest `FAILED` whose reason is
-    an `assert` or an `AssertionError`, a unittest `FAIL:`. A pytest `ERROR`, a
-    pytest body exception and a unittest `ERROR:` are named with it False."""
-    if runner is None:
-        tally = read_tally(text)
-        runner = tally["runner"] if tally is not None else None
-    reader = CASE_READERS.get(runner)
-    return reader(text) if reader is not None else []
-
-
-def _house_tally(text):
-    hits = _HOUSE_TALLY.findall(text)
-    if not hits:
-        return None
-    passed, total = int(hits[-1][0]), int(hits[-1][1])
-    asserting = _house_cases(text)
-    return {"runner": "house", "collected": total, "failed": total - passed,
-            "assertions": len(asserting)}
-
-
-def _pytest_tally(text):
-    hits = _PYTEST_SUMMARY.findall(text)
-    if not hits:
-        return None
-    # Every summary line is counted, as unittest's `Ran N` lines are: a command
-    # running two invocations prints two, and reading only the last would judge
-    # the whole run by its second half.
-    counts = {}
-    for hit in hits:
-        for n, kind in _PYTEST_COUNT.findall(hit):
-            key = kind.rstrip("s") if kind.startswith("error") else kind
-            counts[key] = counts.get(key, 0) + int(n)
-    ran = sum(counts.get(k, 0) for k in ("failed", "passed", "xfailed", "xpassed"))
-    asserting = [c for c in _pytest_cases(text) if c["assertion"]]
-    return {"runner": "pytest", "collected": ran,
-            "failed": counts.get("failed", 0) + counts.get("error", 0),
-            "assertions": len(asserting)}
-
-
-def _unittest_tally(text):
-    ran = _UNITTEST_RAN.findall(text)
-    if not ran:
-        return None
-    counts = {}
-    for hit in _UNITTEST_FAILED.findall(text):
-        for part in hit.split(","):
-            key, _sep, val = part.strip().partition("=")
-            if val.isdigit():
-                counts[key] = counts.get(key, 0) + int(val)
-    failures = counts.get("failures", 0)
-    # Every `Ran N` line is counted, as every FAILED line is: a command running
-    # two suites prints two, and reading only the last would pair one run's
-    # count with both runs' failures.
-    return {"runner": "unittest", "collected": sum(int(n) for n in ran),
-            "failed": failures + counts.get("errors", 0), "assertions": failures}
-
-
-TALLY_READERS = (("house", _house_tally), ("pytest", _pytest_tally),
-                 ("unittest", _unittest_tally))
-
-
-def command_runner(cmd):
-    """The runner a test command names - `pytest`, `python -m unittest`, a house
-    `--selftest` - or None when it names none, or more than one."""
-    args = [str(a) for a in (cmd or ())]
-    named = set()
-    for i, arg in enumerate(args):
-        base = os.path.basename(arg)
-        follows_m = i > 0 and args[i - 1] == "-m"
-        if base in ("pytest", "py.test"):
-            named.add("pytest")
-        elif follows_m and arg == "unittest":
-            named.add("unittest")
-        elif arg == "--selftest":
-            named.add("house")
-    return named.pop() if len(named) == 1 else None
-
-
-def read_tally(text, cmd=None):
-    """The tally of the runner that ran, or None when no known runner printed one.
-
-    One runner's tally is that runner's. When more than one appears - a house
-    case echoing a captured unittest transcript, a unittest test printing a
-    house tally - neither the order they were printed in nor a precedence
-    between runners says which ran: a merged pipe puts a test's buffered
-    stdout after the runner's own stderr. So the command decides when it names
-    a runner (`command_runner`), and otherwise the answer is
-    `{"runner": None, "mixed": [...]}`, which no reader reads cases from."""
-    tallies = [t for t in (reader(text) for _name, reader in TALLY_READERS)
-               if t is not None]
-    if not tallies:
-        return None
-    if len(tallies) == 1:
-        return tallies[0]
-    named = [t for t in tallies if t["runner"] == command_runner(cmd)]
-    if named:
-        return named[0]
-    return {"runner": None, "mixed": [t["runner"] for t in tallies],
-            "collected": 0, "failed": 0, "assertions": 0}
 
 
 def classify_run(code, text, cmd=None):
@@ -742,25 +761,48 @@ def introduced(root, implementation, symbol, deadline=None):
 # own; the fix run then shows each one passes with the working tree's code.
 NARROW = ("the command is already red (or unreadable) at HEAD - narrow it to the "
           "task's cases")
+# What jest (`No tests found, ...`) and vitest (`No test files found, ...`) print
+# when no test file matched - the sentence the design note's (3) records them
+# printing, exit 1, for a command naming only a file that is not there.
+_JS_NO_TESTS = re.compile(r"^[ \t]*No test(?:s| files) found, exiting with code \d+",
+                          re.M)
+
+
+def _js_none_found(head, tally):
+    """Whether HEAD's run is jest's or vitest's no-test-file answer: exit 1, the
+    runner's own sentence, no tally counting a case or a failure - and only for
+    a run that left a new test file absent, which is what makes "nothing
+    matched" the expected answer rather than a misnamed path."""
+    if head["code"] != 1 or not head.get("absent"):
+        return False
+    if not _JS_NO_TESTS.search(_runner_output.plain_text(head["text"])):
+        return False
+    return tally is None or (tally["runner"] is not None and not tally["collected"]
+                             and not tally["failed"])
 
 
 def baseline_problem(head, cmd):
     """Why HEAD's own run is not a GREEN baseline, or None when it is.
 
-    `head` is `{"code", "text", "problem"}` of HEAD's own test files run on
-    HEAD's code, FIRST, in a fresh throwaway and an isolated environment, with
-    every declared test file new at HEAD laid over as an EMPTY file - so the
-    same command reaches what the task's run reaches, however it is spelled,
-    minus the new files' content. Green is exit 0 with no failure counted, or the
-    runner's own no-tests-ran exit 5 - which a command naming only new files
-    legitimately gives, and pytest gives when `-k` deselects every case - read
-    as ONE runner's tally counting no case run and no failure. The text alone
-    is not read: a red run followed by an empty one prints "NO TESTS RAN" too,
-    and a mixed tally counts nothing because it reads no cases.
+    `head` is `{"code", "text", "problem", "absent"}` of HEAD's own test files
+    run on HEAD's code, FIRST, in a fresh throwaway and an isolated
+    environment, with every declared test file new at HEAD laid over as an
+    EMPTY file - or, for a jest or vitest test file (`_is_js_test_path`), left
+    ABSENT and named in `absent`, since both runners fail an empty suite - so
+    the same command reaches what the task's run reaches, however it is
+    spelled, minus the new files' content. Green is exit 0 with no failure
+    counted, or the runner's own no-tests-ran exit 5 - which a command naming
+    only new files legitimately gives, and pytest gives when `-k` deselects
+    every case - read as ONE runner's tally counting no case run and no
+    failure; or, with a file left absent, jest's or vitest's no-test-file
+    sentence (`_js_none_found`), their counterpart of that exit 5. The text
+    alone is not read: a red run followed by an empty one prints "NO TESTS
+    RAN" too, and a mixed tally counts nothing because it reads no cases.
 
-    The stubs remove the new files' CONTENT, and with it everything that
-    content reaches - a HEAD case a new file imports, inherits or loads is not
-    run here. `credit_problem` is what keeps such a case from being credited."""
+    The stubs and the absent files remove the new files' CONTENT, and with it
+    everything that content reaches - a HEAD case a new file imports, inherits
+    or loads is not run here. `credit_problem` is what keeps such a case from
+    being credited."""
     if head is None:
         return "HEAD's own run was not made - %s" % (NARROW,)
     if head.get("problem"):
@@ -768,6 +810,8 @@ def baseline_problem(head, cmd):
     tally = read_tally(head["text"], cmd)
     if head["code"] == 5 and tally is not None and tally["runner"] is not None \
             and not tally["collected"] and not tally["failed"]:
+        return None
+    if _js_none_found(head, tally):
         return None
     if head["code"] != 0 or (tally is not None and (tally["runner"] is None
                                                     or tally["failed"])):
@@ -888,7 +932,18 @@ def case_site(failure, runner, tests, cmd, roots=(), others=()):
     qualified: the longest prefix naming a declared file is the module), or
     `__main__` when the command runs a declared file as a script; a house run
     is located only as the one declared script its command runs, with
-    `classes` None, because its FAIL lines carry no location at all."""
+    `classes` None, because its FAIL lines carry no location at all. A jest or
+    vitest case is located by the suite path its `FAIL` header or line prints,
+    read as a real path, so an exact match is the file and a tail matches only
+    when exactly one declared file ends with it and no other file does (a config
+    that moved the root prints a path relative to a package); `classes` is its
+    describe titles and `name` the test's own title. A suite that never ran a
+    test has no chain and is located nowhere."""
+    if runner in JS_RUNNERS:
+        chain = list(failure.get("chain") or [])
+        rel = _one_declared(_as_rel(failure.get("suite"), roots), tests, others,
+                            real_path=True)
+        return (rel, chain[:-1], chain[-1]) if rel and chain else None
     name = (failure.get("id") or "").split("[")[0]
     script = _as_rel(_house_script(cmd), roots)
     if runner == "pytest":
@@ -1150,6 +1205,346 @@ def test_definitions(texts):
     return out
 
 
+# --- which jest or vitest case a JS/TS test file defines ---
+# `ast` reads only Python, so a jest or vitest case is read off its source by a
+# small tokenizer: a regex cannot tell which `test(` sits inside which
+# `describe(` callback once a string, a template literal, a comment or a regex
+# literal holds a bracket. It knows those token kinds, so the brackets it counts
+# are the code's. What it reads is each `describe` / `test` / `it` call (any
+# `.only`, `.skip` ... between the name and the paren), its title chain, and its
+# argument tokens - comments and whitespace dropped - as the body two copies are
+# compared by. A file it cannot read with every bracket balanced and every
+# literal closed is None, never an empty file: a misread HEAD copy must not look
+# like no HEAD copy at all. JSX text and a regex literal right after `)` are
+# blind spots; a misreading of either surfaces as an unbalanced file (refused)
+# or as the same misreading of both copies (compared alike).
+JS_RUNNERS = ("jest", "vitest")
+_JS_TEST_FILE = re.compile(r"\.(test|spec)\.[cm]?[jt]sx?$")
+_JS_SOURCE = re.compile(r"\.[cm]?[jt]sx?$")
+_JS_CALLS = ("describe", "test", "it")
+_JS_IDENT = re.compile(r"[A-Za-z_$\u0080-\uffff][\w$\u0080-\uffff]*")
+_JS_NUMBER = re.compile(r"\.?\d[\w.]*")
+# After one of these a `/` starts a regex literal; after a name, a number, `)`
+# or `]` it divides.
+_JS_REGEX_AFTER = ("return", "typeof", "instanceof", "in", "of", "new", "delete",
+                   "void", "throw", "case", "do", "else", "yield", "await")
+_JS_OPEN = {"(": ")", "[": "]", "{": "}"}
+_JS_ESCAPE = re.compile(r"\\(u\{[0-9A-Fa-f]+\}|u[0-9A-Fa-f]{4}|x[0-9A-Fa-f]{2}|"
+                        r"\r\n|[\s\S])")
+_JS_SIMPLE_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "b": "\b", "f": "\f",
+                      "v": "\v", "0": "\0", "\n": "", "\r\n": "", "\r": ""}
+# The placeholders jest and vitest fill a `.each` title with.
+_JS_EACH_FORMAT = re.compile(r"%[psdifjoO#$%]|\$[\w.]+")
+
+
+def _js_unescape(body):
+    """A string literal's value, its escapes decoded."""
+    def one(hit):
+        esc = hit.group(1)
+        if esc[0] == "u" and len(esc) > 1:
+            return chr(int(esc[1:].strip("{}"), 16))
+        if esc[0] == "x" and len(esc) == 3:
+            return chr(int(esc[1:], 16))
+        return _JS_SIMPLE_ESCAPES.get(esc, esc)
+    return _JS_ESCAPE.sub(one, body)
+
+
+def _js_quoted_end(src, i):
+    """The index past the string literal opening at `src[i]`; ValueError when
+    it is not closed on its line."""
+    quote, j = src[i], i + 1
+    while j < len(src):
+        ch = src[j]
+        if ch == "\\":
+            j += 2
+            continue
+        if ch == quote:
+            return j + 1
+        if ch == "\n":
+            break
+        j += 1
+    raise ValueError("an unterminated string at offset %d" % (i,))
+
+
+def _js_template_end(src, i):
+    """`(end, chunks)` - the index past the template literal opening at
+    `src[i]`, and its literal text decoded, split at each `${}` substitution
+    (one chunk when it holds none)."""
+    j, start, chunks = i + 1, i + 1, []
+    while j < len(src):
+        ch = src[j]
+        if ch == "\\":
+            j += 2
+        elif ch == "`":
+            return j + 1, chunks + [_js_unescape(src[start:j])]
+        elif src.startswith("${", j):
+            chunks.append(_js_unescape(src[start:j]))
+            _tokens, j = _js_scan(src, j + 2, inside=True)
+            start = j
+        else:
+            j += 1
+    raise ValueError("an unterminated template literal at offset %d" % (i,))
+
+
+def _js_regex_end(src, i):
+    """The index past the regex literal opening at `src[i]`, flags included."""
+    j, in_class = i + 1, False
+    while j < len(src) and src[j] != "\n":
+        ch = src[j]
+        if ch == "\\":
+            j += 2
+            continue
+        if ch == "[":
+            in_class = True
+        elif ch == "]":
+            in_class = False
+        elif ch == "/" and not in_class:
+            flags = _JS_IDENT.match(src, j + 1)
+            return flags.end() if flags else j + 1
+        j += 1
+    raise ValueError("an unterminated regex literal at offset %d" % (i,))
+
+
+def _js_regex_may_start(tokens):
+    if not tokens:
+        return True
+    kind, raw = tokens[-1][0], tokens[-1][1]
+    if kind == "id":
+        return raw in _JS_REGEX_AFTER
+    return kind == "p" and raw not in (")", "]")
+
+
+def _js_scan(src, i=0, inside=False):
+    """`(tokens, end)` - `[(kind, raw, value)]` from `src[i]` on, kinds `id`,
+    `num`, `str` (a quoted string or a template with no substitution, `value`
+    its decoded text), `tpl` (a template with one, `value` its literal text
+    split at each substitution), `re` and `p` (one
+    punctuation character). `inside` scans a `${}` substitution and stops past
+    the `}` that closes it. ValueError on a literal or comment left open."""
+    tokens, depth, n = [], 0, len(src)
+    while i < n:
+        ch = src[i]
+        if ch.isspace():
+            i += 1
+        elif src.startswith("//", i):
+            nl = src.find("\n", i)
+            i = n if nl < 0 else nl
+        elif src.startswith("/*", i):
+            end = src.find("*/", i + 2)
+            if end < 0:
+                raise ValueError("an unterminated comment at offset %d" % (i,))
+            i = end + 2
+        elif ch in "'\"":
+            end = _js_quoted_end(src, i)
+            tokens.append(("str", src[i:end], _js_unescape(src[i + 1:end - 1])))
+            i = end
+        elif ch == "`":
+            end, chunks = _js_template_end(src, i)
+            tokens.append(("tpl", src[i:end], chunks) if len(chunks) > 1
+                          else ("str", src[i:end], chunks[0]))
+            i = end
+        elif ch == "/" and _js_regex_may_start(tokens):
+            end = _js_regex_end(src, i)
+            tokens.append(("re", src[i:end], None))
+            i = end
+        else:
+            word = _JS_IDENT.match(src, i) or _JS_NUMBER.match(src, i)
+            if word:
+                kind = "num" if word.group(0)[0] in ".0123456789" else "id"
+                tokens.append((kind, word.group(0), None))
+                i = word.end()
+                continue
+            if inside and ch == "}" and depth == 0:
+                return tokens, i + 1
+            depth += {"{": 1, "}": -1}.get(ch, 0)
+            tokens.append(("p", ch, None))
+            i += 1
+    if inside:
+        raise ValueError("an unterminated template substitution")
+    return tokens, i
+
+
+def _js_pairs(tokens):
+    """`{open index: close index}` of every bracket, or None when they do not
+    balance."""
+    pairs, stack = {}, []
+    for k, (kind, raw, _v) in enumerate(tokens):
+        if kind != "p":
+            continue
+        if raw in _JS_OPEN:
+            stack.append(k)
+        elif raw in (")", "]", "}"):
+            if not stack or _JS_OPEN[tokens[stack[-1]][1]] != raw:
+                return None
+            pairs[stack.pop()] = k
+    return pairs if not stack else None
+
+
+def _js_title_token(tokens, open_at, close_at):
+    """The token a call's first argument is when it is a lone `str` or `tpl`
+    literal, else None."""
+    first, after = open_at + 1, open_at + 2
+    if first < close_at and tokens[first][0] in ("str", "tpl") \
+            and tokens[after][1] in (",", ")") and tokens[after][0] == "p":
+        return tokens[first]
+    return None
+
+
+def _js_title(tokens, open_at, close_at):
+    """The literal title a call's first argument spells, or None when the
+    title is built at run time."""
+    token = _js_title_token(tokens, open_at, close_at)
+    return token[2] if token is not None and token[0] == "str" else None
+
+
+def _js_title_pattern(tokens, open_at, close_at, each):
+    """The regex a title built at run time matches, or None when nothing of
+    it is literal: a template's literal parts with anything between them, and
+    a `.each` title format with anything in place of each placeholder."""
+    token = _js_title_token(tokens, open_at, close_at)
+    if token is None:
+        return None
+    parts = token[2] if token[0] == "tpl" else [token[2]]
+    if each:
+        parts = [p for part in parts for p in _JS_EACH_FORMAT.split(part)]
+    return "^" + "[\\s\\S]*".join(re.escape(p) for p in parts) + "$"
+
+
+def js_test_cases(text):
+    """`{"tests": [(chain, body)], "dynamic": [chain]}` of a JS/TS test file,
+    or None when it cannot be read with every literal closed and every bracket
+    balanced. `chain` is the tuple of describe titles and the test's own;
+    `body` the tuple of the test call's argument tokens. A `dynamic` chain is
+    one some element of which is built at run time (`.each`, a template with a
+    substitution, a variable): that element is `("~", pattern)`, the pattern
+    the regex `_js_title_pattern` reads off a template or a `.each` format,
+    and None for anything else."""
+    try:
+        tokens, _end = _js_scan(text or "")
+    except (ValueError, IndexError):
+        return None
+    pairs = _js_pairs(tokens)
+    if pairs is None:
+        return None
+    tests, dynamic, scopes, k = [], [], [], 0
+    while k < len(tokens):
+        while scopes and scopes[-1][0] < k:
+            scopes.pop()
+        kind, raw, _v = tokens[k]
+        if kind != "id" or raw not in _JS_CALLS or (
+                k and tokens[k - 1][0] == "p" and tokens[k - 1][1] == "."):
+            k += 1
+            continue
+        j, each = k + 1, False
+        while j + 1 < len(tokens) and tokens[j][1] == "." and tokens[j + 1][0] == "id":
+            each = each or tokens[j + 1][1] == "each"
+            j += 2
+        if j >= len(tokens) or tokens[j][1] != "(" or tokens[j][0] != "p":
+            k += 1
+            continue
+        open_at = j
+        if each:
+            table_close = pairs[j]
+            if table_close + 1 >= len(tokens) or tokens[table_close + 1][1] != "(":
+                k = j + 1
+                continue
+            open_at = table_close + 1
+        close_at = pairs[open_at]
+        title = None if each else _js_title(tokens, open_at, close_at)
+        element = title if title is not None else (
+            "~", _js_title_pattern(tokens, open_at, close_at, each))
+        parent = scopes[-1][1] if scopes else ()
+        chain = parent + (element,)
+        if raw == "describe":
+            scopes.append((close_at, chain))
+        elif any(not isinstance(e, str) for e in chain):
+            dynamic.append(chain)
+        else:
+            tests.append((chain, tuple(t[1] for t in tokens[open_at + 1:close_at])))
+        k = open_at + 1
+    return {"tests": tests, "dynamic": dynamic}
+
+
+def _js_chain_matches(pattern_chain, chain):
+    """Whether a `dynamic` chain could be filled in as `chain`."""
+    if len(pattern_chain) != len(chain):
+        return False
+    for element, title in zip(pattern_chain, chain):
+        if isinstance(element, str):
+            if element != title:
+                return False
+        elif element[1] is not None and not re.match(element[1], title):
+            return False
+    return True
+
+
+def js_test_definitions(texts):
+    """`{"defs": {(chain, body): rel}, "unread": {rel: text}}` of each file of
+    `texts` (`{rel: text}`): the jest and vitest cases HEAD already has, keyed so
+    a copy of one is found wherever it lands, and the files `js_test_cases`
+    could not read, kept whole so a case they might hold is refused."""
+    defs, unread = {}, {}
+    for rel in sorted(texts):
+        cases = js_test_cases(texts[rel])
+        if cases is None:
+            unread[rel] = texts[rel]
+            continue
+        for chain, body in cases["tests"]:
+            defs.setdefault((chain, body), rel)
+    return {"defs": defs, "unread": unread}
+
+
+# A title holding one of these may be spelled in source by an escape, so a file
+# the tokenizer could not read is not searched for it - it is assumed to hold it.
+_JS_TITLE_ESCAPABLE = re.compile("[\"'`\\\\\u0080-\U0010ffff]")
+
+
+def _js_unread_holding(unread, title):
+    """The unreadable HEAD test files that may hold a test titled `title`."""
+    if _JS_TITLE_ESCAPABLE.search(title):
+        return sorted(unread)
+    return sorted(rel for rel, text in unread.items() if title in (text or ""))
+
+
+def _js_credit_problem(site, scope):
+    """Why a located jest or vitest case is NOT the task's own, or None.
+
+    The declared file's working-tree copy must define a test with exactly that
+    title chain, and no test of it built at run time may fill in the same chain
+    - otherwise which of them failed cannot be told. Then no test file in HEAD's
+    tree may hold a test with that chain whose body is the same token for token:
+    that is HEAD's case, unchanged, wherever it now sits. A HEAD test file the
+    tokenizer cannot read refuses every case whose title it may hold."""
+    rel, describes, name = site
+    chain = tuple(describes) + (name,)
+    where = "%s (%s)" % (rel, " > ".join(chain))
+    cases = js_test_cases(scope["wt"].get(rel))
+    if cases is None:
+        return ("%s could not be read as JS/TS source with every literal closed and "
+                "every bracket balanced, so which tests it defines cannot be told"
+                % (rel,))
+    built = [c for c in cases["dynamic"] if _js_chain_matches(c, chain)]
+    bodies = [body for c, body in cases["tests"] if c == chain]
+    if built:
+        return ("%s builds a test title at run time (`.each`, a template or a "
+                "variable) that may be this one, so which test failed cannot be "
+                "told" % (where,))
+    if not bodies:
+        return "%s defines no test with that title chain" % (where,)
+    head = scope.get("head_js")
+    if head is None:
+        return "HEAD's test files could not be read to tell an edit from HEAD's case"
+    same = [head["defs"][(chain, b)] for b in bodies if (chain, b) in head["defs"]]
+    if same:
+        return ("its test body in %s is unchanged from HEAD's %s (the same title "
+                "chain and tokens) - HEAD's case" % (where, same[0]))
+    held = _js_unread_holding(head["unread"], name)
+    if held:
+        return ("HEAD's %s could not be read as JS/TS source and may hold this "
+                "case, so it is not credited" % (", ".join(held),))
+    return None
+
+
 def credit_problem(failure, runner, scope):
     """Why this failing case is NOT the task's own, or None when it is.
 
@@ -1168,11 +1563,15 @@ def credit_problem(failure, runner, scope):
     nothing else. Layout and comments do not count as a change; any edit to
     the def's ast does. A house run carries no definitions, so the one script
     it runs is compared whole: a script identical to one of HEAD's test files
-    is HEAD's suite, moved or copied."""
+    is HEAD's suite, moved or copied. A jest or vitest case is judged by
+    `_js_credit_problem`, its title chain and test body standing in for the
+    class chain and the def."""
     site = case_site(failure, runner, scope["tests"], scope["cmd"],
                      scope.get("roots", ()), scope.get("others", ()))
     if site is None:
         return "the runner locates it in no declared test file"
+    if runner in JS_RUNNERS:
+        return _js_credit_problem(site, scope)
     rel, classes, name = site
     if classes is None:
         modules = scope.get("head_modules")
@@ -1236,26 +1635,39 @@ def module_key(text):
     return ast.dump(tree) if tree is not None else "text:" + (text or "")
 
 
+def _is_js_test_path(rel, named):
+    """A jest or vitest test file: a `.test.`/`.spec.` JS/TS name, or a JS/TS
+    file under `__tests__` or among the declared `named`."""
+    parts = rel.split("/")
+    return bool(_JS_TEST_FILE.search(rel)) or (bool(_JS_SOURCE.search(rel)) and (
+        rel in named or "__tests__" in parts[:-1]))
+
+
 def head_tree(root, named, deadline):
-    """`(files, defs, modules)` - every path in HEAD's tree; `test_definitions`
-    of the `.py` test files among them (`_is_test_path`, the declared `named`
-    counting as tests); and `{module_key: rel}` of the same files, for a house
-    run, whose cases carry no definition to compare. Any is None when git
-    could not answer under the deadline, which the credit reads as a refusal,
-    never as "nothing"."""
+    """`(files, defs, modules, js)` - every path in HEAD's tree;
+    `test_definitions` of the `.py` test files among them (`_is_test_path`,
+    the declared `named` counting as tests); `{module_key: rel}` of the same
+    files, for a house run, whose cases carry no definition to compare; and
+    `js_test_definitions` of the jest and vitest test files
+    (`_is_js_test_path`). Any is None when git could not answer under the
+    deadline, which the credit reads as a refusal, never as "nothing"."""
     code, text = _git(root, ["ls-tree", "-r", "-z", "--name-only", "HEAD"],
                       timeout=max(1, _left(deadline)), strip=False)
     if code != 0:
-        return None, None, None
+        return None, None, None, None
     files = [p for p in text.split("\0") if p]
     tests = [p for p in files if p.endswith(".py") and _is_test_path(p, named)]
-    texts, problem = _cat_blobs(root, tests, deadline)
+    js_tests = [p for p in files if _is_js_test_path(p, named)]
+    texts, problem = _cat_blobs(root, tests + js_tests, deadline)
     if problem is not None:
-        return files, None, None
+        return files, None, None, None
     modules = {}
-    for rel in sorted(texts):
-        modules.setdefault(module_key(texts[rel]), rel)
-    return files, test_definitions(texts), modules
+    for rel in sorted(tests):
+        if rel in texts:
+            modules.setdefault(module_key(texts[rel]), rel)
+    py_texts = dict((rel, texts[rel]) for rel in tests if rel in texts)
+    js_texts = dict((rel, texts[rel]) for rel in js_tests if rel in texts)
+    return files, test_definitions(py_texts), modules, js_test_definitions(js_texts)
 
 
 def _throwaway_files(path):
@@ -1306,23 +1718,257 @@ def _names_shared_tree(cmd, root, project):
             or (os.path.isabs(a) and os.path.realpath(a).startswith(real))]
 
 
+# --- dependencies: the ignored directories linked into the throwaway ---
+# The throwaway holds tracked files only, so a suite importing from
+# `node_modules` or run from an in-repo `.venv` cannot start there. These are
+# linked in from `--deps-from` ENTRY BY ENTRY into a real directory, never as one
+# link to the whole directory: a new entry a runner creates beside them lands in
+# the throwaway, and the cache entries below are not linked at all, so their
+# writes stay there too. A write INTO a linked entry still lands in the source;
+# the basis says so rather than claiming it is watched.
+DEP_DIRS = ("node_modules", ".venv")
+DEP_CACHES = (".cache", ".vite", ".vite-temp")
+# A quoted absolute path in an editable install's finder module.
+_QUOTED = re.compile(r"""["']([^"'\n]+)["']""")
+
+
+def dep_rels(listing):
+    """The dependency directories in git's NUL-separated ignored listing, the
+    outermost only: one nested inside another is reached through its parent's
+    link already."""
+    rels = sorted(set(e.rstrip("/") for e in listing.split("\0")
+                      if e.rstrip("/") and e.rstrip("/").split("/")[-1] in DEP_DIRS))
+    return [r for r in rels if not any(r.startswith(o + "/") for o in rels)]
+
+
+def _editable_paths(path):
+    """The absolute paths an editable install points the interpreter at: the
+    path lines of a `.pth` file, the quoted paths of an `__editable__` finder."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError:
+        return []
+    if path.endswith(".pth"):
+        found = [ln.strip() for ln in text.splitlines()
+                 if ln.strip() and not ln.strip().startswith(("#", "import"))]
+    else:
+        found = _QUOTED.findall(text)
+    return [p for p in found if os.path.isabs(p)]
+
+
+def _listing(path):
+    """The sorted entry names of directory `path`, or [] when it is none."""
+    try:
+        return sorted(os.listdir(path))
+    except OSError:
+        return []
+
+
+def _site_packages(top):
+    """Every site-packages directory a virtualenv at `top` can hold:
+    `lib/python<X.Y>/site-packages` (and `lib64`) on POSIX,
+    `Lib/site-packages` on Windows. Each directory once: on a filesystem that
+    ignores case, `lib` and `Lib` are one directory."""
+    out, seen = [], set()
+    for lib in ("lib", "lib64", "Lib"):
+        base = os.path.join(top, lib)
+        for site in [os.path.join(base, v, "site-packages") for v in _listing(base)
+                     if v.startswith("python")] + [os.path.join(base, "site-packages")]:
+            if not os.path.isdir(site) or os.path.islink(site):
+                continue
+            st = os.stat(site)
+            if (st.st_dev, st.st_ino) not in seen:
+                seen.add((st.st_dev, st.st_ino))
+                out.append(site)
+    return out
+
+
+def _link_candidates(top):
+    """`[(path, kind)]` - the only entries under the dependency directory `top`
+    that can carry a link into the tree: each top-level entry and each entry of
+    a top-level `@scope` directory (where npm, pnpm and yarn put a workspace
+    package's link), as `link`; and each `.pth` or `__editable__` file directly
+    under a site-packages directory (where `pip install -e` leaves its path),
+    as `editable`. Nothing inside a package is opened, which is what keeps the
+    scan to a listing per directory rather than a walk of every installed file."""
+    out = []
+    for name in _listing(top):
+        full = os.path.join(top, name)
+        out.append((full, "link"))
+        if name.startswith("@") and os.path.isdir(full) and not os.path.islink(full):
+            out.extend((os.path.join(full, n), "link") for n in _listing(full))
+    for site in _site_packages(top):
+        out.extend((os.path.join(site, n), "editable") for n in _listing(site)
+                   if n.endswith(".pth") or n.startswith("__editable__"))
+    return out
+
+
+def workspace_links(source, rels, roots, deadline):
+    """`(links, problem)` - `links` is `[(entry, target)]`, every link and every
+    editable-install path among `_link_candidates` of the dependency
+    directories `rels` of `source` that lands inside `roots` but outside every
+    one of those directories: a workspace package, which would load the shared
+    tree's implementation into a run meant to see HEAD's. The scan stops when
+    `deadline` passes, and the answer is then `(None, problem)`, never a
+    partial list read as complete."""
+    deps = [os.path.realpath(os.path.join(source, *r.split("/"))) for r in rels]
+
+    def into_tree(target):
+        real = os.path.realpath(target)
+        return _under(real, roots) and not _under(real, deps)
+
+    out = []
+    for rel in rels:
+        top = os.path.join(source, *rel.split("/"))
+        for full, kind in _link_candidates(top):
+            if _left(deadline) < 1:
+                return None, ("the run timed out: no time was left of the deadline "
+                              "to scan %s for links into the tree" % (rel,))
+            shown = "%s/%s" % (rel, os.path.relpath(full, top).replace(os.sep, "/"))
+            if os.path.islink(full):
+                if into_tree(full):
+                    out.append((shown, os.path.realpath(full)))
+            elif kind == "editable" and os.path.isfile(full):
+                out.extend((shown, p) for p in _editable_paths(full) if into_tree(p))
+    return out, None
+
+
+def _npmrc_state(root, deadline):
+    """What becomes of each `.npmrc` that exists - an existence check, never a
+    read, since the user's carries registry credentials."""
+    _c, tracked = _git(root, ["ls-tree", "--name-only", "HEAD", "--", ".npmrc"],
+                       timeout=max(1, _left(deadline)))
+    said = []
+    if tracked.strip() == ".npmrc":
+        said.append("the project's tracked .npmrc carried with HEAD")
+    elif os.path.isfile(os.path.join(root, ".npmrc")):
+        said.append("the project's untracked .npmrc dropped")
+    if os.path.isfile(os.path.join(os.path.expanduser("~"), ".npmrc")):
+        said.append("the user's ~/.npmrc dropped (every run has a fresh home)")
+    return said or ["no .npmrc to carry or drop"]
+
+
+def dependency_plan(source, root, deadline):
+    """`(plan, problem)` - which ignored dependency directories of `source` are
+    linked into a throwaway of `root`, which are skipped and why, and what
+    becomes of each `.npmrc`. A directory is linked only where its parent
+    exists at `root`'s HEAD and no entry of it links into the tree
+    (`workspace_links`): such a directory is skipped, the entry named as its
+    reason, and the run proceeds without it - a command that never needed it
+    still proves, and one that did fails for want of it, which the basis says."""
+    code, top = _git(source, ["rev-parse", "--show-toplevel"],
+                     timeout=max(1, _left(deadline)))
+    if code != 0:
+        return None, "--deps-from %s is not inside a git repository: %s" % (source, top)
+    code, listing = _git(top, ["ls-files", "-z", "--others", "--ignored",
+                               "--exclude-standard", "--directory"],
+                         timeout=max(1, _left(deadline)), strip=False)
+    if code != 0:
+        return None, "git could not list %s's ignored directories: %s" % (top, listing)
+    rels = [r for r in dep_rels(listing)
+            if os.path.isdir(os.path.join(top, *r.split("/")))]
+    parents = sorted(set(posixpath.dirname(r) for r in rels) - set([""]))
+    at_head = set()
+    if parents:
+        code, text = _git(root, ["ls-tree", "-z", "--name-only", "HEAD", "--"]
+                          + parents, timeout=max(1, _left(deadline)), strip=False)
+        at_head = set(p for p in text.split("\0") if p) if code == 0 else set()
+    placed = [r for r in rels if posixpath.dirname(r) in at_head | set([""])]
+    skipped = [(r, "its parent directory is not at HEAD")
+               for r in rels if r not in placed]
+    roots = sorted(set((top, os.path.realpath(top), root, os.path.realpath(root))))
+    links, problem = workspace_links(top, placed, roots, deadline)
+    if problem is not None:
+        return None, problem
+    into = {}
+    for entry, target in links:
+        owner = max((r for r in placed if entry.startswith(r + "/")), key=len)
+        into.setdefault(owner, []).append("%s -> %s" % (entry, target))
+    skipped += [(r, "it holds a link into the shared tree, through which HEAD's "
+                    "run would read the working tree's implementation: %s"
+                    % ("; ".join(into[r]),)) for r in placed if r in into]
+    return {"source": top, "linked": [r for r in placed if r not in into],
+            "skipped": skipped, "npmrc": _npmrc_state(root, deadline)}, None
+
+
+def link_dependencies(path, plan):
+    """Link each planned directory into the throwaway at `path`, entry by entry,
+    leaving out `DEP_CACHES` and anything HEAD already put there. Returns the
+    problem, or None."""
+    for rel in (plan or {}).get("linked") or []:
+        src = os.path.join(plan["source"], *rel.split("/"))
+        dst = os.path.join(path, *rel.split("/"))
+        try:
+            if not os.path.isdir(dst):
+                os.makedirs(dst)
+            for name in sorted(os.listdir(src)):
+                target = os.path.join(dst, name)
+                if name in DEP_CACHES or os.path.lexists(target):
+                    continue
+                entry = os.path.join(src, name)
+                os.symlink(entry, target, target_is_directory=os.path.isdir(entry))
+        except OSError as exc:
+            return "could not link %s into the throwaway: %s" % (rel, exc)
+    return None
+
+
+def deps_clause(plan):
+    """The basis clause naming what was linked, from where, what a runner may
+    write back through, what was skipped and what became of each `.npmrc`."""
+    if plan is None:
+        return ""
+    src = plan["source"]
+    if plan["linked"]:
+        said = ("dependencies linked from %s, entry by entry: %s - %s are not "
+                "linked and a new entry a runner makes beside the links stays in "
+                "the throwaway, but a write into a linked entry lands in %s and is "
+                "not watched" % (src, ", ".join(plan["linked"]), ", ".join(DEP_CACHES),
+                                 ", ".join(os.path.join(src, *r.split("/"))
+                                           for r in plan["linked"])))
+    else:
+        said = "no ignored dependency directory linked from %s" % (src,)
+    if plan["skipped"]:
+        said += "; not linked: %s" % ("; ".join("%s (%s)" % s for s in plan["skipped"]),)
+    return "; %s; %s" % (said, "; ".join(plan["npmrc"]))
+
+
 # --- the throwaway tree itself ---
 def leftover_throwaways(root, timeout=120):
-    """`[{"path", "state", "pid"}]` - registered worktrees whose path carries
-    `THROWAWAY_PREFIX`, each graded by the process its `OWNER_FILE` names:
-    `running` while that process is alive (a sibling's `red`, still going),
-    `left-behind` once it is gone, `unknown` with no owner record. Reported,
-    never pruned. A reused pid reads as `running`, the safe direction."""
+    """`[{"path", "state", "pid"}]` - registered worktrees whose HOLDER (the
+    directory `_build_throwaway` makes with `tempfile.mkdtemp(prefix=
+    THROWAWAY_PREFIX, ...)`, directly above the checked-out `tree` directory)
+    carries `THROWAWAY_PREFIX`, each graded by the process its `OWNER_FILE`
+    names: `running` while that process is alive (a sibling's `red`, still
+    going), `left-behind` once it is gone, `unknown` with no owner record.
+    Reported, never pruned. A reused pid reads as `running`, the safe
+    direction.
+
+    THE MAIN WORKTREE IS NEVER A CANDIDATE, however its own path is spelled.
+    `git worktree list --porcelain` always lists it first, so it is skipped by
+    position rather than by name - a repository checked out under a directory
+    that happens to start with `THROWAWAY_PREFIX` (a scratch test root, say)
+    is still the main worktree and reports nothing about itself.
+
+    AND THE PREFIX IS READ ON ONE DIRECTORY, NOT ON EVERY ANCESTOR. Matching
+    any path segment reported the repository above as its own leftover
+    whenever a caller's scratch root happened to carry the prefix several
+    levels up; a throwaway's `tree` directory sits exactly one level under the
+    holder `_build_throwaway` made, so that is the only segment this reads."""
     code, listing = _git(root, ["worktree", "list", "--porcelain"], timeout=timeout)
     if code != 0:
         return []
     out = []
+    seen_main = False
     for ln in listing.splitlines():
         if not ln.startswith("worktree "):
             continue
         path = ln[len("worktree "):]
-        if not any(part.startswith(THROWAWAY_PREFIX)
-                   for part in path.replace("\\", "/").split("/")):
+        if not seen_main:
+            seen_main = True
+            continue
+        holder = posixpath.basename(posixpath.dirname(path))
+        if not holder.startswith(THROWAWAY_PREFIX):
             continue
         pid = None
         try:
@@ -1472,11 +2118,26 @@ def _run_in(path, cmd, timeout, env):
     return proc.returncode, (out or b"").decode("utf-8", "replace"), None
 
 
-_TALLY_KEYS = {"house": "cases ", "pytest": " in ", "unittest": "Ran "}
+_TALLY_KEYS = {"house": "cases ", "pytest": " in ", "unittest": "Ran ",
+               "jest": "Tests:", "vitest": "Tests "}
+# Said in place of a decisive line when neither reader matched. A line chosen
+# by its position - the last one is often a package manager's update notice
+# printed after the run - would name an unrelated line as the run's cause.
+NO_READER = ("no tally or error reader matched its output, so no line of it is "
+             "quoted as decisive")
+NO_OUTPUT = "the run printed no output"
 
 
 def _decisive_line(text, tally):
-    """The line a reader checks the verdict against: the tally, else the error."""
+    """The line a reader checks the verdict against: the tally, else the error,
+    else a sentence saying no reader matched - never a line picked by position.
+
+    Read through `_runner_output.plain_text` first, same as every tally and case
+    reader `red` calls: a runner forced into colour through a pipe (`FORCE_COLOR`)
+    wraps the very words this hunts for (`Tests:`, `Error`) in terminal escapes,
+    and a basis quoting them raw is unreadable and still carries no more
+    information than the plain line underneath."""
+    text = _runner_output.plain_text(text)
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     if tally is not None and tally["runner"] in _TALLY_KEYS:
         hits = [ln for ln in lines if _TALLY_KEYS[tally["runner"]] in ln]
@@ -1485,7 +2146,7 @@ def _decisive_line(text, tally):
     errors = _ERROR_LINE.findall(text)
     if errors:
         return errors[-1].strip()
-    return lines[-1] if lines else "(no output)"
+    return NO_READER if lines else NO_OUTPUT
 
 
 def _ids(cases):
@@ -1506,19 +2167,20 @@ def red_verdict(run, ctx):
     `second` is the `--introduces` re-run with the working tree's
     implementation copied in, `head` the baseline - HEAD's own test files on
     HEAD's code, made FIRST in the fresh throwaway with the new declared test
-    files as empty stubs - and `fix` the task's test files on the working
-    tree's code, made when the task's run is red on a green baseline. Every
-    run has an isolated environment of its own. `ctx` is `{"root",
-    "implementation", "tests", "cases", "symbols", "dropped", "new",
-    "head_files", "head_defs", "head_modules", "path"}` - `head_tree`'s
-    answer, and the
-    throwaway's path."""
+    files as empty stubs, the jest and vitest ones among them (`absent`) left
+    out instead - and `fix` the task's test files on the working tree's code,
+    made when the task's run is red on a green baseline. Every run has an
+    isolated environment of its own. `ctx` is `{"root", "implementation",
+    "tests", "cases", "symbols", "dropped", "new", "absent", "head_files",
+    "head_defs", "head_modules", "head_js", "path"}` - `head_tree`'s answer,
+    and the throwaway's path."""
     at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     shown = " ".join(run["cmd"])
     env_clause = "; run without %s" % (", ".join(ctx["dropped"]) or "nothing",)
     if ctx.get("naming"):
         env_clause += ("; kept, naming the shared root: %s - the run may have read "
                        "shared-tree files through it" % (", ".join(ctx["naming"]),))
+    env_clause += deps_clause(ctx.get("deps"))
     if run["problem"] is not None:
         return E_CANNOT_PROVE, V_NOT_RUN, {
             "status": RED_CANNOT, "at": at,
@@ -1533,13 +2195,19 @@ def red_verdict(run, ctx):
             "%s (%s): the test PASSED in the throwaway - HEAD's implementation with "
             "this task's test files, run with %s removed from its environment - so "
             "it proves nothing yet; fix the test, there is no redFirst word to "
-            "record for this" % (where, line, ", ".join(ctx["dropped"]) or "nothing"))
+            "record for this%s" % (where, line, ", ".join(ctx["dropped"]) or "nothing",
+                                   deps_clause(ctx.get("deps"))))
     failing = (failing_cases(text, tally["runner"])
                if tally is not None and tally["runner"] is not None else [])
     how = "HEAD's own tests green on HEAD's code"
-    if ctx.get("new"):
+    absent = ctx.get("absent") or []
+    stubbed = [rel for rel in ctx.get("new") or [] if rel not in absent]
+    if stubbed:
         how += (", its declared test files new at HEAD (%s) laid over as empty "
-                "files" % (", ".join(ctx["new"]),))
+                "files" % (", ".join(stubbed),))
+    if absent:
+        how += (", its declared jest or vitest test files new at HEAD (%s) left "
+                "absent" % (", ".join(absent),))
     if ctx["cases"]:
         how = "named by --case, " + how
     baseline = baseline_problem(run.get("head"), run["cmd"])
@@ -1558,7 +2226,8 @@ def red_verdict(run, ctx):
                  "roots": tuple(r for r in (ctx["root"], ctx.get("path")) if r),
                  "wt": _test_texts(ctx["root"], ctx["tests"]),
                  "head_defs": ctx.get("head_defs"),
-                 "head_modules": ctx.get("head_modules"), "others": others}
+                 "head_modules": ctx.get("head_modules"),
+                 "head_js": ctx.get("head_js"), "others": others}
         own, refused = own_failures(failing, ctx["cases"], tally["runner"], scope)
         refused_clause = _refused_clause(refused)
         uncredited = "; ".join(
@@ -1566,14 +2235,18 @@ def red_verdict(run, ctx):
             ((f, credit_problem(f, tally["runner"], scope)) for f in failing
              if f["assertion"]) if why)
         if not own and not ctx["cases"]:
+            rule = (("whose working-tree copy defines its title chain, with no "
+                     "test of that chain and identical body in HEAD's test files")
+                    if tally["runner"] in JS_RUNNERS else
+                    ("whose named class defines it, with no identical def in "
+                     "HEAD's test files"))
             return E_CANNOT_PROVE, verdict, {
                 "status": RED_CANNOT, "at": at,
                 "basis": "%s with failing cases %s, but none is the task's own (%s) "
                          "- a case is the task's only when the runner locates it in "
-                         "a declared test file (%s) whose named class defines it, "
-                         "with no identical def in HEAD's test files - %s%s"
+                         "a declared test file (%s) %s - %s%s"
                          % (where, _ids(failing), uncredited or "none asserted",
-                            ", ".join(ctx["tests"]), line, env_clause)}, None
+                            ", ".join(ctx["tests"]), rule, line, env_clause)}, None
         if own:
             return E_PROVED, verdict, {
                 "status": RED_PROVED, "at": at,
@@ -1709,9 +2382,10 @@ def _isolated_env(env, scratch, tag):
 
 
 def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
-                  stubs=()):
+                  stubs=(), deps=None):
     """`(run, copied)` - the throwaway reset to HEAD, `rels` laid over it from
-    the working tree and each of `stubs` written as an EMPTY file, and the
+    the working tree, each of `stubs` written as an EMPTY file and the `deps`
+    plan's directories linked in again - the reset removed them - and the
     command run in an isolated environment. With less than a second of the
     deadline left no run is made at all - not even the reset's git calls,
     which would otherwise run past it."""
@@ -1728,6 +2402,9 @@ def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
         if not os.path.isdir(os.path.dirname(dst)):
             os.makedirs(os.path.dirname(dst))
         open(dst, "w").close()
+    problem = link_dependencies(path, deps)
+    if problem is not None:
+        return {"code": None, "text": "", "problem": problem, "seconds": 0.0}, copied
     return _timed_run(path, cmd, deadline, timeout,
                       _isolated_env(env, scratch, tag)), copied
 
@@ -1788,8 +2465,12 @@ def _red_scope(args, cmd, deadline):
         return None, ("none of task %s's test files (%s) is in the working tree, "
                       "so a throwaway would hold HEAD alone"
                       % (args.task, ", ".join(tests)))
+    deps, problem = dependency_plan(os.path.abspath(args.deps_from or args.project),
+                                    root, deadline)
+    if problem is not None:
+        return None, problem
     return {"root": root, "implementation": implementation, "tests": present,
-            "declared": tests}, None
+            "declared": tests, "deps": deps}, None
 
 
 def _arm():
@@ -1815,6 +2496,12 @@ def run_red(args, cmd, out):
     # still trusts - in the tree or under PYTHONPYCACHEPREFIX alike. So no run
     # writes one, and none is there to be read.
     env = dict(env, PYTHONDONTWRITEBYTECODE="1")
+    # The user's npm config carries registry credentials; a run's fresh home
+    # leaves it behind, and so must a variable pointing straight at it.
+    for key in sorted(k for k in env if k.lower() == "npm_config_userconfig"):
+        del env[key]
+        dropped.append(key)
+    deps = scope["deps"]
     _c, head = _git(root, ["rev-parse", "HEAD"], timeout=max(1, _left(deadline)))
     base = holder_base(root)
     if base is None:
@@ -1831,8 +2518,8 @@ def run_red(args, cmd, out):
         pass
     run = {"cmd": cmd, "code": None, "text": "", "problem": None, "second": None,
            "head": None, "fix": None}
-    state = {"new": [], "head_files": None, "head_defs": None,
-             "head_modules": None}
+    state = {"new": [], "absent": [], "head_files": None, "head_defs": None,
+             "head_modules": None, "head_js": None}
     copied = []
     previous = _arm()
     try:
@@ -1840,8 +2527,13 @@ def run_red(args, cmd, out):
             present, run["problem"] = _at_head(root, scope["declared"], deadline)
             if run["problem"] is None:
                 state["new"] = sorted(set(scope["tests"]) - present)
-                (state["head_files"], state["head_defs"],
-                 state["head_modules"]) = head_tree(
+                # jest and vitest fail an empty suite, so a new file of theirs
+                # is left absent - the reset already removes it - and the
+                # stub stays the rule for every other runner.
+                state["absent"] = [rel for rel in state["new"]
+                                   if _is_js_test_path(rel, set(scope["tests"]))]
+                (state["head_files"], state["head_defs"], state["head_modules"],
+                 state["head_js"]) = head_tree(
                     root, set(scope["tests"]), deadline)
                 _copied, run["problem"] = _build_throwaway(
                     root, path, [], timeout=max(1, _left(deadline)))
@@ -1849,27 +2541,29 @@ def run_red(args, cmd, out):
                 run["problem"] = ("the run timed out: building the throwaway spent "
                                   "the %s-second deadline" % (args.timeout,))
             if run["problem"] is None:
-                run["head"], _c = _isolated_run(root, path, [], cmd, deadline,
-                                                args.timeout, env, holder, "baseline",
-                                                stubs=state["new"])
+                run["head"], _c = _isolated_run(
+                    root, path, [], cmd, deadline, args.timeout, env, holder,
+                    "baseline", stubs=[rel for rel in state["new"]
+                                       if rel not in state["absent"]], deps=deps)
+                run["head"]["absent"] = state["absent"]
             if run["problem"] is None:
                 task, copied = _isolated_run(root, path, scope["declared"], cmd,
                                              deadline, args.timeout, env, holder,
-                                             "task")
+                                             "task", deps=deps)
                 run["code"], run["text"], run["problem"] = (
                     task["code"], task["text"], task["problem"])
             if run["problem"] is None and _wants_second(run["code"], run["text"],
                                                         args.introduces, cmd):
                 run["second"], _c = _isolated_run(
                     root, path, scope["declared"] + scope["implementation"], cmd,
-                    deadline, args.timeout, env, holder, "second")
+                    deadline, args.timeout, env, holder, "second", deps=deps)
             verdict1 = (classify_run(run["code"], run["text"], cmd)[0]
                         if run["problem"] is None and run["code"] is not None
                         else None)
             if verdict1 == V_RED and baseline_problem(run["head"], cmd) is None:
                 run["fix"], _c = _isolated_run(
                     root, path, scope["declared"] + scope["implementation"], cmd,
-                    deadline, args.timeout, env, holder, "fix")
+                    deadline, args.timeout, env, holder, "fix", deps=deps)
         except KeyboardInterrupt as exc:
             run["problem"] = ("interrupted by %s before the run finished; the "
                               "run's process group was torn down"
@@ -1878,10 +2572,12 @@ def run_red(args, cmd, out):
             "root": root, "implementation": scope["implementation"],
             "tests": scope["tests"], "cases": args.case,
             "symbols": args.introduces, "dropped": dropped, "naming": naming,
-            "new": state["new"], "head_files": state["head_files"],
+            "new": state["new"], "absent": state["absent"],
+            "head_files": state["head_files"],
             "head_defs": state["head_defs"],
-            "head_modules": state["head_modules"], "path": path,
-            "deadline": deadline})
+            "head_modules": state["head_modules"],
+            "head_js": state["head_js"], "path": path,
+            "deadline": deadline, "deps": deps})
     finally:
         removed = _remove_throwaway(root, holder, path)
         if previous is not None:
@@ -1889,6 +2585,12 @@ def run_red(args, cmd, out):
     payload = {"verdict": verdict, "redFirst": block, "note": note,
                "atHead": scope["implementation"], "copied": copied,
                "leftovers": leftovers,
+               "dependencies": {"source": deps["source"], "linked": deps["linked"],
+                                "skipped": [list(s) for s in deps["skipped"]],
+                                "npmrc": deps["npmrc"]},
+               "baseline": {"stubbed": [rel for rel in state["new"]
+                                        if rel not in state["absent"]],
+                            "absent": state["absent"]},
                "environment": {"dropped": dropped, "naming": naming,
                                "set": ["%s=%s" % (k, env[k]) for k in
                                        ("PYTHONDONTWRITEBYTECODE",) if k in env]},
@@ -1908,6 +2610,7 @@ def run_red(args, cmd, out):
         out("  at HEAD: %s" % (", ".join(scope["implementation"]) or "(none declared)"))
         out("  from the working tree: %s" % (", ".join(copied) or "(none)"))
         out("  environment: inherited, without %s" % (", ".join(dropped) or "nothing"))
+        out("  dependencies:%s" % (deps_clause(deps)[1:],))
         if naming:
             out("  kept, naming the shared root: %s" % (", ".join(naming),))
         for left in leftovers:
@@ -1960,8 +2663,14 @@ def build_parser():
                              "`red` only - a red "
                              "counts only when one of the task's own cases "
                              "fails an assertion")
+    parser.add_argument("--deps-from", dest="deps_from", default=None,
+                        help="the checkout whose ignored node_modules and .venv "
+                             "directories are linked into the throwaway; `red` only "
+                             "(default: --project)")
     parser.add_argument("--json", action="store_true", dest="as_json")
-    return parser
+    # An older cached copy asked for a newer action would otherwise answer with a
+    # bare "invalid choice" that reads as "this helper does not exist".
+    return _claude_home.attach_usage_hint(parser)
 
 
 def run_take(args, out):
