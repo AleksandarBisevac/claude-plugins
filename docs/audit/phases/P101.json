@@ -1,7 +1,7 @@
 {
   "id": "P101",
   "title": "the plugin's value is measured, not asserted",
-  "status": "in_progress",
+  "status": "done",
   "description": "Tasks: (1) Pilot: one paid /audit:run end to end on the benchmark fixture, hard cap 4.50 USD (--max-budget-usd), recording what the orchestrator prose drives, cost per stage and where it stalls; this unblocks the decision on moving prose rules into scripts. (2) Design a subscription-based comparison: one feature-sized task in a brownfield fixture repo with hidden acceptance tests; arms = plain Claude Code, Claude Code with the same skills and a short CLAUDE.md, and the plugin's pipeline; same model, pinned CLI version, same skills, fresh session per run, randomized order; measure acceptance tests, out-of-scope changes, false completion claims, human interventions, wall clock, tokens and list-price equivalent, and share of the subscription window; scenarios: feature, bugfix, interrupted session plus resume, a step a guard must stop. (3) Run it within an agreed subscription time budget, n>=2 per arm, and publish the result with its limits.",
   "desiredOutcome": "one end-to-end pipeline run on a fixture shows what a task costs and delivers through the plugin's own commands, and a reproducible with/without comparison on a feature-sized task reports outcome, cost, time and interventions per arm",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "6d0ef731b5ac60e6bef3c015cf9967583e3625f8",
   "branch": "audit/p101-the-plugin-s-value-is-measured",
-  "mergedAt": null,
+  "mergedAt": "2026-10-07T11:06:18Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -323,5 +323,6 @@
     "runId": "2026-10-07T11:05:55Z.1f1de2",
     "status": "passed",
     "at": "2026-10-07T11:05:55Z"
-  }
+  },
+  "mergedHead": "6ee64f8c273c31513a3b1034bb291fae76a872fa"
 }
