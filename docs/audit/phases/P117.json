@@ -220,9 +220,44 @@
         "resolution": "fixed in P117.6-2sz (9e4ab790): Read every result event: sum their usage and modelUsage per model, and keep each final request's rebuild per result segment. Add a case with a stream holding two result events whose sum is known, plus a twin with one, and show it red against keeping only the last. Re-run the tool on all whole-C sessions and on the four recorded sessions; the latter's figures must not move.",
         "fixTask": "P117.6-2sz",
         "commit": "9e4ab790"
+      },
+      {
+        "id": "P117-R23",
+        "severity": "med",
+        "file": "docs/research/pipeline-cost-design.md:130-135, 1657-1669, 1730-1733, 1774-1777, 2394, 2449-2450",
+        "issue": "The per-task ratio favours the plugin, and the document never says so. The top of the ratio is the task cycle, which leaves out the plugin's session-level work: the session-start write is in planning, and the report is in the run's close. The bottom is arm A's whole session, which keeps plain's session-level work. Measured with the result-reading commit's `analyse()` costs, arm A's first request (session-start write plus the file listing) and its last (the closing summary) cost 0.0793, 0.0955 and 0.0877. That is 15.7, 15.9 and 16.4 percent of whole-A-1, -2 and -3. With those two requests taken out of the bottom (mean 0.459507 instead of 0.547004), the predicted ratios change. Rung 1 becomes 2.05 / 1.95 / 2.18, mean 2.06, not 1.72 / 1.64 / 1.83. G2 becomes 1.60 / 1.50 / 1.75. G1 becomes 1.40 / 1.29 / 1.55, mean 1.41, not 1.17 / 1.09 / 1.30, mean 1.19. Section 5.1's single-task shape compares a whole plugin session with a whole plain session, so it treats both sides alike. It gives 2.16 at rung 1, which agrees with the fairer reading. The document's 0.2 says only that 'the description leaves the plain side open'. The gap matters because it is larger than both margins the headlines rest on. Rung 1's 'meets the ceiling in every session' and G1's 'meets the ideal on the arm's mean' both reverse under the fairer reading, and the user chose G1 partly on the second.",
+        "resolution": "Next to the definition in 0.2, say that the bottom holds plain's session-level open and close and the top does not, and give the size. Print the per-task ratio both ways in 5.1's ladder: against whole arm A, and against arm A less its first and last main-loop requests (or add the plugin's equivalent session-start write to the cycle). Restate the rung 1 and G1 claims in 5.2 and section 8 for each reading, and say which one the target means. Put that same quantity in section 7's per-task row, so the after-study measures what the decision used."
+      },
+      {
+        "id": "P117-R24",
+        "severity": "med",
+        "file": "docs/research/pipeline-cost-design.md:1475-1478, 1566, 1786-1796, 2228-2247, 2447-2450 (against plugins/audit/reference/execute-task.md:304-377 and plugins/audit/agents/audit-reviewer.md:34, 114-147)",
+        "issue": "G1's guarantee change is stated as 'the per-task intent check moves', but G1 removes more than that, and the way it is held may never fire. (a) The per-task review returns two more answers. One is a red-first grade: a `not-proved` on a `tdd` task becomes a human action item (execute-task.md:352). The other is the inherited-test question. That question is bounded by `tests.gate`, which only a task-mode review receives. Under G1 the phase review is not handed any task's `tests.gate`, so the inherited-test question comes back `not-asked` by construction, and phase mode grades red-first as `not-attempted`. Neither is listed as given up or moved. (In these sessions neither caught anything: all nine per-task reviews returned `inheritedTests: not-asked`, and their red-first words echoed the executor's: `proved` six times, `could-not-prove` three times. So the decision may well stand, but the statement is not exact.) (b) Under 'held by', the phase brief carries each task's return and description but not its commit or diff. The reviewer definition's stated reason for asking per task is exactly that the phase diff 'has no way back to the task that produced each line'. (c) With no per-task reviewer filing a return, T3's `done --from-return` forces every G1 task to close `--intent not-asked` with a basis. T6's sign-off refusal accepts 'a `not-asked` with its basis', and today's sign-off already counts a deliberate `not-asked` as answered (execute-task.md:373-377). Read literally, every G1 task meets the refusal at its own close, so the refusal never fires. T6's micro-test would only catch this if its fixture closes tasks the G1 way, and T6 does not say it does.",
+        "resolution": "In C14, the section 4 table, 5.2 and section 8 decision 1, name everything G1 removes per task: the intent binding before commit, the red-first grade, and the inherited-test question. Then either carry each into the phase review or list it as given up. Have the phase reviewer's computed brief (T3/T6) carry each task's commit SHA and its `tests.gate` commands, and ask the binding, red-first and inherited-test questions per task. Give a G1 task a close state that is not `not-asked`, such as one recording that its intent is deferred to the phase review, and make the sign-off verb refuse unless the phase review answered for that task. Pin it with a T6 case: a fixture whose tasks closed the G1 way must be refused at sign-off when one binding is missing."
+      },
+      {
+        "id": "P117-R25",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:1604-1611, 1798-1814, 2366",
+        "issue": "Section 5.3 says 'Any one of them can double and the worst session stays under the ceiling'. Two rows do not support that. (a) The requests row uses C7's 5 per task instead of 4, a 25 percent rise. Doubling it to 8 per task adds 12 × (37755 × 0.2e-6 + 250 × 20e-6) = 0.1506, which puts whole-C-2-r at 2.10. (b) Output and writes are treated as independent, but the main loop's output is written back into its own cache at the next request. In whole-A-1, 10016 of 12166 output tokens came back as main-loop cache writes (0.82, from the tool's `items`). Rung 1 sets W = 3000 below O = 3500. Doubling output together with its write-back (about 2870 × 9.3e-6 ≈ 0.027 on top of 0.0700) puts whole-C-2-r at about 2.00. There is also no sensitivity check for G1, the chosen rung. Its mean margin to 1.25 is about 0.035 per session, less than doubling output alone (0.04 before write-back). T11's probe threshold of 500 output tokens per request is taken from this table.",
+        "resolution": "Double every row, or rename the column to say what each row actually varies. Tie W to O (W ≥ 0.82 × O plus the tool results). Add a G1 table against the 1.25 ideal. Set the probe's output threshold from the tied model."
+      },
+      {
+        "id": "P117-R26",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:2061-2063, 2089-2094",
+        "issue": "T1's target says 'the `unattributed` row is gone' on all three arm C records. The stated mechanism, which skips the rebuild for a dispatch whose tool result is the async-launch notice, does not get there on whole-C-2-r. Its two async dispatches are RKf8vq (cacheR 33634) and MMJ2sv (32179), 65813 together, against a row of −70856. That leaves −5043 (dispatch command, and the `dispatch` lines at 9e4ab790). The document itself says that row 'is not yet explained'.",
+        "resolution": "Limit the target to whole-C-3 and whole-C-1 and keep whole-C-2-r as an open reading. Or add an investigation step to T1 that names the second cause before the target is set."
+      },
+      {
+        "id": "P117-R27",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md:1624-1627, 1477-1478",
+        "issue": "Several estimates carry the 'estimate' label but no stated judgement, which section 0's label definition requires. In sign-off: each request reads P′ + 4000, writes 600, the final report emits 1000, and the filing request costs 0.005. In G1: 1500 tokens per return in the phase review. They are small. The sign-off ones are about 0.06 of the predicted 0.25–0.27, against a budget margin of 0.07–0.12.",
+        "resolution": "Base each one on a reading, for example whole-C-3's sign-off requests 45–57 with the span and billed-span commands, or the filed-return size implied by feature-C-1's hand-backs (6142 and 3550 bytes). Or add them to a sensitivity row for the phase-overhead budget."
       }
     ],
-    "outcome": "[findings: 22 - 0 high, 6 med, 16 low; 22 with a recorded fix commit]"
+    "outcome": "[findings: 27 - 0 high, 8 med, 19 low; 22 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -566,7 +601,7 @@
     {
       "id": "P117.7-2sz",
       "title": "the design meets the user's cost target: a task at most 2x plain, ideally 1.25x, with the phase overhead budgeted and value-tested",
-      "status": "in_progress",
+      "status": "done",
       "description": "The user set the cost target on 2026-10-07, in two parts.\n\nTargets:\n1. Per task: the plugin's task cycle may cost at most 2x what plain Claude Code spends on the same task, ideally 1.25x.\n2. Per phase: planning, the phase review and the phase gate are budgeted separately as a phase overhead. That overhead has to pay for itself: each part of it is justified by what it catches, measured, or it is a candidate for removal.\n\nThe current design does not meet the per-task target. It predicts a one-task run falling from 1.7484 to 1.0047 USD against about 0.30 plain, which is about 3.3x. On the whole-feature benchmark the plugin arm averaged about ten times the plain arm (grade.txt of the nine valid sessions).\n\nWhere the cost sits (whole-C-3, Opus, grade.txt token lines, priced with the confirmed table):\n- cache reads, 10.66M tokens: 2.13 USD;\n- cache writes, mostly at the one-hour rate: 1.78 USD;\n- output: 0.93 USD.\n\nCache reads are 5 percent of the input price, and they still dominate through volume: 61 main-loop requests, about 174k tokens each. Every new tool output in the main loop is written once at the one-hour rate and then re-read on every later request.\n\nThis task revises docs/research/pipeline-cost-design.md so that the recommended set is predicted to meet the per-task target. The phase overhead is stated separately, with its own budget and a value test.\n\nEvidence:\n- The whole-feature sessions, now priceable.\n- Arm C's cost decomposed into:\n  - planning;\n  - the task cycle per task;\n  - sign-off;\n  - main-loop context carried per request, split by origin: reference prose, plugin script output, file reads, hand-backs;\n  - the main-loop request count.\n- What each phase-level step caught in the recorded sessions, against what the hidden tests and the grader show. This includes the hidden requirement that every arm missed.\n\nOptions to evaluate beside the earlier candidates:\n- a script that drives the whole pipeline deterministically, so the model only writes code and answers named decisions;\n- terse plugin script output by default;\n- one executor per phase instead of one per task;\n- fewer and cheaper main-loop requests;\n- a smaller subagent start: omitClaudeMd, preloaded skills, and the cache TTL that an agent definition can set;\n- a per-task review that is cheap enough to fit, or that moves to the phase;\n- an enforced rule moved from an agent's tool list to a hook, where that keeps it enforced.\n\nThe document gives a ladder:\n- what is reached with no change to any guarantee;\n- then, for each guarantee change, the saving it adds, the guarantee affected, and how that guarantee would be held instead.\n\nThe recommendation is the structurally correct set that meets the per-task target. Guarantee changes it needs go to the user as decisions with figures. The implementation tasks are restated so that together they reach the target, each with its own measurable target and confirming session.",
       "files": [
         "docs/research/pipeline-cost-design.md",
@@ -595,19 +630,66 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b72372f7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Revises docs/research/pipeline-cost-design.md against the user's target: a task at most 2x plain, ideally 1.25x, with the phase overhead budgeted and value-tested. All nine whole-feature sessions are priced with tools/stream-cost.py at HEAD, and arm C is split into planning, preflight, task cycle, sign-off, sign-off's fix task and close.\n\nMeasured:\n- the task cycle costs 3.95-4.74x plain;\n- the cycle's main loop is 69-70 percent of it, at 22-28 requests for three tasks, each reading 168k-191k tokens;\n- reference prose and command bodies are 60-71 percent of what the cycle read;\n- the /audit:phase body is injected again on every invocation;\n- phase overhead is 2.91-3.35 USD per session, larger than the cycle;\n- no phase-level step moved a graded result.\n\nThe prediction model main(k, P, W, O) = r(kP + W(k-1)/2) + wW + oO reproduces today's cycle main loop within 1.1 percent in all three sessions.\n\nRung 1, with no guarantee change, is a script-driven pipeline. The script runs every step that needs no judgement, hands briefs by file path, prints each rule at its step, asks judgements as named decisions, and takes four main-loop requests per task, with planning as one batch call and sign-off as one step. It is predicted at 1.64-1.83x plain per task and 3.17-3.57x arm A (2.06-2.32x arm B) per whole session. Each labelled estimate is doubled in a sensitivity check, and the worst session stays under 2.0.\n\nG1 moves the per-task intent review into the phase review and is predicted at 1.09-1.30x per task. G2 gates it on a computed signal. Both go to the user, with G1 recommended. One caveat is stated: a single task on feature-C-1 is 2.16x at rung 1 and 1.81x with G1.\n\nThe phase overhead budget is 0.75 USD per phase, with a value test per step. Implementation tasks are restated for a new phase, each with an offline micro-test. The order is micro-tests, then one single-task probe (about 0.64), then the full benchmark (about 5.6).\n\nHost behaviour measured once per session: the longest main-loop gap was 67-81 s, so one-hour writes bought nothing; a later dispatch of the same agent type read its start from cache; ${CLAUDE_PLUGIN_ROOT} is substituted in command bodies.\n\nAn instrument fault is recorded for T1: stream-cost.py sizes only tool_result user blocks, so an injected command body is booked as main-loop output. Totals are right and labels are wrong.",
+        "descriptive": "The cost design now meets the user's ceiling on paper: a script-driven pipeline is predicted at about 1.7x plain per task with no guarantee change, and about 1.2x if the per-task intent review moves to the phase review, with a budget for the phase overhead and a micro-test for each fix."
       },
       "startedAt": "2026-10-07T16:27:45Z",
-      "completedAt": null,
+      "completedAt": "2026-10-07T17:53:25Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-07T17:16:15Z.5e1b54",
         "status": "passed",
         "at": "2026-10-07T17:16:15Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b72372f7",
+        "at": "2026-10-07T17:53:25Z",
+        "basis": "orchestrator check: all nine sessions decomposed by stage, every rung carries both ratios, the guarantee changes are listed as user decisions, and the tasks carry micro-tests in the user's order"
       }
+    },
+    {
+      "id": "P117.8-2sz",
+      "title": "the per-task ratio states what its two sides hold, and G1 names everything it moves",
+      "status": "pending",
+      "description": "Fixes review findings P117-R23 to P117-R27 from the cost phase's fourth review round. Documents only.\n\n- The per-task ratio's definition states that its denominator holds plain's session-level open and close and its numerator does not, and gives the size of that difference. The ladder prints the ratio both ways.\n- G1's guarantee change names everything the per-task review returns that G1 would drop: the intent binding before commit, the red-first grade, and the inherited-test question. Each one is either carried into the phase reviewer's computed brief, or listed as given up. The user chose G1 on the earlier wording, so section 8 restates the decision with the full list.\n- The sensitivity section doubles every row, ties writes to output, and adds a G1 table against the 1.25 ideal.\n- T1's unattributed-row target is limited to the sessions its mechanism explains.\n- The remaining sign-off and G1 estimates are based on readings, or added to a sensitivity row.",
+      "files": [
+        "docs/research/pipeline-cost-design.md",
+        "docs/research/pipeline-cost-analysis.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-07T11:45:57Z"
