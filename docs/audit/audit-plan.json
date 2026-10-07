@@ -672,7 +672,7 @@
     {
       "id": "P106",
       "title": "rules the model only follows become checks a script makes",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P106.json"
     },
     {
@@ -2107,7 +2107,8 @@
       "P84.7-791",
       "P80.21-rtb",
       "P80.17-rtb",
-      "P96.1"
+      "P96.1",
+      "P106.2"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -2250,7 +2251,8 @@
       "P80.20-rtb",
       "P80.23-rtb",
       "P102.10",
-      "P104.1"
+      "P104.1",
+      "P106.2"
     ],
     "plugins/audit/scripts/demo/gen-demo-usage.py": [
       "P10.3",
@@ -2723,7 +2725,8 @@
       "P79.10-5bh",
       "P79.12-5bh",
       "P84.2",
-      "P81.15-j7p"
+      "P81.15-j7p",
+      "P106.2"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -2760,7 +2763,8 @@
       "P80.21-rtb",
       "P80.17-rtb",
       "P80.15-rtb",
-      "P96.1"
+      "P96.1",
+      "P106.2"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -3549,7 +3553,8 @@
       "P18.2",
       "P18.7",
       "P20.6",
-      "P26.2"
+      "P26.2",
+      "P106.2"
     ],
     "plugins/audit/tests/test__id_refs.py": [
       "P61.7",
@@ -3671,7 +3676,8 @@
       "P79.10-5bh",
       "P79.12-5bh",
       "P84.2",
-      "P81.15-j7p"
+      "P81.15-j7p",
+      "P106.2"
     ],
     "plugins/audit/tests/test__manifest_rules.py": [
       "P18.2",
@@ -3697,7 +3703,8 @@
       "P81.1",
       "P76.4-6qa",
       "P94.4",
-      "P96.1"
+      "P96.1",
+      "P106.2"
     ],
     "plugins/audit/tests/test__merge_install.py": [
       "P60.5",
@@ -3842,7 +3849,8 @@
       "P94.4",
       "P109.7",
       "P102.8",
-      "P108.3"
+      "P108.3",
+      "P106.1"
     ],
     "plugins/audit/tests/test__report_html.py": [
       "P25.1",
@@ -4180,7 +4188,8 @@
       "P80.20-rtb",
       "P80.23-rtb",
       "P94.1",
-      "P104.1"
+      "P104.1",
+      "P106.2"
     ],
     "plugins/audit/tests/test_guard_bash_writes.py": [
       "P20.1",
@@ -4540,7 +4549,8 @@
       "P72.5-ttl",
       "P90.1",
       "P91.1",
-      "P91.2-htp"
+      "P91.2-htp",
+      "P106.2"
     ],
     "tools/check-example-ledgers.py": [
       "P32.10",
@@ -4649,7 +4659,8 @@
       "P102.8",
       "P102.10",
       "P107.4",
-      "P100.3-zxo"
+      "P100.3-zxo",
+      "P106.2"
     ],
     "tools/redfirst.sh": [
       "P55.13"
