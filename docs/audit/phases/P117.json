@@ -172,38 +172,55 @@
         "severity": "med",
         "file": "docs/research/pipeline-cost-design.md:596-610, 1030-1035, 1100-1110, 1172",
         "issue": "T3 and C3's confirming readings are said to be 'the task cycle with planning excluded' (596, 1100-1101), but sign-off is still counted in them. The after-study is arm C (§7, 1161), and arm C's prompt runs the phase 'with /audit:phase <its id> through sign-off' (<h2>/plugin-sentence.txt). So sign-off's main-loop output lands in `output pool, measured: main loop`, and its task-class tokens land in `contexts:` → `main`, `task`. Neither prediction (4472, 9547) counts them. The new T1 bullet lists the readings that need the sign-off split as 'C7's and T4's \"before sign-off\", section 7's whole-set reading and T5's S' (1030-1031). T3 is not on that list. §7's T4 row says 'before sign-off'; its T3 row (1172) does not. The margins for one task are small: 5000 − 4472 = 528 tokens and 11000 − 9547 = 1453. Sign-off spawns a reviewer (§1.4, 244), and C3 computes no brief for it. In `feature-C-1` the per-task reviewer brief was 2817 output tokens. A sign-off brief that size would put a one-task session over the output target. That is the same class as R15 and R16: a target refuted by work the prediction never counted. Because sign-off is paid once per session, the flip is likely at small N rather than at every N. But §7 confirms a target only when every after session meets it, so a single small-N session is enough to break it.",
-        "resolution": "Add 'before sign-off' to both C3 readings (600-607), to both T3 output bullets (1103-1107) and to §7's T3 row. Add T3 and C3 to T1's list of readings that need the sign-off split (1030-1031), under the same rule as the others: a reading that cannot place sign-off says so."
+        "resolution": "fixed in P117.5-2sz (fd0d366d): Add 'before sign-off' to both C3 readings (600-607), to both T3 output bullets (1103-1107) and to §7's T3 row. Add T3 and C3 to T1's list of readings that need the sign-off split (1030-1031), under the same rule as the others: a reading that cannot place sign-off says so.",
+        "fixTask": "P117.5-2sz",
+        "commit": "fd0d366d"
       },
       {
         "id": "P117-R18",
         "severity": "low",
         "file": "docs/research/pipeline-cost-design.md:1016-1025, 1036-1043",
         "issue": "Two gaps in T1's planning rule. (a) The span closes only at another command or at `audit-task.py start`. The `add` invocation has already loaded the whole of phase.md, including its run section (`git show 7b489337:plugins/audit/commands/phase.md`, line 37). If the model then runs the phase without a new Skill call, every request between the last `add` and the first `start` reads as planning. Those are section 1.2's run-level preflight, manifest read and lock (in feature-C-1, main-loop requests 2-4 come before the start at 5). That contradicts 'So `plan` keeps the run's own requests' (1024-1025). T4's 'less the run's own five' then subtracts requests that are no longer in plan, gate or close, which biases the reading toward a pass. (b) T1's only planning target is the empty row on `feature-C-1` (1041-1042). An implementation that never reports planning also passes it.",
-        "resolution": "(a) Also close the span at the first main-loop request that runs a plugin script other than the `audit-task.py add`/`add-phase` verbs (the preflight or the lock). Or state the case and have T4 subtract only the run-level requests that fall outside planning. (b) Add a positive target: `whole-C-2`'s stream, whose main-loop Skill call `{\"skill\": \"audit:phase\", \"args\": \"add\"}` must open a non-empty `planning` row. Add a twin fixture in which `start` closes the span."
+        "resolution": "fixed in P117.5-2sz (fd0d366d): (a) Also close the span at the first main-loop request that runs a plugin script other than the `audit-task.py add`/`add-phase` verbs (the preflight or the lock). Or state the case and have T4 subtract only the run-level requests that fall outside planning. (b) Add a positive target: `whole-C-2`'s stream, whose main-loop Skill call `{\"skill\": \"audit:phase\", \"args\": \"add\"}` must open a non-empty `planning` row. Add a twin fixture in which `start` closes the span.",
+        "fixTask": "P117.5-2sz",
+        "commit": "fd0d366d"
       },
       {
         "id": "P117-R19",
         "severity": "low",
         "file": "docs/research/pipeline-cost-design.md:1174",
         "issue": "The whole-set reading subtracts the `planning` row's `$total`. That total holds every prose write made inside the span. By the design's own T2 table (1064), `/audit:phase add` reads 242068 bytes first at `7b489337`: phase.md lines 9-12 name all four reference files before any verb is chosen. After T2, `add` may still read up to 30000 bytes. Prose that a planning command reads and the run then reuses would come out of the session total, while §5's run class predicts it. The reading would then come in under the prediction for a reason the change did not cause.",
-        "resolution": "Subtract only planning's own task-class part (its `out` and the `task` tokens T1 prints for it). Or subtract the planning row less its `Read <plugin>/reference/…` writes. Or state the prose case beside the row."
+        "resolution": "fixed in P117.5-2sz (fd0d366d): Subtract only planning's own task-class part (its `out` and the `task` tokens T1 prints for it). Or subtract the planning row less its `Read <plugin>/reference/…` writes. Or state the prose case beside the row.",
+        "fixTask": "P117.5-2sz",
+        "commit": "fd0d366d"
       },
       {
         "id": "P117-R20",
         "severity": "low",
         "file": "docs/research/pipeline-cost-design.md:1173, 1121-1122",
         "issue": "Two constants are left in T4's readings. (a) §7's T4 row reads '`req` per task, before sign-off, with the `planning` row apart'. It omits 'less the run's own five', which T4 (1119-1120) and C7 (812-817) now require. Read off the table, `feature-C-1` gives 13 per task, not 8. (b) The second clause fixes orient at 2 ('which adds orient's 2'). Orient ends at the first call that is not a plugin read (`tools/stream-cost.py:337-338`). A Skill call is not a plugin read, so an arm C session whose first request makes the `add` call has an orient of 0. `7 + 5N` would then sit 2 above what that session can reach, which also biases toward a pass.",
-        "resolution": "(a) Add 'less the run's own five (section 1.2)' to §7's T4 row. (b) In T4's second clause, read orient's request count off the session's `per stage, as billed` instead of fixing it at 2."
+        "resolution": "fixed in P117.5-2sz (fd0d366d): (a) Add 'less the run's own five (section 1.2)' to §7's T4 row. (b) In T4's second clause, read orient's request count off the session's `per stage, as billed` instead of fixing it at 2.",
+        "fixTask": "P117.5-2sz",
+        "commit": "fd0d366d"
       },
       {
         "id": "P117-R21",
         "severity": "low",
         "file": "docs/research/pipeline-cost-design.md:552-556, 569-575 (against 540-542)",
         "issue": "The write-once guarantee and the four echoes (887, 996-998, 1096-1099, 1223-1225) are accurate. Two premises around them are stated as facts, with no mechanism and no T3 case. (a) 'The reviewer is dispatched only once the executor's return is filed, because its brief carries that return as filed.' Handing the brief over is itself a followed rule (540-541), and nothing says `brief` refuses to compose a reviewer brief before the executor's return is filed. (b) 'its own task is left with none, and `done --from-return` refuses that close (above).' The 'above' (542) says only that it refuses 'when no return is filed'. No case pins a close with one role's return missing, or which start's returns the close reads.",
-        "resolution": "Either specify both and pin each with a T3 case: `brief` for the reviewer exits non-zero until the executor's return for the current start is filed, and `done --from-return` refuses unless both roles' returns for the current start are filed. Or move both sentences under *What nothing checks* as followed rules."
+        "resolution": "fixed in P117.5-2sz (fd0d366d): Either specify both and pin each with a T3 case: `brief` for the reviewer exits non-zero until the executor's return for the current start is filed, and `done --from-return` refuses unless both roles' returns for the current start are filed. Or move both sentences under *What nothing checks* as followed rules.",
+        "fixTask": "P117.5-2sz",
+        "commit": "fd0d366d"
+      },
+      {
+        "id": "P117-R22",
+        "severity": "med",
+        "file": "tools/stream-cost.py:234-235",
+        "issue": "Found by the P117.5 executor. stream-cost.py keeps only the last result event of a stream. A headless session that is re-invoked, for example when a background task notifies it, emits several result events, each carrying the usage of its own stretch. whole-C-3 has three, and their usage blocks sum exactly to its main loop. Read with only the last one, the main loop prints DISAGREE, Opus prices differ by about half a dollar, and an orphan request is printed with negative tokens. So the tool cannot price a whole-feature arm C session, and T5's calibration on those sessions is blocked.",
+        "resolution": "Read every result event: sum their usage and modelUsage per model, and keep each final request's rebuild per result segment. Add a case with a stream holding two result events whose sum is known, plus a twin with one, and show it red against keeping only the last. Re-run the tool on all whole-C sessions and on the four recorded sessions; the latter's figures must not move."
       }
     ],
-    "outcome": "[findings: 21 - 0 high, 5 med, 16 low; 16 with a recorded fix commit]"
+    "outcome": "[findings: 22 - 0 high, 6 med, 16 low; 21 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -436,7 +453,7 @@
     {
       "id": "P117.5-2sz",
       "title": "the after-study reads the task cycle as one span, so planning, sign-off and run-level work fall outside it by construction",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P117-R17 to P117-R21 from the cost phase's third review round. Documents only.\n\nThree rounds found the same class. A target read off a whole-session stage table was refuted or flattered by work its prediction never counted: run-level requests, planning, and sign-off. This fix closes the class with one rule rather than a fourth patch.\n\n1. The task cycle is defined as a span. It runs from the main-loop request that calls the first task's `audit-task.py start` through the request that calls the last task's `done`. Planning and sign-off fall outside it by construction, and run-level requests are counted apart.\n2. T1 reports that span. T3's and T4's targets, C3's and C7's confirming readings, and section 7's rows read inside it, and each one names the row it reads.\n3. The planning span's closing rule, and the subtraction of run-level requests and of orient's fixed count, are replaced by the span or made consistent with it.\n4. T1 gets a positive planning target, on the recorded arm C stream whose Skill call was add, plus a twin.\n5. Section 7's whole-set reading subtracts only planning's task-class part, or states the prose case.\n6. The two premises around the write-once filing verb are either pinned by T3 cases or moved under what nothing checks:\n   - the reviewer's brief waits for the executor's filed return;\n   - `done --from-return` needs both roles' returns for the current start.\n\nThe k = 8 headline does not move.",
       "files": [
         "docs/research/pipeline-cost-design.md",
@@ -465,19 +482,67 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fd0d366d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes P117-R17 to P117-R21, documents only, by closing the class rather than patching a fourth instance. Design section 1.1 defines the task cycle once, as a span of the stream. It opens at the main-loop request that calls the first task's audit-task start, and it closes at the last done before any request inside it plans a task. Closing at the last done would have held sign-off's fix tasks: phase-signoff.md has sign-off create and start one per actionable finding, and whole-C-3 did so after its last real done. In feature-C-1 the cycle is requests 6 to 13: k = 8, c = 21857, task class 0.704895, file class 0.212897, and an estimated output of 11374. The task class left outside it is 0.0774, paid once per run. Every per-task target and confirming reading reads inside the span: T3, T4, T6, C1, C2/C4, C3, C5, C7, section 7 and the analysis per-task row. The patches it replaces are deleted and kept once as history: less the run's own five, the 7 + 5N clause, and the planning-row subtraction. Targets moved by what the cycle leaves out of feature-C-1, rounded to 50: output 5000 to 2350 against a prediction moved from 4472 to 1815, and content tokens 11000 to 7400 against 9547 to 5949. Planning closes at its last add or add-phase before the cycle. T1 gains positive targets: whole-C-2 has planning request 1 and no cycle; whole-C-3 has planning 1-12 and cycle 15-36; and two twin fixtures. The whole-set reading subtracts only planning's task class. The write-once verb's two premises are specified and pinned by T3 cases with allow halves: the reviewer's brief refuses until the executor's return for the current start is filed, and done --from-return needs both returns or --intent not-asked with its basis. The parts of the cycle that depend on the order the prose gives are said to be unenforced. The k = 8 headline is unchanged. The executor found a fault outside its files: stream-cost.py keeps only the last result event, so a session with several results (whole-C-3 has three) cannot be priced. That is recorded as a finding with its own fix task.",
+        "descriptive": "Per-task cost targets now read one span of a session, from the first task's start to its last close, so planning, setup and sign-off can no longer distort them."
       },
       "startedAt": "2026-10-07T15:14:16Z",
-      "completedAt": null,
+      "completedAt": "2026-10-07T15:50:38Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-07T15:50:19Z.702ee5",
         "status": "passed",
         "at": "2026-10-07T15:50:19Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "fd0d366d",
+        "at": "2026-10-07T15:50:38Z",
+        "basis": "orchestrator check: one span definition replaces the three patches, each finding maps to a change, the span is shown request by request on feature-C-1 and bounded on whole-C-3, and the k = 8 headline is unchanged"
       }
+    },
+    {
+      "id": "P117.6-2sz",
+      "title": "stream-cost reads every result event, so a re-invoked session is priced whole",
+      "status": "pending",
+      "description": "Fixes review finding P117-R22. tools/stream-cost.py reads every result event in a stream, not only the last. A headless session that is re-invoked, for example by a background task's notification, emits one result per stretch, each with that stretch's usage and modelUsage. The tool sums them per model, and rebuilds each stretch's missing final request against its own result. A new case holds a stream with two result events whose totals are known, with a single-result twin. It goes red against keeping only the last result, in a scratch copy. Re-reading the four recorded sessions leaves every figure the documents quote unchanged. The whole-feature arm C sessions are priced: whole-C-1, whole-C-3 and whole-C-2-r, with the main loop agreeing with the CLI's costUSD per model.",
+      "files": [
+        "tools/stream-cost.py",
+        "docs/research/pipeline-cost-analysis.md",
+        "docs/research/pipeline-cost-design.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-07T11:45:57Z"
