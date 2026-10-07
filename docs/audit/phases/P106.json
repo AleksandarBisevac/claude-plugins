@@ -95,7 +95,7 @@
     {
       "id": "P106.2",
       "title": "audit-task start writes the phase claim, and the hand-edited phase-entry steps are deleted",
-      "status": "in_progress",
+      "status": "done",
       "description": "execute-task.md's step 1a tells the model to Edit phase.status to in_progress, which start already does through _panel_write's phase promotion. Step 1d tells it to hand-write phase.claim into the shard. Make start write the claim on the sharded layout; sign-off already releases it. Then delete the prose the rule came from: steps 1a and 1d under execute-task.md's '## Execute the task'. Keep the 1b-1c pointer to the verb, and keep README.md's '§ Execute the task 1b–1c' citation pointing at the step that remains. Record the mandatory-read bytes of /audit:next before and after. Like the rest of this phase, it waits for P101's pipeline pilot.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -141,18 +141,34 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7eb31513",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task start now writes phase.claim on the sharded layout, in the same _write_add that _heal_phase_status promotes the phase in: {sessionId from $CLAUDE_CODE_SESSION_ID (read through _journal_io.ENV_SESSION_VAR), branch (entry or current), at}. No host is written: the shard is committed, and the journal drops actor.host for the same reason. _claim_plan decides before any write (none / keep / take / contested / no-session). A claim held by another session is refused with exit 2 before any write, naming that claim's session, branch and at; --force --reason replaces it and journals the claim it replaced (forced gains replaced). The task.start row carries phase-keyed changes rows for claim.sessionId, claim.branch and claim.at; --json gains claim, claimAction and claimReplaced. With no session id, no claim is written and the output says so. Any start on a sharded phase with no claim takes one (re-entry after an interruption included); a re-start by the holding session keeps the claim byte for byte.\nexecute-task.md: steps 1a (hand-edit phase.status) and 1d (hand-write phase.claim) are deleted; step 1 says the start verb sets both and refuses another session's claim; the b-c sub-step keeps its label because README and _invariants cite it. /audit:next's mandatory-read bytes (wc -c of next.md, orchestrator.md, manifest-conventions.md, execute-task.md): 151841 -> 151193.\nNo host anywhere: _manifest_vocab.CLAIM_KEYS = (sessionId, branch), so a claim the verb writes revalidates with no warning; _manifest_phases' wording follows; the schema's claim description says host stays an accepted key (COMPATIBILITY.md) but the plugin writes none; gen-demo-manifest's lease has the same shape (no committed render moved: check-rendered-artifacts --before-commit OK); tools/check-committed-pii.py reports plan-claim-host for a host under any phase claim in a committed plan file; prove-gates' schema_subset_drift row re-anchored on the new CLAIM_KEYS.\nDocs: task.md (argument hint, claim bullet, journal rows, refusal list, --force and --json keys), README's /audit:task row.\nTests: test_audit_task pc1-pc8 (pc3 the allow twin; pc7 no host key; pc8 a started sharded plan revalidates with no claim warning while a branchless claim still warns); check-committed-pii q32 plus q24/q25 fixtures (a host-free claim stays clean); test__manifest_phases mp10/mp11, test__manifest_vocab mv25/mv27/mv28, test_gen_demo_manifest lease cases updated to derive from CLAIM_KEYS. Red-first proved through the helper at HEAD 775df9c1 (pc1, pc2, pc4, pc5, pc6; 721/726); pc7 and pc8 were red in the shared tree before their fixes; the PII cases were proved by never-fire and over-fire mutations (33/36 each). Full sweep 305/305 files ok; prove-gates --selftest 37/37; validator OK.",
+        "descriptive": "Starting a task now records which session holds the phase - without naming the machine, since the plan is committed - and refuses a phase another session holds unless forced with a recorded reason, so the two hand-edit steps the orchestrator used to follow are gone."
       },
       "startedAt": "2026-10-07T00:24:02Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T01:32:47Z",
+      "verifiedBy": [
+        "pc1",
+        "pc2",
+        "pc3",
+        "pc4",
+        "pc5",
+        "pc6",
+        "pc7",
+        "pc8",
+        "q32"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T01:25:48Z.b50fc1",
         "status": "passed",
         "at": "2026-10-07T01:25:48Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7eb31513",
+        "at": "2026-10-07T01:32:47Z",
+        "basis": "orchestrator check: the claim is written by the verb in the same write as the phase promotion, steps 1a/1d deleted with bytes measured, and the orchestrator's privacy correction (no host, PII backstop) applied across verb, validator, schema text, demo and check"
       }
     },
     {
