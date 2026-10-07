@@ -22,9 +22,12 @@ With `--by`, one focused table. Without it, the full dashboard.
 `--backfill` re-reads every transcript for this project from offset 0 and rebuilds
 the affected monthly files. It is the repair path for a lost cursor or a drifted
 ledger, and it is idempotent — running it twice leaves identical totals. It is also
-the ONLY path that rewrites (and therefore locks); the metering hook only appends.
+the ONLY path that rewrites, and the lock it takes excludes only another backfill:
+the metering hook appends with no lock, so each month's rewrite carries the rows
+appended to it during the rebuild (`usage_ledger.rewrite_month`).
 
-Exit codes: 0 ok - 2 usage error / unreadable ledger.
+Exit codes: 0 ok - 1 a backfill left a month file not rewritten cleanly -
+2 usage error / unreadable ledger.
 
 This module carries no `--selftest` of its own any more; its cases live in
 `plugins/audit/tests/test_audit_usage.py`, byte-identical labels and all - see
@@ -66,6 +69,8 @@ import _areas  # noqa: E402  (phase_tags: the read-time area join the ledger rec
 import _cli_fmt  # noqa: E402  (the one place CLI color lives - mode resolution + paint)
 import _ui_theme as _theme  # noqa: E402  (the one place a machine value gets its words)
 import _evidence_io  # noqa: E402  (the OTHER ledger `planCost` reads - gate scope + reuse)
+from _usage_economics import (  # noqa: E402  (the one coverage sentence, the one rate basis)
+    coverage_sentence, rate_basis_phrase)
 
 
 def _load(name, filename):
@@ -172,44 +177,29 @@ def resolve_project(args):
         args.project_dir or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 
 
-DEFAULT_MANIFEST_REL = os.path.join("docs", "audit", "audit-plan.json")
+def resolve_manifest(args, project):
+    """`_manifest_io.resolve_manifest` - argument, else config `manifestPath`,
+    else `docs/audit/audit-plan.json` - asked with this CLI's own argument.
 
-
-def resolve_manifest_path(args, project):
-    """`<manifestPath argument>` > config `manifestPath` > `docs/audit/audit-plan.json`.
-
-    The middle term is the one that was missing, and its absence was not cosmetic.
-    This resolved the default location and nothing else, so a project keeping its
-    manifest anywhere else loaded NO manifest — and then read every project value
-    off `{}`. The shipped example is exactly that project: its config sets
-    `"manifestPath": "audit-plan.json"` and says in its own comment why. So
-    `/audit:usage` there ignored `meta.usage` entirely, including
-    **`showCost: false`** — a repo that had asked for dollars to stay off the
-    screen got them printed anyway, which is the failure the setting exists to
-    prevent. `panel-server.py` has always resolved it this way; this is that.
+    The config term matters here more than anywhere: a project keeping its
+    manifest elsewhere would otherwise load NO manifest and read every project
+    value off `{}`, `meta.usage.showCost: false` included, and print the dollars
+    that setting exists to keep off the screen. The shipped example is exactly
+    that project.
 
     The manifest stays the commands' source for project values and the config is
     read for one key only. That does not cross the standing manifest/hooks split
-    — finding the manifest is not the same act as reading it.
+    - finding the manifest is not the same act as reading it.
     """
-    if args.manifest:
-        return args.manifest
-    rel = None
-    try:
-        with open(os.path.join(project, ".claude", "audit.config.json"),
-                  encoding="utf-8") as fh:
-            cfg = json.load(fh)
-        if isinstance(cfg, dict) and isinstance(cfg.get("manifestPath"), str):
-            rel = cfg["manifestPath"]
-    except Exception:
-        rel = None                    # unreadable or malformed: fall through, never raise
-    for cand in (rel, DEFAULT_MANIFEST_REL):
-        if not cand:
-            continue
-        p = os.path.normpath(os.path.join(project, cand))
-        if os.path.isfile(p):
-            return p
-    return None
+    return mio.resolve_manifest(project, args.manifest)
+
+
+def _config_named_a_plan(resolved):
+    """True when the config, not the default, is why no plan was found: it could
+    not be read, or its `manifestPath` points at nothing. Either way the project
+    said which plan it has, so rendering without one is not this project's
+    answer."""
+    return bool(resolved["problem"]) or resolved["source"] == "config"
 
 
 def resolve_ledger(args, project, manifest):
@@ -237,12 +227,21 @@ def resolve_ledger(args, project, manifest):
 
 
 def load_manifest(path):
+    """(manifest, refusal). No path is the one case that renders without a plan
+    (`main` has already said so); a path that resolved but does not load or is
+    not an object is refused, in the words /audit:status and /audit:report print
+    for the same load. Reading it as `{}` instead would default showCost to on
+    for a plan that may have turned it off."""
     if not path:
-        return {}
+        return {}, None
     try:
-        return mio.load_manifest_safe(path)
-    except Exception:
-        return {}
+        manifest = mio.load_manifest(path)
+    except Exception as exc:
+        return None, "ERROR: cannot read/parse %s: %s" % (path, exc)
+    if not isinstance(manifest, dict):
+        return None, ("ERROR: %s is not a JSON object (got %s)"
+                      % (path, type(manifest).__name__))
+    return manifest, None
 
 
 def titles_of(manifest):
@@ -282,25 +281,45 @@ def apply_filters(rows, args, tags_by_phase=None):
     return kept
 
 
+def project_pricing(manifest, manifest_path, project_dir):
+    """The project's price table and which place priced it, `{table, basis,
+    asOf, source}` - `usage_ledger.project_pricing`, the resolver the report,
+    the panel and the meter hook ask too, so this command prices a project at
+    the table every other surface prices it at.
+
+    `project_dir` None means "walk up from the manifest", the rule
+    `pricing_root` applies for a manifest named from another directory."""
+    return ul.project_pricing(manifest, manifest_path, project_dir)
+
+
+def pricing_root(args, project):
+    """Where the project's config is looked for: `project`, unless a manifest
+    was named with no `--project-dir` or CLAUDE_PROJECT_DIR - then None, so the
+    lookup walks up from that manifest. The same rule `resolve_ledger` applies,
+    so the config read is the one beside the ledger this command reads."""
+    if args.manifest and not args.project_dir \
+            and not os.environ.get("CLAUDE_PROJECT_DIR"):
+        return None
+    return project
+
+
 # --- rendering ------------------------------------------------------------------
 def rate_basis(usage):
-    """`meta.usage.pricingAsOf` as a BASIS, or None when the manifest declares none.
+    """`meta.usage.pricingAsOf` as the manifest declares it, trimmed, or None.
+
+    The `--json` payload's `pricingAsOf`: what the PLAN says about its rates,
+    kept for consumers that read it. The basis printed beside a cost is not
+    this value but `rate_basis_phrase` over the resolver's answer, which also
+    knows when the shipped table priced the rows.
 
     THE TRIM IS THE POINT. The plan schema asks only that this key be
-    non-empty, so a string of spaces validates - and both readers below test the
-    value for truth, so `"  "` reached the terminal as `rates as of` followed by
-    nothing and the `--json` payload as a basis a consumer would print the same
-    way. A basis with no content is exactly what this project's output rule
-    forbids, and a whitespace-only setting is a typo rather than a declaration:
-    it collapses to None, which is the shape absence already has, so neither
-    caller needs to learn a second kind of empty.
-
-    ONE DOOR because this file has two readers - the terminal line and the JSON
-    payload - and they must not be able to disagree about a value's whitespace.
-    The parameter is named for the block it takes, which is also what lets
-    `_deps.config_read_violations` see the read and compare it against the other
-    modules that render this key; `panel/_panel_paths._declared_as_of` applies
-    the same trim to the config file's copy.
+    non-empty, so a string of spaces validates; a whitespace-only setting is a
+    typo rather than a declaration and collapses to None, the shape absence
+    already has. The parameter is named for the block it takes, which is what
+    lets `_deps.config_read_violations` see the read and compare it against the
+    other modules that read this key; `_usage_core._declared_as_of` is the
+    trim the resolver applies to both the manifest's and the config file's
+    copy before a rate phrase dates anything.
 
     `isinstance` before `.strip()`, because a hand-edited manifest may carry a
     number here and a raise inside a render is a report that does not print.
@@ -309,7 +328,14 @@ def rate_basis(usage):
     return (value.strip() or None) if isinstance(value, str) else None
 
 
-def render(rows, args, manifest, window, show_cost, pt=None):
+def render(rows, args, manifest, window, show_cost, pt=None, pricing=None):
+    """The dashboard. `pricing` is `project_pricing`'s answer, `{table, basis,
+    asOf, source}`: its table prices the routing advice and the rest is the
+    rate basis printed beside the costs. None resolves it from the manifest
+    alone (no config read). `rows` are summed as handed in: `main` hands
+    `ul.priced_at_read`'s copies, priced at that same table."""
+    if pricing is None:
+        pricing = ul.resolve_pricing(manifest, None)
     phase_titles, task_titles = titles_of(manifest)
     tot = ul.totals(rows)
     repo = next((r.get("repo") for r in rows if r.get("repo")), "-")
@@ -347,17 +373,13 @@ def render(rows, args, manifest, window, show_cost, pt=None):
                    fmt_tokens(tot["cacheW5m"] + tot["cacheW1h"]),
                    fmt_tokens(tot["cacheR"]), " " if md else "   ",
                    tot["cacheHitPct"]))
-    # The rate table behind every dollar above. This is the third surface of the
-    # same gap: the JSON payload has carried `pricingAsOf` all along and the
-    # terminal printed a cost with no basis at all, exactly as the HTML report did
-    # before 0.22.0. There is no fallback to the default table's date here either
-    # — see render-report._usage_context for why manufacturing one is worse than
-    # admitting the manifest never declared it.
+    # The rate table behind every dollar above: its date and source, as the one
+    # phrase every surface prints (`rate_basis_phrase`), built from the same
+    # resolver answer that priced the routing advice below - never a second
+    # resolution, so the line cannot name a table other than the one in use.
     if show_cost and rows:
-        as_of = rate_basis(((manifest or {}).get("meta") or {}).get("usage"))
-        out.append(("- " if md else "          ") + "costs priced at %s" % (
-            "rates as of %s" % as_of if as_of
-            else "undated rates - set usage.pricingAsOf"))
+        out.append(("- " if md else "          ") + "costs priced at %s"
+                   % rate_basis_phrase(pricing))
     if not rows:
         out.append("")
         out.append(pt.paint("  No usage recorded for this window.", "warn"))
@@ -420,6 +442,13 @@ def render(rows, args, manifest, window, show_cost, pt=None):
 
     if args.by:
         out += group_table(args.by, args.by.upper(), limit=args.top)
+        if args.by == "task" and show_cost:
+            meta_usage = ((manifest or {}).get("meta") or {}).get("usage") or {}
+            bands = ul.cost_bands(manifest, rows,
+                                  meta_usage if isinstance(meta_usage, dict) else {})
+            cov = coverage_sentence(bands.get("doneTaskCoverage"))
+            if cov:
+                out.append(("" if md else "  ") + pt.paint(cov, "dim"))
         return "\n".join(out)
 
     out += group_table("phase", "BY PHASE")
@@ -442,11 +471,15 @@ def render(rows, args, manifest, window, show_cost, pt=None):
         else:
             out += group_table("task", "TOP TASKS", limit=args.top)
         out.append("")
-        out.append(("" if md else "  ") + pt.paint(band_note(bands), "dim"))
+        out.append(("" if md else "  ")
+                   + pt.paint(band_note(bands, show_cost), "dim"))
+        if show_cost:
+            cov = coverage_sentence(bands.get("doneTaskCoverage"))
+            if cov:
+                out.append(("" if md else "  ") + pt.paint(cov, "dim"))
         out += routing_advice_lines(
-            ul.routing(manifest, rows,
-                       (meta_usage or {}).get("pricing")).get("advice") or [],
-            fmt=fmt, pt=pt)
+            ul.routing(manifest, rows, pricing["table"]).get("advice") or [],
+            fmt=fmt, pt=pt, show_cost=show_cost)
     out += render_monthly(manifest, rows, show_cost, fmt=fmt, pt=pt)
     out += render_trend(rows, fmt=fmt, pt=pt)
     return "\n".join(out)
@@ -546,11 +579,15 @@ def render_monthly(manifest, rows, show_cost, fmt="ascii", pt=None):
     return out
 
 
-def routing_advice_lines(advice, fmt="ascii", pt=None):
+def routing_advice_lines(advice, fmt="ascii", pt=None, show_cost=True):
     """The one recommendation the CLI makes. Silent unless the ledger's own
     evidence clears every gate — which on a well-routed project is normal.
     md nests the two evidence lines under their advice bullet; markdown
-    would otherwise merge all three into one paragraph."""
+    would otherwise merge all three into one paragraph.
+
+    With `show_cost` off the re-priced figures are dollars like any other, so
+    the saving is stated as a share alone and the line says the dollars are
+    withheld rather than dropping the basis the advice stands on."""
     if not advice:
         return []
     md = fmt == "md"
@@ -563,11 +600,16 @@ def routing_advice_lines(advice, fmt="ascii", pt=None):
         out.append(("- " if md else "  ")
                    + "%s work is running on %s - %d task(s) at %.1f mean attempts"
                    % (a["risk"], a["from"], a["tasks"], a["fromMeanAttempts"] or 0))
-        out.append(("  - " if md else "    ")
-                   + "those same tokens cost %s at %s rates vs %s  ->  %s less (%.0f%%)"
-                   % (fmt_cost(a["atToRates"]), a["to"],
-                      fmt_cost(a["atFromRates"]), fmt_cost(a["saving"]),
-                      a["savingPct"]))
+        if show_cost:
+            priced = ("those same tokens cost %s at %s rates vs %s  ->  %s less "
+                      "(%.0f%%)" % (fmt_cost(a["atToRates"]), a["to"],
+                                    fmt_cost(a["atFromRates"]),
+                                    fmt_cost(a["saving"]), a["savingPct"]))
+        else:
+            priced = ("those same tokens cost %.0f%% less at %s rates (dollar "
+                      "figures withheld: showCost is off)"
+                      % (a["savingPct"], a["to"]))
+        out.append(("  - " if md else "    ") + priced)
         out.append(("  - " if md else "    ")
                    + "%s has already run %d task(s) in this band here, at %.1f "
                    "mean attempts" % (a["to"], a["evidenceTasks"],
@@ -578,20 +620,25 @@ def routing_advice_lines(advice, fmt="ascii", pt=None):
     return out
 
 
-def band_note(bands):
+def band_note(bands, show_cost=True):
     """One line saying where the band thresholds came from, or why there are none.
 
     "This task is an outlier" is a claim, and a claim whose basis is invisible
     cannot be checked. On a young project this line is the entire content: it says
-    the band is waiting for a sample rather than leaving a blank column."""
+    the band is waiting for a sample rather than leaving a blank column.
+
+    The thresholds are dollar figures, so with `show_cost` off the line keeps the
+    basis and says the thresholds are withheld rather than printing them."""
     if not bands.get("sufficient"):
         return ("band: not calibrated yet - needs %d completed tasks, there are %d "
                 "(or set usage.bands.highUSD / outlierUSD for a fixed budget)"
                 % (bands.get("gate", 5), bands.get("sample", 0)))
+    basis = ("configured thresholds" if bands.get("basis") == "absolute"
+             else "this project's completed tasks (median / p90)")
+    if not show_cost:
+        return ("band: %s - thresholds withheld: showCost is off" % basis)
     return ("band: %s - typical <= %s, high <= %s, outlier above"
-            % ("configured thresholds" if bands.get("basis") == "absolute"
-               else "this project's completed tasks (median / p90)",
-               fmt_cost(bands.get("high")), fmt_cost(bands.get("outlier"))))
+            % (basis, fmt_cost(bands.get("high")), fmt_cost(bands.get("outlier"))))
 
 
 def render_trend(rows, width=28, fmt="ascii", pt=None):
@@ -751,8 +798,9 @@ def acquire_lock(project):
     """Take the backfill lock -> `({"held", "release", "why"}, None)` or
     `(None, refusal)`.
 
-    Backfill rewrites monthly ledger files, so it locks; the hook only appends
-    and never does.
+    Backfill rewrites monthly ledger files, so it locks against another
+    backfill; the hook only appends and never takes it, which is why the
+    rewrite carries the rows appended during it rather than relying on this.
 
     THE SHARED CLAIM, NOT A LOCAL ONE OF THE SAME SHAPE. This wrote its own file
     into the very directory the lock library owns, and it wrote it the way the
@@ -827,7 +875,7 @@ def backfill(args, project, ledger_dir, manifest, pricing):
         return 2, err
     refused = None
     try:
-        fresh, sessions, cursors = [], set(), {}
+        fresh, sessions, cursors, failed = [], set(), {}, []
         for path in transcripts:
             sid = os.path.splitext(os.path.basename(path))[0]
             rows, cursor = ul.scan_transcripts(
@@ -843,14 +891,34 @@ def backfill(args, project, ledger_dir, manifest, pricing):
         months = {ul.bucket_month(r.get("ts")) for r in fresh}
         months |= {ul.bucket_month(r.get("ts")) for r in existing
                    if r.get("sessionId") in sessions}
+        # Each month is re-read just before its rewrite, through a descriptor
+        # the rewrite keeps: the metering hook appends with no lock, and a row
+        # it appended after the read above would otherwise be erased by the
+        # replace. The read above only decides WHICH months to rebuild.
         for month in sorted(m for m in months if m and m != "unknown"):
-            keep = [r for r in existing
-                    if ul.bucket_month(r.get("ts")) == month
-                    and r.get("sessionId") not in sessions]
+            keep, tail = ul.open_month(ledger_dir, month, sessions)
             add = [r for r in fresh if ul.bucket_month(r.get("ts")) == month]
-            ul.rewrite_month(ledger_dir, month, keep + add)
+            if not ul.rewrite_month(ledger_dir, month, keep + add, tail=tail):
+                failed.append(month)
+        # A cursor claims its session's rows are in the ledger, and the next
+        # metering pass resumes from it. A session whose every month failed to
+        # rewrite keeps its old cursor, which matches the ledger when the
+        # replaces were refused. A session with rows in a month that WAS
+        # rewritten gets its new cursor: that month already holds all of the
+        # session's rows, and an old cursor would have the metering hook append
+        # them there a second time. The price is the failed months of such a
+        # session, which miss its rows past the old cursor until the next
+        # --backfill - the one the answer below exits non-zero asking for.
+        spans = {}
+        for r in fresh + existing:
+            if r.get("sessionId") in sessions:
+                spans.setdefault(r.get("sessionId"), set()).add(
+                    ul.bucket_month(r.get("ts")))
+        held_back = {sid for sid, spanned in spans.items()
+                     if spanned and spanned <= set(failed)}
         for sid, cursor in cursors.items():
-            ul.save_cursor(ledger_dir, sid, cursor)
+            if sid not in held_back:
+                ul.save_cursor(ledger_dir, sid, cursor)
     finally:
         refused = release_lock(project, lock)
 
@@ -860,6 +928,15 @@ def backfill(args, project, ledger_dir, manifest, pricing):
     # above reports, and a reader who is told the row counts without either of
     # them is reading a stronger sentence than the one that is true.
     notes = [n for n in (lock.get("why"), refused) if n]
+    if failed:
+        return 1, ("[FAIL] backfill: month file(s) %s were not rewritten cleanly "
+                   "- either left as they were or missing rows carried during "
+                   "the rewrite; cursors of the %d session(s) with rows only "
+                   "there were not saved; a session also in a rewritten month "
+                   "had its cursor saved, so its rows in these months wait for "
+                   "the next backfill. Run --backfill again.\n     ledger %s%s" % (
+                       ", ".join(failed), len(held_back), ledger_dir,
+                       "".join("\n     note: %s" % (n,) for n in notes)))
     return 0, ("[OK] backfill: %d transcript(s), %d session(s), %s rows, "
                "%s tokens\n     ledger %s%s" % (
                    len(transcripts), len(sessions), fmt_int(len(fresh)),
@@ -914,32 +991,72 @@ def build_parser():
 def main(argv):
     args = build_parser().parse_args(argv)
     project = resolve_project(args)
-    manifest_path = resolve_manifest_path(args, project)
-    manifest = load_manifest(manifest_path)
+    resolved = resolve_manifest(args, project)
+    manifest_path = resolved["path"]
+    if manifest_path is None and _config_named_a_plan(resolved):
+        # The config is unreadable, or names a plan that is not there. Rendering
+        # without a plan would read meta.usage off nothing - showCost included -
+        # and print the dollars a plan turned off, so this refuses exactly as
+        # /audit:status and /audit:report do.
+        sys.stderr.write(mio.describe_unresolved(resolved) + "\n")
+        return 2
+    if manifest_path is None:
+        # Nothing configured and no plan at the default: the ledger renders
+        # without one, so this is a note - it says why titles and meta.usage
+        # are absent.
+        sys.stderr.write("note: rendering without the plan's titles and "
+                         "meta.usage - %s\n" % (mio.describe_unresolved(resolved),))
+    manifest, refusal = load_manifest(manifest_path)
+    if refusal:
+        sys.stderr.write(refusal + "\n")
+        return 2
     ledger_dir = resolve_ledger(args, project, manifest)
 
     meta_usage = ((manifest or {}).get("meta") or {}).get("usage") or {}
     show_cost = not args.no_cost and bool(
         meta_usage.get("showCost", True) if isinstance(meta_usage, dict) else True)
 
+    resolved = project_pricing(manifest, manifest_path,
+                               pricing_root(args, project))
+    pricing = resolved["table"]
+
     if args.backfill:
-        code, message = backfill(args, project, ledger_dir, manifest,
-                                 meta_usage.get("pricing"))
+        code, message = backfill(args, project, ledger_dir, manifest, pricing)
         (sys.stdout if code == 0 else sys.stderr).write(message + "\n")
         return code
 
     since = resolve_since(args.since)
     tags_by_phase = _areas.phase_tags(manifest)
-    rows = apply_filters(ul.read_ledger(ledger_dir, since, args.until), args,
-                         tags_by_phase)
+    # Every cost below is summed off these copies, priced at the resolved
+    # table the rate phrase names; the count of rows that kept the figure
+    # stored when written rides in the answer the phrase is worded from.
+    # After the filters, so the count is of the rows this run shows.
+    priced = ul.priced_at_read(
+        apply_filters(ul.read_ledger(ledger_dir, since, args.until), args,
+                      tags_by_phase), pricing)
+    rows = priced["rows"]
+    resolved = dict(resolved, pricedWhenWritten=priced["pricedWhenWritten"])
     window = "all time" if not (since or args.until) else "%s -> %s" % (
         since or "start", args.until or today())
 
     if args.as_json:
         payload = {
+            # A render setting, not derived data - the schema describes it as
+            # rendering equivalent cost alongside token counts. --json keeps the
+            # cost fields regardless, so a consumer honouring this itself needs
+            # the plan's own setting beside them rather than losing it to
+            # whatever --no-cost happened to do on this invocation.
+            "showCost": bool(
+                meta_usage.get("showCost", True) if isinstance(meta_usage, dict)
+                else True),
             "window": {"since": since, "until": args.until},
             "ledgerDir": ledger_dir,
             "pricingAsOf": rate_basis(meta_usage),
+            # Which place priced these rows, and the phrase every surface
+            # prints for it - the resolver's answer as data, beside the words.
+            "pricingBasis": {k: resolved[k] for k in
+                             ("basis", "asOf", "source", "pricedWhenWritten")},
+            "rateBasis": rate_basis_phrase(resolved),
             "totals": ul.totals(rows),
             "byPhase": ul.aggregate(rows, "phase"),
             "byTask": ul.aggregate(rows, "task"),
@@ -954,7 +1071,7 @@ def main(argv):
             "monthly": ul.monthly_activity(manifest, rows),
             "bands": ul.cost_bands(
                 manifest, rows, meta_usage if isinstance(meta_usage, dict) else {}),
-            "routing": ul.routing(manifest, rows, meta_usage.get("pricing")),
+            "routing": ul.routing(manifest, rows, pricing),
             # The claim `plugins/audit/README.md`'s Token usage section makes
             # about the plan itself, re-derived from THIS project's own two
             # ledgers rather than asserted: `_evidence_io.read_rows` is the
@@ -970,7 +1087,7 @@ def main(argv):
         return 0
 
     print(render(rows, args, manifest, window, show_cost,
-                 pt=_cli_fmt.painter(args.color)))
+                 pt=_cli_fmt.painter(args.color), pricing=resolved))
     return 0
 
 

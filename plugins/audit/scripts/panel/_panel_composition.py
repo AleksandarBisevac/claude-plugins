@@ -1159,6 +1159,14 @@ def _composition_view(manifest, boundary=None, full_run_rows=None,
             "phaseId": ph.get("id"), "status": t.get("status"),
             "model": t.get("model"),
             "skills": _skills_of(t),
+            # THE SAME MARKER, ONE NODE TYPE OVER. `_ado_parent_of` reads a
+            # dict generically - absent/null/declared are the same three
+            # states on a task as on a phase - so a task's own adoParent
+            # (inert while meta.ado.phaseWorkItems is on, real otherwise)
+            # reaches the client in the one shape adoVisible already reads,
+            # rather than being invisible to it: a plan whose only ADO
+            # record is a task-level declaration must not read as unused.
+            "adoParent": _ado_parent_of(t),
             # ov: Overview shows what the REPORT's table shows, so
             # it needs the same four values. They ride the composition
             # payload rather than a second endpoint — this is one manifest

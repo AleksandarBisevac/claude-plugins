@@ -8,26 +8,23 @@ not need to.
 
 ## Execute the task
 
-1. **Phase entry** (first started task of the phase, or after an interruption):
-   a. Set `phase.status = "in_progress"` if it isn't already (Edit the phase's manifest file — the
-      shard when sharded) — resume depends on this write.
+1. a. **Phase entry** (first started task of the phase, or after an interruption) is the verb's in
+   step 2: `audit-task start` sets `phase.status`, and on the sharded layout writes
+   `phase.claim`, in the same write as the task. **On a claim refusal, relay it the way
+   `reference/manifest-conventions.md` → *The operator's words go in unchanged* states** — it
+   refuses only while another session's claim may still be live or unaskable.
    b.–c. **The branch and `phase.baseRef` are the verb's in step 2.** `audit-task start` cuts
       the phase branch from its resolved parent on the phase's first task (or records the one
       `/audit:worktree add` checked out), writes `baseRef`, and refuses — naming why — when HEAD
       is anywhere else; see `reference/orchestrator.md`'s **Phase entry**. Do not cut or switch
       the branch by hand first: on a refusal, stop and ask the human.
-   d. **Claim the phase** (sharded layout only): write `phase.claim = {sessionId, host, branch, at}`
-      into the shard — optimistic cross-machine coordination, so a same-phase double-claim on another
-      branch surfaces as a shard merge conflict. The FS phase-lock is the same-machine guard; the
-      claim is the durable, pushed record for other machines. It is released at sign-off.
-      `sessionId` is **`$CLAUDE_CODE_SESSION_ID`** — say which one, because a session has more than
-      one name and the hooks see a different id in their payload. `meter-usage` accepts either, so
-      spend still lands on the claimed phase; write this one so the record is consistent.
 2. **Promote the task — through the script, not by hand:**
    ```
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" start <taskId>
    ```
-   It sets `task.status = "in_progress"`, stamps `startedAt`, and does `task.attempts += 1` — in
+   **On a readiness refusal, relay it the same way** (`reference/manifest-conventions.md` →
+   *The operator's words go in unchanged*). It sets `task.status = "in_progress"`, stamps
+   `startedAt`, and does `task.attempts += 1` — in
    the phase's manifest file (the shard when sharded), under the lock, revalidated and journaled.
    **If the increment would take `attempts` past `maxAttempts` (default 3), it REFUSES rather than
    spawn** — that transition still owes an ADO echo and a human, neither of which the verb can
@@ -61,29 +58,6 @@ not need to.
      first** — house conventions before task specifics, because a subagent that reads the specifics
      first has already made the decisions the conventions were meant to inform. With no registered
      area this is exactly `task.skills`, unchanged.
-   - **Resolve `executor.runsGate` the same way — at spawn, by you, and stated in the prompt as a
-     word rather than left for the subagent to look up.** Read `.claude/audit.config.json` (through
-     `hooks/_config.load()` and `executor_gate_policy(cfg)`); absent config, or the key absent from
-     it, is `own-tests`, the cheap default. Tell the subagent which reading it got: `never` (run
-     nothing itself — the recorded run below is the only evidence this task gets), `own-tests` (run
-     only the test(s) `task.tests.add` names, as its own quick check — `gate-only` tasks add none, so
-     this is the same as `never` for them), or `full` (every command in `task.tests.gate`, unchanged
-     from before this key existed). **An unrecognized value is refused, not folded into the
-     default** — `executor_gate_policy` returns `None` for it; stop and ask the human rather than
-     guessing which reading a typo meant. This changes only what the SUBAGENT does before it hands
-     back — the recorded run two steps below is unconditional and is what becomes evidence either way.
-     **The `own-tests` reading runs through the script, never bare Bash:**
-     ```
-     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/run-test-gate.py" \
-         <manifestPath> <phaseId> --task <taskId> --own --quiet
-     ```
-     `--own` writes no row and no pointer, ever — it is the executor's own quick check, through
-     the same bracket and coverage answer as the recorded run, with its whole output kept on disk
-     under `<logsDir>/gate-raw/`, in a file named from the run id with every character outside
-     `[A-Za-z0-9._-]`, its colons included, turned to `-` — so read the path off the printed `raw log:` line rather than composing it from the
-     `runId` — rather than spent in the
-     subagent's context. Tell it the finished command in the spawn prompt rather than leaving it
-     to compose its own.
    - Give it `task.description`, `task.files`, `task.docs`, the phase's `desiredOutcome` (so the work
      aims at the phase's stated goal), and the repo hard-rules (no token logging, no secret
      reads, plus any `meta`-level conventions). It must load project skills for domain rules.
@@ -98,7 +72,13 @@ not need to.
      default first move into a deliberate step it justifies in its own outcome when it does reach
      for one. A task with no declared files yet gets an empty answer, which is itself worth
      pasting in rather than silently skipping the step: it tells the executor the plan has nothing
-     to say about its files, not that you forgot to ask.
+     to say about its files, not that you forgot to ask. Its last line,
+     `executor.runsGate: <word> (<basis>)`, is the reading the executor runs — paste it with the
+     rest; with `own-tests`, also hand it the finished
+     `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/run-test-gate.py" <manifestPath> <phaseId> --task <taskId> --own --quiet`.
+     When `brief` exits non-zero and names the config instead, the value is unrecognised or the
+     file does not parse: stop and ask the human — `audit-lookup.py` refuses to print a default
+     there, and you must not supply one.
    - **Test discipline by `task.tests.mode`:**
      - `tdd` → write a test asserting each item in `task.tests.add` that **FAILS on current code** first
        (run it, confirm red — proves the bug), THEN implement until green. (`tests.expectRedFirst` should be true.)

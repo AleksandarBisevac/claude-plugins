@@ -93,14 +93,19 @@ def _cases(check):
           "narrowed back to `done`", f == [], f)
 
     _, f, w = M._walk_phases([_phase(status="done",
-                                     claim={"sessionId": "s", "host": "h",
-                                            "branch": "b"})])
+                                     claim={"sessionId": "s", "branch": "b"})])
     check("mp10 a claim left on a finished phase is a WARNING: it is stale "
           "bookkeeping, not a broken document",
           any("stale claim" in x for x in w), w)
     _, f, w = M._walk_phases([_phase(claim={"sessionId": "s"})])
+    # Read off the recommended set, so the case follows it: the claim holds
+    # only `sessionId`, so every other recommended key is named, in order.
+    _mp11_want = "claim is missing %s" % ", ".join(
+        k for k in _vocab.CLAIM_KEYS if k != "sessionId")
     check("mp11 ...and a claim missing the keys that identify its holder is a "
-          "warning naming them", any("host, branch" in x for x in w), w)
+          "warning naming them: %r" % (_mp11_want,),
+          len(_vocab.CLAIM_KEYS) > 1
+          and len([x for x in w if _mp11_want in x]) == 1, w)
     _, f, w = M._walk_phases([_phase(claim="mine")])
     check("mp12 ...while a non-object claim is a FINDING: it is a shape the "
           "orchestrator would misread", len(f) == 1 and "claim must be" in f[0],

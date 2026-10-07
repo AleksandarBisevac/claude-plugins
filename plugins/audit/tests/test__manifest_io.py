@@ -1053,13 +1053,155 @@ def _gate_cases(check):
                                               {"gateBasis": "Cleared"})))
 
 
+def _stub_claim_cases(check):
+    """A legacy `claim` on an index stub - what a phase sign-off must clear.
+
+    `_merge_phase` lets a stub's claim stand in for a body that carries none, so
+    a sign-off that pops the body's claim alone leaves the phase claimed the
+    moment the manifest is assembled again."""
+    claim = {"sessionId": "s-old", "branch": "audit/p2", "at": "t0"}
+    index = {"meta": {"version": 3},
+             "phases": [{"id": "P2", "title": "B", "status": "in_progress",
+                         "shard": "phases/P2.json", "claim": dict(claim)},
+                        {"id": "P3", "title": "C", "status": "pending",
+                         "shard": "phases/P3.json", "claim": dict(claim)}]}
+    before = json.dumps(index, sort_keys=True)
+    signed_body = {"id": "P2", "status": "done", "tasks": []}
+    # The fallback this cleanup exists for, read off the merge itself: the
+    # signed-off body has no claim, and the stub's comes back.
+    check("sc1 the premise: a body sign-off emptied of its claim still "
+          "assembles CLAIMED while the stub holds one: %r"
+          % (M._merge_phase(index["phases"][0], signed_body).get("claim"),),
+          M._merge_phase(index["phases"][0], signed_body).get("claim") == claim)
+    cleared, dropped = M.index_without_stub_claim(index, "P2")
+    stubs = dict((s["id"], s) for s in cleared["phases"])
+    check("sc2 a legacy claim on an index stub is gone after sign-off clears "
+          "it: the stub has no claim, the assembled phase has none, the claim "
+          "dropped is returned, and the input index is untouched: %r"
+          % ((stubs["P2"], dropped),),
+          "claim" not in stubs["P2"] and dropped == claim
+          and "claim" not in M._merge_phase(stubs["P2"], signed_body)
+          and json.dumps(index, sort_keys=True) == before)
+    check("sc3 SECOND DIRECTION: only the named phase's stub is cleared, and a "
+          "stub with no claim answers None, so a caller does not dirty the "
+          "index for nothing: %r" % ((stubs["P3"].get("claim"),
+                                       M.index_without_stub_claim(cleared,
+                                                                  "P2")[1]),),
+          stubs["P3"].get("claim") == claim
+          and M.index_without_stub_claim(cleared, "P2")[1] is None
+          and M.index_without_stub_claim(cleared, "P9")[1] is None)
+
+
+def _write_json(path, obj):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        if isinstance(obj, str):
+            fh.write(obj)
+        else:
+            json.dump(obj, fh)
+
+
+def _resolve_cases(check):
+    """The one rule for where the manifest is: argument, else config, else default."""
+    tmp = tempfile.mkdtemp(prefix="manifest-io-resolve-")
+    try:
+        default_abs = os.path.join(tmp, "docs", "audit", "audit-plan.json")
+        cfg = os.path.join(tmp, ".claude", "audit.config.json")
+        moved = os.path.join(tmp, "plan", "audit-plan.json")
+
+        # Nothing anywhere: no path, and both places named with what was seen.
+        r0 = M.resolve_manifest(tmp)
+        places = [p for p, _seen in r0["looked"]]
+        check("rm1 with no config and no default file, nothing resolves and BOTH "
+              "places looked at are named - the config, then the default path",
+              r0["path"] is None and places == [cfg, default_abs]
+              and r0["problem"] is None, repr(r0))
+        msg = M.describe_unresolved(r0)
+        check("rm2 the refusal text carries every looked-at place, once each",
+              msg.count(cfg) == 1 and msg.count(default_abs) == 1
+              and "/audit:init" in msg, msg)
+
+        # The default file alone resolves, through the default.
+        _write_json(default_abs, {"meta": {}, "phases": []})
+        r1 = M.resolve_manifest(tmp)
+        check("rm3 the default path resolves when no config names another",
+              r1["path"] == os.path.normpath(default_abs)
+              and r1["source"] == "default", repr(r1))
+
+        # A config naming a moved plan wins over the default, which also exists:
+        # fixture chosen so the default-only rule and the config rule disagree.
+        _write_json(moved, {"meta": {}, "phases": []})
+        _write_json(cfg, {"manifestPath": "plan/audit-plan.json"})
+        r2 = M.resolve_manifest(tmp)
+        check("rm4 the config's manifestPath wins over an existing default file",
+              r2["path"] == os.path.normpath(moved) and r2["source"] == "config",
+              repr(r2))
+
+        # The explicit argument wins over both, returned as typed.
+        r3 = M.resolve_manifest(tmp, "elsewhere/x.json")
+        check("rm5 an explicit argument wins over config and default, as given",
+              r3["path"] == "elsewhere/x.json" and r3["source"] == "argument",
+              repr(r3))
+
+        # The config names a file that is gone: the default must NOT stand in.
+        os.remove(moved)
+        r4 = M.resolve_manifest(tmp)
+        check("rm6 a config naming a missing file resolves to nothing - the "
+              "existing default is not substituted - and names that file",
+              r4["path"] is None and r4["source"] == "config"
+              and [p for p, _s in r4["looked"]] == [cfg, os.path.normpath(moved)],
+              repr(r4))
+
+        # A config with no manifestPath key falls through to the default.
+        _write_json(cfg, {"tddReminder": "on"})
+        r5 = M.resolve_manifest(tmp)
+        check("rm7 a config naming no manifestPath falls through to the default",
+              r5["path"] == os.path.normpath(default_abs)
+              and r5["source"] == "default", repr(r5))
+
+        # A malformed config is a problem said by name, never the default.
+        _write_json(cfg, "{not json")
+        r6 = M.resolve_manifest(tmp)
+        check("rm8 a config that cannot be parsed stops the resolver with a "
+              "problem naming it, and the default is not read in its place",
+              r6["path"] is None and r6["problem"]
+              and cfg in r6["problem"] and cfg in M.describe_unresolved(r6),
+              repr(r6))
+
+        # An absolute manifestPath is used as given, the way the hooks join it.
+        # The plan sits OUTSIDE the project, so a resolver that glued the path
+        # under the project would look somewhere that does not exist.
+        outside = tempfile.mkdtemp(prefix="manifest-io-abs-")
+        try:
+            abs_plan = os.path.join(outside, "plan.json")
+            _write_json(abs_plan, {"meta": {}, "phases": []})
+            _write_json(cfg, {"manifestPath": abs_plan.replace(os.sep, "/")})
+            r7 = M.resolve_manifest(tmp)
+            check("rm9 an absolute manifestPath in the config resolves as given, "
+                  "not re-rooted under the project",
+                  r7["path"] == os.path.normpath(abs_plan)
+                  and r7["source"] == "config", repr(r7))
+        finally:
+            shutil.rmtree(outside, ignore_errors=True)
+        _write_json(cfg, {"manifestPath": "docs/audit/audit-plan.json"})
+        r8 = M.resolve_manifest(tmp)
+        check("rm10 ALLOW: a relative manifestPath is still read against the "
+              "project - the case that fails if every path is taken as given",
+              r8["path"] == os.path.normpath(default_abs)
+              and r8["source"] == "config", repr(r8))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _selftest():
     def body(check):
+        _stub_claim_cases(check)
         _cases(check)
         _root_key_cases(check)
         _phase_status_cases(check)
         _drift_cases(check)
         _gate_cases(check)
+        _resolve_cases(check)
     return _harness.run(body)
 
 

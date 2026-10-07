@@ -52,11 +52,13 @@ anything is written.
 
 ### ▶ The gate, refusing
 
-The plan gate denying an edit no task covers, while a phase is running. Every line is
-this plugin's real output — `audit-status.py` renders the plan, `require-plan.py` is fed
-the same `PreToolUse` payload Claude Code sends it, and its refusal is what you see.
+A recorded Claude Code session against a small demo plan, with this plugin loaded. The
+user runs `/audit:status`, asks for an edit the running task covers and it goes through,
+then asks for an edit no task covers and Claude Code shows the plan gate's refusal. The
+session is real; CI replays the refused edit against the gate on every push and fails if
+the refusal no longer reads the way the recording shows it.
 
-![The plan gate: an edit inside the plan passes silently, an edit outside it is refused with the file named and a way out](docs/screenshots/demo-gate.gif)
+![A Claude Code session: /audit:status shows the plan, an edit to a planned file goes through, and an edit to an unplanned file is refused by the plan gate with the file named and a way out](docs/screenshots/demo-gate.gif)
 
 ### ▶ See it
 

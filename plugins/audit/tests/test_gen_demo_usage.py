@@ -186,6 +186,56 @@ def _cases(check):
     check("shape: cost is priced per row and non-zero",
           all(r["costUSD"] > 0 for r in rows_a))
 
+    # A ROW IS PRICED ONCE, WITH THE PROJECT'S OWN TABLE - never the shipped
+    # DEFAULT_PRICING, which is what makes a committed ledger move every time the
+    # shipped table does. `.claude/audit.config.json` sits BESIDE the manifest
+    # (the same place `meter-usage.py` reads it from a real session), so writing
+    # the manifest and the config into the same scratch directory is what makes
+    # this an end-to-end case rather than a call straight into `_load_pricing`.
+    tmp_pricing = tempfile.mkdtemp(prefix="gen-demo-usage-pricing-")
+    try:
+        manifest_path = os.path.join(tmp_pricing, "audit-plan.json")
+        with open(manifest_path, "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh)
+        cfg_dir = os.path.join(tmp_pricing, ".claude")
+        os.makedirs(cfg_dir)
+        # A full row, not a partial one: `usage_cfg()`'s merge REPLACES a named
+        # model's row rather than merging its fields, so a partial row here would
+        # zero the rates this case does not set rather than keep the shipped ones.
+        custom_sonnet = dict(ul.DEFAULT_PRICING["claude-sonnet-5"])
+        custom_sonnet["in"] *= 50
+        custom_sonnet["out"] *= 50
+        with open(os.path.join(cfg_dir, "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"usage": {"pricing": {"claude-sonnet-5": custom_sonnet}}}, fh)
+
+        out_dir = os.path.join(tmp_pricing, "out")
+        rc = M.main([manifest_path, "--out-dir", out_dir, "--seed", "7",
+                    "--adhoc-days", "2"])
+        check("pricing: main() still exits 0 with a declared pricing table "
+              "beside the manifest", rc == 0)
+        priced_rows = ul.read_ledger(out_dir)
+        default_rows_pricing = M.generate(manifest, seed=7, adhoc_days=2)
+        sonnet_priced = [r for r in priced_rows if r["model"] == "claude-sonnet-5"]
+        sonnet_default = [r for r in default_rows_pricing
+                          if r["model"] == "claude-sonnet-5"]
+        check("pricing: there are sonnet rows on both sides to compare",
+              bool(sonnet_priced) and bool(sonnet_default),
+              "priced=%d default=%d" % (len(sonnet_priced), len(sonnet_default)))
+        check("pricing: the declared table leaves token counts untouched (only "
+              "the price moved)",
+              ul.totals(sonnet_priced)["tokens"] == ul.totals(sonnet_default)["tokens"])
+        check("pricing: a fixture whose .claude/audit.config.json declares "
+              "usage.pricing prices every row at the DECLARED rates, not "
+              "DEFAULT_PRICING's - a different sonnet rate yields a different "
+              "costUSD rather than the shipped one",
+              ul.totals(sonnet_priced)["costUSD"]
+              > ul.totals(sonnet_default)["costUSD"] * 10,
+              "priced=$%.4f default=$%.4f" % (ul.totals(sonnet_priced)["costUSD"],
+                                              ul.totals(sonnet_default)["costUSD"]))
+    finally:
+        shutil.rmtree(tmp_pricing, ignore_errors=True)
+
     tmp = tempfile.mkdtemp(prefix="gen-demo-usage-selftest-")
     try:
         written = M.write_ledger(rows_a, tmp)

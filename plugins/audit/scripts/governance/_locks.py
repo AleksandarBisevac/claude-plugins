@@ -251,6 +251,32 @@ def _claim_holder(info, path):
                 if _interrupted_take(info, path) else "an unknown session"))
 
 
+def holder_gone(info, path=None, host=None):
+    """True only where the END of the claim's run was observed.
+
+    Two observations count: an empty claim file at `path` (`_interrupted_take`),
+    and a recorded pid that is gone on the host the claim names, when that host is
+    this one. Every other not-live reading - no pid, another host, a probe that
+    answered nothing, an old claim - is an uncertainty, and those resolve to live.
+
+    THE ONE PREDICATE for that question. `judge`, the release conflict and every
+    caller deciding whether a holder may be replaced read it here, so "gone"
+    cannot mean one thing to the verdict and another to the takeover.
+    """
+    info = info if isinstance(info, dict) else {}
+    if path is not None and _interrupted_take(info, path):
+        return True
+    if not info:
+        return False
+    if str(info.get("hostname") or "") != (host or platform.node()):
+        return False
+    try:
+        holder = int(info.get("pid"))
+    except (TypeError, ValueError):
+        return False
+    return pid_alive(holder) is False
+
+
 def judge(info, path, host=None):
     """Is this lock held by a live run? -> (live: bool, basis: str).
 
@@ -260,10 +286,12 @@ def judge(info, path, host=None):
     """
     host = host or platform.node()
     info = info if isinstance(info, dict) else {}
-    if _interrupted_take(info, path):
-        return False, ("the claim file is empty -- a take was interrupted "
-                       "before it recorded who took it, so there is no run "
-                       "here to wait for")
+    if holder_gone(info, path, host):
+        if _interrupted_take(info, path):
+            return False, ("the claim file is empty -- a take was interrupted "
+                           "before it recorded who took it, so there is no run "
+                           "here to wait for")
+        return False, "pid %s is gone on this host (%s)" % (info.get("pid"), host)
     pid, lock_host = info.get("pid"), info.get("hostname")
     age = _age_minutes(info, path)
     if pid and lock_host == host:
@@ -456,6 +484,17 @@ def held_by_us(info, session=None, pid=None):
     carried a token. A claim a process took for its own write is re-entered by
     its token alone - carried by the process and its children - and never across
     a session a caller names as different.
+
+    A SESSION'S CLAIM WHOSE PROCESS IS GONE is still this session's, and is also
+    one every other reader judges dead: a resumed session runs under a new
+    process, and the claim names the old one. The answer then carries
+    `"refresh": True` - the key is present only then - and `acquire` re-records
+    the claim under the live process instead of answering "already yours" over
+    it, so the lock goes on naming a run that holds it.
+
+    The pid spelling matches only a caller that names no other session: a match
+    on `$CLAUDE_PID` alone is the tie the docstring above gives to "ours", and a
+    caller naming a different session is not a tie.
     """
     if not isinstance(info, dict) or not info:
         return {"ours": False, "why": "no lock to compare against"}
@@ -490,9 +529,17 @@ def held_by_us(info, session=None, pid=None):
     # a token: the session is the holder, which is the take-then-run-the-verbs
     # flow `reference/manifest-conventions.md` prescribes.
     if sid and info.get("sessionId") and str(info["sessionId"]) == str(sid):
+        if holder_gone(info):
+            return {"ours": True, "refresh": True,
+                    "why": "held by this session (sessionId %s), under pid %s, "
+                           "which is gone on this host" % (sid, info.get("pid"))}
         return {"ours": True,
                 "why": "held by this session (sessionId %s)" % (sid,)}
-    if ident and info.get("pid") and str(info["pid"]) == str(ident):
+    # THE PID RULE EXCLUDES A CALLER NAMING ANOTHER SESSION, as the token rule
+    # does: subagents of one run share its $CLAUDE_PID, so a pid match alone let a
+    # different session take a live holder's claim as its own.
+    if (ident and info.get("pid") and str(info["pid"]) == str(ident)
+            and not other_session):
         return {"ours": True, "why": "held by this session (pid %s)" % (ident,)}
     return {"ours": False,
             "why": "held by %s" % (info.get("sessionId") or info.get("pid")
@@ -877,8 +924,138 @@ def release_refusal(code, name):
             "status` for the reason" % (name, code))
 
 
+def _replace_own(path, info, stamp, record, name, out):
+    """Write `info` over this session's own claim `stamp` names -> None when it
+    landed, else the exit code, with the line saying why already printed.
+
+    Through `_take_over`, so the replacement is decided by the same exclusive
+    create a takeover is: a claim that changed hands since it was read is not
+    written over, and the caller is told it lost."""
+    try:
+        res = _take_over(path, info, stamp, record)
+    except Exception as exc:
+        out("[audit-lock] could not rewrite %s: %s" % (name, exc))
+        return E_ERR
+    if res["error"]:
+        out("[audit-lock] could not rewrite %s: %s" % (name, res["error"]))
+        return E_ERR
+    if not res["taken"]:
+        out("[audit-lock] %s went to another run while it was being rewritten "
+            "-- it is NOT yours" % (name,))
+        out("             `audit-lock.py status` says who holds it now.")
+        return E_LIVE
+    return None
+
+
+def _rerecord(path, current, stamp, live_pid, name, out, taken=False):
+    """Re-record this session's hand-off claim under `live_pid` -> `E_OURS`, `0`
+    when `taken`, or the code `_replace_own` refused with.
+
+    THE HOLD IS THE SAME HOLD: its note, session, token and any takeover record
+    are kept, so whatever releases it by note or by session still finds it. Only
+    the process it names changes, to one that is running, and `refreshedFrom`
+    keeps the pid it replaced.
+
+    `taken` IS A HAND-OFF ACQUIRE OVER A HOLD WHOSE PROCESS IS GONE. Nothing that
+    took that hold is still running to give it back, so the run asking - a
+    resumed session under a new process - is the one that must: the answer is
+    `0`, the claim's token is carried, and the line says the hold is this call's.
+    Answered `E_OURS` there, the resumed run left the lock on disk at its end,
+    naming a process with no release coming. Every other caller gets `E_OURS`:
+    the claim is still the hold's to give back, not this call's.
+    """
+    info = dict(current)
+    info.update({"pid": live_pid, "hostname": platform.node(),
+                 "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                 "refreshedFrom": current.get("pid")})
+    code = _replace_own(path, info, stamp, {}, name, out)
+    if code is not None:
+        return code
+    if taken:
+        if current.get("token") and not current.get("perCall"):
+            _carry(current["token"], True)
+        out("[audit-lock] acquired %s -- this session's own claim, re-recorded "
+            "under pid %s, the run asking, from pid %s, which is gone"
+            % (name, live_pid, current.get("pid")))
+        out("             Nothing that took it is running to give it back, so "
+            "the hold is this call's now: release it at the end of the run.")
+        return 0
+    out("[audit-lock] %s is this session's -- re-recorded under pid %s, the "
+        "run asking, in place of pid %s" % (name, live_pid, current.get("pid")))
+    out("             The hold is otherwise unchanged and still not this call's "
+        "to give back.")
+    return E_OURS
+
+
+def refresh(project, name, session=None, pid=None, out=print):
+    """Make this session's hand-off claim on `name` name the run asking -> code.
+
+    `E_OURS` when the claim is this run's: re-recorded under `pid` (or
+    `$CLAUDE_PID`), already naming it, with no pid to name, naming a process that
+    is not gone, or not a hand-off claim - whose pid is the process that took
+    it, not a run to re-name - each said in its line. `E_LIVE` when the claim is
+    not this run's at all; `E_ERR`/`E_USAGE` as `acquire` answers them.
+
+    ONLY A HOLDER THAT IS GONE, OR NONE RECORDED, IS RE-RECORDED. A live recorded
+    pid is the process whose release gives the hold back, and `release` compares
+    the pid it records: moving the claim onto a second live process of the same
+    session made that release read as a takeover and refused it.
+
+    For a caller that already holds the lock through `acquire`'s re-entry answer
+    and must not leave it naming a process other than the one running the work:
+    a resumed session, or the same session under a second process.
+    """
+    ld = lock_dir(project)
+    if not ld:
+        out("[audit-lock] not a git repository: %s" % project)
+        return E_ERR
+    if not valid_name(name):
+        out(name_refusal(name))
+        return E_USAGE
+    path = os.path.join(ld, name + ".lock")
+    current = read_lock(path)
+    mine = held_by_us(current, session=session, pid=pid)
+    if not mine["ours"]:
+        out("[audit-lock] %s is not this run's (%s) -- nothing re-recorded"
+            % (name, mine["why"]))
+        return E_LIVE
+    if not current.get("handedOff"):
+        out("[audit-lock] %s is this run's and not a hand-off claim, so the pid "
+            "it records is the process that took it -- left as it is" % (name,))
+        return E_OURS
+    if current.get("pid") and not holder_gone(current, path):
+        _live, basis = judge(current, path)
+        out("[audit-lock] %s is this session's and its recorded holder is not "
+            "gone (%s) -- left as it is" % (name, basis))
+        return E_OURS
+    live_pid = _holder_pid(pid, True)
+    if not live_pid:
+        out("[audit-lock] %s is this session's; no pid names the run asking, so "
+            "it keeps pid %s" % (name, current.get("pid")))
+        return E_OURS
+    if str(current.get("pid")) == str(live_pid):
+        out("[audit-lock] %s is this session's and already names pid %s"
+            % (name, live_pid))
+        return E_OURS
+    return _rerecord(path, current, _claim_stamp(path), live_pid, name, out)
+
+
+def taken_from(info, session=None):
+    """True when the claim `info` records taking over from THIS session.
+
+    The one fact that tells a run whose lock was taken from it apart from a run
+    that never held the lock: both meet a claim naming somebody else, and only
+    the first was displaced. A session on both sides, or the answer is None
+    compared with None.
+    """
+    sid, _pid = _identity(session, None)
+    if not sid or not isinstance(info, dict):
+        return False
+    return (info.get("takenOverFrom") or {}).get("sessionId") == sid
+
+
 def acquire(project, name, note=None, takeover=False, session=None, pid=None,
-            out=print, wait=None, handed_off=False, per_call=False):
+            out=print, wait=None, handed_off=False, per_call=False, yields=False):
     """Take `name` for this project -> an exit code, which `held()` reads.
 
     `wait` is how long a LIVE holder is waited out before the refusal is printed,
@@ -895,6 +1072,24 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
     `per_call` says the claim belongs to one CALL rather than to this process -
     a server serving requests on threads - so its token is not carried and no
     other call re-enters it (`held_by_us`).
+
+    `yields` marks a claim its OWN session's later hand-off acquire takes over:
+    a hold taken for a verb's bookkeeping that a longer hold of the same session
+    supersedes, re-taken under that hold's note and no longer yielding, so the
+    verb that releases the yielding claim by its note leaves the longer hold in
+    place. Another session's acquire meets it as any live claim.
+
+    A claim this session holds whose pid is gone (`held_by_us`'s `refresh`) is
+    re-recorded under the run asking (`_rerecord`) rather than answered as
+    already held; with no pid to record it is judged like any other claim. A
+    `handed_off` acquire that re-records it holds it from then on and answers
+    `0` - the resumed run that asked is the one to give it back; any other
+    caller is answered `E_OURS`.
+
+    Superseding a yielding claim needs the caller to NAME the claim's session:
+    a caller with no session id and the holder's `$CLAUDE_PID` is "ours" to
+    `held_by_us`'s tie, and that tie is for answering re-entry, not for taking
+    a claim over.
     """
     ld = lock_dir(project)
     if not ld:
@@ -926,6 +1121,8 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
             "token": os.urandom(12).hex(), "handedOff": bool(handed_off)}
     if per_call:
         info["perCall"] = True
+    if yields:
+        info["yields"] = True
     if holder:
         info["pid"] = holder
     if sid:
@@ -966,16 +1163,40 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
         current = read_lock(path)
         mine = held_by_us(current, session=session, pid=pid)
         if mine["ours"] and not is_user_name(name):
-            # RE-ENTRY IS ANSWERED BEFORE ANYTHING IS WAITED FOR. A command that
-            # holds this lock and calls another command that takes it would
-            # otherwise spend the whole bound waiting for itself and then be
-            # refused by its own claim.
-            out("[audit-lock] %s is already yours (%s) -- nothing was taken"
-                % (name, mine["why"]))
-            out("             Whatever took it still needs it, so this is not "
-                "yours to give back: proceed, and leave the release to the hold "
-                "that owns it.")
-            return E_OURS
+            stamp = _claim_stamp(path)
+            same_session = (bool(sid) and str(current.get("sessionId") or "")
+                            == str(sid))
+            if (handed_off and current.get("yields") and not yields
+                    and same_session):
+                code = _replace_own(path, info, stamp,
+                                    {"supersededNote": current.get("note")},
+                                    name, out)
+                if code is not None:
+                    return code
+                if not per_call:
+                    _carry(info["token"], True)
+                out("[audit-lock] acquired %s from this session's own yielding "
+                    "claim (%s) -- the hold is this call's now"
+                    % (name, current.get("note") or name))
+                return 0
+            live_pid = _holder_pid(pid, True) if mine.get("refresh") else None
+            if live_pid:
+                return _rerecord(path, current, stamp, live_pid, name, out,
+                                 taken=handed_off)
+            if not mine.get("refresh"):
+                # RE-ENTRY IS ANSWERED BEFORE ANYTHING IS WAITED FOR. A command
+                # that holds this lock and calls another command that takes it
+                # would otherwise spend the whole bound waiting for itself and
+                # then be refused by its own claim.
+                out("[audit-lock] %s is already yours (%s) -- nothing was taken"
+                    % (name, mine["why"]))
+                out("             Whatever took it still needs it, so this is "
+                    "not yours to give back: proceed, and leave the release to "
+                    "the hold that owns it.")
+                return E_OURS
+            # A claim of this session naming a gone process, with no live pid
+            # to re-record it under: judged below like any other claim, which
+            # reads it dead.
         stamp = _claim_stamp(path)
         live, basis = judge(current, path)
         if takeover or not live or time.monotonic() >= deadline:
@@ -1066,7 +1287,7 @@ def _release_conflict(held, session, pid):
     # recovery line the panel prints for a crashed panel a command that always
     # failed. A holder on another host, or one with no pid, is not known dead and
     # keeps the identity rule below.
-    if _holder_dead_here(held):
+    if holder_gone(held):
         return {"mismatch": False, "who": "a run that is gone"}
     sid, ident = _identity(session, pid)
     owner = held.get("sessionId")
@@ -1082,17 +1303,6 @@ def _release_conflict(held, session, pid):
     else:
         who = owner or holder_pid or held.get("hostname") or "someone else"
     return {"mismatch": session_mismatch or pid_mismatch, "who": who}
-
-
-def _holder_dead_here(info):
-    """True only when the claim's holder ran on THIS host and its pid is gone."""
-    if str(info.get("hostname") or "") != platform.node():
-        return False
-    try:
-        holder = int(info.get("pid"))
-    except (TypeError, ValueError):
-        return False
-    return pid_alive(holder) is False
 
 
 def release(project, name, session=None, pid=None, force=False, out=print):
@@ -1126,9 +1336,7 @@ def release(project, name, session=None, pid=None, force=False, out=print):
             % (name, conflict["who"]))
         out("             You were taken over. Anything you wrote since may have")
         out("             raced that session. Re-read the shard before trusting it.")
-        sid, _pid = _identity(session, pid)
-        # A SESSION ON BOTH SIDES, or the sentence is None compared with None.
-        if sid and (held.get("takenOverFrom") or {}).get("sessionId") == sid:
+        if taken_from(held, session):
             out("             (this lock records taking over from you)")
         return E_LIVE
     try:

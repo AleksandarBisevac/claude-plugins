@@ -72,6 +72,128 @@ def _cases(check):
     check("unit: most-expensive list carries attempts for context",
           ue["mostExpensive"] and len(ue["mostExpensive"][0]) == 3)
 
+    # doneTaskCoverage: how many of the plan's done tasks the per-task figures priced.
+    # Four done tasks, two of them with ledger rows - so a reading that counts
+    # only tasks carrying rows says two of two, and the plan says two of four.
+    _cov_man = {"phases": [{"id": "P1", "tasks": [
+        {"id": "P1.%d" % i, "status": "done"} for i in range(1, 5)]
+        + [{"id": "P1.5", "status": "pending"}]}]}
+    _cov_rows = [mkrow(1, "claude-opus-5", "a@x", "P1.1", "P1", "task", 10.0),
+                 mkrow(2, "claude-opus-5", "a@x", "P1.2", "P1", "task", 30.0),
+                 mkrow(3, "claude-opus-5", "a@x", "P1.5", "P1", "task", 99.0)]
+    ue_cov = M.unit_economics(_cov_man, _cov_rows)
+    check("doneTaskCoverage: unit_economics reports two priced of FOUR done tasks in "
+          "the plan, not two of two, and costPerTask averages only the two "
+          "priced ones: %r" % (ue_cov.get("doneTaskCoverage"), ),
+          ue_cov.get("doneTaskCoverage") == {"done": 4, "priced": 2}
+          and ue_cov["costPerTask"] == 20.0)
+    # The allow twin: a plan whose every done task carries tokens reads n of n,
+    # so a coverage that always under-reports is caught too.
+    ue_full = M.unit_economics(
+        {"phases": [{"id": "P1", "tasks": [{"id": "P1.1", "status": "done"},
+                                           {"id": "P1.2", "status": "done"}]}]},
+        _cov_rows[:2])
+    check("doneTaskCoverage: every done task priced reads two of two: %r"
+          % (ue_full.get("doneTaskCoverage"), ),
+          ue_full.get("doneTaskCoverage") == {"done": 2, "priced": 2})
+    ue_none = M.unit_economics(
+        {"phases": [{"id": "P1", "tasks": [{"id": "P1.1", "status": "pending"}]}]},
+        [mkrow(1, "claude-opus-5", "a@x", "P1.1", "P1", "task", 10.0)])
+    check("doneTaskCoverage: with no done task the coverage is ABSENT (None), never a "
+          "zero-of-zero that reads as complete: %r" % (ue_none, ),
+          "doneTaskCoverage" in ue_none and ue_none["doneTaskCoverage"] is None)
+    _zero = dict(mkrow(4, "claude-opus-5", "a@x", "P1.3", "P1", "task", 0.0,
+                       out_tok=0, cr=0, cw=0, fin=0))
+    ue_zero = M.unit_economics(_cov_man, _cov_rows + [_zero])
+    check("doneTaskCoverage: a done task whose rows carry zero tokens is not counted "
+          "as priced: %r" % (ue_zero.get("doneTaskCoverage"), ),
+          ue_zero.get("doneTaskCoverage") == {"done": 4, "priced": 2})
+    cb_cov = M.cost_bands(_cov_man, _cov_rows)
+    check("doneTaskCoverage: cost_bands carries the same done-task denominator beside "
+          "its sample, from the same computation unit_economics reads: %r"
+          % (cb_cov.get("doneTaskCoverage"), ),
+          cb_cov.get("doneTaskCoverage") == {"done": 4, "priced": 2}
+          and cb_cov.get("doneTaskCoverage") == ue_cov.get("doneTaskCoverage")
+          and cb_cov["sample"] == 2)
+    # The report payload already binds a top-level `coverage` key to a different
+    # metric (spend attribution), so the done-task reading must not wear that name.
+    check("doneTaskCoverage: neither return carries a bare `coverage` key that "
+          "would collide with the report payload's spend-attribution one",
+          "coverage" not in ue_cov and "coverage" not in cb_cov)
+    cb_cov_abs = M.cost_bands(_cov_man, _cov_rows,
+                              {"bands": {"highUSD": 5, "outlierUSD": 20}})
+    check("doneTaskCoverage: the absolute basis carries the denominator too: %r"
+          % (cb_cov_abs.get("doneTaskCoverage"), ),
+          cb_cov_abs.get("doneTaskCoverage") == {"done": 4, "priced": 2})
+
+    # coverage_sentence: the one wording every caller that prints a per-task
+    # cost figure states beside it - None in (nothing yet to cover) gives None
+    # out, never an empty string, so a caller's own `if note:` guard reads the
+    # same whether the coverage is missing or absent.
+    check("coverage_sentence: None in (no done task in the plan) gives None "
+          "out, not an empty string a caller's `if note:` guard would also "
+          "treat as absent but that a stricter `is None` check would not",
+          M.coverage_sentence(None) is None)
+    check("coverage_sentence: a known coverage renders the exact sentence, "
+          "worded so 'of' never sits directly between the two numbers - the "
+          "shape `_output._ratio_claim` refuses in a committed render",
+          M.coverage_sentence({"done": 4, "priced": 2})
+          == "Of the plan's 4 done task(s), 2 are priced; main-loop spend is "
+             "not attributed to a task.")
+
+    # rate_basis_phrase: the ONE phrase every surface prints beside a cost,
+    # built from `resolve_pricing`'s answer and nothing else.
+    _url = "https://example.invalid/pricing"
+    _rb_shipped = M.rate_basis_phrase(
+        {"basis": "shipped", "asOf": "2026-10-06", "source": _url})
+    check("rb1 the shipped table's basis names its date AND its source: %r"
+          % (_rb_shipped,),
+          "rates as of 2026-10-06" in _rb_shipped and _url in _rb_shipped
+          and "shipped" in _rb_shipped and "undated" not in _rb_shipped)
+    _rb_man = M.rate_basis_phrase(
+        {"basis": "manifest", "asOf": "2026-08-06", "source": None})
+    check("rb2 a plan's own table names its date and where it was declared: %r"
+          % (_rb_man,),
+          "rates as of 2026-08-06" in _rb_man
+          and "meta.usage.pricing" in _rb_man and "shipped" not in _rb_man)
+    _rb_cfg_nd = M.rate_basis_phrase(
+        {"basis": "config", "asOf": None, "source": None})
+    check("rb3 a project table declared with no date says so and names the "
+          "key that dates it: %r" % (_rb_cfg_nd,),
+          "rates undated" in _rb_cfg_nd and "usage.pricingAsOf" in _rb_cfg_nd
+          and "audit.config.json" in _rb_cfg_nd and "rates as of" not in _rb_cfg_nd)
+    _rb_blank = M.rate_basis_phrase(
+        {"basis": "manifest", "asOf": "   ", "source": None})
+    check("rb4 a whitespace-only date is no date, not 'rates as of' followed "
+          "by nothing: %r" % (_rb_blank,),
+          "rates undated" in _rb_blank and "rates as of" not in _rb_blank)
+    check("rb5 no resolver answer at all is stated as unrecorded, never "
+          "guessed into the shipped table's date: %r"
+          % ([M.rate_basis_phrase(None), M.rate_basis_phrase({"basis": "x"})],),
+          all(M.rate_basis_phrase(v) == "rate basis not recorded"
+              for v in (None, {}, {"basis": "x", "asOf": "2026-01-01"}, "shipped")))
+
+    # A row the read-time pricing could not price keeps the figure it was
+    # written with, at a rate the ledger never recorded - the phrase says how
+    # many, beside the table it names for the rest.
+    _rb_kept = M.rate_basis_phrase(
+        {"basis": "shipped", "asOf": "2026-10-06", "source": _url,
+         "pricedWhenWritten": 3})
+    check("rb6 rows priced when written are counted in the same phrase: %r"
+          % (_rb_kept,),
+          _rb_kept.startswith(_rb_shipped)
+          and "3 row(s) keep the cost stored when written" in _rb_kept
+          and "no recorded rate" in _rb_kept)
+    # The second direction: a phrase that always appended would pass rb6.
+    check("rb7 ...and a count of zero, or none given, leaves the phrase as it "
+          "was: %r" % (M.rate_basis_phrase(
+              {"basis": "shipped", "asOf": "2026-10-06", "source": _url,
+               "pricedWhenWritten": 0}),),
+          M.rate_basis_phrase(
+              {"basis": "shipped", "asOf": "2026-10-06", "source": _url,
+               "pricedWhenWritten": 0}) == _rb_shipped
+          and "row(s)" not in _rb_shipped)
+
     # cost_bands: the same sample gate, and a name that does not collide
     cb = M.cost_bands(man, ar)
     check("bands: 5 completed tasks clears the gate on the relative basis",

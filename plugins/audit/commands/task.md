@@ -1,6 +1,6 @@
 ---
 description: Add a tracked task to the audit manifest — every answer is a flag, and the dialogue only covers what the caller did not pass — promote one to running, close one that landed, move one between phases, or cancel work that will not be done. `add` allocates the id, initializes all orchestrator fields, updates fileIndex, and revalidates; `start` promotes a task to in_progress so the plan gate resolves its files, without spawning anything; `done` closes it against the commit its work landed in, writing status, completedAt, commit, outcome and verifiedBy in one write — or, with `--no-change --reason`, closes a task whose answer was that nothing needed to change; `reopen` puts a done task back to pending with the reason recorded; `move` renumbers a task into another phase, rewrites every reference, and records a chained task.move journal row; `block` sets a task blocked with the reason beside the status; `note` appends a dated note, the one addition a started task takes; `cancel` closes a task — or, as the legacy spelling of `/audit:phase cancel`, a whole phase — as terminal-but-not-done, recording the reason, the moment and a journal row. `priority` is the legacy spelling of `/audit:phase priority` and still works.
-argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] | start <taskId> | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] [--override-verdict TEXT] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id], or --test <path> --caught <runId> | uncouple --test <path> | mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId> | unmute --test <path> | cancel <id> --reason "<why>"'
+argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] [--outputs pat,pat] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--failing-from RUNID] [--risk RISK] [--model NAME] [--skills a,b] [--blocked-by ids] [--depends-on ids] [--dry-run] | start <taskId> [--force --reason "<why>"] | done <taskId> [--commit <sha>] [--no-change --reason "<why>"] [--descriptive TEXT] [--technical TEXT] [--verified-by t1,t2] [--intent ANSWER] [--intent-basis TEXT] [--override-verdict TEXT] | reopen <taskId> --reason "<why>" | scope <taskId> [--files a,b] [--tests-mode MODE] [--tests-add TEXT] [--gate CMD] [--gate-clear] [--description TEXT] [--risk RISK] [--blocked-by ids] [--depends-on ids] | move <taskId> --to <phaseId> | block <taskId> --reason "<why>" | note <taskId> --text TEXT | couple --test <path> --sources a,b --basis-run <runId> --basis-head <sha> [--phases id,id], or --test <path> --caught <runId> | uncouple --test <path> | mute --test <path> --reason TEXT --owner NAME --until <YYYY-MM-DD> --bug <bugId> | unmute --test <path> | cancel <id> --reason "<why>"'
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -404,6 +404,7 @@ spawns, and the hand edit this file forbids everywhere else.
 
 ```
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" start P3.2 [--json]
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" start P3.2 --force --reason "<why>"
 ```
 
 **It performs phase entry first** (`reference/orchestrator.md` → *Phase entry*). On a phase's
@@ -426,10 +427,25 @@ step 2 prescribes as an orchestrator `Edit`:
   work began. The phase's rows come back under `healed`, apart from `changes`, which is
   the task's own fields. A phase already running is left alone, and one that already
   carries a `startedAt` keeps the moment it recorded.
+- **the phase's claim, on the sharded layout** — `phase.claim = {sessionId, branch, at}`
+  in the phase's shard, from the same write: `sessionId` is `$CLAUDE_CODE_SESSION_ID`, `branch`
+  the phase's, `at` the start's own instant. Two machines entering one phase then meet a merge
+  conflict in that shard rather than running it twice. Sign-off releases it. It carries no
+  `host`: the shard is committed, so a machine name there would be published, which is why
+  the journal drops `actor.host` too and `tools/check-committed-pii.py` reports a `host` under
+  a claim. A claim this session already holds is left exactly as it was; a single-file
+  plan gets none (it has no shard to conflict in); and with `$CLAUDE_CODE_SESSION_ID` unset no
+  claim is written and the output says so, because a claim naming no session is one no later
+  start can recognise as its own.
 - **journal** → one `task.start` row whose `details.changes` names each field with the
   value it held, plus `details.attempt` — both keys the `_journal_io.DETAILS_KEYS`
   allow-list already carries, so nothing is written that the trail would drop in silence.
-  A phase the write promoted is named in the row's summary.
+  A phase the write promoted is named in the row's summary. A claim the write took adds
+  `changes` rows keyed by the **phase** id — `claim.sessionId`, `claim.branch` and `claim.at`,
+  each with the value it replaced — and names the session in the summary. A **forced** start (below) adds
+  `details.mode: "forced"`, `details.reason` and `details.basis` naming what it was forced
+  past — the unmet references, another session's claim, or both — and says `FORCED past ...`
+  in the summary.
 - Same index lock, same revalidate-from-disk, same byte-for-byte rollback on findings as
   `add`.
 
@@ -449,16 +465,56 @@ would freeze the count `blocked` is derived from.
 verb takes a task, and the phase around that task is promoted by the same write; a phase
 with no task to start is entered by the run that enters it); a `done` or `cancelled` task, named
 as such — terminal work is not re-opened by flipping a status, and the follow-up is a new
-task; and a start that would take `attempts` past the task's `maxAttempts`. That last one
+task; a task that is not ready, or a phase another session has claimed, without
+`--force --reason` (below); and a start that would
+take `attempts` past the task's `maxAttempts`. That last one
 refuses rather than writing `blocked` itself: that transition also owes an ADO echo and a
 human, both of which belong to the orchestrator, and the refusal names the count and the
 ceiling so the caller can make it.
 
-**Readiness is reported, never enforced.** A task with unmet `blockedBy`/`dependsOn` is
-still promoted, with a `NOTE:` naming what it waits on — `/audit:run` is where readiness
-decides a spawn, and the case this verb exists for is a task whose edits are being denied
-right now. **Nothing refuses a promotion of unready work**, here or in the script; the
-note is the whole of it.
+**Readiness is refused, with one recorded way past it.** A task that is not already
+`in_progress` and still waits on an unmet reference — its own `blockedBy` or `dependsOn`, or
+its phase's `blockedBy` — is refused with exit 2 and nothing written, and the refusal names
+each reference the way `/audit:status` does (`_status_facts.unmet_refs` is the one answer both
+read; a phase-level blocker reads `<id> (phase)`). `--force --reason "<why>"` is the
+recorded way past it, and the `task.start` row keeps it — see
+`reference/manifest-conventions.md` → *The operator's words go in unchanged*. The door refuses
+`--force` without `--reason`, and `--reason` without `--force`; `--reason -` reads the text off
+stdin like every prose flag. A re-start of
+a task already `in_progress`
+is the retry above and is never refused for readiness — it prints a `NOTE:` naming what is
+still unmet. Under `--json` the result carries `ready`, `waitingOn`, `forced` and
+`forcedReason`.
+
+**A claim is refused only while its holder may still be live.** On the sharded layout, a phase
+whose `claim.sessionId` is not this session's is refused with exit 2 and nothing written only
+when the claim's `phase-<id>` lock is still live under another session, or when it is
+**unaskable** — no such lock in this clone, or one `judge` could only place by its age, neither
+of which says the holder's run has stopped (`_holder_under_claim`) — the refusal names the
+claim's session, branch, moment and which of those it is. Otherwise this start **takes the
+claim over**: the lock's run was observed to end (`_locks.holder_gone`), or the live
+`phase-<id>` lock it names is this run's own (`_locks.held_by_us`) — and the takeover is
+recorded (`_claim_plan`); there is nothing here for `--force` to replace. **With no session
+id (`$CLAUDE_CODE_SESSION_ID` unset), `claimAction` is `no-session` and nothing is written over
+any claim already held** — a claim naming no session answers no later start's question of whose
+it is, so a held one stays exactly as it stands rather than being replaced; with none held, none
+is written either.
+
+**Taking the `phase-<id>` lock a written claim needs is a second, separate door.** A start that
+is about to write a claim takes that lock first (`reference/orchestrator.md` →
+*Branch-per-phase*); any live phase lock this run does not hold refuses the start outright,
+naming the holder — whether or not the claim check above also had something to say.
+
+**On either refusal, relay it the way `reference/manifest-conventions.md` → *The operator's
+words go in unchanged* states.** Forcing a claim refusal replaces the claim with this session's,
+with the `task.start` row keeping the replaced session as the `from` of its `claim.sessionId`
+row and in its `basis`.
+
+Under `--json` the result carries `claim`, `claimAction` (`none`, `keep`, `take`, `takeover`,
+`contested` or `no-session`), `claimReplaced` (the claim this start wrote over), `claimKept`
+(the other session's claim this start left standing), `claimHolder` (the liveness
+`_phase_holder` read, asked only when another session's claim was in play), `claimTakeoverBasis`
+(a `takeover`'s own reason) and `phaseLock` (the `phase-<id>` lock's own state).
 
 **The start that enters a phase warns about what sign-off will ask for** — an empty
 `testGate` (sign-off then rests on review alone) and a missing `desiredOutcome` — as

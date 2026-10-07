@@ -18,7 +18,8 @@ Four things live here, and the reason each is HERE rather than beside its caller
                  shape is that bucket.
   aggregation  - `totals` / `aggregate` / `aggregate_area` / `heatmap`, the
                  roll-ups the CLI, the report and the panel all read. One home, so
-                 three surfaces cannot disagree about a number.
+                 three surfaces cannot disagree about a number. `priced_at_read`
+                 prices the rows they sum at the resolved table first.
   rows + plan  - `task_index`, `_tokens`, `_cost`: one row's tokens, one row's
                  cost, and the plan's tasks by id. They arrived with the U3.2
                  split and the LAYER is why they are here rather than in a base
@@ -68,23 +69,36 @@ _output.install_path()
 # `tests/test__usage_core.py`'s `pp` cases load the hooks' own table and name any
 # field that drifts.
 # They cannot be merged - hooks/ may import nothing from scripts/ - so the copy is
-# deliberate and the case is what keeps it honest.
-# Cache rates follow the published multipliers off base input: write 1.25x at the
-# 5-minute TTL, 2x at the 1-hour TTL, read 0.1x.
+# deliberate and the case is what keeps it honest. The date and the page the rates
+# were read from are mirrored the same way and held equal by
+# `pricing_provenance_divergences()`.
+# Every rate is copied from the page, not derived: the cache writes follow the
+# published 1.25x (5-minute TTL) and 2x (1-hour TTL) multipliers off base input,
+# but the read multiplier is not uniform - the page prices some models' cache read
+# below the usual 0.1x, so a row computed from base input would overcharge them.
+#
+# Resolution is by LONGEST PREFIX, so a point release needs its own row whenever
+# its rates differ from its family's: without one, `claude-opus-5-5` resolves to
+# `claude-opus-5` and is priced at another model's rate with no warning.
 #
 # `_default` is Opus-tier on purpose: an unrecognized model is far more likely to be
 # a new frontier release than a cheap one, and over-stating spend is the safer error
 # for a cost display. Anything a project actually runs should get its own row.
+PRICING_AS_OF = "2026-10-06"
+PRICING_SOURCE_URL = "https://platform.claude.com/docs/en/about-claude/pricing"
 DEFAULT_PRICING = {
     "_default":          {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
     "claude-fable-5":    {"in": 10.0, "out": 50.0, "cacheW5m": 12.50, "cacheW1h": 20.0, "cacheR": 1.0},
+    "claude-fable-5-1":  {"in": 10.0, "out": 50.0, "cacheW5m": 12.50, "cacheW1h": 20.0, "cacheR": 0.25},
     "claude-mythos-5":   {"in": 10.0, "out": 50.0, "cacheW5m": 12.50, "cacheW1h": 20.0, "cacheR": 1.0},
+    "claude-mythos-5-1": {"in": 10.0, "out": 50.0, "cacheW5m": 12.50, "cacheW1h": 20.0, "cacheR": 0.25},
     "claude-opus-5":     {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
+    "claude-opus-5-5":   {"in":  4.0, "out": 20.0, "cacheW5m":  5.00, "cacheW1h":  8.0, "cacheR": 0.2},
     "claude-opus-4-8":   {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
     "claude-opus-4-7":   {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
     "claude-opus-4-6":   {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
     "claude-opus-4-5":   {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
-    "claude-sonnet-5":   {"in":  3.0, "out": 15.0, "cacheW5m":  3.75, "cacheW1h":  6.0, "cacheR": 0.3},
+    "claude-sonnet-5":   {"in":  2.0, "out": 10.0, "cacheW5m":  2.50, "cacheW1h":  4.0, "cacheR": 0.2},
     "claude-sonnet-4-6": {"in":  3.0, "out": 15.0, "cacheW5m":  3.75, "cacheW1h":  6.0, "cacheR": 0.3},
     "claude-sonnet-4-5": {"in":  3.0, "out": 15.0, "cacheW5m":  3.75, "cacheW1h":  6.0, "cacheR": 0.3},
     "claude-haiku-4-5":  {"in":  1.0, "out":  5.0, "cacheW5m":  1.25, "cacheW1h":  2.0, "cacheR": 0.1},
@@ -130,13 +144,13 @@ def pricing_divergences(mine, theirs, mine_name="mine", theirs_name="theirs"):
     means the two agree completely.
 
     Named rather than boolean because DEFAULT_PRICING above and
-    `hooks/_config.py DEFAULTS["usage"]["pricing"]` are 13 models x 5 rates that
-    must be kept identical BY HAND: hooks/ may import nothing from scripts/ and
-    has to price a model with no config file present, so the table cannot be
-    merged into one home. Each file carried a comment saying it mirrored the
-    other and nothing read either comment. A checker that only says "the tables
-    differ" hands the reader 65 numbers to diff, which is why every difference
-    is named down to `model.rate: <value> vs <value>`.
+    `hooks/_config.py DEFAULTS["usage"]["pricing"]` must be kept identical BY
+    HAND: hooks/ may import nothing from scripts/ and has to price a model with
+    no config file present, so the table cannot be merged into one home. Each
+    file carried a comment saying it mirrored the other and nothing read either
+    comment. A checker that only says "the tables differ" hands the reader every
+    rate of both tables to diff, which is why every difference is named down to
+    `model.rate: <value> vs <value>`.
 
     A table that is not a dict is REPORTED, never treated as empty-and-therefore-
     equal: the caller's most likely non-dict is a load that failed, and a failed
@@ -171,6 +185,119 @@ def pricing_divergences(mine, theirs, mine_name="mine", theirs_name="theirs"):
                            % (model, rate, mine_name, row_a[rate],
                               theirs_name, row_b[rate]))
     return out
+
+
+_PROVENANCE_KEYS = ("pricingAsOf", "source")
+
+
+def _blank_field(value):
+    return not isinstance(value, str) or not value.strip()
+
+
+def pricing_provenance_divergences(mine, theirs, mine_name="mine",
+                                   theirs_name="theirs"):
+    """Every disagreement between two `{pricingAsOf, source}` provenances,
+    worded the way `pricing_divergences()` words a rate. `[]` means both name
+    the same date and the same page.
+
+    The date and the URL are mirrored for the same reason the rates are, and
+    drift the same way: a table corrected in both files with its date bumped in
+    one prints a basis the other copy's numbers did not come from.
+
+    A blank or missing field is reported on its own side even when the other
+    side is blank too - two empty dates agree, and say nothing. A provenance
+    that is not a dict is reported, never read as agreement."""
+    if not isinstance(mine, dict):
+        return ["%s is not a pricing provenance (%s)" % (mine_name, type(mine).__name__)]
+    if not isinstance(theirs, dict):
+        return ["%s is not a pricing provenance (%s)"
+                % (theirs_name, type(theirs).__name__)]
+    out = []
+    for key in _PROVENANCE_KEYS:
+        a, b = mine.get(key), theirs.get(key)
+        blanks = [name for name, value in ((mine_name, a), (theirs_name, b))
+                  if _blank_field(value)]
+        if blanks:
+            out.extend("%s: blank in %s" % (key, name) for name in blanks)
+        elif a != b:
+            out.append("%s: %s %r vs %s %r" % (key, mine_name, a, theirs_name, b))
+    return out
+
+
+# Which of the three places a project's table can come from priced it. Data, not
+# a sentence: a surface that names its basis words it from these.
+PRICING_BASES = ("manifest", "config", "shipped")
+
+
+def _declared_table(block):
+    """`block["pricing"]` when it is a non-empty dict, else None. An empty table
+    declares nothing: it would price every model at the zero row a lookup with
+    nothing in it falls back past."""
+    if not isinstance(block, dict):
+        return None
+    table = block.get("pricing")
+    return table if isinstance(table, dict) and table else None
+
+
+def _declared_as_of(block):
+    """`block["pricingAsOf"]` trimmed, or None - a whitespace-only date is no
+    date, the same normalisation every reader of this key applies."""
+    value = block.get("pricingAsOf") if isinstance(block, dict) else None
+    return (value.strip() or None) if isinstance(value, str) else None
+
+
+def _copy_table(table):
+    return dict((k, dict(v) if isinstance(v, dict) else v)
+                for k, v in table.items())
+
+
+def resolve_pricing(manifest, config):
+    """The one price table a project is priced at, and which place it came from.
+
+    -> {"table":  the rate table, a copy the caller may keep,
+        "basis":  one of PRICING_BASES,
+        "asOf":   the date the declaring place gives its rates, or None,
+        "source": the page the rates were read from, or None}
+
+    Precedence, first match wins:
+      * `manifest` - the plan's `meta.usage.pricing`;
+      * `config`   - `usage.pricing` of the RAW `.claude/audit.config.json`
+        (as parsed, not merged with defaults);
+      * `shipped`  - DEFAULT_PRICING, dated PRICING_AS_OF from
+        PRICING_SOURCE_URL.
+
+    A declared table, from either place, is laid over the shipped table
+    model by model: a named row replaces the shipped row whole, every other
+    row stays shipped. That is `hooks/_config.usage_cfg`'s merge for the
+    config, and the plan's table gets the same one so a model it does not
+    name is priced at its shipped row, never at a `_default` the plan may
+    not declare.
+
+    `asOf` is the declaring place's own `pricingAsOf`, None when it gives
+    none - an overlay's unnamed rows are still the shipped ones, but the
+    date names what the project declared. Only the shipped table carries a
+    source; a project's own table answers to whatever page it was copied from,
+    which neither file names.
+
+    The config must be the raw file: a config already merged with defaults
+    always carries a table, and the basis would read `config` for a project
+    that declared nothing. Never raises."""
+    meta = (manifest or {}).get("meta") if isinstance(manifest, dict) else None
+    meta_usage = meta.get("usage") if isinstance(meta, dict) else None
+    declared = _declared_table(meta_usage)
+    table = _copy_table(DEFAULT_PRICING)
+    if declared is not None:
+        table.update(_copy_table(declared))
+        return {"table": table, "basis": "manifest",
+                "asOf": _declared_as_of(meta_usage), "source": None}
+    cfg_usage = config.get("usage") if isinstance(config, dict) else None
+    overlay = _declared_table(cfg_usage)
+    if overlay is not None:
+        table.update(_copy_table(overlay))
+        return {"table": table, "basis": "config",
+                "asOf": _declared_as_of(cfg_usage), "source": None}
+    return {"table": table, "basis": "shipped", "asOf": PRICING_AS_OF,
+            "source": PRICING_SOURCE_URL}
 
 
 # --- timestamps -----------------------------------------------------------------
@@ -296,6 +423,42 @@ GROUP_KEYS = {
     "branch": lambda r: r.get("branch") or "--",
     "attr": lambda r: r.get("attr") or "unattributed",
 }
+
+
+def _priceable(row):
+    """True when every TOKEN_KEYS field is a number, so the row can be priced
+    again whole. A row missing one cannot: pricing the absent field at zero
+    would print a figure lower than anything the row ever cost."""
+    return all(isinstance(row.get(k), (int, float))
+               and not isinstance(row.get(k), bool) for k in TOKEN_KEYS)
+
+
+def priced_at_read(rows, table):
+    """Every row's `costUSD` as `table` prices its token counts now.
+
+    -> {"rows": copies of `rows`, each priceable row's `costUSD` replaced,
+        "pricedWhenWritten": how many rows kept their stored figure}
+
+    The surfaces print a cost beside a phrase naming the resolved table, while
+    a row's stored `costUSD` was priced when it was written, at a rate the
+    ledger never recorded. So each surface sums these copies rather than the
+    rows it read, and every roll-up below inherits the resolved table. The
+    rows handed in are not touched: the ledger stays as written. Each figure
+    is rounded the way the writer rounds one, so a ledger written at the
+    resolved table sums to exactly what it stored.
+
+    A row that cannot be priced again (`_priceable`) keeps its stored figure,
+    and the count of those is returned for the rate phrase to state - never
+    left as a silent mix of two tables."""
+    out, kept = [], 0
+    for row in rows:
+        copy = dict(row)
+        if _priceable(row):
+            copy["costUSD"] = round(price(row, row.get("model"), table), 6)
+        else:
+            kept += 1
+        out.append(copy)
+    return {"rows": out, "pricedWhenWritten": kept}
 
 
 def totals(rows):

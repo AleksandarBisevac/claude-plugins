@@ -1714,6 +1714,135 @@ def discovery_projection_drift(repo_root=None):
     return out
 
 
+# --- a placeholder the script answers itself -------------------------------------
+# A command document that hands its script a `<manifestPath>` placeholder makes the
+# MODEL fill it in. A thin command reads no reference stating the default, so the
+# model guesses - and narrates the guess to the user. Once a script resolves the
+# manifest itself (it calls `_manifest_io.resolve_manifest`), the placeholder is a
+# question the model need not be asked, so a command line still asking it is
+# reported. Which scripts resolve is read off their source, not listed here: a
+# script that starts resolving later is held to this rule from that commit on.
+MANIFEST_PLACEHOLDER = "<manifestPath>"
+_RESOLVER_ATTR = "resolve_manifest"
+_PLACEHOLDER_AFTER_RE = re.compile(
+    r"([A-Za-z0-9_-]+\.py)\"?`?\s+" + re.escape(MANIFEST_PLACEHOLDER))
+# Command documents that still hand a self-resolving script the placeholder, each
+# with the reason it is not yet repaired. A row whose document no longer carries
+# one is reported stale, so this table shrinks with the debt and never outlives it.
+MANIFEST_PLACEHOLDER_PENDING = (
+    ("commands/phase.md",
+     "reads reference/orchestrator.md, where the default manifestPath is stated, "
+     "so the model is not left guessing; routing it through the resolver is "
+     "follow-up work alongside the other orchestrator-driven commands"),
+    ("commands/task.md",
+     "reads reference/orchestrator.md, where the default manifestPath is stated, "
+     "so the model is not left guessing; routing it through the resolver is "
+     "follow-up work alongside the other orchestrator-driven commands"),
+)
+
+
+def _calls_resolver(source):
+    """True when `source` CALLS `<module>.resolve_manifest(...)`. Read off the AST,
+    not the text: this file names the resolver in a string and a docstring, and
+    neither is a call."""
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return False
+    return any(isinstance(node, ast.Call)
+               and isinstance(node.func, ast.Attribute)
+               and node.func.attr == _RESOLVER_ATTR
+               for node in ast.walk(tree))
+
+
+def self_resolving_scripts(repo_root=None):
+    """Sorted basenames of every `.py` under `plugins/audit/scripts/` that calls
+    `<module>.resolve_manifest(...)` - the scripts that find the manifest
+    themselves."""
+    root = repo_root or REPO_ROOT
+    scripts = os.path.join(root, PLUGIN_REL.replace("/", os.sep), "scripts")
+    out = []
+    for relname, path in _output.py_files(scripts):
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                source = fh.read()
+        except OSError:
+            continue
+        if _calls_resolver(source):
+            out.append(relname.rsplit("/", 1)[-1])
+    return sorted(set(out))
+
+
+def _logical_lines(lines):
+    """[(first physical line number, text)] with every backslash-continued run
+    joined into one line, the way the shell reads it - so a placeholder on a
+    continuation is seen beside the script the command starts with. A line that
+    does not end in a backslash is never joined to the next."""
+    out = []
+    start, parts = None, []
+    for lineno, line in enumerate(lines, 1):
+        if start is None:
+            start = lineno
+        stripped = line.rstrip()
+        if stripped.endswith("\\"):
+            parts.append(stripped[:-1])
+            continue
+        parts.append(line)
+        out.append((start, " ".join(parts)))
+        start, parts = None, []
+    if parts:
+        out.append((start, " ".join(parts)))
+    return out
+
+
+def manifest_placeholder_drift(repo_root=None, pending=None):
+    """[(doc, lineno, script)] - every line of `commands/*.md` handing a
+    self-resolving script `<manifestPath>`, plus `(doc, 0, reason)` for a pending
+    row whose document carries no such line any more. A command continued over
+    backslash-ended lines is read as one line and reported at its first.
+
+    WHAT THIS CANNOT SEE: `reference/` is not scanned - it is read by the
+    orchestrator-driven commands, which state the default where the placeholder
+    is used. A placeholder separated from its script by another argument
+    (`x.py --json <manifestPath>`) is not matched; every call site writes the
+    manifest first, which is the shape argparse's positional takes.
+    """
+    root = repo_root or REPO_ROOT
+    rows = MANIFEST_PLACEHOLDER_PENDING if pending is None else pending
+    excused = dict(rows)
+    resolving = set(self_resolving_scripts(root))
+    cmd_dir = os.path.join(root, PLUGIN_REL.replace("/", os.sep), "commands")
+    try:
+        names = sorted(n for n in os.listdir(cmd_dir) if n.endswith(".md"))
+    except OSError as exc:
+        return [("commands <unreadable: %s>" % (exc,), 0, "")]
+    out = []
+    carrying = set()
+    for name in names:
+        rel = "commands/" + name
+        try:
+            with open(os.path.join(cmd_dir, name), "r", encoding="utf-8",
+                      errors="replace") as fh:
+                lines = fh.read().splitlines()
+        except OSError as exc:
+            out.append(("%s <unreadable: %s>" % (rel, exc), 0, ""))
+            continue
+        for lineno, line in _logical_lines(lines):
+            for match in _PLACEHOLDER_AFTER_RE.finditer(line):
+                script = match.group(1)
+                if script not in resolving:
+                    continue
+                carrying.add(rel)
+                if rel not in excused:
+                    out.append((rel, lineno, script))
+    for rel, _reason in rows:
+        if rel not in carrying:
+            out.append((rel, 0, "stale pending row: no self-resolving script "
+                                "is handed %s there any more"
+                        % (MANIFEST_PLACEHOLDER,)))
+    return out
+
+
 # --- what the published handbook claims about the product ---------------------
 # `docs/handbook.html` is served by GitHub Pages beside `docs/index.html` and is the
 # one published page with NO GENERATOR BEHIND IT. Every other published artifact is

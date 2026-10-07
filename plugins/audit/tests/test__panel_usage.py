@@ -152,55 +152,30 @@ def _cases(check):
         du = M.usage_state(proj)
         check("usage_state reports metering off so the tab can explain itself",
               du["enabled"] is False and du["showCost"] is False)
-        # The empty branch's own comment requires it: every key the populated
-        # branch returns must appear here too, or a fresh install reads undefined.
-        check("the no-ledger shape carries pricingAsOfDeclared as well, so a "
-              "fresh install does not read undefined",
-              "pricingAsOfDeclared" in du and du["pricingAsOfDeclared"] is False)
+        # No panel script read the declared-or-default flag this payload used
+        # to serve beside the date: the tab words its basis from `rateBasis`
+        # and offers the Settings link off `pricingBasis`. A key with no
+        # reader is a claim nobody checks, so it is gone from both branches.
+        check("pa0 the payload serves no declared-date flag beside the date - "
+              "no panel script reads one: %r" % (sorted(du),),
+              not [k for k in du if k.startswith("pricingAsOf")
+                   and k != "pricingAsOf"])
+        # The tab dates its costs from `pricingBasis.asOf`, the resolver's
+        # answer for the table that priced them. A second date taken off the
+        # MERGED config is the shipped default whenever the project set none,
+        # beside a table it may not have priced - and no panel script read it.
+        # Declared and padded, so a payload that still trims and serves the
+        # config's copy is caught as well as one serving it as typed. A
+        # populated payload is asked, and so is `_usage_shape()`, which every
+        # branch is built from.
         with open(_cfg_path, "w", encoding="utf-8") as fh:
-            json.dump({"usage": {"pricingAsOf": "2026-01-02"}}, fh)
-        check("a declared date is reported as declared, and travels with it",
-              M.usage_state(proj)["pricingAsOfDeclared"] is True
-              and M.usage_state(proj)["pricingAsOf"] == "2026-01-02")
-        # --- the rate basis, trimmed at the door -------------------------------
-        # `_declared_as_of` decides on the TRIMMED config value and this payload
-        # served the MERGED one as typed, so the two disagreed about one config
-        # value inside one dict literal. The fixture is padded rather than clean
-        # on purpose: an unpadded date passes on both versions of the code, so it
-        # cannot tell the fix from the bug. The case above is the other half of
-        # that pair - it is what fails if the trim ever eats a legitimate date.
-        with open(_cfg_path, "w", encoding="utf-8") as fh:
-            json.dump({"usage": {"pricingAsOf": "  2026-01-02  "}}, fh)
-        _pad = M.usage_state(proj)
-        check("pa1 a PADDED date is trimmed where the config becomes plugin "
-              "data. usage-view.js prints 'rates as of ' + this value verbatim, "
-              "so serving it as typed puts the padding on the tab: %r"
-              % (_pad["pricingAsOf"],),
-              _pad["pricingAsOf"] == "2026-01-02"
-              and _pad["pricingAsOfDeclared"] is True)
-        with open(_cfg_path, "w", encoding="utf-8") as fh:
-            json.dump({"usage": {"pricingAsOf": "   "}}, fh)
-        _blank = M.usage_state(proj)
-        check("pa2 ...and a whitespace-only one collapses to None - the shape "
-              "absence already has - rather than shipping a TRUTHY empty string "
-              "beside a flag saying this project declared nothing, which is the "
-              "second kind of empty the other three readers were taught not to "
-              "serve: %r" % (_blank["pricingAsOf"],),
-              _blank["pricingAsOf"] is None
-              and _blank["pricingAsOfDeclared"] is False)
-        with open(_cfg_path, "w", encoding="utf-8") as fh:
-            json.dump({"usage": {"pricingAsOf": 20260102}}, fh)
-        check("pa3 a hand-edited NUMBER answers None instead of raising - the "
-              "trim sits inside the payload's own dict literal, so an exception "
-              "there costs the whole Usage tab and not one line of context",
-              M.usage_state(proj)["pricingAsOf"] is None
-              and M.usage_state(proj)["pricingAsOfDeclared"] is False)
-        with open(_cfg_path, "w", encoding="utf-8") as fh:
-            json.dump({"usage": {"showCost": True}}, fh)
-        _dd = M.usage_state(proj)
-        check("an undeclared one still carries the merged default as the VALUE, "
-              "flagged as undeclared - the client decides, the server does not lie",
-              _dd["pricingAsOfDeclared"] is False and _dd["pricingAsOf"])
+            json.dump({"usage": {"pricingAsOf": " 2026-01-02 "}}, fh)
+        _pa_full = M.usage_state(proj)
+        check("pa4 the usage payload carries no `pricingAsOf` of the merged "
+              "config's - the date beside a cost is `pricingBasis.asOf`: %r"
+              % (sorted(k for k in _pa_full if "AsOf" in k),),
+              "pricingAsOf" not in _pa_full
+              and "pricingAsOf" not in M._usage_shape())
     finally:
         if _prev_cfg is None:
             os.remove(_cfg_path)
@@ -305,8 +280,24 @@ def _cases(check):
           "hide behind a duplicate: %r"
           % (sorted(set(_up_empty) ^ set(_up_full)),),
           set(_up_empty) == set(_up_full)
-          and len(_up_empty) == len(_up_full) == 20
+          and len(_up_empty) == len(_up_full) == len(M._usage_shape())
+          and {"pricingBasis", "rateBasis"} <= set(_up_empty)
           and _up_full["facts"] and not _up_empty["facts"])
+    # The two rate-basis keys, by VALUE on both branches: the populated one
+    # carries the resolver's answer and the one phrase built from it, the
+    # no-ledger one None for both - no cost on screen, so no basis to state.
+    import usage_ledger as _ul
+    _pb = _up_full.get("pricingBasis")
+    check("up1a the populated payload carries the resolver's answer and the "
+          "phrase rate_basis_phrase builds from it, not a retyped one: %r"
+          % (_up_full.get("rateBasis"),),
+          isinstance(_pb, dict) and set(_pb) == {"basis", "asOf", "source",
+                                              "pricedWhenWritten"}
+          and _pb["basis"] in _ul.PRICING_BASES
+          and _up_full.get("rateBasis") == _ul.rate_basis_phrase(_pb))
+    check("up1b ...and the no-ledger payload carries None for both - a basis "
+          "with no cost beside it is noise",
+          _up_empty["pricingBasis"] is None and _up_empty["rateBasis"] is None)
     check("up2 ...and one level down, where `counts` was the second literal "
           "nobody was comparing either: %r"
           % (sorted(set(_up_empty["counts"]) ^ set(_up_full["counts"])),),
@@ -319,8 +310,7 @@ def _cases(check):
           "CONFIG-derived keys overridden - it writes no data key of its own, "
           "so a key added to the shape reaches it without anyone remembering "
           "to add it twice: %r" % (_up_differs,),
-          set(_up_differs) <= {"enabled", "ledgerDir", "showCost",
-                               "pricingAsOf", "pricingAsOfDeclared", "bands"})
+          set(_up_differs) <= {"enabled", "ledgerDir", "showCost", "bands"})
     _up_ok, _up_msg = _harness.attempt(M._usage_shape, phaseTitle={})
     check("up4 _usage_shape REFUSES a key the payload has no room for - a "
           "typo'd override is the exact defect it exists to prevent, and "
@@ -396,8 +386,44 @@ def _cases(check):
               "phaseAreas": {"P1": ["a"]}, "areaOwners": {"a": "jo@x"},
               "contextShape": {}})
 
+    _read_time_pricing_cases(check, tmp, _atomic_write_json)
 
     shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _read_time_pricing_cases(check, tmp, write_json):
+    """A ledger stored at another table: the tab ships the resolved table's
+    figure, since the phrase beside it names that table, and a row with no
+    token fields keeps its stored figure and is counted in the phrase."""
+    proj = os.path.join(tmp, "rt-proj")
+    os.makedirs(os.path.join(proj, ".claude", "usage"))
+    write_json(_paths._config_path(proj), {})
+    mpath = _paths._manifest_path(proj, _paths.read_config(proj))
+    os.makedirs(os.path.dirname(mpath), exist_ok=True)
+    write_json(mpath, {"meta": {"version": 2}, "phases": []})
+    base = {"ts": "2026-08-01T10", "sessionId": "s", "phaseId": "P1",
+            "taskId": "P1.1", "attr": "task", "model": "claude-opus-5",
+            "author": "a@x.io", "msgs": 1}
+    priced = dict(base, costUSD=15.0, **{"in": 1000000, "out": 0,
+                                          "cacheW5m": 0, "cacheW1h": 0,
+                                          "cacheR": 0})
+    kept = dict(base, ts="2026-08-02T10", costUSD=2.5)
+    with open(os.path.join(proj, ".claude", "usage", "2026-08.jsonl"), "w",
+              encoding="utf-8") as fh:
+        for row in (priced, kept):
+            fh.write(json.dumps(row) + "\n")
+    u = M.usage_state(proj)
+    at = list(u.get("fields") or []).index("cost") if u.get("fields") else None
+    costs = sorted(f[at] for f in u.get("facts") or []) if at is not None else []
+    check("rt1 the tab's facts carry the resolved table's figure (5.00 for 1M "
+          "opus-5 input) beside the kept row's stored 2.50, never the 15.00 "
+          "stored at another table: %r" % (costs,),
+          costs == [2.5, 5.0])
+    check("rt2 ...and its rate phrase counts the row priced when written, with "
+          "the count as data beside it: %r %r"
+          % (u.get("rateBasis"), u.get("pricingBasis")),
+          "1 row(s) keep the cost stored when written" in (u.get("rateBasis") or "")
+          and (u.get("pricingBasis") or {}).get("pricedWhenWritten") == 1)
 
 
 def _selftest():

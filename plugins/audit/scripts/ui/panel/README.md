@@ -45,8 +45,8 @@ views, the CSV export after the usage metrics). Moving either would be a regroup
 | `ado-connector.js` | The Azure DevOps connector card inside Composition — API-only `meta.ado`, saved through `PUT /api/ado`. |
 | `theme-state.js` | The theme draft: token values, layout and density, the undo stack, and what a save sends. |
 | `appearance-view.js` | The Appearance tab: rendering the theme editor, contrast warnings, and theme export/import. |
-| `run-status.js` | Who is driving which phase while you watch — the poll and the badges it owns. |
-| `overview.js` | Out-of-band change handling (the file moved under you), the Overview rollup, and the recorded-test-run badges in a phase's detail — the verdict, the observations beside it, and the run a reader can open. |
+| `run-status.js` | Who is driving which phase while you watch — the poll and the badges it owns. It also owns the page's belief about liveness (`OFFLINE`, written only by the poll's own `runOffline`), which `write-confirmation.js` reads before sending a save. |
+| `overview.js` | Out-of-band change handling (the file moved under you), the Overview rollup, and the recorded-test-run badges in a phase's detail — the verdict, the observations beside it, and the run a reader can open. Defines `planState`, a helper `composition.js`, `policy-view.js` and `proposals-view.js` all call rather than re-deriving. |
 | `policy-state.js` | The capability policy draft: rules, patterns, which area columns the table draws, and what changed against the server's copy. |
 | `policy-view.js` | The policy switchboard's rendering: the capability table, the full-list dialog, and the per-rule cells. |
 | `usage-model.js` | One usage filter state, the dimensions derived from it, and the number formatters that mirror `_fmt.py`. |

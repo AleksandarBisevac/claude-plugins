@@ -238,15 +238,10 @@ never hardcode branch names, package ids, skills, or build tools here:
 
 ## Readiness rule
 
-A task is **ready** when ALL of:
-1. its `status == "pending"`;
-2. its **own** `blockedBy` is fully satisfied;
-3. its **own** `dependsOn` is fully satisfied — every listed task-id must be `status == "done"`;
-4. its **phase's** `blockedBy` is fully satisfied.
-
-"Satisfied": a **task id** → that task's `status == "done"`; a **phase id** → that phase reads
-`done` by its **derived** status (`_manifest_io.effective_phase_status`): a stored `done`, or every
-task terminal with a sign-off verdict recorded and, for a phase with a branch, `mergedAt` stamped.
+Which tasks are ready is computed, not followed: `_status_facts.ready_tasks()` lists them under
+`/audit:status`'s READY NOW, `_status_facts.unmet_refs()` names what each other task waits on, and
+`audit-task.py start` refuses a task with an unmet reference unless `--force --reason`, which
+its `task.start` row records.
 
 A phase becomes `done` only after `reference/phase-signoff.md`'s **Phase sign-off**, whose verb
 records the verdict and then stores the status that verdict derives — `done` at once for a phase
@@ -360,7 +355,12 @@ liveness is unknowable: no pid recorded, or a lock from another host. **Never se
 exit 3 by looking at `startedAt` yourself** — that is the rule the script exists to replace.
 
 **Release** at the END of the command, including failure paths you control — **unless the acquire
-in that step answered that the lock was already yours**, in which case it is not yours to give back:
+in that step answered that the lock was already yours**, in which case it is not yours to give back.
+A resumed run whose own lock named a gone pid is answered `acquired` (re-recorded under the
+process `CLAUDE_PID` names), so it releases that lock too; with no `CLAUDE_PID` exported the lock
+reads dead and meets exit 4 like any other dead holder (`_locks.acquire`). A start's yielding lock
+is superseded under your note rather than re-recorded, and a hand start that re-records your lock
+keeps your note, so sign-off leaves it and the release stays yours:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py" release <name> --project <gitRoot>
@@ -413,6 +413,9 @@ driven through the verbs never got a branch; the verb performs it now, before it
   not record. On a refusal, **STOP and ask the human** — do not branch by hand to get past it.
 - Outside a git repository the phase runs with no branch, and the verb says so. `/audit:doctor`
   names any running phase that has no branch.
+- **The same write also claims the phase (sharded layout) and checks readiness, and both refusals
+  are `start`'s**: relay either the way `reference/manifest-conventions.md` → *The operator's
+  words go in unchanged* states.
 
 **During task execution:** all edits and commits happen on the phase branch. **Push remains FORBIDDEN** — local only.
 
@@ -698,7 +701,8 @@ green without a tracked bug behind it.
      gates pass, finish + commit; if partial, **ask the human** whether to discard (`git checkout -- <files>`) and re-run.
      Never discard without confirmation.
    - `status == "pending"` → resume normally: read `reference/execute-task.md` and follow
-     **Execute the task**.
+     **Execute the task** — whose step 1/2 cover what to do on a readiness or claim refusal from
+     `start`.
 4. Continue normal execution from the resume point — reading `reference/execute-task.md` and, once
    every task in the phase is `done`, `reference/phase-signoff.md` when you reach them, rather than
    up front: a run that resumes into a `done`-but-uncommitted phase or a fully-blocked one may need

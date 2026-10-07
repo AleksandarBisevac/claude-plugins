@@ -116,6 +116,30 @@ TITLE_NOUNS = ("the checkout payload", "the session cookie", "the product query"
                "the image pipeline", "the retry policy", "the audit log",
                "the feature flags", "the webhook handler", "the search index")
 
+# The fixture's OWN declared rate table, written into `.claude/audit.config.json`
+# by `write_config()` - a literal, the same way `examples/acme-store`'s committed
+# config carries one, rather than a read of `_usage_core.DEFAULT_PRICING`. A row
+# is priced once, with the project's own table: pointing this at the shipped
+# constant would mean every committed artifact `gen-demo-usage.py` prices from
+# this fixture moves the day that constant does, which is the drift a declared
+# table exists to stop. The figures were copied from the shipped table while it
+# was dated CONFIG_PRICING_AS_OF and are frozen there on purpose, so they are free
+# to fall behind it; `tests/test_gen_demo_manifest.py` pins the shape and the
+# date this table carries, never the figures.
+#
+# CONFIG_PRICING_AS_OF is that date, and the one the fixture's
+# `meta.usage.pricingAsOf` prints beside every figure priced from this table.
+# It is NOT the shipped table's date: that moves when the shipped rates do, and a
+# demo dated by it would claim a basis its numbers did not come from.
+CONFIG_PRICING_AS_OF = "2026-08-06"
+CONFIG_PRICING = {
+    "_default":          {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
+    "claude-opus-5":     {"in":  5.0, "out": 25.0, "cacheW5m":  6.25, "cacheW1h": 10.0, "cacheR": 0.5},
+    "claude-sonnet-5":   {"in":  3.0, "out": 15.0, "cacheW5m":  3.75, "cacheW1h":  6.0, "cacheR": 0.3},
+    "claude-haiku-4-5":  {"in":  1.0, "out":  5.0, "cacheW5m":  1.25, "cacheW1h":  2.0, "cacheR": 0.1},
+    "claude-fable-5":    {"in": 10.0, "out": 50.0, "cacheW5m": 12.50, "cacheW1h": 20.0, "cacheR": 1.0},
+}
+
 
 # --- generation -----------------------------------------------------------------
 def _load_manifest_io():
@@ -403,13 +427,12 @@ def _demo_areas():
 # on POLICY rather than on capability, and telling those two apart is the whole
 # point of this section.
 #
-# A claim is a LIVE LEASE — which session, on which host, on which branch is running
-# this phase right now — released when the phase finishes. The DEFAULT output of
+# A claim is a LIVE LEASE — which session, on which branch, is running this phase
+# right now — released when the phase finishes. The DEFAULT output of
 # this generator is what `docs/demo-large.html` and the `docs/screenshots/panel-*`
 # set are built from, and both are COMMITTED. A lease in that output publishes a
 # demo permanently held by a session that does not exist, `/audit:doctor` reports it
-# as a stale claim on the page that exists to show a healthy run, and `claim.host`
-# publishes whoever generated it.
+# as a stale claim on the page that exists to show a healthy run.
 #
 # Every word of that is about what this generator PUBLISHES; none of it is about
 # what it can produce. So the lease is available on request and by nothing else:
@@ -432,9 +455,11 @@ def _demo_areas():
 # EVERY VALUE IS A FIXED LITERAL OR DERIVED FROM THE FIXTURE. Nothing here reads the
 # machine, the environment or the clock, and that is a structural property rather
 # than a matter of care: `tests/test_gen_demo_manifest.py` parses this file and
-# fails on an identifier that could reach any of them. The `.invalid` top-level
-# domain is reserved by RFC 2606, so "resolves to nobody" is a fact about the name.
-CLAIM_HOST = "runner.demo.invalid"
+# fails on an identifier that could reach any of them.
+#
+# NO `host`, though the schema allows one: the lease has the shape `audit-task
+# start` writes, and that verb writes none because the shard a claim lives in is
+# committed and a machine name there would be published.
 CLAIM_SESSION_PREFIX = "demo-session"
 
 
@@ -459,7 +484,6 @@ def _claim_for(phase):
         return None
     return {
         "sessionId": "%s-%s" % (CLAIM_SESSION_PREFIX, str(phase.get("id")).lower()),
-        "host": CLAIM_HOST,
         "branch": phase["branch"],
         "at": starts[0],
     }
@@ -820,7 +844,7 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
             # to show what a well-formed one looks like. The fixture was the
             # defect there, not the renderer.
             "usage": {"ledgerDir": ".claude/usage", "showCost": True,
-                      "pricingAsOf": "2026-08-06"},
+                      "pricingAsOf": CONFIG_PRICING_AS_OF},
             "areas": areas,
             # Connector v2: configured so the ADO card has a form to show; the
             # links above make its banner read 'linked' rather than 'unverified'.
@@ -1109,7 +1133,7 @@ SCHEMA_EXEMPTIONS = {
         "shard pointer would name a file that form does not have; the write path "
         "is pinned by the sharded round-trip cases.",
     "phase.claim":
-        "a LIVE lease: which session, host and branch is running this phase right "
+        "a LIVE lease: which session and branch is running this phase right "
         "now, released when the phase finishes. The DEFAULT output is what "
         "docs/demo-large.html and the panel screenshots are built from and both "
         "are committed, so a lease there publishes a demo permanently held by a "
@@ -1194,10 +1218,11 @@ SCHEMA_EXEMPTIONS = {
         "branch a lease nobody holds would name is not a fact about the demo. "
         "Under with_claim it is the phase's own branch, not a second invention.",
     "claim.host":
-        "a field of phase.claim, which the default fixture does not take: a host "
-        "name is the one part of a claim that would publish whoever generated it. "
-        "Under with_claim it is CLAIM_HOST, a reserved .invalid name that resolves "
-        "to nobody, and the suite parses this file to keep it that way.",
+        "a field of phase.claim that no claim the plugin writes carries: the "
+        "shard a claim lives in is committed, so a host name there would publish "
+        "the machine that wrote it, and `audit-task start` writes none. Neither "
+        "the default fixture nor with_claim carries one, so the lease the suite "
+        "builds has the shape the plugin writes.",
     "claim.sessionId":
         "a field of phase.claim, which the default fixture does not take: a "
         "session id invented for a published fixture is exactly the stale claim "
@@ -2298,7 +2323,7 @@ def write_evidence(manifest, out_dir):
     return written
 
 
-def write_config(out_dir):
+def write_config(out_dir, manifest):
     """Write `.claude/audit.config.json` pointing at the manifest we just wrote.
 
     Without this the fixture is unusable by the very surfaces it exists to
@@ -2314,15 +2339,30 @@ def write_config(out_dir):
     would be reporting a property of the FIXTURE as if it were a property of the
     product, and the marks would land in a committed artifact this repo diffs
     byte-for-byte against a fresh render.
+
+    `usage.pricing` is `CONFIG_PRICING`, the same acme-style literal table
+    `gen-demo-usage.py` then reads beside this file to price the ledger - the
+    fix that made a committed ledger stop moving every time the shipped
+    `DEFAULT_PRICING` does. `usage.pricingAsOf` is read off `manifest` rather than
+    restated as a second literal, so the two can never name different dates for
+    the same table - trimmed the same way every other reader of this key
+    trims it (`panel/_panel_paths.py`, `panel/_panel_usage.py`,
+    `report/_usage_load.py`, `status/audit-status.py`, `usage/audit-usage.py`),
+    so a hand-edited manifest's padded or blank date is not this generator's
+    own fifth answer to what the OTHER five already agree on.
     """
     cfg_dir = os.path.join(out_dir, ".claude")
     os.makedirs(cfg_dir, exist_ok=True)
     path = os.path.join(cfg_dir, "audit.config.json")
+    _as_of_raw = ((manifest.get("meta") or {}).get("usage") or {}).get("pricingAsOf")
+    pricing_as_of = (_as_of_raw.strip() or None) if isinstance(_as_of_raw, str) else None
     # Through the plugin's one JSON writer rather than a `json.dump` of its own:
     # a fixture written with a second escaping is a fixture that re-spells itself
     # the first time a real command touches it.
     _load_manifest_io().atomic_write_json(
-        path, {"manifestPath": "audit-plan.json", "portability": "off"}, indent=2)
+        path, {"manifestPath": "audit-plan.json", "portability": "off",
+               "usage": {"pricingAsOf": pricing_as_of, "pricing": CONFIG_PRICING}},
+        indent=2)
     return path
 
 
@@ -2347,7 +2387,7 @@ def write_manifest(manifest, out_dir, single_file=False):
         written = [index_path]
     else:
         written = mio.save_sharded(index_path, manifest)
-    written.append(write_config(out_dir))
+    written.append(write_config(out_dir, manifest))
     # ...AND THE LEDGER THE POINTERS NAME. A fixture that wrote the plan and not
     # the record would publish a `testEvidence` block resolving to nothing, which
     # every surface renders as `Pointer without evidence` - the one state a demo

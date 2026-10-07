@@ -6,21 +6,45 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ## [Unreleased]
 
-### Fixed
-- **A stamp now goes stale when a sibling rewrites a file the task does not declare.**
-  `stamp-verification.py compare` answered `current`, exit 0, after an already-dirty undeclared
-  file was rewritten: the three identity fields record HEAD, the declared files' contents and
-  WHICH paths were dirty, never the other files' bytes. A stamp is now version 2 and carries a
-  `content` field, which is `_tree_stamp.content_digest` over the tree with the paths this
-  plugin's recorder writes left out (`_evidence_io.recorded_paths`, derived again at compare
-  time from the manifest the stamp stores). It also carries a bounded per-path list of the
-  dirty set, so a stale answer prints a `moved:` line naming the path that moved; over the
-  bound (`_tree_stamp.DIRTY_PATHS_LIMIT`) the list is not kept and the line says so. A
-  version-1 token still compares, on its three fields, and says that it carries no content
-  field. Gate rows are unchanged: `dirtyDigest` and the row shape `tested_state` writes do not
-  move. `reference/execute-task.md` lists the new field and its limits.
+### Added
+- **`audit-status.py` and `render-report.py` take the manifest as an optional argument.**
+  Given none, they find it themselves through one shared resolver,
+  `_manifest_io.resolve_manifest`: the `manifestPath` that `.claude/audit.config.json` names
+  under the project (`CLAUDE_PROJECT_DIR`, else the working directory), else
+  `docs/audit/audit-plan.json` there. An absolute `manifestPath` is used as given, the way the
+  hooks already read it. `audit-usage.py` asks the same resolver, so the three scripts behind the
+  first-contact commands agree on which plan is the project's.
 
 ### Changed
+- **`/audit:status`, `/audit:report` and `/audit:usage` refuse when the config names a manifest
+  they cannot use.** A `.claude/audit.config.json` that does not parse, or whose `manifestPath`
+  names a file that does not exist, makes each of them exit 2 and print the same refusal
+  (`_manifest_io.describe_unresolved`): every place it looked, what it found there, and the ways
+  forward. None of them falls back to `docs/audit/audit-plan.json` in that case, because that
+  is a different plan from the one the project points at. For `/audit:usage` this replaces
+  rendering with no plan, which read `meta.usage` off nothing and so showed equivalent cost for a
+  project whose plan sets `showCost: false`. With no config and no plan at the default location,
+  `/audit:usage` still renders the ledger and says it has no plan, and `/audit:status` and
+  `/audit:report` exit 2 naming where they looked. A plan that is found but cannot be loaded -
+  it does not parse, a shard of a sharded plan is missing, or an explicit argument names a file
+  that is not there - makes all three exit 2 with the same `cannot read/parse <path>` line;
+  `/audit:usage` used to render that case with an empty plan, whose `showCost` defaults to on.
+- **`/audit:usage` prints no dollar figure when `showCost` is false.** The cost-band thresholds
+  and the routing advice's re-priced figures were printed regardless of the setting, unlike the
+  totals beside them. With `showCost` off the band line names its basis and says the thresholds
+  are withheld, and the routing advice states its saving as a share.
+- **`/audit:usage --json` keeps its cost fields beside `showCost`, which the payload now carries
+  at top level.** `showCost` is a render setting - the schema describes it as rendering
+  equivalent API cost alongside token counts - so a machine consumer deciding whether to print a
+  dollar figure needs the setting next to the data, not withheld with it.
+
+- **The first-contact commands no longer hand their script a `<manifestPath>` placeholder.**
+  `/audit:status`, `/audit:usage`, `/audit:report` and `/audit:next` used to leave the model to
+  fill the manifest path in, and a command that reads no reference stating the default got a
+  guess, said out loud. The scripts now find the manifest themselves, and
+  `_refs.manifest_placeholder_drift` reports a command line that hands a self-resolving script
+  the placeholder, including one written over backslash-continued lines.
+
 - **`audit-task.py done` and `close-phase.py` refuse to close over a verdict that no longer
   holds** — except where there is no measurement to vouch for in the first place: no run is
   recorded under the gate, the newest row answers `empty-gate`, the phase's branch has already
@@ -36,6 +60,108 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   exits 1 having merged or written nothing. A sign-off given no `--no-evidence-reason` now drops
   an earlier `review.noEvidenceReason` instead of letting it outlive the sign-off that recorded
   it and excuse a later landing over a verdict that one no longer backs.
+
+- **A panel URL without its session token now answers 403.** The panel page carries the
+  per-launch token substituted into it, so `GET /` is held to the same token check every API
+  call already was; before, a request that passed only the host check was handed the page and
+  the token in it. The refusal is plain text, because a person reads it in a browser tab: it
+  says where the full URL is (`/audit:panel status` for whether the panel runs,
+  `.claude/audit-panel.json` for the URL itself, or a relaunch) and echoes no token. The URL
+  `--status` prints is redacted and does not open the page; `commands/panel.md` says so, and
+  that the browser was opened with the full one.
+
+- **One price table per project, chosen the same way on every surface, and every printed cost
+  priced at read time by the table its phrase names.**
+  - *One precedence.* The report and its Markdown twin, `/audit:usage` and its `--backfill`,
+    `/audit:status`, the panel and the meter hook all ask `usage_ledger.resolve_pricing`: the
+    plan's `meta.usage.pricing` when it declares a non-empty table, else the config's
+    `usage.pricing`, else the shipped table. **The meter and the panel used to read only the
+    config**, so on a project that declares a table in both places they now price at the plan's
+    table where they priced at the config's.
+  - *The plan's table is laid over the shipped one.* A table in `meta.usage.pricing` used to be
+    taken as written, so a model it did not name was priced at that table's own fallback; it is
+    now laid over the shipped table model by model, the way the config's table already was, and
+    a model it does not name keeps its shipped row.
+  - *The shipped rates changed.* The shipped table carries the official rates as of its
+    `pricingAsOf` (2026-10-06) with the page they were read from, adding rows for models it did
+    not name and lowering `claude-sonnet-5`'s; a project that declares no table sees its costs
+    move with it.
+  - *Costs are priced at read time.* A ledger row still stores the cost it was priced at when
+    written, and the ledger is never rewritten, but every surface now prints the resolved
+    table's price for each row's tokens rather than the stored figure, so changing a table
+    reprices what is printed. A row that cannot be priced again keeps its stored figure, and
+    the rate phrase beside the cost counts those rows; the meter hook's outlier advisory and
+    session line carry no rate phrase and instead say how many of those rows the figure they
+    print rests on.
+  - *One date for the price table on a page.* The report's stale-price notice is dated from the
+    table the resolver chose and names it in the same words as the cost line; a
+    `meta.usage.pricingAsOf` beside no `meta.usage.pricing` no longer raises a notice about a
+    table that priced nothing. The report's usage payload drops its separate `pricingAsOf` and
+    the panel's drops both `pricingAsOf` and `pricingAsOfDeclared`, neither of which any panel
+    script read — the date beside a panel cost is `pricingBasis.asOf`, the same resolved answer
+    the report and the meter hook already name theirs from.
+
+  **Against `COMPATIBILITY.md`.** No precedence that document had written down changes: its list
+  under *When two keys can express the same thing, which one wins is written down* named only
+  `planGate` over `enforce`, and this release adds the pricing order to it. But its version
+  table names *a changed precedence* as what a MAJOR carries, and on the meter and the panel
+  which of the plan's and the config's tables wins did change, as did how a plan table that
+  omits a model is priced. The shipped-rate change is the case its *Not promised* list names
+  (*That a default value is frozen*), and printed output is outside the document. Whether this
+  release is therefore a major is the operator's call, and is not decided here.
+
+### Fixed
+- **The meter's outlier advisory no longer counts a kept ledger row from outside the task
+  it is warning about.** It used to sum `ledger["kept"]` over every row the ledger holds, so a
+  row that kept its stored figure on some unrelated task inflated the "N ledger row(s) keep the
+  cost stored when written" clause beside a figure that never summed that row at all. It now
+  counts only the warned task's own rows, plus — on the relative basis — the completed tasks
+  `cost_bands()` read to calibrate its percentiles; the absolute basis reads no task's history
+  at all, so it extends no further than the task itself. The session line was already scoped to
+  the session's own rows and is unchanged; a case now locks that in.
+- **The panel's Usage-tab CSV export drops `costUSD`, header and cell together, when `showCost`
+  is off** — the same rule `report/exports.js`'s `usageCsv` already applies, so a file saved
+  from either surface never carries a dollar figure the screen was configured to withhold. The
+  `/api/usage` payload keeps its cost data regardless: it is the page's own, token-protected
+  data source read over localhost by the same tab about to render it, never a file a reader
+  saves and hands around.
+- **The Settings help for `usage.pricingAsOf` said an unset field leaves BOTH the report and
+  the Usage tab calling the rates undated, which is true only when the project's own
+  `usage.pricing` table is the one in force.** It now says what `rate_basis_phrase` actually
+  does: the field dates this project's own table and nothing else, it is printed only when that
+  table is the one that priced the rows, and "rates undated" is never said of the shipped
+  table, which already carries its own date.
+
+- **A stamp now goes stale when a sibling rewrites a file the task does not declare.**
+  `stamp-verification.py compare` answered `current`, exit 0, after an already-dirty undeclared
+  file was rewritten: the three identity fields record HEAD, the declared files' contents and
+  WHICH paths were dirty, never the other files' bytes. A stamp is now version 2 and carries a
+  `content` field, which is `_tree_stamp.content_digest` over the tree with the paths this
+  plugin's recorder writes left out (`_evidence_io.recorded_paths`, derived again at compare
+  time from the manifest the stamp stores). It also carries a bounded per-path list of the
+  dirty set, so a stale answer prints a `moved:` line naming the path that moved; over the
+  bound (`_tree_stamp.DIRTY_PATHS_LIMIT`) the list is not kept and the line says so. A
+  version-1 token still compares, on its three fields, and says that it carries no content
+  field. Gate rows are unchanged: `dirtyDigest` and the row shape `tested_state` writes do not
+  move. `reference/execute-task.md` lists the new field and its limits.
+
+- **A launch killed while writing the pidfile no longer leaves its token in an untracked
+  file.** The pidfile is written to an `audit-panel.json.tmp-*` sibling and renamed into
+  place; a launch killed between the two left the sibling behind, outside every ignore rule.
+  The panel's own `.claude/.gitignore` rows now cover that name, and the next launch or
+  `--stop` removes any such file, warning on one it cannot. A pidfile an older build left at a
+  wider mode is narrowed to owner-only when `--status` or a launch that finds a panel already
+  running reads it, on POSIX; the docstring claiming owner-only now limits that claim to POSIX.
+
+- **The demo recorder's after-take report names both places it searched when nothing was left
+  behind, and states an isolated take's config removal only after checking it.** An empty report
+  used to name only the config directory, dropping the trust file entirely whenever
+  `CLAUDE_CONFIG_DIR` is unset and the two sit apart - the global config's trust entries live
+  beside `HOME`, everything else the take writes under `HOME/.claude`. It now names both. Under
+  an isolated take the report used to assert the kit's config was "removed" before the kit's own
+  cleanup ever ran; `tools/capture-demo-gif.py` now removes that take's own config directory and
+  checks it is gone before printing the line, and says so when a removal cannot complete instead
+  of claiming one happened.
 
 ## [3.1.0] - 2026-10-05
 

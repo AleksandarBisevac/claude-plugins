@@ -1,7 +1,7 @@
 {
   "id": "P104",
   "title": "the cost a user sees is the cost they paid",
-  "status": "pending",
+  "status": "done",
   "description": "Tasks: (1) Price table rows for claude-opus-5-5, claude-sonnet-5 at its current price and claude-fable-5-1 (cache read 0.25), with pricingAsOf and the source URL; the hook-side copy stays equal through pricing_divergences. (2) Print attribution coverage beside every cost-per-task figure (tasks with any attributed tokens / tasks done; main loop not attributed). (3) Pilot reading Claude Code's own costUSD or OTel cost instead of the plugin's table, and retire the table if it holds.",
   "desiredOutcome": "every cost the plugin prints uses current official prices with their date and source, and every per-task cost says how much of the work it actually attributes",
   "testGate": [
@@ -15,27 +15,249 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
-  "mergedAt": null,
+  "baseRef": "80a7eed2f52726a06ca43309b66a08a04fda1ab4",
+  "branch": "audit/p104-the-cost-a-user-sees-is-the-co",
+  "mergedAt": "2026-10-07T06:45:06Z",
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P104-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/report/_usage_overview.py:100-122; _usage_markdown.py:85-86; audit-usage.py:352-361; ui/panel/usage-view.js:80-90; status/audit-status.py:1253-1255",
+        "issue": "The phase outcome says every cost is printed with its date and source, but no surface prints the source: PRICING_SOURCE_URL and pricing_provenance_divergences() are read only by tests, and the report, its Markdown twin, /audit:usage, the panel and /audit:status print only 'rates as of <date>' or 'rates undated'.",
+        "resolution": "fixed in P104.11-tog (308189d6): Extend the one rate-basis phrase each surface prints so it names the source beside the date (the shipped table's source URL, or the project's own usage.pricing), built in one Python helper the report, twin, CLI and status call, served to the panel in its payload, with a pin per surface.",
+        "fixTask": "P104.11-tog",
+        "commit": "308189d6"
+      },
+      {
+        "id": "P104-R2",
+        "severity": "med",
+        "file": "plugins/audit/scripts/report/_usage_load.py:426-461; usage/audit-usage.py:459-460,969; panel/_panel_usage.py:248-249",
+        "issue": "The surfaces resolve three different rate tables for one project: the report takes the manifest's meta.usage.pricing then the config overlay, /audit:usage routing takes the manifest's then the shipped table and never the config, and the panel takes only the config overlay; usage_cfg() overlays the config table on the shipped one model by model, and no user document states the precedence. Backfill prices with the manifest's or shipped table while the meter hook prices live rows with the config overlay.",
+        "resolution": "fixed in P104.10-tog (59285dfe): One resolver in the usage layer (manifest table if declared, else the config overlay, else shipped), called by the report loader, the CLI, the panel and backfill, with a case proving all agree on a config-only project, and the precedence documented next to usage.pricing.",
+        "fixTask": "P104.10-tog",
+        "commit": "59285dfe"
+      },
+      {
+        "id": "P104-R3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/report/_usage_detail.py:336-351; ui/panel/usage-view.js:349-352",
+        "issue": "The HTML report's unit-economics projection and band note, and the panel's projection fact, print per-task dollar figures with no coverage sentence.",
+        "resolution": "fixed in P104.11-tog (308189d6): Print the coverage sentence once at the head of the HTML economics block and under the panel's projection, gated on showCost, and pin both.",
+        "fixTask": "P104.11-tog",
+        "commit": "308189d6"
+      },
+      {
+        "id": "P104-R4",
+        "severity": "low",
+        "file": "CONTRIBUTING.md:1084-1151",
+        "issue": "The pilot's Decision record entry says in the present tense that the ledger keeps the first entry per id, in scan_transcripts, and that the defect is still to be fixed; the phase fixed it, and the check was in _scan_file.",
+        "resolution": "fixed in P104.11-tog (308189d6): Rewrite it as history and point at _scan_file's provisional-count mechanism.",
+        "fixTask": "P104.11-tog",
+        "commit": "308189d6"
+      },
+      {
+        "id": "P104-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/report/_usage_load.py:383-416; scripts/demo/gen-demo-usage.py:192-208",
+        "issue": "Both docstrings say they return None when no pricing table is declared, but both return the merged shipped table whenever the config parses; a comment beside them is wrong for the same reason.",
+        "resolution": "fixed in P104.10-tog (59285dfe): Fold into the single resolver, or correct the docstrings and comment to the overlay they return.",
+        "fixTask": "P104.10-tog",
+        "commit": "59285dfe"
+      },
+      {
+        "id": "P104-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/ui/panel/usage-metrics.js:633-648; tools/ui-tests/usage-edges.test.mjs:241-254; usage/_usage_economics.py:860-883",
+        "issue": "The panel retypes the coverage sentence, guarded only by a comment that names the wrong function; each suite pins its own literal, so a wording change on one side leaves both green; _coverage_sentence is private but imported by four modules.",
+        "resolution": "fixed in P104.11-tog (308189d6): Make it a public coverage_sentence re-exported with its peers, fix the comment, and add one parity case comparing Python's sentence with the panel's for the same inputs.",
+        "fixTask": "P104.11-tog",
+        "commit": "308189d6"
+      },
+      {
+        "id": "P104-R7",
+        "severity": "high",
+        "file": "plugins/audit/scripts/usage/_usage_economics.py:130-165; report/_usage_overview.py:111; report/_usage_markdown.py:86; usage/audit-usage.py:385; status/audit-status.py:671,1260; ui/panel/usage-view.js:85; CONTRIBUTING.md:458",
+        "issue": "The rate-basis phrase names the resolver's CURRENT table beside sums of each row's stored costUSD, which the meter and backfill priced at WRITE time with no recorded vintage; for ledger history older than the current shipped table (e.g. rows priced at the 2026-08-06 rates) every surface claims 'rates as of 2026-10-06, the plugin's shipped table' for figures that table never priced, and CONTRIBUTING.md:458 states the false claim as the rule.",
+        "resolution": "fixed in P104.13-tog (553d6c57): Make every printed cost a read-time pricing of each row's token counts with the resolved table, so the phrase is true of the figure beside it; rows that cannot be re-priced keep their stored figure and are counted and named as priced when written with no recorded rate; the ledger itself is never rewritten. Correct CONTRIBUTING.md:458 and add a case with a ledger priced at a different table than the current one, red first.",
+        "fixTask": "P104.13-tog",
+        "commit": "553d6c57"
+      },
+      {
+        "id": "P104-R8",
+        "severity": "med",
+        "file": "plugins/audit/scripts/report/_usage_load.py:293; report/_usage_overview.py:155-160",
+        "issue": "The stale-price notice still reads meta.usage.pricingAsOf while the context line names the resolver's basis, so one page can name two dates for the price table (a manifest date with no manifest table renders the shipped 2026-10-06 basis and a notice about a 2026-01-01 table), and an old dated config table or the shipped table can never trigger the notice.",
+        "resolution": "fixed in P104.14-tog (8c7b7d8e): Compute pricingStale from the resolver's asOf and word the notice with rate_basis_phrase's place; add a case with a manifest date but no manifest table asserting one date on the page.",
+        "fixTask": "P104.14-tog",
+        "commit": "8c7b7d8e"
+      },
+      {
+        "id": "P104-R9",
+        "severity": "med",
+        "file": "plugins/audit/scripts/ui/panel/usage-view.js:85,293-296,350-357,376-381",
+        "issue": "With showCost off the panel still prints the cost-per-task tile, the projection and the routing cost/task column, while this phase gated their coverage line and rate basis on showCost - so a bare per-task dollar figure is shown with neither, the state round 1 set out to remove; the report drops the dollars instead.",
+        "resolution": "fixed in P104.15-tog (f9422d8d): Gate the cost-per-task tile, the projection fact and the routing cost/task column (header and cells) on USAGE.showCost as the report does; add a vitest case for showCost=false asserting no dollar renders in those places.",
+        "fixTask": "P104.15-tog",
+        "commit": "f9422d8d"
+      },
+      {
+        "id": "P104-R10",
+        "severity": "med",
+        "file": "plugins/audit/hooks/meter-usage.py:100-110,301; scripts/panel/_panel_usage.py:423-424; CHANGELOG.md [Unreleased]; COMPATIBILITY.md",
+        "issue": "Two user-visible changes ship with no CHANGELOG entry: the meter and the panel now let a manifest's meta.usage.pricing win over the config's usage.pricing (the meter writes that result into the ledger), and the shipped rates changed (sonnet-5 rates, new model rows); COMPATIBILITY.md classes a changed precedence between two keys as a major change and nothing assesses this one.",
+        "resolution": "fixed in P104.14-tog (8c7b7d8e): Add a Changed entry under [Unreleased] for the shared precedence (manifest > config overlay > shipped) on every surface and for the shipped-rate change, and record the precedence in COMPATIBILITY.md's written-down list; whether it needs a major is the operator's release decision.",
+        "fixTask": "P104.14-tog",
+        "commit": "8c7b7d8e"
+      },
+      {
+        "id": "P104-R11",
+        "severity": "low",
+        "file": "plugins/audit/scripts/usage/_usage_core.py:262",
+        "issue": "A manifest table is used as written with no overlay, so a manifest naming one model prices every other model at the shipped _default row (and, now that the meter honours it, stores that permanently), while a config table is overlaid model by model.",
+        "resolution": "fixed in P104.13-tog (553d6c57): Overlay a manifest table on the shipped table the way the config table is, with a case for an unnamed model.",
+        "fixTask": "P104.13-tog",
+        "commit": "553d6c57"
+      },
+      {
+        "id": "P104-R12",
+        "severity": "low",
+        "file": "plugins/audit/README.md:673",
+        "issue": "The usage.currency / pricingAsOf row still says the rate table is '(undated until you set it)', but a project with no table of its own is now shown the shipped table's date and source.",
+        "resolution": "fixed in P104.14-tog (8c7b7d8e): Reword it to match rate_basis_phrase: shipped rates carry their own date and page; a project's own table is undated until it sets pricingAsOf beside it.",
+        "fixTask": "P104.14-tog",
+        "commit": "8c7b7d8e"
+      },
+      {
+        "id": "P104-R13",
+        "severity": "low",
+        "file": "plugins/audit/scripts/panel/_panel_usage.py:92,396",
+        "issue": "pricingAsOfDeclared is still served and pinned by test__panel_usage but no panel script reads it any more - a payload key with no reader.",
+        "resolution": "fixed in P104.14-tog (8c7b7d8e): Drop it with its cases, or name its consumer.",
+        "fixTask": "P104.14-tog",
+        "commit": "8c7b7d8e"
+      },
+      {
+        "id": "P104-R14",
+        "severity": "med",
+        "file": "plugins/audit/scripts/ui/panel/browse-dialog.js:22-33,134-138,190",
+        "issue": "With showCost off the Usage tab's 'browse all' dialog still prints per-task dollars: every column set includes cost and the cell renders uCost(r.cost) ungated, and for dim=task the band note prints dollar thresholds - while the task that gated the tab claims no per-task dollar figure anywhere, and the report withholds the same figures.",
+        "resolution": "fixed in P104.16-tog (ce3ede07): Drop the cost column (header and cells) and the band note's dollar thresholds when showCost is off, keeping the band names; a vitest case opening the browse dialog for tasks with showCost off asserts no dollar figure, with its showCost-on twin.",
+        "fixTask": "P104.16-tog",
+        "commit": "ce3ede07"
+      },
+      {
+        "id": "P104-R15",
+        "severity": "low",
+        "file": "plugins/audit/scripts/ui/panel/usage-cards.js:17-52; tools/ui-tests/usage-edges.test.mjs:443-449",
+        "issue": "uBudgets prints dollar amounts for each budgeted phase with no showCost gate (the report gates its budget block), and the 'no dollar figure anywhere on the tab' case passes only because its fixture declares no phaseBudgets.",
+        "resolution": "fixed in P104.16-tog (ce3ede07): Gate the budget amounts on showCost as the report does, and give the case's fixture a phase budget so it can fail on that path.",
+        "fixTask": "P104.16-tog",
+        "commit": "ce3ede07"
+      },
+      {
+        "id": "P104-R16",
+        "severity": "low",
+        "file": "plugins/audit/hooks/meter-usage.py:165-166,179,221-231",
+        "issue": "The advisory's docstring states a measured figure that no longer describes the code (it now re-prices every row), and on SessionEnd advise and session_summary each read and re-price the whole ledger.",
+        "resolution": "fixed in P104.17-tog (8f84edad): Re-measure and carry the command, or drop the number and keep the reasoning; read and price the ledger once per meter() and hand the rows to both.",
+        "fixTask": "P104.17-tog",
+        "commit": "8f84edad"
+      },
+      {
+        "id": "P104-R17",
+        "severity": "low",
+        "file": "plugins/audit/hooks/meter-usage.py:179,221-231; CHANGELOG.md; plugins/audit/README.md",
+        "issue": "The meter's session line and outlier advisory print dollars from re-priced rows but drop pricedWhenWritten and print no rate phrase, while the CHANGELOG and README say every surface's phrase counts the rows that kept their stored figure.",
+        "resolution": "fixed in P104.17-tog (8f84edad): Append the kept-row count when it is above zero, or narrow the CHANGELOG and README sentences to the surfaces that print a phrase.",
+        "fixTask": "P104.17-tog",
+        "commit": "8f84edad"
+      },
+      {
+        "id": "P104-R18",
+        "severity": "low",
+        "file": "plugins/audit/scripts/panel/_panel_paths.py:124-137; panel/_panel_state.py:135; panel/panel-server.py:161; panel/_panel_usage.py:376-379; usage/audit-usage.py:326; status/audit-status.py:662",
+        "issue": "_panel_paths._declared_as_of is now dead code reached only through two aliases and a test, its docstring is false, and three comments still name it, or a removed report trim, as where the date is trimmed.",
+        "resolution": "fixed in P104.17-tog (8f84edad): Delete the helper, its aliases and its test, or give it an honest docstring; point the comments at _usage_core._declared_as_of.",
+        "fixTask": "P104.17-tog",
+        "commit": "8f84edad"
+      },
+      {
+        "id": "P104-R19",
+        "severity": "low",
+        "file": "plugins/audit/scripts/panel/_panel_usage.py:383-391",
+        "issue": "The /api/usage payload still ships the merged config pricingAsOf beside pricingBasis.asOf; no panel script reads it and it can date a table that priced nothing.",
+        "resolution": "fixed in P104.17-tog (8f84edad): Drop the key and its pins, or name its reader and serve the resolver's asOf instead.",
+        "fixTask": "P104.17-tog",
+        "commit": "8f84edad"
+      },
+      {
+        "id": "P104-R20",
+        "severity": "med",
+        "file": "plugins/audit/scripts/ui/panel/usage-metrics.js uCsvText; plugins/audit/scripts/panel/_panel_usage.py usage_state",
+        "issue": "With showCost false the panel's Usage-tab Export CSV still writes a costUSD column with every row's dollar figure, while the report's CSV drops costUSD and its data layer zeroes costs under the same setting.",
+        "resolution": "fixed in P104.18-tog (4bc4796d): Gate the costUSD column in uCsvText on showCost, header and cells together, as the report's usageCsv does, with an off/on twin in usage-edges.test.mjs. The /api/usage payload is the page's local token-protected data source rather than a shareable artifact; keep its cost data and record that as the decision.",
+        "fixTask": "P104.18-tog",
+        "commit": "4bc4796d"
+      },
+      {
+        "id": "P104-R21",
+        "severity": "med",
+        "file": "plugins/audit/scripts/panel/_panel_settings.py FIELD_HELP usage.pricingAsOf",
+        "issue": "The Settings help for usage.pricingAsOf still says that until it is set both surfaces say the rates are undated, but since the resolver change a project with no table is shown the shipped table's date and a pricingAsOf beside no usage.pricing dates nothing.",
+        "resolution": "fixed in P104.18-tog (4bc4796d): Reword the help to match the README and rate_basis_phrase: it dates the config's own usage.pricing table, is printed only when that table priced the rows, and 'rates undated' is said only of a project table that carries no date; a case fails while the old sentence stands.",
+        "fixTask": "P104.18-tog",
+        "commit": "4bc4796d"
+      },
+      {
+        "id": "P104-R22",
+        "severity": "low",
+        "file": "plugins/audit/hooks/meter-usage.py advisory; CHANGELOG.md; plugins/audit/README.md",
+        "issue": "The advisory counts kept rows over the whole ledger while the CHANGELOG and README say the count is of the rows the printed figure rests on; for an absolute band an unrelated legacy row is counted.",
+        "resolution": "fixed in P104.18-tog (4bc4796d): Count only the rows the advisory's figure rests on (the task's rows, plus on the relative basis the completed tasks' rows the bands were read from), with an mt case holding a kept row outside the task for an absolute band.",
+        "fixTask": "P104.18-tog",
+        "commit": "4bc4796d"
+      },
+      {
+        "id": "P104-R23",
+        "severity": "low",
+        "file": "CHANGELOG.md [Unreleased]",
+        "issue": "The changelog records that the panel payload drops pricingAsOfDeclared but not that /api/usage also drops the merged config's pricingAsOf.",
+        "resolution": "fixed in P104.18-tog (4bc4796d): Extend the sentence: the panel's payload drops both pricingAsOf and pricingAsOfDeclared; the date beside a panel cost is pricingBasis.asOf.",
+        "fixTask": "P104.18-tog",
+        "commit": "4bc4796d"
+      },
+      {
+        "id": "P104-R24",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_meter_usage.py mt1-mt4",
+        "issue": "No case pins that the session line counts only this session's kept rows; a regression summing the whole ledger's kept flags would leave every case green.",
+        "resolution": "fixed in P104.18-tog (4bc4796d): Add a kept row from another session to the fixture, assert the session line's count excludes it, and prove it red by counting over the whole ledger.",
+        "fixTask": "P104.18-tog",
+        "commit": "4bc4796d"
+      }
+    ],
+    "outcome": "[findings: 24 - 1 high, 8 med, 15 low; 24 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "Every cost the plugin prints is now priced at read time from one resolved price table. That covers status, report and its Markdown twin, usage, the panel, the meter and the demo ledger. The table is the project's own usage.pricing when it declares one, and otherwise the shipped table. Each cost carries one date and source phrase, and that phrase counts any rows that kept the cost stored when they were written. The ledger counts a message once, at its final entry. Per-task costs state how much of the work they attribute, and the cost bands state their basis and how far completed tasks cover it.\n\nWith showCost off, no dollar figure reaches any rendered surface: tiles, projections, routing, retry spend, advice, the browse dialog, budgets and the CSV export. The panel's local data source keeps its cost data, and the code records why. The meter reads and prices the ledger once per run. Its notes count only the rows its figure rests on.\n\nThe review ran five rounds. All findings are fixed. The phase gate is green with screenshots and the interactive browser check.\n\nThe invariants check reports a manifest-revalidated breach on three earlier task commits. Each recorded a task linked to a bug that reached the committed index only in a later index commit. That was an ordering slip in bookkeeping; the current manifest validates. Whether the precedence change needs a major version stays the operator's decision, recorded in the CHANGELOG.",
   "tasks": [
     {
       "id": "P104.1",
       "title": "the demo fixtures price their ledgers with the table they declare",
-      "status": "pending",
+      "status": "done",
       "description": "gen-demo-usage.py:181 prices each row with ul.price(counts, model) and no table, so the committed acme ledger, the example report and its twin, docs/index.html and docs/demo-large.html all move whenever DEFAULT_PRICING does, which contradicts the product's own rule that a row is priced once, when written, with the project's table. Price generated rows with the fixture's declared table (usage.pricing from its config, the table meter-usage would have used) and have gen-demo-manifest.py's write_config declare one matching its pricingAsOf; the acme config already declares one. Acceptance: no committed artifact changes in this task (verify.sh's derived-ledger diff and tools/check-rendered-artifacts.py stay green), and both stay green with DEFAULT_PRICING's sonnet row mutated. This must land before the price table changes.",
       "files": [
         "plugins/audit/scripts/demo/gen-demo-usage.py",
         "plugins/audit/scripts/demo/gen-demo-manifest.py",
         "plugins/audit/tests/test_gen_demo_usage.py",
-        "plugins/audit/tests/test_gen_demo_manifest.py"
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        "plugins/audit/scripts/report/_usage_load.py",
+        "plugins/audit/tests/test__usage_load.py",
+        "plugins/audit/scripts/usage/_usage_spend.py",
+        "plugins/audit/tests/test__usage_spend.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -55,28 +277,49 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "268f9bbf",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "gen-demo-usage.py reads the fixture's .claude/audit.config.json usage.pricing (resolved through hooks/_config.usage_cfg via _loader) in main() and prices every generated row with it, so generate() stays pure and no row is priced from the shipped DEFAULT_PRICING. gen-demo-manifest.py writes a frozen CONFIG_PRICING literal (equal to the shipped rows on 2026-10-06) and the manifest's pricingAsOf into the generated config, reading pricingAsOf trimmed like every other reader of that key. The report re-priced from DEFAULT_PRICING in two places, which made the committed renders move with the shipped table: report/_usage_load.py now resolves routing and cache pricing from the manifest's meta.usage.pricing when it is set (unchanged precedence) and otherwise from the project's own config table, and usage/_usage_spend.cache_profile takes that table. Verified in scratch copies: with DEFAULT_PRICING's sonnet row mutated, the regenerated acme ledger stays byte-identical and tools/check-rendered-artifacts.py --before-commit exits 0, as in the unmutated control; no committed artifact changes. Cases in test_gen_demo_usage, test_gen_demo_manifest, test__usage_load (ur1-ur4, including that a manifest table still wins) and test__usage_spend. The cache_profile cases could not be proved red at HEAD because the new argument does not exist there (the call raises before any assertion); recorded as could-not-prove. Left for later: audit-usage.py's CLI routing still reads only the manifest table, and the panel does not apply the manifest-wins precedence.",
+        "descriptive": "The demo fixtures, the example report and its renders no longer move when the shipped price table changes: every row and every re-priced figure uses the table the project declares."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T14:46:28Z",
+      "completedAt": "2026-10-06T15:43:39Z",
+      "verifiedBy": [
+        "ur1",
+        "ur2",
+        "ur3",
+        "ur4"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T15:40:06Z.bf6cd0",
+        "status": "passed",
+        "at": "2026-10-06T15:40:06Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "268f9bbf",
+        "at": "2026-10-06T15:43:39Z",
+        "basis": "audit-reviewer re-review: acceptance verified independently in control and mutated scratch copies (ledger byte-identical, render check exit 0 in both); manifest-wins precedence unchanged; first review's high finding closed"
+      }
     },
     {
       "id": "P104.2",
       "title": "the shipped price table carries today's official rates with their date and source",
-      "status": "pending",
+      "status": "done",
       "description": "The table has no claude-opus-5-5 row (it prices at Opus 5's rate), holds Sonnet 5 at 3/15 and lets claude-fable-5-1 resolve to Fable 5's cache read; on the dogfood ledger the shown spend was overstated by about a sixth. Re-read https://platform.claude.com/docs/en/about-claude/pricing at implementation time (the research read Opus 5.5 at 4/20 with read 0.20, Sonnet 5 at 2/10 and Fable 5.1 read 0.25 on 2026-10-05; verify every rate rather than copying these), add the rows, set usage.pricingAsOf to that date in DEFAULTS and the template, and record the source URL beside both mirrors with pricing_divergences or a sibling check holding them equal. Correct the prose that the change falsifies: the read-0.1x multiplier sentence (comments and the schema description) if any official row departs from it, the table-size numbers in pricing_divergences' docstring and the pp comments (delete them), the pp2 fixture literal, and hooks/_config.py's pointer to usage_ledger.py. Acceptance: pp8 green, and the derived example ledger and rendered artifacts unchanged, which the previous task makes true.",
       "files": [
         "plugins/audit/scripts/usage/_usage_core.py",
         "plugins/audit/hooks/_config.py",
         "plugins/audit/templates/audit.config.example.json",
         "plugins/audit/schema/audit-config.schema.json",
-        "plugins/audit/tests/test__usage_core.py"
+        "plugins/audit/tests/test__usage_core.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/tests/test_usage_ledger.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -100,21 +343,48 @@
       "dependsOn": [
         "P104.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6c4c573f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The shipped price table matches the official pricing page as read on 2026-10-06: new rows claude-opus-5-5, claude-fable-5-1 and claude-mythos-5-1 (added so longest-prefix lookup does not give Mythos 5.1 Mythos 5's cache read) and the corrected claude-sonnet-5 row, identical in _usage_core.DEFAULT_PRICING and hooks/_config.py DEFAULTS; the page gives display names only, so the id mapping is this task's. pricingAsOf is 2026-10-06 in DEFAULTS and the template; PRICING_AS_OF, PRICING_SOURCE_URL and pricing_provenance_divergences() hold the date and source equal across the mirrors (the hooks copy is a module constant, not a config key, so the compatibility contract is unchanged), re-exported through usage_ledger. Prose that called cache reads 0.1x is corrected and table-size numbers are gone. New cases: the new rows, Sonnet 5.5 resolving to an equal row, the template's listed rows and date held equal to the shipped table, the provenance mirror, and a re-export pin derived by AST rather than a literal count. The demo dates its frozen table to its own date, so no committed render moved. The build guide's _usage_core section and the module-map fence are updated; the fence also carries the sibling tasks' new imports, which is why this task commits last.",
+        "descriptive": "The prices the plugin ships now match the official page as of 2026-10-06, with the date and source recorded beside them and checked across every copy, so a cost the plugin shows is no longer overstated for the newest models."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T15:46:06Z",
+      "completedAt": "2026-10-06T19:03:59Z",
+      "verifiedBy": [
+        "pr1",
+        "pr2",
+        "pr3",
+        "pr4",
+        "pr5",
+        "pr6",
+        "pv1",
+        "pv2",
+        "pv3",
+        "pv4",
+        "pv5",
+        "pv6",
+        "tp1",
+        "tp2",
+        "tp3"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T16:55:42Z.8963ea",
+        "status": "passed",
+        "at": "2026-10-06T16:55:42Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6c4c573f",
+        "at": "2026-10-06T19:03:59Z",
+        "basis": "audit-reviewer (task mode, opus): matches, every rate checked cell by cell against the page transcript; one medium and two low findings fixed (guide text, Sonnet 5.5 pin, template held equal)"
+      }
     },
     {
       "id": "P104.3",
       "title": "unit economics and cost bands report how many done tasks they priced",
-      "status": "pending",
+      "status": "done",
       "description": "unit_economics' completed counts only done tasks that carry ledger rows, and cost_bands calibrates from the same set, so 'cost per task' reads as if it covered every done task; on this repository's ledger only about a third of done tasks were attributed and main-loop spend never is. Return the denominator beside the numerator in both (done tasks in the plan, and done tasks with any attributed tokens) as data, without changing costPerTask or the bands themselves, so every surface can print coverage from one computation. The renderers come in the following tasks.",
       "files": [
         "plugins/audit/scripts/usage/_usage_economics.py",
@@ -139,21 +409,32 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4fbf9fd3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_usage_economics gains a private _done_task_coverage(tasks, rows) returning {done, priced}: done tasks in the plan, and done tasks whose own ledger rows add up to more than zero tokens; None when the plan has no done task, so an empty plan never reads as complete coverage. unit_economics and cost_bands (both bases) carry it as doneTaskCoverage, named apart from the report payload's spend-attribution coverage key so the renderer tasks cannot merge the two. costPerTask, completed, the sample, the percentiles and the bands are unchanged. The helper is private because usage_ledger re-exports this module's public names and its suite pins that list. Edge stated: costPerTask still averages a done task whose rows carry zero tokens, so priced can be lower than completed. Cases: two priced of four done, every done priced, absent with no done task, zero-token rows not priced, the denominator on both cost_bands bases, and no bare coverage key on either return.",
+        "descriptive": "Cost per task and the cost bands now carry how many of the plan's done tasks they actually priced, as data the report, the CLI and the panel can print beside every per-task figure."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T14:46:29Z",
+      "completedAt": "2026-10-06T15:43:40Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T15:43:01Z.38936c",
+        "status": "passed",
+        "at": "2026-10-06T15:43:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "4fbf9fd3",
+        "at": "2026-10-06T15:43:40Z",
+        "basis": "audit-reviewer (task mode): matches; one low finding (field name colliding with the payload's coverage key) fixed by renaming to doneTaskCoverage, with a case guarding the collision"
+      }
     },
     {
       "id": "P104.4",
       "title": "the report and its Markdown twin print attribution coverage beside cost per task",
-      "status": "pending",
+      "status": "done",
       "description": "Print the coverage from the previous task beside every cost-per-task figure the report renders: the HTML tile (_usage_overview.py:148), the Markdown fact (_usage_markdown.py:168) and the routing table in both (_usage_detail.py, _usage_markdown.py:190-205), following render-report's rule that a claim carries its basis and a basis with no claim is noise. Re-render the committed artifacts with the recipes tools/check-rendered-artifacts.py prints (docs/index.html is a byte copy of the example report). The committed acme Markdown twin is read by _deps.doc_prose_numbers(), so a rendered 'N of M <noun>' would fail the build: word the line so the lint's ratio shape does not form, or exempt the derived twin in _output.PROSE_SCAN_EXEMPT with the reason docs/audit/audit-report.md's row gives, and say which. Run tools/check-rendered-artifacts.py, which no build-command key runs.",
       "files": [
         "plugins/audit/scripts/report/_usage_overview.py",
@@ -165,7 +446,9 @@
         "examples/acme-store/acme-store-audit.html",
         "examples/acme-store/acme-store-audit.md",
         "docs/index.html",
-        "docs/demo-large.html"
+        "docs/demo-large.html",
+        "plugins/audit/scripts/usage/_usage_economics.py",
+        "plugins/audit/tests/test__usage_economics.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -191,21 +474,40 @@
       "dependsOn": [
         "P104.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "53540f42",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The coverage sentence lives once, as _coverage_sentence(cov) in usage/_usage_economics.py beside _done_task_coverage, worded \"Of the plan's N done task(s), M are priced; main-loop spend is not attributed to a task.\" so the rendered Markdown twin never forms the prose-number lint's ratio shape; the report modules import it by basename. The report prints it beside the cost-per-task tile, the Markdown 'Cost per completed task' fact and the risk-band table, and as the routing table's caption. Every dollar figure the report renders now obeys meta.usage.showCost: the cost-per-task tile, the Markdown fact and both routing tables' cost/task columns, the routing advice sentence (dropped, because its percentage has no basis without the two dollar figures it was computed from), the per-phase budget block, the projection, the retried- and blocked-spend facts and the most-expensive-tasks table, each gated inside its rendering function; a sufficient-sample projection hidden by showCost no longer falls through to a false 'suppressed - needs N tasks' notice. Committed renders re-rendered; check-rendered-artifacts --before-commit is OK. Cases cover each surface with showCost false and its true twin.",
+        "descriptive": "Every cost-per-task figure the report shows now says how many of the plan's done tasks it priced, and every dollar figure in the report respects a project's choice to hide costs."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T15:43:57Z",
+      "completedAt": "2026-10-06T19:03:09Z",
+      "verifiedBy": [
+        "uo30",
+        "uo31",
+        "um25",
+        "um26",
+        "um27",
+        "ud10b",
+        "ud10c"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T16:45:47Z.5bdb35",
+        "status": "passed",
+        "at": "2026-10-06T16:45:47Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "53540f42",
+        "at": "2026-10-06T19:03:09Z",
+        "basis": "audit-reviewer (task mode): matches; one medium finding (dollar figures leaking with showCost off) fixed as a class across every report surface, each guarded by a showCost-false case and its true twin"
+      }
     },
     {
       "id": "P104.5",
       "title": "/audit:usage prints attribution coverage beside its per-task figures",
-      "status": "pending",
+      "status": "done",
       "description": "The CLI calibrates its bands from 'this project's completed tasks' and lists per-task costs without saying how many done tasks those figures cover or that main-loop spend is never attributed to a task. Print the coverage from unit economics beside band_note's line and under the --by task table, in both ascii and md formats, and carry it in the --json payload. Acceptance: on the acme example the dashboard states priced versus done tasks next to the band thresholds.",
       "files": [
         "plugins/audit/scripts/usage/audit-usage.py",
@@ -230,21 +532,44 @@
       "dependsOn": [
         "P104.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "dbe693f8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "/audit:usage prints the shared coverage sentence (_usage_economics._coverage_sentence over cost_bands' doneTaskCoverage) under the band note in TOP TASKS and under the --by task table, in the ascii and md formats, gated on show_cost and silent when the plan has no done task; --json carries bands.doneTaskCoverage. Cases ac1-ac11 use a fixture with three priced of four done tasks and cover both formats, --no-cost and the no-done-task silence for the dashboard and --by task, and the exact json payload.",
+        "descriptive": "/audit:usage now says how many of the plan's done tasks its per-task cost figures cover, in every output format, and stays silent when costs are hidden."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T15:43:58Z",
+      "completedAt": "2026-10-06T19:03:57Z",
+      "verifiedBy": [
+        "ac1",
+        "ac2",
+        "ac3",
+        "ac4",
+        "ac5",
+        "ac6",
+        "ac7",
+        "ac8",
+        "ac9",
+        "ac10",
+        "ac11"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T16:47:44Z.6c1a9c",
+        "status": "passed",
+        "at": "2026-10-06T16:47:44Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "dbe693f8",
+        "at": "2026-10-06T19:03:57Z",
+        "basis": "audit-reviewer (task mode): clean; one low finding (no md-format case) fixed; wording moved to the shared sentence; red-first re-proved at HEAD 53540f42 (ac1, ac4, ac9, ac10)"
+      }
     },
     {
       "id": "P104.6",
       "title": "the panel's Usage tab prints attribution coverage beside cost per task",
-      "status": "pending",
+      "status": "done",
       "description": "The panel computes its own unit economics in usage-metrics.js (uUnit, :108-125) and renders 'cost per task' (usage-view.js:283) and the routing cost/task (:368) with no coverage. Mirror the Python definition and print the same coverage, under the same showCost and empty-ledger silences. Read the refactoring-the-assembled-ui and writing-javascript skills and print the pins first (python3 tools/count-ui-pins.py); add no new shape pin, since the assertion is a vitest behaviour case. Any change under scripts/ui/panel moves the panel surface digest, so re-capture every panel screenshot with node tools/capture-screenshots.mjs (screenshot_capture_drift goes red otherwise) and run npx vitest run, which no build-command key runs.",
       "files": [
         "plugins/audit/scripts/ui/panel/usage-metrics.js",
@@ -289,21 +614,32 @@
       "dependsOn": [
         "P104.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6516170d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "usage-metrics.js gains uDoneCoverage(facts), mirroring _done_task_coverage: done counted from the plan's task metadata over the whole plan, priced from the rows handed in (filtering narrows only the numerator), main-loop rows never attributed, null with no done task; uUnit carries it. uCoverageLine renders exactly the wording of _usage_economics._coverage_sentence, with a comment that it must change with it. usage-view.js prints it under the cost-per-task tile and above the routing table, both gated on showCost. No new shape pin; the assembled panel script parses (node --check). The panel screenshots were re-captured because the panel sources moved.",
+        "descriptive": "The panel's Usage tab now says how many of the plan's done tasks its cost-per-task figures cover, in the same words as the report and the CLI."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T15:43:59Z",
+      "completedAt": "2026-10-06T19:03:58Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T16:53:54Z.61358a",
+        "status": "passed",
+        "at": "2026-10-06T16:53:54Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6516170d",
+        "at": "2026-10-06T19:03:58Z",
+        "basis": "audit-reviewer (task mode): clean; counting and wording verified against the Python side; the assembled panel script parses"
+      }
     },
     {
       "id": "P104.7",
       "title": "pilot: compare Claude Code's own cost with the ledger's on the same work",
-      "status": "pending",
+      "status": "done",
       "description": "Decide whether Claude Code's own cost can replace the plugin's price table. On the pinned CLI version, first verify which sources exist and at what grain (verifying-external-behavior): a headless run's total_cost_usd and modelUsage costUSD, the OTel claude_code.cost.usage metric with its agent.name attribute, and any per-message cost in the transcript meter-usage already tails; per-task attribution needs per-subagent cost, which a session total cannot give. Run one short headless session that spawns one subagent, capped with --max-budget-usd, with OTel exported to the console, and compare native cost per session and per agent with the ledger rows meter-usage wrote for it at the corrected table. Record the result as an evaluated entry in CONTRIBUTING.md's Decision record (the measurement as dated history with the command that re-derives it, and a revisit trigger). gate-only: a measurement and a written decision, no product code.",
       "files": [
         "CONTRIBUTING.md"
@@ -324,21 +660,32 @@
       "dependsOn": [
         "P104.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0fbc0ed3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Pilot taken once on 2026-10-06, CLI 2.1.291. Free survey first: neither `claude --help` nor `claude -p --help` names total_cost_usd, the OTel variables or the cost metric; they exist only as strings in the binary, and in this repository's transcripts a cost-state row carries totalCostUSD and per-model modelUsage.costUSD while no assistant entry carries a cost. One paid headless run in a scratch fixture (its own --settings, no permission bypass, --model haiku, --max-budget-usd 0.50, --max-turns 8, one custom subagent) exited 0 with total_cost_usd 0.042306; modelUsage held one entry covering the main agent and the subagent together, so native cost has no per-agent split, and the OTel console output and its agent.name attribute were not observed (recorded as a gap). Metering the same transcript with this branch's meter-usage and corrected price table gave 0.040881, with input, cache-read and cache-write tokens equal to modelUsage; the whole gap is output tokens the ledger undercounts (a dedup keeping a streaming partial per message id), filed as a bug with its own fix task. Decision record entry in CONTRIBUTING.md: keep the price table, because every native source is per session and per model, never per subagent; use the native session total as a reconciliation check; revisit when a native per-subagent cost or the OTel metric with agent.name is observed. Spend: 0.042306 USD of the 0.50 cap.",
+        "descriptive": "A single capped paid run showed that Claude Code's own cost figure matches the plugin's corrected prices but only per session and model, never per task or subagent, so the plugin keeps its price table and uses the native total as a cross-check; the run also exposed an undercount in the ledger, now filed and being fixed."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T21:25:09Z",
+      "completedAt": "2026-10-06T22:14:22Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-06T22:07:26Z.be3fe7",
+        "status": "passed",
+        "at": "2026-10-06T22:07:26Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "0fbc0ed3",
+        "at": "2026-10-06T22:14:22Z",
+        "basis": "orchestrator check: the description's survey, one capped run and recorded decision are all present; the measurement is dated history beside the commands that re-derive it; spend 0.042306 USD"
+      }
     },
     {
       "id": "P104.8",
       "title": "retire the shipped price table if the pilot shows native cost covers it",
-      "status": "pending",
+      "status": "done",
       "description": "Only if the pilot's recorded decision says native cost holds at per-agent grain: meter-usage records Claude Code's own cost where the source carries it and keeps the table for rows without one (backfill of old transcripts), each row saying which priced it. COMPATIBILITY.md promises that a config key the plugin reads keeps being read, so usage.pricing stays honoured; retiring means the plugin stops maintaining shipped rows, not that it stops reading the key. If the pilot says it does not hold, close with /audit:task done --no-change --reason citing the Decision record entry. Rescope files and cases with /audit:task scope before starting, since the pilot decides the shape; risk is high because every cost the plugin prints and the Stop-hook path change.",
       "files": [
         "plugins/audit/hooks/meter-usage.py",
@@ -370,16 +717,839 @@
         "P104.7",
         "P104.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "The price table stays, because Claude Code's own cost figure is only per session; nothing was changed.",
+        "noChange": {
+          "reason": "The native-cost pilot recorded in CONTRIBUTING.md's Decision record (2026-10-06) found that every source of Claude Code's own cost - total_cost_usd and modelUsage in a headless run, the cost-state row in the transcript - is per session and per model, never per subagent, and the OTel metric with agent.name was not observed. Per-task attribution needs per-agent cost, so native cost does not hold at the grain this task requires, and the shipped price table stays. No change is made; the Decision record entry names the revisit trigger.",
+          "examinedAt": "c38330bf45c21cc1198a4c485bfe4f14e2d6d1f6"
+        }
       },
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-10-06T22:14:24Z",
+      "completedAt": "2026-10-06T22:14:24Z",
       "verifiedBy": []
+    },
+    {
+      "id": "P104.9-tog",
+      "title": "the ledger counts a message at its final entry, not its streaming partial",
+      "status": "done",
+      "description": "The usage ledger undercounts output tokens. A transcript can write one assistant message twice under the same message id: first a streaming partial (stop_reason null, a small output_tokens count), then the final entry with the real count. usage_ledger's dedup keeps the first entry it sees for an id, so it counts the partial. Measured on one headless run with a subagent (2026-10-06, CLI 2.1.291): the ledger counted 4 output tokens for the subagent against 289 in its final entries; that shortfall was the whole gap between Claude Code's own total_cost_usd and the ledger's sum, while input and cache tokens matched exactly. The ledger must count each message id once at its final entry. That includes the incremental tail, where a scan can read the partial before the final entry is written: a partial must never be counted in a way a later final entry for the same id cannot correct, and the seen-id memory the cursor keeps must not freeze the partial's count. Decide the mechanism (count the final entry only, or replace a counted partial when its final arrives) from how the tail and the cursor work today, and say which and why.",
+      "files": [
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/tests/test_usage_ledger.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_usage_ledger.py: a transcript holding a streaming partial and then the final entry for one message id is counted once, at the final entry's output tokens",
+          "plugins/audit/tests/test_usage_ledger.py: a scan that ends after the partial and a later scan that reads the final entry together count the message once, at the final entry's tokens"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "c38330bf",
+      "outcome": {
+        "technical": "The usage ledger now counts a streamed message once, at its final entry's figures. A transcript can write a streaming partial (stop_reason null) and then the final entry under one message id; the dedup kept the first. _scan_file now keeps a per-file cursor field, pending, holding message ids whose entries so far were all partials with the figures already counted; a later entry for a pending id adds only how far it exceeds what was counted, field by field and never below zero, without adding to msgs, and an entry with a stop reason clears the id. Because the ledger is append-only and a scan can end between the partial and the final, the correction across scans is its own row with msgs 0, which every reader sums and the linear price() prices correctly; a partial whose final never arrives is still counted. An older cursor without the field behaves as before, and pending is trimmed with the recent-ids list and reset with it. Re-metering the native-cost pilot's transcript gives 822 output tokens against 822 in Claude Code's own modelUsage (the subagent at 289, where it had counted 4), with input and cache tokens equal as before. Cases sf1-sf5 in test_usage_ledger.py; red-first proved 80/82 at HEAD (sf1, sf2); mutations (final entries only, pending not carried, msgs counted twice, the old dedup, pending never cleared) each reddened their named cases.",
+        "descriptive": "The plugin's own record of token use now matches Claude Code's: a message Claude Code writes twice while streaming is counted once, at its final size, so costs are no longer understated."
+      },
+      "startedAt": "2026-10-06T21:30:00Z",
+      "completedAt": "2026-10-06T22:14:23Z",
+      "verifiedBy": [
+        "sf1",
+        "sf2",
+        "sf3",
+        "sf4",
+        "sf5"
+      ],
+      "bugId": "BUG-18-tog",
+      "testEvidence": {
+        "runId": "2026-10-06T22:14:08Z.7e3e5f",
+        "status": "passed",
+        "at": "2026-10-06T22:14:08Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c38330bf",
+        "at": "2026-10-06T22:14:23Z",
+        "basis": "orchestrator check: the fix matches the bug's expected behaviour, re-metering the pilot transcript equals the native totals exactly, red-first proved and mutations red"
+      }
+    },
+    {
+      "id": "P104.10-tog",
+      "title": "one resolver chooses a project's price table for every surface",
+      "status": "done",
+      "description": "Fixes review findings P104-R2 and P104-R5. One function in the usage layer resolves the price table for a project - the manifest's meta.usage.pricing when declared, else the config's usage.pricing overlaid model by model on the shipped table (what usage_cfg does), else the shipped table - and returns which of the three priced it, so a surface can name its basis. The report loader, /audit:usage (its text advice, --json routing and --backfill), the panel's usage payload and the meter hook's live pricing all call it, so one project gets one table everywhere. The docstrings in _usage_load.py and gen-demo-usage.py, and the comment beside them, say what is now returned. The precedence, including the per-model overlay, is documented next to usage.pricing where the config keys are documented.",
+      "files": [
+        "plugins/audit/scripts/usage/_usage_core.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/scripts/report/_usage_load.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/scripts/demo/gen-demo-usage.py",
+        "plugins/audit/hooks/meter-usage.py",
+        "plugins/audit/README.md",
+        "plugins/audit/tests/test__usage_core.py",
+        "plugins/audit/tests/test_audit_usage.py",
+        "plugins/audit/tests/test__usage_load.py",
+        "plugins/audit/tests/test__panel_usage.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__usage_core.py: a project with a config-only table, a manifest table, and neither resolves the same table and basis whichever surface asks",
+          "plugins/audit/tests/test_audit_usage.py: /audit:usage routing and backfill price a config-only project with the config overlay, as the report does"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "59285dfe",
+      "outcome": {
+        "technical": "RESOLVER: _usage_core.resolve_pricing(manifest, config) returns {table, basis, asOf, source}; PRICING_BASES = (manifest, config, shipped). Precedence: (1) the manifest's meta.usage.pricing used as written when it is a non-empty dict; (2) usage.pricing from the RAW config laid over DEFAULT_PRICING model by model (a named row replaces the shipped row whole, as usage_cfg merges); (3) the shipped table. asOf is the declaring place's own pricingAsOf or None; the shipped table gives PRICING_AS_OF and PRICING_SOURCE_URL. The returned table is always a copy. usage_ledger re-exports both names and adds project_pricing(manifest, manifest_path=None, project_dir=None), which finds .claude the way find_ledger_dir does and reads audit.config.json raw.\nSURFACES: report (_usage_load._project_pricing, plus load_usage's pricingBasis {basis, asOf, source} as data for the printed basis), /audit:usage (project_pricing/pricing_root following resolve_ledger's rule; main() resolves once and passes the table to --backfill, the --json routing and render()), the panel (_panel_usage._usage_pricing over the raw config it already reads), the meter hook (_pricing through the usage_ledger it already loads by path, no new import, bench-hooks --gate green), and gen-demo-usage (_load_pricing walks up from the manifest bounded by .git, as the report does). README's usage.pricing row states the precedence and that an omitted rate prices at zero.\nDECISIONS: the resolver takes the RAW config because the merged one always carries the shipped table and could not tell declared from nothing; the meter therefore re-reads .claude/audit.config.json once per Stop. Behaviour change: a project whose manifest declares meta.usage.pricing is now priced at it by the panel and the meter too (before, both used the config).\nMEASURED: on examples/acme-store the report's and the CLI's inputCostVsFreshPct are both 20.4 (config table, 2026-08-06); the shipped table, which the CLI used before, gives 20.5. The committed demo ledger reproduces byte for byte from gen-demo-usage.\nTESTS: test__usage_core rp-config-only, rp-manifest, rp-neither (each asserting all seven surfaces agree on table and basis), rp-overlay, rp-empty, rp-mutate; test_audit_usage cp1-cp5. Red-first proved through the helper (test_audit_usage 128/132 and test__usage_core 64/72 at HEAD c38330bf); scratch mutations (config-first precedence, shared DEFAULT_PRICING object) turned rp-manifest and rp-mutate red. Recorded gate green.",
+        "descriptive": "One project now gets one price table on every surface - the manifest's, else its config laid over the shipped table, else the shipped table - and each surface can say which one priced it."
+      },
+      "startedAt": "2026-10-06T22:20:15Z",
+      "completedAt": "2026-10-07T00:17:42Z",
+      "verifiedBy": [
+        "rp-config-only",
+        "rp-manifest",
+        "rp-neither",
+        "rp-overlay",
+        "rp-empty",
+        "rp-mutate",
+        "cp1",
+        "cp2",
+        "cp3",
+        "cp4",
+        "cp5"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T00:16:56Z.a381f5",
+        "status": "passed",
+        "at": "2026-10-07T00:16:56Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "59285dfe",
+        "at": "2026-10-07T00:17:42Z",
+        "basis": "orchestrator check: all seven pricing surfaces call resolve_pricing; rp cases assert agreement across them for three project shapes; red-first proved on HEAD; acme-store report and CLI now agree"
+      }
+    },
+    {
+      "id": "P104.11-tog",
+      "title": "every cost names its rate date and source, and every per-task figure its coverage",
+      "status": "done",
+      "description": "Fixes review findings P104-R1, P104-R3, P104-R4 and P104-R6. Every surface that prints a cost names its basis: the one rate-basis phrase the report, its Markdown twin, /audit:usage and /audit:status print becomes date and source, built by one Python helper from what the shared resolver reports (the shipped table's date and source URL, or the project's own declared table and its date), and the panel shows the same phrase from its payload rather than retyping it; when the shipped table priced the rows and the project declared no date, the shipped table's date is shown, never 'rates undated'. The HTML report's unit-economics projection and band note, and the panel's projection, carry the coverage sentence. The coverage sentence becomes a public coverage_sentence re-exported with its peers, its four importers updated, and one parity case compares Python's sentence with the panel's for the same inputs. CONTRIBUTING.md's native-cost pilot entry says the ledger miscount as history and points at _scan_file's provisional count. The panel screenshots are re-captured by the orchestrator.",
+      "files": [
+        "plugins/audit/scripts/report/_usage_overview.py",
+        "plugins/audit/scripts/report/_usage_markdown.py",
+        "plugins/audit/scripts/report/_usage_detail.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/scripts/ui/panel/usage-view.js",
+        "plugins/audit/scripts/ui/panel/usage-metrics.js",
+        "plugins/audit/scripts/usage/_usage_economics.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "CONTRIBUTING.md",
+        "tools/ui-tests/usage-edges.test.mjs",
+        "plugins/audit/tests/test__usage_overview.py",
+        "plugins/audit/tests/test__usage_markdown.py",
+        "plugins/audit/tests/test__usage_detail.py",
+        "plugins/audit/tests/test_audit_usage.py",
+        "plugins/audit/tests/test__usage_economics.py",
+        "plugins/audit/tests/test__panel_page.py",
+        "plugins/audit/tests/test__panel_usage.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/tests/test__report_usage.py",
+        "examples/acme-store/acme-store-audit.html",
+        "examples/acme-store/acme-store-audit.md",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/mobile.png",
+        "docs/screenshots/overview.png",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png",
+        "plugins/audit/tests/test__usage_bench.py",
+        "plugins/audit/scripts/usage/_usage_bench.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__usage_overview.py: the report's rate basis names the source and the date, and the shipped table's date when the project declared none",
+          "tools/ui-tests/usage-edges.test.mjs: the panel's coverage sentence equals Python's coverage_sentence for the same done and priced counts"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P104.10-tog"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "308189d6",
+      "outcome": {
+        "technical": "One rate-basis phrase, one builder: _usage_economics.rate_basis_phrase(pricing_basis) takes resolve_pricing's {basis, asOf, source} and never resolves a table itself. shipped -> 'rates as of <PRICING_AS_OF>, the plugin's shipped table (<PRICING_SOURCE_URL>)'; manifest -> 'rates as of <d>, the plan's own table in meta.usage.pricing', or 'rates undated, ... - set meta.usage.pricingAsOf'; config -> 'rates as of <d>, the project's usage.pricing in .claude/audit.config.json', or '... - set usage.pricingAsOf'; a whitespace-only date is no date; a missing or unknown basis gives 'rate basis not recorded'. The shipped table's date is never shown as 'rates undated'. coverage_sentence is now public; usage_ledger re-exports both with their peers.\nSurfaces: the HTML report (_usage_overview._usage_context) and its Markdown twin print the phrase from load_usage's pricingBasis; _usage_detail prints the coverage sentence under the projection (when showCost is on) and at the end of the band note in both branches; /audit:usage prints 'costs priced at <phrase>' from the resolver answer main() already holds, and --json gains pricingBasis and rateBasis (pricingAsOf kept); /audit:status's usage block carries pricingBasis and rateBasis and its line prints the phrase or 'rate basis not served'; the panel payload gains pricingBasis and rateBasis and usage-view.js shows the served phrase with no wording of its own, offers 'date them in Settings' only for an undated config table, and the projection carries the coverage line. A vitest parity case compares the panel's coverage sentence with Python's coverage_sentence for the same inputs. CONTRIBUTING.md: the rate-basis bullet describes the one phrase and the resolver; the native-cost pilot entry states the ledger miscount as history and points at _scan_file's provisional count.\nDecisions: renderers keep their existing _usage_economics edge; audit-status takes the phrase from the block rather than a new static import (the module map is unchanged, checked against `_deps.py --render`); the payload keeps pricingAsOf/pricingAsOfDeclared for existing pins; the panel projection's coverage line is not gated on showCost because the panel prints the projection's dollars regardless (pre-existing).\nWidened scope: test__panel_usage up1 (22 keys, the two named) + up1a/up1b; test_audit_status s15a-e, u10b, u10c, u13; test__report_usage u4, u4b, u4d-u4g, u4i, u4j - all asserting rate_basis_phrase's own words. The four committed renders regenerated with the recipes check-rendered-artifacts --how prints (examples/report.sh, the docs/index.html copy, the demo-large generated fixture); check-rendered-artifacts --before-commit exit 0. Panel and report screenshots re-captured by the orchestrator.\nRed-first: helper at HEAD 59285dfe proved test__usage_overview (uo1, uo1a); the vitest parity case was could-not-prove in the throwaway (no node_modules) and failed in the shared tree before the fix. Suites green (each listed in the hand-back), npx vitest 711/711, node --check on the assembled panel script exit 0, ruff and vermin clean.\nBench: test__usage_bench's untimed passes are one table, _UNTIMED (name, reason), holding the earlier exclusions plus coverage_sentence and rate_basis_phrase (both format from values the caller holds and read no rows); bn5 compares against it and bn5b derives its counts from it, so neither carries a count a later name would stale; _usage_bench's docstring names the two. Full sweep 305/305 files ok.",
+        "descriptive": "Every place the plugin prints a cost now says which price table it used and from when - the shipped table's date and source, or the project's own table - and every per-task figure and projection says how much of the work it covers, with the panel showing the same words as the report."
+      },
+      "startedAt": "2026-10-07T00:18:02Z",
+      "completedAt": "2026-10-07T01:08:38Z",
+      "verifiedBy": [
+        "uo1",
+        "uo1a",
+        "uo2",
+        "rb1",
+        "rb2",
+        "rb3",
+        "rb4",
+        "rb5",
+        "um7",
+        "um8",
+        "ud19a",
+        "ud19d",
+        "up1a",
+        "s15a",
+        "u10b",
+        "u10c",
+        "u4i",
+        "u4j"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T01:08:27Z.1ee158",
+        "status": "passed",
+        "at": "2026-10-07T01:08:27Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "308189d6",
+        "at": "2026-10-07T01:08:38Z",
+        "basis": "orchestrator check: P104-R1, R3, R4, R6 addressed; one Python builder for the phrase served to the panel; coverage sentence public with a cross-language parity case; renders regenerated and screenshots re-captured"
+      }
+    },
+    {
+      "id": "P104.12-tog",
+      "title": "the screenshots are re-captured from the merged panel and report sources",
+      "status": "done",
+      "description": "Re-capture the README screenshots after main was merged into this phase branch. The panel and report sources now hold both this phase's usage changes and the landed phases' panel changes, so every committed shot recorded against either side alone is stale, and test__refs sc1 says so by digest. The orchestrator runs node tools/capture-screenshots.mjs; nothing else changes.",
+      "files": [
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/mobile.png",
+        "docs/screenshots/overview.png",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "209e5937",
+      "outcome": {
+        "technical": "After main was merged into the phase branch (merge 1b89e98c), the panel and report sources held both this phase's usage changes and the landed phases' panel changes, and test__refs sc1/sc2 reported every committed shot stale by its recorded source digest. `node tools/capture-screenshots.mjs` (report + panel legs) re-captured docs/screenshots/*.png and captured-at.json from the merged tree; test__refs passes afterwards. No source file changed. Gate-only task: no test owed; the recorded gate (selftests, shots, interactive) is the evidence.",
+        "descriptive": "The README screenshots were taken again after the landed phases were merged in, so each picture matches the panel and report the merged code actually draws."
+      },
+      "startedAt": "2026-10-07T01:12:47Z",
+      "completedAt": "2026-10-07T01:24:13Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T01:23:46Z.a09e8d",
+        "status": "passed",
+        "at": "2026-10-07T01:23:46Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "209e5937",
+        "at": "2026-10-07T01:24:13Z",
+        "basis": "orchestrator check: test__refs sc1/sc2 red before the capture and green after; the recorded gate's shots and interactive legs pass"
+      }
+    },
+    {
+      "id": "P104.13-tog",
+      "title": "every printed cost is priced at read time by the table its phrase names",
+      "status": "done",
+      "description": "Fixes review findings P104-R7 (high) and P104-R11. Every cost a surface prints must be what the resolved table says those tokens cost, because the rate-basis phrase beside it names that table. Today the totals, cost per task, projection, bands and the most-expensive table sum each row's stored costUSD, which was priced when the row was written, with no recorded rate. Price each row's token counts at read time with resolve_pricing's table, in the one place the aggregates are computed (_usage_core), so every surface (report, Markdown twin, /audit:usage text and JSON, /audit:status, panel) inherits it. The ledger is never rewritten: the stored costUSD stays as written. A row whose token counts cannot be priced (fields absent) keeps its stored figure, and the surfaces say how many rows were priced when written with no recorded rate, in the same rate-basis phrase, never silently. Overlay a manifest table on the shipped table model by model, the way a config table already is, so an unnamed model is priced at its shipped row and not at _default. Correct CONTRIBUTING.md's statement of the rule. Cases: a ledger whose stored costUSD came from a different table than the current one prints the current table's figure beside the current table's phrase (red first); a row with no token fields keeps its stored figure and is counted in the phrase; a manifest table naming one model prices another at its shipped row.",
+      "files": [
+        "plugins/audit/scripts/usage/_usage_core.py",
+        "plugins/audit/tests/test__usage_core.py",
+        "plugins/audit/scripts/usage/_usage_economics.py",
+        "plugins/audit/tests/test__usage_economics.py",
+        "plugins/audit/scripts/report/_usage_load.py",
+        "plugins/audit/tests/test__usage_load.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/tests/test_audit_usage.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/tests/test_usage_ledger.py",
+        "CONTRIBUTING.md",
+        "plugins/audit/tests/test__report_usage.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/tests/test__panel_usage.py",
+        "plugins/audit/hooks/meter-usage.py",
+        "plugins/audit/tests/test_meter_usage.py",
+        "plugins/audit/scripts/demo/gen-demo-usage.py",
+        "plugins/audit/tests/test_gen_demo_usage.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__usage_core.py: a ledger whose stored costUSD came from a different table than the resolved one is summed at the resolved table's prices, a row with no token fields keeps its stored figure and is counted as priced when written, and a manifest table naming one model prices another at its shipped row",
+          "plugins/audit/tests/test_audit_usage.py: /audit:usage's totals and cost per task over such a ledger are the resolved table's figures and its phrase counts the rows priced when written"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "validate",
+          "report",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "553d6c57",
+      "outcome": {
+        "technical": "_usage_core.priced_at_read(rows, table) returns copies of the rows plus pricedWhenWritten: a row whose five token fields are all numbers is priced again with the resolved table, rounded as the writer rounds (round(..., 6)), so a ledger written at that table sums exactly as before; any other row keeps its stored figure and is counted (pricing a missing field at zero would print less than the row ever cost). The rows passed in are never changed and the ledger is never rewritten. resolve_pricing lays a manifest table over the shipped table model by model, as it already did for a config table. rate_basis_phrase adds '; N row(s) keep the cost stored when written, at no recorded rate' when the count is above zero. usage_ledger re-exports priced_at_read.\nEvery surface prices at read time: audit-usage main (after filtering, so the count covers the rows shown), _usage_load.load_usage (the report and its Markdown twin, before every pass; the count travels in pricingBasis), audit-status usage_summary, _panel_usage usage_state (the facts the browser sums are built from the priced copies), and meter-usage's band advisory and session line (advise and session_summary take the resolved table as a required argument, resolved once per Stop). gen-demo-usage's own-run totals are left: they add rows the same run just priced with the same table and rounding, and reach only the generator's stdout. CONTRIBUTING.md states the read-time rule; PLUGIN-BUILD-GUIDE.md's reason for the phrase and the _usage_core section are restated. Committed renders did not move (check-rendered-artifacts --before-commit OK).\nTests: test__usage_core rt1-rt9; test__usage_economics rb6, rb7; test_audit_usage ua1-ua4; test__panel_usage rt1, rt2; test_audit_status rt1, rt2; test_meter_usage rt1-rt3; ul1b's fixture made consistent with the table; key-set pins include pricedWhenWritten. Red-first proved through the helper at HEAD 209e5937 for core (71/81), audit-usage (147/152), economics (58/59), panel (38/41) and status (321/324); test_meter_usage was could-not-prove (HEAD's advise/session_summary take no table, so the suite raises before its cases). Suites green; ruff, vermin, bench-hooks --gate (3.11 not measured) clean.",
+        "descriptive": "Every cost the plugin shows - in the report, /audit:usage, /audit:status, the panel and the end-of-turn usage notes - is now what the price table named beside it charges for those tokens, and any old row that cannot be re-priced is counted and said so; the recorded history itself is never changed."
+      },
+      "startedAt": "2026-10-07T01:24:22Z",
+      "completedAt": "2026-10-07T02:01:52Z",
+      "verifiedBy": [
+        "rt1",
+        "rt3",
+        "rt5",
+        "rt8",
+        "rb6",
+        "ua1",
+        "ua3"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T02:01:41Z.850757",
+        "status": "passed",
+        "at": "2026-10-07T02:01:41Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "553d6c57",
+        "at": "2026-10-07T02:01:52Z",
+        "basis": "orchestrator check: P104-R7 and R11 fixed on every surface through one priced_at_read, the phrase now true of the figure beside it, red-first proved on five suites (meter could-not-prove, stated)"
+      }
+    },
+    {
+      "id": "P104.14-tog",
+      "title": "one date for the price table on a page, and the precedence change recorded for users",
+      "status": "done",
+      "description": "Fixes review findings P104-R8, P104-R10, P104-R12 and P104-R13. (R8) The report's stale-price notice computes staleness from the resolver's asOf and names the same place rate_basis_phrase names, so a page never carries two dates for the price table; a manifest pricingAsOf with no manifest table no longer triggers a notice about a table that priced nothing. (R10) CHANGELOG.md [Unreleased] gains a Changed entry: one precedence for every surface (the manifest's meta.usage.pricing, else the config's usage.pricing laid over the shipped table, else the shipped table), naming that the meter and the panel previously read only the config, plus the shipped-rate change and the read-time pricing of printed costs; COMPATIBILITY.md records the precedence in its written-down list, and the CHANGELOG entry says whether the change alters a written promise, stating the basis. Whether the release needs a major bump is recorded for the operator, not decided here. (R12) README's usage.currency / pricingAsOf row matches rate_basis_phrase. (R13) the panel payload's pricingAsOfDeclared, which no panel script reads, is dropped with its pinned cases, unless a reader is found and named.",
+      "files": [
+        "plugins/audit/scripts/report/_usage_load.py",
+        "plugins/audit/scripts/report/_usage_overview.py",
+        "plugins/audit/tests/test__usage_overview.py",
+        "plugins/audit/tests/test__usage_load.py",
+        "CHANGELOG.md",
+        "COMPATIBILITY.md",
+        "plugins/audit/README.md",
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/tests/test__panel_usage.py",
+        "plugins/audit/tests/test__deps.py",
+        "plugins/audit/scripts/_deps.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__usage_overview.py: a manifest pricingAsOf with no manifest table renders one date for the price table and no stale notice about a table that priced nothing, while an old dated table the resolver chose still raises the notice"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "validate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P104.13-tog"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "8c7b7d8e",
+      "outcome": {
+        "technical": "(R8) report/_usage_load.py no longer reads or trims meta.usage.pricingAsOf and drops the payload's separate pricingAsOf; pricingStale = _pricing_stale(pricing[\"asOf\"], until), so staleness is dated from the table the resolver chose and pricingBasis.asOf is the payload's only date for the price table. report/_usage_overview.py's stale notice embeds rate_basis_phrase(pricingBasis), the cost line's own words, and its remedy comes from _stale_remedy(basis), naming the key that declares that table (a function, not a module-level table, so gate-parity's exemption scan has nothing to classify). A manifest pricingAsOf with no manifest table raises no notice; an old dated declared table, or a shipped table the ledger has outrun, still does. (R13) panel/_panel_usage.py drops pricingAsOfDeclared (no reader outside a historical CHANGELOG line) and the unused _declared_as_of alias; the panel's config pricingAsOf stays. (R12) README's usage.currency / pricingAsOf row matches rate_basis_phrase; the usage.pricing row says both declared tables are laid over the shipped one model by model, that every surface prices at read time, and that the phrase counts rows that kept their stored cost; the 'Cost is labelled equiv' paragraph is corrected. (R10) CHANGELOG [Unreleased] Changed: one precedence (plan > config overlay > shipped) on every surface, the meter and panel having read only the config before; the plan-table overlay; the shipped-rate change; read-time pricing; one date per page; the dropped payload keys; an 'Against COMPATIBILITY.md' paragraph saying no written-down precedence changed (the list named only planGate over enforce) while the version table counts a changed precedence as major and which table wins did change for the meter and panel, the shipped-rate change falling under 'a default value is not frozen' - the version decision is the operator's. COMPATIBILITY.md records the pricing order in its written-down list. test__deps ck17 narrowed to the panel reading usage.pricingAsOf (the report no longer reads it), and the _deps comment names where the trim now lives.\nTests: test__usage_overview uo10 (reworked), uo32-uo34; test__usage_load ul20-ul23 (reworked), ul24; test__panel_usage pa0, up1 (21 keys), up3. Red-first proved through the helper at HEAD f9422d8d (uo10, uo32-uo34; ul24; pa0, up1); ck17's narrowing shown red by an in-memory mutation (306/307). Full sweep 305/305 files ok; gate-parity and check-rendered-artifacts --before-commit green; no committed render moved.",
+        "descriptive": "A report now shows one date for the price table that actually priced it, the panel drops a value nothing read, and the README, CHANGELOG and compatibility notes describe which price table wins and that costs are priced when shown - with the version question left to the maintainer."
+      },
+      "startedAt": "2026-10-07T02:01:53Z",
+      "completedAt": "2026-10-07T02:42:29Z",
+      "verifiedBy": [
+        "uo10",
+        "uo32",
+        "uo33",
+        "uo34",
+        "ul24",
+        "pa0",
+        "up1"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T02:42:05Z.6e0f6d",
+        "status": "passed",
+        "at": "2026-10-07T02:42:05Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8c7b7d8e",
+        "at": "2026-10-07T02:42:29Z",
+        "basis": "orchestrator check: P104-R8, R10, R12 and R13 addressed; the compatibility question stated with its basis and left to the operator; red-first proved; full sweep green"
+      }
+    },
+    {
+      "id": "P104.15-tog",
+      "title": "with showCost off the panel prints no per-task dollar figure",
+      "status": "done",
+      "description": "Fixes review finding P104-R9. With showCost off the panel prints no per-task dollar figure anywhere: the cost-per-task tile, the projection fact and the routing table's cost/task column (header and cells) are gated on USAGE.showCost exactly as the report gates them, and the projection's coverage line follows the same gate as the tile's. A vitest case renders the usage view with showCost false and asserts no dollar figure in those three places, with its twin (showCost true shows them, each with its coverage line). The panel screenshots are re-captured by the orchestrator.",
+      "files": [
+        "plugins/audit/scripts/ui/panel/usage-view.js",
+        "tools/ui-tests/usage-edges.test.mjs",
+        "plugins/audit/tests/test__panel_page.py",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/mobile.png",
+        "docs/screenshots/overview.png",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ui-tests/usage-edges.test.mjs: with showCost false the cost-per-task tile, the projection fact and the routing cost/task column render no dollar figure, and with showCost true each shows its figure with its coverage line"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "f9422d8d",
+      "outcome": {
+        "technical": "plugins/audit/scripts/ui/panel/usage-view.js, inside renderUsage, gated on USAGE.showCost the way the report gates the same figures: the cost-per-task tile as a whole (`if(USAGE.showCost&&unit.perTask!=null)`); the projection fact and its coverage line (gated inside the `if(unit.proj)` branch, as the report's _economics_block does, so a large-enough sample never falls through to the 'Projection needs N' notice); the routing table's cost/task column, header and cells together (header list built with concat so no empty <th> is drawn; cells null, which el() skips). Two more ungated dollar spots in the same file, both gated by the report, are gated too: the retry/blocked spend fact and the routing-advice block. The panel reads USAGE.showCost as truthy, like the tab's existing gates.\nTests: 8 new vitest cases in tools/ui-tests/usage-edges.test.mjs driving renderUsage itself through a recording DOM in the test's vm context - showCost off: the tile is not drawn, the projection and its coverage line are withheld (the sample-size notice does not stand in), the routing table drops its cost/task column and coverage line, no dollar figure anywhere on the tab; each with its showCost-on twin. test__panel_page.py's pin 'if(adv.length){' becomes 'if(USAGE.showCost&&adv.length){', relabelled as a construct pin. Red-first: the helper proved the pin (484/485 at HEAD 209e5937); the vitest cases were could-not-prove in the throwaway (no node_modules) and red in the shared tree before the fix (4 failed / 23 passed, assertion errors), twins green. usage-edges 27/27, test__panel_page 485/485, node --check on the assembled panel script exit 0. Left for other files: usage-cards.js budget amounts and browse-dialog.js uCost uses.\nNavigability: three section markers in tools/ui-tests/usage-edges.test.mjs at real seams (test__deps tn0 green, 307/307).",
+        "descriptive": "When a project turns dollar figures off, the panel's Usage tab no longer shows any per-task cost, projection, routing cost, retry spend or routing advice in dollars, the same as the report."
+      },
+      "startedAt": "2026-10-07T01:24:22Z",
+      "completedAt": "2026-10-07T02:19:14Z",
+      "verifiedBy": [
+        "usage-edges showCost-off/on cases",
+        "test__panel_page advice pin"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T02:18:58Z.d00071",
+        "status": "passed",
+        "at": "2026-10-07T02:18:58Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "f9422d8d",
+        "at": "2026-10-07T02:19:14Z",
+        "basis": "orchestrator check: P104-R9's three places gated plus the two the report also gates, each off case with an on twin, assembled script parses"
+      }
+    },
+    {
+      "id": "P104.16-tog",
+      "title": "with showCost off no dollar figure reaches the Usage tab's dialogs or budget block",
+      "status": "done",
+      "description": "Fixes review findings P104-R14 and P104-R15. With showCost off, the panel's Usage tab prints no dollar figure anywhere, its dialogs included.\n\n- The browse dialog drops its cost column, header and cells together, for every dimension.\n- For tasks, the dialog's band note keeps the band names but drops the dollar thresholds.\n- The phase budget block drops its dollar amounts, the way the report's budget block does.\n\nThe existing 'no dollar figure anywhere on the tab' case gets a fixture with a phase budget, so that it can fail on the budget path. A new case opens the browse dialog for tasks with showCost off and asserts no dollar figure; its twin, with showCost on, shows them.\n\nThe orchestrator re-captures the panel screenshots.",
+      "files": [
+        "plugins/audit/scripts/ui/panel/browse-dialog.js",
+        "plugins/audit/scripts/ui/panel/usage-cards.js",
+        "tools/ui-tests/usage-edges.test.mjs",
+        "plugins/audit/tests/test__panel_page.py",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/mobile.png",
+        "docs/screenshots/overview.png",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ui-tests/usage-edges.test.mjs: with showCost off the browse dialog for tasks and the phase budget block render no dollar figure, and with showCost on they do"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "ce3ede07",
+      "outcome": {
+        "technical": "browse-dialog.js: the column list is filtered once (USAGE.showCost or key not cost) and the header and cells are both drawn from it, so the cost column goes for every dimension and the two cannot drift; for tasks the band note keeps its basis and band names and drops the dollar thresholds when showCost is off (unchanged when on). usage-cards.js: uBudgets returns nothing when showCost is off - the whole budget block, as the report's budget block returns nothing (a budget bar is a spend-against-budget comparison). Decision: the band note follows the task (names kept, thresholds dropped) where the report hides its whole note inside the gated most-expensive block.\nTests: tools/ui-tests/usage-edges.test.mjs - the recording builder gains showModal/close so the dialog opens; the render fixture gains a phase budget so 'no dollar figure anywhere on the tab' can fail on the budget path; a browse(showCost, dim) helper opens the dialog over USAGE.facts; new cases for the budget block (off, with its on twin), the tasks browse dialog (off, with its on twin) and every dimension dropping the cost column. test__panel_page.py sc1 (the column filter appears once) and sc2 (uBudgets reads showCost before phaseBudgets), labelled as source pins. Red: the vitest cases failed in the shared tree before the fix (4 failed / 28 passed) with their on twins green; the helper proved the Python pin at HEAD 8c7b7d8e and was could-not-prove for vitest in its throwaway (no node_modules). usage-edges 32/32, full vitest 781/781, test__panel_page 487/487, node --check on the assembled panel script exit 0. Panel screenshots re-captured by the orchestrator.",
+        "descriptive": "When a project turns dollar figures off, the panel's browse dialog and budget block no longer show any, so the Usage tab is dollar-free everywhere, matching the report."
+      },
+      "startedAt": "2026-10-07T05:03:30Z",
+      "completedAt": "2026-10-07T05:39:56Z",
+      "verifiedBy": [
+        "usage-edges showCost browse/budget cases",
+        "test__panel_page sc1",
+        "sc2"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T05:36:03Z.4fc4ae",
+        "status": "passed",
+        "at": "2026-10-07T05:36:03Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ce3ede07",
+        "at": "2026-10-07T05:39:56Z",
+        "basis": "orchestrator check: P104-R14 and R15 fixed, one column filter for header and cells, the budget block matches the report's rule, red seen before the fix with on twins green"
+      }
+    },
+    {
+      "id": "P104.17-tog",
+      "title": "the meter prices once and says what it kept, and the dead date helper and key are gone",
+      "status": "done",
+      "description": "Fixes review findings P104-R16, P104-R17, P104-R18 and P104-R19.\n\n- The meter reads and re-prices the ledger once per run and hands the priced rows to both the band advisory and the session line.\n- Its advisory docstring either carries a figure re-measured with the command that produced it, or drops the number and keeps the reasoning.\n- The meter's two notes append the kept-row count when rows kept their stored figure. If a one-line note cannot carry it, the CHANGELOG and README sentences are narrowed to the surfaces that print the rate phrase.\n- _panel_paths._declared_as_of, its aliases and its test are removed. If something still needs the helper, it gets an honest docstring instead.\n- The comments in audit-usage.py, audit-status.py and _panel_usage.py name _usage_core._declared_as_of as the trim.\n- The /api/usage payload drops the merged config pricingAsOf, with its pins. If a reader exists, name it and serve the resolver's asOf instead.",
+      "files": [
+        "plugins/audit/hooks/meter-usage.py",
+        "plugins/audit/tests/test_meter_usage.py",
+        "plugins/audit/scripts/panel/_panel_paths.py",
+        "plugins/audit/tests/test__panel_paths.py",
+        "plugins/audit/scripts/panel/_panel_state.py",
+        "plugins/audit/scripts/panel/panel-server.py",
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/tests/test__panel_usage.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "CHANGELOG.md",
+        "plugins/audit/README.md",
+        "plugins/audit/tests/test__panel_state.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/tests/test__deps.py",
+        "plugins/audit/scripts/_deps.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_meter_usage.py: one meter run reads and prices the ledger once and its notes name the rows that kept their stored figure",
+          "plugins/audit/tests/test__panel_usage.py: the usage payload carries no merged config pricingAsOf"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "8f84edad",
+      "outcome": {
+        "technical": "meter-usage.py reads the ledger once per run and prices it once (_priced_ledger); the band advisory and the session line both take those priced rows. Each of the two notes appends the count of rows that kept the cost stored when written, and says nothing about a stored figure when every row was priced again (mt1-mt4). The advisory docstring drops its unbased figure and keeps the reasoning. The trim comments in audit-usage.py, audit-status.py and _panel_usage.py name _usage_core._declared_as_of. _panel_paths._declared_as_of, its aliases, its case, its _moved entry and the guide mention are removed. /api/usage no longer carries the merged config's pricingAsOf; the date beside a cost is pricingBasis.asOf (pa4), and the pins that held the old key are gone. ck17 now pins usage.bands, which the panel reads through usage_cfg along with showCost; up1 takes its expected key count from _usage_shape() instead of a literal. Two _deps.py comments that named the panel's pricingAsOf read now describe the usage.bands and showCost reads, checked against config_key_reads(). CHANGELOG and README name the kept-row count on the meter's notes. Red-first: mt1-mt3 failed at HEAD and pass with the fix; pa4 and up3 failed at HEAD and pass with the fix.",
+        "descriptive": "The usage meter now reads and prices the ledger once per run and says how many rows kept the cost stored when they were written; a dead date helper and the panel's second pricing date are gone, so one date stands beside every cost."
+      },
+      "startedAt": "2026-10-07T05:03:30Z",
+      "completedAt": "2026-10-07T05:39:57Z",
+      "verifiedBy": [
+        "mt1",
+        "mt2",
+        "mt3",
+        "mt4",
+        "pa4",
+        "up1",
+        "up3",
+        "ck17"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T05:37:42Z.35ee5b",
+        "status": "passed",
+        "at": "2026-10-07T05:37:42Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8f84edad",
+        "at": "2026-10-07T05:39:57Z",
+        "basis": "orchestrator check: P104-R16..R19 fixed, one read and one pricing per meter run, kept-row count on both notes, dead helper and duplicate date removed with their pins, comments re-checked against config_key_reads, red-first proved for mt1-mt3, pa4, up3"
+      }
+    },
+    {
+      "id": "P104.18-tog",
+      "title": "the panel's CSV and Settings help honour showCost and the resolver, and the meter counts only the rows its figure rests on",
+      "status": "done",
+      "description": "Fixes review findings P104-R20 to P104-R24.\n\n- When showCost is off, the panel's Usage-tab CSV export drops the costUSD column, header and cells together, the way the report's usage CSV already does. usage-edges.test.mjs gets an off/on twin for it. The /api/usage payload keeps its cost data: it is the page's local, token-protected data source, not a shareable artifact. Record that decision in a code comment beside the payload.\n- The Settings help for usage.pricingAsOf says what the resolver does now, matching the README and rate_basis_phrase:\n  - it dates the config's own usage.pricing table;\n  - it is printed only when that table priced the rows;\n  - 'rates undated' is said only of a project table that carries no date.\n  A case in test__panel_settings fails while the old sentence stands.\n- The meter's advisory counts only the kept rows its printed figure rests on: the task's rows, plus, on the relative basis, the completed tasks' rows the bands were read from. One mt case holds a kept row outside the task, for an absolute band.\n- Another mt case adds a kept row from another session and asserts that the session line's count excludes it. Prove it red by counting over the whole ledger.\n- The CHANGELOG [Unreleased] entry says the panel payload drops both pricingAsOf and pricingAsOfDeclared, and that the date beside a panel cost is pricingBasis.asOf. Its meter sentence and the README's matching sentence describe the narrowed count. It also notes that the panel's CSV honours showCost.\n\nThe orchestrator re-captures the screenshots if the help text appears in one.",
+      "files": [
+        "plugins/audit/scripts/ui/panel/usage-metrics.js",
+        "tools/ui-tests/usage-edges.test.mjs",
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/scripts/panel/_panel_settings.py",
+        "plugins/audit/tests/test__panel_settings.py",
+        "plugins/audit/hooks/meter-usage.py",
+        "plugins/audit/tests/test_meter_usage.py",
+        "CHANGELOG.md",
+        "plugins/audit/README.md",
+        "plugins/audit/tests/test__panel_page.py",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/mobile.png",
+        "docs/screenshots/overview.png",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "4bc4796d",
+      "outcome": {
+        "technical": "usage-metrics.js: uCsvText gates the costUSD column, header and cells together, on showCost the way the report's usageCsv does, defaulting to shown when no usage block is loaded. _panel_usage.py records beside the payload why /api/usage keeps its cost data under showCost false: it is the page's local token-protected source, not a shareable artifact, and showCost is honoured by what the tab draws and by the CSV. _panel_settings.py's help for usage.pricingAsOf now says it dates the config's own usage.pricing table, is printed only when that table priced the rows, and that 'rates undated' is said only of a project table with no date; its case drives rate_basis_phrase rather than copying its strings. meter-usage.py: _advisory_scope limits the advisory's kept-row count to the warned task's rows plus, on the relative basis only, the completed tasks cost_bands read; the session line was already scoped to its own rows and is now pinned. CHANGELOG [Unreleased] names the CSV gate, the help wording and the narrowed count, and says the panel payload drops both pricingAsOf and pricingAsOfDeclared with pricingBasis.asOf as the date beside a panel cost. Screenshots re-captured. Red-first: ab2 in test_meter_usage, the help case in test__panel_settings and the CSV pins in test__panel_page failed at HEAD and pass with the change; rt4 is a regression lock that passes at HEAD; the vitest off/on twin was run directly (the throwaway tree has no node_modules).",
+        "descriptive": "With costs turned off the panel's CSV export no longer carries dollars, the help for the pricing date says what the setting actually does, and the meter's cost note counts only the rows its figure depends on."
+      },
+      "startedAt": "2026-10-07T05:47:36Z",
+      "completedAt": "2026-10-07T06:14:50Z",
+      "verifiedBy": [
+        "ab1",
+        "ab2",
+        "rt4",
+        "usage.pricingAsOf help case",
+        "CSV showCost pins",
+        "usage-edges uCsvText off/on twin"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T06:14:38Z.890966",
+        "status": "passed",
+        "at": "2026-10-07T06:14:38Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "4bc4796d",
+        "at": "2026-10-07T06:14:50Z",
+        "basis": "orchestrator check: P104-R20..R24 fixed, CSV gated like the report's, payload decision recorded in code, help text driven from rate_basis_phrase, advisory count scoped to the rows behind the figure, red-first proved for ab2, the help case and the CSV pins"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-10-06T14:46:28Z",
+  "testEvidence": {
+    "runId": "2026-10-07T06:35:03Z.3dd7f1",
+    "status": "passed",
+    "at": "2026-10-07T06:35:03Z"
+  },
+  "mergedHead": "6633c132a3202d8faf3cd705e7b24405bd817fd7"
 }

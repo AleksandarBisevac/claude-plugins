@@ -142,7 +142,7 @@ describe('paintedIdentityProblem: the paths a capture paints, judged by the one 
 // GIF's own check reads that absence as a finding, which would have been red for a
 // reason nobody could see from the diff.
 describe('mergeCaptureRecord: one shot\'s record merged into the shared sidecar', () => {
-  const gifs = { 'demo-gate.gif': { sha256: 'g', textDigest: 't' } };
+  const gifs = { 'demo-gate.gif': { sha256: 'g', refusal: 'r', model: 'sonnet' } };
   const prior = { note: 'old', images: { 'b.png': { sha256: 'b' } }, gifs };
 
   it('KEEPS a top-level key it does not own', () => {

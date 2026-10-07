@@ -445,6 +445,14 @@ TABLE = (
   "def json_encoding_violations(script_dir=None, hooks_dir=None):",
   "def json_encoding_violations(script_dir=None, hooks_dir=None):\n    return []",
   DEP, "je2"),
+ # The one-way-to-replace rule, crippled. It is what keeps a state file from being
+ # replaced by code that shares its temp name with another writer, and a version
+ # reporting nothing reads exactly like a tree that replaces only at its writers.
+ ("state_write_violations", S + "_deps.py", "replace",
+  "def state_write_violations(script_dir=None, hooks_dir=None, table=None):",
+  "def state_write_violations(script_dir=None, hooks_dir=None, table=None):\n"
+  "    return []",
+  DEP, "sw3"),
  # The one-tree rule, crippled. It is what keeps a hook from reading the main
  # checkout's plan for work in a linked worktree, and a version reporting
  # nothing reads exactly like hooks that all ask `_config.tree_for`.
@@ -671,6 +679,12 @@ TABLE = (
  ("discovery_projection_drift", "plugins/audit/commands/task.md", "replace",
   "         --discovery --section discovery",
   "         --discovery", REF, "dp1"),
+ # A first-contact command goes back to handing a script that finds the
+ # manifest itself a placeholder for the model to fill in - the guess the
+ # model then narrates to the user.
+ ("manifest_placeholder_drift", "plugins/audit/commands/status.md", "replace",
+  '/audit-status.py" $ARGUMENTS',
+  '/audit-status.py" <manifestPath> $ARGUMENTS', REF, "mp1"),
  ("raw_url_pin_drift", "plugins/audit/README.md", "sub",
   r"raw\.githubusercontent\.com/.*/v[0-9]+\.[0-9]+\.[0-9]+/",
   (r"/v[0-9]+\.[0-9]+\.[0-9]+/", "/main/"), REF, "p1"),
@@ -1000,12 +1014,12 @@ TABLE = (
  ("schema_vocab_drift", S + "manifest/_manifest_vocab.py", "replace",
   'KNOWN_MERGE = {"auto", "removeWorktree", "deleteBranch"}',
   'KNOWN_MERGE = {"auto", "removeWorktree"}', MVO, "mv18"),
- # A recommended subset that stops being a subset. `CLAIM_KEYS` names three fields
- # of `phase.claim`; a fourth that the schema does not declare is the shape a
+ # A recommended subset that stops being a subset. `CLAIM_KEYS` names the fields a
+ # claim is asked for; one more that the schema does not declare is the shape a
  # rename leaves when only one side is updated.
  ("schema_subset_drift", S + "manifest/_manifest_vocab.py", "replace",
-  'CLAIM_KEYS = ("sessionId", "host", "branch")',
-  'CLAIM_KEYS = ("sessionId", "host", "branch", "worktree")', MVO, "mv23"),
+  'CLAIM_KEYS = ("sessionId", "branch")',
+  'CLAIM_KEYS = ("sessionId", "branch", "worktree")', MVO, "mv23"),
  # An inline vocabulary at its `_unknown_keys()` call, drifted from the schema.
  # These are the levels whose words are a set LITERAL rather than a named set, so
  # nothing but this rule compares them with anything.
@@ -1346,6 +1360,14 @@ ALLOW = (
   "                if _called_name(node) not in JSON_WRITER_NAMES "
   "+ _JSON_DUMP_NAMES:",
   DEP, "je5"),
+ # The one-way-to-replace rule, widened from the os module's two functions to any
+ # method of those names. A string's `.replace` is the commonest call in the tree
+ # and replaces no file, so the widened rule convicts every string edit - `sw4`'s
+ # fixture holds a string's, a path's and an unbound str method's.
+ ("state_write_violations", S + "_deps.py", "replace",
+  "            and isinstance(func.value, ast.Name) and func.value.id in modules:",
+  "            and isinstance(func.value, (ast.Name, ast.Attribute)):",
+  DEP, "sw4"),
  # The one-tree rule, widened to every `repo_root`. The config and the
  # session's own state live with the project on purpose, so a hook resolving
  # the project for those alone is honest code this would convict.
@@ -1837,6 +1859,13 @@ ALLOW = (
  ("discovery_projection_drift", S + "_refs.py", "replace",
   "_DISCOVERY_WINDOW = 60", "_DISCOVERY_WINDOW = 5",
   REF, "dp1"),
+ # The filter to scripts that resolve the manifest themselves, dropped. A
+ # placeholder handed to a script that does NOT resolve it is still needed
+ # (`status.md` hands `verify-invariants.py` one), so a lint that read every
+ # placeholder convicts a line the model genuinely has to fill in.
+ ("manifest_placeholder_drift", S + "_refs.py", "replace",
+  "                if script not in resolving:\n                    continue\n",
+  "", REF, "mp1"),
  # The needle widened from a BOLDED prohibition to any sentence carrying the word.
  # `orchestrator.md` says "never goes out of date" about a manifest and "never
  # recompute it" about a budget - prose about a thing, not a rule about an action -
@@ -2061,6 +2090,12 @@ NOT_A_GATE = (
   "is a pure function of an exit code and some text, has no walk in it, and is "
   "reached through `scratch_debris` and the sweep's own cases rather than through "
   "this name."),
+ ("self_resolving_scripts",
+  "the INPUT to `manifest_placeholder_drift`, not a verdict: it answers which "
+  "scripts call `<module>.resolve_manifest(...)` and so find the manifest "
+  "themselves. A set of script names is what the placeholder lint judges command "
+  "lines against, and an empty or wrong set shows up as that lint's mp1/mp2 going "
+  "red, not as a finding of its own."),
 )
 
 _MIN_NOT_A_GATE_REASON = 80   # a reason short enough to be a label is not a reason

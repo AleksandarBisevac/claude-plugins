@@ -77,6 +77,24 @@ def _pricing_stale(as_of, until, max_days=90):
         return False
 
 
+def _project_pricing(manifest, manifest_path, project_dir, ul):
+    """The project's price table and which place priced it - `usage_ledger.
+    project_pricing`'s answer, `{table, basis, asOf, source}`.
+
+    One resolver for every surface: the manifest's `meta.usage.pricing` when it
+    declares one, else the config's `usage.pricing` laid over the shipped table
+    model by model, else the shipped table. This module used to resolve the
+    first two itself and hand `None` onward for the third, while
+    `/audit:usage`, the panel and the meter each chose differently - so one
+    project's spend read differently depending on which surface printed it.
+
+    The project root is the one the ledger's own lookup places (`project_dir`
+    when given, else the walk up from the manifest bounded by `.git`), so the
+    config read is the file beside the ledger this report plots.
+    """
+    return ul.project_pricing(manifest, manifest_path, project_dir)
+
+
 def _hourly(rows, ul):
     """rows -> {"YYYY-MM-DD": [24 ints]} — tokens per hour per calendar date.
 
@@ -128,6 +146,17 @@ def load_usage(manifest, manifest_path, project_dir=None):
         if not rows:
             return None
 
+        # Resolved ONCE and shared by every pass below: the table, and which
+        # place priced it. Every cost this section sums is the resolved
+        # table's price for the row's tokens (`priced_at_read`), because the
+        # rate phrase beside it names that table; the rows that kept the
+        # figure stored when written are counted into the basis it is worded
+        # from.
+        pricing = _project_pricing(manifest, manifest_path, project_dir, ul)
+        resolved_pricing = pricing["table"]
+        priced = ul.priced_at_read(rows, resolved_pricing)
+        rows = priced["rows"]
+
         # One pass per dimension, hoisted. `aggregate` walks EVERY ledger row and
         # this dict asked for the same four dimensions more than once: `day` three
         # times (the token, cost and message series are three reads of one
@@ -139,28 +168,6 @@ def load_usage(manifest, manifest_path, project_dir=None):
         by_phase = ul.aggregate(rows, "phase")
         by_model = ul.aggregate(rows, "model")
         by_author = ul.aggregate(rows, "author")
-
-        # THE RATE BASIS, TRIMMED AT THE DOOR. The plan schema asks only
-        # that `meta.usage.pricingAsOf` be non-empty, so a string of spaces
-        # validates - and every renderer below tests it for truth, so `"  "`
-        # reached the page and the terminal as "rates as of" followed by
-        # nothing. A basis with no content is the one thing this project's
-        # output rule forbids, and the honest reading of a whitespace-only
-        # setting is that the project never declared one: it collapses to None
-        # here, which is the shape absence already has, and the renderers then
-        # say "rates undated" without needing to learn a second empty value.
-        # Repaired at the READER rather than at the schema because a `pattern`
-        # would stop an existing manifest validating - a major-release change
-        # under COMPATIBILITY.md - and because nothing revalidates a manifest on
-        # the way into a render anyway. The same normalisation that
-        # `panel/_panel_paths._declared_as_of` applies to the config file's copy
-        # of this key; `_deps.config_read_violations` is what keeps the readers
-        # of one key from drifting apart about whitespace again.
-        # `isinstance` first, because a hand-edited manifest may carry a number
-        # and `.strip()` on one would take the whole usage section down through
-        # the `except` below - silence where a report was expected.
-        as_of_raw = meta_usage.get("pricingAsOf")
-        as_of = (as_of_raw.strip() or None) if isinstance(as_of_raw, str) else None
 
         def slim(agg):
             """The three fields a breakdown renders, out of a finished aggregate."""
@@ -249,12 +256,13 @@ def load_usage(manifest, manifest_path, project_dir=None):
             # the analytics layer — every one of these carries its own honesty guard
             "compare": ul.compare(rows, since, until) if since else None,
             "compareWindow": {"since": since, "until": until},
-            "cache": ul.cache_profile(rows),
+            "cache": ul.cache_profile(rows, resolved_pricing),
             "unit": ul.unit_economics(manifest, rows),
             "bands": ul.cost_bands(manifest, rows, meta_usage),
             "budgets": ul.phase_budgets(manifest, rows),
             "retry": ul.retry_cost(manifest, rows),
-            "routing": ul.routing(manifest, rows, meta_usage.get("pricing")),
+            # Priced at the resolver's table - see `_project_pricing`.
+            "routing": ul.routing(manifest, rows, resolved_pricing),
             "coverage": ul.coverage(rows),
             "monthly": ul.monthly_activity(manifest, rows),
             "seriesAuthorModel": {
@@ -262,8 +270,20 @@ def load_usage(manifest, manifest_path, project_dir=None):
                              "model")
                 for a in sorted({r.get("author") or "unknown" for r in rows})},
             "showCost": bool(meta_usage.get("showCost", True)),
-            "pricingAsOf": as_of,
-            "pricingStale": _pricing_stale(as_of, until),
+            # Which place priced every cost above, as data: one of
+            # `ul.PRICING_BASES`, with that place's date and source, and how
+            # many rows kept the figure stored when written. The ONLY date
+            # this payload carries for the price table: the context line and
+            # the stale notice both read it, so a page cannot date one table
+            # twice. The resolver trims the declared date, so a blank one is
+            # None here, never "rates as of" followed by nothing.
+            "pricingBasis": dict(
+                [(k, pricing[k]) for k in ("basis", "asOf", "source")]
+                + [("pricedWhenWritten", priced["pricedWhenWritten"])]),
+            # Dated from the table the resolver CHOSE. A manifest
+            # `pricingAsOf` beside no manifest table dates nothing that priced
+            # a row, so it cannot raise a notice either.
+            "pricingStale": _pricing_stale(pricing["asOf"], until),
             # Orientation, not metrics. These answer "how big is the thing I am
             # looking at" — a question the tiles cannot answer, and one that would
             # cost five more tiles to answer badly.

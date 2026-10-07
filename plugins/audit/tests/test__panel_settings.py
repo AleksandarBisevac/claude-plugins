@@ -30,6 +30,7 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _panel_settings as M                        # noqa: E402
+import _usage_economics as _ue                     # noqa: E402  (rate_basis_phrase)
 
 
 # --- cases --------------------------------------------------------------------
@@ -154,6 +155,36 @@ def _cases(check):
           and tuple(_vc.RUNS_GATE_MODES) == tuple(_hcfg.RUNS_GATE_MODES))
     check("_cfg_enums() is JSON-serializable (panel-server bakes it into UI_HTML "
           "with json.dumps)", json.dumps(M._cfg_enums(), sort_keys=True))
+
+    # --- usage.pricingAsOf's help must say what rate_basis_phrase ACTUALLY does ---
+    # `rate_basis_phrase` is the one resolver every cost surface prints its phrase
+    # through - the README is worded off its real branches, and this field's help
+    # has to agree with the same branches rather than retyping an independent
+    # story. Driven through the real function, not a copy of its strings, so a
+    # future change to the resolver's wording fails THIS case rather than leaving
+    # the help text to quietly stop matching it.
+    _help = M.FIELD_HELP["usage.pricingAsOf"]
+    _config_undated = _ue.rate_basis_phrase(
+        {"basis": "config", "asOf": "", "source": ""})
+    _shipped_dated = _ue.rate_basis_phrase(
+        {"basis": "shipped", "asOf": "2026-01-01", "source": "a pricing page"})
+    check("the resolver says 'rates undated' of this project's OWN undated "
+          "usage.pricing table (basis=config) - the field this help text is for",
+          "rates undated" in _config_undated
+          and "usage.pricingAsOf" in _config_undated)
+    check("...and never of the shipped table, which already carries its own date",
+          "undated" not in _shipped_dated)
+    check("usage.pricingAsOf's help text matches those two branches: it dates "
+          "the config's own usage.pricing table, is printed only when THAT "
+          "table priced the rows, and 'rates undated' is never claimed of the "
+          "shipped table",
+          "project's usage.pricing table" in _help
+          and "priced the rows" in _help
+          and "never" in _help and "shipped table" in _help
+          # The old sentence's false claim: that an unset field leaves BOTH
+          # surfaces saying "undated" regardless of which table priced the
+          # rows - true only when the project table is the one in force.
+          and "both say the rates are undated" not in _help)
 
 
 def _selftest():

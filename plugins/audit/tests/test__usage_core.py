@@ -32,6 +32,7 @@ import os
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402
 from _output import safe_stdio                     # noqa: E402
 import _usage_core as M                            # noqa: E402
 
@@ -49,7 +50,7 @@ def _raises(fn):
 def _cases(check):
     # --- pricing -----------------------------------------------------------
     check("price: exact model match",
-          M.rates_for("claude-sonnet-5")["in"] == 3.0)
+          M.rates_for("claude-sonnet-5") is M.DEFAULT_PRICING["claude-sonnet-5"])
     check("price: longest-prefix match resolves a dated id",
           M.rates_for("claude-haiku-4-5-20251001")["out"] == 5.0)
     check("price: Fable/Mythos priced above Opus tier, not silently defaulted",
@@ -69,22 +70,22 @@ def _cases(check):
             "cacheR": 0}
     check("price: both cache-write tiers priced apart (6.25 + 10.00)",
           abs(M.price(both, "claude-opus-5") - 16.25) < 1e-9)
-    check("price: cache read is 0.1x base input",
+    check("price: cache read on opus-5 is 0.1x base input",
           abs(M.price({"in": 0, "out": 0, "cacheW5m": 0, "cacheW1h": 0,
                        "cacheR": 1_000_000}, "claude-opus-5") - 0.5) < 1e-9)
 
-    # --- pp: the 65 numbers that used to be kept true by two comments -------
+    # --- pp: the rates that used to be kept true by two comments -----------
     # DEFAULT_PRICING and hooks/_config.py DEFAULTS["usage"]["pricing"] are the
-    # same 13 models x 5 rates, and each file's comment said it mirrored the
-    # other. Nothing read either comment. They cannot be merged (hooks/ may
+    # same table, and each file's comment said it mirrored the other. Nothing
+    # read either comment. They cannot be merged (hooks/ may
     # import nothing from scripts/, and the hook must price a model standalone),
     # so the agreement is pinned here instead - a TEST is the one place that is
     # allowed to look at both.
     def _deep_pricing_copy(table):
         return dict((model, dict(row)) for model, row in table.items())
 
-    def _load_hooks_pricing():
-        """`(table, error)` for hooks/_config.py's own pricing map, loaded BY PATH.
+    def _load_hooks_module():
+        """`(module, error)` for hooks/_config.py, loaded BY PATH.
 
         NOT through `_loader.load_hooks_config()`: four lines of `importlib` do
         the same job with no shared cache this one call has any use for, and the
@@ -102,8 +103,30 @@ def _cases(check):
                 return None, "no import spec for %s" % path
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
-            return mod.DEFAULTS["usage"]["pricing"], None
+            return mod, None
         except Exception as exc:     # any failure is reported, not absorbed
+            return None, "%s: %s" % (type(exc).__name__, exc)
+
+    def _load_hooks_pricing():
+        """`(table, error)` for hooks/_config.py's own pricing map."""
+        mod, err = _load_hooks_module()
+        if err is not None:
+            return None, err
+        try:
+            return mod.DEFAULTS["usage"]["pricing"], None
+        except Exception as exc:     # a missing key is reported, not absorbed
+            return None, "%s: %s" % (type(exc).__name__, exc)
+
+    def _load_hooks_provenance():
+        """`(provenance, error)` for hooks/_config.py's shipped date and source,
+        in the shape `pricing_provenance_divergences()` reads."""
+        mod, err = _load_hooks_module()
+        if err is not None:
+            return None, err
+        try:
+            return {"pricingAsOf": mod.DEFAULTS["usage"]["pricingAsOf"],
+                    "source": mod.PRICING_SOURCE_URL}, None
+        except Exception as exc:     # a missing name is reported, not absorbed
             return None, "%s: %s" % (type(exc).__name__, exc)
 
     # The second-direction case: a divergence checker that ALWAYS reports
@@ -112,14 +135,20 @@ def _cases(check):
     check("pp1 two identical tables diverge in nothing",
           M.pricing_divergences(M.DEFAULT_PRICING,
                                 _deep_pricing_copy(M.DEFAULT_PRICING)) == [])
+    # The expected line is built from the shipped rate rather than spelled as
+    # a literal, so a correction to the table does not turn this case red
+    # while the checker is still right. The drifted value is chosen off the
+    # shipped one, so the two can never coincide and hide the drift.
     _pp_drift = _deep_pricing_copy(M.DEFAULT_PRICING)
-    _pp_drift["claude-sonnet-5"]["cacheW1h"] = 6.5
+    _pp_shipped = M.DEFAULT_PRICING["claude-sonnet-5"]["cacheW1h"]
+    _pp_drift["claude-sonnet-5"]["cacheW1h"] = _pp_shipped + 0.5
     _pp_named = M.pricing_divergences(M.DEFAULT_PRICING, _pp_drift,
                                       "ledger", "hooks")
     check("pp2 one drifted rate is named down to model.rate WITH both values, "
           "and is the ONLY thing reported - a checker that just says 'the "
-          "tables differ' sends someone diffing 65 numbers by hand",
-          _pp_named == ["claude-sonnet-5.cacheW1h: ledger 6.0 vs hooks 6.5"],
+          "tables differ' sends someone diffing every rate by hand",
+          _pp_named == ["claude-sonnet-5.cacheW1h: ledger %r vs hooks %r"
+                        % (_pp_shipped, _pp_shipped + 0.5)],
           repr(_pp_named))
     _pp_gone = _deep_pricing_copy(M.DEFAULT_PRICING)
     del _pp_gone["claude-haiku-4-5"]
@@ -158,6 +187,161 @@ def _cases(check):
           "DEFAULTS['usage']['pricing'] are identical, model for model and rate "
           "for rate - the duplication is deliberate, the agreement is now read",
           _hooks_diff == [], " | ".join(_hooks_diff))
+
+    # --- pr: the shipped rates are the published ones ----------------------
+    # Each expected row is transcribed from the pricing page named by
+    # M.PRICING_SOURCE_URL on M.PRICING_AS_OF, written out in full rather than
+    # derived from the table under test - a case that read its expectation off
+    # DEFAULT_PRICING would agree with any typo in it.
+    _pr_opus_5_5 = {"in": 4.0, "out": 20.0, "cacheW5m": 5.0, "cacheW1h": 8.0,
+                    "cacheR": 0.2}
+    _pr_fable_5_1 = {"in": 10.0, "out": 50.0, "cacheW5m": 12.5, "cacheW1h": 20.0,
+                     "cacheR": 0.25}
+    _pr_sonnet_5 = {"in": 2.0, "out": 10.0, "cacheW5m": 2.5, "cacheW1h": 4.0,
+                    "cacheR": 0.2}
+    _pr_opus_5 = {"in": 5.0, "out": 25.0, "cacheW5m": 6.25, "cacheW1h": 10.0,
+                  "cacheR": 0.5}
+    _pr_fable_5 = {"in": 10.0, "out": 50.0, "cacheW5m": 12.5, "cacheW1h": 20.0,
+                   "cacheR": 1.0}
+    check("pr1 claude-opus-5-5 and a dated claude-opus-5-5 id resolve to their "
+          "own row, not claude-opus-5's - the longest prefix used to be "
+          "claude-opus-5",
+          M.rates_for("claude-opus-5-5") == _pr_opus_5_5
+          and M.rates_for("claude-opus-5-5-20261001") == _pr_opus_5_5,
+          "got %r / %r" % (M.rates_for("claude-opus-5-5"),
+                           M.rates_for("claude-opus-5-5-20261001")))
+    # The allow twin of pr1: a row that grew to swallow its neighbour (opus-5
+    # rewritten with opus-5-5's rates) would satisfy pr1 and fail here.
+    check("pr2 ...while claude-opus-5 and its dated ids keep Opus 5's own rates",
+          M.rates_for("claude-opus-5") == _pr_opus_5
+          and M.rates_for("claude-opus-5-20260301") == _pr_opus_5,
+          "got %r" % (M.rates_for("claude-opus-5"),))
+    check("pr3 claude-fable-5-1 and claude-mythos-5-1 carry their own cache-read "
+          "rate, not the Fable 5 / Mythos 5 row's",
+          M.rates_for("claude-fable-5-1") == _pr_fable_5_1
+          and M.rates_for("claude-mythos-5-1") == _pr_fable_5_1
+          and M.rates_for("claude-fable-5-1-20261001")["cacheR"] == 0.25,
+          "got %r / %r" % (M.rates_for("claude-fable-5-1"),
+                           M.rates_for("claude-mythos-5-1")))
+    check("pr4 ...while claude-fable-5 and claude-mythos-5 keep their own read",
+          M.rates_for("claude-fable-5") == _pr_fable_5
+          and M.rates_for("claude-mythos-5") == _pr_fable_5,
+          "got %r" % (M.rates_for("claude-fable-5"),))
+    check("pr5 claude-sonnet-5 carries the rates the official page lists on the "
+          "as-of date, cache tiers included",
+          M.rates_for("claude-sonnet-5") == _pr_sonnet_5,
+          "got %r" % (M.rates_for("claude-sonnet-5"),))
+
+    # --- pv: the date and source travel with the table ---------------------
+    _pv_ship = {"pricingAsOf": M.PRICING_AS_OF, "source": M.PRICING_SOURCE_URL}
+    # The second-direction case, the same job pp1 does for the rates.
+    check("pv1 two identical provenances diverge in nothing",
+          M.pricing_provenance_divergences(_pv_ship, dict(_pv_ship)) == [])
+    _pv_date = dict(_pv_ship, pricingAsOf="2000-01-01")
+    check("pv2 a drifted date is named WITH both values, the way pp names a "
+          "drifted rate",
+          M.pricing_provenance_divergences(_pv_ship, _pv_date, "ledger", "hooks")
+          == ["pricingAsOf: ledger %r vs hooks '2000-01-01'" % (M.PRICING_AS_OF,)],
+          repr(M.pricing_provenance_divergences(_pv_ship, _pv_date,
+                                                "ledger", "hooks")))
+    _pv_url = dict(_pv_ship, source="https://example.invalid/pricing")
+    check("pv3 ...and so is a drifted source URL",
+          M.pricing_provenance_divergences(_pv_ship, _pv_url, "ledger", "hooks")
+          == ["source: ledger %r vs hooks 'https://example.invalid/pricing'"
+              % (M.PRICING_SOURCE_URL,)])
+    check("pv4 a blank or missing field is REPORTED even when both sides share "
+          "it - two empty dates agreeing is not a dated table",
+          M.pricing_provenance_divergences({"pricingAsOf": "", "source": "u"},
+                                           {"pricingAsOf": "", "source": "u"},
+                                           "ledger", "hooks")
+          == ["pricingAsOf: blank in ledger", "pricingAsOf: blank in hooks"]
+          and M.pricing_provenance_divergences({"source": "u"},
+                                               {"pricingAsOf": "d", "source": "u"},
+                                               "ledger", "hooks")
+          == ["pricingAsOf: blank in ledger"])
+    check("pv5 a provenance that is not a dict is REPORTED, never read as "
+          "agreement",
+          M.pricing_provenance_divergences(_pv_ship, None, "ledger", "hooks")
+          == ["hooks is not a pricing provenance (NoneType)"])
+    _pv_hooks, _pv_err = _load_hooks_provenance()
+    _pv_diff = (M.pricing_provenance_divergences(
+        _pv_ship, _pv_hooks, "_usage_core", "hooks/_config.py")
+        if _pv_err is None else [_pv_err])
+    check("pv6 _usage_core and hooks/_config.py ship the same as-of date and "
+          "source URL, and neither is blank",
+          _pv_diff == [], " | ".join(_pv_diff))
+
+    # Sonnet 5.5 has no row of its own: by longest prefix it is priced as
+    # claude-sonnet-5, which is right only while the two carry the same rates.
+    # The expected row is the page's own Sonnet 5.5 line, so a later correction
+    # to claude-sonnet-5 alone goes red HERE and forces the choice between
+    # giving Sonnet 5.5 its own row and confirming the two still agree.
+    _pr_sonnet_5_5 = {"in": 2.0, "out": 10.0, "cacheW5m": 2.5, "cacheW1h": 4.0,
+                      "cacheR": 0.2}
+    check("pr6 claude-sonnet-5-5, priced through the claude-sonnet-5 row, still "
+          "carries the rates the official page lists for Sonnet 5.5",
+          M.rates_for("claude-sonnet-5-5") == _pr_sonnet_5_5
+          and M.rates_for("claude-sonnet-5-5-20261001") == _pr_sonnet_5_5,
+          "got %r" % (M.rates_for("claude-sonnet-5-5"),))
+
+    # --- tp: the example config is a third copy of the shipped rates --------
+    # It lists only some models, so only the rows it lists are compared; its
+    # date and the source its usage note names are compared the way pv
+    # compares the hooks copy, blank fields included.
+    def _template_drift(tpl):
+        usage = (tpl or {}).get("usage") if isinstance(tpl, dict) else None
+        if not isinstance(usage, dict):
+            return ["template carries no usage block"]
+        rows = usage.get("pricing")
+        if not isinstance(rows, dict) or not rows:
+            return ["template lists no pricing rows"]
+        shipped = dict((model, M.DEFAULT_PRICING[model]) for model in rows
+                       if model in M.DEFAULT_PRICING)
+        note = tpl.get("//usage") if isinstance(tpl.get("//usage"), str) else ""
+        named = M.PRICING_SOURCE_URL if M.PRICING_SOURCE_URL in note else ""
+        return (M.pricing_divergences(shipped, rows, "DEFAULT_PRICING", "template")
+                + M.pricing_provenance_divergences(
+                    {"pricingAsOf": M.PRICING_AS_OF, "source": M.PRICING_SOURCE_URL},
+                    {"pricingAsOf": usage.get("pricingAsOf"), "source": named},
+                    "_usage_core", "template"))
+
+    def _load_template():
+        import json
+        path = os.path.join(_output.PLUGIN_ROOT, "templates",
+                            "audit.config.example.json")
+        try:
+            with open(path, encoding="utf-8") as fh:
+                return json.load(fh), None
+        except (OSError, ValueError) as exc:     # reported, never read as agreement
+            return None, "%s: %s" % (type(exc).__name__, exc)
+
+    _tp, _tp_err = _load_template()
+    _tp_diff = [_tp_err] if _tp_err is not None else _template_drift(_tp)
+    check("tp1 the example config's listed rows, its pricingAsOf and the source "
+          "its usage note names all match the shipped table",
+          _tp_diff == [], " | ".join(_tp_diff))
+    _tp_rows = (((_tp or {}).get("usage") or {}).get("pricing") or {})
+    _tp_model = sorted(m for m in _tp_rows if not m.startswith("_"))[:1]
+    _tp_bad = None
+    if _tp_err is None and _tp_model:
+        _tp_bad = dict(_tp, usage=dict(_tp["usage"], pricingAsOf="2000-01-01",
+                                       pricing=dict(_tp_rows)))
+        _tp_bad["usage"]["pricing"][_tp_model[0]] = dict(
+            _tp_rows[_tp_model[0]], out=_tp_rows[_tp_model[0]]["out"] + 1.0)
+    _tp_bad_diff = _template_drift(_tp_bad) if _tp_bad is not None else []
+    check("tp2 ...and the comparison fires: a drifted listed rate and a drifted "
+          "date are both named, so tp1 is not green over a check that reads "
+          "nothing",
+          bool(_tp_model)
+          and any(d.startswith("%s.out:" % _tp_model[0]) for d in _tp_bad_diff)
+          and any(d.startswith("pricingAsOf: _usage_core") for d in _tp_bad_diff),
+          repr(_tp_bad_diff))
+    _tp_blank = (dict(_tp, usage=dict(_tp["usage"], pricingAsOf="  "))
+                 if _tp_err is None else None)
+    check("tp3 a blank template date is reported, the way pv4 reports one",
+          _tp_blank is not None
+          and "pricingAsOf: blank in template" in _template_drift(_tp_blank),
+          repr(_template_drift(_tp_blank)) if _tp_blank is not None else _tp_err)
 
     # --- timestamps --------------------------------------------------------
     check("ts: millisecond Z form parses",
@@ -371,6 +555,236 @@ def _cases(check):
     check("ag8 the counter is real - the eager oracle, measured the same "
           "way, still allocates once per ROW (5), which is the defect",
           _ag_eager_day == 5, "got %d" % _ag_eager_day)
+
+
+    _resolver_cases(check)
+    _read_price_cases(check)
+
+
+# --- rt: every summed cost is priced at read time by the resolved table ---------
+# A row priced when it was written at a rate no longer in any table, so the stored
+# figure and the read-time figure disagree on every priced row: 1M input on opus-5
+# stored at $15 (resolved table says $5), 1M output on sonnet-5 stored at $75
+# (resolved: $10). The third row carries no token fields at all, so it cannot be
+# priced again and must keep its stored $2.50.
+def _rt_row(task, model, stored, **tokens):
+    row = {"ts": "2026-09-01T10", "taskId": task, "phaseId": "P1",
+           "model": model, "msgs": 1, "costUSD": stored}
+    row.update(tokens)
+    return row
+
+
+def _rt_full(model, task, stored, key):
+    tokens = dict((k, 0) for k in M.TOKEN_KEYS)
+    tokens[key] = 1000000
+    return _rt_row(task, model, stored, **tokens)
+
+
+def _rt_price(rows, table):
+    """`priced_at_read`'s answer, or None when it cannot answer - so a missing
+    or raising function fails its cases by assertion, not by aborting."""
+    fn = getattr(M, "priced_at_read", None)
+    if fn is None:
+        return None
+    try:
+        return fn(rows, table)
+    except Exception:  # noqa: BLE001 - the case reports the absent answer
+        return None
+
+
+def _read_price_cases(check):
+    shipped = M.resolve_pricing(None, None)["table"]
+    ledger = [_rt_full("claude-opus-5", "T1", 15.0, "in"),
+              _rt_full("claude-sonnet-5", "T2", 75.0, "out"),
+              _rt_row("T1", "claude-opus-5", 2.5)]
+    before = [dict(r) for r in ledger]
+    got = _rt_price(ledger, shipped) or {}
+    rows = got.get("rows") or []
+    tot = M.totals(rows) if rows else {}
+    check("rt1 a ledger whose stored costUSD came from another table sums at "
+          "the resolved table's prices (5 + 10 + the kept 2.5), not the stored "
+          "92.5: %r" % (tot.get("costUSD"),),
+          abs((tot.get("costUSD") or 0) - 17.5) < 1e-9)
+    by_task = M.aggregate(rows, "task") if rows else {}
+    check("rt2 ...and per task too, which is what cost per task, the bands and "
+          "the most-expensive table read: %r"
+          % (dict((k, v["costUSD"]) for k, v in by_task.items()),),
+          set(by_task) == {"T1", "T2"}
+          and abs(by_task["T1"]["costUSD"] - 7.5) < 1e-9
+          and abs(by_task["T2"]["costUSD"] - 10.0) < 1e-9)
+    check("rt3 a row with no token fields keeps its stored figure and is "
+          "counted as priced when written: %r" % (got.get("pricedWhenWritten"),),
+          got.get("pricedWhenWritten") == 1 and len(rows) == 3
+          and rows[2].get("costUSD") == 2.5)
+    # The second direction: a guard that counted every row would pass rt3.
+    clean = _rt_price(ledger[:2], shipped) or {}
+    check("rt4 ...while a ledger whose every row carries its tokens counts "
+          "none: %r" % (clean.get("pricedWhenWritten"),),
+          clean.get("pricedWhenWritten") == 0
+          and len(clean.get("rows") or []) == 2)
+    partial = _rt_row("T3", "claude-opus-5", 4.0, **{"in": 1000000, "out": 0})
+    part = _rt_price([partial], shipped) or {}
+    check("rt5 a row missing some token fields cannot be priced whole, so it "
+          "keeps its stored figure and is counted: %r" % (part,),
+          part.get("pricedWhenWritten") == 1
+          and (part.get("rows") or [{}])[0].get("costUSD") == 4.0)
+    check("rt6 the ledger is never rewritten - the rows handed in keep the "
+          "stored costUSD they were written with",
+          ledger == before and bool(rows) and rows[0] is not ledger[0])
+    check("rt7 an empty ledger prices to an empty list and counts nothing: %r"
+          % (_rt_price([], shipped),),
+          _rt_price([], shipped) == {"rows": [], "pricedWhenWritten": 0})
+
+    # A plan's table naming one model is laid over the shipped table model by
+    # model, like a config table: an unnamed model keeps its shipped row rather
+    # than falling to a `_default` the plan never declared.
+    named = {"in": 1.5, "out": 7.5, "cacheW5m": 1.875, "cacheW1h": 3.0,
+             "cacheR": 0.15}
+    ans = M.resolve_pricing(
+        {"meta": {"usage": {"pricing": {"claude-sonnet-5": named}}}}, None)
+    table = ans.get("table") or {}
+    haiku = M.rates_for("claude-haiku-4-5", table)
+    check("rt8 a manifest table naming one model prices another at its shipped "
+          "row, not at the _default: haiku out = %r" % (haiku.get("out"),),
+          haiku == M.DEFAULT_PRICING["claude-haiku-4-5"]
+          and abs(M.price({"out": 1000000}, "claude-haiku-4-5", table) - 5.0)
+          < 1e-9)
+    check("rt9 ...while the model it names is priced at the plan's row, and the "
+          "basis stays `manifest`: %r" % (ans.get("basis"),),
+          M.rates_for("claude-sonnet-5", table) == named
+          and ans.get("basis") == "manifest")
+
+
+# --- rp: one price table per project, whichever surface asks -------------------
+def _rp_ask(fn):
+    """A surface's answer, or the exception it raised as a value - so a surface
+    that cannot answer fails its case instead of aborting the suite."""
+    try:
+        return fn()
+    except Exception as exc:  # noqa: BLE001 - surfaced as the case's detail
+        return {"error": repr(exc)}
+
+
+def _rp_key(answer):
+    """The part of an answer every surface must agree on."""
+    if not isinstance(answer, dict) or "error" in answer:
+        return answer
+    return (answer.get("table"), answer.get("basis"), answer.get("asOf"),
+            answer.get("source"))
+
+
+def _resolver_cases(check):
+    import json
+    import shutil
+    import tempfile
+    import _loader
+
+    ul = _loader.load_script("usage_ledger.py", modname="rp_usage_ledger",
+                             cache=False)
+    rl = _loader.load_script("_usage_load.py", modname="rp_usage_load",
+                             cache=False)
+    au = _loader.load_script("audit-usage.py", modname="rp_audit_usage",
+                             cache=False)
+    pu = _loader.load_script("_panel_usage.py", modname="rp_panel_usage",
+                             cache=False)
+    gd = _loader.load_script("gen-demo-usage.py", modname="rp_gen_demo_usage",
+                             cache=False)
+    mu = _loader.load(os.path.join(_harness.HOOKS_DIR, "meter-usage.py"),
+                      "rp_meter_usage")
+
+    # Every rate differs from the shipped sonnet row, and the manifest's row
+    # differs from the config's, so no wrong precedence can match by accident.
+    cfg_sonnet = {"in": 3.0, "out": 15.0, "cacheW5m": 3.75, "cacheW1h": 6.0,
+                  "cacheR": 0.3}
+    man_table = {"_default": {"in": 7.0, "out": 35.0, "cacheW5m": 8.75,
+                              "cacheW1h": 14.0, "cacheR": 0.7},
+                 "claude-sonnet-5": {"in": 1.5, "out": 7.5, "cacheW5m": 1.875,
+                                     "cacheW1h": 3.0, "cacheR": 0.15}}
+    shipped = dict((k, dict(v)) for k, v in M.DEFAULT_PRICING.items())
+    overlay = dict(shipped)
+    overlay["claude-sonnet-5"] = dict(cfg_sonnet)
+    man_overlay = dict(shipped)
+    man_overlay.update(man_table)
+
+    projects = (
+        # name, meta.usage, raw config (None = no file), expected answer
+        ("config-only", {"pricingAsOf": "2026-07-01"},
+         {"usage": {"pricingAsOf": " 2026-08-06 ",
+                    "pricing": {"claude-sonnet-5": cfg_sonnet}}},
+         (overlay, "config", "2026-08-06", None)),
+        ("manifest", {"pricingAsOf": "2026-09-01", "pricing": man_table},
+         {"usage": {"pricingAsOf": "2026-08-06",
+                    "pricing": {"claude-sonnet-5": cfg_sonnet}}},
+         (man_overlay, "manifest", "2026-09-01", None)),
+        ("neither", {}, None,
+         (shipped, "shipped", M.PRICING_AS_OF, M.PRICING_SOURCE_URL)),
+    )
+    root = tempfile.mkdtemp(prefix="usage-core-resolver-")
+    try:
+        for name, meta_usage, raw_cfg, want in projects:
+            proj = os.path.join(root, name)
+            for d in (".git", os.path.join(".claude", "usage"),
+                      os.path.join("docs", "audit")):
+                os.makedirs(os.path.join(proj, d))
+            manifest = {"meta": {"version": 2, "repo": name,
+                                 "usage": meta_usage}, "phases": []}
+            mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+            with open(mpath, "w", encoding="utf-8") as fh:
+                json.dump(manifest, fh)
+            if raw_cfg is not None:
+                with open(os.path.join(proj, ".claude", "audit.config.json"),
+                          "w", encoding="utf-8") as fh:
+                    json.dump(raw_cfg, fh)
+
+            def _bind(m=manifest, p=mpath, d=proj, c=raw_cfg):
+                return (
+                    ("core", lambda: M.resolve_pricing(m, c)),
+                    ("usage_ledger", lambda: ul.project_pricing(m, p, d)),
+                    ("report", lambda: rl._project_pricing(m, p, d, ul)),
+                    ("/audit:usage", lambda: au.project_pricing(m, p, d)),
+                    ("panel", lambda: pu._usage_pricing(ul, m, c or {})),
+                    ("meter hook", lambda: mu._pricing(ul, m, d)),
+                    ("demo generator", lambda: gd._load_pricing(m, p)),
+                )
+
+            answers = [(surface, _rp_key(_rp_ask(fn))) for surface, fn in _bind()]
+            core = answers[0][1]
+            check("rp-%s the resolver answers the %s table, dated %r, for a "
+                  "project declaring %s: %r"
+                  % (name, want[1], want[2], name, core),
+                  core == want)
+            apart = [(s, a) for s, a in answers if a != want]
+            check("rp-%s ...and every surface that prices this project asks it "
+                  "and gets the same table and basis back - apart: %r"
+                  % (name, apart),
+                  apart == [] and len(answers) == 7)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+    # The config overlay replaces a NAMED row whole and leaves every other row
+    # shipped - the merge `hooks/_config.usage_cfg` applies.
+    hooks_cfg = _loader.load_hooks_config(modname="rp_hooks_config", cache=False)
+    raw = {"usage": {"pricing": {"claude-sonnet-5": {"in": 9.0}}}}
+    got = _rp_ask(lambda: M.resolve_pricing({}, raw))
+    check("rp-overlay a partial config row replaces the shipped row whole, "
+          "exactly as usage_cfg merges it, and leaves the other rows shipped",
+          isinstance(got, dict)
+          and got.get("table") == hooks_cfg.usage_cfg(raw).get("pricing")
+          and got.get("table", {}).get("claude-haiku-4-5")
+          == M.DEFAULT_PRICING["claude-haiku-4-5"])
+    # The second direction: a declared-but-empty table is no declaration.
+    got_e = _rp_ask(lambda: M.resolve_pricing(
+        {"meta": {"usage": {"pricing": {}}}}, {"usage": {"pricing": {}}}))
+    check("rp-empty an empty table in either place is not a declaration - the "
+          "basis stays `shipped`: %r" % (_rp_key(got_e),),
+          isinstance(got_e, dict) and got_e.get("basis") == "shipped")
+    got_s = _rp_ask(lambda: M.resolve_pricing(None, None))
+    check("rp-mutate the shipped answer is a copy - writing to it does not "
+          "reprice the next caller",
+          isinstance(got_s, dict) and isinstance(got_s.get("table"), dict)
+          and got_s["table"] == M.DEFAULT_PRICING
+          and got_s["table"] is not M.DEFAULT_PRICING
+          and got_s["table"].get("_default") is not M.DEFAULT_PRICING["_default"])
 
 
 def _selftest():
