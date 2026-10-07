@@ -408,7 +408,7 @@
     {
       "id": "P107.6-gwk",
       "title": "close-phase reports a lock taken over during its write and a rollback that failed",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix the phase review's close-phase findings P107-R3 and P107-R4 (see review.findings in this phase).\n- R3: under_index_lock must not discard a declined index-lock release. A declined release is the only sign that another session took the index lock while this close was writing. Return the release sentence and surface it in the close answer (stampWhy/stubWhy or a warning line), the way write_composition adds `said` to its warnings, so a stamp written under a lock that was taken over never reports clean success.\n- R4: when _revalidated_write's restore of a refused write itself fails (os.replace onto a file a reader holds open on Windows, a full disk), the message must say that the refused write landed and was NOT rolled back: '<path> was written and introduced <findings>; restoring its prior bytes failed: <exc> - the plan holds the refused write'. It must not say the path could not be written. That path's exit code must be a failure.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -434,18 +434,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1645c074",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "R3 (declined lock release): under_index_lock now returns (taken, got, released), where released is the sentence _panel_write.release_index_lock returns when it declines, else \"\". stamp_merged, mirror_stub and record_merged_head each return one more trailing element, notes = _notes(released, unrestored). _told turns notes into answer fields (lockWarnings: [sentence], planUnrestored: <sentence>), _merged_told combines them; backfill_merged_head and main's _stamp carry them into the close answer and --json; _render_told prints \"WARNING: another session took the index lock while this run was writing under it - <sentence>\" from render() and the branch-gone path. A declined release is a warning and does not change the exit code (the panel's callers carry a refused release into warnings the same way).\nR4 (rollback that fails): _revalidated_write wraps a failing _panel_write.restore in RefusedWriteStands, whose message is '<path> was written and introduced <findings>; restoring its prior bytes failed: <exc> - the plan holds the refused write'. _stamp_locked, _head_locked and _mirror_locked catch it before their generic 'could not be written' handler and return unrestored=True. When the answer carries planUnrestored, close() adds a blocked row, holds back the cleanup and returns E_FAIL, and the 'mergedAt NOT written' / 'NOT re-mirrored' lines are not printed beside it; render() prints 'REFUSED WRITE NOT ROLLED BACK: <sentence>'. The branch-gone path now returns E_FAIL when its backfill stranded a refused write. A stranded write found during a re-mirror or head backfill fails the run too. No other caller of the changed functions exists outside close-phase.py (grep over scripts, hooks and tools); existing unpacking sites in the suite read the leading fields by slice.\nTests: test_close_phase to1-to8 (each deny case with its allow twin: to2, to4, to6, to8). Red-first proved through the helper at HEAD 1fdbbee4: 157/163 with exactly to1, to2, to3, to5, to6, to7 failing. Suite 163/163; ruff, vermin and the house lints clean.",
+        "descriptive": "close-phase now says in its answer when another session took the index lock while it was stamping, and when a refused write could not be rolled back it says the plan still holds that write and exits as a failure, instead of saying the file could not be written."
       },
       "startedAt": "2026-10-07T00:14:33Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T00:32:01Z",
+      "verifiedBy": [
+        "to1",
+        "to2",
+        "to3",
+        "to4",
+        "to5",
+        "to6",
+        "to7",
+        "to8"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T00:29:22Z.c3ba9d",
         "status": "passed",
         "at": "2026-10-07T00:29:22Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "1645c074",
+        "at": "2026-10-07T00:32:01Z",
+        "basis": "orchestrator check: R3 and R4 addressed in every writer that goes through the lock, red-first proved through the helper with an allow twin per deny case"
       }
     },
     {

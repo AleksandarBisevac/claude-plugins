@@ -173,7 +173,9 @@ import hashlib
 import json
 import os
 import re
+import stat
 import sys
+import tempfile
 import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -2222,10 +2224,20 @@ def write_merged(path, text, grade=None, dry_run=False):
     writers against nothing.
 
     Through a temporary file in the same directory, so an interrupted merge
-    leaves either the old file or the new one and never half of each."""
+    leaves either the old file or the new one and never half of each.
+
+    THE TEMPORARY'S NAME IS THIS CALL'S OWN, from `mkstemp` in the resolved
+    destination's directory. The lock is on the name handed in, so a write
+    through a link and one through its target hold two different locks and can
+    run at once; a temporary named after the destination alone was the one file
+    both opened, and the second truncated the first's bytes and moved them away
+    under it. Its suffix is not `.jsonl`, so `journal_files` never reads one.
+    `_manifest_io.atomic_write_text` is the same pattern, but it is a layer-mate
+    of this module and cannot be imported from here. The destination's mode is
+    carried over, because `mkstemp` creates owner-only and the replace would
+    otherwise narrow a trail file every append had left readable."""
     lock = _acquire(path)
     dest = os.path.realpath(path)
-    tmp = dest + ".merged"
     try:
         refusals = []
         if grade is not None:
@@ -2233,9 +2245,14 @@ def write_merged(path, text, grade=None, dry_run=False):
             refusals = list(grade(current, unreadable))
         if refusals or dry_run:
             return {"written": False, "refusals": refusals, "path": path}
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(dest),
+                                   prefix=os.path.basename(dest) + ".",
+                                   suffix=".merged")
         try:
-            with open(tmp, "w", encoding="utf-8") as fh:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 fh.write(text)
+            if os.path.isfile(dest):
+                os.chmod(tmp, stat.S_IMODE(os.stat(dest).st_mode))
             os.replace(tmp, dest)
         except Exception:
             # The half-written temporary goes, and the exception does not:

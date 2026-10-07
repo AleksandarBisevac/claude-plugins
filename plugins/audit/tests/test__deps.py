@@ -4321,6 +4321,22 @@ def _cases(check):
          "    return str.replace(text, 'a', 'b')\n"),))
     _sw_torn = _ck_tree((("torn.py", "def f(:\n"),))
     _sw_ok_row = (("scripts/writer.py", "sanctioned", _sw_reason),)
+    # `import os.path` binds the name `os` exactly as `import os` does, and a
+    # star import from os binds `replace` and `rename` bare - two spellings a
+    # reader of the plain `import os` alone never sees.
+    _sw_dotted = _ck_tree((
+        ("dotted.py",
+         "import os.path\n\n\n"
+         "def save(tmp, path):\n"
+         "    os.replace(tmp, path)\n"),
+        ("starred.py",
+         "from os import *\n\n\n"
+         "def move(a, b):\n"
+         "    rename(a, b)\n"),
+        ("writer.py",
+         "import os\n\n\n"
+         "def sanctioned(tmp, path):\n"
+         "    os.replace(tmp, path)\n"),))
     try:
         _sw_hits = M.state_write_violations(_sw_tree, _je_nohooks(_sw_tree),
                                             _sw_ok_row)
@@ -4367,8 +4383,23 @@ def _cases(check):
               "replace in it: %r" % (_sw_t,),
               [k for k, _p in _sw_t] == ["scripts/torn.py"]
               and "does not parse" in _sw_t[0][1])
+        _sw_d = M.state_write_violations(_sw_dotted, _je_nohooks(_sw_dotted),
+                                         _sw_ok_row)
+        _sw_dk = sorted((k, p.split(":", 1)[0]) for k, p in _sw_d)
+        check("sw7 an os.replace after `import os.path` is reported - that "
+              "statement binds the name `os` - and so is a bare `rename` after "
+              "a star import from os, each by file and line: %r" % (_sw_d,),
+              _sw_dk == [("scripts/dotted.py", "line 5"),
+                         ("scripts/starred.py", "line 5")]
+              and sum("in save()" in p for _k, p in _sw_d) == 1
+              and sum("in move()" in p for _k, p in _sw_d) == 1)
+        check("sw8 ...while the same call through a plain `import os` in the "
+              "sanctioned function of the same tree is not (the twin of sw7: "
+              "a binding read so widely that it convicts a sanctioned site "
+              "would fail here): %r" % (_sw_d,),
+              not any(k == "scripts/writer.py" for k, _p in _sw_d))
     finally:
-        for _dir in (_sw_tree, _sw_quiet, _sw_torn):
+        for _dir in (_sw_tree, _sw_quiet, _sw_torn, _sw_dotted):
             shutil.rmtree(_dir, ignore_errors=True)
 
 

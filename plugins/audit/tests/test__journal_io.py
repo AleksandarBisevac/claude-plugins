@@ -2033,6 +2033,91 @@ def _cases(check):
                   and _val(_mvbad, "refusals") == ["unreadable"]
                   and os.path.isdir(_mvdirtarget))
 
+            # --- mw: a link and its target never share a temporary -----------
+            # The lock is taken on the NAME a caller hands in, so a write through
+            # a link and one through its target hold two different locks and run
+            # at once. Whatever temporary each writes must therefore be its own:
+            # a name derived from the destination alone is the one both open.
+            #
+            # DRIVEN DETERMINISTICALLY: the write through the target is run from
+            # inside the link writer's own `os.replace`, i.e. after its
+            # temporary is on disk and before it is moved into place - the
+            # exact window two unserialised writers overlap in.
+            _mwdir = os.path.join(mtmp, "linked")
+            os.makedirs(_mwdir)
+            _mwtarget = os.path.join(_mwdir, "real.jsonl")
+            _mwlink = os.path.join(_mwdir, "alias.jsonl")
+            with open(_mwtarget, "w", encoding="utf-8") as fh:
+                fh.write("base\n")
+            _mwstranger = os.path.realpath(_mwtarget) + ".merged"
+            with open(_mwstranger, "w", encoding="utf-8") as fh:
+                fh.write("not the merge's\n")
+            try:
+                os.symlink(_mwtarget, _mwlink)
+                _mwlinked = None
+            except (OSError, NotImplementedError, AttributeError) as exc:
+                _mwlinked = "%s: %s" % (type(exc).__name__, exc)
+            if _mwlinked is not None:
+                _harness.skip(check, "mw1", "os.symlink is refused here (%s)"
+                              % (_mwlinked,), True)
+            else:
+                _mwreal_replace = os.replace
+                _mwseen = {"temps": [], "inner": None, "between": None}
+
+                def _mw_replace(src, dst):
+                    _mwseen["temps"].append(os.path.basename(src))
+                    if _mwseen["inner"] is None:
+                        _mwseen["inner"] = _harness.attempt(
+                            M.write_merged, _mwtarget, "base\ntarget-row\n")
+                        with open(_mwtarget, "r", encoding="utf-8") as tfh:
+                            _mwseen["between"] = tfh.read()
+                    return _mwreal_replace(src, dst)
+
+                os.replace = _mw_replace
+                try:
+                    _mwouter = _harness.attempt(M.write_merged, _mwlink,
+                                                "base\ntarget-row\nlink-row\n")
+                finally:
+                    os.replace = _mwreal_replace
+                with open(_mwtarget, "r", encoding="utf-8") as fh:
+                    _mwfinal = fh.read()
+                # Guarded: a temporary named after the destination alone is
+                # moved away by the write that shares it, and an unguarded read
+                # here would take every later case out of the run.
+                _mwstranger_text = None
+                if os.path.isfile(_mwstranger):
+                    with open(_mwstranger, "r", encoding="utf-8") as fh:
+                        _mwstranger_text = fh.read()
+                _mwtemps = _mwseen["temps"]
+                check("mw1 a write_merged through a link and one through its "
+                      "target, overlapping, never share a temporary: each "
+                      "moved a file of its own into place, and a file already "
+                      "at the destination's name plus `.merged` is not one "
+                      "either of them touched: %r" % (_mwtemps,),
+                      len(_mwtemps) == 2 and len(set(_mwtemps)) == 2
+                      and _mwstranger_text == "not the merge's\n")
+                check("mw2 ...and the journal holds both writes: the inner one "
+                      "landed whole while the outer one was in flight, and the "
+                      "outer one then landed whole over it rather than raising "
+                      "on a temporary the inner one had already moved away: "
+                      "outer %r inner %r between %r final %r"
+                      % (_mwouter, _mwseen["inner"], _mwseen["between"],
+                         _mwfinal),
+                      _mwouter[0] is True and _val(_mwouter[1], "written") is True
+                      and _mwseen["inner"] is not None
+                      and _mwseen["inner"][0] is True
+                      and _val(_mwseen["inner"][1], "written") is True
+                      and _mwseen["between"] == "base\ntarget-row\n"
+                      and _mwfinal == "base\ntarget-row\nlink-row\n"
+                      and os.path.islink(_mwlink))
+                check("mw3 ...and neither leaves a temporary behind in the "
+                      "trail's directory, where it would sit in `git status`: "
+                      "%r" % (sorted(os.listdir(_mwdir)),),
+                      sorted(n for n in os.listdir(_mwdir)
+                             if not n.endswith(".lock"))
+                      == sorted(["alias.jsonl", "real.jsonl",
+                                 os.path.basename(_mwstranger)]))
+
             # --- av: what the git anchor asks now ----------------------------
             _committed = M.merge_text(ours[:3])
             _appended = M.merge_text(ours)

@@ -1990,8 +1990,9 @@ STATE_WRITERS = (
      "and no writer could express it."),
     ("scripts/governance/_journal_io.py", "write_merged",
      "the journal merge replaces the file an append writes THROUGH (the resolved "
-     "link target), inside the journal lock every append takes; that hold is "
-     "what makes its fixed temp name unshared."),
+     "link target) inside the journal lock, through a temp name of its own from "
+     "mkstemp; _manifest_io's writer is a layer-mate it cannot import, and the "
+     "merge carries the destination's mode over, which that writer does not."),
     ("scripts/manifest/merge-manifest.py", "_write",
      "the merge driver writes the file git hands it and reads back on exit, and "
      "takes a newline argument so .gitattributes and the shim are written byte "
@@ -2028,19 +2029,25 @@ _MIN_STATE_WRITER_REASON = 80
 def _os_bindings(tree):
     """(names bound to the os module, {local name: os function}) in one module.
 
-    `import os`, `import os as x` and `from os import replace as r` are the three
+    `import os`, `import os as x`, `import os.<sub>` with no alias (which binds
+    `os` itself), `from os import replace as r` and `from os import *` are the
     spellings that reach the call, and a rule reading only the first is a rule a
-    file passes by choosing the second."""
+    file passes by choosing another. `import os.path as p` binds `p` to the
+    submodule, not to os, so it binds nothing here."""
     modules, functions = set(), {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name == "os":
                     modules.add(alias.asname or "os")
+                elif alias.name.startswith("os.") and not alias.asname:
+                    modules.add("os")
         elif isinstance(node, ast.ImportFrom) and node.module == "os" \
                 and not node.level:
             for alias in node.names:
-                if alias.name in _STATE_WRITE_CALLS:
+                if alias.name == "*":
+                    functions.update((name, name) for name in _STATE_WRITE_CALLS)
+                elif alias.name in _STATE_WRITE_CALLS:
                     functions[alias.asname or alias.name] = alias.name
     return modules, functions
 
@@ -2137,7 +2144,9 @@ def state_write_violations(script_dir=None, hooks_dir=None, table=None):
         empty answer is never a scan that read nothing.
 
     WHAT IT CANNOT SEE. `shutil.move`, `os.renames`, `os.link`, a
-    `getattr(os, ...)`, and a `Path.replace`/`Path.rename` - the last because a
+    `getattr(os, ...)`, os reached without an import statement naming it
+    (`__import__`, `importlib`, `sys.modules`, or a second name assigned from
+    the module), and a `Path.replace`/`Path.rename` - the last because a
     method call on a path cannot be told from one on a string without types,
     and a rule convicting every `str.replace` would be routed around in a day.
     A write that truncates a file in place (`open(path, "w")`) is not a replace
