@@ -716,6 +716,12 @@
       "title": "every command and reference hands scripts no manifest placeholder",
       "status": "pending",
       "shard": "phases/P113.json"
+    },
+    {
+      "id": "P114",
+      "title": "status names each locked phase's own remaining work and the copy it read",
+      "status": "pending",
+      "shard": "phases/P114.json"
     }
   ],
   "fileIndex": {
@@ -3242,7 +3248,8 @@
       "P80.14-rtb",
       "P80.17-rtb",
       "P81.12",
-      "P81.10"
+      "P81.10",
+      "P114.1"
     ],
     "plugins/audit/scripts/status/audit-doctor.py": [
       "P10.3",
@@ -3305,7 +3312,8 @@
       "P104.11-tog",
       "P104.13-tog",
       "P104.17-tog",
-      "P112.2-uce"
+      "P112.2-uce",
+      "P114.1"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -3995,7 +4003,8 @@
       "P80.14-rtb",
       "P80.17-rtb",
       "P81.12",
-      "P81.10"
+      "P81.10",
+      "P114.1"
     ],
     "plugins/audit/tests/test__status_facts.py: --fail-on failing-tests refuses a run whose record says the tree was mutated": [
       "P32.7"
@@ -4105,7 +4114,8 @@
       "P94.1",
       "P104.11-tog",
       "P104.13-tog",
-      "P112.2-uce"
+      "P112.2-uce",
+      "P114.1"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -6003,6 +6013,25 @@
       "files": [],
       "taskId": "P104.9-tog",
       "fixedIn": "c38330bf",
+      "notes": null
+    },
+    {
+      "id": "BUG-19",
+      "title": "status's UNFINISHED line gives every locked phase the plan-wide ready count",
+      "status": "in_progress",
+      "severity": "med",
+      "reportedAt": "2026-10-07T06:45:52Z",
+      "reportedBy": null,
+      "description": "The UNFINISHED section of /audit:status prints one line per held phase lock and says that phase has N tasks still ready. N is the ready list of the whole plan, not the phase's own count, so every locked phase shows the same number. A phase whose own tasks are all done therefore reads as having work left. Read on the development branch, the count also comes from that branch's copies of the phase shards. A phase whose work lives on its own branch is shown with tasks ready that are already done there, and the line does not say which copy it read. The maintainer read the line as remaining work in each phase.",
+      "repro": "Hold phase locks for several phases while the plan has ready tasks in other phases, then run /audit:status: every UNFINISHED line names the same count.",
+      "expected": "Each line counts the ready tasks of its own phase, read from the copy that holds that phase live, and says which copy it read; a phase with no ready task of its own gets no ready-work line.",
+      "actual": "Each line prints len(ready) over the whole plan; main reads its own stale shard copy for phases whose work is on a branch.",
+      "files": [
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-status.py"
+      ],
+      "taskId": "P114.1",
+      "fixedIn": null,
       "notes": null
     }
   ],
