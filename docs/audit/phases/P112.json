@@ -76,12 +76,23 @@
       },
       "startedAt": "2026-10-06T21:42:56Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-07T01:39:59Z",
+          "text": "Header decision (2026-10-07, orchestrator, under the operator's standing instruction to run to completion): Claude Code's startup header is recorded as a user sees it. The documented recording mode, IS_DEMO (code.claude.com env-vars reference), hides the email and organisation name and deliberately keeps the model and plan line, so the recording shows \"Sonnet 5.5 · Claude Team\"; no documented setting hides that line or the logo. The personal-data scan refuses what IS_DEMO promises to hide (email, organisation name read from `claude auth status --json`), the host's user name, machine name and git identity, any home path, and this checkout's path. Whether the plan line counts as the \"account banner\" the description excludes is left to the operator's visual approval of the GIF before it is published."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T01:50:31Z.c35e6b",
+        "status": "passed",
+        "at": "2026-10-07T01:50:31Z"
+      }
     },
     {
       "id": "P112.2-uce",
       "title": "the first-contact commands find the manifest themselves, so Claude never narrates an unfilled placeholder",
-      "status": "in_progress",
+      "status": "done",
       "description": "A user's first commands make Claude narrate an internal placeholder. In a recorded session with the manifest at the default docs/audit/audit-plan.json, /audit:status made Claude say \"The command needs a manifest path that wasn't filled in, so I'll look for one\" and \"The command didn't fill in <manifestPath>, so I used the only manifest in the repo\". Cause: status.md, usage.md, report.md and next.md hand the model a script line carrying a literal `<manifestPath>` to substitute, and a thin command does not read orchestrator.md, where the default is stated. The model has to guess, and it says that it guessed.\n\nFix it in code:\n1. One shared resolver answers where the manifest is: the explicit argument, else `.claude/audit.config.json`'s manifestPath, else docs/audit/audit-plan.json. audit-usage.resolve_manifest_path already implements that rule; audit-task.py and panel-server.py hold copies of it.\n   - Put the resolver in the lowest shared layer every caller can import, with its layer placement and guide section.\n   - Route audit-usage through it.\n2. audit-status.py and render-report.py take the manifest argument as optional and resolve it through the same resolver. When none is found, they say which places they looked.\n3. status.md, usage.md, report.md and next.md drop `<manifestPath>` from their script lines. Every other line keeps working.\n4. A drift check fails a thin command that hands the model a placeholder its script can resolve itself.\n\nOut of scope, reported in the outcome with file:line: the orchestrator-driven commands that read orchestrator.md (phase, init, sync, propose, layout, task, bug, resume, doctor, worktree), and the audit-task and panel-server copies of the rule. A follow-up routes those through the resolver.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_io.py",
@@ -123,18 +134,38 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1a3151c7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "One resolver for where the manifest is: _manifest_io.resolve_manifest(project, explicit=None) answers the argument as given, else .claude/audit.config.json's manifestPath, else docs/audit/audit-plan.json, all relative to the project, and returns {path, source, looked, problem}; describe_unresolved names every place it looked. A config naming a missing or unreadable file is a refusal, never a fall-back to the default (that would render a different plan, with a different showCost, than the project points at); two old test_audit_usage cases pinning the fall-back are rewritten with the reason. The project is CLAUDE_PROJECT_DIR, else the cwd (the rule audit-usage and render-report already used).\naudit-usage.py: its own copy (resolve_manifest_path, DEFAULT_MANIFEST_REL) is gone; it calls the shared resolver, and when nothing resolves it still exits 0 but notes on stderr where it looked. audit-status.py and render-report.py take the manifest argument as optional and resolve it the same way; with none found they exit 2 with the shared refusal text. status.md, usage.md, report.md (three lines) and next.md no longer hand the model a `<manifestPath>` for a self-resolving script; status.md and report.md tell Claude to relay the refusal rather than search for a manifest.\nDrift check: _refs.self_resolving_scripts() reads off the AST which scripts call <module>.resolve_manifest(...); _refs.manifest_placeholder_drift() reports any commands/*.md line handing one of them <manifestPath>, and any MANIFEST_PLACEHOLDER_PENDING row (phase.md, task.md, each with a reason) whose document no longer carries the placeholder. tools/prove-gates.py gains its red row (mp1, status.md re-given the placeholder), its allow row (the resolving-set filter dropped, which fires on status.md's verify-invariants line), and a NOT_A_GATE row for self_resolving_scripts; tools/gate-parity.py registers MANIFEST_PLACEHOLDER_PENDING as live under manifest_placeholder_drift.\nOut of scope, recorded for a follow-up: placeholder lines in phase.md:110, task.md:171, orchestrator.md:92/102/723 and status.md:346 (verify-invariants does not resolve); copies of the rule in audit-task.py:96-97/1479 and _panel_paths.py:139; default constants in _journal_io.py:337, hooks/_config.py:153, _doctor_setup.py:773, _doctor_trail.py:944. The PLUGIN-BUILD-GUIDE.md sentences for the resolver, audit-usage and the lint go in a separate docs task after the sibling task commits the guide.\nTests: test__manifest_io rm1-rm8; test_audit_status mr1-mr5 (c3 now uses two positionals as its usage error); test_render_report rr-m1-rr-m3; test__refs mp1-mp6; test_audit_usage mn1, mn2. Red-first proved through the helper at HEAD b6d9a4a3 for all five files (mr1-mr5 and rr-m1-rr-m3 failing an assertion; the three --introduces runs failing at HEAD on the missing symbol and passing with the fix). Full sweep 305/305 files ok; prove-gates --selftest 37/37; gate-parity exit 0; ruff and vermin clean.",
+        "descriptive": "/audit:status, /audit:usage, /audit:report and /audit:next now find the plan on their own and say where they looked when there is none, so Claude no longer tells the user it had to guess an unfilled placeholder."
       },
       "startedAt": "2026-10-07T00:26:16Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T00:59:18Z",
+      "verifiedBy": [
+        "rm1",
+        "rm2",
+        "rm6",
+        "mr1",
+        "mr2",
+        "mr5",
+        "rr-m1",
+        "rr-m2",
+        "mp1",
+        "mp2",
+        "mp5",
+        "mn1",
+        "mn2"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T00:59:08Z.544b30",
         "status": "passed",
         "at": "2026-10-07T00:59:08Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "1a3151c7",
+        "at": "2026-10-07T00:59:18Z",
+        "basis": "orchestrator check: one shared resolver, three scripts resolve through it, four commands drop the placeholder, a drift lint with prove-gates rows in both directions keeps it from coming back; the remaining class is listed for a follow-up"
       }
     }
   ],

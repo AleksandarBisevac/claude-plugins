@@ -1,46 +1,49 @@
 #!/usr/bin/env python3
-"""Record the README demo GIF: the plan gate refusing an unplanned edit.
+"""Record the README demo GIF - a real Claude Code session meeting the plan gate - and
+check, without a session, that the gate still says what the recording shows.
 
-WHY THIS EXISTS. Every other artifact in this repo shows the product at rest — a
-rendered report, a screenshot of the panel. The thing the product actually IS, an
-edit being refused, cannot be shown by a still: the refusal is an event.
+WHY THIS EXISTS. Every other artifact in this repo shows the product at rest - a
+rendered report, a screenshot of the panel. The thing the product actually IS, an edit
+being refused inside a session, cannot be shown by a still: the refusal is an event.
 
-WHAT IS REAL HERE. Every line of output in the GIF is captured from the plugin's own
-code at record time. `audit-status.py` renders the plan; `require-plan.py` is fed the
-same PreToolUse JSON Claude Code sends it and its stdout is the deny message you see.
-Nothing is typed out by hand into a mock terminal. If the gate's wording changes, the
-next recording says the new wording, and if the gate stops denying, this script fails
-rather than shipping a GIF of something that no longer happens.
+WHAT IS RECORDED. `tools/demo-gate.tape` drives VHS through a real `claude` session in
+a demo project built fresh at a fixed neutral path (`FIXTURE_DIR`), with a copy of
+this checkout's plugin loaded through --plugin-dir from a neutral path beside it
+(`KIT_DIR`) - a path under a home directory would put a user name on screen. The user
+types /audit:status, asks for an edit the plan covers and sees it go through, then
+asks for an edit no task covers and sees Claude Code render the plan gate's deny.
+Nothing on screen is drawn by this file.
 
-FIXTURES ARE GENERATED, NEVER STORED — same rule as the screenshot capture. The demo
-project is built in a temp dir and thrown away, so the recording cannot drift from a
-fixture nobody can rebuild.
+    python3 tools/capture-demo-gif.py --record [--dry-run] [--out docs/screenshots/demo-gate.gif]
+    python3 tools/capture-demo-gif.py --check  [--out docs/screenshots/demo-gate.gif]
 
-    python3 tools/capture-demo-gif.py [--out docs/screenshots/demo-gate.gif] [--check]
+--record needs `vhs` and a logged-in `claude`, and costs a short paid model session.
+It builds the fixture and the kit, runs the tape, and only then decides whether the
+recording may ship: Claude must have tried to edit the out-of-plan file, the gate fed
+that SAME payload again must refuse it, the refusal must be on screen at least as far
+as its first line, and no frame of VHS's text output may carry the recording host's
+user name, home path, machine name, git identity or an email address. Any failure
+writes nothing and keeps the evidence in a temp directory it names. --dry-run builds
+everything, validates the tape, prints the commands, and starts no session.
 
---check runs the whole capture and asserts the outputs are what the GIF claims (the
-in-plan edit is allowed, the out-of-plan edit is denied, the deny names the file and
-the way out) but writes no file. Run it in CI; run the capture when the gate's
-wording changes.
+--check needs neither: CI runs it. It rebuilds the fixture, feeds `require-plan.py`
+the out-of-plan payload the recording captured, and fails naming the GIF when the
+refusal the gate prints now differs from the one recorded, when the committed GIF's
+sha256 differs from the record, or when there is no record to compare. The pixels are
+never compared, for the reason the screenshots' are not: rasterisation differs by host.
 
-WHAT TIES THE COMMITTED BYTES TO TODAY'S TEXT. Behaviour alone could not: the GIF
-went on showing a bypass line the gate no longer prints while every behavioural
-assertion stayed green. So a recording writes a record beside the screenshots', in
-`captured-at.json` under its own top-level key (`GIF_KEY`): the sha256 of the bytes
-it wrote and a digest of the text they show (`capture_text_digest()`). That digest
-is over every step `build_script()` lays out - the captured answers AND the comment
-lines, the typed commands, the captions and the wrap at the chosen width - so a
-change to any word a reader sees moves it, not only a change in the gate's output.
---check recomputes both - the text from a fresh capture, the hash from the committed
-file - and fails naming the GIF when either differs, or when there is no record to
-compare. The pixels are never compared, for the reason the screenshots' are not: font
-rasterisation differs by host.
+WHERE THE RECORD LIVES. `docs/screenshots/captured-at.json`, under its own top-level
+key (`GIF_KEY`), beside the screenshots' records that `capture-screenshots.mjs` keeps
+and carries through its own merge.
 """
 import argparse
+import getpass
 import hashlib
 import json
 import os
+import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -48,12 +51,18 @@ import tempfile
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOOKS = os.path.join(REPO, "plugins", "audit", "hooks")
 SCRIPTS = os.path.join(REPO, "plugins", "audit", "scripts")
+PLUGIN_SRC = os.path.join(REPO, "plugins", "audit")
+TAPE = os.path.join(REPO, "tools", "demo-gate.tape")
 PY = sys.executable
 
 if SCRIPTS not in sys.path:
     sys.path.insert(0, SCRIPTS)
 
 import _loader  # noqa: E402  (reachable now that SCRIPTS is on the path)
+import _output  # noqa: E402
+_output.install_path()
+import _manifest_rules  # noqa: E402  (the rules every manifest writer validates with)
+import _manifest_vocab  # noqa: E402
 
 
 def resolve_script(basename):
@@ -84,44 +93,48 @@ def resolve_script(basename):
     """
     return _loader.script_path(basename)
 
-# The report's own dark tokens. The GIF and the product should look like one thing,
-# and these are the values `render-report.py` ships, not an approximation of them.
-BG, SURFACE, TEXT = "#0a1120", "#111a2b", "#e6edf6"
-MUTED, ACCENT, DENY, OK, WARN = "#93a4bd", "#2dd4bf", "#f87171", "#34d399", "#fbbf24"
-BORDER = "#1f2b40"
 
-FONT_CANDIDATES = (
-    "/System/Library/Fonts/Menlo.ttc",
-    "/System/Library/Fonts/Supplemental/Andale Mono.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
-    "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
-)
+# --- where the recording happens ------------------------------------------------
+# Fixed, neutral and outside every home directory: Claude Code prints the project
+# path in its header and the plugin path in every Bash line it runs, so whatever these
+# are is what the GIF shows. The tape names the same three paths; `tape_problems()`
+# holds the two files to each other.
+FIXTURE_DIR = "/tmp/acme-store-demo"
+KIT_DIR = "/tmp/acme-store-demo-kit"
+KIT_PLUGIN = KIT_DIR + "/audit"
+KIT_SETTINGS = KIT_DIR + "/settings.json"
+TAP_NAME = "payloads.jsonl"
+VHS_GIF = "demo-gate.gif"
+VHS_TEXT = "demo-gate.txt"
+MODEL = "sonnet"
+OUT_OF_PLAN_REL = "src/billing.ts"
+IN_PLAN_REL = "src/checkout.ts"
+EDIT_TOOLS = ("Edit", "Write", "MultiEdit")
+
+SIDECAR = "captured-at.json"
+GIF_KEY = "gifs"
+GIF_NAME = "demo-gate.gif"
+_FIXTURE_TOKEN = "<demo-project>"
+REPLAY_SESSION = "demo-replay"
+# Where a user's plan lives when nothing says otherwise: the plugin's own default
+# `manifestPath`. The demo keeps it there and writes no config, so the session sees
+# the layout a user gets, and the commands find the plan the way they would there.
+MANIFEST_REL = "docs/audit/audit-plan.json"
 
 
-def _font(size):
-    from PIL import ImageFont
-    for p in FONT_CANDIDATES:
-        if os.path.isfile(p):
-            try:
-                return ImageFont.truetype(p, size)
-            except Exception:
-                continue
-    raise SystemExit("no monospace font found; tried:\n  " + "\n  ".join(FONT_CANDIDATES))
-
-
-# --- building the demo project, and capturing what the gate says about it ------
+# --- the demo project, and what the gate says about it --------------------------
 def build_fixture(d):
     """A minimal but honest plan: one phase running, one task covering one file.
 
     The gate's behaviour depends entirely on this shape — a phase `in_progress` is
     what makes it deny rather than warn — so the fixture is the demo's premise and
-    is written out here rather than described in a caption."""
-    os.makedirs(os.path.join(d, ".claude"), exist_ok=True)
+    is written out here rather than described in a caption. The plan sits at the
+    default `MANIFEST_REL` and no config names it."""
+    os.makedirs(os.path.dirname(os.path.join(d, MANIFEST_REL)), exist_ok=True)
     os.makedirs(os.path.join(d, "src"), exist_ok=True)
     subprocess.run(["git", "-C", d, "init", "-q"], capture_output=True)
     manifest = {
-        "meta": {"version": 2, "repo": "acme-store", "title": "ACME Store security audit",
-                 "manifestPath": "audit-plan.json"},
+        "meta": {"version": 2, "repo": "acme-store", "title": "ACME Store security audit"},
         "phases": [{
             "id": "P2", "title": "Input validation", "status": "in_progress",
             "desiredOutcome": "Every request payload is validated before it reaches "
@@ -129,29 +142,51 @@ def build_fixture(d):
             "tasks": [
                 {"id": "P2.1", "title": "Validate the checkout payload",
                  "status": "in_progress", "model": "sonnet", "risk": "med",
-                 "files": ["src/checkout.ts"]},
+                 "files": [IN_PLAN_REL]},
                 {"id": "P2.2", "title": "Sanitize the product-search query",
                  "status": "pending", "model": "opus", "risk": "high",
                  "files": ["src/search.ts"]}]}],
         "bugs": []}
-    with open(os.path.join(d, "audit-plan.json"), "w", encoding="utf-8") as fh:
+    manifest["fileIndex"] = derived_file_index(manifest)
+    with open(os.path.join(d, MANIFEST_REL), "w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2)
-    with open(os.path.join(d, ".claude", "audit.config.json"), "w", encoding="utf-8") as fh:
-        json.dump({"manifestPath": "audit-plan.json"}, fh)
     for name in ("checkout.ts", "billing.ts"):
         with open(os.path.join(d, "src", name), "w", encoding="utf-8") as fh:
             fh.write("export function %s() {}\n" % name[:-3])
 
 
-def fire_gate(d, rel, new_body, session):
-    """Feed require-plan.py the PreToolUse payload Claude Code would send.
+def derived_file_index(manifest):
+    """{path: [task id, ...]} - every file each task claims, under the key the
+    validator and the plan gate match on (`_manifest_vocab._strip_line_suffix`).
 
-    Returns the deny reason, or None when the edit was allowed — which is what an
-    allow looks like from the outside: nothing at all."""
-    payload = {"session_id": session, "cwd": d, "tool_name": "Edit",
-               "tool_input": {"file_path": os.path.join(d, rel),
-                              "old_string": "export function %s() {}" % rel.split("/")[-1][:-3],
-                              "new_string": new_body}}
+    A plan without it is one every writer refuses: the first full validation - the
+    one `audit-task add` runs after its write - reports each task file missing from
+    the index, and a demo session that follows the gate's advice to add a task
+    meets that refusal on camera."""
+    out = {}
+    for phase in manifest.get("phases") or []:
+        for task in phase.get("tasks") or []:
+            for entry in task.get("files") or []:
+                ids = out.setdefault(_manifest_vocab._strip_line_suffix(entry), [])
+                if task["id"] not in ids:
+                    ids.append(task["id"])
+    return dict((k, out[k]) for k in sorted(out))
+
+
+def plan_findings(manifest):
+    """(findings, warnings) of the validation a manifest writer runs before keeping
+    a write: the rules with the published schema bound in, as `audit-task` does."""
+    schema, unreadable = _manifest_rules.load_validation_schema()
+    findings, warnings = _manifest_rules.validate(manifest, schema=schema)
+    return list(unreadable) + findings, warnings
+
+
+def fire_payload(d, tool_name, tool_input, session):
+    """Feed require-plan.py one PreToolUse payload; the deny reason, or None.
+
+    None is what an allow looks like from the outside: nothing at all."""
+    payload = {"session_id": session, "cwd": d, "hook_event_name": "PreToolUse",
+               "tool_name": tool_name, "tool_input": tool_input}
     out = subprocess.run([PY, os.path.join(HOOKS, "require-plan.py")],
                          input=json.dumps(payload), capture_output=True, text=True,
                          env=dict(os.environ, CLAUDE_PROJECT_DIR=d))
@@ -159,89 +194,475 @@ def fire_gate(d, rel, new_body, session):
         return None
     try:
         return json.loads(out.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
-    except Exception:
+    except (ValueError, KeyError, TypeError):
         return out.stdout.strip()
 
 
-def capture(d):
-    """Run the real commands and collect their real output.
-
-    The status render runs INSIDE the fixture. Run from wherever the caller stood,
-    it reported that checkout's own phase locks - process ids and the host's name -
-    as part of the demo plan, which is both a leak into a committed picture and a
-    text that changes with whatever else is running on the machine."""
-    status = subprocess.run([PY, resolve_script("audit-status.py"),
-                             os.path.join(d, "audit-plan.json")],
-                            capture_output=True, text=True, cwd=d,
-                            env=dict(os.environ, CLAUDE_PROJECT_DIR=d)
-                            ).stdout.rstrip("\n")
-    inplan = fire_gate(d, "src/checkout.ts",
-                       "export function checkout(payload: unknown) {\n"
-                       "  assertCheckoutPayload(payload);\n}", "demo-a")
-    big = "\n".join("  const step%d = compute(%d);" % (i, i) for i in range(1, 95))
-    outplan = fire_gate(d, "src/billing.ts",
-                        "export function billing(c: Customer) {\n%s\n}" % big, "demo-b")
-    return {"status": status, "inplan": inplan, "outplan": outplan}
+def fire_in_plan(d):
+    """The edit the plan covers, as a payload of the shape Claude Code sends."""
+    return fire_payload(d, "Edit", {
+        "file_path": os.path.join(d, IN_PLAN_REL),
+        "old_string": "export function checkout() {}",
+        "new_string": "export function checkout(payload: unknown) {\n"
+                      "  assertCheckoutPayload(payload);\n}"}, "demo-in-plan")
 
 
-# --- the record that ties the committed GIF to the text it shows ---------------
-SIDECAR = "captured-at.json"
-GIF_KEY = "gifs"
-DEFAULT_COLS = 96
-GIF_NAME = "demo-gate.gif"
-_FIXTURE_TOKEN = "<demo-project>"
+def replay(stored, d):
+    """The gate's answer to a stored payload, replayed against the fixture at `d`.
+
+    Both the project and the payload's paths are given the RESOLVED spelling of `d`.
+    Given the macOS temp symlink in one and the resolved path in the other, the gate
+    names the file as a climb out of the project, and that text differs by host and
+    by run. Whether the replay matches what the session showed is not assumed here:
+    `verify_recording()` refuses a recording whose screen does not show the replayed
+    refusal."""
+    real = os.path.realpath(d)
+    live = unscrub_value(stored, real)
+    return fire_payload(real, live.get("tool_name"), live.get("tool_input"),
+                        REPLAY_SESSION)
 
 
-def capture_text_digest(cap, fixture_dir, cols=DEFAULT_COLS):
-    """sha256 over every step the GIF shows, with the fixture's path taken out.
+def fixture_roots(d):
+    """Both spellings of the fixture path, longest first: on macOS the path asked for
+    and the path the kernel resolves differ by a symlink, and either can reach a
+    payload or a refusal."""
+    return sorted(set([d, os.path.realpath(d)]), key=len, reverse=True)
 
-    The steps are `build_script()`'s, so the captions, comments, typed commands and
-    the wrap at `cols` are covered along with the captured answers; the colour of
-    each step is in it too, because a reader sees that as well.
 
-    The fixture is a fresh temp directory every run, so a path that leaked into an
-    answer would make every capture differ; both the path mkdtemp returned and its
-    resolved form are replaced, because on macOS the two differ by a symlink. The
-    answers are scrubbed BEFORE they are wrapped, so the wrap cannot depend on how
-    long the temp path happened to be. An answer that is None (the gate said
-    nothing) stays None - it lays out as a caption, not as an empty line."""
-    roots = sorted(set([fixture_dir, os.path.realpath(fixture_dir)]),
-                   key=len, reverse=True)
-
-    def scrub(text):
-        if text is None:
-            return None
+def scrub_value(value, roots):
+    """`value` with every fixture root in every string replaced by the token, so a
+    record taken at one path compares with a replay at another."""
+    if isinstance(value, str):
         for root in roots:
-            text = text.replace(root, _FIXTURE_TOKEN)
-        return text
+            value = value.replace(root, _FIXTURE_TOKEN)
+        return value
+    if isinstance(value, list):
+        return [scrub_value(v, roots) for v in value]
+    if isinstance(value, dict):
+        return dict((k, scrub_value(v, roots)) for k, v in value.items())
+    return value
 
-    shown = dict((k, scrub(cap.get(k))) for k in ("status", "inplan", "outplan"))
-    steps = [list(step) for step in build_script(shown, cols)]
-    blob = json.dumps(steps, ensure_ascii=False)
-    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+def unscrub_value(value, d):
+    """The inverse of `scrub_value` for a fixture rebuilt at `d`."""
+    if isinstance(value, str):
+        return value.replace(_FIXTURE_TOKEN, d)
+    if isinstance(value, list):
+        return [unscrub_value(v, d) for v in value]
+    if isinstance(value, dict):
+        return dict((k, unscrub_value(v, d)) for k, v in value.items())
+    return value
 
 
-def gif_record_entry(gif_bytes, text_digest):
+# --- reading what the session did ----------------------------------------------
+def parse_payloads(text):
+    """Every JSON object in the tap file, in order; ([objects], [unparsed fragments]).
+
+    The tap appends stdin as it arrives, so objects may or may not be separated by a
+    newline. A fragment that does not parse is returned rather than dropped: a tap
+    that read half a payload is a recording that cannot be replayed."""
+    dec = json.JSONDecoder()
+    objs, bad, i, n = [], [], 0, len(text)
+    while i < n:
+        while i < n and text[i].isspace():
+            i += 1
+        if i >= n:
+            break
+        try:
+            obj, end = dec.raw_decode(text, i)
+        except ValueError:
+            nl = text.find("\n", i)
+            end = n if nl < 0 else nl
+            bad.append(text[i:end])
+            i = end
+            continue
+        if isinstance(obj, dict):
+            objs.append(obj)
+        i = end
+    return objs, bad
+
+
+def out_of_plan_payload(payloads, rel=OUT_OF_PLAN_REL):
+    """{"tool_name", "tool_input"} of the first edit aimed at `rel`, or None.
+
+    Only those two fields are kept: the rest of a PreToolUse payload carries the
+    session id and a transcript path under the recording host's home directory, and
+    none of it changes what the gate decides."""
+    suffix = "/" + rel
+    for p in payloads:
+        tool = p.get("tool_name")
+        ti = p.get("tool_input")
+        if tool not in EDIT_TOOLS or not isinstance(ti, dict):
+            continue
+        path = str(ti.get("file_path") or "").replace("\\", "/")
+        if path == rel or path.endswith(suffix):
+            return {"tool_name": tool, "tool_input": ti}
+    return None
+
+
+# Characters Claude Code draws around a tool result. None can occur in the refusal,
+# which is ASCII, so removing them from the screen cannot remove a word of it.
+_DECORATION = set(u"⎿│⏺●─╭╮╰╯…")
+
+
+def screen_frames(text):
+    """VHS's text output split into frames.
+
+    VHS separates frames with a line drawn of one box character, and Claude Code
+    draws the same line around its input box, so a "frame" here may be part of one;
+    the transcript a refusal sits in is never cut, because it lies between two such
+    lines either way."""
+    frames, cur = [], []
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if stripped and set(stripped) == set(u"─"):
+            frames.append("\n".join(cur))
+            cur = []
+            continue
+        cur.append(line)
+    frames.append("\n".join(cur))
+    return [f for f in frames if f.strip()]
+
+
+def _compact(text, drop):
+    return "".join(ch for ch in text if not ch.isspace() and ch not in drop)
+
+
+def shown_refusal(screen_text, refusal):
+    """The longest leading part of `refusal` that one frame shows; "" when none does.
+
+    Compared with every space and line break taken out on both sides, because the
+    terminal re-wraps the refusal at its own width and may break a long token
+    mid-word. The answer is cut from `refusal` itself, so it keeps the gate's own
+    line breaks rather than the terminal's."""
+    if not refusal:
+        return ""
+    idx = [i for i, ch in enumerate(refusal) if not ch.isspace()]
+    target = "".join(refusal[i] for i in idx)
+    best = 0
+    for frame in screen_frames(screen_text):
+        hay = _compact(frame, _DECORATION)
+        lo, hi = best, len(target)
+        if lo < hi and target[:lo + 1] not in hay:
+            continue
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if target[:mid] in hay:
+                lo = mid
+            else:
+                hi = mid - 1
+        best = lo
+    if best == 0:
+        return ""
+    return refusal[:idx[best - 1] + 1]
+
+
+def first_line_shown(refusal, shown):
+    """True when what the screen showed covers the refusal's whole first line - the
+    line naming the gate, the reason and the file."""
+    head = (refusal or "").split("\n")[0].rstrip()
+    return bool(head) and len(shown.rstrip()) >= len(head)
+
+
+# --- no personal data in any frame -------------------------------------------
+# What the scan refuses is what the CLI's recording mode (IS_DEMO, documented as
+# hiding the email and organisation name from the header and /status) promises to
+# keep off screen, plus the host's own identity: so a take passing it is a take in
+# which IS_DEMO did its job. The plan line beside the model is NOT refused - the
+# recording mode keeps it on purpose, and the demo shows the header as a user sees
+# it.
+EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
+# A home directory of ANY user, not only the recording host's: macOS and Linux
+# spellings, and the windows one.
+HOME_PATH_RE = re.compile(r"(?<![\w.-])/(?:Users|home)/[A-Za-z0-9._-]+"
+                          r"|\b[A-Za-z]:\\Users\\[^\\\s]+")
+_MIN_MARKER = 3
+
+
+def _git_identity(key):
+    try:
+        out = subprocess.run(["git", "config", "--global", key],
+                             capture_output=True, text=True)
+    except OSError:
+        return ""
+    return out.stdout.strip() if out.returncode == 0 else ""
+
+
+def account_markers_from(status_json):
+    """[(kind, value)] read from `claude auth status --json`'s answer; [] when it is
+    not that answer. Only the email and organisation name are taken - the two fields
+    the recording mode promises to hide."""
+    try:
+        body = json.loads(status_json or "")
+    except ValueError:
+        return []
+    if not isinstance(body, dict):
+        return []
+    pairs = [("account email", body.get("email")),
+             ("organisation name", body.get("orgName"))]
+    return [(k, v) for k, v in pairs
+            if isinstance(v, str) and len(v.strip()) >= _MIN_MARKER]
+
+
+def account_markers(env):
+    """The logged-in account's email and organisation, asked of the CLI's own status
+    command - which reads no secret into this process and starts no session - or []
+    with the reason when it gives no answer."""
+    try:
+        out = subprocess.run(["claude", "auth", "status", "--json"],
+                             capture_output=True, text=True, env=env)
+    except OSError as exc:
+        return [], "`claude auth status` could not run: %s" % (exc,)
+    found = account_markers_from(out.stdout) if out.returncode == 0 else []
+    if not found:
+        return [], ("`claude auth status --json` named no account (exit %d), so the "
+                    "organisation name is checked only by the email pattern"
+                    % out.returncode)
+    return found, None
+
+
+def personal_markers():
+    """[(kind, value)] - what would identify the recording host if it reached a frame.
+
+    Read at record time from the host itself, never written down here: the values
+    are the point, and a committed list of them would be the leak."""
+    host = socket.gethostname() or ""
+    pairs = [("user name", getpass.getuser()),
+             ("home path", os.path.expanduser("~")),
+             ("machine name", host),
+             ("machine name", host.split(".")[0]),
+             ("git user name", _git_identity("user.name")),
+             ("git email", _git_identity("user.email")),
+             ("this checkout's path", REPO)]
+    return [(k, v) for k, v in pairs if v and len(v) >= _MIN_MARKER]
+
+
+def pii_findings(text, markers):
+    """Sorted kinds of personal data found in `text`; [] when none.
+
+    The kind is reported and never the value: the finding is printed to a terminal
+    and, in CI, to a public log."""
+    low = (text or "").lower()
+    kinds = set(k for k, v in markers if v.lower() in low)
+    if EMAIL_RE.search(text or ""):
+        kinds.add("an email address")
+    if HOME_PATH_RE.search(text or ""):
+        kinds.add("a home directory path")
+    return sorted(kinds)
+
+
+# --- the session's environment ------------------------------------------------
+# Kept from the caller: the two variables that say WHICH login and config the CLI
+# uses. Every other CLAUDE*/AUDIT_* variable is the recording host's own session
+# leaking in - a child-session marker turns transcript saving off and says so in
+# the footer, and a lock token would let the demo act as the caller.
+_ENV_KEPT = ("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR")
+_ENV_DROPPED_PREFIXES = ("CLAUDE", "AUDIT_")
+# Added: IS_DEMO, documented in Claude Code's environment-variable reference as
+# hiding the email and organisation name from the header and /status and skipping
+# onboarding, "useful when streaming or recording a session"; and
+# DISABLE_AUTOUPDATER, one of the two variables the CLI's updates-disabled check
+# reads (read off the 2.1.292 binary), so no update notice reaches the footer. Only
+# documented switches are shipped here: an undocumented one is a claim nothing backs.
+_ENV_ADDED = (("IS_DEMO", "1"), ("DISABLE_AUTOUPDATER", "1"))
+
+
+def session_env(environ):
+    """A new environment for the recording: `environ` without the caller's session
+    markers, plus the demo's own switches. VHS hands it to the shell that launches
+    `claude`, so the scrub is done once, before any process of the take starts."""
+    out = dict((k, v) for k, v in environ.items()
+               if k in _ENV_KEPT or not k.startswith(_ENV_DROPPED_PREFIXES))
+    out.update(dict(_ENV_ADDED))
+    return out
+
+
+# --- the session's isolated settings -----------------------------------------
+_SCRIPT_CALL_RE = re.compile(r'python3 "\$\{CLAUDE_PLUGIN_ROOT\}/(scripts/[A-Za-z0-9_./-]+)"')
+
+
+def command_script_calls(commands_dir):
+    """Sorted plugin-relative script paths the plugin's own commands tell Claude to run.
+
+    Read off the command files rather than listed here, so a command that starts
+    calling another script is covered by the next recording without anybody editing
+    an allow list."""
+    found = set()
+    for name in sorted(os.listdir(commands_dir)):
+        if not name.endswith(".md"):
+            continue
+        with open(os.path.join(commands_dir, name), encoding="utf-8") as fh:
+            found.update(_SCRIPT_CALL_RE.findall(fh.read()))
+    return sorted(found)
+
+
+def demo_settings(plugin_root, script_calls, tap_path):
+    """The one settings file the session loads.
+
+    The allow list is the plugin's own script calls, rooted at the copy the session
+    loads, plus edits under the demo's `src/`: the edit the plan covers must go
+    through without a permission prompt, and the gate's deny is decided before any
+    allow rule is read, so allowing the edit cannot let the refused one through.
+    `Edit(...)` covers every file-editing tool; the CLI warns on a `Write(...)` rule
+    and matches nothing with it. No mode is set, so the footer shows the CLI's own
+    interactive default rather than a mode this demo chose. The one hook is
+    the tap: it appends each edit's PreToolUse payload to `tap_path` and prints
+    nothing, which is how --check later replays exactly what Claude sent.
+
+    Two documented switches keep Claude Code's own text out of the frames, so a take
+    shows only what the user typed and what Claude answered, and two takes differ
+    only by the model: `promptSuggestionEnabled` off, because a suggestion can land
+    in the input box while the tape is typing; `spinnerTipsEnabled` off, because a
+    tip is random text. Both are settings keys in Claude Code's settings reference
+    (https://code.claude.com/docs/en/settings-reference.md)."""
+    allow = ['Bash(python3 "%s/%s":*)' % (plugin_root, rel) for rel in script_calls]
+    allow += ["Edit(./src/**)"]
+    return {
+        "promptSuggestionEnabled": False,
+        "spinnerTipsEnabled": False,
+        "permissions": {"allow": allow},
+        "hooks": {"PreToolUse": [{
+            "matcher": "|".join(EDIT_TOOLS),
+            "hooks": [{"type": "command",
+                       "command": "cat >> '%s'; echo >> '%s'" % (tap_path, tap_path)}]}]},
+    }
+
+
+TAPE_NEEDS = (
+    ("Output %s" % VHS_GIF, "the GIF output this tool ships"),
+    ("Output %s" % VHS_TEXT, "the text output the checks read"),
+    ("cd %s" % FIXTURE_DIR, "the neutral fixture path"),
+    ("--plugin-dir %s" % KIT_PLUGIN, "this checkout's plugin copy"),
+    ("--settings %s" % KIT_SETTINGS, "the isolated settings"),
+    ("--model %s" % MODEL, "the recorded model"),
+    ("--strict-mcp-config", "no MCP server of the host's in the session"),
+    ("--setting-sources project,local", "none of the user's own settings"),
+    ("/audit:status", "the status command the demo opens on"),
+    (IN_PLAN_REL, "the edit the plan covers"),
+    (OUT_OF_PLAN_REL, "the edit no task covers"),
+    ("Hide", "hiding the launch line and the banner"),
+    ("Usage limit reached", "ending a take that hit the account's limit in seconds"),
+    ("esc to interrupt", "proving each prompt was submitted"),
+    ("env -u IS_DEMO claude", "a first launch that can be asked to trust the folder"),
+    ("Quick safety check", "waiting for the folder-trust question"),
+    ("Interrupted", "the end state the last Wait proves before the hold"),
+    ("Show", "showing the session once the banner is cleared"),
+)
+
+
+def tape_problems(tape_text):
+    """[problem, ...] - why the committed tape would not record what this tool reads.
+
+    The two files share fixed paths and output names; each disagreement is a
+    recording that runs, costs a session, and is then refused."""
+    out = []
+    for need, why in TAPE_NEEDS:
+        if need not in tape_text:
+            out.append("the tape does not carry %r (%s)" % (need, why))
+    for banned in ("--dangerously-skip-permissions", "bypassPermissions",
+                   "--permission-mode"):
+        if banned in tape_text:
+            out.append("the tape carries %r: the demo may not choose a permission "
+                       "mode; the footer shows the CLI's own default" % (banned,))
+    for prompt in tape_prompts(tape_text):
+        if re.search(r"\d", prompt):
+            out.append("the prompt %r carries a digit: typed while a numbered dialog "
+                       "has the keys, a digit answers it" % (prompt[:40],))
+    return out
+
+
+def tape_prompts(tape_text):
+    """[text, ...] - what the tape types into the recorded session, in order: every
+    Type after the camera first comes on. The launch is typed before that, into
+    the shell; a prompt typed off camera later is still the user's prompt."""
+    out, started = [], False
+    for on, line in tape_steps(tape_text):
+        started = started or on
+        if started and line.startswith('Type "') and line.endswith('"'):
+            out.append(line[len('Type "'):-1].replace('\\"', '"'))
+    return out
+
+
+_TAPE_SKIP = ("#", "Output ", "Set ", "Require ")
+
+
+def collapsed_steps(steps):
+    """`steps` with each run of one repeated action folded into one row and a count,
+    so the dry run's listing stays readable: [(on camera, line, times)]."""
+    out = []
+    for on, line in steps:
+        if out and out[-1][0] == on and out[-1][1] == line:
+            out[-1] = (on, line, out[-1][2] + 1)
+        else:
+            out.append((on, line, 1))
+    return out
+
+
+def tape_steps(tape_text):
+    """[(on camera, line)] - the tape's actions in order, each marked by whether the
+    recording shows it: lines between Hide and Show run off camera."""
+    steps, shown = [], True
+    for raw in tape_text.split("\n"):
+        line = raw.strip()
+        if not line or line.startswith(_TAPE_SKIP):
+            continue
+        if line == "Hide":
+            shown = False
+        elif line == "Show":
+            shown = True
+        steps.append((shown and line != "Show", line))
+    return steps
+
+
+# --- the record that ties the committed GIF to the refusal it shows ------------
+def gif_record_entry(gif_bytes, refusal, shown, payload, cli_version, vhs_version):
     """What a recording writes about the file it just wrote."""
     return {"sha256": hashlib.sha256(gif_bytes).hexdigest(),
-            "textDigest": text_digest,
+            "refusal": refusal,
+            "refusalShown": shown,
+            "payload": payload,
+            "cliVersion": cli_version,
+            "model": MODEL,
+            "recordedWith": vhs_version,
+            "tape": "tools/demo-gate.tape",
             "writtenBy": "tools/capture-demo-gif.py"}
 
 
-def gif_record_problems(body, name, gif_bytes, text_digest):
-    """[problem, ...] - why the committed GIF does not match its record; [] when it does.
-
-    `body` None means the sidecar was absent or would not parse, and `gif_bytes` None
-    means the GIF is not on disk. Every missing basis is a finding naming the GIF:
-    a record nobody wrote cannot settle the claim the picture makes."""
+def record_entry(body, name):
+    """This GIF's entry in a parsed sidecar, or None."""
     if not isinstance(body, dict):
-        return ["%s: %s is missing or unreadable, so nothing records which text the "
-                "GIF shows - re-record it" % (name, SIDECAR)]
+        return None
     table = body.get(GIF_KEY)
     entry = table.get(name) if isinstance(table, dict) else None
-    if not isinstance(entry, dict):
+    return entry if isinstance(entry, dict) else None
+
+
+def first_difference(recorded, now):
+    """(line number, recorded line, current line) of the first line that differs."""
+    a = (recorded or "").split("\n")
+    b = (now or "").split("\n")
+    for i in range(max(len(a), len(b))):
+        la = a[i] if i < len(a) else "<no line>"
+        lb = b[i] if i < len(b) else "<no line>"
+        if la != lb:
+            return i + 1, la, lb
+    return 0, "", ""
+
+
+def gif_record_problems(body, name, gif_bytes, refusal):
+    """[problem, ...] - why the committed GIF does not match its record; [] when it does.
+
+    `body` None means the sidecar was absent or would not parse, `gif_bytes` None that
+    the GIF is not on disk, and `refusal` None that the gate printed no refusal for
+    the recorded payload. Every missing basis is a finding naming the GIF: a record
+    nobody wrote cannot settle the claim the picture makes."""
+    if not isinstance(body, dict):
+        return ["%s: %s is missing or unreadable, so nothing records which refusal "
+                "the GIF shows - re-record it" % (name, SIDECAR)]
+    entry = record_entry(body, name)
+    if entry is None:
         return ["%s: %s holds no record for it under %r, so whether it still shows "
-                "the gate's text is unknown rather than settled - re-record it"
+                "the gate's refusal is unknown rather than settled - re-record it"
                 % (name, SIDECAR, GIF_KEY)]
     if gif_bytes is None:
         return ["%s: recorded, but the file is not on disk" % (name,)]
@@ -249,11 +670,18 @@ def gif_record_problems(body, name, gif_bytes, text_digest):
     if entry.get("sha256") != hashlib.sha256(gif_bytes).hexdigest():
         out.append("%s: the committed bytes are not the ones recorded (sha256 "
                    "differs) - re-record it rather than editing the record" % (name,))
-    if entry.get("textDigest") != text_digest:
-        out.append("%s: the gate's text has moved since it was recorded (text "
-                   "digest %s, now %s) - the GIF shows output the plugin no longer "
-                   "prints; re-record it"
-                   % (name, str(entry.get("textDigest"))[:12], text_digest[:12]))
+    recorded = entry.get("refusal")
+    if not isinstance(recorded, str) or not recorded:
+        out.append("%s: the record names no refusal, so what the GIF shows the gate "
+                   "saying is unknown rather than settled - re-record it" % (name,))
+    elif refusal is None:
+        out.append("%s: the gate printed no refusal for the recorded payload, so the "
+                   "GIF shows a refusal the plugin no longer makes" % (name,))
+    elif refusal != recorded:
+        line, was, now = first_difference(recorded, refusal)
+        out.append("%s: the gate's refusal is no longer the one the recording "
+                   "captured - line %d was %r and is now %r; re-record it"
+                   % (name, line, was, now))
     return out
 
 
@@ -283,6 +711,11 @@ def _read_bytes(path):
         return None
 
 
+def _read_text(path):
+    raw = _read_bytes(path)
+    return None if raw is None else raw.decode("utf-8", "replace")
+
+
 def _read_sidecar(path):
     """(body, error) - body None with error None means the file is absent."""
     raw = _read_bytes(path)
@@ -297,327 +730,439 @@ def _read_sidecar(path):
     return body, None
 
 
-def recorded_gif_problems(out_path, text_digest):
+def _sidecar_path(out_path):
+    return os.path.join(os.path.dirname(out_path), SIDECAR)
+
+
+def recorded_gif_problems(out_path, refusal):
     """--check's comparison, against the files beside `out_path`."""
-    body, _err = _read_sidecar(os.path.join(os.path.dirname(out_path), SIDECAR))
+    body, _err = _read_sidecar(_sidecar_path(out_path))
     return gif_record_problems(body, os.path.basename(out_path),
-                               _read_bytes(out_path), text_digest)
+                               _read_bytes(out_path), refusal)
 
 
-def record_gif(out_path, text_digest):
+def record_gif(out_path, entry):
     """Write this GIF's record into the sidecar beside it; None, or why it refused.
 
     An absent sidecar is created holding only this record. One that will not parse
     is REFUSED and left as it is: replacing it would drop every screenshot record it
     held, and those are not this tool's to rebuild."""
-    side = os.path.join(os.path.dirname(out_path), SIDECAR)
+    side = _sidecar_path(out_path)
     body, err = _read_sidecar(side)
     if err:
         return err
-    gif = _read_bytes(out_path)
-    if gif is None:
-        return "%s was not written, so there is nothing to record" % (out_path,)
-    name = os.path.basename(out_path)
-    new = merged_sidecar(body or {}, name, gif_record_entry(gif, text_digest))
+    new = merged_sidecar(body or {}, os.path.basename(out_path), entry)
     with open(side, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(sidecar_text(new))
     return None
 
 
-# The hold on the final frame, read off the refusal rather than fixed. A fixed hold
-# was sized for a refusal half today's length, so the loop restarted while the
-# reader was still in it. The rate is a skimming pace; the floor is the old fixed
-# hold, kept for a refusal short enough to need less.
-#
-# The ceiling is for the viewer, not the format. A README GIF cannot be paused or
-# rewound by most readers, so a hold past the better part of a minute reads as a
-# frozen image rather than a pause, and a refusal that long is a refusal to shorten,
-# not to wait out. It also keeps the delay far inside the GIF frame-delay field,
-# which is a 16-bit count of centiseconds and wraps if a hold ever exceeded it.
-HOLD_FLOOR_MS = 3600
-HOLD_MS_PER_WORD = 150
-HOLD_CEILING_MS = 45000
+# --- --check -----------------------------------------------------------------
+def _status_text(d):
+    """The status render, run INSIDE the fixture: run from wherever the caller stood,
+    it reported that checkout's own phase locks - process ids and the host's name."""
+    return subprocess.run([PY, resolve_script("audit-status.py"),
+                           os.path.join(d, MANIFEST_REL)],
+                          capture_output=True, text=True, cwd=d,
+                          env=dict(os.environ, CLAUDE_PROJECT_DIR=d)).stdout
 
 
-def final_hold_ms(refusal):
-    """How long the last frame stays up, in milliseconds: floor <= hold <= ceiling."""
-    words = len((refusal or "").split())
-    return min(HOLD_CEILING_MS, max(HOLD_FLOOR_MS, words * HOLD_MS_PER_WORD))
-
-
-def _wrap(text, width):
-    """Wrap while keeping each paragraph's own indent.
-
-    The hand-rolled version split on spaces, which turns a two-space indent into two
-    empty tokens and drops it — so the deny message's numbered list lost the indent on
-    exactly the items long enough to wrap, i.e. the ones a reader most needs lined up."""
-    import textwrap
+def refusal_shape_problems(refusal):
+    """What a refusal worth showing must still say."""
+    if not refusal:
+        return ["the out-of-plan edit was ALLOWED; there is no refusal to show"]
     out = []
-    for para in text.split("\n"):
-        if not para.strip():
-            out.append("")
-            continue
-        indent = para[:len(para) - len(para.lstrip())]
-        out.extend(textwrap.wrap(
-            para.strip(), width=width, initial_indent=indent,
-            subsequent_indent=indent + "   ", break_long_words=False,
-            break_on_hyphens=False) or [para])
+    if OUT_OF_PLAN_REL not in refusal:
+        out.append("the refusal does not name the file it refused")
+    if "#no-plan" not in refusal:
+        out.append("the refusal does not name a way out")
     return out
 
 
-def build_script(cap, cols):
-    """The recording, as a list of (kind, text, colour) steps.
-
-    `type` steps animate a character at a time; `out` steps appear whole, the way a
-    terminal actually behaves."""
-    s = []
-    s.append(("type", "audit-status.py audit-plan.json", ACCENT))
-    for line in cap["status"].split("\n"):
-        col = TEXT
-        if line.strip().startswith("READY NOW"):
-            col = OK
-        elif line.strip().startswith("RESUMABLE"):
-            col = WARN
-        elif line.strip().startswith("AUDIT"):
-            col = ACCENT
-        s.append(("out", line, col))
-    s.append(("gap", "", TEXT))
-
-    s.append(("cmt", "# an edit the plan covers - P2.1 owns src/checkout.ts", MUTED))
-    s.append(("type", "edit src/checkout.ts   # PreToolUse -> require-plan", ACCENT))
-    if cap["inplan"] is None:
-        s.append(("out", "(no output - the gate stays out of the way)", OK))
-    else:
-        for line in _wrap(cap["inplan"], cols):
-            s.append(("out", line, DENY))
-    s.append(("gap", "", TEXT))
-
-    s.append(("cmt", "# an edit no task covers, while a phase is running", MUTED))
-    s.append(("type", "edit src/billing.ts    # PreToolUse -> require-plan", ACCENT))
-    if cap["outplan"] is None:
-        s.append(("out", "(allowed - the gate did NOT deny)", DENY))
-    else:
-        for line in _wrap(cap["outplan"], cols):
-            s.append(("out", line, DENY if line.startswith("[require-plan]") else TEXT))
-    return s
-
-
-def render(script, cols, rows, out_path, hold_ms=HOLD_FLOOR_MS):
-    from PIL import Image, ImageDraw
-    font = _font(15)
-    fw = font.getlength("M")
-    lh = 22
-    pad, titleh = 18, 34
-    W = int(pad * 2 + fw * cols)
-    H = int(pad * 2 + titleh + lh * rows)
-
-    def frame(lines, cursor_on):
-        img = Image.new("RGB", (W, H), BG)
-        dr = ImageDraw.Draw(img)
-        dr.rectangle([0, 0, W, titleh], fill=SURFACE)
-        dr.line([(0, titleh), (W, titleh)], fill=BORDER)
-        for i, c in enumerate(("#ff5f57", "#febc2e", "#28c840")):
-            dr.ellipse([16 + i * 18, 12, 26 + i * 18, 22], fill=c)
-        dr.text((76, 9), "audit - plan-first gate", font=font, fill=MUTED)
-        y = titleh + pad
-        for text, col, prompt in lines[-rows:]:
-            x = pad
-            if prompt:
-                dr.text((x, y), "$", font=font, fill=OK)
-                x += fw * 2
-            dr.text((x, y), text, font=font, fill=col)
-            y += lh
-        if cursor_on and lines:
-            last = lines[-1]
-            x = pad + (fw * 2 if last[2] else 0) + fw * len(last[0])
-            yy = titleh + pad + lh * (min(len(lines), rows) - 1)
-            dr.rectangle([x, yy + 2, x + fw - 1, yy + lh - 5], fill=ACCENT)
-        return img
-
-    frames, durs = [], []
-    lines = []
-    for kind, text, col in script:
-        if kind == "gap":
-            lines.append(("", TEXT, False))
-            frames.append(frame(lines, False)); durs.append(120)
-        elif kind == "cmt":
-            lines.append((text, col, False))
-            frames.append(frame(lines, False)); durs.append(420)
-        elif kind == "type":
-            lines.append(("", ACCENT, True))
-            # Three characters a frame. One-per-frame tripled the file for motion
-            # nobody can see at 30fps, and the GIF is a README asset before it is a
-            # typing demo.
-            for i in range(3, len(text) + 3, 3):
-                lines[-1] = (text[:i], col, True)
-                frames.append(frame(lines, True))
-                durs.append(70)
-            frames.append(frame(lines, False)); durs.append(320)
-        else:
-            lines.append((text, col, False))
-            frames.append(frame(lines, False)); durs.append(55)
-    # Hold on the refusal. It is the point of the recording, and a loop that snaps
-    # away from it the moment it lands shows everything except the thing it is for.
-    frames.append(frame(lines, False)); durs.append(hold_ms)
-
-    # disposal=1 (leave the previous frame in place) rather than 2 (repaint the
-    # whole canvas): this recording only ever APPENDS lines, so every frame is the
-    # previous one plus a strip at the bottom, and the encoder can ship the strip.
-    # With disposal=2 each frame is a full 900x752 image and the file was 3.8MB.
-    frames[0].save(out_path, save_all=True, append_images=frames[1:],
-                   duration=durs, loop=0, optimize=True, disposal=1)
-    return W, H, len(frames)
-
-
-def main(argv):
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=os.path.join(REPO, "docs", "screenshots", "demo-gate.gif"))
-    ap.add_argument("--check", action="store_true",
-                    help="capture and assert, write nothing")
-    ap.add_argument("--cols", type=int, default=DEFAULT_COLS)
-    args = ap.parse_args(argv)
-
+def run_check(out_path):
+    name = os.path.basename(out_path)
+    body, err = _read_sidecar(_sidecar_path(out_path))
+    entry = record_entry(body, name)
+    payload = entry.get("payload") if entry else None
     d = tempfile.mkdtemp(prefix="audit-demo-gif-")
     try:
         build_fixture(d)
-        cap = capture(d)
-
-        # The recording is only worth shipping if it still shows what it claims.
-        problems = []
-        if cap["inplan"] is not None:
-            problems.append("the in-plan edit was DENIED; the demo claims it is allowed")
-        if not cap["outplan"]:
-            problems.append("the out-of-plan edit was ALLOWED; there is no refusal to record")
-        else:
-            if "src/billing.ts" not in cap["outplan"]:
-                problems.append("the refusal does not name the file it refused")
-            if "#no-plan" not in cap["outplan"]:
-                problems.append("the refusal does not name a way out")
-        if "P2.1" not in cap["status"] or "READY NOW" not in cap["status"]:
+        problems = [err] if err else []
+        with open(os.path.join(d, MANIFEST_REL), encoding="utf-8") as fh:
+            invalid, _warnings = plan_findings(json.load(fh))
+        problems.extend("the demo plan is one a writer would refuse: %s" % f
+                        for f in invalid)
+        status = _status_text(d)
+        if "P2.1" not in status or "READY NOW" not in status:
             problems.append("the status render is not the one the demo shows")
-        for p in problems:
-            sys.stderr.write("FAIL: %s\n" % p)
-        if problems:
-            return 1
+        if fire_in_plan(d) is not None:
+            problems.append("the in-plan edit was DENIED; the demo shows it going through")
+        refusal = None
+        if entry is not None and (not isinstance(payload, dict)
+                                  or not isinstance(payload.get("tool_input"), dict)):
+            problems.append("%s: the record holds no out-of-plan payload to replay - "
+                            "re-record it" % (name,))
+        elif entry is not None:
+            raw = replay(payload, d)
+            problems.extend(refusal_shape_problems(raw))
+            refusal = scrub_value(raw, fixture_roots(d)) if raw else None
+        problems.extend(gif_record_problems(body, name, _read_bytes(out_path), refusal))
+    finally:
+        # THE ANSWER HERE IS THE PLAIN CALL. `build_fixture()` initialises a
+        # repository and never writes an object into one: no `add`, no `commit`, and
+        # the hooks this drives only read. A repository nothing was staged into holds
+        # no read-only loose object, so there is nothing for windows to refuse to
+        # unlink. THE PREMISE IS ENFORCED: `_suite.unsafe_removal_violations()` asks
+        # for a staging or committing verb as well as an initialising one, so the day
+        # `build_fixture()` learns to stage or commit, this file becomes a finding.
+        shutil.rmtree(d, ignore_errors=True)
+    for p in problems:
+        sys.stderr.write("FAIL: %s\n" % p)
+    if problems:
+        return 1
+    print("  gate allowed the in-plan edit (silently)")
+    print("  gate refused the recorded out-of-plan edit with the refusal %s shows" % name)
+    print("  %s is the recorded bytes" % name)
+    print("\nOK: demo preconditions hold")
+    return 0
 
-        print("  gate allowed the in-plan edit (silently)")
-        print("  gate refused the out-of-plan edit, naming the file and the way out")
-        digest = capture_text_digest(cap, d, args.cols)
-        if args.check:
-            stale = recorded_gif_problems(args.out, digest)
-            for p in stale:
-                sys.stderr.write("FAIL: %s\n" % p)
-            if stale:
+
+# --- --record ------------------------------------------------------------------
+def _tool_version(argv):
+    try:
+        out = subprocess.run(argv, capture_output=True, text=True)
+    except OSError:
+        return None
+    text = (out.stdout or out.stderr or "").strip()
+    return text.split("\n")[0] if out.returncode == 0 and text else None
+
+
+def build_kit(kit_dir, plugin_src):
+    """The plugin copy the session loads and the settings it loads, at `kit_dir`."""
+    plugin = os.path.join(kit_dir, "audit")
+    shutil.copytree(plugin_src, plugin,
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "tests"))
+    calls = command_script_calls(os.path.join(plugin, "commands"))
+    tap = os.path.join(kit_dir, TAP_NAME)
+    with open(tap, "w", encoding="utf-8"):
+        pass
+    with open(os.path.join(kit_dir, "settings.json"), "w", encoding="utf-8") as fh:
+        json.dump(demo_settings(plugin, calls, tap), fh, indent=2)
+    return calls
+
+
+USAGE_LIMIT_RE = re.compile(r"hit your session limit|Usage limit reached")
+
+
+def usage_limit_problem(screen):
+    """Why the take is void when the account ran out of usage, or None.
+
+    Named on its own because every other finding of such a take - no edit, no
+    refusal - is a consequence of it, and a re-record needs to wait for the reset
+    rather than a fix."""
+    if screen and USAGE_LIMIT_RE.search(screen):
+        return ("the account hit its usage limit during the take - Claude Code "
+                "showed its usage-limit screen; re-record after the limit resets")
+    return None
+
+
+_LAST_VALUE = "last value was:"
+_LOG_SCREEN_END = "\nrecording failed"
+
+
+def log_screens(log_text):
+    """[screen, ...] - the terminal screens VHS printed into its log, and nothing else.
+
+    The log also echoes every tape command, and the tape's own Wait patterns name the
+    texts this tool looks for, so reading the whole log reads the question as its
+    answer. A screen is only what follows a failed Wait's "last value was:" marker."""
+    out, i = [], 0
+    text = log_text or ""
+    while True:
+        i = text.find(_LAST_VALUE, i)
+        if i < 0:
+            return out
+        start = i + len(_LAST_VALUE)
+        end = text.find(_LOG_SCREEN_END, start)
+        out.append(text[start:] if end < 0 else text[start:end])
+        i = start
+
+
+VHS_FRAME_BAR = u"\u2500" * 80
+_HEADER_MARK = "Claude Code v"
+_FOOTER_MARK = "shift+tab to cycle"
+
+
+def vhs_frames(text_output):
+    """VHS's text output split at its own frame separator - a bar of exactly the
+    separator's width, which Claude Code's wider box borders never equal."""
+    frames, cur = [], []
+    for line in (text_output or "").split("\n"):
+        if line.strip() == VHS_FRAME_BAR:
+            frames.append("\n".join(cur))
+            cur = []
+        else:
+            cur.append(line)
+    frames.append("\n".join(cur))
+    return [f for f in frames if f.strip()]
+
+
+def outgrew_problem(screens):
+    """Why the take cannot be read, when the session outgrew the terminal; or None.
+
+    VHS reads a screen - for its Wait and for its text output alike - as the first
+    rows of the terminal's buffer, as many as the window is tall, so once the session
+    scrolls, the bottom of it is never read: not the step a Wait waits for, and not
+    the refusal this tool must find. Claude Code draws its footer at the very bottom,
+    and VHS pads a screen to the window's height, so a screen showing the header, no
+    footer, and something on its last row is one whose bottom was cut. (An open
+    command popup also hides the footer, but leaves the rows under it blank.)"""
+    for scr in screens:
+        bottom_filled = scr.split("\n")[-1].strip() != ""
+        if _HEADER_MARK in scr and _FOOTER_MARK not in scr and bottom_filled:
+            return ("the session outgrew the terminal: a screen shows Claude Code's "
+                    "header but not its footer, so VHS read only its top rows and "
+                    "could see neither the step a Wait was waiting for nor the "
+                    "refusal - the whole take has to fit on one screen")
+    return None
+
+
+NARRATION_RE = re.compile(r"<manifestPath>|wasn't filled in|didn't fill in|"
+                          r"was not filled in|did not fill in")
+
+
+def narration_problem(screen):
+    """Why the take may not ship when Claude narrates an unfilled command placeholder,
+    or None. A user never sees that sentence when the command resolves its own
+    arguments; a demo that shows it shows a defect. The fix is in the command."""
+    if screen and NARRATION_RE.search(screen):
+        return ("the session narrates an unfilled command placeholder "
+                "(<manifestPath> / 'wasn't filled in'); a user should never see it - "
+                "fix the command, then re-record")
+    return None
+
+
+def submitted_prompts(screen):
+    """[text, ...] - the prompts the transcript shows as sent.
+
+    Claude Code echoes a sent prompt at the left edge as the prompt mark and an
+    ordinary space; the live input box uses a no-break space there, and a dialog's
+    selected option and the command popup are indented - none of those is a send."""
+    return [line[2:].rstrip() for line in (screen or "").split("\n")
+            if line.startswith(u"\u276f ") and line[2:].strip()]
+
+
+def stray_prompt_problem(screen, prompts):
+    """Why the take shows a prompt the tape never typed, or None.
+
+    A sent prompt that is not the start of one of the tape's own is a prompt
+    something else wrote - a dialog that took half the keys, a suggestion accepted
+    by an Enter - and the session that follows answers a question nobody asked."""
+    expected = [p for p in (prompts or ()) if p]
+    for shown in submitted_prompts(screen):
+        if not any(p.startswith(shown) for p in expected):
+            return ("the session shows a prompt the tape never typed (%r) - the keys "
+                    "went somewhere else first; re-record" % (shown[:60],))
+    return None
+
+
+def screen_problems(text_output, log_text, prompts=()):
+    """[problem, ...] read off what the terminal showed - the text output's frames
+    and the screens in the log - never off the tape commands the log echoes. A
+    usage limit comes first: every other finding of such a take follows from it.
+    `prompts` are the tape's own (`tape_prompts()`); without them no sent prompt
+    can be judged, and none is."""
+    screens = vhs_frames(text_output) + log_screens(log_text)
+    joined = "\n".join(screens)
+    found = [usage_limit_problem(joined), outgrew_problem(screens),
+             narration_problem(joined),
+             stray_prompt_problem(joined, prompts) if prompts else None]
+    return [p for p in found if p]
+
+
+_EDIT_ON_SCREEN_RE = re.compile(r"(?:Update|Write)\((?:[^)]*/)?src/")
+
+
+def hooks_problem(screen, payloads):
+    """Why the take's edits went past every hook, or None.
+
+    The tap is a PreToolUse hook like the plan gate. An edit Claude Code drew on
+    screen that the tap never saw means no hook ran in that session - for a folder
+    Claude Code has not been told to trust, it loads no plugin or settings hook - so
+    there was no gate to refuse anything."""
+    if not payloads and screen and _EDIT_ON_SCREEN_RE.search(screen):
+        return ("the screen shows an edit but the tap recorded none, so no hook ran "
+                "in the session - the plan gate included; the demo folder was most "
+                "likely never trusted")
+    return None
+
+
+def verify_recording(screen, payloads_text, d, markers):
+    """(problems, refusal, shown, payload) for one finished recording at fixture `d`."""
+    problems = []
+    payloads, bad = parse_payloads(payloads_text or "")
+    if bad:
+        problems.append("the tap holds a payload that does not parse")
+    hooks = hooks_problem(screen, payloads)
+    if hooks:
+        return problems + [hooks], None, "", None
+    payload = out_of_plan_payload(payloads)
+    if payload is None:
+        return (problems + ["Claude never tried to edit %s, so there is no refusal "
+                            "in this recording" % OUT_OF_PLAN_REL], None, "", None)
+    roots = fixture_roots(d)
+    stored = scrub_value(payload, roots)
+    raw = replay(stored, d)
+    problems.extend(refusal_shape_problems(raw))
+    if not raw:
+        return problems, None, "", None
+    shown = shown_refusal(screen, raw)
+    if not first_line_shown(raw, shown):
+        problems.append("the screen never shows the gate's refusal as far as its "
+                        "first line, so the GIF does not show the refusal it records")
+    refusal = scrub_value(raw, roots)
+    for where, text in (("a recorded frame", screen),
+                        ("the refusal", refusal),
+                        ("the recorded payload", json.dumps(stored))):
+        for kind in pii_findings(text, markers):
+            problems.append("%s carries %s" % (where, kind))
+    return problems, refusal, scrub_value(shown, roots), stored
+
+
+def _keep_evidence(kit_dir):
+    keep = tempfile.mkdtemp(prefix="audit-demo-failed-")
+    for n in (VHS_GIF, VHS_TEXT, TAP_NAME, "vhs.log"):
+        src = os.path.join(kit_dir, n)
+        if os.path.isfile(src):
+            shutil.copy2(src, os.path.join(keep, n))
+    return keep
+
+
+def run_record(out_path, dry_run):
+    for need in ("vhs",) if dry_run else ("vhs", "claude"):
+        if shutil.which(need) is None:
+            sys.stderr.write("COULD NOT RUN: %s is not on PATH\n" % need)
+            return 2
+    for path in (FIXTURE_DIR, KIT_DIR):
+        if os.path.exists(path):
+            sys.stderr.write("COULD NOT RUN: %s already exists - remove it; this tool "
+                             "never writes into a directory it did not create\n" % path)
+            return 2
+    with open(TAPE, encoding="utf-8") as fh:
+        tape_issues = tape_problems(fh.read())
+    for p in tape_issues:
+        sys.stderr.write("FAIL: %s\n" % p)
+    if tape_issues:
+        return 1
+    kept = None
+    try:
+        os.makedirs(FIXTURE_DIR)
+        os.makedirs(KIT_DIR)
+        build_fixture(FIXTURE_DIR)
+        calls = build_kit(KIT_DIR, PLUGIN_SRC)
+        print("  fixture %s, plugin copy %s, %d script call(s) allowed"
+              % (FIXTURE_DIR, KIT_PLUGIN, len(calls)))
+        if dry_run:
+            with open(TAPE, encoding="utf-8") as fh:
+                order = tape_steps(fh.read())
+            print("  the tape, in order (- off camera, + on camera):")
+            for on, line, times in collapsed_steps(order):
+                print("    %s %s%s" % ("+" if on else "-", line,
+                                       "   (x%d)" % times if times > 1 else ""))
+            check = subprocess.run(["vhs", "validate", TAPE], capture_output=True,
+                                   text=True)
+            sys.stdout.write(check.stdout + check.stderr)
+            print("  would run: (cd %s && vhs %s)" % (KIT_DIR, TAPE))
+            if check.returncode != 0:
+                sys.stderr.write("FAIL: vhs validate exited %d\n" % check.returncode)
                 return 1
-            print("  %s shows this text (digest %s) and is the recorded bytes"
-                  % (os.path.basename(args.out), digest[:12]))
-            print("\nOK: demo preconditions hold")
+            print("\nOK: dry run - no session started, nothing written")
             return 0
-
-        script = build_script(cap, args.cols)
-        rows = sum(1 for k, _, _ in script if k != "type") + \
-            sum(1 for k, _, _ in script if k == "type") + 1
-        os.makedirs(os.path.dirname(args.out), exist_ok=True)
-        hold = final_hold_ms(cap["outplan"])
-        w, h, n = render(script, args.cols, rows, args.out, hold)
-        print("  wrote %s (%dx%d, %d frames, %d KB, final hold %d ms)"
-              % (os.path.relpath(args.out, REPO), w, h, n,
-                 os.path.getsize(args.out) // 1024, hold))
-        err = record_gif(args.out, digest)
+        cli = _tool_version(["claude", "--version"])
+        account, why = account_markers(session_env(os.environ))
+        if why:
+            print("  NOTE: %s" % why)
+        vhs = _tool_version(["vhs", "--version"])
+        with open(os.path.join(KIT_DIR, "vhs.log"), "w", encoding="utf-8") as log:
+            ran = subprocess.run(["vhs", TAPE], cwd=KIT_DIR, stdout=log,
+                                 stderr=subprocess.STDOUT,
+                                 env=session_env(os.environ))
+        problems = []
+        if ran.returncode != 0:
+            problems.append("vhs exited %d (its log is kept)" % ran.returncode)
+        screen = _read_text(os.path.join(KIT_DIR, VHS_TEXT))
+        gif = _read_bytes(os.path.join(KIT_DIR, VHS_GIF))
+        if screen is None or gif is None:
+            problems.append("vhs wrote no %s" % (VHS_TEXT if screen is None else VHS_GIF))
+        refusal = shown = payload = None
+        # VHS writes a text frame per command, so a screen that appears while a Wait
+        # is polling can be missing from the text output; the log's failed-Wait
+        # screen is where a take showed it. These findings are read first and, when
+        # there are any, stand in for the replay: they say why the take is void.
+        with open(TAPE, encoding="utf-8") as fh:
+            typed = tape_prompts(fh.read())
+        void = screen_problems(screen, _read_text(os.path.join(KIT_DIR, "vhs.log")),
+                               typed)
+        if void:
+            problems = void + problems
+        elif not problems:
+            more, refusal, shown, payload = verify_recording(
+                screen, _read_text(os.path.join(KIT_DIR, TAP_NAME)), FIXTURE_DIR,
+                personal_markers() + account)
+            problems.extend(more)
+        if cli is None:
+            problems.append("`claude --version` gave no answer to record")
+        if problems:
+            kept = _keep_evidence(KIT_DIR)
+            for p in problems:
+                sys.stderr.write("FAIL: %s\n" % p)
+            sys.stderr.write("nothing was written; the recording is kept in %s\n" % kept)
+            return 1
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        with open(out_path, "wb") as fh:
+            fh.write(gif)
+        err = record_gif(out_path, gif_record_entry(gif, refusal, shown, payload,
+                                                    cli, vhs))
         if err:
             sys.stderr.write("FAIL: the GIF was written but its record was not: %s\n"
                              % err)
             return 1
-        print("  recorded its sha256 and text digest in %s under %r"
+        print("  wrote %s (%d KB) from %s, model %s"
+              % (os.path.relpath(out_path, REPO), len(gif) // 1024, cli, MODEL))
+        print("  recorded its sha256 and the refusal it shows in %s under %r"
               % (SIDECAR, GIF_KEY))
-        print("\nOK: demo GIF captured")
+        print("\nOK: demo GIF recorded")
         return 0
     finally:
-        # THE ANSWER HERE IS THE PLAIN CALL - said rather than left for
-        # the next reader to work out again. `build_fixture()` initialises a
-        # repository and never writes an object into one: no `add`, no `commit`,
-        # and the hooks the capture drives only read. A repository nothing was
-        # staged into holds no read-only loose object, so there is nothing for
-        # windows to refuse to unlink and the careful removal would be a demand
-        # with no failure behind it.
-        #
-        # THE PREMISE IS ENFORCED AND NOT MERELY RECORDED, which is the difference
-        # between this and an exemption written in prose:
-        # `_suite.unsafe_removal_violations()` asks for a staging or committing
-        # verb as well as an initialising one, so the day `build_fixture()` learns
-        # to stage or commit, this file becomes a finding and this comment stops
-        # being the thing anybody has to trust.
-        shutil.rmtree(d, ignore_errors=True)
+        # Same premise as `run_check`'s removal: the fixture is initialised and never
+        # staged into, and the kit is plain files.
+        shutil.rmtree(FIXTURE_DIR, ignore_errors=True)
+        shutil.rmtree(KIT_DIR, ignore_errors=True)
+
+
+def main(argv):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out", default=os.path.join(REPO, "docs", "screenshots", GIF_NAME))
+    mode = ap.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--check", action="store_true",
+                      help="replay the recorded refusal and compare; no session, no write")
+    mode.add_argument("--record", action="store_true",
+                      help="record a real session with vhs and claude (paid)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="with --record: build and validate everything, start no session")
+    args = ap.parse_args(argv)
+    if args.dry_run and not args.record:
+        ap.error("--dry-run goes with --record")
+    if args.check:
+        return run_check(args.out)
+    return run_record(args.out, args.dry_run)
 
 
 # --- selftest -----------------------------------------------------------------
-# THE ONE `.py` UNDER tools/ THAT CARRIED NO CASES. `--check` already asserts the
-# expensive half - it runs the real capture and refuses to ship a recording of
-# something the product no longer does - but it says nothing about the pure text and
-# colour logic BELOW that capture, which is where this file's one recorded bug was.
+# `--check` asserts the half that needs the hooks - it replays the recorded payload
+# against the real gate. These cases hold the pure logic around it: the comparison,
+# the screen reading, the personal-data scan and the files the session is given.
 def _cases(check):
-
-    # `_wrap`'s docstring names the defect it exists to fix: a hand-rolled split on
-    # spaces turned a two-space indent into two empty tokens and dropped it, so the
-    # deny message's numbered list lost its indent on exactly the items long enough
-    # to wrap. Both halves of that are asserted, because the short line never broke.
-    short = _wrap("  2. short", 40)
-    long_ = _wrap("  2. a numbered item long enough that it has to wrap onto a "
-                  "second line and then a third", 40)
-    check("w0 an indented line that does NOT wrap keeps its indent: %r"
-          % (short,),
-          short == ["  2. short"])
-    check("w1 THE PAIR, and the half that actually broke: a WRAPPING indented "
-          "paragraph keeps the indent on every line. w0 passed on the broken "
-          "version too, so asserting it alone asserted nothing: %r" % (long_,),
-          long_[0].startswith("  2.")
-          and all(ln.startswith("  ") for ln in long_) and len(long_) > 1)
-    check("w2 a blank line survives as one, so two paragraphs do not become one",
-          _wrap("a\n\nb", 40) == ["a", "", "b"])
-    huge = "plugins/audit/scripts/manifest/validate-manifest.py"
-    check("w3 a token longer than the width is NOT broken - a path split across "
-          "two lines is a path a reader cannot copy: %r" % (_wrap(huge, 20),),
-          huge in _wrap(huge, 20))
-    check("w4 a whitespace-only paragraph is one empty line rather than being "
-          "dropped or duplicated",
-          _wrap("   ", 40) == [""])
-
-    cap = {"status": "AUDIT plan\nREADY NOW  P2.1\nRESUMABLE P3\nplain line",
-           "inplan": None,
-           "outplan": "[require-plan] src/billing.ts is not covered\n  use #no-plan"}
-    steps = build_script(cap, 96)
-    colours = dict((text.strip(), col) for kind, text, col in steps
-                   if kind == "out" and text.strip())
-    check("b0 the status render is coloured by PREFIX, and all four answers "
-          "differ - one shared colour would make three of these vacuous",
-          colours.get("AUDIT plan") == ACCENT
-          and colours.get("READY NOW  P2.1") == OK
-          and colours.get("RESUMABLE P3") == WARN
-          and colours.get("plain line") == TEXT)
-
-    denied = dict(cap)
-    denied["inplan"] = "[require-plan] src/checkout.ts refused"
-    other = build_script(denied, 96)
-    # NOT a length comparison, which was the first thing written here: both branches
-    # append exactly one step, so length is the one thing that does NOT differ. What
-    # differs is the step itself, and that is what a reader of the GIF sees.
-    check("b1 THE INVERTED PAIR: two fixtures differing only in whether the "
-          "in-plan edit was denied produce different recordings - the demo "
-          "claims that edit is ALLOWED, so the branch that says so has to be "
-          "the one a None takes",
-          other != steps
-          and any(col == DENY and "checkout" in text
-                  for _k, text, col in other)
-          and any(col == OK and "stays out of the way" in text
-                  for _k, text, col in steps))
-
-    kinds = set(k for k, _t, _c in steps)
-    check("b2 every step is a (kind, text, colour) triple of a kind render() "
-          "knows - a fourth kind would draw nothing and say nothing: %r"
-          % (sorted(kinds),),
-          all(len(step) == 3 for step in steps)
-          and kinds <= set(["type", "out", "cmt", "gap"]))
-
     real = resolve_script("audit-status.py")
     check("r0 a basename resolves to the file WHEREVER it sits under the scripts "
           "tree - a join against the scripts root would look one directory too "
@@ -650,91 +1195,105 @@ def _cases(check):
           "namespaces (got %s)" % (sep,),
           sep == "ValueError")
 
-    _record_cases(check)
+    _refusal_record_cases(check)
+    _sidecar_cases(check)
+    _screen_cases(check)
+    _payload_cases(check)
+    _pii_cases(check)
+    _session_file_cases(check)
+    _env_cases(check)
+    _fixture_cases(check)
+    _screen_reading_cases(check)
+    _prompt_cases(check)
+    _limit_cases(check)
+    _tape_step_cases(check)
 
 
-def _record_cases(check):
-    """What the sidecar record says about the GIF, and what --check makes of it.
+def _refusal_record_cases(check):
+    """--check against a record of the REFUSAL a recording captured.
 
-    The fixture directory is spelled two ways on purpose: macOS hands out a temp
-    path under a symlink, so the same tree can appear as the path mkdtemp returned
-    and as its resolved form, and a digest that kept either would change on every
-    run."""
-    fix = os.path.join(os.sep, "var", "folders", "x", "T", "audit-demo-gif-abc")
-    other = os.path.join(os.sep, "private", "tmp", "audit-demo-gif-zzz")
-    cap = {"status": "AUDIT plan\nREADY NOW  P2.1",
-           "inplan": None,
-           "outplan": "[require-plan] Outside the running plan: %s\n"
-                      "  2. the HUMAN types #no-plan in their own prompt"
-                      % os.path.join(fix, "src", "billing.ts")}
-    moved = dict(cap)
-    moved["outplan"] = cap["outplan"].replace(fix, other)
-    reworded = dict(cap)
-    reworded["outplan"] = cap["outplan"].replace("the HUMAN types", "type")
+    The record is written as literal dicts here rather than by the writer, so a
+    writer that wrote the wrong field cannot also be the thing these cases trust."""
+    gif = b"GIF89a-recorded-session"
+    sha = hashlib.sha256(gif).hexdigest()
+    refusal = ("[require-plan] Outside the running plan (change magnitude 120 "
+               "(> 80)): src/billing.ts\n"
+               "  2. This is genuinely a one-off -> the HUMAN types #no-plan")
+    body = {"images": {"a.png": {"sha256": "aa"}},
+            GIF_KEY: {GIF_NAME: {"sha256": sha, "refusal": refusal}}}
 
-    digest = capture_text_digest(cap, fix)
-    check("t0 the text digest does not see WHERE the fixture was built - the same "
-          "answers from a different temp directory digest the same, or every run "
-          "would read as a moved GIF",
-          capture_text_digest(moved, other) == digest)
-    check("t1 THE PAIR: a refusal whose wording moved digests differently - the "
-          "line that changed is the bypass line, the one the committed GIF got "
-          "wrong",
-          capture_text_digest(reworded, fix) != digest)
-    real_builder = globals()["build_script"]
+    agree = gif_record_problems(body, GIF_NAME, gif, refusal)
+    check("rr0 THE ALLOW TWIN: the gate prints the refusal the recording captured "
+          "and the GIF is the recorded bytes - no finding, so the cases below are "
+          "not passing on a check that always fails: %r" % (agree,),
+          agree == [])
 
-    def recaptioned(c, cols):
-        return [(k, t.replace("stays out of the way", "lets it through"), col)
-                for k, t, col in real_builder(c, cols)]
+    moved = refusal.replace("the HUMAN types", "type")
+    drift = gif_record_problems(body, GIF_NAME, gif, moved)
+    check("rr1 the gate's refusal no longer matches the text the recording "
+          "captured: ONE finding, naming the GIF, saying it is the refusal, and "
+          "quoting the first line that differs so the repair is readable from CI's "
+          "log alone: %r" % (drift,),
+          len(drift) == 1 and GIF_NAME in drift[0] and "refusal" in drift[0]
+          and "the HUMAN types" in drift[0] and "-> type #no-plan" in drift[0])
 
-    globals()["build_script"] = recaptioned
-    try:
-        recaptioned_digest = capture_text_digest(cap, fix)
-    finally:
-        globals()["build_script"] = real_builder
-    check("t3 a CAPTION the recording writes changed while every captured answer "
-          "stayed the same: the digest moves, because the reader sees the "
-          "caption - a digest over the answers alone stayed green here",
-          recaptioned_digest != digest)
-    check("t4 the wrap width is part of what the GIF shows: the same answers laid "
-          "out at another width digest differently",
-          capture_text_digest(cap, fix, 40) != digest)
-    nulled = dict(cap)
-    nulled["inplan"] = ""
-    check("t2 an allowed edit (no answer) and an empty answer are different "
-          "recordings, so they are different digests",
-          capture_text_digest(nulled, fix) != digest)
+    bytes_moved = gif_record_problems(body, GIF_NAME, gif + b"!", refusal)
+    check("rr2 the committed GIF is not the bytes recorded: ONE finding naming the "
+          "GIF and its sha256, and the agreeing refusal adds none: %r"
+          % (bytes_moved,),
+          len(bytes_moved) == 1 and GIF_NAME in bytes_moved[0]
+          and "sha256" in bytes_moved[0])
 
-    gif = b"GIF89a-the-committed-bytes"
-    entry = gif_record_entry(gif, digest)
-    body = {"note": "screenshots", "images": {"a.png": {"sha256": "aa"}},
-            GIF_KEY: {GIF_NAME: entry}}
-    check("c0 THE ALLOW TWIN: a record that matches both the bytes and the text "
-          "is no finding - without it every case below passes on a check that "
-          "always fails: %r" % (gif_record_problems(body, GIF_NAME, gif, digest),),
-          gif_record_problems(body, GIF_NAME, gif, digest) == [])
-    stale_text = gif_record_problems(body, GIF_NAME, gif,
-                                     capture_text_digest(reworded, fix))
-    check("c1 the gate's text moved while the GIF did not: a finding that NAMES "
-          "the GIF, so the repair is obvious from the line alone: %r"
-          % (stale_text,),
-          len(stale_text) == 1 and GIF_NAME in stale_text[0]
-          and "text" in stale_text[0])
-    stale_bytes = gif_record_problems(body, GIF_NAME, gif + b"!", digest)
-    check("c2 the committed bytes are not the ones recorded: a finding naming the "
-          "GIF and its hash: %r" % (stale_bytes,),
-          len(stale_bytes) == 1 and GIF_NAME in stale_bytes[0]
-          and "sha256" in stale_bytes[0])
-    for label, sidecar in (("no gif key", {"note": "n", "images": {}}),
-                           ("no entry", {"images": {}, GIF_KEY: {}}),
-                           ("absent or unreadable", None)):
-        got = gif_record_problems(sidecar, GIF_NAME, gif, digest)
-        check("c3 a sidecar with %s is a FINDING, never a pass: %r" % (label, got),
+    no_refusal = {GIF_KEY: {GIF_NAME: {"sha256": sha}}}
+    got = gif_record_problems(no_refusal, GIF_NAME, gif, refusal)
+    check("rr3 a record that names no refusal is a finding about the REFUSAL, "
+          "never a pass - an absent basis settles nothing: %r" % (got,),
+          len(got) == 1 and GIF_NAME in got[0] and "refusal" in got[0])
+
+    for label, side in (("no gif table", {"images": {}}),
+                        ("no entry for the GIF", {GIF_KEY: {}}),
+                        ("no sidecar at all", None)):
+        got = gif_record_problems(side, GIF_NAME, gif, refusal)
+        check("rr4 a sidecar with %s is a finding naming the GIF: %r" % (label, got),
               len(got) == 1 and GIF_NAME in got[0])
-    got = gif_record_problems(body, GIF_NAME, None, digest)
-    check("c4 a GIF that is not on disk is a finding rather than a skipped "
-          "comparison: %r" % (got,),
-          len(got) == 1 and GIF_NAME in got[0])
+
+    d = tempfile.mkdtemp(prefix="audit-demo-gif-selftest-")
+    try:
+        out = os.path.join(d, GIF_NAME)
+        with open(out, "wb") as fh:
+            fh.write(gif)
+        with open(os.path.join(d, SIDECAR), "w", encoding="utf-8") as fh:
+            fh.write(sidecar_text(body))
+        on_disk = recorded_gif_problems(out, refusal)
+        on_disk_moved = recorded_gif_problems(out, moved)
+        check("rr5 the same comparison read off the files --check reads: green when "
+              "they agree (%r), red naming the refusal when the gate moved (%r)"
+              % (on_disk, on_disk_moved),
+              on_disk == [] and len(on_disk_moved) == 1
+              and "refusal" in on_disk_moved[0])
+    finally:
+        # Plain files only, no repository, so nothing read-only for the windows
+        # runner to refuse.
+        shutil.rmtree(d, ignore_errors=True)
+
+    gone = gif_record_problems(body, GIF_NAME, gif, None)
+    check("rr6 the gate printing NO refusal for the recorded payload is a finding "
+          "of its own, not a comparison that happened to differ: %r" % (gone,),
+          len(gone) == 1 and "no refusal for the recorded payload" in gone[0])
+    missing = gif_record_problems(body, GIF_NAME, None, refusal)
+    check("rr7 a GIF that is not on disk is a finding rather than a skipped "
+          "comparison: %r" % (missing,),
+          len(missing) == 1 and GIF_NAME in missing[0])
+
+
+def _sidecar_cases(check):
+    gif = b"GIF89a-the-committed-bytes"
+    entry = gif_record_entry(gif, "R", "R", {"tool_name": "Write"}, "2.1.0", "vhs 1")
+    check("m0 the entry a recording writes is one --check accepts: its own refusal "
+          "and bytes compare clean (%r)"
+          % (gif_record_problems({GIF_KEY: {GIF_NAME: entry}}, GIF_NAME, gif, "R"),),
+          gif_record_problems({GIF_KEY: {GIF_NAME: entry}}, GIF_NAME, gif, "R") == []
+          and entry["model"] == MODEL and entry["cliVersion"] == "2.1.0")
 
     # The sidecar exactly as capture-screenshots.mjs writes it: two-space JSON, a
     # trailing newline, keys in the order it chose. A recording may add its own key
@@ -747,14 +1306,10 @@ def _record_cases(check):
     shots_text = json.dumps(shots, indent=2, ensure_ascii=False) + "\n"
     merged = merged_sidecar(json.loads(shots_text), GIF_NAME, entry)
     rest = dict((k, v) for k, v in merged.items() if k != GIF_KEY)
-    check("m0 a recording writes its OWN key and leaves the screenshots' entries "
+    check("m1 a recording writes its OWN key and leaves the screenshots' entries "
           "byte-identical once serialised",
           sidecar_text(rest) == shots_text
           and merged.get(GIF_KEY) == {GIF_NAME: entry})
-    check("m1 the entry carries both halves of the claim - the bytes and the text "
-          "they show: %r" % (sorted(entry),),
-          entry.get("sha256") == hashlib.sha256(gif).hexdigest()
-          and entry.get("textDigest") == digest)
     before = json.loads(shots_text)
     merged_sidecar(before, GIF_NAME, entry)
     check("m2 the merge returns a new body and leaves the one it was handed alone",
@@ -768,54 +1323,466 @@ def _record_cases(check):
             fh.write(gif)
         with open(side, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(shots_text)
-        err = record_gif(out, digest)
+        err = record_gif(out, entry)
         with open(side, encoding="utf-8") as fh:
             written = json.loads(fh.read())
         check("f0 a recording writes the record beside the GIF, and --check on "
               "the same tree finds nothing (got %r, then %r)"
-              % (err, recorded_gif_problems(out, digest)),
-              err is None and recorded_gif_problems(out, digest) == []
+              % (err, recorded_gif_problems(out, "R")),
+              err is None and recorded_gif_problems(out, "R") == []
               and written.get("images") == shots["images"])
-        with open(out, "wb") as fh:
-            fh.write(gif + b"re-encoded")
-        got = recorded_gif_problems(out, digest)
-        check("f1 ...and the same check is red the moment the GIF's bytes move: %r"
-              % (got,), len(got) == 1 and GIF_NAME in got[0])
         with open(side, "w", encoding="utf-8") as fh:
             fh.write("{ not json")
-        err = record_gif(out, digest)
+        err = record_gif(out, entry)
         with open(side, encoding="utf-8") as fh:
             kept = fh.read()
-        check("f2 a sidecar that will not parse is REFUSED rather than replaced - "
+        check("f1 a sidecar that will not parse is REFUSED rather than replaced - "
               "rewriting it would drop every screenshot record it held: %r" % (err,),
               err is not None and kept == "{ not json")
     finally:
-        # Plain files only, no repository, so nothing read-only for the windows
-        # runner to refuse.
         shutil.rmtree(d, ignore_errors=True)
 
-    def words(n):
-        return " ".join(["word"] * n)
 
-    short = final_hold_ms("[require-plan] no.")
-    longer = final_hold_ms(words(160))
-    check("h0 a short refusal still gets the floor hold: %r" % (short,),
-          short == HOLD_FLOOR_MS)
-    check("h1 THE PAIR: a refusal of today's length holds for longer than the "
-          "floor, and a longer one longer still - a fixed hold cut the current "
-          "refusal off mid-read (%r, %r)" % (longer, final_hold_ms(words(240))),
-          HOLD_FLOOR_MS < longer < final_hold_ms(words(240)))
-    at_cap = HOLD_CEILING_MS // HOLD_MS_PER_WORD
-    huge_hold = final_hold_ms(words(5000))
-    check("h2 a very long refusal is held at the ceiling and no longer - unbounded, "
-          "it would freeze the loop and eventually overflow the frame-delay field: "
-          "%r" % (huge_hold,),
-          huge_hold == HOLD_CEILING_MS)
-    check("h3 THE TWIN: just under the ceiling the hold still scales with the "
-          "refusal, so h2 is a clamp and not a constant (%r, %r)"
-          % (final_hold_ms(words(at_cap - 2)), final_hold_ms(words(at_cap - 1))),
-          final_hold_ms(words(at_cap - 2)) < final_hold_ms(words(at_cap - 1))
-          < HOLD_CEILING_MS)
+def _screen_cases(check):
+    refusal = ("[require-plan] Outside the running plan (change magnitude 120 "
+               "(> 80)): src/billing.ts\nPhase P2 is in_progress, so edits are held "
+               "to the plan.\n  2. the HUMAN types #no-plan in their own prompt")
+    bar = u"─" * 40
+    # The refusal as a terminal shows it: re-wrapped at its own width, a token split
+    # mid-word, Claude Code's result marker in front, and frames between bars.
+    wrapped = (u"  ⎿  Error: [require-plan] Outside the running plan (change\n"
+               u"     magnitude 120 (> 80)): src/bil\n"
+               u"     ling.ts\n     Phase P2 is in_progress, so edits are held to the\n"
+               u"     plan.\n")
+    full = wrapped + u"       2. the HUMAN types #no-plan in their own prompt\n"
+    screen_full = "\n".join(["earlier frame", bar, full, bar, "> "])
+    check("s0 a refusal re-wrapped by the terminal, split mid-token and drawn behind "
+          "Claude Code's marker is still read as SHOWN, whole",
+          shown_refusal(screen_full, refusal) == refusal)
+    part = shown_refusal("\n".join([bar, wrapped, bar]), refusal)
+    check("s1 a screen that shows the first lines and not the rest yields the shown "
+          "part, cut on the gate's own text: %r" % (part,),
+          refusal.startswith(part) and part.endswith("to the plan.")
+          and first_line_shown(refusal, part))
+    stub = shown_refusal(u"⎿  Error: [require-plan] Outside the", refusal)
+    check("s2 THE PAIR: a screen showing less than the first line is NOT enough - "
+          "the line naming the file is the refusal: %r" % (stub,),
+          stub and not first_line_shown(refusal, stub))
+    check("s3 a screen without the refusal shows none of it, and an empty refusal "
+          "is never shown",
+          shown_refusal("nothing here\n" + bar + "\nstill nothing", refusal) == ""
+          and shown_refusal(screen_full, "") == "")
+    split = "\n".join(["[require-plan] Outside the running", bar,
+                       "plan (change magnitude 120"])
+    check("s4 two frames are never read as one: half a line in each is not the line",
+          not first_line_shown(refusal, shown_refusal(split, refusal)))
+    check("s5 a frame is what lies between the bars, and blank frames are dropped",
+          screen_frames("a\n%s\n\n%s\nb" % (bar, bar)) == ["a", "b"])
+
+
+def _payload_cases(check):
+    root = "/tmp/acme-store-demo"
+    tap = ('{"session_id":"s","tool_name":"Edit","tool_input":{"file_path":"%s/src/'
+           'checkout.ts","old_string":"a","new_string":"b"}}\n'
+           '{"session_id":"s","transcript_path":"/home/x/t.jsonl","tool_name":'
+           '"Write","tool_input":{"file_path":"%s/src/billing.ts","content":"x"}}'
+           '{"tool_name":"Write","tool_input":{"file_path":"%s/src/billing.ts",'
+           '"content":"second"}}\n' % (root, root, root))
+    objs, bad = parse_payloads(tap)
+    check("p0 the tap is read whole, newline-separated or not: %d object(s), %d bad"
+          % (len(objs), len(bad)),
+          len(objs) == 3 and bad == [])
+    _objs, bad2 = parse_payloads(tap + '{"tool_name": "Wri')
+    check("p1 a half-written payload is REPORTED, not dropped: %r" % (bad2,),
+          len(bad2) == 1)
+    picked = out_of_plan_payload(objs)
+    check("p2 the replayed payload is the FIRST edit aimed at the out-of-plan file, "
+          "and carries only the tool and its input - no session id, no transcript "
+          "path under a home directory: %r" % (picked,),
+          picked == {"tool_name": "Write",
+                     "tool_input": {"file_path": root + "/src/billing.ts",
+                                    "content": "x"}})
+    check("p3 THE TWIN: a session that only edited the planned file has no "
+          "out-of-plan payload",
+          out_of_plan_payload(objs[:1]) is None)
+    check("p4 a file whose name merely ENDS like the target is not the target",
+          out_of_plan_payload([{"tool_name": "Edit", "tool_input": {
+              "file_path": root + "/src/rebilling.ts"}}]) is None)
+    roots = ["/private" + root, root]       # the order fixture_roots() returns
+    stored = scrub_value(picked, roots)
+    check("p5 a stored payload names no fixture path, and replays at any other path: "
+          "%r" % (stored,),
+          root not in json.dumps(stored)
+          and unscrub_value(stored, "/var/x")["tool_input"]["file_path"]
+          == "/var/x/src/billing.ts")
+    check("p6 the resolved spelling of the fixture path is scrubbed too, longest "
+          "root first so no half-replaced path is left",
+          scrub_value("/private/tmp/acme-store-demo/a", roots) == _FIXTURE_TOKEN + "/a"
+          and fixture_roots("/tmp")[0] == os.path.realpath("/tmp"))
+
+
+def _pii_cases(check):
+    markers = [("user name", "jdoe"), ("home path", "/Users/jdoe"),
+               ("machine name", "jdoe-laptop")]
+    clean = "/tmp/acme-store-demo  [require-plan] Outside the running plan"
+    check("i0 THE ALLOW TWIN: a frame with only the neutral paths and the refusal "
+          "carries nothing", pii_findings(clean, markers) == [])
+    got = pii_findings("cwd: /Users/JDoe/work on jdoe-laptop", markers)
+    check("i1 a home path and a machine name are found, case-insensitively, and "
+          "reported by KIND: %r" % (got,),
+          got == ["a home directory path", "home path", "machine name", "user name"])
+    mail = pii_findings("Logged in as someone@example.org", markers)
+    check("i2 an email address is found without being a known marker, and the "
+          "finding never repeats it: %r" % (mail,),
+          mail == ["an email address"] and "example" not in " ".join(mail))
+    mine = personal_markers()
+    header = (u" \u2590\u259b\u2588\u2588\u2588\u259b\u2588   Claude Code v2.1.292\n"
+              u"\u259d\u259c\u2588\u2588\u2588\u2588\u2588\u2588\u2580  Sonnet 5.5 \u00b7 "
+              u"Claude Team\n   /private/tmp/acme-store-demo")
+    check("i4 THE ALLOW TWIN of the account cases: the header as the recording mode "
+          "leaves it - version, model, plan line and the neutral project path - is "
+          "NOT refused: %r" % (pii_findings(header, markers),),
+          pii_findings(header, markers) == [])
+    acct = [("account email", "dev@acme.example"), ("organisation name", "Acme Widgets")]
+    leaked = pii_findings(header + u"\n  Acme Widgets's Organization", acct)
+    check("i5 a header still carrying the organisation name is refused by kind, "
+          "never by value: %r" % (leaked,),
+          leaked == ["organisation name"])
+    homes = [pii_findings(t, []) for t in ("cwd /Users/someone/project",
+                                           "cwd /home/someone/project",
+                                           "cwd C:\\Users\\someone\\project")]
+    check("i6 ANY user's home directory is refused, in all three spellings, without "
+          "knowing the name: %r" % (homes,),
+          homes == [["a home directory path"]] * 3)
+    check("i7 THE TWIN: the neutral paths the demo uses, and a path that merely "
+          "contains the word, are not a home directory",
+          pii_findings("/private/tmp/acme-store-demo /tmp/acme-store-demo-kit/audit "
+                       "src/home/users.ts", []) == [])
+    status = json.dumps({"loggedIn": True, "email": "dev@acme.example",
+                         "orgName": "Acme Widgets", "orgId": "x", "subscriptionType": "team"})
+    check("i8 the account's email and organisation are read off `claude auth status "
+          "--json` - and nothing else from it, and nothing from an answer that is "
+          "not JSON: %r" % (account_markers_from(status),),
+          account_markers_from(status) == acct
+          and account_markers_from("Logged in as dev") == []
+          and account_markers_from(json.dumps({"email": "", "orgName": None})) == [])
+    check("i3 the host's own markers are read from the host, and none is shorter "
+          "than a word can safely be matched: %r" % (sorted(set(k for k, _ in mine)),),
+          any(k == "home path" for k, _ in mine)
+          and all(len(v) >= _MIN_MARKER for _k, v in mine))
+
+
+def _session_file_cases(check):
+    calls = command_script_calls(os.path.join(PLUGIN_SRC, "commands"))
+    check("e0 the allow list is read off the plugin's own commands and includes the "
+          "status call the demo opens on: %d call(s)" % (len(calls),),
+          "scripts/status/audit-status.py" in calls
+          and all(c.startswith("scripts/") and c.endswith(".py") for c in calls))
+    settings = demo_settings(KIT_PLUGIN, calls, KIT_DIR + "/" + TAP_NAME)
+    allow = settings["permissions"]["allow"]
+    check("e1 every allowed script call is rooted at the copy the session loads, "
+          "and nothing grants a mode",
+          all(a.startswith('Bash(python3 "%s/scripts/' % KIT_PLUGIN)
+              for a in allow if a.startswith("Bash("))
+          and "defaultMode" not in settings["permissions"]
+          and "bypassPermissions" not in json.dumps(settings))
+    check("e6 file edits are allowed by ONE Edit rule under the demo's src/ - a "
+          "Write rule matches nothing and puts a warning on screen: %r"
+          % ([a for a in allow if not a.startswith("Bash(")],),
+          [a for a in allow if not a.startswith("Bash(")] == ["Edit(./src/**)"])
+    check("e2 THE PAIR: no rule allows Bash beyond those calls - a bare Bash allow "
+          "would let the session run anything without the prompt a reader expects",
+          all(a.startswith('Bash(python3 "') for a in allow if a.startswith("Bash"))
+          and "Bash" not in allow)
+    with open(TAPE, encoding="utf-8") as fh:
+        tape = fh.read()
+    check("e3 the committed tape names the paths, outputs and model this tool "
+          "reads: %r" % (tape_problems(tape),),
+          tape_problems(tape) == [])
+    bad = tape.replace("--model %s" % MODEL, "--model opus") \
+        + "\nType \"--dangerously-skip-permissions --permission-mode bypassPermissions\"\n"
+    check("e4 THE PAIR: a tape on another model, or showing any spelling of a "
+          "permission mode, is refused once per spelling: %r" % (tape_problems(bad),),
+          len(tape_problems(bad)) == 4)
+    stripped = [need for need, _why in TAPE_NEEDS
+                if not any(need in p for p in tape_problems(tape.replace(need, "")))]
+    check("e7 every line the lint requires is one it actually checks: removing any "
+          "of them from the committed tape is a finding naming it (unchecked: %r)"
+          % (stripped,),
+          stripped == [])
+    check("e5 the fixture and the kit sit outside every home directory",
+          not FIXTURE_DIR.startswith(os.path.expanduser("~"))
+          and not KIT_DIR.startswith(os.path.expanduser("~"))
+          and not FIXTURE_DIR.startswith(REPO))
+
+
+def _tape_step_cases(check):
+    steps = tape_steps("# c\nOutput a.gif\nSet Width 9\nHide\nType \"claude\"\n"
+                       "Ctrl+L\nShow\nType \"/audit:status\"\nEnter\n")
+    check("ts0 the dry run's order marks what runs between Hide and Show as off "
+          "camera and the rest as on it, and leaves out comments and settings: %r"
+          % (steps,),
+          steps == [(False, "Hide"), (False, 'Type "claude"'), (False, "Ctrl+L"),
+                    (False, "Show"), (True, 'Type "/audit:status"'), (True, "Enter")])
+    with open(TAPE, encoding="utf-8") as fh:
+        real = tape_steps(fh.read())
+    first_show = [ln for _on, ln in real].index("Show")
+    hidden = [ln for _on, ln in real[:first_show]]
+    shown = [ln for _on, ln in real[first_show:]]
+    check("ts1 THE PAIR, on the committed tape: the launch runs before the camera "
+          "first comes on, the status command after it, and no /clear starts a "
+          "second conversation that reprints the header",
+          any("claude --model" in ln for ln in hidden)
+          and not any("/clear" in ln for _on, ln in real)
+          and 'Type "/audit:status"' in shown
+          and not any("claude --model" in ln for ln in shown))
+
+
+def _limit_cases(check):
+    limit = usage_limit_problem(u"\u23bf  You've hit your session limit \u00b7 resets 2am")
+    other = usage_limit_problem(u"\u23fa Usage limit reached \u00b7 continuing at 2am")
+    check("ul0 both spellings of the usage-limit screen void the take, named as the "
+          "limit: %r" % (limit,),
+          limit is not None and other is not None and "usage limit" in limit)
+    check("ul1 THE TWIN: an ordinary turn - including one that says the word "
+          "'limit' - is not a usage limit",
+          usage_limit_problem("Validate the payload; limit the items array to 100") is None
+          and usage_limit_problem(None) is None)
+    folded = collapsed_steps([(False, "Hide"), (False, "Ctrl+J"), (False, "Ctrl+J"),
+                              (True, "Ctrl+J"), (True, "Enter")])
+    check("ul2 the dry run folds a run of one key into one row with its count, and "
+          "never across the camera boundary: %r" % (folded,),
+          folded == [(False, "Hide", 1), (False, "Ctrl+J", 2), (True, "Ctrl+J", 1),
+                     (True, "Enter", 1)])
+
+
+def _fixture_cases(check):
+    default = _loader.load(os.path.join(HOOKS, "_config.py")).DEFAULTS["manifestPath"]
+    d = tempfile.mkdtemp(prefix="audit-demo-gif-selftest-")
+    try:
+        build_fixture(d)
+        files = sorted(os.path.relpath(os.path.join(r, f), d).replace(os.sep, "/")
+                       for r, _dirs, fs in os.walk(d) if ".git" not in r.split(os.sep)
+                       for f in fs)
+        with open(os.path.join(d, MANIFEST_REL), encoding="utf-8") as fh:
+            meta = json.load(fh).get("meta", {})
+    finally:
+        # The fixture initialises a repository and stages nothing into it, so it
+        # holds no read-only object for the windows runner to refuse.
+        shutil.rmtree(d, ignore_errors=True)
+    d2 = tempfile.mkdtemp(prefix="audit-demo-gif-selftest-")
+    try:
+        build_fixture(d2)
+        with open(os.path.join(d2, MANIFEST_REL), encoding="utf-8") as fh:
+            plan = json.load(fh)
+    finally:
+        shutil.rmtree(d2, ignore_errors=True)
+    findings, _warn = plan_findings(plan)
+    # What a writer leaves behind: its own new row in an index that holds none of
+    # the tasks already there. An ABSENT index is not checked at all, so it would
+    # not show the defect.
+    stripped = dict(plan)
+    stripped["fileIndex"] = {OUT_OF_PLAN_REL: ["P2.1"]}
+    missing, _w = plan_findings(stripped)
+    check("fx1 the demo plan passes the validation a writer runs before keeping a "
+          "write - its FINDINGS, not an exit code: %r" % (findings,),
+          findings == [] and plan.get("fileIndex")
+          == {IN_PLAN_REL: ["P2.1"], "src/search.ts": ["P2.2"]})
+    check("fx2 THE TWIN: the same plan with an index missing its tasks' rows is "
+          "refused by that same "
+          "validation, naming each task's file - the defect a session met on "
+          "camera: %r" % ([f[:50] for f in missing],),
+          len([f for f in missing if "missing from fileIndex" in f]) == 2
+          and any(IN_PLAN_REL in f for f in missing)
+          and any("src/search.ts" in f for f in missing))
+    check("fx0 the demo plan sits where the plugin looks when nothing says otherwise "
+          "(%s), and no config file names it: %r" % (default, files),
+          MANIFEST_REL == default
+          and files == sorted([default, IN_PLAN_REL, OUT_OF_PLAN_REL])
+          and "manifestPath" not in meta)
+
+
+def _screen_reading_cases(check):
+    bar = VHS_FRAME_BAR
+    # The shape of a real failed take's log: the tape command echoed with the limit
+    # alternation in its pattern, then the failed Wait's screen.
+    wait_echo = ("Wait Screen (?s)(Update|Write)\\([^)]*checkout\\.ts\\).*for \\d+s "
+                 u"\u00b7 done|hit your session limit|Usage limit reached\n")
+    head = u" \u2590\u259b\u2588\u2588\u2588\u259b\u2588   Claude Code v2.1.292\n"
+    foot = u"\n  \u23f5\u23f5 auto mode on (shift+tab to cycle)\n"
+    plain_screen = head + u"\u23fa Write(src/checkout.ts)\n  \u23bf  Added 10 lines" + foot
+    log = (wait_echo + 'failed to execute command: timeout waiting for "Screen ..." '
+           "to match ...; last value was: " + plain_screen + "\nrecording failed\n")
+    check("sr0 a log whose echoed tape commands carry the limit pattern, and whose "
+          "screen shows no limit, is NOT a usage limit: %r"
+          % (screen_problems("", log),),
+          screen_problems("", log) == [] and len(log_screens(log)) == 1
+          and "Wait Screen" not in log_screens(log)[0]
+          and "Added 10 lines" in log_screens(log)[0])
+    limited = log.replace("Added 10 lines", u"You've hit your session limit")
+    got = screen_problems("", limited)
+    check("sr1 THE TWIN: the same log whose SCREEN shows the limit is one, named "
+          "first: %r" % (got,),
+          len(got) == 1 and "usage limit" in got[0])
+    cut = log.replace(foot, "")             # the bottom row is the last content row
+    outgrew = screen_problems("", cut)
+    check("sr2 a screen showing Claude Code's header and not its footer is a take "
+          "that outgrew the terminal - the bottom VHS cannot read: %r" % (outgrew,),
+          len(outgrew) == 1 and "outgrew the terminal" in outgrew[0])
+    boxed = plain_screen.replace(foot, "\n" + u"\u2500" * 121 + foot)   # Claude's own border
+    frames = "\n".join([">", bar, boxed, bar, boxed])
+    check("sr3 THE TWIN, over the text output: frames with header and footer both "
+          "are fine, and the frames are split at VHS's own bar only: %r"
+          % (len(vhs_frames(frames)),),
+          screen_problems(frames, "") == [] and len(vhs_frames(frames)) == 3)
+    narr = screen_problems(plain_screen.replace(
+        "Added 10 lines", "The command didn't fill in <manifestPath>, so I used it"), "")
+    check("sr4 a take narrating an unfilled command placeholder is refused: %r"
+          % (narr,),
+          len(narr) == 1 and "placeholder" in narr[0])
+    popup = (head + u"\u276f /audit:status\n    /audit:status   (audit) print manifest "
+             "status\n    /audit:task     (audit) add a task\n\n\n")
+    check("sr6 THE TWIN of sr2: a command popup hides the footer too, but leaves the "
+          "rows under it blank - that is not a cut screen",
+          outgrew_problem([popup]) is None
+          and outgrew_problem(log_screens(cut)) is not None)
+    check("sr7 an edit drawn on screen that the tap never saw means no hook ran - "
+          "named as such; with the edit tapped, or with no edit on screen, it is "
+          "not this finding",
+          hooks_problem(plain_screen, []) is not None
+          and hooks_problem(plain_screen, [{"tool_name": "Write"}]) is None
+          and hooks_problem(head + foot, []) is None)
+    status = plain_screen.replace("Added 10 lines", "READY NOW  1 task(s)  "
+                                  "docs/audit/audit-plan.json filled in by the plan")
+    check("sr5 THE TWIN: an ordinary status answer - even one using the words "
+          "'filled in' - is not that narration",
+          screen_problems(status, "") == [])
+
+
+def _prompt_cases(check):
+    settings = demo_settings(KIT_PLUGIN, ["scripts/status/audit-status.py"],
+                             KIT_DIR + "/" + TAP_NAME)
+    check("pr0 the session's settings switch prompt suggestions and spinner tips off: "
+          "%r" % (dict((k, settings.get(k)) for k in ("promptSuggestionEnabled",
+                                                       "spinnerTipsEnabled")),),
+          settings.get("promptSuggestionEnabled") is False
+          and settings.get("spinnerTipsEnabled") is False)
+    check("pr1 ...and nothing else changed shape: the same top-level keys as before "
+          "plus those two, the allow list and the one tap hook: %r" % (sorted(settings),),
+          sorted(settings) == ["hooks", "permissions", "promptSuggestionEnabled",
+                               "spinnerTipsEnabled"]
+          and sorted(settings["permissions"]) == ["allow"]
+          and list(settings["hooks"]) == ["PreToolUse"]
+          and len(settings["hooks"]["PreToolUse"]) == 1)
+    with open(TAPE, encoding="utf-8") as fh:
+        tape = fh.read()
+    typed = tape_prompts(tape)
+    check("pr2 the tape's own prompts are read off the tape, on camera only, and "
+          "carry no digit: %r" % ([t[:24] for t in typed],),
+          typed and typed[0] == "/audit:status"
+          and any(IN_PLAN_REL in t for t in typed)
+          and any(OUT_OF_PLAN_REL in t for t in typed)
+          and not any("claude --model" in t for t in typed)
+          and not any(re.search(r"\d", t) for t in typed))
+    real = "\n".join([u"\u276f " + t for t in typed]
+                     + [u"\u276f\u00a0Try \"how do I log an error?\"",
+                        u"   \u276f 1. Yes, install",
+                        u"  \u276f /audit:status      (audit) print manifest status"])
+    check("pr3 THE ALLOW TWIN: the tape's real prompts as sent, plus the live input "
+          "box, a dialog option and the command popup, are no finding: %r"
+          % (stray_prompt_problem(real, typed),),
+          stray_prompt_problem(real, typed) is None)
+    mangled = real + u"\n\u276f 20 lines."
+    got = stray_prompt_problem(mangled, typed)
+    check("pr4 a sent prompt the tape never typed - the tail of one whose start a "
+          "dialog took - is refused, quoting it: %r" % (got,),
+          got is not None and "20 lines." in got
+          and screen_problems(mangled, "", typed) == [got])
+    wrapped = u"\u276f " + typed[-1][:50]
+    check("pr5 a long prompt the terminal wrapped is still the tape's own: its first "
+          "line is the start of a typed prompt",
+          stray_prompt_problem(wrapped, typed) is None)
+    empty_box = u"\u276f" + u" " * 60
+    check("pr7 an EMPTY live box - the prompt mark and padding only - is not a sent "
+          "prompt and not a stray one: %r" % (submitted_prompts(real + "\n" + empty_box),),
+          submitted_prompts(empty_box) == []
+          and stray_prompt_problem(real + "\n" + empty_box, typed) is None)
+    box_waits = [ln for _on, ln in tape_steps(tape)
+                 if ln.startswith("Wait") and u"\u276f" in ln]
+    # Go's spelling of the no-break space, read as Python's, so the tape's own
+    # pattern is what these cases run.
+    pats = [re.compile(ln[ln.index("/") + 1:ln.rindex("/")].replace("\\x{00A0}", u"\u00a0"))
+            for ln in box_waits]
+    border = u"\u2500" * 120 + u"   "
+    done = u"READY NOW  1 task(s)\n\u273b Cogitated for 10s \u00b7 done 2:59 AM\n"
+
+    def screen(box_row):
+        return done + border + "\n" + box_row + "\n" + border + "\n  footer"
+    empty, holding = screen(empty_box), screen(u"\u276f\u00a0Now rewrite src/billing.ts")
+    placeholder = screen(u"\u276f\u00a0Try \"how do I log an error?\"")
+    dialog = done + border + (u"\n LSP plugin recommendation\n   \u276f 1. Yes, install\n"
+                              u"     2. No, not now\n")
+    # The mark alone on a row with no border round it is not the live box: the box
+    # is drawn between its two border rows, and nothing else is.
+    unboxed = done + empty_box + "\n  footer"
+    check("pr8 the tape's input-box Wait matches the EMPTY live box, with or without "
+          "the placeholder, and not a box holding text, an open dialog, or the mark "
+          "outside the box's borders (%d such "
+          "Wait(s) read off the tape)" % (len(pats),),
+          len(pats) == len(box_waits) and len(pats) > 0
+          and all(bool(p.search(scr)) for p in pats for scr in (empty, placeholder)
+                  if "READY NOW" in p.pattern)
+          and not any(p.search(scr) for p in pats
+                      for scr in (holding, dialog, unboxed)))
+    ends = [ln for _on, ln in tape_steps(tape)
+            if ln.startswith("Wait") and "Interrupted" in ln]
+    end_pats = [re.compile(ln[ln.index("/") + 1:ln.rindex("/")].replace(
+        "\\x{00A0}", u"\u00a0")) for ln in ends]
+    refused = (u"\u23fa Write(src/billing.ts)\n  \u23bf  Error: PreToolUse:Write hook "
+               u"error: [require-plan] Outside the running plan (change magnitude "
+               u"131 (> 80)): src/billing.ts\n\n\u23fa The plan gate blocked the "
+               u"write.\n")
+    box = border + "\n" + empty_box + "\n" + border + "\n  footer"
+    interrupted = refused + u"  \u23bf  Interrupted \u00b7 What should Claude do instead?\n" + box
+    finished = refused + u"\u273b Worked for 7s \u00b7 done 3:08 AM\n" + box
+    # The last frame of the first take that got this far: a turn still running
+    # under an input box that is empty because Claude, not the user, has the turn.
+    running = refused + (u"\u23fa Bash(python3 \"/tmp/acme-store-demo-kit/audit/scripts/"
+                         u"manifest/audit-task.py\" add ...)\n\u273b Jitterbugging\u2026 "
+                         u"(30s \u00b7 thinking)\n") + box
+    check("pr9 the tape's end Wait proves a finished end state - interrupted, or the "
+          "turn done - with the box empty, and NOT a turn still running under an "
+          "empty box (%d end Wait(s) read off the tape)" % (len(end_pats),),
+          len(end_pats) == 1
+          and bool(end_pats[0].search(interrupted)) and bool(end_pats[0].search(finished))
+          and not end_pats[0].search(running)
+          and not end_pats[0].search(done + box))
+    digit = tape.replace("around a hundred and twenty lines", "about 120 lines")
+    check("pr6 a tape prompt carrying a digit is refused by the tape lint: %r"
+          % ([p for p in tape_problems(digit) if "digit" in p],),
+          tape_problems(tape) == []
+          and len([p for p in tape_problems(digit) if "digit" in p]) == 1)
+
+
+def _env_cases(check):
+    host = {"PATH": "/usr/bin", "HOME": "/h", "CLAUDECODE": "1",
+            "CLAUDE_CODE_CHILD_SESSION": "1", "CLAUDE_CODE_ENTRYPOINT": "cli",
+            "AUDIT_LOCK_TOKENS": "t", "CLAUDE_CODE_OAUTH_TOKEN": "o",
+            "CLAUDE_CONFIG_DIR": "/c", "AUDITOR": "kept"}
+    env = session_env(host)
+    check("v0 the caller's session markers and lock tokens do not reach the take: %r"
+          % (sorted(env),),
+          not any(k in env for k in ("CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION",
+                                     "CLAUDE_CODE_ENTRYPOINT", "AUDIT_LOCK_TOKENS")))
+    check("v1 THE TWIN: the login and config the CLI needs survive, and so does a "
+          "variable that only looks similar",
+          env.get("CLAUDE_CODE_OAUTH_TOKEN") == "o" and env.get("CLAUDE_CONFIG_DIR") == "/c"
+          and env.get("AUDITOR") == "kept" and env.get("PATH") == "/usr/bin")
+    check("v2 the demo's own documented switches are set, an undocumented one is "
+          "not, and the caller's dict is left alone",
+          env.get("IS_DEMO") == "1" and env.get("DISABLE_AUTOUPDATER") == "1"
+          and "CLAUDE_CODE_HIDE_ACCOUNT_INFO" not in env
+          and "IS_DEMO" not in host and host.get("CLAUDECODE") == "1")
 
 
 def _selftest():

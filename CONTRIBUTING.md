@@ -59,10 +59,36 @@ plugin ships with: Node (`npx vitest`, `npx ajv-cli`, the browser gates), `ruff`
 and `vermin` (pip-installed; CI's lint job pins their versions), and the Claude
 Code CLI (`claude plugin validate`; CI installs it with `npm install -g`). None
 of these ship with the plugin's own stdlib-only hooks and scripts — they're
-tooling the gate set reaches for, not a product dependency. Pillow is not
-needed by `tools/verify.sh` or CI at all; it's only for manually regenerating
-the demo GIF itself with `tools/capture-demo-gif.py` (no `--check`), a release
-step the one pre-PR command above does not run.
+tooling the gate set reaches for, not a product dependency.
+
+**Re-recording the demo GIF** is the one step here that needs more than that, and
+neither `tools/verify.sh` nor CI ever takes it. `docs/screenshots/demo-gate.gif` is a
+recording of a real Claude Code session, so making a new one needs
+[VHS](https://github.com/charmbracelet/vhs) (with the `ttyd` and `ffmpeg` it drives) and
+a `claude` CLI you are logged in to:
+
+```bash
+python3 tools/capture-demo-gif.py --record --dry-run   # builds and validates everything, starts no session
+python3 tools/capture-demo-gif.py --record             # records tools/demo-gate.tape
+```
+
+It builds the demo project at `/tmp/acme-store-demo` and a copy of this checkout's
+plugin with an isolated settings file at `/tmp/acme-store-demo-kit`, runs the tape, and
+writes the GIF and its record in `docs/screenshots/captured-at.json` only when the
+refused edit replays to the refusal on screen and no frame carries your user name, any
+home directory path, your machine name, git identity, an email address, or the account
+email and organisation name `claude auth status` reports. The session runs with Claude
+Code's documented recording mode (`IS_DEMO`), which hides that email and organisation
+and keeps the model and plan line, so the header is shown as a user sees it and the
+scan checks that the mode did its job. Hooks - the plan gate among them - load only in a
+folder Claude Code trusts, and the recording mode skips that question without granting
+it, so the tape first launches once without it and answers "Yes, I trust this folder";
+Claude Code stores that answer for `/tmp/acme-store-demo` in your own Claude Code config,
+as it would for any folder you trust. A refused recording is kept in a temp directory
+it names. **What a re-record costs:** one short Sonnet session - the
+prompts `tools/demo-gate.tape` types - billed to whatever account the `claude` CLI is
+logged in to, and the model can answer differently each time, so a take may need
+repeating. Re-record when `--check` says the gate's refusal moved.
 
 Writing a change a *user* will see? [COMPATIBILITY.md](COMPATIBILITY.md) is the
 contract over the manifest and the config file they own, and
@@ -283,6 +309,9 @@ python3 tools/check-rendered-artifacts.py
 # cmp and goes red when one stops carrying it.
 cmp docs/index.html examples/acme-store/acme-store-audit.html
 
+# the demo GIF is a recorded session, so this starts none: it replays the edit the
+# recording refused against require-plan and fails naming the GIF when the refusal
+# moved from the recorded text, or the committed bytes from the recorded sha256.
 python3 tools/capture-demo-gif.py --check
 
 # the same committed files, asked the other question: does any of them carry the
