@@ -28,11 +28,15 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import json
 import os
 import re
+import subprocess
 import sys
+import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402  (TESTS_DIR, for the race children)
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
+import _locks                                      # noqa: E402  (the wait a held-lock case shortens)
 import _manifest_io as _mio                        # noqa: E402  (the layout the stamp writes)
 import _proposals                                  # noqa: E402  (the rule sign-off reports)
 import _worktrees as W                             # noqa: E402
@@ -647,7 +651,7 @@ def _cases(check):
         shard = os.path.join(root, "P2.json")
         with open(shard, "w") as fh:
             json.dump({"id": "P2", "mergedAt": None}, fh)
-        path, stamp = M.stamp_merged(shard, "P2", when="2026-01-02T03:04:05Z")
+        path, stamp = M.stamp_merged(shard, "P2", when="2026-01-02T03:04:05Z")[:2]
         with open(shard) as fh:
             body = json.load(fh)
         check("s1 the stamp lands in the phase's own file and is the moment it was "
@@ -655,20 +659,20 @@ def _cases(check):
               path == shard and body["mergedAt"] == "2026-01-02T03:04:05Z",
               repr(body.get("mergedAt")))
         missing = os.path.join(root, "nope.json")
-        path2, why = M.stamp_merged(missing, "P2")
+        path2, why = M.stamp_merged(missing, "P2")[:2]
         check("s2 a file that cannot be read returns a REASON rather than raising "
               "- a merge that happened must not be reported as not having happened "
               "because the plan could not be updated",
               path2 == "" and why != "", repr(why))
         with open(shard, "w") as fh:
             json.dump({"id": "P9"}, fh)
-        path3, why3 = M.stamp_merged(shard, "P2")
+        path3, why3 = M.stamp_merged(shard, "P2")[:2]
         check("s3 ...and a file holding a DIFFERENT phase is refused by name "
               "rather than stamped anyway",
               path3 == "" and "P2" in why3, repr(why3))
         with open(shard, "w") as fh:
             json.dump({"id": "P2", "mergedAt": "2026-01-02T03:04:05Z"}, fh)
-        path4, stamp4 = M.stamp_merged(shard, "P2", when="2026-09-09T09:09:09Z")
+        path4, stamp4 = M.stamp_merged(shard, "P2", when="2026-09-09T09:09:09Z")[:2]
         with open(shard) as fh:
             body4 = json.load(fh)
         check("s4 a phase that already records its merge KEEPS that moment - an "
@@ -691,20 +695,20 @@ def _cases(check):
         stub_of = lambda: [s for s in _mio.read_json(mpath)["phases"]  # noqa: E731
                            if s.get("id") == "P2"][0]
         spath = os.path.join(root, stub_of()["shard"])
-        path5, _st5 = M.stamp_merged(mpath, "P2", when="2026-01-02T03:04:05Z")
+        path5, _st5 = M.stamp_merged(mpath, "P2", when="2026-01-02T03:04:05Z")[:2]
         body5 = _mio.read_json(spath)
         check("s5 the stamp stores the status the merge now derives - done, for a "
               "signed-off phase with every task terminal - in the same write as "
               "mergedAt: %r" % (body5.get("status"),),
               path5 == spath and body5.get("status") == "done"
               and body5.get("mergedAt") == "2026-01-02T03:04:05Z")
-        mirrored, why = M.mirror_stub(mpath, "P2", root)
+        mirrored, why = M.mirror_stub(mpath, "P2", root)[:2]
         check("s6 ...and the index stub is re-mirrored from that shard, so the index "
               "alone reads done too: stub=%r (%s)" % (stub_of().get("status"), why),
               mirrored == mpath and stub_of().get("status") == "done")
         with open(mpath, "rb") as fh:
             before = fh.read()
-        again, why2 = M.mirror_stub(mpath, "P2", root)
+        again, why2 = M.mirror_stub(mpath, "P2", root)[:2]
         with open(mpath, "rb") as fh:
             after = fh.read()
         check("s7 ...and a stub that already agrees is not rewritten - the index "
@@ -734,7 +738,7 @@ def _cases(check):
         with open(claim, "w") as fh:
             fh.write("held elsewhere")
         try:
-            got9, why9 = M.mirror_stub(mpath, "P2", root)
+            got9, why9 = M.mirror_stub(mpath, "P2", root)[:2]
         finally:
             os.remove(claim)
         with open(mpath, "rb") as fh:
@@ -750,7 +754,7 @@ def _cases(check):
         M._panel_write.read_config = _boom
         try:
             try:
-                got10, why10 = M.mirror_stub(mpath, "P2", root)
+                got10, why10 = M.mirror_stub(mpath, "P2", root)[:2]
                 raised10 = None
             except Exception as exc:
                 got10, why10, raised10 = "", "", exc
@@ -2621,8 +2625,482 @@ def _backfill_direction_cases(check):
             _harness.remove_tree(wt)
 
 
+# --- the stamp under the index lock ------------------------------------------------
+# Every other plan writer takes the index lock around its read-modify-write, so a
+# stamp that did not was one side of a race the other side believed it had closed:
+# two closes, or a close and a panel save, each read the plan, each wrote it whole,
+# and the one written second carried the other's copy - both answering ok.
+
+# How many times each race is run. Two closes released together lose on the
+# unlocked code often, not on every trial, so the deterministic held-lock and inode
+# cases are the ones that prove the fix; the races say the lock holds when real
+# processes collide.
+_RACE_TRIALS = 4
+
+# One racing writer: imports first, then says it is ready, then waits for the shared
+# release so both writers start their read-modify-write in the same instant.
+#
+# A `-hold` writer is HELD BETWEEN ITS READ AND ITS WRITE: it signals, then pauses
+# before writing. An `-after` writer starts once that signal is up, so it runs inside
+# the other's window on every trial. Released together and nothing more, a stamp -
+# whose own window is a millisecond - almost never met a panel save in the middle
+# of one, and the unlocked code passed that race by luck.
+_RACER = r'''
+import json, os, sys, time
+sys.path.insert(0, sys.argv[1])
+import _harness, _loader, _panel_write
+M = _loader.load_script("close-phase.py")
+role, root, mpath, pid, value, ready, go, signal = sys.argv[2:10]
+
+
+def held_open(real):
+    def wrapped(*a, **k):
+        open(signal, "w").close()
+        time.sleep(0.3)
+        return real(*a, **k)
+    return wrapped
+
+
+if role == "stamp-hold":
+    M._revalidated_write = held_open(M._revalidated_write)
+elif role == "panel-hold":
+    _panel_write._write_back = held_open(_panel_write._write_back)
+open(ready, "w").close()
+deadline = time.time() + 60
+while not os.path.exists(go) and time.time() < deadline:
+    time.sleep(0.001)
+while role.endswith("-after") and not os.path.exists(signal) \
+        and time.time() < deadline:
+    time.sleep(0.001)
+role = role.split("-")[0]
+if role == "stamp":
+    path, why = M.stamp_merged(mpath, pid, when=value)[:2]
+    print(json.dumps({"ok": bool(path), "why": why}))
+else:
+    res = _panel_write.apply_composition(
+        root, {"phases": {pid: {"reviewModel": value}}})
+    print(json.dumps({"ok": bool(res.get("ok")), "why": res.get("findings")}))
+'''
+
+# Another run holding the index lock: it takes the lock, says so, and gives it back
+# once its stdin closes.
+_HOLDER = r'''
+import sys
+sys.path.insert(0, sys.argv[1])
+import _harness, _locks
+code = _locks.acquire(sys.argv[2], "index", note="fixture holder",
+                      out=lambda *a, **k: None)
+sys.stdout.write("held %d\n" % code)
+sys.stdout.flush()
+sys.stdin.read()
+_locks.release(sys.argv[2], "index", out=lambda *a, **k: None)
+'''
+
+
+def _child_env():
+    """The environment a fixture child runs under: no lock token this process
+    carries, so the child is another run rather than a re-entry of this one."""
+    env = dict(os.environ)
+    env.pop(_locks.TOKEN_ENV, None)
+    return env
+
+
+def _race_plan(root, merged=()):
+    """A git repository holding a single-file plan of two signed-off phases -
+    git, so the lock taken is the shared one that waits for its holder."""
+    git = _fixture_git(root)
+    _init_fixture_repo(git)
+    phases = []
+    for pid in ("P1", "P2"):
+        ph = _signed_phase(pid, "audit/%s" % (pid.lower(),))
+        ph["review"]["model"] = "sonnet"
+        if pid in merged:
+            ph["mergedAt"] = "2026-01-01T00:00:00Z"
+        phases.append(ph)
+    return _write_plan(root, {"version": 2, "developmentBranch": "main"}, phases)
+
+
+def _race(root, mpath, racers):
+    """Run `racers` - (role, phaseId, value) - released together. Returns each
+    racer's parsed answer, or {"ok": False, "why": <what it printed>}."""
+    procs = []
+    go = os.path.join(root, ".go")
+    signal = os.path.join(root, ".held")
+    for n, (role, pid, value) in enumerate(racers):
+        ready = os.path.join(root, ".ready%d" % (n,))
+        procs.append((ready, subprocess.Popen(
+            [sys.executable, "-c", _RACER, _output.TESTS_DIR, role, root, mpath,
+             pid, value, ready, go, signal], cwd=root, env=_child_env(),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)))
+    deadline = time.time() + 60
+    while not all(os.path.exists(r) for r, _p in procs) and time.time() < deadline:
+        time.sleep(0.005)
+    open(go, "w").close()
+    answers = []
+    for _ready, proc in procs:
+        try:
+            out = proc.communicate(timeout=90)[0].decode("utf-8", "replace")
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            out = proc.communicate()[0].decode("utf-8", "replace")
+        try:
+            answers.append(json.loads(out.strip().splitlines()[-1]))
+        except Exception:
+            answers.append({"ok": False, "why": out[-400:]})
+    return answers
+
+
+def _plan_phase(mpath, pid):
+    return [p for p in _mio.read_json(mpath)["phases"] if p.get("id") == pid][0]
+
+
+def _lock_cases(check):
+    """The stamp and the head backfill write under the index lock, and a rollback
+    restores the prior bytes atomically."""
+    root = _harness.fixture_root("closephase-held")
+    holder = None
+    real_wait = _locks.WAIT_SECONDS
+    try:
+        mpath = _race_plan(root, merged=("P1",))
+        with open(mpath, "rb") as fh:
+            before = fh.read()
+        holder = subprocess.Popen(
+            [sys.executable, "-c", _HOLDER, _output.TESTS_DIR, root], cwd=root,
+            env=_child_env(), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT)
+        said = holder.stdout.readline().decode("utf-8", "replace").strip()
+        # The holder is live for the whole window, so the default wait would only
+        # make the case slower: it is shortened, never removed.
+        _locks.WAIT_SECONDS = 0.2
+        path1, why1 = M.stamp_merged(mpath, "P2", when="2026-02-02T02:02:02Z")[:2]
+        path2, head2, why2 = M.record_merged_head(mpath, "P1", "a" * 40)[:3]
+        with open(mpath, "rb") as fh:
+            after = fh.read()
+        check("lk1 with another run holding the index lock the stamp writes nothing, "
+              "says the lock was not taken and names the re-run that stamps it "
+              "(holder %r): %r" % (said, why1),
+              said == "held 0" and path1 == "" and "not taken" in why1
+              and "run close-phase again for P2" in why1 and after == before)
+        check("lk2 ...and so does the head backfill, leaving the plan's bytes as "
+              "they were: %r" % (why2,),
+              path2 == "" and head2 == "" and "not taken" in why2
+              and "run close-phase again for P1" in why2 and after == before)
+        holder.stdin.close()
+        holder.wait(timeout=30)
+        holder = None
+        path3, stamp3 = M.stamp_merged(mpath, "P2", when="2026-02-02T02:02:02Z")[:2]
+        path4, head4, why4 = M.record_merged_head(mpath, "P1", "a" * 40)[:3]
+        check("lk3 SECOND DIRECTION: with the lock free both write - the case that "
+              "goes red when the lock is refused unconditionally: %r / %r"
+              % (stamp3, why4),
+              path3 == mpath and stamp3 == "2026-02-02T02:02:02Z"
+              and _plan_phase(mpath, "P2").get("mergedAt") == stamp3
+              and head4 == "a" * 40
+              and _plan_phase(mpath, "P1").get("mergedHead") == "a" * 40)
+    finally:
+        _locks.WAIT_SECONDS = real_wait
+        if holder is not None:
+            holder.stdin.close()
+            holder.wait(timeout=30)
+        _harness.remove_tree(root)
+
+    # THE ROLLBACK IS AN ATOMIC REPLACE. The write itself replaced the file, so the
+    # file's inode right after it is the one an in-place rollback would keep; a
+    # restore through temp-plus-replace leaves a different one, with the bytes back.
+    root = _harness.fixture_root("closephase-inode")
+    real_write, real_findings = M._mio.atomic_write_json, M._findings_of
+    try:
+        mpath = _write_plan(root, {"version": 2, "developmentBranch": "main"},
+                            [_signed_phase("P1", "audit/p1")])
+        with open(mpath, "rb") as fh:
+            before = fh.read()
+        written = []
+
+        def recording_write(path, obj, **kw):
+            real_write(path, obj, **kw)
+            written.append(os.stat(path).st_ino)
+
+        def stamped_is_a_finding(manifest_path):
+            body = _mio.read_json(manifest_path)
+            if any(p.get("mergedAt") for p in body.get("phases") or []):
+                return set(["fixture: a stamped phase is a finding here"])
+            return set()
+        M._mio.atomic_write_json = recording_write
+        M._findings_of = stamped_is_a_finding
+        path5, why5 = M.stamp_merged(mpath, "P1", when="2026-03-03T03:03:03Z")[:2]
+        with open(mpath, "rb") as fh:
+            after = fh.read()
+        final = os.stat(mpath).st_ino
+        check("lk4 a stamp whose write introduces a finding restores the prior bytes "
+              "through an atomic replace: the bytes match and the inode is not the "
+              "one the write left, which an in-place rewrite keeps (written %r, "
+              "now %r): %r" % (written, final, why5),
+              path5 == "" and "restored" in why5 and after == before
+              and len(written) == 1 and final != written[0])
+        M._findings_of = lambda _m: set()
+        path6, stamp6 = M.stamp_merged(mpath, "P1", when="2026-03-03T03:03:03Z")[:2]
+        check("lk5 SECOND DIRECTION: a stamp introducing no finding stands - the case "
+              "that goes red when every stamp is rolled back: %r" % (stamp6,),
+              path6 == mpath
+              and _plan_phase(mpath, "P1").get("mergedAt") == stamp6)
+    finally:
+        M._mio.atomic_write_json, M._findings_of = real_write, real_findings
+        _harness.remove_tree(root)
+
+    # THE RACES, between real processes released together.
+    lost, unanswered = [], []
+    for trial in range(_RACE_TRIALS):
+        root = _harness.fixture_root("closephase-race")
+        try:
+            mpath = _race_plan(root)
+            answers = _race(root, mpath, [("stamp", "P1", "2026-04-04T04:04:0%dZ" % trial),
+                                          ("stamp", "P2", "2026-04-04T04:04:1%dZ" % trial)])
+            unanswered += [a["why"] for a in answers if not a.get("ok")]
+            lost += ["trial %d %s" % (trial, pid) for pid in ("P1", "P2")
+                     if not _plan_phase(mpath, pid).get("mergedAt")]
+        finally:
+            _harness.remove_tree(root)
+    check("lk6 two processes stamping different phases of one single-file plan, "
+          "released together over %d trials, both answer ok and lose no mergedAt: "
+          "lost %r, unanswered %r" % (_RACE_TRIALS, lost, unanswered),
+          lost == [] and unanswered == [])
+
+    # Alternating which writer is caught mid-write: an even trial holds the panel
+    # save open while a stamp runs, an odd one holds the stamp open while a save runs.
+    lost, unanswered = [], []
+    for trial in range(_RACE_TRIALS):
+        root = _harness.fixture_root("closephase-panel")
+        try:
+            mpath = _race_plan(root)
+            when = "2026-05-05T05:05:0%dZ" % (trial,)
+            roles = ("stamp-after", "panel-hold") if trial % 2 == 0 \
+                else ("stamp-hold", "panel-after")
+            answers = _race(root, mpath, [(roles[0], "P1", when),
+                                          (roles[1], "P2", "opus")])
+            unanswered += [a["why"] for a in answers if not a.get("ok")]
+            if answers[0].get("ok") and _plan_phase(mpath, "P1").get("mergedAt") != when:
+                lost.append("trial %d stamp" % (trial,))
+            if answers[1].get("ok") and (_plan_phase(mpath, "P2").get("review")
+                                         or {}).get("model") != "opus":
+                lost.append("trial %d save" % (trial,))
+        finally:
+            _harness.remove_tree(root)
+    check("lk7 stamps racing panel composition saves over %d trials, each writer "
+          "in turn caught between its read and its write while the other runs, "
+          "lose neither a stamp nor a save that answered ok: lost %r, "
+          "unanswered %r" % (_RACE_TRIALS, lost, unanswered),
+          lost == [] and unanswered == [])
+
+
+# What the lock module says when it refuses to hand back a claim another session
+# has taken over: built from parts, so it is one value the cases can count.
+_TAKEN_OVER = "the index lock is held by %s now; this run's release was declined" \
+    % ("another session",)
+
+
+def _declining(real, said):
+    """`release_index_lock` that gives the lock back as the real one does and then
+    answers as a release the lock DECLINED - the claim having been taken over."""
+    def release(lock, out=None):
+        real(lock, out=out)
+        if out is not None:
+            out(said)
+        return said
+    return release
+
+
+def _close_run(root, wt_mpath, *extra):
+    """`(exit, text, answer)` of one close-phase run over `_worktree_fixture`, the
+    answer read from the same run's `--json`."""
+    lines = []
+    code = M.main([wt_mpath, "P1", "--project", root, "--json"] + list(extra),
+                  out=lines.append)
+    text = "\n".join(lines)
+    try:
+        answer = json.loads(text)
+    except ValueError:
+        answer = {}
+    return code, text, answer
+
+
+def _stamped_is_a_finding(manifest_path):
+    """A validator under which a stamped phase is the write's own finding, so every
+    stamp is refused and its rollback is what runs."""
+    body = _mio.read_json(manifest_path)
+    if any(p.get("mergedAt") for p in body.get("phases") or []):
+        return set(["fixture: a stamped phase is a finding here"])
+    return set()
+
+
+def _takeover_cases(check):
+    """A stamp written under a lock another session took over, and a refused write
+    whose rollback itself failed: neither may read as the ordinary outcome."""
+    real_release = M._panel_write.release_index_lock
+    real_restore, real_findings = M._panel_write.restore, M._findings_of
+
+    # --- the release, at the function a close calls ---------------------------
+    root = _harness.fixture_root("closephase-takeover-unit")
+    try:
+        mpath = _write_plan(root, {"version": 2, "developmentBranch": "main"},
+                            [_signed_phase("P1", "audit/p1")])
+        M._panel_write.release_index_lock = _declining(real_release, _TAKEN_OVER)
+        try:
+            got = M.stamp_merged(mpath, "P1", when="2026-06-06T06:06:06Z")
+        finally:
+            M._panel_write.release_index_lock = real_release
+        notes = got[2] if len(got) > 2 else {}
+        check("to1 a stamp whose index-lock release is DECLINED hands the release's "
+              "sentence back beside the path it wrote, rather than dropping it: %r"
+              % (got,),
+              got[0] == mpath and notes.get("released") == _TAKEN_OVER)
+        mpath2 = _write_plan(root, {"version": 2, "developmentBranch": "main"},
+                             [_signed_phase("P1", "audit/p1")])
+        got2 = M.stamp_merged(mpath2, "P1", when="2026-06-06T06:06:06Z")
+        notes2 = got2[2] if len(got2) > 2 else None
+        check("to2 SECOND DIRECTION: an ordinary release hands back no sentence - the "
+              "case that goes red when every release is reported as taken over: %r"
+              % (got2,),
+              got2[0] == mpath2 and notes2 == {"released": "", "unrestored": False})
+    finally:
+        M._panel_write.release_index_lock = real_release
+        _harness.remove_tree(root)
+
+    # --- the release, in the close answer -------------------------------------
+    for declined in (True, False):
+        root = _harness.fixture_root("closephase-takeover")
+        wt = None
+        try:
+            mpath, wt, wt_mpath, _git = _worktree_fixture(root)
+            if declined:
+                M._panel_write.release_index_lock = _declining(real_release,
+                                                               _TAKEN_OVER)
+            try:
+                code, text, answer = _close_run(root, wt_mpath, "--keep-worktree",
+                                                "--keep-branch")
+            finally:
+                M._panel_write.release_index_lock = real_release
+            lines = []
+            if answer:
+                M.render(answer, out=lines.append)
+            rendered = "\n".join(lines)
+            if declined:
+                check("to3 a close whose stamp was written under a lock taken over "
+                      "carries the release sentence in its answer, and its rendered "
+                      "text says it once, on a warning line: exit %r, warnings %r, "
+                      "%r" % (code, answer.get("lockWarnings"), rendered[-400:]),
+                      bool(_merged_at(mpath))
+                      and answer.get("lockWarnings") == [_TAKEN_OVER]
+                      and rendered.count(_TAKEN_OVER) == 1
+                      and "WARNING" in [ln for ln in lines
+                                        if _TAKEN_OVER in ln][0])
+            else:
+                check("to4 SECOND DIRECTION: a close whose release is ordinary adds "
+                      "no warning to its answer or its text - the case that goes "
+                      "red when a warning is written unconditionally: exit %r, "
+                      "%r / %r" % (code, answer.get("lockWarnings"),
+                                   rendered[-300:]),
+                      code == M.E_OK and bool(_merged_at(mpath)) and bool(answer)
+                      and not answer.get("lockWarnings")
+                      and "WARNING" not in rendered)
+        finally:
+            M._panel_write.release_index_lock = real_release
+            _harness.remove_tree(root)
+            if wt and os.path.isdir(wt):
+                _harness.remove_tree(wt)
+
+    # --- a rollback that itself fails -----------------------------------------
+    def _no_restore(_snap):
+        raise OSError("No space left on device")
+    root = _harness.fixture_root("closephase-unrestored-unit")
+    try:
+        for broken in (True, False):
+            mpath = _write_plan(root, {"version": 2, "developmentBranch": "main"},
+                                [_signed_phase("P1", "audit/p1")])
+            M._findings_of = _stamped_is_a_finding
+            if broken:
+                M._panel_write.restore = _no_restore
+            try:
+                got = M.stamp_merged(mpath, "P1", when="2026-07-07T07:07:07Z")
+            finally:
+                M._panel_write.restore = real_restore
+                M._findings_of = real_findings
+            why = got[1]
+            notes = got[2] if len(got) > 2 else {}
+            if broken:
+                check("to5 a refused stamp whose restore RAISES says the write landed "
+                      "and was not rolled back, names the finding and the error, and "
+                      "never says the file could not be written: %r" % (why,),
+                      got[0] == "" and "was written and introduced" in why
+                      and "fixture: a stamped phase is a finding here" in why
+                      and "restoring its prior bytes failed" in why
+                      and "No space left on device" in why
+                      and "the plan holds the refused write" in why
+                      and "could not be written" not in why
+                      and notes.get("unrestored") is True
+                      and bool(_merged_at(mpath)))
+            else:
+                check("to6 SECOND DIRECTION: a refused stamp whose restore works says "
+                      "the prior bytes were restored and claims no stranded write - "
+                      "the case that goes red when every rollback is reported as "
+                      "failed: %r / %r" % (why, notes),
+                      got[0] == "" and "restored" in why
+                      and "holds the refused write" not in why
+                      and notes.get("unrestored") is False
+                      and not _merged_at(mpath))
+    finally:
+        M._panel_write.restore = real_restore
+        M._findings_of = real_findings
+        _harness.remove_tree(root)
+
+    for broken in (True, False):
+        root = _harness.fixture_root("closephase-unrestored")
+        wt = None
+        try:
+            mpath, wt, wt_mpath, _git = _worktree_fixture(root)
+            M._findings_of = _stamped_is_a_finding
+            if broken:
+                M._panel_write.restore = _no_restore
+            try:
+                code, text, answer = _close_run(root, wt_mpath)
+            finally:
+                M._panel_write.restore = real_restore
+                M._findings_of = real_findings
+            lines = []
+            if answer:
+                M.render(answer, out=lines.append)
+            rendered = "\n".join(lines)
+            if broken:
+                check("to7 a close whose refused stamp could not be rolled back exits "
+                      "as a failure, says the plan holds the refused write, keeps "
+                      "the worktree, and never says mergedAt could not be written: "
+                      "exit %r, %r" % (code, rendered[-500:]),
+                      code not in (M.E_OK,) and bool(answer)
+                      and "the plan holds the refused write" in rendered
+                      and "could not be written" not in rendered
+                      and "NOT written" not in rendered
+                      and os.path.isdir(wt))
+            else:
+                check("to8 SECOND DIRECTION: a refused stamp that WAS rolled back is "
+                      "a failing exit that says so and claims no stranded write - "
+                      "the case that goes red when the stranded-write sentence is "
+                      "printed for every refusal: exit %r, %r"
+                      % (code, rendered[-400:]),
+                      code not in (M.E_OK,) and bool(answer)
+                      and "restored" in rendered
+                      and "holds the refused write" not in rendered
+                      and not _merged_at(mpath))
+        finally:
+            M._panel_write.restore = real_restore
+            M._findings_of = real_findings
+            _harness.remove_tree(root)
+            if wt and os.path.isdir(wt):
+                _harness.remove_tree(wt)
+
+
 def _selftest():
     def body(check):
+        _takeover_cases(check)
+        _lock_cases(check)
         _no_survivor_cases(check)
         _landed_survivor_cases(check)
         _cases(check)

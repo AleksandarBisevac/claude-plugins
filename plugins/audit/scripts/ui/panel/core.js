@@ -66,18 +66,42 @@ const $=(s,r=document)=>r.querySelector(s), el=(t,a={},...k)=>{const e=document.
  * Every request goes through here, so the token header is written once. The
  * answer is parsed as JSON unconditionally: an HTTP error status still RESOLVES,
  * with whatever JSON the server sent, which is why callers decide on the
- * payload's own `ok` and `findings` fields and never on a status code. It
- * rejects only when the network fails or the body is not JSON at all: the boot
- * sequence catches that for the payloads a view can do without, and deliberately
- * lets it through for the two nothing can be drawn without.
+ * payload's own `ok` and `findings` fields and never on a status code.
+ *
+ * A fetch that REJECTS — the server is gone — splits by method. A READ still
+ * rejects, with `noAnswer` set on the error: the boot sequence catches that for
+ * the payloads a view can do without and deliberately lets it through for the
+ * two nothing can be drawn without, and the run-status poll reads `noAnswer` as
+ * the page being offline. A WRITE resolves instead, to a refusal-shaped answer
+ * carrying `NO_ANSWER`, so every save path renders it through `findingsBox` and
+ * `saveOutcome` like any other refusal rather than dying in an uncaught
+ * rejection with nothing on screen. A body that is not JSON still rejects either
+ * way: that server answered, so it is not offline.
  *
  * @param {string} m - HTTP method
  * @param {string} p - path on this origin, e.g. /api/state
  * @param {Object<string, *>} [b] - payload, serialized as JSON; omit for a GET
- * @returns {Promise<Object<string, *>>} the parsed answer
+ * @returns {Promise<Object<string, *>>} the parsed answer, or for a write that got
+ *   none, `{ok: false, noAnswer: true, findings: [NO_ANSWER]}`
  */
-const api=async(m,p,b)=>{const r=await fetch(p,{method:m,headers:{'X-Audit-Token':TOKEN,
- 'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();};
+const api=async(m,p,b)=>{let r;
+ try{r=await fetch(p,{method:m,headers:{'X-Audit-Token':TOKEN,
+  'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});}
+ catch(cause){
+  if(m!=='GET')return {ok:false,noAnswer:true,findings:[NO_ANSWER]};
+  const e=new Error('the panel server did not answer '+m+' '+p);
+  e.noAnswer=true;e.cause=cause;throw e;}
+ return r.json();};
+/**
+ * What a write that got no answer can honestly say.
+ *
+ * Not "nothing was written": a rejected fetch cannot tell a refused connection
+ * from an answer lost after the server had already written, so the page says only
+ * what it knows — no answer, no confirmation, and the edits still in the form,
+ * because no save path clears a form on a refusal.
+ */
+const NO_ANSWER='The panel server did not answer, so no write is confirmed. '
+ +'Your edits are still in the form.';
 /**
  * The same path, signed for a NAVIGATION rather than a fetch.
  *
@@ -570,7 +594,7 @@ const SAVE_NOTE_MS=5000;
  * on its own. "✓ saved" used to sit in the slot for the rest of the session,
  * indistinguishable from a save that had just landed.
  *
- * @param {{ok: boolean, locked: (boolean|undefined), findings: (string[]|undefined), warnings: (string[]|undefined)}} res -
+ * @param {{ok: boolean, locked: (boolean|undefined), noAnswer: (boolean|undefined), findings: (string[]|undefined), warnings: (string[]|undefined)}} res -
  *   what a write endpoint answered
  * @returns {HTMLDivElement} the card, which is empty when there is nothing to say
  */
@@ -581,7 +605,8 @@ function findingsBox(res){const box=el('div',{class:'savenote'});
   // replaceChildren()s the slot this box lives in.
   const card=el('div',{class:'findings err'});
   card.append(el('div',{class:'nthead'},
-    el('b',{},res.locked?'Locked — nothing was written'
+    el('b',{},res.noAnswer?'No answer — no write is confirmed'
+      :res.locked?'Locked — nothing was written'
       :'Save rejected — nothing was written'),
     el('button',{class:'notex','aria-label':'dismiss','data-notex':'1',
       type:'button',onclick:()=>card.remove()},'×')),

@@ -2,3 +2,5 @@
 audit-panel.json
 # ...and the stderr of its detached launch, so a failure has a reason
 audit-panel.log
+# ...and the pidfile's temp sibling, which a killed launch leaves behind
+audit-panel.json.tmp-*

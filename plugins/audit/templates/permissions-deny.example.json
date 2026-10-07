@@ -1,0 +1,43 @@
+{
+  "sandbox": { "enabled": true },
+  "permissions": {
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(!.env.example)",
+      "Read(!.env.sample)",
+      "Read(!.env.template)",
+      "Read(!.env.dist)",
+      "Read(!.env.defaults)",
+      "Read(.envrc)",
+      "Read(.envrc.*)",
+      "Read(credentials)",
+      "Read(credentials*.json)",
+      "Read(credentials*.plist)",
+      "Read(credentials*.key)",
+      "Read(credentials*.cer)",
+      "Read(credentials*.der)",
+      "Read(credentials*.txt)",
+      "Read(credentials*.cfg)",
+      "Read(credentials*.conf)",
+      "Read(credentials*.yaml)",
+      "Read(credentials*.yml)",
+      "Read(id_rsa)",
+      "Read(id_dsa)",
+      "Read(id_ecdsa)",
+      "Read(id_ed25519)",
+      "Read(*.p12)",
+      "Read(*.pfx)",
+      "Read(*.mobileprovision)",
+      "Read(*.keystore)",
+      "Read(*.jks)",
+      "Read(*.p8)",
+      "Read(*.pem)",
+      "Bash(printenv)",
+      "Bash(printenv *)",
+      "Bash(env)",
+      "Bash(direnv dump *)",
+      "Bash(direnv export *)"
+    ]
+  }
+}

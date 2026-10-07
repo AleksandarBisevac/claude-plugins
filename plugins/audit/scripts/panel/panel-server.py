@@ -15,7 +15,8 @@ Dependency-free (stdlib only). Reuses the plugin's own pure cores by importlib
 (validate-manifest.validate, audit-status.rollup) — no logic is duplicated.
 
 Safety: localhost bind + Host-header check + a random per-launch token required on
-every /api call; writes are refused if the resolved path escapes the project dir;
+every /api call AND on the page itself (`/` carries it the same way, per the URL's own
+`?t=`); writes are refused if the resolved path escapes the project dir;
 manifest writes are refused while <manifestPath>.lock is held; all writes are
 atomic (temp + os.replace).
 
@@ -212,6 +213,7 @@ _composition_changes = _panel_write._composition_changes
 _fmt_change = _panel_write._fmt_change
 _journal = _panel_write._journal
 write_config = _panel_write.write_config
+write_config_patch = _panel_write.write_config_patch
 _reject_unknown = _panel_write._reject_unknown
 apply_composition_patch = _panel_write.apply_composition_patch
 _touched_phase_ids = _panel_write._touched_phase_ids
@@ -319,8 +321,19 @@ def _make_handler(project, token):
             if path == "/favicon.ico":
                 self._send(204, b"", "image/x-icon"); return
             if path == "/":
+                # The page itself carries the session token substituted in (the
+                # launch URL and the pidfile's `url` already ride `?t=`, so a
+                # relaunch or the screenshot tool opening that URL keeps working),
+                # so it runs the same Host and token checks the API does: a
+                # request that only passes the Host check is not enough to read
+                # the token. Only the token refusal's shape differs. Here it is
+                # read by a PERSON in a browser tab, so it is plain text naming
+                # where the real URL lives; `_guard` answers the /api/* routes
+                # in JSON, because the page's script is what reads those.
                 if not self._host_ok():
-                    self._send(403, "forbidden", "text/plain"); return
+                    self._json(403, {"error": "bad host"}); return
+                if not self._tok_ok():
+                    self._send(403, _TOKENLESS_PAGE_TEXT, "text/plain"); return
                 # th: the token block is swapped per REQUEST, not at
                 # import: a theme is a file on disk, and the reader who just
                 # saved one reloads to see it. The default costs one string
@@ -407,7 +420,7 @@ def _make_handler(project, token):
             except Exception as exc:
                 self._json(400, {"ok": False, "findings": ["bad JSON: %s" % exc]}); return
             if path == "/api/config":
-                self._json(200, write_config(project, body)); return
+                self._json(200, write_config_patch(project, body)); return
             if path == "/api/composition":
                 self._json(200, apply_composition(project, body)); return
             if path == "/api/areas":
@@ -489,6 +502,25 @@ def _free_port():
 # `tests/test_panel_server.py` is what would go red now.
 _PIDFILE_NAME = "audit-panel.json"
 _LAUNCH_LOG_NAME = "audit-panel.log"
+# The pidfile is written to a temp sibling and renamed into place; a launch
+# killed between the two leaves the sibling behind, holding the live token.
+_PIDFILE_TMP_PREFIX = _PIDFILE_NAME + ".tmp-"
+# How old a temp sibling must be before a sweep may remove it. A write in
+# flight holds its temp for the moment between `os.open` and `os.replace`;
+# removing it then kills that launch after it has bound. Seconds, judged by
+# mtime, and far wider than any write takes.
+_PIDFILE_TMP_GRACE_S = 60
+
+# What a page request without the session token is answered with. It names
+# where the real URL is and echoes nothing from the request, so the token the
+# visitor lacks is not handed back to them by the refusal.
+_TOKENLESS_PAGE_TEXT = (
+    "403 - this panel page needs its session token, and the URL you opened "
+    "has none (or a stale one).\n\n"
+    "The full URL is written in .claude/audit-panel.json in the project.\n"
+    "`/audit:panel status` says whether the panel is running; the URL it "
+    "prints is redacted and will not open this page.\n"
+    "Or relaunch with `/audit:panel`, which opens the browser at the full URL.\n")
 
 
 def _pidfile(project):
@@ -537,6 +569,8 @@ _PANEL_PRIVATE_FILES = (
      "# audit plugin: the panel pidfile holds a live session token"),
     (_LAUNCH_LOG_NAME,
      "# ...and the stderr of its detached launch, so a failure has a reason"),
+    (_PIDFILE_TMP_PREFIX + "*",
+     "# ...and the pidfile's temp sibling, which a killed launch leaves behind"),
 )
 
 
@@ -705,6 +739,30 @@ def version_state():
 
 
 def _write_pidfile(project, info):
+    """Write the pidfile, atomically, and on POSIX owner-only from the INSTANT
+    it exists.
+
+    On a platform without POSIX file modes (Windows) `os.open`'s mode sets at
+    most the read-only bit, so there the file is as private as its directory's
+    ACLs make it and nothing here narrows that. Everything below about modes is
+    about POSIX.
+
+    The file carries the same live session token the URL does, and `open(path,
+    "w")` creates at whatever the umask leaves (typically 0644) - a `chmod`
+    run only AFTER that write leaves a window, on every single launch (`serve()`
+    removes any stale pidfile first), during which another local user can hold
+    a readable descriptor on a live credential. A temp file in the SAME
+    directory, opened with `O_EXCL` at mode 0o600, is never wider than
+    owner-only for even one instruction - `os.open`'s mode argument is
+    narrowed by the umask, never widened past it, so this is correct even
+    under an umask of 0. `os.replace` onto the real path is what makes this
+    module's own docstring claim ("all writes are atomic (temp + os.replace)")
+    true of the pidfile too, and the temp file is removed rather than left
+    behind on any failure this process survives. A launch KILLED between the
+    create and the rename survives nothing, so its temp stays; the panel's
+    ignore rules cover that name and `_sweep_pidfile_temps` removes it on the
+    next launch or stop.
+    """
     path = _pidfile(project)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     _ensure_panel_files_ignored(project)
@@ -713,8 +771,41 @@ def _write_pidfile(project, info):
     # comparison. A copy, never a mutation of the caller's dict.
     record = dict(info)
     record.setdefault("version", ASSEMBLED_VERSION)
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(record, fh, indent=2)
+    data = json.dumps(record, indent=2)
+    tmp_path = os.path.join(os.path.dirname(path),
+                            _PIDFILE_TMP_PREFIX + secrets.token_hex(8))
+    fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        if hasattr(os, "fchmod"):
+            # Belt-and-suspenders against an odd umask (or a platform whose
+            # `os.open` mode argument is not fully honoured): tighten the
+            # already-open descriptor too, rather than trusting the create
+            # call alone. Not every platform has POSIX modes at all (Windows'
+            # `os.fchmod` only ever touches the read-only bit), so a failure
+            # HERE is reported rather than swallowed - this file holds a live
+            # token and "it may be readable by other local users" is worth a
+            # line on stderr, not silence.
+            try:
+                os.fchmod(fd, 0o600)
+            except OSError as exc:
+                if os.name == "posix":
+                    sys.stderr.write(
+                        "WARNING: could not set the pidfile to owner-only "
+                        "(%s) - it may be readable by other local users\n"
+                        % (exc,))
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(data)
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass  # already closed by the `with` above, or never opened
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass  # nothing to clean up
+        raise
     return record
 
 
@@ -723,6 +814,62 @@ def _rm_pidfile(project):
         os.remove(_pidfile(project))
     except OSError:
         pass
+
+
+def _sweep_pidfile_temps(project):
+    """Remove the pidfile temp siblings a killed launch left in `.claude/`.
+
+    Each one holds the token of a launch that is gone. Only names under
+    `_PIDFILE_TMP_PREFIX` are touched, and only once their mtime is more than
+    `_PIDFILE_TMP_GRACE_S` old: a younger one may be another launch's write in
+    flight, and a launch or stop running beside it must not remove it. Returns
+    the basenames that could NOT be removed, so a caller can tell "swept" from
+    "tried and failed"."""
+    folder = os.path.dirname(_pidfile(project))
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return []                       # no .claude/ yet: nothing was left
+    cutoff = time.time() - _PIDFILE_TMP_GRACE_S
+    stuck = []
+    for name in sorted(n for n in names if n.startswith(_PIDFILE_TMP_PREFIX)):
+        path = os.path.join(folder, name)
+        try:
+            if os.path.getmtime(path) > cutoff:
+                continue                # young: possibly a write in flight
+            os.remove(path)
+        except FileNotFoundError:
+            continue                    # its own launch renamed it meanwhile
+        except OSError:
+            stuck.append(name)
+    return stuck
+
+
+def _warn_unswept(stuck):
+    if stuck:
+        sys.stderr.write("WARNING: could not remove stale panel pidfile temp "
+                         "file(s) in .claude/ (each holds a dead session "
+                         "token; they are gitignored): %s\n" % ", ".join(stuck))
+
+
+def _tighten_pidfile(project):
+    """Narrow an existing pidfile to owner-only, on POSIX.
+
+    `_write_pidfile` creates it owner-only, but a pidfile an older build wrote
+    keeps whatever mode it was given until a new launch replaces it - and the
+    two paths that READ a live one without replacing it are `--status` and a
+    launch that finds a panel already running. Both call this. On a platform
+    without POSIX modes there is nothing this can narrow, so it does nothing."""
+    if os.name != "posix":
+        return
+    try:
+        os.chmod(_pidfile(project), 0o600)
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        sys.stderr.write("WARNING: could not set the pidfile to owner-only "
+                         "(%s) - it may be readable by other local users\n"
+                         % (exc,))
 
 
 def _pid_alive(pid):
@@ -771,6 +918,8 @@ def status_lines(project, info, alive, stderr, installed):
 
 def status_panel(project):
     info = _read_pidfile(project)
+    if info:
+        _tighten_pidfile(project)
     alive = bool(info) and _pid_alive(info.get("pid"))
     ignored = _ensure_panel_files_ignored(project)
     for line in status_lines(project, info, alive,
@@ -815,6 +964,7 @@ def stop_lines(project, info, pid, error):
 
 
 def stop_panel(project):
+    _warn_unswept(_sweep_pidfile_temps(project))
     info = _read_pidfile(project)
     if not info or not _pid_alive(info.get("pid")):
         _rm_pidfile(project)
@@ -844,6 +994,7 @@ def serve(project, port=0, open_browser=True):
     # a second (and never leave an untracked process behind).
     existing = _read_pidfile(project)
     if existing and _pid_alive(existing.get("pid")):
+        _tighten_pidfile(project)
         # The caller asked to OPEN the panel, so honour that against the one that is
         # already up rather than printing a URL and stopping. Refusing with a link
         # made the common case ("I want the panel") a two-step manual dance.
@@ -863,6 +1014,7 @@ def serve(project, port=0, open_browser=True):
         print("stop it with:  --stop   (or /audit:panel stop)")
         return 0
     _rm_pidfile(project)  # clear any stale record
+    _warn_unswept(_sweep_pidfile_temps(project))
 
     token = secrets.token_urlsafe(18)
     port = port or _free_port()
@@ -904,7 +1056,8 @@ def serve(project, port=0, open_browser=True):
         print("audit control panel: %s  (token hidden)" % _redact_token(url))
         print("project: %s" % project)
         print("(opening your browser; press Ctrl-C — or `--stop` — to stop)")
-        print("need the URL? run with --status, or read .claude/audit-panel.json")
+        print("need the full URL? read .claude/audit-panel.json "
+              "(--status prints it redacted, which will not open the page)")
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
     else:
         print("audit control panel: %s" % url)

@@ -247,15 +247,22 @@ function renderPolicy(){closeCombo();
    'Area rules apply only while that area has work in progress. Live now: '
    +(live.join(', ')||'none')
    +(dormant.length?(' · dormant: '+dormant.join(', ')):'')));
- // BOTH LISTS COME FROM THE PLAN, so with no plan they are empty and the line
- // above did not render at all - and its absence reads as "no area rules here"
- // rather than "this cannot be answered yet". The rest of this view is honest
- // without a plan (the policy lives in the config and the guard enforces it
- // either way); this one half does not, so it says which half.
- else if(!STATE.rollup)head.append(el('div',{class:'mut','data-pnoplan':'1'},
+ else{
+  // BOTH LISTS COME FROM THE PLAN, so with no plan they are empty and the line
+  // above did not render at all - and its absence reads as "no area rules here"
+  // rather than "this cannot be answered yet". The rest of this view is honest
+  // without a plan (the policy lives in the config and the guard enforces it
+  // either way); this one half does not, so it says which half.
+  const ps=planState(STATE.manifestExists,STATE.rollup);
+  if(ps==='unreadable'){
+   const mf=STATE.manifestFindings||[];
+   head.append(manifestFindingsBox(mf.length,mf),
+    el('div',{class:'mut',style:'margin-top:var(--sp-0)'},planUnreadableNote(STATE.manifestPath)));
+  }else if(ps==='none')head.append(el('div',{class:'mut','data-pnoplan':'1'},
    'Area rules are read from the plan, and there is none yet — so whether any '
    +'area rule is live cannot be answered here. Everything else on this page is '
    +'config, and the guard applies it with or without a plan.'));
+ }
  head.append(pHonesty());
  c.append(head);
 
@@ -351,17 +358,25 @@ function renderPolicy(){closeCombo();
      empty:'the policy is unchanged',
      note:'writes .claude/audit.config.json'});
    if(!chg)return;
-   const res=await api('PUT','/api/policy',{policy:PDRAFT||{}});
+   // A patch, not the block: the server applies it to the config it reads under
+   // its write lock, so a rule another writer added since the draft was taken
+   // survives the save instead of being replaced along with the block.
+   const res=await api('PUT','/api/config',{patch:policyPatch()});
    findings.replaceChildren(findingsBox(res));
    saveOutcome(res,chg,'the config',findings);
    if(!res.ok)return;
-   const cfg=JSON.parse(JSON.stringify(STATE.config||{}));
-   cfg.policy=PDRAFT||{};STATE.config=cfg;
    // Re-read rather than assume: every verdict on this page is the server's, and
    // the only way they become true of what was just written is to ask again. The
-   // box that says what happened is carried across the redraw, not re-derived.
-   POLICY=await api('GET','/api/policy').catch(()=>POLICY);
-   PDRAFT=pClone(POLICY&&POLICY.stored);
+   // draft and its base move together, and only here, after the server's yes —
+   // to the block it now serves, or to the draft it accepted when the re-read
+   // gets no answer. The box that says what happened is carried across the
+   // redraw, not re-derived.
+   const back=await api('GET','/api/policy').catch(()=>null);
+   if(back)POLICY=back;
+   pTake(back?back.stored:PDRAFT);
+   const cfg=JSON.parse(JSON.stringify(STATE.config||{}));
+   if(PDRAFT===null)delete cfg.policy;else cfg.policy=pClone(PDRAFT);
+   STATE.config=cfg;
    PNOTE=[...findings.childNodes];
    renderPolicy();
  }},'Save policy');
@@ -373,7 +388,7 @@ function renderPolicy(){closeCombo();
    title:'Discard unsaved policy changes',
    note:'nothing is written; the form goes back to the saved block',
    toast:'discarded — the form is back to the saved policy',
-   revert:()=>pEdit(()=>{PDRAFT=pClone(POLICY&&POLICY.stored);})});
+   revert:()=>pEdit(()=>pTake(POLICY&&POLICY.stored))});
  refreshDiscard(discard,pending.length);
  c.append(el('div',{class:'savebar'},save,discard,
    el('span',{class:'mut small'},'writes .claude/audit.config.json'),findings));
