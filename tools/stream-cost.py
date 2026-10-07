@@ -16,6 +16,9 @@ needs two views, and this prints both:
     a command's output, an agent's hand-back, the session's own start), what writing
     it cost and what carrying it through every later request cost, totalled by the
     stage the content came from and by class - fixed per run, per task, per file.
+    The bytes an Edit or a Write emits take the class of the path it writes, by the
+    rule its tool result is classed by: an edit of the plan is task work, not a file
+    the work touches, though both are typed as a file write.
 
 The two views disagree on purpose. Prose the main loop reads in its first requests is
 billed to the NEXT request, the one whose context it entered, and from then on to every
@@ -115,6 +118,12 @@ VIEW_WORDS = frozenset(("cat", "head", "tail", "sed", "nl", "less", "more", "ls"
                         "grep", "rg", "find", "tree", "wc", "diff", "awk", "file"))
 VIEW_GIT = frozenset(("diff", "show"))
 PLAN_STATE_NAMES = ("audit-plan.json", "audit.config.json")
+# The label of the bytes a write tool emitted, by the class of the path it wrote.
+# "file" keeps the label earlier readings printed for code, so a reading of one
+# session taken before this split and after it compares row for row.
+WRITE_LABEL = {"file": "output: code written",
+               "task": "output: plan state or plugin files written",
+               "run": "output: plugin files written"}
 _ABS_RE = re.compile(r"(?<![\w.<>$])/(?:Users|home|private|tmp|var|opt|mnt|Volumes)"
                      r"/[^\s'\"`;|&)]*")
 _WIN_ABS_RE = re.compile(r"[A-Za-z]:\\(?:Users|Temp)\\[^\s'\"`;|&)]*")
@@ -234,7 +243,7 @@ def parse(events):
             if req is None:
                 req = {"id": mid, "context": event.get("parent_tool_use_id") or MAIN,
                        "model": message.get("model") or "?", "tools": [],
-                       "emitFile": 0, "emitOther": 0, "reconstructed": False}
+                       "emitWrite": {}, "emitOther": 0, "reconstructed": False}
                 req.update(_usage_counts(message.get("usage")))
                 requests[mid] = req
                 order.append(mid)
@@ -256,7 +265,8 @@ def parse(events):
                             "request": mid, "context": req["context"],
                             "briefBytes": _text_bytes(tool["input"].get("prompt"))}
                     if tool["name"] in WRITE_TOOLS:
-                        req["emitFile"] += size
+                        kind = classify(tool, req["context"] == MAIN, roots)
+                        req["emitWrite"][kind] = req["emitWrite"].get(kind, 0) + size
                         continue
                 req["emitOther"] += size
             timeline.append((stamp, "request", mid))
@@ -348,14 +358,19 @@ def _input_side(reqs):
             "cr": _sum(reqs, "cr")}
 
 
+def _emitted(req):
+    """Every byte a request put on the wire as output, whatever class it went to."""
+    return sum(req["emitWrite"].values()) + req["emitOther"]
+
+
 def _tail_bytes(req, results):
     """Bytes that entered a context after `req`: its own output and its tools' results."""
-    return (req["emitFile"] + req["emitOther"]
+    return (_emitted(req)
             + sum((results.get(t["id"]) or {}).get("bytes", 0) for t in req["tools"]))
 
 
 def _pseudo(rid, context, model, counts, why):
-    req = {"id": rid, "context": context, "model": model, "tools": [], "emitFile": 0,
+    req = {"id": rid, "context": context, "model": model, "tools": [], "emitWrite": {},
            "emitOther": 0, "reconstructed": True, "outEmit": 0, "ttlKnown": True,
            "why": why}
     req.update(counts)
@@ -502,7 +517,7 @@ def apportion_output(session, reqs):
 
 
 def _split(members, pool):
-    weights = [r["emitFile"] + r["emitOther"] for r in members]
+    weights = [_emitted(r) for r in members]
     whole = float(sum(weights))
     if not members:
         return {}
@@ -734,8 +749,9 @@ def _sources(prev, stages, agents, results, in_main, roots, redact):
     """(origin stage, class, label, bytes) for everything `prev` added to its context."""
     stage = stages[prev["id"]]
     own = "run" if stage == "orient" else "task"
-    out = [(stage, "file", "output: code written", prev["emitFile"]),
-           (stage, own, "output: text and calls", prev["emitOther"])]
+    out = [(stage, kind, WRITE_LABEL[kind], prev["emitWrite"][kind])
+           for kind in CLASSES if kind in prev["emitWrite"]]
+    out.append((stage, own, "output: text and calls", prev["emitOther"]))
     for tool in prev["tools"]:
         size = (results.get(tool["id"]) or {}).get("bytes", 0)
         origin = agent_stage(agents[tool["id"]]["type"]) if tool["id"] in agents else stage
@@ -818,12 +834,16 @@ def stage_table(reading):
 
 
 def _output_class(req, stage):
-    """{class: share} of what a request emitted: code written is per file, the rest is
-    the stage's own work."""
+    """{class: share} of what a request emitted: what it wrote to a path goes to that
+    path's class, the rest is the stage's own work."""
     own = "run" if stage == "orient" else "task"
-    emitted = req["emitFile"] + req["emitOther"]
-    code = req["emitFile"] / float(emitted) if emitted else 0.0
-    return {"file": code, own: 1.0 - code} if own != "file" else {"file": 1.0}
+    emitted = float(_emitted(req))
+    if not emitted:
+        return {own: 1.0}
+    shares = {own: req["emitOther"] / emitted}
+    for kind, size in req["emitWrite"].items():
+        shares[kind] = shares.get(kind, 0.0) + size / emitted
+    return shares
 
 
 def origin_matrix(reading):
@@ -863,7 +883,7 @@ def largest_outputs(reading, top):
             else:
                 what = describe(tool, agents, redact)
             parts.append("%s (%d B)" % (what[:60], size))
-        rest = req["emitFile"] + req["emitOther"] - sum(
+        rest = _emitted(req) - sum(
             _emitted_bytes({"type": "tool_use", "input": t.get("input")}) for t in req["tools"])
         if req["reconstructed"]:
             parts.append("hand-back text (%d B)" % req["emitOther"])
@@ -1196,11 +1216,14 @@ _FX_ORIGIN = {"orient": 1060, "plan": 240, "executor": 1210, "gate": 170, "revie
               "close": 20}
 
 
-def _fx_result(main=None, exe=None, rev=None):
+def _fx_result(main=None, exe=None, rev=None, exe_ttl="5m"):
+    """The result event. `exe_ttl` is the rate the executor's writes are priced at in
+    `costUSD`; modelUsage itself carries one write total per model, with no split."""
     main = dict(_FX_MAIN, **(main or {}))
     exe = dict(_FX_EXE, **(exe or {}))
     rev = dict(_FX_REV, **(rev or {}))
-    opus_5m, opus_1h = exe["cw"], main["cw"]
+    opus_5m = exe["cw"] if exe_ttl == "5m" else 0
+    opus_1h = main["cw"] + (exe["cw"] if exe_ttl == "1h" else 0)
 
     def cost(model, inn, w5, w1, cr, out):
         return _usage_core.price({"in": inn, "cacheW5m": w5, "cacheW1h": w1, "cacheR": cr,
@@ -1225,7 +1248,8 @@ def _fx_result(main=None, exe=None, rev=None):
 def _fx_events(flow, split=False, noise=False, duplicate=False, result=True, roots=True):
     """The stream for `flow`. `split` emits one event per content block with the usage
     repeated on each, as Claude Code does; `noise` interleaves the system events a real
-    stream carries; `duplicate` replays one event under its own uuid."""
+    stream carries; `duplicate` replays one event under its own uuid. `result` is True
+    for the known-answer result event, False for none, or the result event itself."""
     init = {"type": "system", "subtype": "init", "uuid": "u-init", "cwd": _FX_REPO,
             "model": _FX_OPUS, "claude_code_version": "0.0.0",
             "plugins": ([{"name": "audit", "path": _FX_PLUGIN}] if roots else [])
@@ -1273,7 +1297,7 @@ def _fx_events(flow, split=False, noise=False, duplicate=False, result=True, roo
                   and any(b.get("name") == "Agent" for b in e["message"]["content"])]
         events.append(json.loads(json.dumps(replay[-1])))
     if result:
-        events.append(_fx_result())
+        events.append(result if isinstance(result, dict) else _fx_result())
     return events
 
 
@@ -1435,12 +1459,24 @@ def _cases(check):
         ({"name": "Read", "input": {"file_path": _FX_PLUGIN + "/reference/a.md"}}, False,
          "task"),
         ({"name": "Read", "input": {"file_path": _FX_REPO + "/src/a.rb"}}, False, "file"),
+        # Plan state reached by the file tools rather than by a shell command: these
+        # are what an orchestrator does to the plan, and the tool name alone says file.
+        ({"name": "Read", "input": {"file_path": _FX_REPO + "/docs/audit/audit-plan.json"}},
+         True, "task"),
+        ({"name": "Edit", "input": {"file_path": _FX_REPO + "/docs/audit/audit-plan.json",
+                                    "old_string": "a", "new_string": "b"}}, True, "task"),
+        ({"name": "Read", "input": {"file_path": _FX_REPO + "/docs/audit/phases/first.json"}},
+         False, "task"),
+        # ...and the twin that keeps the plan-state rule from swallowing every edit.
+        ({"name": "Edit", "input": {"file_path": _FX_REPO + "/src/a.rb", "old_string": "a",
+                                    "new_string": "b"}}, False, "file"),
     ]
     wrong = [(tool["input"], in_main, want, classify(tool, in_main, roots))
              for tool, in_main, want in shapes if classify(tool, in_main, roots) != want]
     check("sc12 content classes: a command that only looks at project files is a file read, "
-          "one that also runs anything is task work, plan state is task work, and plugin "
-          "prose is fixed per run in the main loop only: %r" % (wrong,), not wrong)
+          "one that also runs anything is task work, plan state is task work whether a "
+          "command, a Read or an Edit reaches it, and plugin prose is fixed per run in the "
+          "main loop only: %r" % (wrong,), not wrong)
 
     wall = reading["wall"]
     check("sc13 wall clock partitions the span, a tool result's wait goes to the stage that "
@@ -1547,6 +1583,63 @@ def _cases(check):
           "is back in gate once that executor hands back - the stage machine does not "
           "stop at the first task: %r" % (got,),
           got == ("close", "plan", "executor", "gate"))
+
+    # A residual that is NOT what the prefix identity predicts. The amount is one no
+    # other figure in the fixture carries, so a verdict that printed some other
+    # difference could not pass by coincidence.
+    skew = 37
+    off = analyse(_fx_events(flow, result=_fx_result(rev={"cr": _FX_REV["cr"] + skew})))
+    rev_notes = [n for n in off["notes"] if n.startswith("dispatch t8: final request")]
+    rev_final = [r for r in off["requests"] if r["id"] == "final:t8"]
+    rev_ctx = off["content"]["contexts"]["t8"]
+    check("sc22 a rebuilt final request whose modelUsage read is off from the prefix "
+          "identity by %d prints DIFFERS by that amount and never the agrees verdict, keeps "
+          "the residual it was billed rather than the prediction, and the content view "
+          "carries the same %d as an identity break: %r"
+          % (skew, skew, (rev_notes, [r["cr"] for r in rev_final], rev_ctx["identityBreaks"])),
+          len(rev_notes) == 1 and "(DIFFERS by %d)" % skew in rev_notes[0]
+          and "agrees" not in rev_notes[0]
+          and sum(1 for n in off["notes"] if "(agrees)" in n) == 1
+          and [r["cr"] for r in rev_final] == [_FX_REV["cr"] + skew]
+          and rev_ctx["identityBreaks"] == 1
+          and _close(rev_ctx["unexplainedReadUSD"], skew * _rate(_FX_SONNET, "cacheR")))
+
+    hour = [list(s) for s in flow]
+    for step in hour:
+        if step[0] == "req" and step[2] == "t4":
+            step[6] = "1h"
+    held = analyse(_fx_events([tuple(s) for s in hour], result=_fx_result(exe_ttl="1h")))
+    exe_final = [(r["cw1"], r["cw5"]) for r in held["requests"] if r["id"] == "final:t4"]
+    exe_notes = [n for n in held["notes"] if n.startswith("dispatch t4: final request")]
+    rows_hour, _t = reconciliation(held)
+    check("sc23 a subagent that writes at the one-hour rate has its rebuilt final request "
+          "written at that rate too - modelUsage carries one write total and no split, so "
+          "the rebuild takes the dispatch's own - and the session still prices to every "
+          "model's costUSD: %r" % ((exe_final, exe_notes, rows_hour),),
+          exe_final == [(50, 0)] and len(exe_notes) == 1
+          and "(1h)" in exe_notes[0]
+          and all(told is not None and abs(priced - told) < 1e-9
+                  for _m, priced, told in rows_hour))
+
+    edited = [list(s) for s in flow]
+    for step in edited:
+        if step[0] == "req" and step[1] == "m3":
+            step[7] = [{"type": "tool_use", "id": "t3", "name": "Edit",
+                        "input": {"file_path": _FX_REPO + "/docs/audit/audit-plan.json",
+                                  "old_string": "pending", "new_string": "in_progress"}}]
+    planned = analyse(_fx_events([tuple(s) for s in edited]))
+    from_edit = [(i["class"], i["source"]) for i in planned["content"]["items"]
+                 if i["request"] == "msg_m4"]
+    plan_classes = class_table(planned)
+    check("sc24 the bytes the main loop emits editing the plan are task work, in the content "
+          "view and in the output split, as the plan read they replace is - not file work "
+          "because the tool that typed them writes a file; the executor's code edit stays "
+          "the whole of the file class's output: %r" % (from_edit,),
+          from_edit and all(kind == "task" for kind, _src in from_edit)
+          and sum(1 for _k, src in from_edit if src == WRITE_LABEL["task"]) == 1
+          and planned["content"]["contexts"][MAIN]["heldByClass"]["file"] == 0
+          and planned["costs"]["msg_e2"]["out"] > 0
+          and _close(plan_classes["file"]["out"], planned["costs"]["msg_e2"]["out"]))
 
 
 def _selftest():

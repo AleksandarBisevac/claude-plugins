@@ -9,9 +9,10 @@ Two observations were published without an explanation:
 
 This document explains both with numbers. It attributes the recorded sessions' tokens, prices and
 time to pipeline stages and to the content that filled each context, and it measures the prose each
-pipeline step loads at the published tag and at `main`. Everything was done offline with tools
-added for it, and no model call was made. The protocol and the outcome tables of those sessions are
-in [benchmark-design.md](benchmark-design.md) and the two documents above; they are not repeated.
+pipeline step loads at the published tag and at `a73b836a`, which was `main` when this was written.
+Everything was done offline with tools added for it, and no model call was made. The protocol and
+the outcome tables of those sessions are in [benchmark-design.md](benchmark-design.md) and the two
+documents above; they are not repeated.
 
 **Every session here was run once.** Each session named below, plugin or plain, was measured once,
 so every figure below describes one session. None of them is a rate.
@@ -30,6 +31,12 @@ folder: `<x>` is `experiments/bench-feature` there, and `<p>` is
 `experiments/p101-pilot-2026-10-06/run`. The plugin session of the feature benchmark is
 `<x>/feature-C-1` and the plain sessions are `<x>/feature-A-1` and `<x>/feature-A-2`. The pilot's
 record is `<p>`.
+
+**Every command is pinned to what its figures were taken at.** A git ref is given as the commit it
+named, never as a branch. A session record does not change, but the tool that reads it can: the
+`stream-cost.py` figures are the tool's output at the commit that last changed this document, which
+`git log -1 --format=%h -- docs/research/pipeline-cost-analysis.md` names. Re-derive them from a
+checkout of that commit.
 
 ## 1. The instruments
 
@@ -57,7 +64,8 @@ pipeline's path loads before it does any work:
 
 - for a command: the command body, and the files its up-front read paragraph names;
 - for an agent: its system prompt and the skills it preloads;
-- the always-on listing.
+- the always-on listing, less the commands and skills whose frontmatter sets
+  `disable-model-invocation: true`.
 
 Bytes are measured. Tokens are bytes divided by a stated divisor, labelled an estimate.
 
@@ -89,7 +97,9 @@ context, so the carrying costs below are read counts, not estimates.
 Rebuilding the missing final requests worked the same way in both plugin sessions. In `feature-C-1`
 each subagent ran on its own model, so the model's residual is that agent's final request. The
 prefix identity's prediction of its cache read agreed with the residual for both agents (the
-`reconstruction:` lines, `(agrees)`). In the pilot both subagents ran on one model, so their final
+`reconstruction:` lines, `(agrees)`). That verdict is one a case can see fail: `sc22` builds a
+residual off from the identity by a known amount and requires `DIFFERS` by that amount, never
+`(agrees)`. In the pilot both subagents ran on one model, so their final
 requests' cache reads come from the identity. How the residual write splits between them is an
 estimate, and the line says so.
 
@@ -116,9 +126,12 @@ here prices each request directly. Both columns describe the same session (`<p>`
 | close | `0.2365` | `0.2085` |
 
 The published reading holds: the main loop up to the dispatch was the largest share either way.
-The differences have two causes. The published split attributed output in proportion to input
+Why the rows differ is **inference**: two differences of method could explain it, and no arithmetic
+here splits the gaps between them. The published split attributed output in proportion to input
 share, whereas output is now measured per pool. And its weights inside one model lacked each
-subagent's final request.
+subagent's final request. Splitting them would mean re-running the published apportionment twice,
+once with the rebuilt final requests added and once with output measured per pool. That was not
+done.
 
 ## 2. Observation 1 — why the main loop before dispatch was the largest share
 
@@ -137,7 +150,7 @@ per stage, as billed
 per stage, by what it put there
   stage          $run    $task    $file   $total  share
   orient       0.7916   0.0000   0.0000   0.7916  61.5%
-  plan         0.0000   0.1456   0.0074   0.1530  11.9%
+  plan         0.0000   0.1530   0.0000   0.1530  11.9%
   executor     0.0000   0.0768   0.0043   0.0811   6.3%
   gate         0.0000   0.0976   0.0000   0.0976   7.6%
   reviewer     0.0000   0.0697   0.0030   0.0727   5.6%
@@ -182,8 +195,8 @@ class (`by content class`, the `$total` column):
 | Class | `feature-C-1` (plugin) | `feature-A-1` (plain) | `feature-A-2` (plain) |
 |---|---|---|---|
 | run — fixed per run | `0.7532` | `0.0598` | `0.0593` |
-| task — per task | `0.7742` | `0.0192` | `0.0677` |
-| file — per file the work touches | `0.2211` | `0.2054` | `0.1847` |
+| task — per task | `0.7823` | `0.0192` | `0.0677` |
+| file — per file the work touches | `0.2129` | `0.2054` | `0.1847` |
 
 Read off the table:
 
@@ -191,7 +204,10 @@ Read off the table:
   coupon feature and its tests is the file class, which cost about the same whether the main loop
   did it (plain) or an executor did it (plugin).
 - **The difference is the run and task classes.** Against `feature-A-1`, run adds `0.6934`, task
-  adds `0.7550` and file adds `0.0157` (derived: the column differences).
+  adds `0.7631` and file adds `0.0075` (derived: the column differences).
+- **An edit of the plan is task work, not file work.** The bytes an `Edit` or `Write` emits take
+  the class of the path it writes, by the rule its tool result is classed by. So the main loop's
+  `Edit` of `docs/audit/audit-plan.json` counts as task work, though the tool writes a file.
 
 What the run class holds in `feature-C-1`
 (`python3 tools/stream-cost.py <x>/feature-C-1/stream.jsonl`, `largest cache writes`):
@@ -214,7 +230,7 @@ That difference covers the plugin's listing, `run.md`'s body and arm B's skills 
 carries because C is B plus the plugin. B was not run, so these records cannot split it further.
 
 What the task class holds, by stage
-(`per stage, by what it put there`, `$task`, for `<x>/feature-C-1`): plan `0.1526`, executor
+(`per stage, by what it put there`, `$task`, for `<x>/feature-C-1`): plan `0.1607`, executor
 `0.2341`, gate `0.1261`, reviewer `0.0873`, close `0.1740`. It is made of:
 
 - **Each agent's start is written fresh at every dispatch.** Both agents' first requests found
@@ -248,19 +264,28 @@ From `feature-C-1`, the one plugin session that did a feature
 |---|---|---|
 | fixed per run, written once | the session start, plus the reference prose the command reads first | run `$write` `0.5406` (`by content class`) |
 | fixed per run, carried per main-loop request | the same tokens, re-read by every later main-loop request | run `$carry` `0.2017`; a further main-loop request re-reads 79461 run-class tokens (`contexts:`, `run`) |
-| per task | the agent starts, briefs, hand-backs, plan and gate output, the model's own text | task `$total` `0.7742` |
-| per file | project files read and code written | file `$total` `0.2211` |
+| per task | the agent starts, briefs, hand-backs, plan state read and written, plan and gate output, the model's own text | task `$total` `0.7823` |
+| per file | project files read and code written | file `$total` `0.2129` |
 
 **The fixed part is not fixed in a run of several tasks.** That is inference, from how the identity
 works. It is written once, but every main-loop request re-reads it. At C-1's end that was 79461
 run-class tokens, `$0.0159` per request at the shipped cache-read rate (derived: 79461 × 0.20 / 10^6).
 The main loop's requests after orient wrote the prose, then re-read it: the `reads` column of each
 reference row counts the re-reads, and the run `$carry` above prices them together with the
-re-reads of the session start. Those requests are the pipeline's per-task steps: start, dispatch,
-gate, review dispatch, commit, done. A run of several tasks therefore pays the prose again on every
-task's steps, on a prefix that grows with each hand-back. A single-task recording cannot measure
-how many main-loop requests a second task adds, or which of C-1's are paid once per run (the lock,
-the preflight).
+re-reads of the session start.
+
+Those requests are listed one by one by the snippet in
+[pipeline-cost-design.md](pipeline-cost-design.md), section 1.1. Four of them are paid once per run:
+the manifest read, the lock, the lock release and the report. The rest are per task, in a shape of
+six steps: start, dispatch, gate (with the stamp comparison in the same call), review dispatch,
+commit, done. C-1 made two more, each of them once:
+
+- a re-check after the stamp came back stale (the request ending `yyXaVM`);
+- a retried close after zsh passed an argument list as one word (`avGJjL`).
+
+Whether either recurs is unmeasured, because each was seen once in one session. A run of several
+tasks pays the prose again on every task's steps, on a prefix that grows with each hand-back. A
+single-task recording cannot measure how many main-loop requests a second task adds.
 
 ## 5. What the prompt cache saves, and what it cannot
 
@@ -310,14 +335,15 @@ session start (`$0.1005`), the executor's test file (`$0.0816` of output; it is 
 plain arm also did), the executor's hand-back (`$0.0625`), the two briefs (`$0.0568`, `$0.0563`)
 and the reviewer's start (`$0.0492`).
 
-**In the prose the plugin ships, at the published tag and at `main`.** The command below uses the
-calibrated divisor (section 6.1):
+**In the prose the plugin ships, at the published tag and at `a73b836a`.** A tag is never moved
+once published, so `v3.1.0` stays pinned; the tool prints the commit beside each ref. The command
+below uses the calibrated divisor (section 6.1):
 
 ```
-python3 tools/measure-context.py --ref v3.1.0 --ref main --bytes-per-token 2.63
+python3 tools/measure-context.py --ref v3.1.0 --ref a73b836a --bytes-per-token 2.63
 
-                             v3.1.0 (b090fbd5109c)        main (a73b836a9e8c)
-  listing (always on)          9659 B   ~3673 tok           9659 B   ~3673 tok
+                             v3.1.0 (b090fbd5109c)        a73b836a (a73b836a9e8c)
+  listing (always on)          6799 B   ~2585 tok           6799 B   ~2585 tok
   /audit:run                 153938 B  ~58532 tok         159474 B  ~60637 tok
   /audit:next                150516 B  ~57230 tok         155867 B  ~59265 tok
   /audit:phase               235948 B  ~89714 tok         242068 B  ~92041 tok
@@ -326,7 +352,7 @@ python3 tools/measure-context.py --ref v3.1.0 --ref main --bytes-per-token 2.63
   reviewer                    15689 B   ~5965 tok          15689 B   ~5965 tok
 
 largest contributors, each file once [bytes]:
-  file                                     v3.1.0         main     delta  loaded by
+  file                                     v3.1.0     a73b836a     delta  loaded by
   reference/orchestrator.md                 55898        59104     +3206  /audit:run, /audit:next, /audit:phase, sign-off (/audit:review)
   reference/execute-task.md                 56806        58657     +1851  /audit:run, /audit:next, /audit:phase
   reference/phase-signoff.md                47841        48598      +757  /audit:phase, sign-off (/audit:review)
@@ -337,15 +363,21 @@ largest contributors, each file once [bytes]:
 ```
 
 The per-entry totals above are condensed from the command's own per-entry `total` lines. Between the
-tag and `main` the prose grew. Nothing loaded shrank by more than a few bytes, and the delta column
-names the files that grew. `orchestrator.md` and `manifest-conventions.md` load on every pipeline
-command that runs work. `/audit:phase` loads the most, because it reads both the task half and the
-sign-off half before it starts.
+tag and `a73b836a` the prose grew. Nothing loaded shrank by more than a few bytes, and the delta
+column names the files that grew. `orchestrator.md` and `manifest-conventions.md` load on every
+pipeline command that runs work. `/audit:phase` loads the most, because it reads both the task half
+and the sign-off half before it starts.
+
+The listing leaves out every command or skill whose frontmatter sets
+`disable-model-invocation: true`, and the tool prints how many it withheld under the `listing` line.
+The skills documentation keeps such a description out of context (the R4 section of
+[token-efficiency-audit.md](token-efficiency-audit.md) quotes its table). An earlier version of
+this block counted them, which overstated the always-on listing at both refs.
 
 In a project with a large `CLAUDE.md`, the agents' column changes most: subagents load the project's
 `CLAUDE.md`. In this repository, where the plugin is used on itself, that file was larger than
-either agent's own prompt on 2026-10-07:
-`python3 tools/measure-context.py --ref main --claude-md CLAUDE.md --bytes-per-token 2.63`.
+either agent's own prompt at `a73b836a`:
+`python3 tools/measure-context.py --ref a73b836a --claude-md <(git show a73b836a:CLAUDE.md) --bytes-per-token 2.63`.
 
 ### 6.1 The divisor, calibrated
 
@@ -374,7 +406,8 @@ prose written differently.
   and the pilot's two final requests on one model.
 - **The content classes follow rules,** which the tool's docstring states. A tool call is classed by
   its tool, its path and, for a shell command, whether every segment only looks at files. A command
-  that both views and runs counts as task work.
+  that both views and runs counts as task work. The bytes a write emits take the class of the path
+  it writes.
 - **Prices are the plugin's shipped table.** It reproduced every `costUSD` exactly, which checks it
   against the CLI, not against the published page.
 
@@ -382,8 +415,8 @@ prose written differently.
 
 | Figure | Command |
 |---|---|
-| per-stage billing, content view, classes, cache economics, largest writes and outputs, contexts | `python3 tools/stream-cost.py <record>/stream.jsonl` (`--json` for every row) |
-| the prose each pipeline step loads, and its growth between refs | `python3 tools/measure-context.py --ref v3.1.0 --ref main --bytes-per-token 2.63` |
+| per-stage billing, content view, classes, cache economics, largest writes and outputs, contexts | `python3 tools/stream-cost.py <record>/stream.jsonl` (`--json` for every row), from a checkout of the commit section 0 names |
+| the prose each pipeline step loads, and its growth between refs | `python3 tools/measure-context.py --ref v3.1.0 --ref a73b836a --bytes-per-token 2.63` |
 | the sizes at the commits the sessions ran | `python3 tools/measure-context.py --ref 5df231ec76c9 --ref b6d9a4a31d2a` |
 | the tools' own proof | `python3 tools/stream-cost.py --selftest`, `python3 tools/measure-context.py --selftest` |
 | the published figures compared in section 1.2 | [pipeline-pilot.md](pipeline-pilot.md) §4, [benchmark-results.md](benchmark-results.md) §2.4 |

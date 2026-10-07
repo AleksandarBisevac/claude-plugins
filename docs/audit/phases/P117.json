@@ -222,7 +222,7 @@
     {
       "id": "P117.3-2sz",
       "title": "the cost tools' verdicts and classes are pinned by cases, and the design's arithmetic and guarantees are stated exactly",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes review findings P117-R1 to P117-R11 of the cost phase's first review round.\n\nTools:\n- stream-cost.py gains these cases, each shown red against the mutation the review named before it is trusted:\n  - a modelUsage cache read that is off from the prefix identity by a known amount, which must print the DIFFERS verdict with that amount and never the agrees verdict;\n  - a subagent that writes at the one-hour rate, which must carry the one-hour write into the rebuilt final request;\n  - Read and Edit of the plan files, classed as plan work.\n- Emitted Edit and Write bytes are classed by their target path, the same way tool results are.\n- measure-context.py leaves out of the always-on listing any command or skill whose frontmatter sets disable-model-invocation, with a case for it.\n- The analysis block that prints the listing is regenerated.\n\nDocuments:\n- The design names that C3 needs the reviewer to file its return, and says how that write is held. It is one filing verb that can only write the reviewer's own return path, or 3(b) is chosen for the reviewer with the trade stated.\n- The per-task request count is made to agree between the analysis and the design, the re-check after a stale stamp is described as one observation, and the predictions are given with both counts.\n- The cost-model arithmetic is corrected and written out:\n  - the double-counted re-read term;\n  - the executor's read subtraction;\n  - the reviewer-fork and C7 figures;\n  - the early-reads term in the run line.\n- T2's target table uses one quantity throughout, the one the ceiling gate measures.\n- The confirming benchmark's protocol is said to land with the whole-feature benchmark phase.\n- Every re-derivation command is pinned to the SHA its figures were taken at.\n- These claims are restated to their basis:\n  - the main-loop TTL is called unknown;\n  - R8's risky arm is quoted accurately;\n  - the TTL and billing assumption is listed with the model's assumptions;\n  - the two-cause sentence in the analysis is marked as inference or decomposed.",
       "files": [
         "tools/stream-cost.py",
@@ -251,16 +251,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T13:21:25Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T14:06:29Z.287412",
+        "status": "passed",
+        "at": "2026-10-07T14:06:29Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T11:45:57Z"

@@ -20,7 +20,10 @@ WHAT "LOADED" MEANS HERE, rule by rule:
     frontmatter preloads under `skills:`, and the project's CLAUDE.md;
   * ALWAYS ON, in every session where the plugin is enabled: the listing - the name
     and description (and a skill's `when_to_use`) of every command, agent and skill -
-    and the project's CLAUDE.md.
+    and the project's CLAUDE.md. A command or skill whose frontmatter sets
+    `disable-model-invocation: true` is left out of the listing and counted as
+    withheld: the skills documentation's table gives that flag "Description not in
+    context" (quoted in docs/research/token-efficiency-audit.md, the R4 section).
 
 CLAUDE.md is the PROJECT's file, not the plugin's, so it is measured only when one is
 handed over with `--claude-md`; without it the report says it is not measured rather
@@ -197,11 +200,21 @@ def entry_rows(source, kind, rel, claude_md):
     return rows
 
 
+def _model_invocable(kind, fields):
+    """False for a command or skill the model cannot invoke, whose description the
+    host keeps out of context. Agents carry no such flag."""
+    if kind == "agents":
+        return True
+    flag = fields.get("disable-model-invocation")
+    return not (isinstance(flag, str) and flag.strip().lower() == "true")
+
+
 def listing(source):
-    """{"commands": n, "agents": n, "skills": n, "bytes": n} - what the plugin adds to
-    every session's listing: name and description of each, and a skill's
-    `when_to_use`."""
-    counts = {"commands": 0, "agents": 0, "skills": 0, "bytes": 0}
+    """{"commands": n, "agents": n, "skills": n, "bytes": n, "withheld": n} - what the
+    plugin adds to every session's listing: name and description of each, and a
+    skill's `when_to_use`. `withheld` counts the commands and skills left out because
+    the model cannot invoke them, so a smaller figure says why it is smaller."""
+    counts = {"commands": 0, "agents": 0, "skills": 0, "bytes": 0, "withheld": 0}
     for rel in source["names"]:
         parts = rel.split("/")
         if len(parts) == 2 and parts[0] == "commands" and parts[1].endswith(".md"):
@@ -213,6 +226,9 @@ def listing(source):
         else:
             continue
         fields, _body = split_frontmatter(source["read"](rel) or b"")
+        if not _model_invocable(kind, fields):
+            counts["withheld"] += 1
+            continue
         name = fields.get("name") or name or parts[1]
         text = name + (fields.get("description") or "") + (fields.get("when_to_use") or "")
         counts[kind] += 1
@@ -261,6 +277,8 @@ def render(measured_list, per, top):
                      % ("listing", "%d commands, %d agents, %d skills"
                         % (lst["commands"], lst["agents"], lst["skills"]),
                         lst["bytes"], "~%d" % _tok(lst["bytes"], per)))
+        lines.append("  %-26s %d command(s) or skill(s) set disable-model-invocation: "
+                     "not in the listing" % ("", lst["withheld"]))
         cmd = measured["claudeMd"]
         if cmd is None:
             lines.append("  %-26s not measured: it is the project's file - pass --claude-md"
@@ -504,6 +522,30 @@ def _cases(check):
     finally:
         remove_tree(small)
         remove_tree(large)
+
+    quiet = tempfile.mkdtemp(prefix="measure-context-q-")
+    try:
+        _fx_plugin(quiet)
+        _fx_write(quiet, "commands/bug.md", "---\ndescription: 'File a bug.'\n"
+                  "disable-model-invocation: true\n---\nbody\n")
+        _fx_write(quiet, "skills/hush/SKILL.md", "---\nname: hush\ndescription: Hush.\n"
+                  "disable-model-invocation: true\n---\nbody\n")
+        # The twin: the key present and false. A rule that withheld on the key's mere
+        # presence would drop this one too.
+        _fx_write(quiet, "commands/status.md", "---\ndescription: 'Show status.'\n"
+                  "disable-model-invocation: false\n---\nbody\n")
+        held = measure(tree_source(quiet))
+        lst = held["listing"]
+        shown = render([held], DEFAULT_BYTES_PER_TOKEN, 5)
+        check("mc13 a command or skill whose frontmatter sets disable-model-invocation: true "
+              "is left out of the always-on listing and counted as withheld, and one that "
+              "sets it false is listed: %r" % (lst,),
+              lst["bytes"] == want + len("audit:status" + "Show status.")
+              and (lst["commands"], lst["agents"], lst["skills"], lst["withheld"])
+              == (5, 2, 1, 2)
+              and "2 command(s) or skill(s) set disable-model-invocation" in shown)
+    finally:
+        remove_tree(quiet)
 
     head, problem = git_source("HEAD")
     if problem:
