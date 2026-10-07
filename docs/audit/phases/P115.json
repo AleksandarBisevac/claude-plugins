@@ -138,17 +138,21 @@
         "severity": "med",
         "file": "plugins/audit/scripts/ui/panel/overview.js renderOver",
         "issue": "The panel's task strip totals, pills and phases/tasks summary are drawn from the overlaid plan while the payload's copyHeadline is never rendered, so a phase read live from a linked worktree inflates those totals with no note on screen.",
-        "resolution": "Render r.copyHeadline beside the existing live-copy error near the task strip, the sentence the report's hero prints."
+        "resolution": "fixed in P115.5-4yc (b3cf4718): Render r.copyHeadline beside the existing live-copy error near the task strip, the sentence the report's hero prints.",
+        "fixTask": "P115.5-4yc",
+        "commit": "b3cf4718"
       },
       {
         "id": "P115-R14",
         "severity": "low",
         "file": "plugins/audit/scripts/status/_status_facts.py copy_headline",
         "issue": "The fallback-only branch of copy_headline has no case.",
-        "resolution": "Add a case where every named copy is a fallback and assert the fallback sentence."
+        "resolution": "fixed in P115.5-4yc (b3cf4718): Add a case where every named copy is a fallback and assert the fallback sentence.",
+        "fixTask": "P115.5-4yc",
+        "commit": "b3cf4718"
       }
     ],
-    "outcome": "[findings: 14 - 1 high, 5 med, 8 low; 12 with a recorded fix commit]"
+    "outcome": "[findings: 14 - 1 high, 5 med, 8 low; 14 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -530,7 +534,7 @@
     {
       "id": "P115.5-4yc",
       "title": "the panel's overview totals carry the copy headline the report's hero prints",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P115-R13 and P115-R14. The panel's Overview renders the payload's copyHeadline beside the live-copy error, next to the task strip, so the totals, the pills and the phases-and-tasks summary carry the same sentence the report's hero prints. A case covers copy_headline's fallback-only branch. Cases: a vitest case showing the headline renders when the payload carries it and is absent when it does not; a test__status_facts case for the fallback sentence. The orchestrator re-captures the screenshots.",
       "files": [
         "plugins/audit/scripts/ui/panel/overview.js",
@@ -587,18 +591,29 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b3cf4718",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "overview.js's renderOver renders the payload's copyHeadline, the sentence the report's hero prints, as a findings warn line (data-ovcopyheadline) right after the live-copy error and before the task strip. The totals, pills and phases-and-tasks summary therefore carry the note whenever a phase was read from another copy. The payload already carried the field. Cases: a vitest case where a payload carrying copyHeadline renders it, with a twin that renders nothing without it. That case was observed red before the change, and the helper could not prove it because vitest is absent in its throwaway. test__status_facts gains ch1-ch3: the fallback-only sentence, a read copy flipping it, and no copies giving none. The UI pin counts are unchanged, and the full vitest suite passes. Screenshots re-captured.",
+        "descriptive": "The panel's overview now says, beside its totals, when they include work read from another worktree's copy, as the report does."
       },
       "startedAt": "2026-10-07T11:39:18Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T12:02:05Z",
+      "verifiedBy": [
+        "copyHeadline vitest pair",
+        "ch1",
+        "ch2",
+        "ch3"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T11:58:53Z.a3bfbd",
         "status": "passed",
         "at": "2026-10-07T11:58:53Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b3cf4718",
+        "at": "2026-10-07T12:02:05Z",
+        "basis": "orchestrator check: P115-R13 and R14 fixed, vitest case seen red before the change with its twin, fallback branch covered"
       }
     }
   ],
