@@ -3586,6 +3586,120 @@ def _live_copy_cases(check):
         _harness.remove_tree(root)
 
 
+def _worktree_post_fork_cases(check):
+    """The worktree that holds the branch IS the live copy - reading its own
+    file already captures the branch's current state, uncommitted edits
+    included. So a readiness-moving edit this checkout lands on its own
+    shard after the fork is nothing that copy is missing; only the
+    branch-tip path reads a COMMITTED copy the fork-point diff is actually
+    about, and only that path has a question to ask.
+
+    `_readiness_moved` used to run on both paths and name 'the branch's
+    copy' even when the worktree's file, not the branch's committed tip,
+    was what got counted.
+    """
+    labels = ("wp1", "wp2")
+    if not shutil.which("git"):
+        for lbl in labels:
+            _harness.skip(check, lbl, "git is not on PATH, and the locks, "
+                          "the branches and the worktrees all live in git",
+                          True)
+        return
+    root = _harness.fixture_root("audit-status-worktree-postfork-")
+    repo = os.path.join(root, "proj")
+    shard_dir = os.path.join("docs", "audit", "phases")
+    os.makedirs(os.path.join(repo, shard_dir))
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+           "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+
+    def sh(*args):
+        subprocess.run(git + list(args), cwd=repo, check=True,
+                       capture_output=True)
+
+    def write_shard(base, pid, title, done, pending):
+        rows = ([{"id": "%s.%d" % (pid, i + 1), "title": "t",
+                  "status": "done"} for i in range(done)]
+                + [{"id": "%s.%d" % (pid, done + i + 1), "title": "t",
+                    "status": "pending"} for i in range(pending)])
+        with open(os.path.join(base, shard_dir, "%s.json" % (pid,)), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"id": pid, "title": title, "status": "in_progress",
+                       "tasks": rows}, fh)
+
+    with open(os.path.join(repo, "README"), "w", encoding="utf-8") as fh:
+        fh.write("x\n")
+    sh("init", "-q")
+    sh("add", "-A")
+    sh("commit", "-qm", "before the plan")
+    manifest_path = os.path.join(repo, "docs", "audit", "audit-plan.json")
+    phases = [("P1", "worktree"), ("P2", "tiponly")]
+    with open(manifest_path, "w", encoding="utf-8") as fh:
+        json.dump({"meta": {"version": 3, "title": "worktree post-fork"},
+                   "phases": [{"id": p, "title": t, "status": "in_progress",
+                               "shard": "phases/%s.json" % (p,)}
+                              for p, t in phases]}, fh)
+    for p, t in phases:
+        write_shard(repo, p, t, 0, 2)
+    sh("add", "-A")
+    sh("commit", "-qm", "the plan")
+    sh("branch", "audit/p1-worktree")
+    sh("branch", "audit/p2-tiponly")
+    # Main lands a readiness-moving edit to BOTH shards after the fork - a
+    # task closed, which neither branch's own history ever saw.
+    write_shard(repo, "P1", "worktree", 1, 1)
+    write_shard(repo, "P2", "tiponly", 1, 1)
+    sh("commit", "-qam", "this checkout closes a task in both shards")
+    tree = os.path.join(root, "p1-tree")
+    sh("worktree", "add", "-q", tree, "audit/p1-worktree")
+    # The worktree's own file is already live - both tasks done, uncommitted.
+    write_shard(tree, "P1", "worktree", 2, 0)
+
+    quiet = lambda *_a, **_k: None                  # noqa: E731
+    sid = "worktree-postfork-fixture"
+    locked = ["P1", "P2"]
+    took = [_lockmod.held(_lockmod.acquire(
+        repo, "phase-%s" % (p,), note="/audit:phase %s" % (p,), session=sid,
+        pid=os.getpid(), out=quiet)) for p in locked]
+    try:
+        manifest = _mio.load_manifest(manifest_path)
+        _ok, block = _harness.attempt(M.locks_block, manifest, repo,
+                                      manifest_path)
+        block = block if isinstance(block, dict) else {"error": block}
+        rows = {str(r.get("name"))[len("phase-"):]: r
+                for r in block.get("held") or []}
+
+        def row(pid):
+            return rows.get(pid) or {}
+
+        def basis(pid):
+            return str(row(pid).get("readyBasis"))
+
+        w1 = row("P1")
+        moved = "in a way that moves readiness"
+        check("wp1 a worktree holding the branch is counted from its own "
+              "file - both tasks done there, uncommitted - so a "
+              "readiness-moving edit this checkout lands on its shard after "
+              "the fork is not read back, the count stays live, and the "
+              "basis never says the branch's copy may be missing anything: "
+              "%r" % (w1,),
+              all(took) and w1.get("readyCount") == 0
+              and w1.get("readyLive") is True
+              and "p1-tree" in basis("P1")
+              and moved not in basis("P1") and "forked" not in basis("P1"))
+        w2 = row("P2")
+        check("wp2 ...and its twin: the SAME edit, with no worktree holding "
+              "the branch so the branch's committed tip is what gets "
+              "counted, still carries the note and is marked not live - the "
+              "fix narrows which path asks the question, it does not drop "
+              "the question: %r" % (w2,),
+              w2.get("readyCount") == 2 and moved in basis("P2")
+              and "forked" in basis("P2") and w2.get("readyLive") is False)
+    finally:
+        for p in locked:
+            _lockmod.release(repo, "phase-%s" % (p,), session=sid, out=quiet)
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(record):
         _cases(record)
@@ -3593,6 +3707,7 @@ def _selftest():
         _harness.stage(record, "lb", _locked_copy_cases)
         _unfinished_header_cases(record)
         _harness.stage(record, "lw", _live_copy_cases)
+        _harness.stage(record, "wp", _worktree_post_fork_cases)
     return _harness.run(body)
 
 

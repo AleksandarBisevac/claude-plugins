@@ -82,24 +82,37 @@
         "severity": "med",
         "file": "plugins/audit/scripts/status/audit-status.py _commits_branch_lacks",
         "issue": "The behind-check counts commits with rev-list, so a no-content --no-ff landing merge marks a live zero not live: on the real main checkout P102 and P111 print an UNFINISHED line with nothing ready and fail --fail-on unfinished-run, though their shards are unchanged since the branch forked.",
-        "resolution": "Ask about content: git diff --quiet refs/heads/<branch>...HEAD -- <shard> first, and only when it changed compare the readiness projection (task ids, status, dependencies) of the merge-base copy and HEAD's copy, marking the row not live only when that differs; a twin with a no-content landing merge after the branch committed to its shard gives no note and a silent live zero."
+        "resolution": "fixed in P114.3-ffv (aa61e9a5): Ask about content: git diff --quiet refs/heads/<branch>...HEAD -- <shard> first, and only when it changed compare the readiness projection (task ids, status, dependencies) of the merge-base copy and HEAD's copy, marking the row not live only when that differs; a twin with a no-content landing merge after the branch committed to its shard gives no note and a silent live zero.",
+        "fixTask": "P114.3-ffv",
+        "commit": "aa61e9a5"
       },
       {
         "id": "P114-R8",
         "severity": "low",
         "file": "plugins/audit/commands/status.md",
         "issue": "The list of zeros that print omits the unreadable linked worktree, and 'the count is still the branch's' is wrong when the count came from a worktree file.",
-        "resolution": "Add that case and say the count is the one from the copy named."
+        "resolution": "fixed in P114.3-ffv (aa61e9a5): Add that case and say the count is the one from the copy named.",
+        "fixTask": "P114.3-ffv",
+        "commit": "aa61e9a5"
       },
       {
         "id": "P114-R9",
         "severity": "low",
         "file": "plugins/audit/scripts/status/_status_facts.py unfinished_runs",
         "issue": "A non-live zero prints with the live repair, telling the reader to resume waves for a phase with nothing counted ready.",
-        "resolution": "When the count is zero and not live, word the repair around the caveat: re-read from the copy named or check the branch."
+        "resolution": "fixed in P114.3-ffv (aa61e9a5): When the count is zero and not live, word the repair around the caveat: re-read from the copy named or check the branch.",
+        "fixTask": "P114.3-ffv",
+        "commit": "aa61e9a5"
+      },
+      {
+        "id": "P114-R10",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/audit-status.py _phase_ready_count and _readiness_moved; plugins/audit/commands/status.md",
+        "issue": "The readiness-moved check runs even when the count was read from the linked worktree that holds the branch, so an accurate live reading is marked not live and its note blames 'the branch's copy', which is not the copy that was read.",
+        "resolution": "Treat a linked worktree's file as the live copy: skip the check there (readyLive stays true), keep it for the branch-tip read, and word the note and status.md around the copy actually read; a twin of the worktree fixtures with a post-fork readiness-moving edit on the checkout."
       }
     ],
-    "outcome": "[findings: 9 - 0 high, 4 med, 5 low; 6 with a recorded fix commit]"
+    "outcome": "[findings: 10 - 0 high, 5 med, 5 low; 9 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -250,7 +263,7 @@
     {
       "id": "P114.3-ffv",
       "title": "a row is not live only when the phase's readiness changed after its branch forked",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P114-R7, P114-R8 and P114-R9. A row is marked not live only when the phase's readiness changed after its branch forked, never because a merge brought no content.\n\nReplace the rev-list commit count with a content question: git diff --quiet refs/heads/<branch>...HEAD -- <shard>. This is one call, the same cost as before.\n- Unchanged: no note, and the row stays live.\n- Changed: compare the readiness projection (task ids, status, dependency fields) of the merge-base copy with HEAD's copy. Mark the row not live, with the note, only when that projection differs. A description edit that landed does not count.\n- Unknown: the existing not-current wording.\n\nA non-live zero's repair sentence says to re-read from the copy named or to check the branch. It never says to resume waves.\n\nIn status.md:\n- The list of zeros that print includes an unreadable linked worktree.\n- The count is described as the one from the copy named.\n- The behind note is described as \"this checkout's copy of the phase's file changed after the branch forked, in a way that moves readiness\".\n\nCases, each with its twin:\n- A no-content --no-ff landing merge, after the branch committed to its shard, gives no note and a silent live zero.\n- A landed description-only edit gives no note.\n- A landed status change gives the note.\n- A non-live zero's repair wording.",
       "files": [
         "plugins/audit/scripts/status/_status_facts.py",
@@ -282,18 +295,82 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "aa61e9a5",
+      "outcome": {
+        "technical": "audit-status.py: _readiness_moved replaces the commit count. The common path is one git diff --quiet refs/heads/<branch>...HEAD -- <shard>. If that says unchanged, there is no note and the row stays live. If it says changed, git merge-base runs and the fork-point copy and HEAD's copy are read (through the shared _show_phase, which _branch_copy now uses too); the row gets the note \"changed after the branch forked, in a way that moves readiness\" only when _status_facts.readiness_projection differs between them. If the diff or a read cannot be answered, the row gets the not-current wording. _status_facts.py adds the pure readiness_projection: phase id, status and blockedBy, and per task id, status, blockedBy and dependsOn, beside ready_tasks. It also adds an UNFINISHED_UNREAD repair for any printed zero, which says to re-read the count from the copy named or check the branch and never to resume waves; a non-live count that is not zero keeps the live/stale repair. status.md describes the count as the one from the copy named, gives the readiness rule (a reworded title or a no-content --no-ff merge earns no note), lists every zero that prints, and names the diff and the conditional reads in the cost paragraph. Red-first proved for ul12, ul14 and ul15 (test__status_facts) and lw6 and lw8-lw11 (test_audit_status); the fixture adds a phase retitled on main and a no-content --no-ff landing on the fork point. A read-only run against the main checkout now prints lines only for two phases. Each is counted live from its own linked worktree and has a genuinely ready task. The two phases that printed false lines before are silent zeros.",
+        "descriptive": "The status warning now ignores merges and wording changes that do not affect which tasks are ready, so it only fires for phases with real work left, and a stale zero tells the reader to re-check instead of resuming."
+      },
+      "startedAt": "2026-10-07T07:32:15Z",
+      "completedAt": "2026-10-07T07:48:39Z",
+      "verifiedBy": [
+        "ul12",
+        "ul13",
+        "ul14",
+        "ul15",
+        "lw6",
+        "lw7",
+        "lw8",
+        "lw9",
+        "lw10",
+        "lw11"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T07:48:33Z.eb5656",
+        "status": "passed",
+        "at": "2026-10-07T07:48:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "aa61e9a5",
+        "at": "2026-10-07T07:48:39Z",
+        "basis": "orchestrator check: P114-R7..R9 fixed with a content diff then a readiness projection, reviewer scratch case reproduced, live main checkout now flags only phases with genuinely ready tasks"
+      }
+    },
+    {
+      "id": "P114.4-ffv",
+      "title": "a count read from the worktree that holds the branch is live",
+      "status": "in_progress",
+      "description": "Fixes review finding P114-R10. A linked worktree's file that holds the branch is the copy that holds the phase live, so a count read from it is live.\n\n_readiness_moved runs only when the count was read from the branch's committed copy. On the worktree path it does not run, and readyLive stays true. The note and status.md's paragraph name the copy that was actually read. They do not say 'the branch's copy' when a worktree file was counted.\n\nCases, each with its twin:\n- A worktree holding the branch, with a post-fork readiness-moving edit on this checkout: a silent live zero.\n- The same edit with only the branch tip readable: the note, and the row is not live.",
+      "files": [
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/commands/status.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-07T07:32:15Z",
+      "startedAt": "2026-10-07T07:58:27Z",
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-10-07T07:48:33Z.eb5656",
+        "runId": "2026-10-07T08:21:49Z.e1c1a4",
         "status": "passed",
-        "at": "2026-10-07T07:48:33Z"
+        "at": "2026-10-07T08:21:49Z"
       }
     }
   ],

@@ -317,13 +317,17 @@ copy read is, in order:
 - this checkout's copy, when no branch of that name exists — it is then the only
   copy there is.
 
-The count printed is the one from the copy named. When this checkout's copy of the
-phase's file changed after the branch forked, in a way that moves readiness — a task's
-status, its `dependsOn` or `blockedBy`, a task added or removed, the phase's own status
-or `blockedBy` — the line says so: the count is still the branch's, and it may be
-missing that change. It is a question about content, not commits: a landed edit to a
-title or a description moves nothing, and neither does a `--no-ff` merge that brought
-the file no content, so neither earns the note.
+The count printed is the one from the copy named. **The note below only asks about
+the branch's committed copy** — when no worktree holds the branch out and `git show`
+is the copy read. A linked worktree's file is already live, uncommitted edits
+included, so there is nothing that copy could be missing; the note is silent there
+and the count is live. When the copy read IS the branch's committed tip, and this
+checkout's copy of the phase's file changed after the branch forked, in a way that
+moves readiness — a task's status, its `dependsOn` or `blockedBy`, a task added or
+removed, the phase's own status or `blockedBy` — the line says so: the count is still
+the branch's, and it may be missing that change. It is a question about content, not
+commits: a landed edit to a title or a description moves nothing, and neither does a
+`--no-ff` merge that brought the file no content, so neither earns the note.
 
 **A count nobody could take from the live copy is never a silent zero.** Zero is the
 silent row only when it was counted from the copy that holds the phase live. A branch

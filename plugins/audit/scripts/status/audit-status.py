@@ -405,11 +405,17 @@ def _readiness_moved(git_root, branch, rel, phase_id):
     """`(note, known)` - whether this checkout's copy of `rel` changed after
     `branch` forked, in a way that moves the phase's readiness.
 
-    A copy read off a phase branch is the live copy of the work the run did,
-    but the development branch may have moved the same file on since the
-    branch forked - a task added, a dependency rewritten - and a count off the
-    branch alone would then miss that. So the count stays the branch's, and
-    the sentence says what it may be missing.
+    CALL THIS ONLY WHEN THE COUNT CAME FROM THE BRANCH'S COMMITTED COPY - no
+    worktree holds `branch` out, so `git show` is the only copy there was to
+    read. That copy is the branch tip, but the development branch may have
+    moved the same file on since the fork - a task added, a dependency
+    rewritten - and a count off the tip alone would then miss that. So the
+    count stays the branch's, and the sentence says what it may be missing.
+
+    A worktree that holds `branch` out is read for its own file instead
+    (`_tree_copy`), uncommitted edits included - that copy already IS
+    whatever is live there, so it has nothing this question could be about,
+    and the caller must not run this check over it.
 
     THE QUESTION IS ABOUT CONTENT, NOT COMMITS. A count of commits to the file
     reads a `--no-ff` landing of a branch that predates the file as a commit to
@@ -567,12 +573,18 @@ def _phase_ready_count(manifest, manifest_path, git_root, phase_id, view, user):
             caveat = ("; the worktree that has the branch out could not be "
                       "read (%s), so its uncommitted work is not in this count"
                       % (why,))
+    note, current = "", True
     if body is None:
         body, why = _branch_copy(git_root, branch, rel, phase_id)
         source = "branch `%s`'s copy of %s" % (branch, rel)
         if body is None:
             return _fallback(local, on, branch, why)
-    note, current = _readiness_moved(git_root, branch, rel, phase_id)
+        # Only the branch's COMMITTED copy is what the fork-point diff is
+        # about. A worktree's file already carries whatever is live there,
+        # uncommitted edits included, so a readiness-moving edit this
+        # checkout lands on its own history afterwards is not a gap in that
+        # copy - there is nothing for this question to ask.
+        note, current = _readiness_moved(git_root, branch, rel, phase_id)
     counted = dict(manifest)
     counted["phases"] = [dict(p, **body) if p is phase else p
                          for p in (manifest.get("phases") or [])]
