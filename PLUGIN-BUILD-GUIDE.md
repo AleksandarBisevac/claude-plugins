@@ -991,9 +991,20 @@ Sign-off steps 5c–5e as one command. It merges the phase branch into its resol
 before the first write, and each result read back by asking a *different* question than the write
 answered. The merge is an input of the phase's derived status, so the stamp stores that status in
 the same write (`done`, for a signed-off phase with every task terminal) and `mirror_stub`
-re-mirrors the index stub from the shard under the index lock. Both writes are revalidated, and a
-finding the write introduced restores the prior bytes (`_revalidated_write`). Any failure of the
-mirror, the lock's own included, is a sentence naming `audit-task.py settle`, never a failed merge.
+re-mirrors the index stub from the shard. Each of the three plan writes here — the stamp, the
+`mergedHead` backfill (`record_merged_head`) and the mirror — reads the plan and writes it while
+holding the index lock every other plan writer takes (`under_index_lock`, through
+`_panel_write.acquire_index_lock`). On the single-file layout, two closes or a close and a panel
+save used to each write the copy they had read, and one write was lost while both answered ok.
+A stamp or a backfill whose lock is not taken writes nothing; it says why and names the re-run of
+close-phase that writes it. A stamp not written exits 1 with the cleanup held back. A backfill
+not written prints `mergedHead NOT recorded` with that sentence. Every write is
+revalidated, and a finding the write introduced restores the prior bytes through
+`_panel_write.restore`'s temp file and replace (`_revalidated_write`), so the rollback is as
+atomic as the write it undoes. Any failure of the mirror, the lock's own included, is a sentence
+naming `audit-task.py settle`, never a failed merge. `test_close_phase.py` covers this with a
+held lock and an inode check, plus two races between real processes: two closes released
+together, and a close against a panel save with each in turn caught mid-write.
 
 **It never runs `git switch`.** Not as a preference: `git switch <parent>` from inside the worktree
 a phase ran in fails with `fatal: '<parent>' is already used by worktree at '<the main tree>'`, so
@@ -1341,6 +1352,16 @@ asset they could not read and a directory they could not list, rather than skipp
 `.py` side had already reported a file it could not *tokenize* while quietly swallowing one it
 could not *open*, and the `ui/` side returned an empty list for a missing `scripts/ui/` — the whole
 report and panel UI gone, printing exactly what a clean tree prints. `--selftest`.
+`state_write_violations()` holds the rule that a state file is replaced only through a sanctioned
+writer: every `os.replace`/`os.rename` under `scripts/` and `hooks/` — through `os.`, a module
+alias, or a name imported from `os` — must sit in a function `STATE_WRITERS` names, and each row
+carries a reason and must still name a live site, so the table cannot excuse code nobody wrote.
+The writers a new site routes through are `_manifest_io.atomic_write_text` (which
+`atomic_write_json` writes through) and, on the hooks side, `_config.atomic_write_text`; both take
+a temp name of their own, which is what a fixed `<target>.tmp` shared between two writers running
+at once did not. `state_write_sites()` prints the corpus the rule judged. A method of the same name
+on a string or a path is not the `os` module's and is not read — the allow row in
+`tools/prove-gates.py` holds that line.
 
 ### `plugins/audit/scripts/_refs.py`
 The other half of the same idea, aimed at paths rather than at imports: roughly 150 places
@@ -4503,7 +4524,9 @@ drawing, no ANSI, no emoji) so the command file can print it verbatim without pa
 to reformat a JSON rollup. With `--by phase|task|model|author|agent|day|hour|session|branch|
 attr` it prints one focused table; without it, the full dashboard. `--backfill` re-reads every
 transcript for the project from offset 0 and rebuilds the ledger — idempotent, and the only
-path that rewrites (and therefore locks) rather than only appending. `--json`'s payload also
+path that rewrites rather than only appending. The lock it takes excludes only another backfill:
+the metering hook appends with no lock, so each month's rewrite carries the rows appended to it
+during the rebuild (`usage_ledger.rewrite_month`), a month with no file yet included. `--json`'s payload also
 carries `planCost` (since P56.6): `_usage_economics.plan_cost_claim`, read against BOTH ledgers
 this command's project has — the usage ledger already loaded for everything else, and
 `_evidence_io.read_rows(project)` for the gate-scope and gate-reuse comparisons, which live in

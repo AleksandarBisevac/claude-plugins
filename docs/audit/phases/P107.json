@@ -1,7 +1,7 @@
 {
   "id": "P107",
   "title": "state writes never lose each other",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Tasks: (1) close-phase stamp_merged and record_merged_head under the index lock close-phase already takes for the stub mirror, rollback through atomic_write_json. (2) The stale journal lock is claimed by rename so only one waiter breaks it (no false tamper verdict). (3) Backfill re-reads the month file's tail after its replace, with no lock on the Stop hook's hot path. (4) A _deps rule: os.replace on plan or ledger paths only through sanctioned writers; reduce or justify the existing sites. Mechanisms reproduced by fixtures; not observed in 100 dogfood phases, hence after the higher-value phases.",
   "desiredOutcome": "two plugin writers running at once never silently drop each other's write: close-phase stamps under the index lock with an atomic rollback, a stale journal lock is broken by exactly one waiter, usage backfill keeps rows appended during its window, and the import-layer lint refuses a state write outside the sanctioned writers",
   "testGate": [
@@ -15,21 +15,129 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "6d0ef731b5ac60e6bef3c015cf9967583e3625f8",
+  "branch": "audit/p107-state-writes-never-lose-each-o",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P107-R1",
+        "severity": "low",
+        "file": "plugins/audit/scripts/usage/usage_ledger.py:930-944",
+        "issue": "When the month file does not exist, rewrite_month retries open(path,'rb'), and on FileNotFoundError writes and replaces with no tail descriptor; a metering hook that creates the month file and appends a row between that failed open and os.replace has its file retired by the replace, so the row is lost while the backfill exits 0 - on a rebuild after a lost ledger, the case --backfill exists for, and usually in the current month the hook writes.",
+        "resolution": "fixed in P107.5-gwk (675777a3): Always hold a descriptor: create the month file when missing and keep it open (os.open with O_RDONLY|O_CREAT), so rows appended before the replace are drained and rows after it settled like every other month; add a case where a row lands in the no-file window.",
+        "fixTask": "P107.5-gwk",
+        "commit": "675777a3"
+      },
+      {
+        "id": "P107-R2",
+        "severity": "low",
+        "file": "plugins/audit/commands/usage.md:56-60",
+        "issue": "The 'A platform that refuses to replace an open file' bullet follows the plain 'A month file the backfill could not rewrite cleanly' paragraph, so it renders as a separate one-item list instead of the third item of 'What that still leaves open'.",
+        "resolution": "fixed in P107.5-gwk (675777a3): Move the bullet up under 'A writer that opened the month file...' and keep the paragraph after the list.",
+        "fixTask": "P107.5-gwk",
+        "commit": "675777a3"
+      },
+      {
+        "id": "P107-R3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py:704-706",
+        "issue": "under_index_lock releases with release_index_lock(lock, out=lines.append) and never reads lines or the return value, so a declined release - the only sign another session took the index lock during this write - is discarded, and a stamp written under a taken-over lock reports success with no note.",
+        "resolution": "fixed in P107.6-gwk (1645c074): Return the release sentence from under_index_lock and surface it in the close answer (stampWhy/stubWhy or a warning line), as write_composition adds `said` to its warnings; add a case where the release is declined.",
+        "fixTask": "P107.6-gwk",
+        "commit": "1645c074"
+      },
+      {
+        "id": "P107-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py:772-792",
+        "issue": "_revalidated_write calls _panel_write.restore(snap) after a refused write; if restore raises (Windows replace onto an open file, full disk) the caller reports '<path> could not be written', while the refused write actually landed and was not rolled back - the message says the opposite of the plan's state.",
+        "resolution": "fixed in P107.6-gwk (1645c074): Guard the restore separately and say '<path> was written and introduced <findings>; restoring its prior bytes failed: <exc> - the plan holds the refused write'; add a case where restore raises.",
+        "fixTask": "P107.6-gwk",
+        "commit": "1645c074"
+      },
+      {
+        "id": "P107-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/_deps.py:2028-2045",
+        "issue": "_os_bindings binds the os module only for alias.name == 'os', but `import os.path` (no asname) also binds `os`, so os.replace/os.rename in such a file is invisible to state_write_violations, and the lint's WHAT IT CANNOT SEE list does not name the spelling.",
+        "resolution": "fixed in P107.7-gwk (359a0870): Bind 'os' for any Import alias with no asname whose first dotted part is 'os'; add a fixture case using `import os.path` then os.replace.",
+        "fixTask": "P107.7-gwk",
+        "commit": "359a0870"
+      },
+      {
+        "id": "P107-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/usage/audit-usage.py:855-869",
+        "issue": "The comment says held-back cursors 'match the ledger when the replace was refused', which holds only for the failed month: a session spanning a failed and a rewritten month keeps its old cursor while the rewritten month already holds its rows past it, so the next metering turn appends them again and they are double-counted there until --backfill re-runs.",
+        "resolution": "fixed in P107.5-gwk (675777a3): Correct the comment and usage.md's cursor sentence to state the double-count until the next --backfill, or hold the cursor back only when every month the session spans failed.",
+        "fixTask": "P107.5-gwk",
+        "commit": "675777a3"
+      },
+      {
+        "id": "P107-R7",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md:4525-4527",
+        "issue": "audit-usage.py's guide section still says --backfill is 'the only path that rewrites (and therefore locks) rather than only appending', the sentence this phase corrected in the module docstring and usage.md: the lock excludes only another backfill and the metering hook appends with no lock.",
+        "resolution": "fixed in P107.5-gwk (675777a3): Match the docstring: the backfill's lock excludes only another backfill, and each month's rewrite carries rows appended during it (usage_ledger.open_month / rewrite_month).",
+        "fixTask": "P107.5-gwk",
+        "commit": "675777a3"
+      },
+      {
+        "id": "P107-R8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_journal_io.py:2226-2228",
+        "issue": "write_merged locks `path` but writes its fixed temp at realpath(path)+'.merged', so a link and its target take different locks and share one temp; the STATE_WRITERS row added this phase says the hold is 'what makes its fixed temp name unshared', which holds only when every caller uses the same name.",
+        "resolution": "fixed in P107.7-gwk (359a0870): Route the temp through mkstemp in the destination directory (or atomic_write_text on the resolved destination) so the reason is true for every caller, and keep the STATE_WRITERS reason in step.",
+        "fixTask": "P107.7-gwk",
+        "commit": "359a0870"
+      }
+    ],
+    "outcome": "[findings: 8 - 0 high, 0 med, 8 low; 8 with a recorded fix commit]",
+    "acceptedCommits": [
+      {
+        "commit": "35c0652331bcfe697d35cdd677963e43f5401bfc",
+        "reason": "orchestrator bookkeeping: each non-merge commit touches only docs/audit/ (state commits taken before merging main or after resolving findings, and index commits), and each merge brings main's already-landed phases into this branch; none carries implementation"
+      },
+      {
+        "commit": "17e046e46c2b1eeb599b9fab807d2cb878db1522",
+        "reason": "orchestrator bookkeeping: each non-merge commit touches only docs/audit/ (state commits taken before merging main or after resolving findings, and index commits), and each merge brings main's already-landed phases into this branch; none carries implementation"
+      },
+      {
+        "commit": "c43eb96d9a9b0b4c56b18ffe1e01bc27d209ba5d",
+        "reason": "orchestrator bookkeeping: each non-merge commit touches only docs/audit/ (state commits taken before merging main or after resolving findings, and index commits), and each merge brings main's already-landed phases into this branch; none carries implementation"
+      },
+      {
+        "commit": "1ea75c74c02ef9c977018b9a918bc300037b1cbe",
+        "reason": "orchestrator bookkeeping: each non-merge commit touches only docs/audit/ (state commits taken before merging main or after resolving findings, and index commits), and each merge brings main's already-landed phases into this branch; none carries implementation"
+      },
+      {
+        "commit": "dd342c9322cc35a57ac874a74e07209aa346da47",
+        "reason": "orchestrator bookkeeping: each non-merge commit touches only docs/audit/ (state commits taken before merging main or after resolving findings, and index commits), and each merge brings main's already-landed phases into this branch; none carries implementation"
+      },
+      {
+        "commit": "475ddf61ed19f795302dc03699c7326b77bb3219",
+        "reason": "orchestrator bookkeeping: each non-merge commit touches only docs/audit/ (state commits taken before merging main or after resolving findings, and index commits), and each merge brings main's already-landed phases into this branch; none carries implementation"
+      },
+      {
+        "commit": "1d9d09af345a6ac4cbfc6ab0d5f4d5f4cd4ceca6",
+        "reason": "orchestrator bookkeeping: each non-merge commit touches only docs/audit/ (state commits taken before merging main or after resolving findings, and index commits), and each merge brings main's already-landed phases into this branch; none carries implementation"
+      },
+      {
+        "commit": "afb134b5e4e8812cf9f6c80742639fd77fae5e8b",
+        "reason": "orchestrator bookkeeping: each non-merge commit touches only docs/audit/ (state commits taken before merging main or after resolving findings, and index commits), and each merge brings main's already-landed phases into this branch; none carries implementation"
+      }
+    ]
   },
-  "summary": null,
+  "summary": "Two plugin writers running at once no longer silently drop each other's write. close-phase stamps mergedAt, mergedHead and the index stub under the index lock with an atomic restore, says when another session took the lock during its write, and reports a rollback that failed as the refused write still standing (exit failure). A stale journal lock is broken by exactly one waiter through an O_EXCL breaker with put-back, and two journal merges reaching one file through a link and its target never share a temp. Usage backfill keeps rows the metering hook appends during its window, including into a month file created during the rebuild, and never double-counts a session spanning a failed and a rewritten month. The import-layer lint refuses an os.replace or os.rename outside the sanctioned STATE_WRITERS, including after `import os.path` and `from os import *`. Phase review: 8 low findings (P107-R1..R8), all fixed by P107.5-gwk, P107.6-gwk and P107.7-gwk and resolved with their commits; the recorded phase gate (selftests, validate, plugin-validate, gate, report, lint, shots, interactive) is green and verify-invariants found no breach.",
   "tasks": [
     {
       "id": "P107.1",
       "title": "close-phase stamps the merge under the index lock with an atomic rollback",
-      "status": "pending",
+      "status": "done",
       "description": "stamp_merged and record_merged_head read, revalidate and write the phase file without the index lock that every other plan writer takes. So on the single-file layout, concurrent closes, or a close and a panel save, lost a write while both answered ok. _revalidated_write's rollback also rewrites the file in place with open(path, 'wb'). Take the lock that close-phase already takes for mirror_stub (_panel_write.acquire_index_lock), and re-read under it. Restore the prior bytes atomically through _panel_write.restore's temp-plus-replace; atomic_write_json would re-serialize the content rather than restore the bytes. When the lock cannot be taken after a merge has landed, the output is a sentence naming the re-run, never an unlocked write. The race cases run as subprocess children released together, with bounded trials. The deterministic held-lock and inode cases carry the red-first. Update close-phase's PLUGIN-BUILD-GUIDE.md section.",
       "files": [
         "plugins/audit/scripts/git/close-phase.py",
@@ -58,21 +166,40 @@
         "P100"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6422e846",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "close-phase.py now writes mergedAt, mergedHead and the index stub only while holding the index lock: a new under_index_lock takes _panel_write.acquire_index_lock, runs the write inside it and releases in a finally; stamp_merged and record_merged_head resolve and read the phase file only after the lock is taken (their bodies moved into _stamp_locked and _head_locked, with a project argument defaulting to the manifest's own tree), and mirror_stub goes through the same helper. When the lock cannot be taken nothing is written and the sentence says the merge has landed and to run close-phase again once the lock is free; a stamp not written exits 1 with the cleanup held back, and a backfill not written prints that mergedHead was not recorded. _revalidated_write's rollback restores the prior bytes atomically through _panel_write.snapshot and restore (temp file and replace) instead of rewriting in place, refusing before the write when the snapshot read nothing. PLUGIN-BUILD-GUIDE.md's close-phase section says the same. Cases lk1-lk7 in test_close_phase.py: a live holder of the real lock leaves both writes undone and names the re-run (lk1, lk2) and its allow twin lands once released (lk3); a rejected write comes back byte-identical through a new inode (lk4) and an accepted one stands (lk5); two closers racing on one single-file plan (lk6) and a stamp held against a panel save (lk7) lose nothing. Red-first proved through the helper: 149/155 at HEAD (lk1, lk2, lk3, lk4, lk6, lk7); the suite passed 155/155 twice, 20 s apart.",
+        "descriptive": "Landing a phase no longer loses its merge record when another phase lands, or a panel save happens, at the same moment; when the plan is busy it writes nothing and says to run again."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T21:25:50Z",
+      "completedAt": "2026-10-06T22:05:38Z",
+      "verifiedBy": [
+        "lk1",
+        "lk2",
+        "lk3",
+        "lk4",
+        "lk5",
+        "lk6",
+        "lk7"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T22:05:33Z.716402",
+        "status": "passed",
+        "at": "2026-10-06T22:05:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6422e846",
+        "at": "2026-10-06T22:05:38Z",
+        "basis": "orchestrator check: every plan write in close-phase runs under the index lock, the rollback restores bytes atomically, the unlocked case names the re-run; the race and lock cases were red at HEAD"
+      }
     },
     {
       "id": "P107.2",
       "title": "a stale journal lock is broken by exactly one waiter",
-      "status": "pending",
+      "status": "done",
       "description": "_acquire unlinks a lock older than LOCK_STALE_SECONDS. Waiters that both read the stale mtime can both unlink it, and the second removes the lock the first just took. Both then append with the same prev, and verify reports a tamper that never happened. That lands in a committed trail, which cannot be repaired without breaking every clone's chain. Claim the stale lock by renaming it to a name unique to the waiter, or by checking its identity before removing it, so exactly one waiter breaks it. _journal_io is on the hooks' per-call path, so `python3 tools/bench-hooks.py --gate` must stay green. The deterministic case carries the red-first; the stress case is bounded for sweep time.",
       "files": [
         "plugins/audit/scripts/governance/_journal_io.py",
@@ -97,21 +224,42 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b253b153",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_journal_io._acquire no longer unlinks a stale lock directly. A waiter that judges the lock stale takes a breaker (<lock>.break) with the same O_EXCL create the lock uses, re-checks the lock's age while holding it, and removes the lock only if it is still stale, releasing the breaker in a finally; a waiter that cannot take the breaker keeps waiting. A stale breaker (its owner died or stopped inside its own stat and unlink) is cleared the same careful way: renamed to a claim name unique to this waiter, its age re-checked, then removed, or, if it turns out fresh, put back with an O_EXCL create of the breaker name; EEXIST means another waiter holds the name, and any other refusal raises so the append declines instead of deleting a live breaker. The claim is released on every path, including a BaseException. The comment states what remains: a put-back window in which a third waiter can take the empty name or an owner can finish first, leaving a breaker nobody holds until it ages out (declined appends, never a forked chain), and a process stopped longer than LOCK_STALE_SECONDS, which no time-based lock can tell from a dead one. Cases sl0-sl8: deterministic interleavings for the overtaken lock breaker and the overtaken breaker clearer, allow twins, a refused put-back, an interrupt with the claim on disk, and a bounded stress port of the maintainer's stale-lock race (the race writer waits long enough that only a chain fork can turn it red). Mutations of each mechanism turned their cases red; bench-hooks --gate stayed green.",
+        "descriptive": "When several writers find the same stale journal lock, exactly one breaks it, so the committed trail no longer records a chain break nobody caused; the one window a time-based lock cannot close is written down where the code is."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T14:44:46Z",
+      "completedAt": "2026-10-06T15:36:06Z",
+      "verifiedBy": [
+        "sl0",
+        "sl1",
+        "sl2",
+        "sl3",
+        "sl4",
+        "sl5",
+        "sl6",
+        "sl7",
+        "sl8"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T15:31:01Z.b9ad25",
+        "status": "passed",
+        "at": "2026-10-06T15:31:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b253b153",
+        "at": "2026-10-06T15:36:06Z",
+        "basis": "audit-reviewer (task mode, two rounds): matches; low findings fixed (breaker cleanup asserted, stress wait raised, careful breaker clearing, put-back without hard links, claim released on every path)"
+      }
     },
     {
       "id": "P107.3",
       "title": "usage backfill keeps the rows appended to a month file during its window",
-      "status": "pending",
+      "status": "done",
       "description": "backfill reads the ledger, then rewrite_month replaces each month file, while the metering hook appends without a lock. So a row appended between the read and the replace was dropped. After its replace, backfill reads the old file's tail past the size it read, through a descriptor held across the replace, and appends the rows of sessions it did not re-read. No lock goes on the Stop hook's path, which runs every turn. Also decide the fixture's inset mode, where an in-set session's later save_cursor can win over backfill's: either close it, or state it in commands/usage.md as the remaining limit. usage.md's 'takes the shared usage lock' must also say that this lock excludes only another backfill.",
       "files": [
         "plugins/audit/scripts/usage/audit-usage.py",
@@ -138,21 +286,44 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "006341e4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "usage_ledger.open_month reads a month file through a descriptor it keeps open and returns the rows to keep plus that tail. rewrite_month builds one list (kept rows, added rows and the rows appended since the read) and makes one write-and-replace call through _replace_rows, the only place that writes the temp file and calls os.replace; after the replace it keeps reading the old file through the held descriptor until a wait passes in which no byte arrived and no half-written line is pending, and appends the rows of sessions the backfill did not re-read. On a platform that refuses to replace an open file it closes the descriptor, adds a final read and repeats the same call. append_rows on the Stop hook's path stays lock-free. audit-usage.py backfill opens each month just before rewriting it, and when a rewrite fails it names the month, saves no cursor for sessions with rows in it, leaves no temp file and exits 1 instead of reporting OK. commands/usage.md says the usage lock excludes only another backfill and states the remaining limits: inset mode (another session ending a turn during a backfill can come out short or doubled, repaired by re-running), the bounded settle, and the platform case. Cases bw1-bw11, including a bounded port of the maintainer's foreign-appender race that lost rows at HEAD, the dropped-session-then-foreign-row settle case, and the failed-rewrite case with its allow twin; mutations of each rule turned their cases red.",
+        "descriptive": "Usage backfill no longer drops rows other sessions append while it rebuilds a month file, decides the old file is quiet from bytes rather than filtered rows, and makes a failed month rewrite visible instead of reporting OK; the metering hook still takes no lock."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T14:44:46Z",
+      "completedAt": "2026-10-06T15:36:07Z",
+      "verifiedBy": [
+        "bw1",
+        "bw2",
+        "bw3",
+        "bw4",
+        "bw5",
+        "bw6",
+        "bw7",
+        "bw8",
+        "bw9",
+        "bw10",
+        "bw11"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-06T15:33:01Z.eeb7cc",
+        "status": "passed",
+        "at": "2026-10-06T15:33:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "006341e4",
+        "at": "2026-10-06T15:36:07Z",
+        "basis": "audit-reviewer (task mode): matches; three low findings and one adjacent gap fixed as proposed, each guarded by a mutation-proven case"
+      }
     },
     {
       "id": "P107.4",
       "title": "a state file is replaced only through a sanctioned writer, and a _deps lint refuses any other site",
-      "status": "pending",
+      "status": "done",
       "description": "The races above are instances of one class: a state file replaced outside the sanctioned writers. A new state_write_violations() in _deps.py reports every os.replace and os.rename under scripts/ and hooks/ that sits outside a table of sanctioned sites. Each row carries a reason. The sanctioned sites are atomic_write_json, hooks/_config.atomic_write_text, _panel_write.restore, the lock and journal-lock primitives, the merge driver's write of git's file, and any other site that is justified rather than routed. List the sites with `grep -rnE 'os\\.(replace|rename)\\(' plugins/audit/scripts plugins/audit/hooks`. Reduce sites where a sanctioned writer fits. usage_ledger's save_cursor and rewrite_month use a fixed '.tmp' name that concurrent writers can share, so both go through a new atomic text writer in _manifest_io, which atomic_write_json then writes through, keeping one implementation. The lint gets a row in tools/prove-gates.py and a line in PLUGIN-BUILD-GUIDE.md's _deps section. P103's fsync-docstring fix also edits _manifest_io.py, so serialize with it.",
       "files": [
         "plugins/audit/scripts/_deps.py",
@@ -161,7 +332,8 @@
         "plugins/audit/scripts/manifest/_manifest_io.py",
         "plugins/audit/scripts/usage/usage_ledger.py",
         "plugins/audit/tests/test_usage_ledger.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/gate-parity.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -186,16 +358,217 @@
         "P107.2",
         "P107.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1fdbbee4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "A state file is now replaced only through a sanctioned writer. _manifest_io.py gains atomic_write_text (an mkstemp temp in the target's directory, os.replace, removal on failure), and atomic_write_json writes through it, so there is one implementation. usage_ledger's save_cursor and the month rewrite, which shared a fixed '<target>.tmp' name that two writers could both use, now go through atomic_write_text, with one row formatter for both writers. _deps.py gains state_write_violations: it reads every os.replace and os.rename under scripts/ and hooks/ by AST (through os, a module alias or a name imported from os) and reports, by file, function and line, a site with no row in STATE_WRITERS, a row with no reason, a row that names no live site, and a file that will not parse. The table holds the sites that exist after the branch took main - both atomic text writers, _panel_write.restore, the lock and journal-lock primitives, the merge driver's write, the migration's shard retirement, the journal archive, the evidence import, the invariants clone id and the panel's owner-only pidfile - each with its reason; the close-phase, journal-breaker and backfill writers of this phase are accepted. What it cannot see (shutil.move, os.renames, os.link, Path methods, truncating writes) is stated in its docstring. Cases sw1-sw6 in test__deps.py and tw1-tw4 in test_usage_ledger.py; red-first proved through the helper (78/81 at HEAD; the lint's absence at HEAD named by --introduces); prove-gates rows in both directions, proven in a scratch repo (gutted lint reddens sw3, sw5, sw6; widened lint reddens sw1, sw4, sw5). PLUGIN-BUILD-GUIDE.md's _deps section describes the lint, and tools/gate-parity.py classifies STATE_WRITERS among the audited exemption tables, naming state_write_violations as its instrument.",
+        "descriptive": "Every place the plugin swaps a state file into place now goes through an approved writer, and the build fails on any new place that does not, so two writers can no longer clobber each other through a shared temporary file."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-06T22:06:25Z",
+      "completedAt": "2026-10-07T00:05:56Z",
+      "verifiedBy": [
+        "sw1",
+        "sw2",
+        "sw3",
+        "sw4",
+        "sw5",
+        "sw6",
+        "tw1",
+        "tw2",
+        "tw3",
+        "tw4"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T00:05:45Z.e28f7f",
+        "status": "passed",
+        "at": "2026-10-07T00:05:45Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "1fdbbee4",
+        "at": "2026-10-07T00:05:56Z",
+        "basis": "orchestrator check: the lint, its table and the two rerouted ledger writers match the description; red-first proved and the lint proven in both directions by prove-gates"
+      }
+    },
+    {
+      "id": "P107.5-gwk",
+      "title": "a backfill keeps a row appended while it creates a missing month file, and its cursor docs say what it guarantees",
+      "status": "done",
+      "description": "Fix the phase review's usage-ledger findings P107-R1, P107-R2, P107-R6 and P107-R7 (see review.findings in this phase).\n- R1: rewrite_month must hold a descriptor even when the month file does not exist yet. Create it when missing (os.open with O_RDONLY|O_CREAT) and keep it open, so a row the metering hook appends while the file is being created is drained before the replace or settled after it, exactly like every other month. A backfill that rebuilds a lost ledger must never retire a file the hook created during its window.\n- R6: the comment at audit-usage.py's held-back cursors, and usage.md's cursor sentence, must say what the code guarantees. Hold a session's cursor back only when every month that session spans failed to rewrite (the structurally correct option, so a rewritten month is never double-counted). If that cannot be done without a second state file, state the double-count until the next --backfill plainly instead.\n- R2: usage.md's 'What that still leaves open' list renders as one list.\n- R7: PLUGIN-BUILD-GUIDE.md's audit-usage.py section stops saying the backfill lock protects the rewrite. Match the module docstring: the lock excludes only another backfill, and each month's rewrite carries the rows appended during it.",
+      "files": [
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/tests/test_usage_ledger.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/tests/test_audit_usage.py",
+        "plugins/audit/commands/usage.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_usage_ledger.py: a row a writer appends to a month file created during a backfill of a month that had no file survives the rewrite",
+          "plugins/audit/tests/test_audit_usage.py: a session spanning a month that failed to rewrite and one that was rewritten is not counted twice in the rewritten month by the next metering pass, or the documented double-count is what the case asserts"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "675777a3",
+      "outcome": {
+        "technical": "R1 (usage_ledger.rewrite_month): when the tail holds no descriptor because the month file did not exist, the rewrite now creates it with os.open(O_RDONLY|O_CREAT, plus O_BINARY where defined) and holds it through os.fdopen('rb'), so a row the metering hook appends while the file is being created is drained before the replace or settled after it, exactly like every other month. If the replace then fails, the created empty file stays (it holds no row, so readers see the month unchanged); deleting it could race a writer that had just created it. open_month's docstring matches.\nR6 (audit-usage.py backfill): a session's cursor is held back only when every month it spans failed to rewrite (spanned <= set(failed), non-empty); a session with rows in a rewritten month gets its new cursor saved, so the rewritten month is never double-counted by the next metering pass. Trade-off, stated in the comment, the [FAIL] message and usage.md: that session's rows in the failed month are missing until the next --backfill.\nR2 (usage.md): the platform-refuses-open-file bullet is back inside 'What that still leaves open', so the list renders as one; added the created-empty month and the rewritten failed-month/cursor paragraphs.\nR7 (PLUGIN-BUILD-GUIDE.md, audit-usage.py section): the lock excludes only another backfill, and each month's rewrite carries rows appended during it, matching the module docstring.\nTests: test_usage_ledger nm1 (a row appended to a month file created during a backfill survives the rewrite) and nm2 (allow twin: no writer, exactly the rows handed over); test_audit_usage bw12 (a session spanning a failed and a rewritten month is not counted twice in the rewritten month by the next metering pass) and bw13 (the failed month lacks the session's rows until the next --backfill, which restores them); existing bw10 is the twin for never holding a cursor back. Red-first proved through the helper at HEAD 1fdbbee4: test_usage_ledger 82/83 (nm1), test_audit_usage 127/129 (bw12, bw13). Suites 83/83 and 129/129; ruff clean; prose-number and house-style lints empty.",
+        "descriptive": "A backfill no longer erases a row the hook writes into a month file created during the rebuild, a session spanning a failed and a rewritten month is no longer counted twice in the rewritten one, and the usage docs and build guide say what the backfill lock and cursors actually guarantee."
+      },
+      "startedAt": "2026-10-07T00:14:33Z",
+      "completedAt": "2026-10-07T00:32:00Z",
+      "verifiedBy": [
+        "nm1",
+        "nm2",
+        "bw12",
+        "bw13"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T00:27:14Z.e1de8f",
+        "status": "passed",
+        "at": "2026-10-07T00:27:14Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "675777a3",
+        "at": "2026-10-07T00:32:00Z",
+        "basis": "orchestrator check: R1, R2, R6 and R7 each addressed as the description asks, the structurally correct cursor option taken, red-first proved through the helper with allow twins"
+      }
+    },
+    {
+      "id": "P107.6-gwk",
+      "title": "close-phase reports a lock taken over during its write and a rollback that failed",
+      "status": "done",
+      "description": "Fix the phase review's close-phase findings P107-R3 and P107-R4 (see review.findings in this phase).\n- R3: under_index_lock must not discard a declined index-lock release. A declined release is the only sign that another session took the index lock while this close was writing. Return the release sentence and surface it in the close answer (stampWhy/stubWhy or a warning line), the way write_composition adds `said` to its warnings, so a stamp written under a lock that was taken over never reports clean success.\n- R4: when _revalidated_write's restore of a refused write itself fails (os.replace onto a file a reader holds open on Windows, a full disk), the message must say that the refused write landed and was NOT rolled back: '<path> was written and introduced <findings>; restoring its prior bytes failed: <exc> - the plan holds the refused write'. It must not say the path could not be written. That path's exit code must be a failure.",
+      "files": [
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/tests/test_close_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_close_phase.py: a stamp whose index-lock release is declined reports the release sentence in the close answer, and an ordinary release adds no note",
+          "plugins/audit/tests/test_close_phase.py: a refused write whose restore raises is reported as written-and-not-rolled-back with a failing exit, never as could-not-be-written"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "1645c074",
+      "outcome": {
+        "technical": "R3 (declined lock release): under_index_lock now returns (taken, got, released), where released is the sentence _panel_write.release_index_lock returns when it declines, else \"\". stamp_merged, mirror_stub and record_merged_head each return one more trailing element, notes = _notes(released, unrestored). _told turns notes into answer fields (lockWarnings: [sentence], planUnrestored: <sentence>), _merged_told combines them; backfill_merged_head and main's _stamp carry them into the close answer and --json; _render_told prints \"WARNING: another session took the index lock while this run was writing under it - <sentence>\" from render() and the branch-gone path. A declined release is a warning and does not change the exit code (the panel's callers carry a refused release into warnings the same way).\nR4 (rollback that fails): _revalidated_write wraps a failing _panel_write.restore in RefusedWriteStands, whose message is '<path> was written and introduced <findings>; restoring its prior bytes failed: <exc> - the plan holds the refused write'. _stamp_locked, _head_locked and _mirror_locked catch it before their generic 'could not be written' handler and return unrestored=True. When the answer carries planUnrestored, close() adds a blocked row, holds back the cleanup and returns E_FAIL, and the 'mergedAt NOT written' / 'NOT re-mirrored' lines are not printed beside it; render() prints 'REFUSED WRITE NOT ROLLED BACK: <sentence>'. The branch-gone path now returns E_FAIL when its backfill stranded a refused write. A stranded write found during a re-mirror or head backfill fails the run too. No other caller of the changed functions exists outside close-phase.py (grep over scripts, hooks and tools); existing unpacking sites in the suite read the leading fields by slice.\nTests: test_close_phase to1-to8 (each deny case with its allow twin: to2, to4, to6, to8). Red-first proved through the helper at HEAD 1fdbbee4: 157/163 with exactly to1, to2, to3, to5, to6, to7 failing. Suite 163/163; ruff, vermin and the house lints clean.",
+        "descriptive": "close-phase now says in its answer when another session took the index lock while it was stamping, and when a refused write could not be rolled back it says the plan still holds that write and exits as a failure, instead of saying the file could not be written."
+      },
+      "startedAt": "2026-10-07T00:14:33Z",
+      "completedAt": "2026-10-07T00:32:01Z",
+      "verifiedBy": [
+        "to1",
+        "to2",
+        "to3",
+        "to4",
+        "to5",
+        "to6",
+        "to7",
+        "to8"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T00:29:22Z.c3ba9d",
+        "status": "passed",
+        "at": "2026-10-07T00:29:22Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "1645c074",
+        "at": "2026-10-07T00:32:01Z",
+        "basis": "orchestrator check: R3 and R4 addressed in every writer that goes through the lock, red-first proved through the helper with an allow twin per deny case"
+      }
+    },
+    {
+      "id": "P107.7-gwk",
+      "title": "the state-write lint sees os bound by a dotted import, and the journal merge temp is never shared",
+      "status": "done",
+      "description": "Fix the phase review's findings P107-R5 and P107-R8 (see review.findings in this phase).\n- R5: _deps._os_bindings must bind the name `os` for `import os.path` (or any `import os.<sub>` with no asname), because that statement binds `os`. An os.replace or os.rename after that spelling is then seen by state_write_violations. If any spelling stays invisible, name it in the lint's WHAT IT CANNOT SEE list.\n- R8: _journal_io.write_merged writes a fixed temp at realpath(path)+'.merged' while its lock is taken on `path`. So a link and its target take different locks and share one temp. Route the temp through a unique name in the destination directory (mkstemp, or the house atomic writer on the resolved destination), so no two callers can share it whatever name they use. Keep the STATE_WRITERS row's reason true for every caller, and remove the row if the site no longer needs one.",
+      "files": [
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/tests/test__deps.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__deps.py: a fixture file that imports os.path and then calls os.replace is reported by state_write_violations, and the same call through a plain import os in a sanctioned site is not",
+          "plugins/audit/tests/test__journal_io.py: two write_merged calls reaching one journal through a link and its target never share a temp file, and the merged journal holds both writes"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "359a0870",
+      "outcome": {
+        "technical": "R5 (_deps._os_bindings): binds `os` for `import os.<sub>` with no alias, and binds bare replace/rename for `from os import *`; `import os.path as p` still binds nothing (p is the submodule). state_write_violations' WHAT IT CANNOT SEE list now names os reached without an import naming it (__import__, importlib, sys.modules, or a second name assigned from the module).\nR8 (_journal_io.write_merged): the temp is now tempfile.mkstemp(dir=dirname(realpath(path)), prefix=basename+'.', suffix='.merged'), so a link and its target can never share one; the suffix is not .jsonl, so journal_files never reads a temp; the temp is removed on failure; the lock stays on the name the caller passed; the destination's mode is copied onto the temp so a merge never narrows a journal file's mode. mkstemp is used inline because _journal_io and _manifest_io are both layer 1 and hooks load _journal_io on every tool call. The STATE_WRITERS row for write_merged stays (it still calls os.replace) with its reason rewritten to the mkstemp name.\nTests: test__deps sw7 (import os.path + os.replace and from os import * + rename, each reported by file and line) and sw8 (allow twin: plain import os in the sanctioned function); test__journal_io mw1-mw3 (a real symlink plus a stranger file at the target's name + '.merged', the overlap made deterministic by wrapping os.replace: the temps differ and the stranger is untouched; both writes land whole in order and the link stays a link; no temp is left). Red-first proved through the helper at HEAD 1fdbbee4: test__deps 306/307 (sw7), test__journal_io 206/209 (mw1-mw3; HEAD's outer write raised FileNotFoundError). Suites 307/307 and 209/209; ruff, vermin and the house lints clean.",
+        "descriptive": "The state-write lint now catches os.replace and os.rename after `import os.path` and `from os import *`, and two journal merges reaching one file through a link and its target can no longer share a temp file and lose a write."
+      },
+      "startedAt": "2026-10-07T00:14:33Z",
+      "completedAt": "2026-10-07T00:32:01Z",
+      "verifiedBy": [
+        "sw7",
+        "sw8",
+        "mw1",
+        "mw2",
+        "mw3"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T00:31:31Z.6a19a1",
+        "status": "passed",
+        "at": "2026-10-07T00:31:31Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "359a0870",
+        "at": "2026-10-07T00:32:01Z",
+        "basis": "orchestrator check: R5 and R8 addressed, the STATE_WRITERS reason now true for every caller, red-first proved through the helper with an allow twin"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-10-06T14:44:46Z",
+  "testEvidence": {
+    "runId": "2026-10-07T00:39:44Z.802b90",
+    "status": "passed",
+    "at": "2026-10-07T00:39:44Z"
+  }
 }
