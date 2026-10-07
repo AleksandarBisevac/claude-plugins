@@ -720,7 +720,7 @@
     {
       "id": "P114",
       "title": "status names each locked phase's own remaining work and the copy it read",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P114.json"
     }
   ],
@@ -1147,7 +1147,9 @@
       "P104.13-tog",
       "P104.17-tog",
       "P112.1-uce",
-      "P112.3-uce"
+      "P112.3-uce",
+      "P114.1",
+      "P114.2-ffv"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1669,7 +1671,10 @@
       "P80.17-rtb",
       "P81.12",
       "P103.5",
-      "P112.2-uce"
+      "P112.2-uce",
+      "P114.2-ffv",
+      "P114.3-ffv",
+      "P114.4-ffv"
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1",
@@ -3249,7 +3254,9 @@
       "P80.17-rtb",
       "P81.12",
       "P81.10",
-      "P114.1"
+      "P114.1",
+      "P114.2-ffv",
+      "P114.3-ffv"
     ],
     "plugins/audit/scripts/status/audit-doctor.py": [
       "P10.3",
@@ -3313,7 +3320,10 @@
       "P104.13-tog",
       "P104.17-tog",
       "P112.2-uce",
-      "P114.1"
+      "P114.1",
+      "P114.2-ffv",
+      "P114.3-ffv",
+      "P114.4-ffv"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -4004,7 +4014,9 @@
       "P80.17-rtb",
       "P81.12",
       "P81.10",
-      "P114.1"
+      "P114.1",
+      "P114.2-ffv",
+      "P114.3-ffv"
     ],
     "plugins/audit/tests/test__status_facts.py: --fail-on failing-tests refuses a run whose record says the tree was mutated": [
       "P32.7"
@@ -4115,7 +4127,10 @@
       "P104.11-tog",
       "P104.13-tog",
       "P112.2-uce",
-      "P114.1"
+      "P114.1",
+      "P114.2-ffv",
+      "P114.3-ffv",
+      "P114.4-ffv"
     ],
     "plugins/audit/tests/test_audit_task.py": [
       "P22.9",
@@ -6018,7 +6033,7 @@
     {
       "id": "BUG-19",
       "title": "status's UNFINISHED line gives every locked phase the plan-wide ready count",
-      "status": "in_progress",
+      "status": "fixed",
       "severity": "med",
       "reportedAt": "2026-10-07T06:45:52Z",
       "reportedBy": null,
@@ -6031,7 +6046,7 @@
         "plugins/audit/scripts/status/audit-status.py"
       ],
       "taskId": "P114.1",
-      "fixedIn": null,
+      "fixedIn": "e04e7557",
       "notes": null
     }
   ],
