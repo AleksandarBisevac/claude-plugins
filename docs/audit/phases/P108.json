@@ -21,7 +21,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P108-R1",
@@ -332,7 +332,7 @@
     ],
     "outcome": "[findings: 34 - 2 high, 16 med, 16 low; 34 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "For every documented operation class, the plan gate's verdict at each tier is now an executable contract in test_hooks.py. A shell write gets the same verdict as an Edit, through one free-file slot shared in hooks/_config. The guard reads writes inside subshells, command substitutions, bash -c and eval, cp/mv/install destinations (including directories made earlier in the same command and recursive copies), git --output, interpreter writes with a keyword mode, and editor or pager settings that git runs. It stays within its time budget on wide copies. A quoted argument is read as text only where it provably is text, so commit messages and grep patterns that mention a redirect are not refused. The shapes the grammar deliberately does not read are named in SECURITY.md and recorded per tier as reasoned known divergences, rather than chased with more grammar. A refusal names a sanctioned tool, and a classifier with no verdict is recorded as could-not-run.\n\nThe journal: the plugin's own rows redact a machine path and are always written. Caller free text carrying one is refused at the verb before any write, gate commands and verified-by values included. The writer and the commit-time detector read one shared table of identity shapes, file URLs and home slugs included, and the remaining over- and under-match shapes are named.\n\nThe review ran six rounds. Rounds three to five found regressions introduced by the earlier fixes (a recursive copy slower than the hook timeout, an env prefix turning prose into a write, a slug detector regression, a trailing slash changing a verdict); each was fixed and proved by mutation in both directions. The phase gate is green, with screenshots and the interactive check.\n\nThe invariants check reports a manifest-revalidated breach on earlier task commits. Each recorded a task linked to a bug that reached the committed index only in a later index commit; that is the same bookkeeping-order class as the bug-link ordering finding recorded for the plugin. The current manifest validates, and every linked bug is reciprocal.",
   "tasks": [
     {
       "id": "P108.1",
@@ -1686,5 +1686,10 @@
       }
     }
   ],
-  "startedAt": "2026-10-06T21:26:46Z"
+  "startedAt": "2026-10-06T21:26:46Z",
+  "testEvidence": {
+    "runId": "2026-10-07T10:38:35Z.b7ddea",
+    "status": "passed",
+    "at": "2026-10-07T10:38:35Z"
+  }
 }
