@@ -1,7 +1,7 @@
 {
   "id": "P115",
   "title": "status shows every in-flight phase from the copy that holds it live",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "every surface of /audit:status - ready list, phase table, counts, --short and --json - reads an in-flight phase from its live copy through one reader and says which copy it read",
   "testGate": [
@@ -19,7 +19,7 @@
   ],
   "baseRef": "79b03eae6c390c13e0a88b5f79bc8336ec316734",
   "branch": "audit/p115-status-shows-every-in-flight-p",
-  "mergedAt": null,
+  "mergedAt": "2026-10-07T12:16:29Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -622,5 +622,6 @@
     "runId": "2026-10-07T12:15:54Z.ae7968",
     "status": "passed",
     "at": "2026-10-07T12:15:54Z"
-  }
+  },
+  "mergedHead": "b72e48d37b0d8837afd012068ea3c770ebd3fe73"
 }
