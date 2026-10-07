@@ -21,7 +21,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P102-R1",
@@ -116,7 +116,7 @@
     ],
     "outcome": "[findings: 10 - 1 high, 2 med, 7 low; 10 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "stamp-verification red now proves a red in a jest or vitest project the way it does under pytest. The runner readers live in one module, governance/_runner_output.py. red reads jest and vitest tallies and failing cases, coloured output and node:assert hints included. It credits a failure to the task by suite path and title chain. A new test file's baseline runs with the file absent. The project's ignored dependency directories are linked into the throwaway entry by entry, and a directory holding a link into the tree is skipped and named rather than refusing the run. The docs name the runners red reads, held by a drift check. Every argparse entry point, and the hand-parsed verb dispatcher, prints the shared usage hint, so an older cached copy asked for a newer verb names the newer installed copy; a lint holds both shapes. The orchestrator resolves the plugin root per spawn. The leftover-throwaway check no longer mistakes a project's own checkout for a stray throwaway.\n\nThe review ran two rounds. The first found a regression on the Python path (an editable install refused the whole run) and two jest reading gaps; all are fixed, and the second round found only low items, now fixed too. The phase gate is green, and the invariants check found no breach.",
   "tasks": [
     {
       "id": "P102.1",
@@ -994,5 +994,10 @@
       }
     }
   ],
-  "startedAt": "2026-10-06T21:26:47Z"
+  "startedAt": "2026-10-06T21:26:47Z",
+  "testEvidence": {
+    "runId": "2026-10-07T11:35:06Z.5df767",
+    "status": "passed",
+    "at": "2026-10-07T11:35:06Z"
+  }
 }
