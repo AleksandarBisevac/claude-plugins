@@ -648,7 +648,7 @@
     {
       "id": "P102",
       "title": "red-first proves a red outside Python",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P102.json"
     },
     {
@@ -1100,7 +1100,9 @@
       "P100.1",
       "P100.2",
       "P100.3-zxo",
-      "P103.8"
+      "P103.8",
+      "P102.6",
+      "P102.7"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1406,7 +1408,8 @@
       "P102.7",
       "P102.8",
       "P108.3",
-      "P100.4-zxo"
+      "P100.4-zxo",
+      "P102.6"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -1924,7 +1927,8 @@
       "P102.11",
       "P106.2",
       "P106.3",
-      "P108.3"
+      "P108.3",
+      "P102.6"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -3697,7 +3701,8 @@
       "P80.5",
       "P80.10",
       "P102.10",
-      "P100.3-zxo"
+      "P100.3-zxo",
+      "P102.3"
     ],
     "plugins/audit/tests/test__panel_composition.py": [
       "P18.7",
