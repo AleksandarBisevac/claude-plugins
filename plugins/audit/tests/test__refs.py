@@ -2730,7 +2730,7 @@ def _cases(check):
           % (_rv_compile,),
           _rv_compile == [])
 
-    # --- (cv) P108.3: a classifier no-verdict is `could-not-run`, never a fail --
+    # --- (cv) a classifier no-verdict is `could-not-run`, never a fail --
     # Claude Code's auto-mode permission classifier can refuse a tool call with
     # text saying it reached no verdict ('auto mode cannot determine the safety'
     # or 'gave no verdict', the wording seen in 2.1.2xx transcripts). The

@@ -28,28 +28,36 @@
         "severity": "high",
         "file": "plugins/audit/hooks/journal-writes.py:1234-1250; scripts/governance/_journal_io.py:1741-1755,1558-1578",
         "issue": "The pre-hash machine-path refusal makes the hook's own manifest rows droppable with no sign: journal-writes renders task-field values into details.changes from/to, a value holding a home path makes _append raise, append() swallows it, and the hook exits 0 with no manifest.edit row - and an edit that corrects such a value can never be journalled either; SECURITY.md still says every manifest write appends a row.",
-        "resolution": "Do not refuse rows the plugin builds itself: rewrite the offending token in place (as redacted_text does for program output) so the write is still recorded; keep the hard refusal only for caller free text at the verb boundary; a journal-writes case where a manifest edit holding a home path still yields a manifest.edit row without the path."
+        "resolution": "fixed in P108.10-4gh (179d4f18): Do not refuse rows the plugin builds itself: rewrite the offending token in place (as redacted_text does for program output) so the write is still recorded; keep the hard refusal only for caller free text at the verb boundary; a journal-writes case where a manifest edit holding a home path still yields a manifest.edit row without the path.",
+        "fixTask": "P108.10-4gh",
+        "commit": "179d4f18"
       },
       {
         "id": "P108-R2",
         "severity": "high",
         "file": "plugins/audit/scripts/manifest/audit-task.py:4697-4705,2056-2072; set-priority.py; derive-phase-gate.py; panel/_panel_write.py:1413-1423",
         "issue": "For CLI and panel verbs the refusal lands after the manifest write and is swallowed: `audit-task note ... --text '<a home path>'` exits 0, the path is committed in the phase shard, no journal row is written, and the field/shape/remedy text never reaches the user - the reverse of the intent.",
-        "resolution": "Expose the check (a public _journal_io check on caller free text) and call it in each verb before the plan or panel save, refusing with a non-zero exit and the field/shape/remedy text so neither the manifest nor the journal takes the value; carry any later append failure's text into journaledWhy; verb-level cases (manifest unchanged, exit non-zero, message names the field)."
+        "resolution": "fixed in P108.10-4gh (179d4f18): Expose the check (a public _journal_io check on caller free text) and call it in each verb before the plan or panel save, refusing with a non-zero exit and the field/shape/remedy text so neither the manifest nor the journal takes the value; carry any later append failure's text into journaledWhy; verb-level cases (manifest unchanged, exit non-zero, message names the field).",
+        "fixTask": "P108.10-4gh",
+        "commit": "179d4f18"
       },
       {
         "id": "P108-R3",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_journal_io.py:1430-1446",
         "issue": "machine_path_shape checks a boundary after the checkout root but not before it, so with a short root (/src, /app, /repo, /workspace in containers) any text containing that segment ('lib/src/foo.ts', a URL) is refused as checkout-root; and the detector's over-flagging patterns (a relative path whose first segment is the word home reads as a home directory) are now a hard refusal with no baseline.",
-        "resolution": "Require a token start before the root too, with cases for short roots where a relative path containing the segment is written unchanged; decide whether a relative 'home/<x>' at token start refuses at the writer or is only flagged by the detector."
+        "resolution": "fixed in P108.10-4gh (179d4f18): Require a token start before the root too, with cases for short roots where a relative path containing the segment is written unchanged; decide whether a relative 'home/<x>' at token start refuses at the writer or is only flagged by the detector.",
+        "fixTask": "P108.10-4gh",
+        "commit": "179d4f18"
       },
       {
         "id": "P108-R4",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_journal_io.py:1539-1578,1668 (via _scoped_commit.py:715-734, close-phase.py:1200-1216)",
         "issue": "The check applies to every summary and details value, including program output: a scoped-commit withdrawal whose reason is git's stderr naming an outside .git path in a linked worktree under a home directory is refused and the withdrawal row lost, where the module's rule for program output was redaction.",
-        "resolution": "Route program-produced fields (withdraw reasons, verdict sentences, close-phase basis) through the redaction path, keep refusal for caller-supplied text, with a case for a withdrawal reason quoting an outside .git path."
+        "resolution": "fixed in P108.10-4gh (179d4f18): Route program-produced fields (withdraw reasons, verdict sentences, close-phase basis) through the redaction path, keep refusal for caller-supplied text, with a case for a withdrawal reason quoting an outside .git path.",
+        "fixTask": "P108.10-4gh",
+        "commit": "179d4f18"
       },
       {
         "id": "P108-R5",
@@ -63,7 +71,9 @@
         "severity": "med",
         "file": "plugins/audit/hooks/guard-secrets-read.py:1573-1580,2509; tests/test_hooks.py:49-53; SECURITY.md:419-440",
         "issue": "Real bypasses at the deny tier, stated only in code: `bash -c \"sed -i ... src/app.py\"` and `eval \"sed -i ...\"` are allowed where bare sed -i is denied; `sh -c \"sed -i ... <journal>\"` and `python3 -c \"open('<journal>','a')...\"` are allowed while the journal-write class says deny at every tier; test_hooks.py says shapes left out of its table are the ones the security document lists as open, which these are not.",
-        "resolution": "Close them: the shell-write arm reads the command inside a bash -c / sh -c / eval argument through the shared wrapper readers, and the interpreter arm grades a journal target; cases at every tier; anything left open listed in SECURITY.md and as test_hooks rows marked today with a contradicts basis."
+        "resolution": "fixed in P108.11-4gh (fb2f68fa): Close them: the shell-write arm reads the command inside a bash -c / sh -c / eval argument through the shared wrapper readers, and the interpreter arm grades a journal target; cases at every tier; anything left open listed in SECURITY.md and as test_hooks rows marked today with a contradicts basis.",
+        "fixTask": "P108.11-4gh",
+        "commit": "fb2f68fa"
       },
       {
         "id": "P108-R7",
@@ -77,10 +87,12 @@
         "severity": "low",
         "file": "plugins/audit/hooks/guard-secrets-read.py:1589-1605",
         "issue": "cp, mv and install into a source file or the journal are allowed at deny: the shell write grammar reads only redirect, tee and sed -i (pre-existing).",
-        "resolution": "Read the destination operand of cp/mv/install, or name the gap in SECURITY.md with the other residuals."
+        "resolution": "fixed in P108.11-4gh (fb2f68fa): Read the destination operand of cp/mv/install, or name the gap in SECURITY.md with the other residuals.",
+        "fixTask": "P108.11-4gh",
+        "commit": "fb2f68fa"
       }
     ],
-    "outcome": "[findings: 8 - 2 high, 4 med, 2 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 8 - 2 high, 4 med, 2 low; 6 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -768,7 +780,7 @@
     {
       "id": "P108.11-4gh",
       "title": "a write inside bash -c, eval, cp/mv/install or an interpreter journal append gets the bare form's verdict",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P108-R6 and P108-R8. They are real bypasses at the deny tier.\n\nguard-secrets-read's shell-write arm also reads three things it misses today:\n- the command inside a `bash -c` / `sh -c` / `zsh -c` argument and an `eval` argument;\n- the destination operand of cp, mv and install;\n- for the journal, an interpreter write (python3 -c / a heredoc program that opens a journal file for writing or appending).\n\nIt reads them through the shared shell readers in hooks/_config (the wrapper unwrapping it already uses for env, sudo, xargs and the like), never a second grammar. If unwrapping a `-c` argument needs a change to _config, make it there; hooks/_config.py is in this task's files.\n\nEach form gets the same verdict as the bare form at every tier:\n- `bash -c \"sed -i ... src/app.py\"`\n- `eval \"sed -i ...\"`\n- `sh -c \"sed -i ... <journal>\"`\n- `python3 -c \"open('<journal>','a')...\"`\n- `cp notes.md <journal>`\n- `cp x src/app.py`\n\nThe allow twins stay allowed:\n- `bash -c \"ls src\"`\n- `eval \"echo hi\"`\n- `cp src/app.py /tmp/x`\n- a program that only reads the journal\n\ntest_hooks.py gains rows for these shapes in their classes. Any shape that is still left open is listed in KNOWN_DIVERGENCE with today and contradicts set, so the contract records the gap.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -796,24 +808,46 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fb2f68fa",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "hooks/_config.py: shell_words (the former _dir_change_words, now public and used by effective_cwd; it reads a backslash before $, a backtick, \" or a backslash inside double quotes, and before a quote outside them, as an escape); _handed_command and handed_commands(text) read the command a shell's -c or eval runs (the program found past wrappers through program_candidates, so sudo bash -c and env A=1 sh -c read like bash -c; a c anywhere in a short-option cluster counts; the command is the first operand after the options, value-taking options skipped; an operand before -c is a script run; eval joins its arguments as the shell does); program_name(word) is a public name for _program_of; effective_cwd follows a literal cd inside eval (unreadable returns None), while a cd inside bash -c moves only the child shell. guard-secrets-read.py: _simple_commands cuts at separators and group openers/closers outside quotes; _copy_destinations/_copy_targets read cp, mv and install in command position (the last operand is written; a source's name inside the destination for a trailing slash, several sources, or -t/--target-directory; install -d writes nothing) and _shell_write_targets includes them; _write_views(text, cwd) returns the text plus every command it hands to a shell or eval, each placed at effective_cwd, nested up to _MAX_HANDED levels, and the source, manifest and journal write checks go through every view; _journal_write_hit also takes the interpreter clauses' write targets, so open(<journal>, 'a') in python3 -c or a heredoc program is refused at every tier while a read-only program is not. The header, the _shell_states comment, the docstrings and the journal refusal text name the new forms. Decisions: an eval's literal cd is followed (same shell), an eval of a substitution leaves the walk alone; a destination written without a trailing slash is read as the file it names; an interpreter write to the manifest stays a stated residual (the scope named the journal). Found, not fixed: guard-history-rewrite keeps its own -c/eval reader (its eval takes only the next word) - one grammar instead of two is a follow-up.\nTests: test_guard_secrets_read stage ww (ww1 sed -i handed to bash/sh/zsh -c, sh -ec, sudo bash -c and eval; ww2 cp/mv/install onto a source file; ww3 a cd inside bash -c; ww4 seven journal forms; ww5 eight allow twins taking no slot; ww6 the destination grammar), each graded case compared tier by tier against the bare form; test__config hc1-hc3; test_hooks rows b17c, b17v, b17p, b10s, b10e, b10i, b10c, n20-n22, b21 (KNOWN_DIVERGENCE still empty). Red-first proved through the helper at HEAD bd415c44 for all three suites (546/564, 281/284, 150/159). Over-fire mutations red: dropping the -c requirement (hc2), a quote-blind copy split (ww5). Suites 564/564, 284/284, 159/159 and every neighbouring guard suite green; ruff, vermin, bench-hooks --gate (3.11 not measured) clean.",
+        "descriptive": "Wrapping a file write in bash -c or eval, copying over a file, or appending to the journal from a script is now judged the same way as writing it directly."
       },
       "startedAt": "2026-10-07T05:02:18Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T05:43:55Z",
+      "verifiedBy": [
+        "hc1",
+        "hc2",
+        "hc3",
+        "ww5",
+        "b17c",
+        "b17v",
+        "b17p",
+        "b10s",
+        "b10e",
+        "b10i",
+        "b10c",
+        "n20",
+        "n21",
+        "n22",
+        "b21"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T05:43:43Z.afdcd9",
         "status": "passed",
         "at": "2026-10-07T05:43:43Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "fb2f68fa",
+        "at": "2026-10-07T05:43:55Z",
+        "basis": "orchestrator check: P108-R6 and R8 fixed through shared shell readers in hooks/_config.py, every write check runs over each handed command, residual shapes recorded"
       }
     },
     {
       "id": "P108.12-4gh",
       "title": "SECURITY.md's trail and plan-gate sections describe the journal and guard as they now behave",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes review findings P108-R5 and P108-R7.\n\nSECURITY.md's trail section describes the journal as it now behaves:\n- Rows the plugin builds itself redact a machine path and are still written.\n- Caller free text carrying one is refused by the verb before anything is written.\n- The fail-mode table's journal rows match that.\n\nThe hand-edits bullet names the PreToolUse shell arm, which refuses redirect, tee, sed -i, cp/mv/install, -c and eval forms, and interpreter writes into the journal at every tier, plus whatever residual the guard task left open. The plan-gate paragraph lists any remaining open shapes, together with the guard-bash-writes after-the-fact report.\n\nEvery sentence must be true of the code as committed by the two tasks this one depends on.\n\ntest__refs.py's section-marker comment that cites a task id loses the id and keeps its constraint.",
       "files": [
         "SECURITY.md",
@@ -837,16 +871,21 @@
         "P108.10-4gh",
         "P108.11-4gh"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T05:44:10Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T05:53:24Z.3ee57f",
+        "status": "passed",
+        "at": "2026-10-07T05:53:24Z"
+      }
     }
   ],
   "startedAt": "2026-10-06T21:26:46Z"
