@@ -1185,7 +1185,12 @@
       "P108.4",
       "P108.7-4gh",
       "P110.4-exo",
-      "P110.5-exo"
+      "P110.5-exo",
+      "P108.12-4gh",
+      "P108.15-4gh",
+      "P108.16-4gh",
+      "P108.18-4gh",
+      "P108.20-4gh"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -1745,7 +1750,12 @@
       "P108.4",
       "P104.2",
       "P104.8",
-      "P108.7-4gh"
+      "P108.7-4gh",
+      "P108.11-4gh",
+      "P108.14-4gh",
+      "P108.16-4gh",
+      "P108.18-4gh",
+      "P108.20-4gh"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -1837,7 +1847,12 @@
       "P108.5-4gh",
       "P108.6-4gh",
       "P108.8-4gh",
-      "P108.7-4gh"
+      "P108.7-4gh",
+      "P108.11-4gh",
+      "P108.14-4gh",
+      "P108.16-4gh",
+      "P108.18-4gh",
+      "P108.20-4gh"
     ],
     "plugins/audit/hooks/hooks.json": [
       "P1.2",
@@ -1871,7 +1886,8 @@
       "P85.3",
       "P87.2",
       "P87.3-bpl",
-      "P109.6"
+      "P109.6",
+      "P108.10-4gh"
     ],
     "plugins/audit/hooks/meter-usage.py": [
       "P15.4",
@@ -2427,7 +2443,12 @@
       "P87.2",
       "P87.3-bpl",
       "P107.2",
-      "P107.7-gwk"
+      "P107.7-gwk",
+      "P108.9-4gh",
+      "P108.10-4gh",
+      "P108.13-4gh",
+      "P108.17-4gh",
+      "P108.19-4gh"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -2874,7 +2895,9 @@
       "P100.2",
       "P102.10",
       "P106.1",
-      "P106.2"
+      "P106.2",
+      "P108.10-4gh",
+      "P108.13-4gh"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -2911,7 +2934,8 @@
     "plugins/audit/scripts/manifest/set-priority.py": [
       "P22.11",
       "P31.6",
-      "P102.10"
+      "P102.10",
+      "P108.10-4gh"
     ],
     "plugins/audit/scripts/manifest/validate-manifest.py": [
       "P1.5",
@@ -3004,7 +3028,8 @@
       "P84.8-791",
       "P84.9-791",
       "P105.4",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P108.10-4gh"
     ],
     "plugins/audit/scripts/panel/panel-server.py": [
       "P10.2",
@@ -3402,7 +3427,12 @@
       "P86.3",
       "P89.1",
       "P95.1",
-      "P99.1"
+      "P99.1",
+      "P108.11-4gh",
+      "P108.14-4gh",
+      "P108.16-4gh",
+      "P108.18-4gh",
+      "P108.20-4gh"
     ],
     "plugins/audit/tests/test__deps.py": [
       "P32.5",
@@ -3620,7 +3650,12 @@
       "P87.2",
       "P87.3-bpl",
       "P107.2",
-      "P107.7-gwk"
+      "P107.7-gwk",
+      "P108.9-4gh",
+      "P108.10-4gh",
+      "P108.13-4gh",
+      "P108.17-4gh",
+      "P108.19-4gh"
     ],
     "plugins/audit/tests/test__locks.py": [
       "P22.11",
@@ -3812,7 +3847,8 @@
       "P84.8-791",
       "P84.9-791",
       "P105.4",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P108.10-4gh"
     ],
     "plugins/audit/tests/test__priority.py": [
       "P63.8"
@@ -3861,7 +3897,8 @@
       "P94.4",
       "P109.7",
       "P102.8",
-      "P108.3"
+      "P108.3",
+      "P108.12-4gh"
     ],
     "plugins/audit/tests/test__report_html.py": [
       "P25.1",
@@ -4086,7 +4123,10 @@
       "P96.1",
       "P100.2",
       "P106.1",
-      "P106.2"
+      "P106.2",
+      "P108.10-4gh",
+      "P108.13-4gh",
+      "P108.17-4gh"
     ],
     "plugins/audit/tests/test_audit_task.py: --reason and --outcome refuse a shell-eaten value, accept one on stdin, and refuse two flags claiming stdin in one call": [
       "P32.4"
@@ -4279,7 +4319,12 @@
       "P108.6-4gh",
       "P108.8-4gh",
       "P110.4-exo",
-      "P110.5-exo"
+      "P110.5-exo",
+      "P108.11-4gh",
+      "P108.14-4gh",
+      "P108.16-4gh",
+      "P108.18-4gh",
+      "P108.20-4gh"
     ],
     "plugins/audit/tests/test_harvest_worktree.py": [
       "P43.3"
@@ -4306,7 +4351,9 @@
       "P85.3",
       "P87.2",
       "P87.3-bpl",
-      "P109.6"
+      "P109.6",
+      "P108.10-4gh",
+      "P108.13-4gh"
     ],
     "plugins/audit/tests/test_manage_worktrees.py": [
       "P18.4",
@@ -4461,7 +4508,8 @@
     "plugins/audit/tests/test_set_priority.py": [
       "P22.11",
       "P59.12",
-      "P85.4"
+      "P85.4",
+      "P108.10-4gh"
     ],
     "plugins/audit/tests/test_stamp_verification.py": [
       "P43.4",
@@ -4568,7 +4616,12 @@
       "P90.1",
       "P91.1",
       "P91.2-htp",
-      "P108.4"
+      "P108.4",
+      "P108.9-4gh",
+      "P108.10-4gh",
+      "P108.13-4gh",
+      "P108.17-4gh",
+      "P108.19-4gh"
     ],
     "tools/check-example-ledgers.py": [
       "P32.10",
@@ -4738,14 +4791,16 @@
       "P81.4",
       "P94.2",
       "P94.5-579",
-      "P102.10"
+      "P102.10",
+      "P108.10-4gh"
     ],
     "plugins/audit/tests/test_derive_phase_gate.py": [
       "P79.3",
       "P79.8-5bh",
       "P81.3",
       "P81.4",
-      "P94.2"
+      "P94.2",
+      "P108.10-4gh"
     ],
     "plugins/audit/scripts/governance/import-evidence.py": [
       "P80.5",
@@ -5252,7 +5307,12 @@
       "P108.4",
       "P108.5-4gh",
       "P108.6-4gh",
-      "P108.8-4gh"
+      "P108.8-4gh",
+      "P108.11-4gh",
+      "P108.14-4gh",
+      "P108.16-4gh",
+      "P108.18-4gh",
+      "P108.20-4gh"
     ],
     "tools/ui-tests/capture-provenance.test.mjs": [
       "P103.8"
@@ -5735,7 +5795,7 @@
     {
       "id": "BUG-21-4gh",
       "title": "free text written through audit-task reaches the hash-chained journal with a home-directory path in it",
-      "status": "open",
+      "status": "fixed",
       "severity": "med",
       "reportedAt": "2026-10-07T00:54:43Z",
       "reportedBy": null,
@@ -5747,8 +5807,8 @@
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/scripts/governance/_journal_io.py"
       ],
-      "taskId": null,
-      "fixedIn": null,
+      "taskId": "P108.9-4gh",
+      "fixedIn": "bd415c44",
       "notes": null
     }
   ],
