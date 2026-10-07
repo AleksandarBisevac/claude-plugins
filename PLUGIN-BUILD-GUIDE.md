@@ -359,10 +359,10 @@ L4:
   _panel_usage -> _areas, _evidence_io, _manifest_io, _output, _panel_paths
   _panel_viewer -> _loader, _output, _panel_discovery, _panel_paths
   _proposals -> _fmt, _id_refs, _id_shape, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output
-  _usage_detail -> _output, _ui_theme, _usage_viz
+  _usage_detail -> _output, _ui_theme, _usage_economics, _usage_viz
   _usage_load -> _loader, _output, _report_html
-  _usage_markdown -> _output, _ui_theme, _usage_viz
-  _usage_overview -> _fmt, _output, _ui_theme, _usage_viz
+  _usage_markdown -> _output, _ui_theme, _usage_economics, _usage_viz
+  _usage_overview -> _fmt, _output, _ui_theme, _usage_economics, _usage_viz
 
 L5:
   _panel_state -> _evidence_io, _help, _journal_io, _manifest_io, _manifest_rules, _output, _panel_composition, _panel_discovery, _panel_paths, _panel_policy, _panel_runstate, _panel_usage, _panel_viewer, _proposals, _report_html
@@ -383,7 +383,7 @@ L7:
   audit-lookup -> _evidence_io, _journal_io, _manifest_io, _manifest_vocab, _output
   audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
   audit-task -> _areas, _branch, _commit_trail, _evidence_io, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
-  audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme
+  audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
   close-phase -> _branch, _evidence_io, _journal_io, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _tree_stamp, _verdict_binding, _worktrees
@@ -1559,17 +1559,21 @@ a finding, so the excuse cannot go stale quietly either.
 The arithmetic the whole metering stack stands on, and nothing else: the `DEFAULT_PRICING`
 table plus `rates_for`/`price`, one ISO parser and one hour-bucket rule, the roll-ups
 (`totals`, `aggregate`, `aggregate_area`, `rows_for_area`, `heatmap`) the CLI, the report and
-the panel all read, and — since U3.2 — the three readers every analytics pass starts from
-(`task_index`, `_tokens`, `_cost`). Values in, values out — no file, no process, no transcript
-— which is why its cases need no fixture directory. `pricing_divergences()` lives here too:
-`hooks/_config.py` must price a model with no config present and may import nothing from
-`scripts/`, so its copy of the 13 x 5 rate table is deliberate and the `pp` cases are what
-keep the two identical.
+the panel all read, `priced_at_read` which prices the rows those roll-ups sum at the resolved
+table and counts the ones it cannot, and the three readers every analytics pass starts from (`task_index`,
+`_tokens`, `_cost`) — here because the four analytics modules sit at one layer and may not
+import a peer. Values in, values out — no file, no process, no transcript — which is why its
+cases need no fixture directory. `pricing_divergences()` lives here too: `hooks/_config.py`
+must price a model with no config present and may import nothing from `scripts/`, so its copy
+of the rate table is deliberate and the `pp` cases are what keep the two identical. The
+table's as-of date and source URL are mirrored the same way (`PRICING_AS_OF`,
+`PRICING_SOURCE_URL`), and `pricing_provenance_divergences()` with the `pv6` case holds them
+equal.
 `--selftest`.
 
 ### `plugins/audit/scripts/usage/_usage_spend.py`, `_usage_economics.py`, `_usage_routing.py`, `_usage_coverage.py`
 What the ledger MEANS, as `rows -> dict` functions. One file until v0.40.x, when it reached 955
-lines and was cut on its own section markers (U3.2) — every body moved by line range, so each
+lines and was cut on its own section markers — every body moved by line range, so each
 module does exactly what its section did:
 
 * **`_usage_spend.py`** — `series`, `compare`, `cache_profile`. A first-run dashboard has no
@@ -4810,9 +4814,11 @@ nobody computed one, which is exactly what every caller rendered before the para
 ### `plugins/audit/scripts/report/_usage_overview.py`
 What the Usage section shows on **first paint** (layer 4): the context line, the five-tile metric
 strip, the notices, the one dominant trend chart, the budget block, the author chips and the three
-ranked lists. The context line is where the rate basis lives — with costs shown and no date
-declared it says *that* rather than falling back to the default table's date, because the ledger
-prices at write time and records no vintage. The trend's axis labels live **outside** the SVG:
+ranked lists. The context line is where the rate basis lives: every cost in the section is
+priced at read time by the resolved table (`priced_at_read`), so the phrase names that table and
+its date. A project table declared with no date is said to be undated rather than given the
+shipped table's date, and the rows that kept the figure stored when written, at a rate the
+ledger never recorded, are counted in the same phrase. The trend's axis labels live **outside** the SVG:
 the columns stretch to fill the width, which scales the coordinate system non-uniformly, and the
 labels once came out 49% too wide. The budget block renders nothing when no phase declares one,
 and names unbudgeted phases in a footnote rather than drawing them at 0% — an unbudgeted phase is
@@ -4955,7 +4961,7 @@ import `_help` or `panel-server`.
 
 ### `plugins/audit/scripts/panel/_panel_paths.py`
 The floor the panel's read side stands on: `CONFIG_REL`, `_within`/`_config_path`/
-`_manifest_path`/`_read_json`/`read_config`, `_declared_as_of`, the `_load` wrapper, and the
+`_manifest_path`/`_read_json`/`read_config`, the `_load` wrapper, and the
 three accessors `hooks_config()`/`config_rules()`/`status_facts()`. Those three replaced
 `_cores()`'s positional 4-tuple, and that is the whole reason the U3.1 split fits: the tuple
 also carried `_manifest_rules` (layer 3), so a base module holding it could only sit at layer 4

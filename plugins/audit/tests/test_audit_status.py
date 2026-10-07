@@ -441,21 +441,32 @@ def _cases(_record):
           "this phase" not in _txt_u)
     # The rate basis. It belongs on THIS surface in particular: the budget lines
     # printed under it are what the preflight check acts on, and a number that can
-    # stop a phase should say what priced it.
-    check("s15a the rate basis is stated when the manifest declares one",
-          "rates as of 2026-08-06" in M.render_status(
-              _fx, M.rollup(_fx, [], [], usage=dict(_u, pricingAsOf="2026-08-06"))))
-    check("s15b and says so when it does not, rather than printing dollars that "
-          "look pinned to a table nobody named",
-          "rates undated" in _txt_u and "usage.pricingAsOf" in _txt_u)
+    # stop a phase should say what priced it. The line prints the phrase
+    # `usage_summary` recorded (`rateBasis`, built by `rate_basis_phrase` from
+    # the resolver's answer), so the expectations are that helper's own words.
+    import usage_ledger as _ul
+    _pb_man = {"basis": "manifest", "asOf": "2026-08-06", "source": None}
+    _u_dated = dict(_u, pricingBasis=_pb_man,
+                    rateBasis=_ul.rate_basis_phrase(_pb_man))
+    _txt_dated = M.render_status(_fx, M.rollup(_fx, [], [], usage=_u_dated))
+    check("s15a the rate basis is the recorded phrase, naming the plan's own "
+          "table and its date: %r"
+          % ([ln for ln in _txt_dated.splitlines() if "usage:" in ln],),
+          _ul.rate_basis_phrase(_pb_man) in _txt_dated
+          and "rates as of 2026-08-06" in _txt_dated)
+    check("s15b a block that arrived without the phrase says so, rather than "
+          "printing dollars that look pinned to a table nobody named",
+          "rate basis not served" in _txt_u)
     check("s15c it never falls back to the default table's date - that would "
           "manufacture a basis instead of stating one",
-          "rates as of" not in _txt_u)
+          "rates as of" not in _txt_u and _ul.PRICING_AS_OF not in _txt_u)
     check("s15d withheld with the dollars when showCost is false",
-          "rates" not in _txt_u2)
+          "rate" not in M.render_status(_fx, M.rollup(
+              _fx, [], [], usage=dict(_u_dated, showCost=False))))
     check("s15e and silent when there is no spend to price at all",
-          "rates" not in M.render_status(
-              _fx, M.rollup(_fx, [], [], usage=dict(_u, totals={"tokens": 0}))))
+          "rate" not in M.render_status(
+              _fx, M.rollup(_fx, [], [], usage=dict(_u_dated,
+                                                    totals={"tokens": 0}))))
 
     # a running phase gets the phase clause and the RESUMABLE line
     _fx_run = copy.deepcopy(_fx)
@@ -1177,6 +1188,8 @@ def _cases(_record):
               M.usage_summary({}, os.path.join(_empty, "docs", "audit", "m.json"),
                             project_dir=_empty)["totals"]["tokens"] == 35)
 
+        _read_time_pricing_cases(check)
+
         # --- (ug) the passes nothing on the human path reads -----------------
         # Each of `byModel`, `byAuthor` and `byPhase` is a full extra sweep of
         # every ledger row, and the terminal render prints none of the first two
@@ -1233,9 +1246,9 @@ def _cases(_record):
               == M._budget_lines(_ug_sum_t, _ug_thin))
         # --- the rate basis, trimmed at the door ----------------------------
         # The plan schema asks only `minLength: 1` of `meta.usage.pricingAsOf`,
-        # so a string of spaces VALIDATES - and `_usage_line` tests the value
-        # for truth, so it printed "rates as of" followed by nothing, beside a
-        # cost figure the budget preflight acts on. Asserted THROUGH the render
+        # so a string of spaces VALIDATES - and `_usage_line` once printed
+        # "rates as of" followed by nothing, beside a cost figure the budget
+        # preflight acts on. Asserted THROUGH the render
         # as well as on the payload, because the payload is the door and the
         # line is what a person reads.
         def _u_basis(raw):
@@ -1250,12 +1263,39 @@ def _cases(_record):
               _u_blank["pricingAsOf"] is None)
         _u_blank_txt = M.render_status(_fx, M.rollup(_fx, [], [],
                                                      usage=_u_blank))
-        check("u10b ...so the line says the rates are UNDATED rather than "
-              "trailing off after 'rates as of'. The claim without its basis "
-              "is the one thing this project's output rule forbids: %r"
+        # This manifest declares a date and NO table, so the shipped table
+        # priced the rows: the line names ITS date and source, never "rates
+        # as of" followed by nothing and never "undated".
+        import usage_ledger as _ul
+        _pb_shipped = {"basis": "shipped", "asOf": _ul.PRICING_AS_OF,
+                       "source": _ul.PRICING_SOURCE_URL,
+                       "pricedWhenWritten": 0}
+        check("u10b ...and the line names the SHIPPED table's own date and "
+              "source, the table that priced the rows - not 'rates as of' "
+              "followed by nothing, and not 'undated': %r"
               % ([ln for ln in _u_blank_txt.splitlines() if "rates" in ln],),
-              "rates undated" in _u_blank_txt
-              and "rates as of" not in _u_blank_txt)
+              _u_blank["pricingBasis"] == _pb_shipped
+              and _ul.rate_basis_phrase(_pb_shipped) in _u_blank_txt
+              and _ul.PRICING_SOURCE_URL in _u_blank_txt
+              and "undated" not in _u_blank_txt)
+
+        def _u_table(raw):
+            return M.usage_summary(
+                {"meta": {"usage": {"pricingAsOf": raw, "pricing": {
+                    "_default": {"in": 1.0, "out": 2.0, "cacheW5m": 1.0,
+                                 "cacheW1h": 1.0, "cacheR": 0.1}}}}},
+                os.path.join(_empty, "docs", "audit", "m.json"),
+                project_dir=_empty)
+        _u_tb = _u_table("   ")
+        _u_tb_txt = M.render_status(_fx, M.rollup(_fx, [], [], usage=_u_tb))
+        check("u10c ...while the plan's OWN table with a whitespace-only date "
+              "is undated, and the line names the key that dates it: %r"
+              % ([ln for ln in _u_tb_txt.splitlines() if "rates" in ln],),
+              _u_tb["pricingBasis"]["basis"] == "manifest"
+              and _u_tb["pricingBasis"]["asOf"] is None
+              and _ul.rate_basis_phrase(_u_tb["pricingBasis"]) in _u_tb_txt
+              and "rates undated" in _u_tb_txt
+              and "meta.usage.pricingAsOf" in _u_tb_txt)
         check("u11 ...and a padded date is TRIMMED rather than refused - the "
               "fixture that separates trimming from merely rejecting a blank: "
               "%r" % (_u_basis(" 2026-08-06 ")["pricingAsOf"],),
@@ -1271,10 +1311,15 @@ def _cases(_record):
         # THE OTHER-DIRECTION CASE: it passes on the pre-fix code by
         # construction and is the only one that fails if the trim collapses to
         # an unconditional None and every project is told its rates are undated.
-        check("u13 ...and a declared date still reaches the line intact",
+        _u_td = _u_table("2026-08-06")
+        check("u13 ...and a declared date on the plan's own table still "
+              "reaches the line intact, through the one phrase",
               _u_basis("2026-08-06")["pricingAsOf"] == "2026-08-06"
+              and _u_td["pricingBasis"]["asOf"] == "2026-08-06"
+              and _u_td["rateBasis"]
+              == _ul.rate_basis_phrase(_u_td["pricingBasis"])
               and "rates as of 2026-08-06" in M.render_status(
-                  _fx, M.rollup(_fx, [], [], usage=_u_basis("2026-08-06"))))
+                  _fx, M.rollup(_fx, [], [], usage=_u_td)))
     finally:
         _harness.remove_tree(_empty)
 
@@ -2982,6 +3027,41 @@ def _cases(_record):
               repr(_sh_short_u))
     finally:
         os.unlink(_sh_path)
+
+
+def _read_time_pricing_cases(check):
+    """/audit:status over a ledger stored at another table prints the resolved
+    table's figure, since the phrase beside it names that table, and counts a
+    row with no token fields in that phrase."""
+    import shutil as _sh
+    import tempfile as _tf
+    root = _tf.mkdtemp(prefix="audit-status-read-pricing-")
+    try:
+        os.makedirs(os.path.join(root, ".claude", "usage"))
+        base = {"ts": "2026-08-06T07", "sessionId": "s1", "phaseId": "P1",
+                "taskId": "P1.1", "attr": "task", "model": "claude-opus-5",
+                "author": "a@b.c", "msgs": 1}
+        with open(os.path.join(root, ".claude", "usage", "2026-08.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(json.dumps(dict(base, costUSD=15.0, **{
+                "in": 1000000, "out": 0, "cacheW5m": 0, "cacheW1h": 0,
+                "cacheR": 0})) + "\n")
+            fh.write(json.dumps(dict(base, costUSD=2.5)) + "\n")
+        u = M.usage_summary({}, os.path.join(root, "docs", "audit", "m.json"),
+                            project_dir=root) or {}
+        total = (u.get("totals") or {}).get("costUSD")
+        check("rt1 usage_summary totals a ledger stored at another table at the "
+              "resolved table's figure (5.00 + the kept 2.50), not the stored "
+              "17.50: %r" % (total,),
+              isinstance(total, float) and abs(total - 7.5) < 1e-9)
+        line = M._usage_line({"phases": []}, u) if u else ""
+        check("rt2 ...and the status line prints that figure with a phrase "
+              "counting the row priced when written: %r" % (line,),
+              "~%s equiv" % M._fmt.fmt_cost(7.5) in line
+              and "1 row(s) keep the cost stored when written" in line
+              and (u.get("pricingBasis") or {}).get("pricedWhenWritten") == 1)
+    finally:
+        _sh.rmtree(root, ignore_errors=True)
 
 
 def _in_project(project, argv, via_env=True):

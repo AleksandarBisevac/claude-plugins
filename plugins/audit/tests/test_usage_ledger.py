@@ -20,7 +20,7 @@ different ways if carried literally:
     on a machine with no such directory.
   * `rx1`/`rx2` - "is this public name served by usage_ledger?" was `n in globals()`
     because the suite WAS that namespace. It is `hasattr(M, n)` / `getattr(M, n)`
-    here. This half fails loudly (all 40 names reported missing) rather than
+    here. This half fails loudly (every name reported missing) rather than
     quietly, and is written out anyway so the next reader does not have to
     rediscover which of the two shapes was which.
 
@@ -248,6 +248,72 @@ def _cases(check):
         r_p2, _ = M.scan_transcripts(partial, "sess-1", c_p, manifest, opts)
         check("scan: completed line is picked up on the next pass",
               M.totals(r_p2)["out"] == 5)
+
+        # --- scanning: a streaming partial, then the final entry -----------
+        # The shape a real subagent transcript wrote: one message id twice, first
+        # with stop_reason null and the output count of the first streamed
+        # tokens, then with the stop reason and the real count. Input and cache
+        # fields are the same on both entries, so a fix that counted both would
+        # show up as a doubled `in`.
+        def streamed(mid, out_tokens, stop):
+            return json.dumps({
+                "type": "assistant", "timestamp": "2026-08-06T07:30:00Z",
+                "gitBranch": "audit/p3",
+                "message": {"id": mid, "model": "claude-haiku-4-5",
+                            "stop_reason": stop, "usage": {
+                                "input_tokens": 2306, "output_tokens": out_tokens,
+                                "cache_creation_input_tokens": 0,
+                                "cache_read_input_tokens": 0}}})
+
+        one_scan = os.path.join(proj, "sess-stream.jsonl")
+        with open(one_scan, "w", encoding="utf-8") as fh:
+            fh.write(streamed("msg-S", 3, None) + "\n")
+            fh.write(streamed("msg-S", 164, "tool_use") + "\n")
+        r_s, _ = M.scan_transcripts(one_scan, "sess-1", {}, manifest, opts)
+        t_s = M.totals(r_s)
+        check("sf1 a streaming partial followed by its final entry is counted "
+              "once, at the final entry's output tokens (164, not the partial's 3)",
+              (t_s["out"], t_s["in"], t_s["msgs"]) == (164, 2306, 1),
+              (t_s["out"], t_s["in"], t_s["msgs"]))
+
+        two_scans = os.path.join(proj, "sess-stream-split.jsonl")
+        with open(two_scans, "w", encoding="utf-8") as fh:
+            fh.write(streamed("msg-T", 1, None) + "\n")
+        r_t1, c_t1 = M.scan_transcripts(two_scans, "sess-1", {}, manifest, opts)
+        with open(two_scans, "a", encoding="utf-8") as fh:
+            fh.write(streamed("msg-T", 125, "end_turn") + "\n")
+        r_t2, c_t2 = M.scan_transcripts(two_scans, "sess-1", c_t1, manifest, opts)
+        t_t = M.totals(r_t1 + r_t2)
+        check("sf2 a scan that ends after the partial and a later scan that reads "
+              "the final entry together count the message once, at the final "
+              "entry's tokens (125 out, 2306 in, one message)",
+              (t_t["out"], t_t["in"], t_t["msgs"]) == (125, 2306, 1),
+              (t_t["out"], t_t["in"], t_t["msgs"]))
+        r_t3, _ = M.scan_transcripts(two_scans, "sess-1", c_t2, manifest, opts)
+        with open(two_scans, "a", encoding="utf-8") as fh:
+            fh.write(streamed("msg-T", 125, "end_turn") + "\n")
+        r_t4, _ = M.scan_transcripts(two_scans, "sess-1", c_t2, manifest, opts)
+        check("sf3 ...and once the final is counted, a re-scan and a repeat of the "
+              "final entry add nothing",
+              r_t3 == [] and M.totals(r_t4)["tokens"] == 0,
+              (r_t3, M.totals(r_t4)))
+        pend = (c_t2.get("files") or {}).get(two_scans, {}).get("pending")
+        check("sf4 ...and the cursor stops carrying a message as provisional once "
+              "its final entry is counted",
+              not pend, pend)
+
+        # Allow twin, for the mutation that counts final entries only: a message
+        # whose stream was cut off never gets a final entry, and its partial is
+        # the only record that tokens were spent at all.
+        cut_off = os.path.join(proj, "sess-stream-cut.jsonl")
+        with open(cut_off, "w", encoding="utf-8") as fh:
+            fh.write(streamed("msg-U", 7, None) + "\n")
+        r_u, _ = M.scan_transcripts(cut_off, "sess-1", {}, manifest, opts)
+        t_u = M.totals(r_u)
+        check("sf5 a partial that never gets a final entry is still counted, "
+              "rather than dropped",
+              (t_u["out"], t_u["in"], t_u["msgs"]) == (7, 2306, 1),
+              (t_u["out"], t_u["in"], t_u["msgs"]))
 
         # --- scanning: subagents + parallel attribution --------------------
         sub = os.path.join(proj, "sess-1", "subagents")
@@ -779,7 +845,7 @@ def _cases(check):
     import _usage_routing
     import _usage_spend
 
-    # The four modules `_usage_analytics` was cut into at U3.2. `_usage_bench` is
+    # The four modules `_usage_analytics` was cut into. `_usage_bench` is
     # NOT here and that is not an omission: every name it defines starts with an
     # underscore, so it contributes nothing to re-export, and the passes it holds
     # are the four below's, counted there.
@@ -803,8 +869,8 @@ def _cases(check):
     # LOUDLY rather than quietly - which is why it is worth naming. Inline,
     # "is this name served?" was "is it in my own namespace?", because the suite
     # WAS the module. Here it has to ask the module: `hasattr(M, n)` and
-    # `getattr(M, n, None)`. Carried literally, `_missing` would list all 40
-    # names and rx1 would go red on a re-export that is perfectly intact.
+    # `getattr(M, n, None)`. Carried literally, `_missing` would list every
+    # name and rx1 would go red on a re-export that is perfectly intact.
     _missing = [n for n in _core_public + _analytics_public
                 if not hasattr(M, n)]
     check("rx1 every public name _usage_core and the four analytics modules define "
@@ -814,7 +880,7 @@ def _cases(check):
 
     def _definer(name):
         """The module that DEFINES `name`, for the identity check below. Read
-        rather than assumed: after U3.2 a name can come from any of five files,
+        rather than assumed: since the split a name can come from any of five files,
         and asking the wrong one would compare an object against itself."""
         for mod in (_core_mod,) + _analytics_mods:
             if name in _public_names(mod) and (
@@ -827,12 +893,39 @@ def _cases(check):
           all(getattr(M, n, None) is getattr(_definer(n), n, object())
               for n in _core_public + _analytics_public))
     # The second direction, and it is the one that looks vacuous: rx1 passes by
-    # construction if the five modules define NOTHING (a filter that narrows to
-    # empty must never read as 'all clear'). Only a literal count fails then.
-    check("rx3 ...and there are 18 + 30 of them, so rx1 cannot be green over an "
-          "empty or gutted module",
-          len(_core_public) == 18 and len(_analytics_public) == 30,
-          "got %d + %d" % (len(_core_public), len(_analytics_public)))
+    # construction if `_public_names` narrows to NOTHING (a filter that narrows
+    # to empty must never read as 'all clear'). The yardstick is read off
+    # usage_ledger.py's own import statements by AST rather than written here
+    # as a count, so it is a second source that cannot be gutted along with the
+    # filter, and a name added below and re-exported above moves both sides at
+    # once instead of turning a literal stale.
+    import ast
+
+    def _reexported_by_source():
+        """{defining module: sorted names} that usage_ledger.py's own
+        `from _usage_* import (...)` statements list."""
+        with open(M.__file__, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+        found = {}
+        for node in tree.body:
+            if isinstance(node, ast.ImportFrom) and node.level == 0 and (
+                    node.module or "").startswith("_usage_"):
+                found.setdefault(node.module, []).extend(
+                    a.name for a in node.names)
+        return dict((mod, sorted(names)) for mod, names in found.items())
+
+    _rx_src = _reexported_by_source()
+    _rx_core_src = _rx_src.get("_usage_core", [])
+    _rx_analytics_src = sorted(set(
+        n for mod in _analytics_mods for n in _rx_src.get(mod.__name__, [])))
+    check("rx3 ...and the names counted are exactly the ones usage_ledger.py's "
+          "import statements re-export, none of them empty, so rx1 cannot be "
+          "green over a filter that narrowed to nothing",
+          bool(_rx_core_src) and bool(_rx_analytics_src)
+          and _core_public == _rx_core_src
+          and _analytics_public == _rx_analytics_src,
+          "core %r vs source %r; analytics %r vs source %r"
+          % (_core_public, _rx_core_src, _analytics_public, _rx_analytics_src))
 
 
 def _selftest():

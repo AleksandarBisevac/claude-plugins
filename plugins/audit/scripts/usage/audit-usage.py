@@ -69,6 +69,8 @@ import _areas  # noqa: E402  (phase_tags: the read-time area join the ledger rec
 import _cli_fmt  # noqa: E402  (the one place CLI color lives - mode resolution + paint)
 import _ui_theme as _theme  # noqa: E402  (the one place a machine value gets its words)
 import _evidence_io  # noqa: E402  (the OTHER ledger `planCost` reads - gate scope + reuse)
+from _usage_economics import (  # noqa: E402  (the one coverage sentence, the one rate basis)
+    coverage_sentence, rate_basis_phrase)
 
 
 def _load(name, filename):
@@ -279,25 +281,45 @@ def apply_filters(rows, args, tags_by_phase=None):
     return kept
 
 
+def project_pricing(manifest, manifest_path, project_dir):
+    """The project's price table and which place priced it, `{table, basis,
+    asOf, source}` - `usage_ledger.project_pricing`, the resolver the report,
+    the panel and the meter hook ask too, so this command prices a project at
+    the table every other surface prices it at.
+
+    `project_dir` None means "walk up from the manifest", the rule
+    `pricing_root` applies for a manifest named from another directory."""
+    return ul.project_pricing(manifest, manifest_path, project_dir)
+
+
+def pricing_root(args, project):
+    """Where the project's config is looked for: `project`, unless a manifest
+    was named with no `--project-dir` or CLAUDE_PROJECT_DIR - then None, so the
+    lookup walks up from that manifest. The same rule `resolve_ledger` applies,
+    so the config read is the one beside the ledger this command reads."""
+    if args.manifest and not args.project_dir \
+            and not os.environ.get("CLAUDE_PROJECT_DIR"):
+        return None
+    return project
+
+
 # --- rendering ------------------------------------------------------------------
 def rate_basis(usage):
-    """`meta.usage.pricingAsOf` as a BASIS, or None when the manifest declares none.
+    """`meta.usage.pricingAsOf` as the manifest declares it, trimmed, or None.
+
+    The `--json` payload's `pricingAsOf`: what the PLAN says about its rates,
+    kept for consumers that read it. The basis printed beside a cost is not
+    this value but `rate_basis_phrase` over the resolver's answer, which also
+    knows when the shipped table priced the rows.
 
     THE TRIM IS THE POINT. The plan schema asks only that this key be
-    non-empty, so a string of spaces validates - and both readers below test the
-    value for truth, so `"  "` reached the terminal as `rates as of` followed by
-    nothing and the `--json` payload as a basis a consumer would print the same
-    way. A basis with no content is exactly what this project's output rule
-    forbids, and a whitespace-only setting is a typo rather than a declaration:
-    it collapses to None, which is the shape absence already has, so neither
-    caller needs to learn a second kind of empty.
-
-    ONE DOOR because this file has two readers - the terminal line and the JSON
-    payload - and they must not be able to disagree about a value's whitespace.
-    The parameter is named for the block it takes, which is also what lets
-    `_deps.config_read_violations` see the read and compare it against the other
-    modules that render this key; `panel/_panel_paths._declared_as_of` applies
-    the same trim to the config file's copy.
+    non-empty, so a string of spaces validates; a whitespace-only setting is a
+    typo rather than a declaration and collapses to None, the shape absence
+    already has. The parameter is named for the block it takes, which is what
+    lets `_deps.config_read_violations` see the read and compare it against the
+    other modules that read this key; `_usage_core._declared_as_of` is the
+    trim the resolver applies to both the manifest's and the config file's
+    copy before a rate phrase dates anything.
 
     `isinstance` before `.strip()`, because a hand-edited manifest may carry a
     number here and a raise inside a render is a report that does not print.
@@ -306,7 +328,14 @@ def rate_basis(usage):
     return (value.strip() or None) if isinstance(value, str) else None
 
 
-def render(rows, args, manifest, window, show_cost, pt=None):
+def render(rows, args, manifest, window, show_cost, pt=None, pricing=None):
+    """The dashboard. `pricing` is `project_pricing`'s answer, `{table, basis,
+    asOf, source}`: its table prices the routing advice and the rest is the
+    rate basis printed beside the costs. None resolves it from the manifest
+    alone (no config read). `rows` are summed as handed in: `main` hands
+    `ul.priced_at_read`'s copies, priced at that same table."""
+    if pricing is None:
+        pricing = ul.resolve_pricing(manifest, None)
     phase_titles, task_titles = titles_of(manifest)
     tot = ul.totals(rows)
     repo = next((r.get("repo") for r in rows if r.get("repo")), "-")
@@ -344,17 +373,13 @@ def render(rows, args, manifest, window, show_cost, pt=None):
                    fmt_tokens(tot["cacheW5m"] + tot["cacheW1h"]),
                    fmt_tokens(tot["cacheR"]), " " if md else "   ",
                    tot["cacheHitPct"]))
-    # The rate table behind every dollar above. This is the third surface of the
-    # same gap: the JSON payload has carried `pricingAsOf` all along and the
-    # terminal printed a cost with no basis at all, exactly as the HTML report did
-    # before 0.22.0. There is no fallback to the default table's date here either
-    # — see render-report._usage_context for why manufacturing one is worse than
-    # admitting the manifest never declared it.
+    # The rate table behind every dollar above: its date and source, as the one
+    # phrase every surface prints (`rate_basis_phrase`), built from the same
+    # resolver answer that priced the routing advice below - never a second
+    # resolution, so the line cannot name a table other than the one in use.
     if show_cost and rows:
-        as_of = rate_basis(((manifest or {}).get("meta") or {}).get("usage"))
-        out.append(("- " if md else "          ") + "costs priced at %s" % (
-            "rates as of %s" % as_of if as_of
-            else "undated rates - set usage.pricingAsOf"))
+        out.append(("- " if md else "          ") + "costs priced at %s"
+                   % rate_basis_phrase(pricing))
     if not rows:
         out.append("")
         out.append(pt.paint("  No usage recorded for this window.", "warn"))
@@ -417,6 +442,13 @@ def render(rows, args, manifest, window, show_cost, pt=None):
 
     if args.by:
         out += group_table(args.by, args.by.upper(), limit=args.top)
+        if args.by == "task" and show_cost:
+            meta_usage = ((manifest or {}).get("meta") or {}).get("usage") or {}
+            bands = ul.cost_bands(manifest, rows,
+                                  meta_usage if isinstance(meta_usage, dict) else {})
+            cov = coverage_sentence(bands.get("doneTaskCoverage"))
+            if cov:
+                out.append(("" if md else "  ") + pt.paint(cov, "dim"))
         return "\n".join(out)
 
     out += group_table("phase", "BY PHASE")
@@ -441,9 +473,12 @@ def render(rows, args, manifest, window, show_cost, pt=None):
         out.append("")
         out.append(("" if md else "  ")
                    + pt.paint(band_note(bands, show_cost), "dim"))
+        if show_cost:
+            cov = coverage_sentence(bands.get("doneTaskCoverage"))
+            if cov:
+                out.append(("" if md else "  ") + pt.paint(cov, "dim"))
         out += routing_advice_lines(
-            ul.routing(manifest, rows,
-                       (meta_usage or {}).get("pricing")).get("advice") or [],
+            ul.routing(manifest, rows, pricing["table"]).get("advice") or [],
             fmt=fmt, pt=pt, show_cost=show_cost)
     out += render_monthly(manifest, rows, show_cost, fmt=fmt, pt=pt)
     out += render_trend(rows, fmt=fmt, pt=pt)
@@ -981,16 +1016,26 @@ def main(argv):
     show_cost = not args.no_cost and bool(
         meta_usage.get("showCost", True) if isinstance(meta_usage, dict) else True)
 
+    resolved = project_pricing(manifest, manifest_path,
+                               pricing_root(args, project))
+    pricing = resolved["table"]
+
     if args.backfill:
-        code, message = backfill(args, project, ledger_dir, manifest,
-                                 meta_usage.get("pricing"))
+        code, message = backfill(args, project, ledger_dir, manifest, pricing)
         (sys.stdout if code == 0 else sys.stderr).write(message + "\n")
         return code
 
     since = resolve_since(args.since)
     tags_by_phase = _areas.phase_tags(manifest)
-    rows = apply_filters(ul.read_ledger(ledger_dir, since, args.until), args,
-                         tags_by_phase)
+    # Every cost below is summed off these copies, priced at the resolved
+    # table the rate phrase names; the count of rows that kept the figure
+    # stored when written rides in the answer the phrase is worded from.
+    # After the filters, so the count is of the rows this run shows.
+    priced = ul.priced_at_read(
+        apply_filters(ul.read_ledger(ledger_dir, since, args.until), args,
+                      tags_by_phase), pricing)
+    rows = priced["rows"]
+    resolved = dict(resolved, pricedWhenWritten=priced["pricedWhenWritten"])
     window = "all time" if not (since or args.until) else "%s -> %s" % (
         since or "start", args.until or today())
 
@@ -1007,6 +1052,11 @@ def main(argv):
             "window": {"since": since, "until": args.until},
             "ledgerDir": ledger_dir,
             "pricingAsOf": rate_basis(meta_usage),
+            # Which place priced these rows, and the phrase every surface
+            # prints for it - the resolver's answer as data, beside the words.
+            "pricingBasis": {k: resolved[k] for k in
+                             ("basis", "asOf", "source", "pricedWhenWritten")},
+            "rateBasis": rate_basis_phrase(resolved),
             "totals": ul.totals(rows),
             "byPhase": ul.aggregate(rows, "phase"),
             "byTask": ul.aggregate(rows, "task"),
@@ -1021,7 +1071,7 @@ def main(argv):
             "monthly": ul.monthly_activity(manifest, rows),
             "bands": ul.cost_bands(
                 manifest, rows, meta_usage if isinstance(meta_usage, dict) else {}),
-            "routing": ul.routing(manifest, rows, meta_usage.get("pricing")),
+            "routing": ul.routing(manifest, rows, pricing),
             # The claim `plugins/audit/README.md`'s Token usage section makes
             # about the plan itself, re-derived from THIS project's own two
             # ledgers rather than asserted: `_evidence_io.read_rows` is the
@@ -1037,7 +1087,7 @@ def main(argv):
         return 0
 
     print(render(rows, args, manifest, window, show_cost,
-                 pt=_cli_fmt.painter(args.color)))
+                 pt=_cli_fmt.painter(args.color), pricing=resolved))
     return 0
 
 

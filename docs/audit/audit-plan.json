@@ -660,7 +660,7 @@
     {
       "id": "P104",
       "title": "the cost a user sees is the cost they paid",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P104.json"
     },
     {
@@ -915,6 +915,9 @@
       "P100.1",
       "P100.4-zxo",
       "P105.9-m32",
+      "P104.14-tog",
+      "P104.17-tog",
+      "P104.18-tog",
       "P112.4-uce",
       "P112.6-uce",
       "P112.8-uce"
@@ -961,7 +964,8 @@
       "P80.22-rtb",
       "P87.2",
       "P96.1",
-      "P100.4-zxo"
+      "P100.4-zxo",
+      "P104.14-tog"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -986,8 +990,10 @@
       "P103.10",
       "P103.12",
       "P104.7",
+      "P104.11-tog",
       "P103.14-xi3",
       "P105.6",
+      "P104.13-tog",
       "P112.1-uce",
       "P112.5-uce",
       "P112.7-uce"
@@ -1124,15 +1130,18 @@
       "P106.3",
       "P107.1",
       "P107.4",
+      "P104.2",
       "P100.1",
       "P100.2",
       "P100.3-zxo",
       "P103.8",
       "P105.10-m32",
       "P110.4-exo",
+      "P107.5-gwk",
+      "P104.13-tog",
+      "P104.17-tog",
       "P112.1-uce",
-      "P112.3-uce",
-      "P107.5-gwk"
+      "P112.3-uce"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -1217,7 +1226,8 @@
       "P80.20-rtb",
       "P80.15-rtb",
       "P109.1",
-      "P104.4"
+      "P104.4",
+      "P104.11-tog"
     ],
     "docs/design/audit-concurrency-report.md": [
       "P60.3"
@@ -1252,7 +1262,8 @@
       "P32.10",
       "P80.15-rtb",
       "P109.1",
-      "P104.4"
+      "P104.4",
+      "P104.11-tog"
     ],
     "docs/screenshots": [
       "P53.9"
@@ -1269,10 +1280,15 @@
       "P80.15-rtb",
       "P103.8",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
       "P105.8-m32",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog",
       "P112.1-uce"
     ],
     "examples/acme-store/acme-store-audit.html": [
@@ -1287,7 +1303,8 @@
       "P63.6",
       "P80.15-rtb",
       "P109.1",
-      "P104.4"
+      "P104.4",
+      "P104.11-tog"
     ],
     "examples/acme-store/acme-store-audit.md": [
       "P13.3",
@@ -1297,7 +1314,8 @@
       "P32.10",
       "P63.6",
       "P80.15-rtb",
-      "P104.4"
+      "P104.4",
+      "P104.11-tog"
     ],
     "examples/acme-store/audit-plan.json": [
       "P50.3",
@@ -1410,8 +1428,12 @@
       "P103.4",
       "P103.5",
       "P103.7",
+      "P104.10-tog",
       "P100.2",
-      "P103.14-xi3"
+      "P103.14-xi3",
+      "P104.14-tog",
+      "P104.17-tog",
+      "P104.18-tog"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -1695,8 +1717,8 @@
       "P31.2",
       "P107.3",
       "P103.14-xi3",
-      "P112.2-uce",
       "P107.5-gwk",
+      "P112.2-uce",
       "P112.8-uce"
     ],
     "plugins/audit/commands/version.md": [
@@ -1891,7 +1913,11 @@
       "P47.6",
       "P56.1",
       "P72.1",
-      "P104.8"
+      "P104.8",
+      "P104.10-tog",
+      "P104.13-tog",
+      "P104.17-tog",
+      "P104.18-tog"
     ],
     "plugins/audit/hooks/py-launch.sh": [
       "P1.2",
@@ -2184,7 +2210,9 @@
       "P102.3",
       "P107.4",
       "P100.2",
-      "P107.7-gwk"
+      "P107.7-gwk",
+      "P104.14-tog",
+      "P104.17-tog"
     ],
     "plugins/audit/scripts/_fmt.py": [
       "P10.6",
@@ -2277,13 +2305,16 @@
       "P80.20-rtb",
       "P80.23-rtb",
       "P102.10",
-      "P104.1"
+      "P104.1",
+      "P104.2"
     ],
     "plugins/audit/scripts/demo/gen-demo-usage.py": [
       "P10.3",
       "P15.4",
       "P102.10",
-      "P104.1"
+      "P104.1",
+      "P104.10-tog",
+      "P104.13-tog"
     ],
     "plugins/audit/scripts/git/_worktrees.py": [
       "P18.1",
@@ -2983,7 +3014,8 @@
       "P15.4",
       "P18.7",
       "P44.1",
-      "P85.1"
+      "P85.1",
+      "P104.18-tog"
     ],
     "plugins/audit/scripts/panel/_panel_state.py": [
       "P12.3",
@@ -2991,7 +3023,8 @@
       "P85.1",
       "P80.8",
       "P80.15-rtb",
-      "P105.1"
+      "P105.1",
+      "P104.17-tog"
     ],
     "plugins/audit/scripts/panel/_panel_ui.py": [
       "P11.1",
@@ -3002,7 +3035,13 @@
     ],
     "plugins/audit/scripts/panel/_panel_usage.py": [
       "P49.2",
-      "P56.1"
+      "P56.1",
+      "P104.10-tog",
+      "P104.11-tog",
+      "P104.14-tog",
+      "P104.13-tog",
+      "P104.17-tog",
+      "P104.18-tog"
     ],
     "plugins/audit/scripts/panel/_panel_write.py": [
       "P12.4",
@@ -3042,7 +3081,8 @@
       "P105.4",
       "P105.6",
       "P105.9-m32",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P104.17-tog"
     ],
     "plugins/audit/scripts/report/_evidence_view.py": [
       "P32.7",
@@ -3262,6 +3302,9 @@
       "P81.12",
       "P81.10",
       "P102.10",
+      "P104.11-tog",
+      "P104.13-tog",
+      "P104.17-tog",
       "P112.2-uce"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
@@ -3338,7 +3381,10 @@
       "P56.1",
       "P56.6",
       "P63.8",
-      "P104.3"
+      "P104.3",
+      "P104.4",
+      "P104.11-tog",
+      "P104.13-tog"
     ],
     "plugins/audit/scripts/usage/audit-usage.py": [
       "P10.3",
@@ -3350,8 +3396,12 @@
       "P102.10",
       "P107.3",
       "P104.5",
-      "P112.2-uce",
+      "P104.10-tog",
+      "P104.11-tog",
       "P107.5-gwk",
+      "P104.13-tog",
+      "P104.17-tog",
+      "P112.2-uce",
       "P112.4-uce",
       "P112.6-uce",
       "P112.8-uce"
@@ -3364,7 +3414,12 @@
       "P107.3",
       "P107.4",
       "P104.8",
-      "P107.5-gwk"
+      "P104.2",
+      "P104.9-tog",
+      "P104.10-tog",
+      "P104.11-tog",
+      "P107.5-gwk",
+      "P104.13-tog"
     ],
     "plugins/audit/templates/audit-plan.starter.json": [
       "P1.5"
@@ -3451,7 +3506,9 @@
       "P72.5-ttl",
       "P86.4",
       "P107.4",
-      "P107.7-gwk"
+      "P107.7-gwk",
+      "P104.14-tog",
+      "P104.17-tog"
     ],
     "plugins/audit/tests/test__deps.py: a field added to one copy of the explorer return contract and not the other is a finding": [
       "P32.5"
@@ -3805,7 +3862,11 @@
       "P105.2",
       "P105.3",
       "P105.7",
-      "P105.8-m32"
+      "P104.11-tog",
+      "P105.8-m32",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "plugins/audit/tests/test__panel_policy.py": [
       "P59.10",
@@ -3823,7 +3884,8 @@
       "P80.15-rtb",
       "P94.1",
       "P98.2-yie",
-      "P105.1"
+      "P105.1",
+      "P104.17-tog"
     ],
     "plugins/audit/tests/test__panel_write.py": [
       "P18.7",
@@ -3955,7 +4017,10 @@
       "P49.2",
       "P56.6",
       "P63.8",
-      "P104.3"
+      "P104.3",
+      "P104.4",
+      "P104.11-tog",
+      "P104.13-tog"
     ],
     "plugins/audit/tests/test__warning_groups.py": [
       "P51.5"
@@ -4038,6 +4103,8 @@
       "P81.9",
       "P81.12",
       "P94.1",
+      "P104.11-tog",
+      "P104.13-tog",
       "P112.2-uce"
     ],
     "plugins/audit/tests/test_audit_task.py": [
@@ -4125,8 +4192,11 @@
       "P53.7",
       "P107.3",
       "P104.5",
-      "P112.2-uce",
+      "P104.10-tog",
+      "P104.11-tog",
       "P107.5-gwk",
+      "P104.13-tog",
+      "P112.2-uce",
       "P112.4-uce",
       "P112.6-uce",
       "P112.8-uce"
@@ -4232,7 +4302,8 @@
       "P80.20-rtb",
       "P80.23-rtb",
       "P94.1",
-      "P104.1"
+      "P104.1",
+      "P104.2"
     ],
     "plugins/audit/tests/test_guard_bash_writes.py": [
       "P20.1",
@@ -4352,7 +4423,10 @@
     ],
     "plugins/audit/tests/test_meter_usage.py": [
       "P72.1",
-      "P104.8"
+      "P104.8",
+      "P104.13-tog",
+      "P104.17-tog",
+      "P104.18-tog"
     ],
     "plugins/audit/tests/test_migrate_manifest.py": [
       "P50.6",
@@ -4527,7 +4601,10 @@
       "P61.2",
       "P107.4",
       "P104.8",
-      "P107.5-gwk"
+      "P104.2",
+      "P104.9-tog",
+      "P107.5-gwk",
+      "P104.13-tog"
     ],
     "plugins/audit/tests/test_validate_config.py": [
       "P47.1"
@@ -4665,8 +4742,8 @@
       "P93.2",
       "P93.4-287",
       "P109.9",
-      "P112.2-uce",
-      "P107.4"
+      "P107.4",
+      "P112.2-uce"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -4916,19 +4993,36 @@
       "P85.2"
     ],
     "plugins/audit/tests/test__report_usage.py": [
-      "P85.2"
+      "P85.2",
+      "P104.11-tog",
+      "P104.13-tog"
     ],
     "docs/screenshots/areas.png": [
       "P84.7-791",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P104.11-tog",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/authors.png": [
       "P84.7-791",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P104.11-tog",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/dark.png": [
       "P84.7-791",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P104.11-tog",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/demo-gate.gif": [
       "P84.7-791",
@@ -4937,193 +5031,303 @@
     ],
     "docs/screenshots/expanded.png": [
       "P84.7-791",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P104.11-tog",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/filtered.png": [
       "P84.7-791",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P104.11-tog",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/filters.png": [
       "P84.7-791",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P104.11-tog",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/mobile.png": [
       "P84.7-791",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P104.11-tog",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/overview.png": [
       "P84.7-791",
-      "P80.15-rtb"
+      "P80.15-rtb",
+      "P104.11-tog",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/panel-appearance.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/panel-blocks.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/panel-composition-expanded.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/panel-composition.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/panel-confirm.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/panel-dark.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/panel-gate.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/panel-guards.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/panel-help.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/panel-mobile.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/panel-monthly.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/panel-overview.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/panel-person.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/panel-policy-expanded.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/panel-policy.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/panel-proposals.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "docs/screenshots/panel-usage.png": [
       "P80.8",
       "P84.7-791",
       "P80.15-rtb",
       "P104.6",
+      "P104.11-tog",
       "P105.3",
       "P105.2",
       "P105.7",
-      "P105.8-m32"
+      "P105.8-m32",
+      "P104.12-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
     ],
     "tools/ui-tests/evidence-read-error.test.mjs": [
       "P80.15-rtb"
@@ -5303,41 +5507,93 @@
       "P103.14-xi3"
     ],
     "plugins/audit/tests/test_gen_demo_usage.py": [
-      "P104.1"
+      "P104.1",
+      "P104.13-tog"
     ],
     "plugins/audit/scripts/usage/_usage_core.py": [
       "P104.2",
-      "P104.8"
+      "P104.8",
+      "P104.10-tog",
+      "P104.13-tog"
     ],
     "plugins/audit/tests/test__usage_core.py": [
-      "P104.2"
+      "P104.2",
+      "P104.10-tog",
+      "P104.13-tog"
     ],
     "plugins/audit/scripts/report/_usage_overview.py": [
-      "P104.4"
+      "P104.4",
+      "P104.11-tog",
+      "P104.14-tog"
     ],
     "plugins/audit/scripts/report/_usage_markdown.py": [
-      "P104.4"
+      "P104.4",
+      "P104.11-tog"
     ],
     "plugins/audit/scripts/report/_usage_detail.py": [
-      "P104.4"
+      "P104.4",
+      "P104.11-tog"
     ],
     "plugins/audit/tests/test__usage_overview.py": [
-      "P104.4"
+      "P104.4",
+      "P104.11-tog",
+      "P104.14-tog"
     ],
     "plugins/audit/tests/test__usage_markdown.py": [
-      "P104.4"
+      "P104.4",
+      "P104.11-tog"
     ],
     "plugins/audit/tests/test__usage_detail.py": [
-      "P104.4"
+      "P104.4",
+      "P104.11-tog"
     ],
     "plugins/audit/scripts/ui/panel/usage-metrics.js": [
-      "P104.6"
+      "P104.6",
+      "P104.11-tog",
+      "P104.18-tog"
     ],
     "plugins/audit/scripts/ui/panel/usage-view.js": [
-      "P104.6"
+      "P104.6",
+      "P104.11-tog",
+      "P104.15-tog"
     ],
     "tools/ui-tests/usage-edges.test.mjs": [
-      "P104.6"
+      "P104.6",
+      "P104.11-tog",
+      "P104.15-tog",
+      "P104.16-tog",
+      "P104.18-tog"
+    ],
+    "plugins/audit/scripts/report/_usage_load.py": [
+      "P104.1",
+      "P104.10-tog",
+      "P104.13-tog",
+      "P104.14-tog"
+    ],
+    "plugins/audit/tests/test__usage_load.py": [
+      "P104.1",
+      "P104.10-tog",
+      "P104.13-tog",
+      "P104.14-tog"
+    ],
+    "plugins/audit/scripts/usage/_usage_spend.py": [
+      "P104.1"
+    ],
+    "plugins/audit/tests/test__usage_spend.py": [
+      "P104.1"
+    ],
+    "plugins/audit/tests/test__panel_usage.py": [
+      "P104.10-tog",
+      "P104.11-tog",
+      "P104.14-tog",
+      "P104.13-tog",
+      "P104.17-tog"
+    ],
+    "plugins/audit/tests/test__usage_bench.py": [
+      "P104.11-tog"
+    ],
+    "plugins/audit/scripts/usage/_usage_bench.py": [
+      "P104.11-tog"
     ],
     "plugins/audit/scripts/ui/panel/policy-state.js": [
       "P105.8-m32"
@@ -5353,6 +5609,21 @@
     ],
     "examples/acme-store/.claude/.gitignore": [
       "P105.9-m32"
+    ],
+    "plugins/audit/scripts/ui/panel/browse-dialog.js": [
+      "P104.16-tog"
+    ],
+    "plugins/audit/scripts/ui/panel/usage-cards.js": [
+      "P104.16-tog"
+    ],
+    "plugins/audit/scripts/panel/_panel_paths.py": [
+      "P104.17-tog"
+    ],
+    "plugins/audit/tests/test__panel_paths.py": [
+      "P104.17-tog"
+    ],
+    "plugins/audit/tests/test__panel_settings.py": [
+      "P104.18-tog"
     ],
     "tools/demo-gate.tape": [
       "P112.1-uce",
@@ -5716,6 +5987,22 @@
       "files": [],
       "taskId": null,
       "fixedIn": null,
+      "notes": null
+    },
+    {
+      "id": "BUG-18-tog",
+      "title": "the usage ledger counts a message's streaming partial, undercounting output tokens",
+      "status": "fixed",
+      "severity": "med",
+      "reportedAt": "2026-10-06T21:29:24Z",
+      "reportedBy": null,
+      "description": "usage_ledger keeps the first transcript entry per message id; a transcript can write a streaming partial (stop_reason null) before the final entry under the same id, so output tokens are undercounted. Found by the native-cost pilot on 2026-10-06; fixed by task P104.9-tog.",
+      "repro": "a headless claude -p run that spawns one subagent; meter its transcript with meter-usage",
+      "expected": "each message id counted once at its final entry; the ledger sum matches Claude Code's total_cost_usd when the price table is current",
+      "actual": "the subagent's output was counted as 4 tokens against 289 final, and the ledger summed below the native total by exactly that shortfall",
+      "files": [],
+      "taskId": "P104.9-tog",
+      "fixedIn": "c38330bf",
       "notes": null
     }
   ],

@@ -348,6 +348,12 @@ is still true of a nested key.
 - **When two keys can express the same thing, which one wins is written down.**
   `planGate` beats `enforce`, and that precedence does not change without a major
   release. A superseded key is kept and documented, never silently reinterpreted.
+  **The price table** is the second such pair, and the manifest is party to it: the plan's
+  `meta.usage.pricing`, when it declares a non-empty table, beats the config's
+  `usage.pricing`, and either beats the shipped table. A declared table is laid over the
+  shipped one model by model, so a model it does not name keeps its shipped row. Every
+  surface that prints a cost takes that one answer (`usage_ledger.resolve_pricing`); the
+  meter and the panel read only the config before this order was written here.
 - **When two keys COMPOSE rather than compete, that is written down too**, because
   a reader who finds only one of them draws the wrong conclusion. There is one such
   pair: `bashWriteCheck.enabled` and the plan gate both have to be permissive before

@@ -3718,23 +3718,23 @@ def _cases(check):
                   for _k, _r, w in M.KNOWN_CONFIG_MIRRORS))
 
     # --- the merged-block accessor --------------------------------------------
-    # THE READER THIS RULE COULD NOT SEE. `usage.pricingAsOf` reaches the panel
-    # through `usage_cfg(config)`, which leaves no key on the line for the walk to
-    # anchor at - so `panel/_panel_usage.py` was absent from that key's reader
-    # list ENTIRELY, and the read it was absent for is the one that served the
-    # value as typed while the flag in the same dict literal was decided on the
-    # trimmed one. A rule added to catch one key read two ways stayed quiet about
-    # the copy that shipped. ck17 is the REAL-TREE floor for the widening: every
-    # fixture below still passes with the accessor branch deleted, because a
-    # fixture proves the shape and not that this tree is still built out of it.
-    _ck_asof = sorted(set(r[0] for r in
-                          M.config_key_reads()[0].get("usage.pricingAsOf", ())))
+    # THE READER THIS RULE COULD NOT SEE. The panel's Usage payload takes its
+    # `usage` block from `usage_cfg(config)`, which leaves no key on the line for
+    # the walk to anchor at - so `panel/_panel_usage.py` was absent from the
+    # reader list of every key it read off that block. The key that exposed it,
+    # served as typed while a flag beside it was decided on the trimmed copy, is
+    # no longer served at all; `usage.bands` is still read off the same block
+    # and nowhere else in the panel, so it carries the same question. ck17 is the
+    # REAL-TREE floor for the widening: every fixture below still passes with
+    # the accessor branch deleted, because a fixture proves the shape and not
+    # that this tree is still built out of it.
+    _ck_bands = sorted(set(r[0] for r in
+                           M.config_key_reads()[0].get("usage.bands", ())))
     check("ck17 the panel is among the modules the scan credits with reading "
-          "`usage.pricingAsOf`, which it only can be if a block arriving "
-          "through `<root>_cfg(...)` anchors the reads taken off it: %r"
-          % (_ck_asof,),
-          "panel/_panel_usage.py" in _ck_asof
-          and "report/_usage_load.py" in _ck_asof)
+          "`usage.bands`, which it only can be if a block arriving through "
+          "`<root>_cfg(...)` anchors the reads taken off it: %r"
+          % (_ck_bands,),
+          "panel/_panel_usage.py" in _ck_bands)
 
     _ck_block = _ck_tree((
         ("_panel_usage.py",

@@ -622,6 +622,18 @@ def usage_summary(manifest, manifest_path, project_dir=None, full=True):
     if not rows:
         return None
     try:
+        # Which place prices these rows - the resolver every cost surface
+        # asks, over this manifest and the raw config beside the ledger. Every
+        # sum below is of `priced_at_read`'s copies, priced at that table,
+        # because the phrase `_usage_line` prints beside them names it; the
+        # rows that kept the figure stored when written are counted into the
+        # basis the phrase is worded from.
+        pricing = ul.project_pricing(
+            manifest, manifest_path,
+            project_dir or os.environ.get("CLAUDE_PROJECT_DIR"))
+        priced = ul.priced_at_read(rows, pricing["table"])
+        rows = priced["rows"]
+        pricing = dict(pricing, pricedWhenWritten=priced["pricedWhenWritten"])
         total = ul.totals(rows)
         # WHICH OPTIONAL SWEEPS ARE WORTH THEIR PASS, asked of the MANIFEST so the
         # answer is a function of the plan and the flag alone: the same plan
@@ -649,14 +661,11 @@ def usage_summary(manifest, manifest_path, project_dir=None, full=True):
             and p.get("budgetUSD") > 0
             for p in dicts)
         # Trimmed at the door: the plan schema asks only that
-        # `meta.usage.pricingAsOf` be non-empty, so a string of spaces validates
-        # and `_usage_line` below printed "rates as of" followed by nothing - a
-        # basis with no content, beside a cost figure the budget preflight acts
-        # on. A whitespace-only setting is a typo, not a declaration, so it
-        # collapses to the shape absence already has and the line says "rates
-        # undated" instead. `isinstance` guards a hand-edited number, and the
-        # same trim is what `panel/_panel_paths._declared_as_of` applies to the
-        # config file's copy of this key.
+        # `meta.usage.pricingAsOf` be non-empty, so a string of spaces validates.
+        # A whitespace-only setting is a typo, not a declaration, so it collapses
+        # to the shape absence already has. `isinstance` guards a hand-edited
+        # number, and the same trim is what `_usage_core._declared_as_of`
+        # applies to both copies of this key when the resolver dates a table.
         as_of_raw = meta_usage.get("pricingAsOf") \
             if isinstance(meta_usage, dict) else None
         # One shape for every aggregate, so a key added to one is added to all.
@@ -664,10 +673,15 @@ def usage_summary(manifest, manifest_path, project_dir=None, full=True):
             return {k: {"tokens": v["tokens"], "costUSD": v["costUSD"],
                         "msgs": v["msgs"]} for k, v in grouped.items()}
 
+        # The resolver's answer as data, and as the one phrase
+        # `rate_basis_phrase` words it in, which `_usage_line` prints.
         block = {
             "ledgerDir": ledger_dir,
             "pricingAsOf": (as_of_raw.strip() or None)
             if isinstance(as_of_raw, str) else None,
+            "pricingBasis": {k: pricing[k] for k in
+                             ("basis", "asOf", "source", "pricedWhenWritten")},
+            "rateBasis": ul.rate_basis_phrase(pricing),
             "showCost": bool(meta_usage.get("showCost", True))
             if isinstance(meta_usage, dict) else True,
             "totals": total,
@@ -1251,13 +1265,12 @@ def _usage_line(summary, usage):
     # The rate table behind this cost AND behind the budget lines under it, which
     # is why it belongs here rather than only in the report: those percentages are
     # what the preflight budget check acts on, and a number that can stop a phase
-    # should say what priced it. No fallback to the default table's date — see
-    # render-report._usage_context; manufacturing a basis is worse than stating
-    # that the manifest declared none.
+    # should say what priced it. The phrase is the one `usage_summary` recorded
+    # (`rate_basis_phrase` over the resolver's answer), the same words the
+    # report and `/audit:usage` print; a block that arrived without it says so
+    # rather than guessing the shipped table's date into it.
     if usage.get("showCost") and (totals.get("tokens") or 0):
-        parts.append("rates as of %s" % usage["pricingAsOf"]
-                     if usage.get("pricingAsOf")
-                     else "rates undated (set usage.pricingAsOf)")
+        parts.append(usage.get("rateBasis") or "rate basis not served")
     return " - ".join(parts)
 
 

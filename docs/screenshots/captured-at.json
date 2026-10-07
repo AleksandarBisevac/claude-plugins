@@ -38,13 +38,13 @@
       "uiDigest": "85855af0000725d8a24ca34a8e7efa6901ed6f57dd32dcad1f1d4ff545ed1c2d"
     },
     "mobile.png": {
-      "sha256": "172f151d5055538b879f4952f0e29b2ca56b9191a805d7822404002292e487ad",
+      "sha256": "547fb056cf4df376dad6227a82da4fe6c303904f572877d5e644da57474c985d",
       "version": "3.1.0",
       "surface": "report",
       "uiDigest": "85855af0000725d8a24ca34a8e7efa6901ed6f57dd32dcad1f1d4ff545ed1c2d"
     },
     "overview.png": {
-      "sha256": "1f255933e1311ff1ad3b898921df5d93c81d08bea7e0ecd52a245143b4893ad7",
+      "sha256": "a212faac3cc889fc0f5899724608726eead7506df91f822feb2ccb83744c9d26",
       "version": "3.1.0",
       "surface": "report",
       "uiDigest": "85855af0000725d8a24ca34a8e7efa6901ed6f57dd32dcad1f1d4ff545ed1c2d"
@@ -53,122 +53,103 @@
       "sha256": "7223da970444292da23d3cfddece2f33876d549e28a775474c7975f6ac2d7e72",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "4f5d95465379a497102252c4bfdc8f098f4cc9ae55df466fd758fcfe3374d57d"
+      "uiDigest": "01f6bd323627e833c84543d098337ae71ef434250952756a6876cedfc0e1889f"
     },
     "panel-blocks.png": {
       "sha256": "be1556ce9fa3122115451c049f6543dc24048508544adb39d8deb9f1bf914229",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "4f5d95465379a497102252c4bfdc8f098f4cc9ae55df466fd758fcfe3374d57d"
+      "uiDigest": "01f6bd323627e833c84543d098337ae71ef434250952756a6876cedfc0e1889f"
     },
     "panel-composition-expanded.png": {
       "sha256": "947c54f4ca4a106698a5c61e39fc295f3046b748071d7cf3a9aaa042a92df0fe",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "4f5d95465379a497102252c4bfdc8f098f4cc9ae55df466fd758fcfe3374d57d"
+      "uiDigest": "01f6bd323627e833c84543d098337ae71ef434250952756a6876cedfc0e1889f"
     },
     "panel-composition.png": {
       "sha256": "fa7724c7efa4aade8353c98e213060e07e7be83c24e6687a4c1c88c9f4304f73",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "4f5d95465379a497102252c4bfdc8f098f4cc9ae55df466fd758fcfe3374d57d"
+      "uiDigest": "01f6bd323627e833c84543d098337ae71ef434250952756a6876cedfc0e1889f"
     },
     "panel-confirm.png": {
       "sha256": "7e3e31119b10fa54987fd7723e01c4d902ef5579027b2aa4e824fc5afd103adc",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "4f5d95465379a497102252c4bfdc8f098f4cc9ae55df466fd758fcfe3374d57d"
+      "uiDigest": "01f6bd323627e833c84543d098337ae71ef434250952756a6876cedfc0e1889f"
     },
     "panel-dark.png": {
-      "sha256": "b6d6810d0e4e6aac3e811e6d74d622573a247868656d2fc4ccab739d75b3fab0",
+      "sha256": "548dd8eeaf58c5fe6366cf616ce11dc59092be69428f5d056615ff9d632a206c",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "4f5d95465379a497102252c4bfdc8f098f4cc9ae55df466fd758fcfe3374d57d"
+      "uiDigest": "01f6bd323627e833c84543d098337ae71ef434250952756a6876cedfc0e1889f"
     },
     "panel-gate.png": {
       "sha256": "660e067ef56ccefeecac9834607d6de42e2fa3d17a8ee6f33c5e1e48b46c5c51",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "4f5d95465379a497102252c4bfdc8f098f4cc9ae55df466fd758fcfe3374d57d"
+      "uiDigest": "01f6bd323627e833c84543d098337ae71ef434250952756a6876cedfc0e1889f"
     },
     "panel-guards.png": {
       "sha256": "5af9d882eeea9b0489939f77fbd7c9f2d290ac5484bd0d8bb1c67032a13f7bde",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "4f5d95465379a497102252c4bfdc8f098f4cc9ae55df466fd758fcfe3374d57d"
+      "uiDigest": "01f6bd323627e833c84543d098337ae71ef434250952756a6876cedfc0e1889f"
     },
     "panel-help.png": {
       "sha256": "08178dff95b23012dc806cc0fb7202ab38d8206ddbd9dd90f17e291f4e472d9f",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "4f5d95465379a497102252c4bfdc8f098f4cc9ae55df466fd758fcfe3374d57d"
+      "uiDigest": "01f6bd323627e833c84543d098337ae71ef434250952756a6876cedfc0e1889f"
     },
     "panel-mobile.png": {
       "sha256": "8f28900e9621ba0e16cf4398802eeb7f63b31198f2944db79600e5eb6d625138",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "4f5d95465379a497102252c4bfdc8f098f4cc9ae55df466fd758fcfe3374d57d"
+      "uiDigest": "01f6bd323627e833c84543d098337ae71ef434250952756a6876cedfc0e1889f"
     },
     "panel-monthly.png": {
-      "sha256": "38c5cdd85b90f9faec528e6d01d24f6964646ead5d695d1d06bf990f1634ca50",
+      "sha256": "b4a886bc5c1b0488f2859ca0ecba1506722d81c766dfaa0cd0fa43a97b36e719",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "4f5d95465379a497102252c4bfdc8f098f4cc9ae55df466fd758fcfe3374d57d"
+      "uiDigest": "01f6bd323627e833c84543d098337ae71ef434250952756a6876cedfc0e1889f"
     },
     "panel-overview.png": {
       "sha256": "543e699299c39d71c9f7980d7756c1e319a960fea29eed2bcb361aee419eec65",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "4f5d95465379a497102252c4bfdc8f098f4cc9ae55df466fd758fcfe3374d57d"
+      "uiDigest": "01f6bd323627e833c84543d098337ae71ef434250952756a6876cedfc0e1889f"
     },
     "panel-person.png": {
-      "sha256": "e1c417d577438b632d9a527bbb64187f558c4be3bdb7e581f2677304e483ea3d",
+      "sha256": "7247d41ed6132ec79f25660561e623d0f44e78c40e9abd089cca9decb6299ddd",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "4f5d95465379a497102252c4bfdc8f098f4cc9ae55df466fd758fcfe3374d57d"
+      "uiDigest": "01f6bd323627e833c84543d098337ae71ef434250952756a6876cedfc0e1889f"
     },
     "panel-policy-expanded.png": {
       "sha256": "2b69d36dee9b433ee6722ab39d36fc2ca182154b7acffe30727fe7004964208f",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "4f5d95465379a497102252c4bfdc8f098f4cc9ae55df466fd758fcfe3374d57d"
+      "uiDigest": "01f6bd323627e833c84543d098337ae71ef434250952756a6876cedfc0e1889f"
     },
     "panel-policy.png": {
       "sha256": "09c8b017c8ee7c36173d59c41b481c8d807858a550acdb769d899b011c8af0ac",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "4f5d95465379a497102252c4bfdc8f098f4cc9ae55df466fd758fcfe3374d57d"
+      "uiDigest": "01f6bd323627e833c84543d098337ae71ef434250952756a6876cedfc0e1889f"
     },
     "panel-proposals.png": {
       "sha256": "4b549fce6734cbedba1d3d2e85015d407a6ab7b595fd636349b29157aca991c3",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "4f5d95465379a497102252c4bfdc8f098f4cc9ae55df466fd758fcfe3374d57d"
+      "uiDigest": "01f6bd323627e833c84543d098337ae71ef434250952756a6876cedfc0e1889f"
     },
     "panel-usage.png": {
-      "sha256": "6ab7d26588be8e8e489130896b9ef0801c4b164d54f6a3820ed213827b01683f",
+      "sha256": "dd3595d440053f5ff413776673c2104370b9cb3cdea81469b7d7597ab6b04c90",
       "version": "3.1.0",
       "surface": "panel",
-      "uiDigest": "4f5d95465379a497102252c4bfdc8f098f4cc9ae55df466fd758fcfe3374d57d"
-    }
-  },
-  "gifs": {
-    "demo-gate.gif": {
-      "sha256": "f7065c66f6632e7ffbcdafdfc26bb8b742a4597b9476fe3073c2700f4d79c63f",
-      "refusal": "[require-plan] Outside the running plan (change magnitude 123 (> 80)): src/billing.ts\nPhase P2 is in_progress, so edits are held to the plan.\nNo task in docs/audit/audit-plan.json declares src/billing.ts - it is in no task's `files`, in no task's `outputs` and in no `fileIndex` row.\nTwo ways forward, weighed:\n  1. This is part of the work at hand -> add a task covering this file to docs/audit/audit-plan.json (status \"in_progress\"). Preferred: the change lands in the plan, reviewed and recorded. If a subagent is running, widen its scope and message it to continue - do not re-spawn it.\n  2. This is genuinely a one-off -> the HUMAN types #no-plan in their own prompt to opt out for one change. Agents cannot arm it; it is single-use, logged, and expires unused after 30 minutes.\nExempt regardless: docs/audit/**, **/*.md, .claude/**, **/*.spec.*, **/*.test.*, **/*_test.*, **/*_spec.*, **/test_*.*, and the first single small (magnitude <= 80: lines added, chars/200, or lines removed - whichever is larger) non-exempt file per session.",
-      "refusalShown": "[require-plan] Outside the running plan (change magnitude 123 (> 80)): src/billing.ts\nPhase P2 is in_progress, so edits are held to the plan.\nNo task in docs/audit/audit-plan.json declares src/billing.ts - it is in no task's `files`, in no task's `outputs` and in no `fileIndex` row.\nTwo ways forward, weighed:\n  1. This is part of the work at hand -> add a task covering this file to docs/audit/audit-plan.json (status \"in_progress\"). Preferred: the change lands in the plan, reviewed and recorded. If a subagent is running, widen its scope and message it to continue - do not re-spawn it.\n  2. This is genuinely a one-off -> the HUMAN types #no-plan in their own prompt to opt out for one change. Agents cannot arm it; it is single-use, logged, and expires unused after 30 minutes.\nExempt regardless: docs/audit/**, **/*.md, .claude/**, **/*.spec.*, **/*.test.*, **/*_test.*, **/*_spec.*, **/test_*.*, and the first single small (magnitude <= 80: lines added, chars/200, or lines removed - whichever is larger) non-exempt file per session.",
-      "payload": {
-        "tool_name": "Write",
-        "tool_input": {
-          "file_path": "<demo-project>/src/billing.ts",
-          "content": "/**\n * Invoicing module: line items, tax, discounts and totals.\n *\n * All monetary values are integer minor units (e.g. cents) so that sums\n * never accumulate floating-point error.\n */\n\n/** A single billable line on an invoice. */\nexport interface LineItem {\n  /** Human-readable description shown on the invoice. */\n  description: string;\n  /** Price of one unit, in minor units. */\n  unitPrice: number;\n  /** Number of units; must be a positive integer. */\n  quantity: number;\n  /** Tax rate for this line as a fraction (0.2 = 20%). Defaults to the invoice rate. */\n  taxRate?: number;\n}\n\n/** A discount applied to the invoice subtotal. */\nexport type Discount =\n  | { kind: \"percent\"; /** Fraction of the subtotal, 0..1. */ value: number }\n  | { kind: \"fixed\"; /** Amount in minor units. */ value: number };\n\n/** An invoice before totals are computed. */\nexport interface Invoice {\n  /** Unique invoice identifier. */\n  id: string;\n  /** Lines being billed. */\n  items: LineItem[];\n  /** Optional discounts, applied in order to the subtotal. */\n  discounts?: Discount[];\n  /** Default tax rate for lines without their own rate. */\n  defaultTaxRate?: number;\n}\n\n/** The computed monetary breakdown of an invoice. */\nexport interface InvoiceTotals {\n  /** Sum of all line amounts before discounts and tax. */\n  subtotal: number;\n  /** Total amount removed by discounts. */\n  discountTotal: number;\n  /** Tax charged on the discounted amount. */\n  tax: number;\n  /** Final amount due: subtotal - discountTotal + tax. */\n  total: number;\n}\n\n/**\n * Computes the net amount of a line item (unit price times quantity).\n *\n * @throws RangeError if the quantity is not a positive integer or the price is negative.\n */\nexport function lineAmount(item: LineItem): number {\n  if (!Number.isInteger(item.quantity) || item.quantity <= 0) {\n    throw new RangeError(`quantity must be a positive integer: ${item.description}`);\n  }\n  if (!Number.isInteger(item.unitPrice) || item.unitPrice < 0) {\n    throw new RangeError(`unitPrice must be a non-negative integer: ${item.description}`);\n  }\n  return item.unitPrice * item.quantity;\n}\n\n/** Sums the net amounts of all line items. */\nexport function subtotal(items: LineItem[]): number {\n  return items.reduce((sum, item) => sum + lineAmount(item), 0);\n}\n\n/**\n * Applies discounts in order and returns the total amount discounted.\n * The result is capped at the subtotal, so an invoice never goes negative.\n *\n * @throws RangeError if a discount value is out of range.\n */\nexport function discountTotal(base: number, discounts: Discount[] = []): number {\n  let remaining = base;\n  for (const d of discounts) {\n    if (d.value < 0 || (d.kind === \"percent\" && d.value > 1)) {\n      throw new RangeError(`invalid ${d.kind} discount: ${d.value}`);\n    }\n    const amount = d.kind === \"percent\" ? Math.round(remaining * d.value) : d.value;\n    remaining -= Math.min(amount, remaining);\n  }\n  return base - remaining;\n}\n\n/**\n * Computes tax over the discounted invoice. Discounts are spread across lines\n * proportionally to each line's share of the subtotal, then each line is taxed\n * at its own rate and rounded to the nearest minor unit.\n */\nexport function taxTotal(\n  items: LineItem[],\n  discount: number,\n  defaultTaxRate = 0,\n): number {\n  const base = subtotal(items);\n  if (base === 0) return 0;\n  let tax = 0;\n  for (const item of items) {\n    const rate = item.taxRate ?? defaultTaxRate;\n    if (rate < 0) throw new RangeError(`taxRate must be non-negative: ${item.description}`);\n    const share = lineAmount(item) / base;\n    const taxable = lineAmount(item) - discount * share;\n    tax += Math.round(taxable * rate);\n  }\n  return tax;\n}\n\n/** Computes the full breakdown (subtotal, discounts, tax, total) for an invoice. */\nexport function computeTotals(invoice: Invoice): InvoiceTotals {\n  const sub = subtotal(invoice.items);\n  const discount = discountTotal(sub, invoice.discounts);\n  const tax = taxTotal(invoice.items, discount, invoice.defaultTaxRate);\n  return { subtotal: sub, discountTotal: discount, tax, total: sub - discount + tax };\n}\n\n/** Formats minor units as a fixed two-decimal string, e.g. 1999 -> \"19.99\". */\nexport function formatAmount(minor: number): string {\n  const sign = minor < 0 ? \"-\" : \"\";\n  const abs = Math.abs(minor);\n  return `${sign}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, \"0\")}`;\n}\n"
-        }
-      },
-      "cliVersion": "2.1.292 (Claude Code)",
-      "model": "sonnet",
-      "recordedWith": "vhs version 0.12.1",
-      "tape": "tools/demo-gate.tape",
-      "writtenBy": "tools/capture-demo-gif.py"
+      "uiDigest": "01f6bd323627e833c84543d098337ae71ef434250952756a6876cedfc0e1889f"
     }
   }
 }

@@ -175,20 +175,25 @@ def _cases(check):
         # The plan schema asks only `minLength: 1`, so a string of spaces
         # VALIDATES and every renderer downstream tests this value for truth.
         # Untrimmed it printed "rates as of" followed by nothing - a basis with
-        # no content, which is this project's founding output rule broken by a
-        # space.
+        # no content. The date reaches the payload ONLY as `pricingBasis.asOf`,
+        # the resolver's, so each fixture declares a table for it to date.
+        _tbl = {"opus": {"in": 1.0, "out": 2.0, "cacheW5m": 1.0,
+                         "cacheW1h": 1.0, "cacheR": 0.1}}
         p5 = os.path.join(root, "p5")
         m5, mp5 = _write_project(p5, [_row("2026-07-01T03")],
-                                 meta_usage={"pricingAsOf": "   "})
+                                 meta_usage={"pricing": _tbl,
+                                             "pricingAsOf": "   "})
         u5 = M.load_usage(m5, mp5, p5)
         check("ul20 a whitespace-only `meta.usage.pricingAsOf` reaches the "
               "payload as None - the shape absence already has, so no renderer "
               "has to learn a second kind of empty and none can print a basis "
-              "with nothing in it: %r" % (u5["pricingAsOf"],),
-              u5["pricingAsOf"] is None)
+              "with nothing in it: %r" % (u5["pricingBasis"],),
+              u5["pricingBasis"]["basis"] == "manifest"
+              and u5["pricingBasis"]["asOf"] is None)
         p6 = os.path.join(root, "p6")
         m6, mp6 = _write_project(p6, [_row("2026-07-01T03")],
-                                 meta_usage={"pricingAsOf": " 2026-07-01 "})
+                                 meta_usage={"pricing": _tbl,
+                                             "pricingAsOf": " 2026-07-01 "})
         u6 = M.load_usage(m6, mp6, p6)
         # A PADDED date, not a blank one, and it is the fixture that separates
         # trimming from merely refusing the blank: a version testing
@@ -196,32 +201,146 @@ def _cases(check):
         # and fails here.
         check("ul21 ...and a padded one is carried through TRIMMED rather than "
               "rejected - the padding is a typo, the date is a declaration: %r"
-              % (u6["pricingAsOf"],),
-              u6["pricingAsOf"] == "2026-07-01")
+              % (u6["pricingBasis"],),
+              u6["pricingBasis"]["asOf"] == "2026-07-01")
         p7 = os.path.join(root, "p7")
         m7, mp7 = _write_project(p7, [_row("2026-07-01T03")],
-                                 meta_usage={"pricingAsOf": 20260701})
+                                 meta_usage={"pricing": _tbl,
+                                             "pricingAsOf": 20260701})
         u7 = M.load_usage(m7, mp7, p7)
         check("ul22 ...and a hand-edited NUMBER is None rather than a raise: "
-              "`.strip()` on one would escape into the payload builder's own "
-              "`except` and take the whole Usage section down, which is a "
-              "missing report where a wrong date was the complaint: %r"
-              % (u7 if u7 is None else u7["pricingAsOf"],),
-              u7 is not None and u7["pricingAsOf"] is None)
+              "a raise would escape into the payload builder's own `except` "
+              "and take the whole Usage section down, which is a missing "
+              "report where a wrong date was the complaint: %r"
+              % (u7 if u7 is None else u7["pricingBasis"],),
+              u7 is not None and u7["pricingBasis"]["asOf"] is None)
         # THE OTHER-DIRECTION CASE, and it is the vacuous-looking one: it
-        # passes on the pre-fix code by construction, and it is the only case
-        # that fails if the trim becomes an unconditional None and every
-        # project is told its rates are undated.
+        # is the only case that fails if the trim becomes an unconditional
+        # None and every project is told its rates are undated.
         p8 = os.path.join(root, "p8")
         m8, mp8 = _write_project(p8, [_row("2026-07-01T03")],
-                                 meta_usage={"pricingAsOf": "2026-06-30"})
+                                 meta_usage={"pricing": _tbl,
+                                             "pricingAsOf": "2026-06-30"})
         u8 = M.load_usage(m8, mp8, p8)
         check("ul23 ...and a declared date survives untouched, so the repair "
               "cannot have been 'never report a basis': %r"
-              % (u8["pricingAsOf"],),
-              u8["pricingAsOf"] == "2026-06-30")
+              % (u8["pricingBasis"],),
+              u8["pricingBasis"]["asOf"] == "2026-06-30")
+        check("ul24 ...and the payload carries no second date for the table: "
+              "`pricingBasis.asOf` is the one the context line and the stale "
+              "notice both read, so a manifest key cannot reach the page "
+              "beside it under another name",
+              "pricingAsOf" not in u8)
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+    # --- routing re-prices from the PROJECT'S table, never the shipped
+    # DEFAULT_PRICING, when the manifest declares none of its own -----------
+    # Two models, same risk band, same token volume, so the only thing that
+    # can move the RECOMMENDED DIRECTION is which rate table priced them.
+    # Under the shipped table sonnet is cheaper than opus; the project's own
+    # config below prices sonnet as the costlier model instead - so a version
+    # that still reached DEFAULT_PRICING would recommend the OPPOSITE move.
+    def _routing_rows(risk_pid, opus_tid_fmt, sonnet_tid_fmt):
+        tasks, rows = [], []
+        for i in range(3):
+            otid, stid = opus_tid_fmt % i, sonnet_tid_fmt % i
+            tasks.append({"id": otid, "title": "o", "status": "done",
+                          "risk": "high", "attempts": 1})
+            tasks.append({"id": stid, "title": "s", "status": "done",
+                          "risk": "high", "attempts": 1})
+            rows.append(_row("2026-07-01T03", model="claude-opus-5",
+                             taskId=otid, **{"in": 10000, "out": 200000}))
+            rows.append(_row("2026-07-01T03", model="claude-sonnet-5",
+                             taskId=stid, **{"in": 10000, "out": 200000}))
+        return tasks, rows
+
+    def _write_routing_project(proj_root, pid, meta_usage, config_pricing):
+        os.makedirs(os.path.join(proj_root, "docs", "audit"))
+        os.makedirs(os.path.join(proj_root, ".claude", "usage"))
+        tasks, rows = _routing_rows(pid, "O%d", "S%d")
+        meta = {"version": 2, "repo": "x"}
+        if meta_usage is not None:
+            meta["usage"] = meta_usage
+        manifest = {"meta": meta, "phases": [
+            {"id": pid, "title": "P", "status": "pending", "tasks": tasks}]}
+        mpath = os.path.join(proj_root, "docs", "audit", "audit-plan.json")
+        with io.open(mpath, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(json.dumps(manifest))
+        with io.open(os.path.join(proj_root, ".claude", "usage",
+                                  "2026-07.jsonl"), "w", encoding="utf-8",
+                    newline="\n") as fh:
+            for r in rows:
+                fh.write(json.dumps(r) + "\n")
+        if config_pricing is not None:
+            with io.open(os.path.join(proj_root, ".claude",
+                                      "audit.config.json"), "w",
+                        encoding="utf-8", newline="\n") as fh:
+                fh.write(json.dumps({"usage": {"pricing": config_pricing}}))
+        return manifest, mpath, rows
+
+    hooks_cfg = _loader.load_hooks_config(modname="hooks_cfg_for_routing_case")
+    expensive_sonnet = {"in": 300.0, "out": 1500.0, "cacheW5m": 375.0,
+                       "cacheW1h": 600.0, "cacheR": 30.0}
+
+    root2 = tempfile.mkdtemp(prefix="audit-usage-load-routing-")
+    try:
+        # --- deny twin: no meta.usage.pricing, so the PROJECT's own
+        # .claude/audit.config.json table is what routing must price at ---
+        p9 = os.path.join(root2, "p9")
+        m9, mp9, rows9 = _write_routing_project(
+            p9, "P9", {}, {"claude-sonnet-5": expensive_sonnet})
+        u9 = M.load_usage(m9, mp9, p9)
+        expected9 = hooks_cfg.usage_cfg(
+            {"usage": {"pricing": {"claude-sonnet-5": expensive_sonnet}}}
+        ).get("pricing")
+        check("ur1 routing re-prices from the PROJECT's own declared "
+              "usage.pricing when the manifest carries none - the advice "
+              "RECOMMENDS AWAY FROM THE MODEL THE PROJECT'S OWN TABLE PRICES "
+              "HIGHEST, which the shipped DEFAULT_PRICING cannot reproduce "
+              "because under it sonnet is the CHEAPER model: %r"
+              % (u9["routing"]["advice"][:1],),
+              bool(u9["routing"]["advice"])
+              and u9["routing"]["advice"][0]["from"] == "claude-sonnet-5"
+              and u9["routing"]["advice"][0]["to"] == "claude-opus-5")
+        check("ur2 ...and it matches a direct call to ul.routing() with that "
+              "SAME merged table - not a coincidence of direction only",
+              u9["routing"] == _UL.routing(m9, rows9, expected9),
+              u9["routing"])
+        check("ur3 ...and the vacuous direction: a version that still reached "
+              "DEFAULT_PRICING for this same ledger recommends the OPPOSITE "
+              "move, which is what proves ur1 is not reading the shipped "
+              "table under another name", _UL.routing(m9, rows9, None)
+              ["advice"][0]["from"] == "claude-opus-5")
+
+        # --- allow twin: the manifest DOES declare meta.usage.pricing, and a
+        # DIFFERENT table sits in the project's config - the manifest's own
+        # value must still win, unchanged from before this fallback existed ---
+        p10 = os.path.join(root2, "p10")
+        cheap_sonnet_in_config = {"in": 0.01, "out": 0.01, "cacheW5m": 0.01,
+                                  "cacheW1h": 0.01, "cacheR": 0.01}
+        # A FULL table, not a bare override: `_has_rates` treats a model
+        # absent from the table as an unpriced guess and routing then has no
+        # evidence to compare it against, so a manifest-declared table has to
+        # name both models the same way a real project's would.
+        manifest_declared9 = hooks_cfg.usage_cfg(
+            {"usage": {"pricing": {"claude-sonnet-5": expensive_sonnet}}}
+        ).get("pricing")
+        m10, mp10, rows10 = _write_routing_project(
+            p10, "P10", {"pricing": manifest_declared9},
+            {"claude-sonnet-5": cheap_sonnet_in_config})
+        u10 = M.load_usage(m10, mp10, p10)
+        check("ur4 a manifest that DOES declare meta.usage.pricing keeps "
+              "winning over the project's own config table, exactly as "
+              "before this fallback existed - the config here prices sonnet "
+              "as the CHEAP model, so a version that let it win would "
+              "recommend the other direction: %r"
+              % (u10["routing"]["advice"][:1],),
+              bool(u10["routing"]["advice"])
+              and u10["routing"]["advice"][0]["from"] == "claude-sonnet-5"
+              and u10["routing"]["advice"][0]["to"] == "claude-opus-5")
+    finally:
+        shutil.rmtree(root2, ignore_errors=True)
 
     # --- the aliases ---
     _names = ("load_usage", "_iso_day", "_pricing_stale", "_hourly")

@@ -70,7 +70,68 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `--status` prints is redacted and does not open the page; `commands/panel.md` says so, and
   that the browser was opened with the full one.
 
+- **One price table per project, chosen the same way on every surface, and every printed cost
+  priced at read time by the table its phrase names.**
+  - *One precedence.* The report and its Markdown twin, `/audit:usage` and its `--backfill`,
+    `/audit:status`, the panel and the meter hook all ask `usage_ledger.resolve_pricing`: the
+    plan's `meta.usage.pricing` when it declares a non-empty table, else the config's
+    `usage.pricing`, else the shipped table. **The meter and the panel used to read only the
+    config**, so on a project that declares a table in both places they now price at the plan's
+    table where they priced at the config's.
+  - *The plan's table is laid over the shipped one.* A table in `meta.usage.pricing` used to be
+    taken as written, so a model it did not name was priced at that table's own fallback; it is
+    now laid over the shipped table model by model, the way the config's table already was, and
+    a model it does not name keeps its shipped row.
+  - *The shipped rates changed.* The shipped table carries the official rates as of its
+    `pricingAsOf` (2026-10-06) with the page they were read from, adding rows for models it did
+    not name and lowering `claude-sonnet-5`'s; a project that declares no table sees its costs
+    move with it.
+  - *Costs are priced at read time.* A ledger row still stores the cost it was priced at when
+    written, and the ledger is never rewritten, but every surface now prints the resolved
+    table's price for each row's tokens rather than the stored figure, so changing a table
+    reprices what is printed. A row that cannot be priced again keeps its stored figure, and
+    the rate phrase beside the cost counts those rows; the meter hook's outlier advisory and
+    session line carry no rate phrase and instead say how many of those rows the figure they
+    print rests on.
+  - *One date for the price table on a page.* The report's stale-price notice is dated from the
+    table the resolver chose and names it in the same words as the cost line; a
+    `meta.usage.pricingAsOf` beside no `meta.usage.pricing` no longer raises a notice about a
+    table that priced nothing. The report's usage payload drops its separate `pricingAsOf` and
+    the panel's drops both `pricingAsOf` and `pricingAsOfDeclared`, neither of which any panel
+    script read — the date beside a panel cost is `pricingBasis.asOf`, the same resolved answer
+    the report and the meter hook already name theirs from.
+
+  **Against `COMPATIBILITY.md`.** No precedence that document had written down changes: its list
+  under *When two keys can express the same thing, which one wins is written down* named only
+  `planGate` over `enforce`, and this release adds the pricing order to it. But its version
+  table names *a changed precedence* as what a MAJOR carries, and on the meter and the panel
+  which of the plan's and the config's tables wins did change, as did how a plan table that
+  omits a model is priced. The shipped-rate change is the case its *Not promised* list names
+  (*That a default value is frozen*), and printed output is outside the document. Whether this
+  release is therefore a major is the operator's call, and is not decided here.
+
 ### Fixed
+- **The meter's outlier advisory no longer counts a kept ledger row from outside the task
+  it is warning about.** It used to sum `ledger["kept"]` over every row the ledger holds, so a
+  row that kept its stored figure on some unrelated task inflated the "N ledger row(s) keep the
+  cost stored when written" clause beside a figure that never summed that row at all. It now
+  counts only the warned task's own rows, plus — on the relative basis — the completed tasks
+  `cost_bands()` read to calibrate its percentiles; the absolute basis reads no task's history
+  at all, so it extends no further than the task itself. The session line was already scoped to
+  the session's own rows and is unchanged; a case now locks that in.
+- **The panel's Usage-tab CSV export drops `costUSD`, header and cell together, when `showCost`
+  is off** — the same rule `report/exports.js`'s `usageCsv` already applies, so a file saved
+  from either surface never carries a dollar figure the screen was configured to withhold. The
+  `/api/usage` payload keeps its cost data regardless: it is the page's own, token-protected
+  data source read over localhost by the same tab about to render it, never a file a reader
+  saves and hands around.
+- **The Settings help for `usage.pricingAsOf` said an unset field leaves BOTH the report and
+  the Usage tab calling the rates undated, which is true only when the project's own
+  `usage.pricing` table is the one in force.** It now says what `rate_basis_phrase` actually
+  does: the field dates this project's own table and nothing else, it is printed only when that
+  table is the one that priced the rows, and "rates undated" is never said of the shipped
+  table, which already carries its own date.
+
 - **A stamp now goes stale when a sibling rewrites a file the task does not declare.**
   `stamp-verification.py compare` answered `current`, exit 0, after an already-dirty undeclared
   file was rewritten: the three identity fields record HEAD, the declared files' contents and
