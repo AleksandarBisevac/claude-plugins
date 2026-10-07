@@ -738,7 +738,7 @@
     {
       "id": "P117",
       "title": "a pipeline run's fixed cost is measured stage by stage and cut by infrastructure",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P117.json"
     }
   ],
@@ -5848,16 +5848,20 @@
       "P116.2"
     ],
     "tools/measure-context.py": [
-      "P117.1"
+      "P117.1",
+      "P117.3-2sz"
     ],
     "tools/stream-cost.py": [
-      "P117.1"
+      "P117.1",
+      "P117.3-2sz"
     ],
     "docs/research/pipeline-cost-analysis.md": [
-      "P117.1"
+      "P117.1",
+      "P117.3-2sz"
     ],
     "docs/research/pipeline-cost-design.md": [
-      "P117.2"
+      "P117.2",
+      "P117.3-2sz"
     ]
   },
   "bugs": [
