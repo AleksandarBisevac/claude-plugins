@@ -36,12 +36,13 @@ Config keys (all optional; defaults in DEFAULTS below):
                                   branches of guard-secrets-read (the shell forms
                                   and the interpreter ones) and the PostToolUse
                                   report in guard-bash-writes all resolve their
-                                  tier through plan_gate_mode below, so one
-                                  file gets one TIER whichever way it is
-                                  written — see that function's own docstring
-                                  for the one allowance (trivialLineThreshold)
-                                  still read on the Edit/Write path alone, which
-                                  is tier agreement, not yet verdict agreement.
+                                  tier through plan_gate_mode below, and the
+                                  first two read one free-file slot
+                                  (trivial_slot), so one file gets one verdict
+                                  whichever way it is written — except a shell
+                                  write whose size its command does not state,
+                                  which takes the slot unmeasured; see that
+                                  function's own docstring.
                                   The secret guards are never graded and
                                   deny at every tier, because reading .env is
                                   wrong whether or not a plan exists.
@@ -931,6 +932,162 @@ def state_dir(root, cfg):
 
 def logs_dir(root, cfg):
     return root / (cfg.get("logsDir") or DEFAULTS["logsDir"])
+
+
+# --- the session's free-file slot ----------------------------------------------
+# `trivialLineThreshold`'s allowance is ONE file per session, whichever tool
+# writes it. `require-plan.py` grades Edit/Write against it and
+# `guard-secrets-read.py` grades a shell write against it, and the slot has one
+# reader and one writer here so the two cannot disagree about which file a
+# session has already spent it on - which is what they did while the shell half
+# never read the slot at all.
+TRIVIAL_SLOT = "plan-gate-%s.json"
+_SLOT_UNSAFE = re.compile(r"[^A-Za-z0-9_.-]")
+_SLOT_ID_MAX = 96
+
+
+def _slot_path(state, session_id):
+    """The slot's file. The session id is payload text, so it is reduced to a
+    file-name-safe class and bounded before it names a file: a separator in
+    it would otherwise place the slot outside the state directory."""
+    sid = _SLOT_UNSAFE.sub("_", str(session_id or "no-session"))[:_SLOT_ID_MAX]
+    return Path(state) / (TRIVIAL_SLOT % sid)
+
+
+def text_lines(text):
+    """Lines in `text`; 0 for the empty string."""
+    s = str(text)
+    return 0 if s == "" else len(s.splitlines())
+
+
+def text_char_lines(text):
+    """`text`'s length in 200-character lines, rounded up."""
+    return (len(str(text)) + 199) // 200
+
+
+def text_magnitude(text):
+    """The size `trivialLineThreshold` is compared against, for a body of
+    text: max(lines, chars / 200, rounded up). One formula for both plan-gate
+    halves - require-plan measures an edit's new text with it, and
+    guard-secrets-read measures the content a shell write states - so a
+    one-line blob and a long file count the same through either tool."""
+    return max(text_lines(text), text_char_lines(text))
+
+
+# What `trivial_slot` answers for a slot file that exists but names no file it
+# can read. Not a path any tree holds, so it never matches a `rel` - the slot
+# is spent, on a file nobody can name.
+SLOT_UNREADABLE = "(an unreadable free-file slot)"
+
+
+def trivial_slot(state, session_id):
+    """The repo-relative files this session's free-file slot holds; [] while
+    it is unspent.
+
+    A SLOT FILE THAT EXISTS IS A SPENT SLOT, readable or not. One that cannot
+    be parsed, or names no file, answers [SLOT_UNREADABLE]: spent on a file
+    nobody can name, so the next uncovered file is graded. Reading it as
+    unspent gave two verdicts by tool - an Edit was allowed as the first free
+    file while a shell write, whose exclusive take then failed, was graded -
+    and kept the door open for the rest of the session. Only an ABSENT file
+    is unspent. `take_trivial_slot` publishes the file whole, so a reader
+    never meets one half-written by a live writer; this answer is for a file
+    damaged some other way."""
+    path = _slot_path(state, session_id)
+    try:
+        if not path.exists():
+            return []
+    except Exception:
+        return [SLOT_UNREADABLE]
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            loaded = json.load(fh)
+        files = loaded.get("files") if isinstance(loaded, dict) else None
+        named = [f for f in files or [] if isinstance(f, str)]
+        return named or [SLOT_UNREADABLE]
+    except Exception:
+        return [SLOT_UNREADABLE]
+
+
+def take_trivial_slot(state, session_id, files):
+    """Take this session's slot for `files`.
+
+    -> True   taken
+       False  another write took it first: the slot file already exists, so
+              the loser re-reads the slot and is graded against it
+       None   the slot could not be written at all
+
+    PUBLISHED WHOLE. The JSON is written to a temp file in the state
+    directory and `os.link`ed to the slot's name, which fails if the name
+    exists - so two writers racing for an empty slot cannot both win, and no
+    reader can ever see a slot file that is present but not yet written. An
+    exclusive create followed by a write had the first property and not the
+    second: a failed write left an empty slot file behind. A volume that
+    refuses hard links falls back to exactly that create
+    (`_take_slot_exclusive`), so a writable directory always takes the slot.
+
+    NONE IS AN OPEN DOOR, and it is stated here because it is the cost of
+    keeping state writes best-effort. With a state directory nobody can write,
+    every slot reads as unspent, so EVERY uncovered file of the session is
+    taken as its first free file and allowed - at the deny tier too, through
+    either tool. A hook cannot refuse an edit for want of its own scratch
+    space without making that scratch space a way to stop all work, so the
+    door is accepted and named rather than closed.
+
+    `tempfile` is imported here, not at module scope, for the reason
+    `atomic_write_text` gives: every hook imports this module on every call,
+    and this is reached only when a slot is taken."""
+    import tempfile
+    tmp = None
+    try:
+        ensure_local_dir(Path(state))
+        fd, tmp = tempfile.mkstemp(dir=str(state), prefix="plan-gate-tmp-",
+                                   suffix=".json")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump({"files": list(files)}, fh)
+        try:
+            os.link(tmp, str(_slot_path(state, session_id)))
+        except FileExistsError:
+            raise
+        except OSError:
+            return _take_slot_exclusive(state, session_id, files)
+        return True
+    except FileExistsError:
+        return False
+    except Exception:
+        return None
+    finally:
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except Exception:
+                pass
+
+
+def _take_slot_exclusive(state, session_id, files):
+    """`take_trivial_slot` on a volume that refuses hard links.
+
+    FAT/exFAT, some SMB and FUSE mounts and some container bind mounts raise
+    on `os.link` in a directory that is perfectly writable, and reading that
+    as "the slot cannot be written" opened the door for every uncovered file
+    of the session. So the slot is taken by an exclusive create instead: the
+    race is still won once, and the cost is the property `os.link` bought - a
+    write that fails after the create leaves a partial file, which
+    `trivial_slot` reads as SLOT_UNREADABLE, a spent slot. That errs strict.
+    None only when this create fails too."""
+    try:
+        fd = os.open(str(_slot_path(state, session_id)),
+                     os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        return False
+    except Exception:
+        return None
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump({"files": list(files)}, fh)
+        return True
+    except Exception:
+        return None
 
 
 # --- usage / ledger -----------------------------------------------------------
@@ -2706,22 +2863,27 @@ def plan_gate_mode(cfg, state):
     WHAT ELSE READS THIS, because the reach is the promise and it used to be
     understated in every place it was written down. `require-plan.py` grades the
     Edit/Write path here; `guard-secrets-read.py` grades its shell-write branch
-    here, so `sed -i src/x.ts` and `Edit src/x.ts` resolve to the SAME TIER; and
+    here, so `sed -i src/x.ts` and `Edit src/x.ts` cannot disagree; and
     `guard-bash-writes.py` grades its plan-coverage class here — it did not,
     and an advisory that cried wolf in a repo which never opted in was how a
     stranger met this plugin. Only the plan-coverage claim is graded. A guard whose
     claim binds to evidence of its own — a secret path, a held lock, a journal file
     — needs no tier to be right and reports at all of them.
 
-    SAME TIER IS NOT YET SAME VERDICT. `trivialLineThreshold`'s first-free-
-    code-file allowance (`require-plan.py`'s own `allow.trivial`, read only on
-    its Edit/Write path) sits outside this function entirely:
-    `guard-secrets-read.py`'s shell-write branch calls this resolver and
-    nothing else, so a file small enough to clear the allowance for free
-    through `Edit` can still be denied here through `sed -i` on the same
-    file. Folding the allowance into this function, so one file gets one
-    VERDICT rather than one tier, is the open task; until it lands, say tier
-    agreement and not verdict agreement."""
+    THE TIER IS HALF OF THE VERDICT; THE FREE-FILE SLOT IS THE OTHER HALF.
+    `trivialLineThreshold` allows a session's first uncovered code file before
+    any tier is asked, and that slot is `trivial_slot` — one reader, one
+    writer, asked by `require-plan.py` for an edit and by
+    `guard-secrets-read.py` for a shell write — so a file spent through either
+    tool is spent for both, and a change's size is `text_magnitude` through
+    either: an edit's new text, or the text a shell command carries. So the
+    same change gets one verdict - WITH ONE EXCEPTION, decided rather than
+    open: a shell write whose command does not state its content (it
+    computes or fetches it) cannot be measured before it runs, and takes the
+    slot exactly as an Edit within the threshold would (decided 2026-10-06).
+    Measuring it afterwards is the PostToolUse arm's to do, and
+    `guard-bash-writes.py` does not do it yet: an unstated oversized shell
+    write that took the slot is reported by nothing today."""
     try:
         knob = plan_gate_knob(cfg)
         if knob:

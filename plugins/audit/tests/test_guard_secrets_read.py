@@ -88,9 +88,354 @@ def _refresh_cases(check):
             os.environ["CLAUDE_PROJECT_DIR"] = held
 
 
+def _slot_file(root, cfg, session):
+    """The session's free-file slot as require-plan stores it, read off disk
+    rather than through the reader under test."""
+    path = _config.state_dir(root, cfg) / ("plan-gate-%s.json" % session)
+    if not path.exists():
+        return []
+    return json.loads(path.read_text(encoding="utf-8")).get("files", [])
+
+
+def _spend_slot(root, cfg, session=None):
+    """Spend `session`'s free file on a file no case writes.
+
+    The cases that follow assert how an uncovered write is GRADED, which is
+    what a write past the session's one free file gets; without this the first
+    of them would take the slot and be allowed as the trivial file instead.
+    `_slot_cases` is where the slot itself is asserted."""
+    _config.take_trivial_slot(_config.state_dir(Path(root), cfg), session,
+                              ["src/spent-before-these-cases.ts"])
+
+
+def _slot_cases(check):
+    """One free-file slot per session, whichever tool takes it.
+
+    The fixture runs a phase whose task declares one file, so every other
+    source file is uncovered and the tier is deny: what decides a verdict here
+    is the slot alone. require-plan is driven beside this guard on the same
+    project, because the claim is that both read and write ONE slot."""
+    root = Path(_harness.fixture_root("guard-secrets-slot-"))
+    (root / "src").mkdir(parents=True)
+    (root / "docs" / "audit").mkdir(parents=True)
+    (root / "docs" / "audit" / "audit-plan.json").write_text(json.dumps(
+        {"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "in_progress",
+                 "files": ["src/declared.py"]}]}]}), encoding="utf-8")
+    rp = _loader.load(os.path.join(_harness.HOOKS_DIR, "require-plan.py"),
+                      modname="require_plan_for_slot")
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    held = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(root)
+
+    def shell(sid, cmd, use_cfg=None, agent=None):
+        data = {"tool_name": "Bash", "session_id": sid, "cwd": str(root),
+                "tool_input": {"command": cmd}}
+        if agent:
+            data["agent_id"] = agent
+        ok, got = _harness.attempt(M.decide, data, cfg=use_cfg or cfg)
+        return got if ok else ("raised", str(got))
+
+    def edit(sid, rel, event="PreToolUse"):
+        ok, got = _harness.attempt(rp.decide, {
+            "tool_name": "Edit", "session_id": sid, "cwd": str(root),
+            "hook_event_name": event,
+            "tool_input": {"file_path": str(root / rel), "old_string": "A = 1",
+                           "new_string": "A = 2"}}, cfg=cfg, event=event)
+        return got if ok else ("raised", str(got))
+
+    try:
+        first = shell("ts-a", "sed -i '' 's/A = 1/A = 2/' src/first.py")
+        check("ts1 the session's first uncovered source file, written by sed -i "
+              "at the deny tier, is allowed as the trivial file an Edit of it "
+              "would be, and takes require-plan's slot: %r, slot %r"
+              % (first, _slot_file(root, cfg, "ts-a")),
+              first[0] == "allow"
+              and _slot_file(root, cfg, "ts-a") == ["src/first.py"])
+        again = shell("ts-a", "sed -i '' 's/A = 2/A = 3/' src/first.py")
+        check("ts2 the slot's own file stays allowed on a second shell write "
+              "(require-plan's 'already being worked'): %r" % (again,),
+              again[0] == "allow")
+        second = shell("ts-a", "sed -i '' 's/A = 1/A = 2/' src/second.py")
+        check("ts3 a second uncovered file through the shell is graded by the "
+              "tier once the slot is spent, and the refusal names the file: %r"
+              % (second,),
+              second[0] == "block" and "src/second.py" in second[1])
+        by_edit = edit("ts-a", "src/third.py")
+        check("ts4 ...and so is a second uncovered file through Edit, the slot "
+              "having been taken by the shell write: %r" % (by_edit,),
+              by_edit[0] == "block")
+        asked = shell("ts-a", "sed -i '' 's/A = 1/A = 2/' src/second.py",
+                      use_cfg=_config._deep_merge(cfg, {"planGate": "ask"}))
+        check("ts5 the graded verdict is the tier's, not a fixed refusal: at "
+              "planGate 'ask' the same second file asks: %r" % (asked,),
+              asked[0] == "ask")
+        took = edit("ts-b", "src/edited.py", event="PostToolUse")
+        after = shell("ts-b", "sed -i '' 's/A = 1/A = 2/' src/other.py")
+        check("ts6 a slot an Edit took counts against a later shell write of a "
+              "different uncovered file: edit %r, then shell %r" % (took, after),
+              took[0] == "allow" and after[0] == "block")
+        same = shell("ts-b", "sed -i '' 's/A = 1/A = 2/' src/edited.py")
+        check("ts7 ...while the shell write of the file that Edit took is "
+              "allowed: %r" % (same,), same[0] == "allow")
+        both = shell("ts-c", "sed -i '' 's/A = 1/A = 2/' src/one.py src/two.py")
+        check("ts8 one command writing two uncovered files in a fresh session "
+              "is graded on the second, and a refused command spends no slot - "
+              "nothing was written: %r, slot %r"
+              % (both, _slot_file(root, cfg, "ts-c")),
+              both[0] == "block" and "src/two.py" in both[1]
+              and _slot_file(root, cfg, "ts-c") == [])
+        warned = shell("ts-e", "sed -i '' 's/A = 1/A = 2/' src/one.py src/two.py",
+                       use_cfg=_config._deep_merge(cfg, {"planGate": "warn"}))
+        check("ts10 ...while at a tier that lets the same command run, the first "
+              "file takes the slot as two Edits would have: %r, slot %r"
+              % (warned, _slot_file(root, cfg, "ts-e")),
+              warned[0] == "allow"
+              and _slot_file(root, cfg, "ts-e") == ["src/one.py"])
+        covered = shell("ts-d","sed -i '' 's/A = 1/A = 2/' src/declared.py")
+        check("ts9 a declared file takes no slot - coverage is answered before "
+              "the slot is consulted: %r, slot %r"
+              % (covered, _slot_file(root, cfg, "ts-d")),
+              covered[0] == "allow" and _slot_file(root, cfg, "ts-d") == [])
+        _ts_more(check, root, cfg, shell)
+        _ts_unreadable(check, root, cfg, shell, edit)
+    finally:
+        if held is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = held
+
+
+def _ts_more(check, root, cfg, shell):
+    """Every target one command writes is graded, whichever arm finds it; a
+    command that states its content is measured; the slot is taken once."""
+    eval_write = "python3 -c \"open('src/a.py','w').write('x')\""
+    mixed = shell("ts-f", eval_write + "; sed -i '' 's/A/B/' src/b.py")
+    check("ts11 an interpreter write that takes the free slot does not end the "
+          "grading: the shell write after it in the same command is a second "
+          "file and is refused at the deny tier: %r, slot %r"
+          % (mixed, _slot_file(root, cfg, "ts-f")),
+          mixed[0] == "block" and "src/b.py" in mixed[1]
+          and _slot_file(root, cfg, "ts-f") == [])
+    plan_write = eval_write + "; echo '{}' > docs/audit/audit-plan.json"
+    sub_deny = shell("ts-g", plan_write, agent="agent-ts")
+    check("ts12 a subagent's interpreter write that would take the free slot "
+          "does not open the manifest write after it - the subagent refusal "
+          "still holds at the deny tier: %r" % (sub_deny,),
+          sub_deny[0] == "block" and "audit plan" in sub_deny[1])
+    sub_warn = shell("ts-h", plan_write, agent="agent-ts",
+                     use_cfg=_config._deep_merge(cfg, {"planGate": "warn"}))
+    check("ts13 ...and at the warn tier, where the interpreter arm's own "
+          "verdict is an allow: %r" % (sub_warn,),
+          sub_warn[0] == "block" and "audit plan" in sub_warn[1])
+    orch = shell("ts-i", plan_write)
+    check("ts14 ...while the orchestrator's same command is allowed - the "
+          "manifest is its to write and src/a.py is the session's free file: %r"
+          % (orch,), orch[0] == "allow")
+    big = shell("ts-j", "cat > src/big.py <<'EOF'\n%s\nEOF"
+                % "\n".join("V%d = %d" % (n, n) for n in range(2000)))
+    check("ts15 a heredoc that states a body far past trivialLineThreshold is "
+          "not the trivial file - it is graded, and names its size: %r, slot %r"
+          % (big[:1] + (big[1][:160],), _slot_file(root, cfg, "ts-j")),
+          big[0] == "block" and "src/big.py" in big[1]
+          and "magnitude" in big[1] and _slot_file(root, cfg, "ts-j") == [])
+    small = shell("ts-k", "cat > src/small.py <<'EOF'\nA = 1\nEOF")
+    check("ts16 ...while a one-line heredoc into the same kind of file is: %r"
+          % (small,), small[0] == "allow"
+          and _slot_file(root, cfg, "ts-k") == ["src/small.py"])
+    state = _config.state_dir(root, cfg)
+    won = _config.take_trivial_slot(state, "ts-l", ["src/won.py"])
+    lost = _config.take_trivial_slot(state, "ts-l", ["src/lost.py"])
+    check("ts17 taking the slot is a create that refuses to overwrite: the "
+          "second taker loses and the first file stays: %r, %r, slot %r"
+          % (won, lost, _slot_file(root, cfg, "ts-l")),
+          won is True and lost is False
+          and _slot_file(root, cfg, "ts-l") == ["src/won.py"]
+          and not list(state.glob("plan-gate-tmp-*")))
+    real = _config.trivial_slot
+    reads = []
+
+    def stale_once(st, sid):
+        reads.append(sid)
+        return [] if len(reads) == 1 else real(st, sid)
+
+    _config.take_trivial_slot(state, "ts-m", ["src/winner.py"])
+    _config.trivial_slot = stale_once
+    try:
+        raced = shell("ts-m", "sed -i '' 's/A/B/' src/loser.py")
+    finally:
+        _config.trivial_slot = real
+    check("ts18 the loser of a race for the slot - it read the slot empty, "
+          "another write took it first - is graded against the winner's "
+          "file, not freed: %r after %d reads" % (raced, len(reads)),
+          raced[0] == "block" and "src/loser.py" in raced[1])
+    odd = "../../outside/" + "x" * 300
+    _config.take_trivial_slot(state, odd, ["src/odd.py"])
+    made = sorted(p.name for p in state.glob("plan-gate-*"))
+    stray = sorted(str(p) for p in root.parent.glob("outside*"))
+    check("ts19 a session id is reduced to a safe file name: the slot stays "
+          "in the state directory, is bounded, and reads back: %r, strays %r"
+          % ([m for m in made if "outside" in m], stray),
+          not stray and _config.trivial_slot(state, odd) == ["src/odd.py"]
+          and all(len(m) < 160 for m in made))
+
+
+def _trivial_rows(root, cfg, sid):
+    """allow.trivial rows the gate feed holds for `sid`."""
+    feed = _config.logs_dir(root, cfg) / "plan-gate-events.jsonl"
+    if not feed.exists():
+        return []
+    rows = [json.loads(x) for x in feed.read_text(encoding="utf-8").splitlines()
+            if x.strip()]
+    return [r for r in rows if r.get("event") == "allow.trivial"
+            and r.get("sessionId") == sid]
+
+
+def _ts_unreadable(check, root, cfg, shell, edit):
+    """A slot file that exists but cannot be read is ONE answer for both tools:
+    spent, on a file nobody can name - and neither hook claims a slot it did
+    not record."""
+    state = _config.state_dir(root, cfg)
+    damaged = (("ts20", "ts-n", "an empty slot file", ""),
+               ("ts21", "ts-o", "a truncated slot file", '{"files": ["src/w'),
+               ("ts21b", "ts-o2", "a slot file that parses but names no file",
+                '{"files": []}'))
+    for cid, sid, what, body in damaged:
+        (state / ("plan-gate-%s.json" % sid)).write_text(body, encoding="utf-8")
+        edits = [edit(sid, "src/e%d.py" % n) for n in (1, 2)]
+        echoed = shell(sid, "echo x > src/s9.py")
+        check("%s %s is a spent slot through BOTH tools at the deny tier, and "
+              "the Edit's refusal says the slot is what could not be read - "
+              "not a size it never measured: edits %r, shell %r"
+              % (cid, what, [e[:1] for e in edits], echoed[:1]),
+              all(e[0] == "block" and _config.SLOT_UNREADABLE in e[1]
+                  for e in edits) and echoed[0] == "block"
+              and _config.trivial_slot(state, sid) == [_config.SLOT_UNREADABLE])
+    raced_rows_before = len(_trivial_rows(root, cfg, "ts-p"))
+    _config.take_trivial_slot(state, "ts-p", ["src/winner.py"])
+    real = _config.trivial_slot
+    reads = []
+
+    def stale_once(st, s):
+        reads.append(s)
+        return [] if len(reads) == 1 else real(st, s)
+
+    _config.trivial_slot = stale_once
+    try:
+        lost = edit("ts-p", "src/loser.py")
+    finally:
+        _config.trivial_slot = real
+    check("ts22 an Edit that loses the race for the slot is graded against the "
+          "winner and logs no allow.trivial: %r, rows %d -> %d"
+          % (lost[:1], raced_rows_before, len(_trivial_rows(root, cfg, "ts-p"))),
+          lost[0] == "block" and "recorded first trivial" not in lost[1]
+          and len(_trivial_rows(root, cfg, "ts-p")) == raced_rows_before)
+    (root / "blocker").write_text("a file where a directory is wanted",
+                                  encoding="utf-8")
+    nowhere = _config._deep_merge(cfg, {"stateDir": "blocker/state"})
+    rp_mod = _loader.load(os.path.join(_harness.HOOKS_DIR, "require-plan.py"),
+                          modname="require_plan_for_slot")
+    ok, got = _harness.attempt(rp_mod.decide, {
+        "tool_name": "Edit", "session_id": "ts-q", "cwd": str(root),
+        "tool_input": {"file_path": str(root / "src/q.py"),
+                       "old_string": "A = 1", "new_string": "A = 2"}},
+        cfg=nowhere, event="PreToolUse")
+    check("ts23 with a state directory that cannot be written, the Edit is "
+          "allowed (the named open door) but neither says nor logs that it "
+          "recorded the slot: %r, rows %r"
+          % (got, _trivial_rows(root, nowhere, "ts-q")),
+          ok and got[0] == "allow" and "recorded first trivial" not in got[1]
+          and "could not be recorded" in got[1]
+          and _trivial_rows(root, nowhere, "ts-q") == [])
+    ok, sgot = _harness.attempt(M.decide, {
+        "tool_name": "Bash", "session_id": "ts-s", "cwd": str(root),
+        "tool_input": {"command": "echo x > src/s.py"}}, cfg=nowhere)
+    check("ts25 ...and the shell write in the same state is allowed with the "
+          "same words, not as a recorded first file, and no slot appears: %r"
+          % (sgot,),
+          ok and sgot[0] == "allow" and "could not be recorded" in sgot[1]
+          and "first trivial code file of the session" not in sgot[1]
+          and _config.trivial_slot(_config.state_dir(root, nowhere),
+                                   "ts-s") == [])
+    _ts_no_links(check, root, cfg, shell, edit)
+
+
+def _ts_no_links(check, root, cfg, shell, edit):
+    """A writable state directory on a volume without hard links still takes
+    the slot: `os.link` refusing is not the directory refusing."""
+    real_link = os.link
+
+    def no_links(src, dst, *args, **kwargs):
+        raise PermissionError(1, "Operation not permitted", dst)
+
+    os.link = no_links
+    try:
+        first = [edit("ts-r", "src/l1.py"), edit("ts-r", "src/l2.py"),
+                 shell("ts-r", "echo x > src/l3.py")]
+        reverse = [shell("ts-r2", "echo x > src/m1.py"),
+                   shell("ts-r2", "echo x > src/m2.py"),
+                   edit("ts-r2", "src/m3.py")]
+    finally:
+        os.link = real_link
+    check("ts24 with os.link refused on a writable state directory, the first "
+          "uncovered file still takes the slot and the next one is graded "
+          "through BOTH tools: edit-first %r slot %r, shell-first %r slot %r"
+          % ([v[0] for v in first], _slot_file(root, cfg, "ts-r"),
+             [v[0] for v in reverse], _slot_file(root, cfg, "ts-r2")),
+          [v[0] for v in first] == ["allow", "block", "block"]
+          and _slot_file(root, cfg, "ts-r") == ["src/l1.py"]
+          and [v[0] for v in reverse] == ["allow", "block", "block"]
+          and _slot_file(root, cfg, "ts-r2") == ["src/m1.py"])
+
+
+def _two_tree_cases(check):
+    """One command writing uncovered files in two trees is graded in each."""
+    lw = _harness.worktree_pair("gsr-two-trees-")
+    main = Path(lw["main"])
+    (main / "docs" / "audit" / "audit-plan.json").write_text(json.dumps(
+        {"meta": {"version": 2}, "phases": [
+            {"id": "P41", "title": "p", "status": "done", "tasks": [
+                {"id": "P41.1", "title": "t", "status": "done"}]}]}),
+        encoding="utf-8")
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    held = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(main)
+    _spend_slot(main, cfg, "tt")
+    wt_file = os.path.join(lw["wt"], "src", "undeclared.ts")
+
+    def run(cmd):
+        ok, got = _harness.attempt(M.decide, {
+            "tool_name": "Bash", "session_id": "tt", "cwd": str(main),
+            "tool_input": {"command": cmd}}, cfg=cfg)
+        return got if ok else ("raised", str(got))
+
+    try:
+        alone = run("echo x > src/undeclared.ts")
+        check("tt1 an uncovered file of the main checkout, whose plan runs "
+              "nothing, is allowed at its warn tier: %r" % (alone[:1],),
+              alone[0] == "allow")
+        both = run("echo x > src/undeclared.ts; echo y > %s" % wt_file)
+        check("tt2 the same command also writing the linked worktree's "
+              "uncovered file - whose phase runs - is refused, naming the "
+              "worktree file: the first file's tier does not grade the second: "
+              "%r" % (both[:1] + (both[1][:200],),),
+              both[0] == "block" and "linked worktree" in both[1])
+        flipped = run("echo y > %s; echo x > src/undeclared.ts" % wt_file)
+        check("tt3 ...in either order: %r" % (flipped[:1],),
+              flipped[0] == "block")
+    finally:
+        if held is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = held
+
+
 def _cases(check):
     """Exercise the decision core with fictional secret paths (never real files)."""
     _harness.stage(check, "gs-live", _refresh_cases)
+    _harness.stage(check, "ts", _slot_cases)
+    _harness.stage(check, "tt", _two_tree_cases)
     cfg = _config._deep_merge(_config.DEFAULTS, {})
     tmp = Path(_harness.fixture_root("guard-secrets-selftest-"))
 
@@ -99,6 +444,7 @@ def _cases(check):
     # repository happened to be open.
     _prev_project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
     os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
+    _spend_slot(tmp, cfg)
 
     # The shell-write branch is a PLAN gate and is graded like require-plan's. The
     # cases that assert full enforcement say so explicitly.
@@ -2437,6 +2783,7 @@ def _cases(check):
     tmp_t = Path(tempfile.mkdtemp(prefix="guard-secrets-events-"))
     _prev_t = os.environ.get("CLAUDE_PROJECT_DIR")
     os.environ["CLAUDE_PROJECT_DIR"] = str(tmp_t)
+    _spend_slot(tmp_t, cfg, "sess-t")
     try:
         _feed = tmp_t / ".claude" / "logs" / "plan-gate-events.jsonl"
 
@@ -2774,6 +3121,7 @@ def _cases(check):
     else:
         _prev_lw = os.environ.get("CLAUDE_PROJECT_DIR")
         os.environ["CLAUDE_PROJECT_DIR"] = _lw["main"]
+        _spend_slot(_lw["main"], cfg, "lw")
         try:
             def _lw_bash(cwd, command):
                 ok, got = _harness.attempt(

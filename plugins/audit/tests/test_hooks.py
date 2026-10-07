@@ -87,12 +87,6 @@ OPERATOR_DECISION = ("operator decision, 2026-10-06: taken by the orchestrator "
                      "to completion, on the analysis's recommendation")
 
 
-SHELL_EDIT_PARITY = ("_config.plan_gate_mode docstring: a shell write and Edit "
-                     "of one file cannot disagree; the Edit twin takes the "
-                     "session's trivial-file slot at the deny tier while the "
-                     "shell write is refused as outside the plan")
-
-
 def _all(verdict):
     return {"observe": verdict, "warn": verdict, "deny": verdict}
 
@@ -227,24 +221,24 @@ ROWS = (
      "why": "one-line Edit of a hook file no task declares"},
     {"id": "b02", "class": "trivial-edit-undeclared-file", "tool": "Bash",
      "input": _bash("sed -i '' 's/X = 1/X = 2/' " + OTHER_HOOK),
-     "why": "the same change as b02e, through sed -i",
-     "today": _ladder("allow", "allow", "deny"), "contradicts": SHELL_EDIT_PARITY},
+     "why": "the same change as b02e, through sed -i"},
     {"id": "b17", "class": "trivial-edit-undeclared-file", "tool": "Edit",
      "input": _edit("src/app.py", "A = 1", "A = 2"),
      "why": "one-line Edit of an uncovered source file"},
     {"id": "b17s", "class": "trivial-edit-undeclared-file", "tool": "Bash",
      "input": _bash("sed -i '' 's/A = 1/A = 2/' src/app.py"),
-     "why": "the same change as b17, through sed -i",
-     "today": _ladder("allow", "allow", "deny"), "contradicts": SHELL_EDIT_PARITY},
+     "why": "the same change as b17, through sed -i"},
     {"id": "b03o", "class": "trivial-edit-undeclared-file", "tool": "Bash",
      "input": _bash("python3 - <<'PY'\np = 'src/app.py'\ns = open(p).read()"
                     ".replace('A = 1', 'A = 2')\nopen(p, 'w').write(s)\nPY"),
-     "why": "the same change as b17, through a heredoc program",
-     "today": _ladder("allow", "allow", "deny"), "contradicts": SHELL_EDIT_PARITY},
+     "why": "the same change as b17, through a heredoc program"},
     # large-new-undeclared-file
     {"id": "b17w", "class": "large-new-undeclared-file", "tool": "Write",
      "input": {"file_path": "{ROOT}/src/new_module.py", "content": "{BIGCONTENT}"},
      "why": "a new uncovered source file above the trivial threshold"},
+    {"id": "b17h", "class": "large-new-undeclared-file", "tool": "Bash",
+     "input": _bash("cat > src/new_module.py <<'EOF'\n{BIGCONTENT}EOF"),
+     "why": "the same new file as b17w, its body stated in a heredoc"},
     # write-test-file
     {"id": "n02", "class": "write-test-file", "tool": "Write",
      "input": {"file_path": "{ROOT}/" + FX_TESTS + "test_guard_demo.py",
@@ -626,7 +620,7 @@ def _verdict_word(decided):
 
 
 # --- the cases ----------------------------------------------------------------------
-KNOWN_DIVERGENCE = ("b02", "b03o", "b17s", "b10", "g06")
+KNOWN_DIVERGENCE = ("b10", "g06")
 OPERATOR_DECIDED = ("b06", "b10", "g06")
 
 

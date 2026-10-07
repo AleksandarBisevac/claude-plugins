@@ -54,21 +54,27 @@ ASK = permissionDecision "ask" when planGate pins that tier):
 
 Every verdict past step 5 also drops one line into the gate events feed
 (_config.append_gate_event → <logsDir>/plan-gate-events.jsonl): deny and
-ask.shown on the Pre pass (a denial has no Post), everything else when the
-edit actually happened.
+ask.shown on the Pre pass (a denial has no Post), allow.trivial when the slot
+is taken (normally Pre — see below), everything else when the edit actually
+happened.
 
 "Change magnitude" is max(added lines, added chars / 200, removed lines) — a
 single-line minified blob and a large deletion both count as large.
 
-TRANSACTIONAL STATE (decide at PreToolUse, commit at PostToolUse):
-  PreToolUse only OBSERVES state — it neither consumes the bypass nor records
-  the free-file slot, because the edit may still be denied by a sibling hook
-  (guard-edits) or by the user's permission prompt. PostToolUse — which fires
-  only after the tool actually ran — CONSUMES the bypass (single-use, logged)
-  and RECORDS the free-file slot. Accepted residual: several edits batched in
-  one assistant message can ride one armed bypass ("single-use per tool batch"),
-  and two files racing the single free slot are both allowed once — the second
-  file blocks from its NEXT edit onward.
+TRANSACTIONAL STATE (decide at PreToolUse, commit at PostToolUse), WITH ONE
+EXCEPTION:
+  PreToolUse does not consume the bypass, because the edit may still be denied
+  by a sibling hook (guard-edits) or by the user's permission prompt.
+  PostToolUse — which fires only after the tool actually ran — CONSUMES the
+  bypass (single-use, logged). Accepted residual: several edits batched in one
+  assistant message can ride one armed bypass ("single-use per tool batch").
+  THE FREE-FILE SLOT IS THE EXCEPTION: it is TAKEN at PreToolUse (and its
+  allow.trivial row written then), because guard-secrets-read takes the same
+  slot for a shell write at its own Pre and has no Post pass; a slot left free
+  until this hook's Post was a window in which a shell write could take it
+  from an edit already allowed. The exclusive take (`_config.take_trivial_slot`)
+  means two files racing the slot cannot both win it. The cost is the
+  stricter direction: an edit refused after its Pre has still spent the slot.
 
 Contract: a block emits {"hookSpecificOutput": {"permissionDecision": "deny",
 "permissionDecisionReason": ...}} on stdout and exits 0 (the deprecated exit-2 +
@@ -161,22 +167,17 @@ def _change_magnitude(tool, ti):
     server author's vocabulary and not a contract. Same residual, one server over:
     what the target held BEFORE the call is not in the payload.
     """
-    def lines(text):
-        s = str(text)
-        return 0 if s == "" else len(s.splitlines())
-
-    def char_lines(text):
-        return (len(str(text)) + 199) // 200
+    lines = _config.text_lines
+    measure = _config.text_magnitude
+    char_lines = _config.text_char_lines
 
     if str(tool).startswith("mcp__"):
-        body = _config.mcp_payload(ti).get("body") or ""
-        return max(lines(body), char_lines(body))
+        return measure(_config.mcp_payload(ti).get("body") or "")
     if tool == "Write":
-        t = ti.get("content", "")
-        return max(lines(t), char_lines(t))
+        return measure(ti.get("content", ""))
     if tool == "Edit":
         new, old = ti.get("new_string", ""), ti.get("old_string", "")
-        return max(lines(new), char_lines(new), lines(old))
+        return max(measure(new), lines(old))
     if tool == "MultiEdit":
         new_l = new_c = old_l = 0
         for e in ti.get("edits", []) or []:
@@ -186,8 +187,7 @@ def _change_magnitude(tool, ti):
             old_l += lines(old)
         return max(new_l, new_c, old_l)
     if tool == "NotebookEdit":
-        t = ti.get("new_source", "")
-        return max(lines(t), char_lines(t))
+        return measure(ti.get("new_source", ""))
     return 0
 
 
@@ -641,8 +641,8 @@ def _mcp_plan_target(ti, root, cfg):
 
     A payload naming SEVERAL writable paths is decided on the first that is not
     already exempt, and the others reach this gate through nothing — under-coverage,
-    named, and the same residual `_source_write_hit` carries for a command that
-    writes two files.
+    named. The shell half no longer shares it: `_source_write_hit` reports every
+    uncovered file a command writes, and the second of two is graded.
 
     A CANDIDATE OUTSIDE `root` IS NOT NECESSARILY OUT OF SCOPE. `_config.in_project`
     widens the old `within_root` filter to a linked worktree of this same
@@ -686,10 +686,11 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
            event=None):
     """Pure-ish decision core. Returns ("allow", reason) or ("block", message).
 
-    `event` selects the transactional side: "PreToolUse" (default) is read-only
-    on state; "PostToolUse" commits state (consumes the bypass / records the
-    free-file slot). `cfg`/`state_dir`/`logs_dir` override real values
-    (used by --selftest).
+    `event` selects the transactional side. "PreToolUse" (default) takes the
+    free-file slot - as guard-secrets-read takes it for a shell write - and
+    does not consume the bypass; "PostToolUse" consumes the bypass, confirms
+    the slot, and takes it only when the Pre pass did not.
+    `cfg`/`state_dir`/`logs_dir` override real values (used by --selftest).
     """
     tool = data.get("tool_name", "")
     is_mcp = str(tool).startswith("mcp__")
@@ -948,15 +949,21 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     except Exception:
         pass
 
-    # 5. trivial-edit allowance (per-session state; recorded at Post)
-    gate_file = sd / ("plan-gate-%s.json" % session_id)
-    files_list = []
-    try:
-        if gate_file.exists():
-            with open(gate_file, "r", encoding="utf-8") as fh:
-                files_list = (json.load(fh) or {}).get("files", []) or []
-    except Exception:
-        files_list = []
+    # 5. trivial-edit allowance. The slot is `_config.trivial_slot`, the same
+    #    one guard-secrets-read reads and writes for a shell write: a file
+    #    spent through `sed -i` is spent here too, and the other way round.
+    #
+    #    TAKEN AT PRE, as the shell arm takes it, and that is the exception to
+    #    this hook's decide-at-Pre / commit-at-Post rule. Taken at Post, the
+    #    slot was free between an Edit's Pre allow and its Post: a shell write
+    #    in that window took it, and the Edit's own Post then found its file
+    #    a second one - after it had landed - so every later edit of it was
+    #    refused. The Post pass confirms: the file is in the slot by then. It
+    #    takes the slot only when the Pre pass did not (no Pre ran, or the
+    #    state directory refused the write then). A Pre take whose edit a
+    #    sibling hook or the operator then refuses has still spent the slot -
+    #    the stricter direction, the one the shell arm already pays.
+    files_list = _config.trivial_slot(sd, session_id)
 
     if rel in files_list:
         return ("allow", "already being worked: %s" % rel)
@@ -964,14 +971,8 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     magnitude = _change_magnitude(tool, ti)
 
     if len(files_list) == 0 and magnitude <= threshold:
-        if commit_state:
-            files_list.append(rel)
-            try:
-                _ensure_dir(sd)
-                with open(gate_file, "w", encoding="utf-8") as fh:
-                    json.dump({"files": files_list}, fh)
-            except Exception:
-                pass
+        took = _config.take_trivial_slot(sd, session_id, [rel])
+        if took is True:
             _config.append_gate_event(ld, {
                 "event": "allow.trivial", "file": rel, "mode": "allow",
                 "reason": REASON_FIRST_SMALL % magnitude,
@@ -979,8 +980,17 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
             return ("allow",
                     "recorded first trivial code file (magnitude %d): %s"
                     % (magnitude, rel))
-        return ("allow",
-                "first trivial code file (magnitude %d): %s" % (magnitude, rel))
+        if took is None:
+            # The open door `take_trivial_slot` names: nothing was recorded,
+            # so nothing is logged as recorded either.
+            return ("allow",
+                    "first trivial code file (magnitude %d), but the slot "
+                    "could not be recorded: %s" % (magnitude, rel))
+        # Lost the race: another write took the slot first, so this file is
+        # graded against it like any second file.
+        files_list = _config.trivial_slot(sd, session_id)
+        if rel in files_list:
+            return ("allow", "already being worked: %s" % rel)
 
     reason = (
         _slot_reason(files_list)

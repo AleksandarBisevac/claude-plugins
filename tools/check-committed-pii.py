@@ -576,6 +576,13 @@ BASELINE = (
      "posix-home",
      "the task.add row beside it, whose title quotes the same phrase for the same "
      "reason. A phrase, not a directory; chained, so recorded rather than rewritten."),
+    ("docs/audit/journal/2026-10.6c881c24-c1fd-461f-8c48.wt-d215e320.jsonl", 23,
+     "posix-home",
+     "a task.note row whose text quoted an operator's command, and that command's "
+     "argument was an absolute path under the operator's home directory. The "
+     "plan's copy of the note was corrected to a repository-relative spelling; "
+     "this row cannot be - its hash covers these bytes and the chain runs "
+     "through it - so it is recorded here rather than rewritten."),
     # THE PLAN'S ROWS, recorded when the plan entered the domain. Every one is a
     # shape QUOTED in a task's text - an example, a fixture name, a phrase - and
     # names no machine. KEYED BY WHAT THE LINE SAYS (`line_anchor`), not by its

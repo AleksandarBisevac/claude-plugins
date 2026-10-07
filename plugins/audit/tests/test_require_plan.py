@@ -349,18 +349,31 @@ def _cases(check):
                 os.environ["CLAUDE_PROJECT_DIR"] = _prev_lk
             shutil.rmtree(lkroot, ignore_errors=True)
 
-    # (b) transactional slot: Pre allows but does NOT record; the matching Post
-    #     records; only then does a second distinct file block.
+    # (b) the slot is taken at Pre - the shell arm takes the same slot at its
+    #     own Pre, so a slot left free until Post was a window - and the
+    #     matching Post confirms it.
     sess_b = "selftest-session-b"
     p_first = payload("Write", "src/foo/a.ts", content="export const a = 1;",
                       sid=sess_b)
     _expect("b1 first small file (Pre) allowed", "allow", p_first)
     gate = sd / ("plan-gate-%s.json" % sess_b)
-    check("b2 Pre did NOT record the slot", not gate.exists())
-    _expect("b3 second small file BEFORE any Post still allowed", "allow",
-          payload("Write", "src/foo/b.ts", content="export const b = 2;", sid=sess_b))
-    _expect("b4 Post records the slot", "allow", p_first, event="PostToolUse")
-    check("b5 Post recorded the slot", gate.exists())
+
+    def slot_b():
+        """The slot read off disk, not through the reader under test."""
+        if not gate.exists():
+            return []
+        return json.loads(gate.read_text(encoding="utf-8")).get("files")
+
+    check("b2 Pre took the slot for the file it allowed",
+          slot_b() == ["src/foo/a.ts"], slot_b())
+    _expect("b3 a second small file before the first one's Post is already a "
+            "second file", "block",
+            payload("Write", "src/foo/b.ts", content="export const b = 2;",
+                    sid=sess_b))
+    _expect("b4 Post of the first file confirms it", "allow", p_first,
+            event="PostToolUse")
+    check("b5 the slot still names the first file after Post",
+          slot_b() == ["src/foo/a.ts"], slot_b())
     _expect("b6 second distinct file after Post blocks", "block",
           payload("Write", "src/foo/b.ts", content="export const b = 2;", sid=sess_b))
     _expect("b7 same first file again allowed", "allow", p_first)
@@ -1914,6 +1927,83 @@ def _cases(check):
               (tmp_ig / "state" / ".gitignore").exists())
     finally:
         shutil.rmtree(tmp_ig, ignore_errors=True)
+
+    _harness.stage(check, "ss", _shell_slot_cases)
+
+
+def _shell_slot_cases(check):
+    """The free-file slot is ONE slot per session, and a shell write takes it.
+
+    guard-secrets-read grades the shell half of the plan gate; the fixture runs
+    a phase so every undeclared source file meets the deny tier, which leaves
+    the slot as the only thing deciding these verdicts. Neither `state_dir` nor
+    `cfg` is overridden: both hooks must find the slot through the project's
+    own configuration, or the two would be reading two different files."""
+    root = Path(_harness.fixture_root("require-plan-shell-slot-"))
+    (root / "src").mkdir(parents=True)
+    (root / "docs" / "audit").mkdir(parents=True)
+    (root / "docs" / "audit" / "audit-plan.json").write_text(json.dumps(
+        {"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "in_progress",
+                 "files": ["src/declared.py"]}]}]}), encoding="utf-8")
+    guard = _loader.load(os.path.join(_harness.HOOKS_DIR, "guard-secrets-read.py"),
+                         modname="guard_secrets_read_for_slot")
+    held = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(root)
+
+    def edit(sid, rel):
+        ok, got = _harness.attempt(M.decide, {
+            "tool_name": "Edit", "session_id": sid, "cwd": str(root),
+            "tool_input": {"file_path": str(root / rel), "old_string": "A = 1",
+                           "new_string": "A = 2"}}, event="PreToolUse")
+        return got if ok else ("raised", str(got))
+
+    try:
+        fresh = edit("ss-fresh", "src/edited.py")
+        check("ss0 with nothing spent, a one-line Edit of an uncovered file is "
+              "the session's trivial file at the deny tier: %r" % (fresh,),
+              fresh[0] == "allow")
+        ok, shell = _harness.attempt(guard.decide, {
+            "tool_name": "Bash", "session_id": "ss-a", "cwd": str(root),
+            "tool_input": {"command": "sed -i '' 's/A = 1/A = 2/' src/shell.py"}})
+        later = edit("ss-a", "src/edited.py")
+        check("ss1 a slot taken by a shell write counts against a later Edit of "
+              "a different uncovered file: shell %r, then Edit %r"
+              % (shell, later),
+              ok and shell[0] == "allow" and later[0] == "block")
+        same = edit("ss-a", "src/shell.py")
+        check("ss2 ...and an Edit of the file the shell write took is that "
+              "file being worked, not a second one: %r" % (same,),
+              same[0] == "allow")
+
+        def edit_at(sid, rel, event):
+            ok, got = _harness.attempt(M.decide, {
+                "tool_name": "Edit", "session_id": sid, "cwd": str(root),
+                "hook_event_name": event,
+                "tool_input": {"file_path": str(root / rel),
+                               "old_string": "A = 1", "new_string": "A = 2"}},
+                event=event)
+            return got if ok else ("raised", str(got))
+
+        pre_b = edit_at("ss-w", "src/b.py", "PreToolUse")
+        ok, shell_a = _harness.attempt(guard.decide, {
+            "tool_name": "Bash", "session_id": "ss-w", "cwd": str(root),
+            "tool_input": {"command": "echo x > src/a.py"}})
+        post_b = edit_at("ss-w", "src/b.py", "PostToolUse")
+        again_b = edit_at("ss-w", "src/b.py", "PreToolUse")
+        check("ss3 the window between an Edit's Pre and its Post is closed: "
+              "Edit of b allowed at Pre, a shell write of a in between is the "
+              "second file, and b - already landed - stays the session's free "
+              "file at its Post and on the next edit: %r"
+              % ([pre_b[0], ok and shell_a[0], post_b[0], again_b[0]],),
+              pre_b[0] == "allow" and ok and shell_a[0] == "block"
+              and post_b[0] == "allow" and again_b[0] == "allow")
+    finally:
+        if held is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = held
 
 
 def _selftest():

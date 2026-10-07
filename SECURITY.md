@@ -391,8 +391,23 @@ at every tier, and `planGate` (0.34.0) pins any single tier by hand — `"observ
 deny. Both plan gates are graded this way — `require-plan`, and **both** Bash-write branches of
 `guard-secrets-read`: the shell forms (`sed -i`, `tee`, `>`/`>>`) and the interpreter ones
 (`python -c`, `node -e`, and the heredoc spelling of either), which resolve their tier through
-the single function in that hook that is allowed to read one. So the same file gets the same
-verdict whether it is edited through a tool, through `sed -i` or through `python3 -c`. The
+the single function in that hook that is allowed to read one, after the session's one
+free-file slot (`trivialLineThreshold`), which both hooks read and take through one reader and
+one writer in `_config.py`. So the same file gets the same verdict whether it is edited through
+a tool, through `sed -i` or through `python3 -c` - except a shell write whose command does not
+state its content (it computes or fetches it), which cannot be measured before it runs and
+takes the slot unmeasured. Nothing reports an oversized one of those yet; a post-write report
+is follow-up work. And when the slot cannot be written at all (an unwritable state directory),
+every uncovered file of the session is taken as its first free file and allowed - at the deny
+tier too, through either tool: a hook will not stop all work for want of its own scratch space,
+so that door is named rather than closed. A volume that only refuses hard links (FAT/exFAT,
+some SMB, FUSE or container mounts) is not that case: the slot is published by `os.link` for
+atomicity, and when that link is refused in a writable directory the slot is taken by an
+exclusive create instead, whose half-written file would read as spent. Both hooks take the slot
+before the write runs, which costs the stricter direction: an Edit the operator rejects at the
+permission prompt, or that a sibling hook denies, has still spent the free file, so the session
+can meet "this session's one free file was already spent on X" for an X that was never
+written. The
 interpreter branch was the exception for a long time — it refused a file an `in_progress` task
 declared, at every tier, while printing the plan gate's name — and the secret rules beside it
 are still graded by nothing at all, which is the distinction that branch had erased.

@@ -63,12 +63,12 @@ it. SECURITY.md says the same thing in the same words; keep the two in step.
 Plan-first backstop for Bash WRITES (this is the only hook that sees Bash).
 GRADED, and the ONLY graded rule in this file: both forms below are judged on
 the plan gate's tier for the file (`_config.plan_gate_mode` — require-plan's own
-resolver), so one file gets one TIER whether it is written through `Edit`,
-through `sed -i`, or through `python3 -c`. That is tier, not verdict:
-`trivialLineThreshold`'s first-free-code-file allowance is read only by
-`require-plan.py`'s Edit/Write path (see `plan_gate_mode`'s own docstring), so a
-file small enough to pass there for free can still be denied here through
-`sed -i` — closing that gap is the verdict task this file waits on.
+resolver), after the session's free-file slot (`_config.trivial_slot` —
+require-plan's own slot), so one file gets one verdict whether it is written
+through `Edit`, through `sed -i`, or through `python3 -c` - except a shell write
+whose command does not state its content, which cannot be measured and takes
+the slot unmeasured: `_slot_write_verdict` says what that decision is and what
+it leaves. Every file one command writes is graded in that one call.
 `_plan_gate_write_verdict` is the one place a tier is read, and no Rule #1 or
 Rule #2 branch calls it.
   - the write CALLS inside an interpreter — `python -c`, `node -e`, and the
@@ -1541,8 +1541,13 @@ def _ungoverned_write_target(targets, root, cfg, cwd):
     `root` in the answer is the tree the hit was judged in, so the verdict reads
     THAT tree's running phase; `hit` names the worktree beside the path when
     the two differ, because "src/app.ts" alone says which file and not which
-    checkout of it."""
-    graded = {"hit": None, "unresolved": [], "root": root}
+    checkout of it.
+
+    `hits` is EVERY such file, in command order, as {"rel", "shown", "root"}:
+    `rel` is the key the session's free-file slot stores, `shown` is `hit`'s
+    spelling. The slot is one file, so a command writing two uncovered files
+    has a second one to grade even when the first is free."""
+    graded = {"hit": None, "unresolved": [], "root": root, "hits": []}
     if not targets:
         return graded
     exts = _source_exts(cfg)
@@ -1579,9 +1584,13 @@ def _ungoverned_write_target(targets, root, cfg, cwd):
             rel.startswith(f) for f in in_prog[key] if f.endswith("/")
         ):
             continue
+        shown = (rel if not tree["moved"] else
+                 "%s (in the linked worktree %s)" % (rel, key))
+        if not any(h["shown"] == shown for h in graded["hits"]):
+            graded["hits"].append({"rel": rel, "shown": shown,
+                                   "root": tree["root"]})
         if graded["hit"] is None:
-            graded["hit"] = (rel if not tree["moved"] else
-                             "%s (in the linked worktree %s)" % (rel, key))
+            graded["hit"] = shown
             graded["root"] = tree["root"]
     return graded
 
@@ -1598,7 +1607,8 @@ def _source_write_hit(cmd, root, cfg, cwd):
 def _eval_write_hit(graded, root, cfg, cwd):
     """(the ungoverned source file an interpreter clause WRITES, how that clause
     was spelled, the destinations none of them could establish, the tree the
-    file was judged in).
+    file was judged in, every ungoverned file the clauses write - in
+    `_ungoverned_write_target`'s `hits` shape).
 
     The interpreter half of the same arm, and it is the same question asked of a
     different grammar: `_eval_write_targets` resolves what a write CALL names,
@@ -1617,6 +1627,7 @@ def _eval_write_hit(graded, root, cfg, cwd):
     verdict, so one lost to an early return is a silence with nothing behind
     it."""
     unresolved = []
+    hits = []
     first = (None, None, root)
     for cl, is_eval, how in graded:
         if not is_eval:
@@ -1625,9 +1636,13 @@ def _eval_write_hit(graded, root, cfg, cwd):
         for spelling in seen["unresolved"]:
             if spelling not in unresolved:
                 unresolved.append(spelling)
+        hits += [dict(h, surface="A source-file write from %s"
+                      % (_EVAL_SHAPE[how],))
+                 for h in seen["hits"]
+                 if not any(h["shown"] == k["shown"] for k in hits)]
         if seen["hit"] and first[0] is None:
             first = (seen["hit"], how, seen["root"])
-    return (first[0], first[1], unresolved, first[2])
+    return (first[0], first[1], unresolved, first[2], hits)
 
 
 _PLAN_WRITE_DENY = (
@@ -1691,6 +1706,108 @@ def _plan_gate_write_verdict(root, cfg, hit, surface):
         # the same whether the agent reaches for Edit, sed -i or python3 -c.
         return ("ask", _PLAN_WRITE_ASK % (surface, hit))
     return ("allow", "bash: source write, plan gate %s: %s" % (mode, hit))
+
+
+_VERDICT_RANK = {"allow": 0, "ask": 1, "block": 2}
+
+
+def _slot_write_verdict(data, project, cfg, hits, magnitude):
+    """The verdict on a shell command whose ungoverned files are `hits` -
+    EVERY one it writes, from the interpreter arm and the shell grammar alike,
+    each carrying the `surface` its refusal is worded in - read against the
+    session's free-file slot before any tier is.
+
+    CALLED ONCE PER COMMAND, AND THAT IS THE POINT. Each arm used to return its
+    own verdict, so an interpreter write that took the slot ended the grading:
+    the `sed -i` of a second file after it, and a subagent's manifest write
+    after it, were never asked about. Merging the hits first means the slot is
+    spent at most once and every other file is graded.
+
+    ONE SLOT, WHICHEVER TOOL SPENDS IT. `trivialLineThreshold` allows the first
+    uncovered source file of a session for free, and require-plan grants that
+    to `Edit`. This arm used to grade the tier alone, so the one-line `sed -i`
+    that `Edit` would have been allowed was refused at the deny tier - one file,
+    two verdicts, decided by the tool. The slot is `_config.trivial_slot`, the
+    reader require-plan uses, so a file spent here is spent there and the
+    other way round; the decision below is require-plan's step 5 in the same
+    order: the slot's own file is being worked, an empty slot takes the file,
+    anything else is graded by `_plan_gate_write_verdict`.
+
+    WHAT THE COMMAND STATES IS MEASURED; WHAT IT DOES NOT STATE IS DECIDED.
+    `magnitude` is `_config.text_magnitude` of the command's own text - the
+    formula require-plan applies to an edit's new text - and that text is the
+    most content a command can carry: a heredoc body, a literal redirected into
+    the file, a program that writes a literal. Over `trivialLineThreshold` the
+    write is not trivial and takes no slot, exactly as a large `Write` takes
+    none. It over-counts a long command that writes little (the slot is then
+    graded rather than spent - the stricter direction) and cannot count
+    content the command computes or fetches: a write whose size the command
+    does not state takes the slot as an `Edit` within the threshold would
+    (decided 2026-10-06), because PreToolUse sees the command and not the
+    change. The PostToolUse arm is where that change is visible, and NOTHING
+    THERE GRADES ITS SIZE YET: `guard-bash-writes.py` does not read
+    `trivialLineThreshold`, so an unstated oversized write that took the slot
+    is reported by nothing today.
+
+    TAKEN AT PRE, by both hooks: this one has no Post pass for Bash, and
+    require-plan takes the same slot at its own Pre (its Post confirms, and
+    takes the slot only when its Pre did not). So a write some sibling hook or
+    the operator's prompt then refuses has still spent the slot - the stricter
+    direction, since the next uncovered file is graded rather than freed. A
+    write this verdict refuses records nothing; an `ask` records, because an
+    approval leaves no trace this hook could read.
+
+    One command naming two uncovered files is two files, as two `Edit`s are:
+    the first may take an empty slot, the second is graded.
+
+    A LOST RACE IS GRADED, NOT FREED. The slot is taken by an exclusive create
+    (`_config.take_trivial_slot`), so a write that read the slot empty and then
+    finds it taken re-reads it and is judged against the winner's file - the
+    second pass below. Only an unwritable state directory leaves the door open,
+    and that function's docstring says so."""
+    sid = (data or {}).get("session_id")
+    state = _config.state_dir(project, cfg)
+    threshold = int(cfg.get("trivialLineThreshold") or 80)
+    large = magnitude > threshold
+    for _pass in (0, 1):
+        spent = _config.trivial_slot(state, sid)
+        fresh = [h for h in hits if h["rel"] not in spent]
+        if not fresh:
+            return ("allow", "bash: source write to this session's free "
+                    "file: %s" % ", ".join(h["shown"] for h in hits))
+        taker = fresh[0] if not spent and not large and _pass == 0 else None
+        graded = fresh[1:] if taker else fresh
+        verdict = None
+        for hit in graded:
+            # EVERY graded file is asked, each in its own tree: one command can
+            # write the main checkout (warn) and a linked worktree (deny), and
+            # grading the second under the first tree's tier let it through.
+            # The strictest answer wins and names the file that decided it.
+            shown = hit["shown"]
+            if large and not spent:
+                shown = "%s (change magnitude %d > %d)" % (
+                    shown, magnitude, threshold)
+            one = _plan_gate_write_verdict(hit["root"], cfg, shown,
+                                           hit["surface"])
+            if verdict is None or _VERDICT_RANK[one[0]] > _VERDICT_RANK[verdict[0]]:
+                verdict = one
+        if taker is None:
+            return verdict
+        if verdict is not None and verdict[0] == "block":
+            return verdict
+        took = _config.take_trivial_slot(state, sid, [taker["rel"]])
+        if took is False:
+            continue
+        if verdict is not None:
+            return verdict
+        if took is None:
+            # The open door `take_trivial_slot` names, in require-plan's words:
+            # nothing was recorded, so nothing is claimed as recorded.
+            return ("allow", "bash: first trivial code file, but the slot "
+                    "could not be recorded: %s" % taker["shown"])
+        return ("allow", "bash: first trivial code file of the session: %s"
+                % taker["shown"])
+    return verdict
 
 
 # --- the manifest, reached by shell instead of by Edit ---------------------------
@@ -2122,11 +2239,15 @@ def _decide_core(data, root, cfg):
         # an in_progress task declared was refused through `python3 -c` and
         # allowed through `echo >`, by a message that blamed the plan-first gate
         # while consulting no plan at all.
-        ehit, ehow, eunplaced, eroot = _eval_write_hit(graded, root, cfg, cwd)
-        if ehit:
-            return _plan_gate_write_verdict(
-                eroot, cfg, ehit,
-                "A source-file write from %s" % (_EVAL_SHAPE[ehow],))
+        #
+        # NO ARM RETURNS AN ALLOW EARLY. The interpreter arm used to return its
+        # own verdict here, before the manifest arm and the shell arm had run,
+        # so a `python3 -c` write that took the free slot let a `sed -i` of a
+        # second file - and a subagent's write to the plan - ride the same
+        # command ungraded. The manifest refusal is asked first, and every
+        # file both arms find is graded in one `_slot_write_verdict` call.
+        _ehit, _ehow, eunplaced, _eroot, ehits = _eval_write_hit(
+            graded, root, cfg, cwd)
         # BEFORE the source-write gate, and before any exempt glob is consulted,
         # because the manifest is not a source file and is not this gate's subject
         # under either heading: `.json` is no source extension and the default
@@ -2155,14 +2276,17 @@ def _decide_core(data, root, cfg):
         # written into a file is not a redirect the shell performs. An interpreter
         # body stays in this view: a `sed -i` inside one is still a shell write.
         shell_write = _source_write_hit(runnable, root, cfg, cwd)
-        if shell_write["hit"]:
-            # The same grading, through the same function, as the interpreter arm
-            # above. Otherwise `Edit src/x.ts` would be merely observed while
-            # `sed -i src/x.ts` still denied — same file, same rule, opposite
-            # verdict, decided by which tool the agent happened to reach for.
-            return _plan_gate_write_verdict(
-                shell_write["root"], cfg, shell_write["hit"],
-                "Shell write into a source file")
+        hits = list(ehits)
+        hits += [dict(h, surface="Shell write into a source file")
+                 for h in shell_write["hits"]
+                 if not any(h["shown"] == k["shown"] for k in hits)]
+        if hits:
+            # Both arms through one function, once. Otherwise `Edit src/x.ts`
+            # would be merely observed while `sed -i src/x.ts` still denied —
+            # same file, same rule, opposite verdict, decided by which tool
+            # the agent happened to reach for.
+            return _slot_write_verdict(data, root, cfg, hits,
+                                       _config.text_magnitude(cmd))
         # WHAT COULD NOT BE ESTABLISHED IS SAID, and it is said as an allow
         # rather than swallowed into the line below. A destination only the
         # shell can resolve is not a file the plan could have named, so there is
