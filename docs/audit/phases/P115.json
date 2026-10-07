@@ -30,28 +30,36 @@
         "severity": "high",
         "file": "plugins/audit/scripts/status/audit-status.py in_flight",
         "issue": "A phase counts as in flight only while its lock file exists, so a phase whose linked worktree has its branch out but holds no lock is shown from this checkout's copy with no copy line, and its tasks done there are still listed as ready: the bug this phase fixes still reproduces on the repository it was reported against.",
-        "resolution": "Treat as in flight every unmerged plan phase whose branch one worktree listing reports checked out in a linked worktree, as well as every locked phase, and read it through the live reader; say on the row when a branch exists with no worktree and was not read; a case with a lock-less phase done in its worktree, and its no-branch twin."
+        "resolution": "fixed in P115.2-4yc (cf50c607): Treat as in flight every unmerged plan phase whose branch one worktree listing reports checked out in a linked worktree, as well as every locked phase, and read it through the live reader; say on the row when a branch exists with no worktree and was not read; a case with a lock-less phase done in its worktree, and its no-branch twin.",
+        "fixTask": "P115.2-4yc",
+        "commit": "cf50c607"
       },
       {
         "id": "P115-R2",
         "severity": "med",
         "file": "plugins/audit/scripts/status/audit-status.py gate evaluation",
         "issue": "--gate evaluates bugs, blocked and in-progress conditions over the plan with live bodies laid over it, while invalid and invariant-breach read this checkout, so an uncommitted fix in another worktree closes a bug on the development branch's gate and release preparation goes green over it.",
-        "resolution": "Evaluate the gate over this checkout's own rollup, keep the overlay for the human render and --json, and say in status.md which copy the gate reads; a gate case where the fix exists only in a worktree."
+        "resolution": "fixed in P115.2-4yc (cf50c607): Evaluate the gate over this checkout's own rollup, keep the overlay for the human render and --json, and say in status.md which copy the gate reads; a gate case where the fix exists only in a worktree.",
+        "fixTask": "P115.2-4yc",
+        "commit": "cf50c607"
       },
       {
         "id": "P115-R3",
         "severity": "med",
         "file": "plugins/audit/scripts/status/audit-status.py bug counts",
         "issue": "Bug counts derived from a laid-over body carry no basis, so the development branch is told a bug is closed whose fix exists only in another worktree's uncommitted file.",
-        "resolution": "Derive bug status from this checkout, and when a live copy shows a bug's fix elsewhere, name that copy beside it in the BUGS block and --json; a case."
+        "resolution": "fixed in P115.2-4yc (cf50c607): Derive bug status from this checkout, and when a live copy shows a bug's fix elsewhere, name that copy beside it in the BUGS block and --json; a case.",
+        "fixTask": "P115.2-4yc",
+        "commit": "cf50c607"
       },
       {
         "id": "P115-R4",
         "severity": "med",
         "file": "plugins/audit/scripts/status/audit-status.py _resumable_lines; commands/status.md",
         "issue": "RESUMABLE now reads the live copy's phase status, so it tells the operator to resume a run whose holder is live elsewhere, with no copy basis, contradicting the UNFINISHED line beside it and status.md.",
-        "resolution": "Read RESUMABLE from this checkout, or skip a live-locked phase read from another copy, keeping status.md true; a case."
+        "resolution": "fixed in P115.2-4yc (cf50c607): Read RESUMABLE from this checkout, or skip a live-locked phase read from another copy, keeping status.md true; a case.",
+        "fixTask": "P115.2-4yc",
+        "commit": "cf50c607"
       },
       {
         "id": "P115-R5",
@@ -65,10 +73,12 @@
         "severity": "low",
         "file": "plugins/audit/scripts/status/audit-status.py locks_block",
         "issue": "The lock directory is looked up twice, and --json and --gate gained a git call the recorded outcome says they did not.",
-        "resolution": "Skip the second lookup when the reads are already in hand, and correct the cost wording."
+        "resolution": "fixed in P115.2-4yc (cf50c607): Skip the second lookup when the reads are already in hand, and correct the cost wording.",
+        "fixTask": "P115.2-4yc",
+        "commit": "cf50c607"
       }
     ],
-    "outcome": "[findings: 6 - 1 high, 3 med, 2 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 6 - 1 high, 3 med, 2 low; 5 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -146,7 +156,7 @@
     {
       "id": "P115.2-4yc",
       "title": "every phase worked on elsewhere is read live, and the gate, bugs and resume advice read this checkout",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P115-R1 to P115-R4 and P115-R6. Every phase that is being worked on elsewhere is read live. The gate, the bug counts and RESUMABLE read this checkout, because they certify or advise about it.\n\n- A phase is in flight when its lock exists, or when one git worktree list shows its branch checked out in a linked worktree and that branch is not merged into this checkout's HEAD. Both kinds go through the live reader. If a branch exists with no worktree and no lock, its row says so: the branch exists and was not read.\n- --gate evaluates every condition over this checkout's own rollup. The overlay stays for the human render and --json. The main() comment and status.md's Gate mode section say which copy the gate reads.\n- Bug status comes from this checkout. When a live copy shows a bug's fix elsewhere, the BUGS block and --json name that copy beside the bug.\n- RESUMABLE reads this checkout and skips a phase whose lock is held live. status.md stays true.\n- The lock directory is looked up once per invocation.\n\nCases, each with a twin:\n- a lock-less phase done in its linked worktree is not ready, and its row names the worktree file;\n- a lock-less phase with no branch is unchanged;\n- a gate whose bug fix exists only in a worktree still fails open-bugs;\n- a bug whose fix is shown elsewhere names the copy;\n- a live-locked phase that is in progress in its worktree prints no RESUMABLE line on the development branch.",
       "files": [
         "plugins/audit/scripts/status/audit-status.py",
@@ -178,24 +188,48 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "cf50c607",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-status.py in_flight looks the lock directory up once (_locks.lock_dir) and hands it to locks_block. _held_locks lists and judges the locks in collect's order. One worktree listing, one user-name read and one for-each-ref per invocation feed _worked_elsewhere. A lock-less phase is read live when another worktree has its branch out and that branch is not an ancestor of HEAD. An unfinished phase whose unmerged branch exists with no worktree and no lock gets a row saying the branch exists and was not read, or, when the merge question cannot be answered, that it could not be asked. Anything git could not answer goes to liveCopyError. main evaluates the gate over gate_view, a rollup of this checkout's own plan, and every failure-detail line reads that view; it is built only when a read laid a body over the plan. render_status's own= makes the BUGS block and RESUMABLE read this checkout, and RESUMABLE skips a phase whose lock is held live. _status_facts.bugs_fixed_elsewhere and rollup(own=) take bug counts from this checkout. The bugs.elsewhere entries name the copy that shows a fix, and the BUGS block prints that copy under the bug. status.md states the in-flight definition, the three readers that stay on this checkout, the gate mode, the cost and the RESUMABLE advice. Known gap, stated in the code and in status.md: a lock-less worktree whose branch has no commit past HEAD reads as merged, so its uncommitted work shows this checkout's copy until its first commit. Red-first proved: we1-we13 (a real repo with six phases) and lv5 failed at HEAD and pass with the change. uf6 now asserts RESUMABLE is absent beside a live lock, and uf5 is its twin.",
+        "descriptive": "The status view now shows a phase being worked on in another worktree as it really is even without a lock, while the gate, the bug counts and the resume advice still answer for this checkout and say where a fix made elsewhere lives."
       },
       "startedAt": "2026-10-07T09:09:41Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T10:09:43Z",
+      "verifiedBy": [
+        "we1",
+        "we2",
+        "we3",
+        "we4",
+        "we5",
+        "we6",
+        "we7",
+        "we8",
+        "we9",
+        "we10",
+        "we11",
+        "we12",
+        "we13",
+        "lv5",
+        "lv6",
+        "uf5",
+        "uf6"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T10:09:36Z.e7ea07",
         "status": "passed",
         "at": "2026-10-07T10:09:36Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "cf50c607",
+        "at": "2026-10-07T10:09:43Z",
+        "basis": "orchestrator check: P115-R1..R4 and R6 fixed, each reproduced in a scratch repo before fixing, gate certifies this checkout, red-first proved with a six-phase real repo, the uncommitted-branch gap stated"
       }
     },
     {
       "id": "P115.3-4yc",
       "title": "the panel and the report show a phase worked on elsewhere as status does, and name the copy",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes review finding P115-R5. The panel and the report show a phase being worked on elsewhere the same way /audit:status does. They use the same in-flight reader and overlay, through a shared module that respects the layer rules (a pure overlay in _status_facts and the reader at the entry layer), and every row or card read from another copy names that copy. The report embeds the overlaid plan only together with the copy note, so a shared report never presents another worktree's uncommitted state as committed fact. If a surface cannot read the live copy, it says that it shows this checkout's copy. The orchestrator re-captures the screenshots if the panel's look changes.\n\nCases:\n- the panel payload and the rendered report, each with a phase done in a linked worktree;\n- their twins with no worktree.",
       "files": [
         "plugins/audit/scripts/panel/_panel_state.py",
@@ -203,7 +237,48 @@
         "plugins/audit/scripts/status/_status_facts.py",
         "plugins/audit/tests/test__panel_state.py",
         "plugins/audit/tests/test_render_report.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/status/_live_copy.py",
+        "plugins/audit/tests/test__live_copy.py",
+        "plugins/audit/scripts/_deps.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/scripts/panel/panel-server.py",
+        "plugins/audit/scripts/ui/panel/overview.js",
+        "plugins/audit/scripts/report/_report_page.py",
+        "plugins/audit/scripts/report/_report_md.py",
+        "plugins/audit/tests/test__report_page.py",
+        "plugins/audit/tests/test__report_md.py",
+        "plugins/audit/tests/test_panel_server.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/tests/test__panel_page.py",
+        "tools/ui-tests/overview-outcome.test.mjs",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/mobile.png",
+        "docs/screenshots/overview.png",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png",
+        "plugins/audit/tests/test__output.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -228,16 +303,21 @@
       "dependsOn": [
         "P115.2-4yc"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T10:09:45Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T10:49:38Z.413b74",
+        "status": "passed",
+        "at": "2026-10-07T10:49:38Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T08:30:56Z"

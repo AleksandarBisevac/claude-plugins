@@ -307,7 +307,7 @@ def with_live_bodies(manifest, reads):
     `reads` is `{phase id: {"body": phase dict or None, ...}}`. Reading a copy
     of a phase that lives elsewhere - a linked worktree's file, a branch tip -
     is a git call or another checkout's file, and this module opens nothing,
-    so `audit-status.py` reads it and hands the body here. A read with no
+    so `_live_copy` reads it and the caller hands the body here. A read with no
     body means this checkout's own copy is the one to show, so the phase is
     left exactly as it is. Every fact downstream - the ready list, each
     phase's counts, the plan-wide tally - is then taken from the one plan
@@ -326,6 +326,74 @@ def with_live_bodies(manifest, reads):
         body = bodies.get(str(p.get("id"))) if isinstance(p, dict) else None
         laid.append(dict(p, **body) if isinstance(body, dict) else p)
     return dict(manifest, phases=laid)
+
+
+def row_copies(reads, unread=None):
+    """`{phase id: {"live", "basis"}}` - the copy each row says it came from.
+
+    Only a row that is NOT this checkout's own live copy says anything: a
+    phase read from another copy says which, and a phase that fell back to
+    this checkout's copy says it shows that copy and that this may not be
+    current. A phase this plan does not hold has no row to say it on.
+    `unread` is `_live_copy.in_flight`'s rows for branches that exist and were
+    not read, carried as they are.
+    """
+    out = dict((str(k), dict(v)) for k, v in (unread or {}).items())
+    for pid, read in (reads or {}).items():
+        if not isinstance(read, dict) or (read.get("own") and read.get("live")):
+            continue
+        if not read.get("own") and not read.get("counted"):
+            continue
+        out[str(pid)] = {"live": bool(read.get("live")),
+                         "basis": "%s %s" % ("shows" if read.get("own")
+                                             else "read from", read["basis"])}
+    return out
+
+
+def ready_counts(manifest, reads):
+    """`{phase id: {"readyCount", "readyLive", "readyBasis"}}` for each read -
+    the phase's OWN ready tasks in the plan with every live body laid over it,
+    so the count is a share of the very ready list READY NOW prints."""
+    live = with_live_bodies(manifest, reads)
+    by_phase = ready_by_phase(live)
+    out = {}
+    for pid, read in (reads or {}).items():
+        if not read.get("counted"):
+            out[pid] = {"readyCount": None, "readyLive": False,
+                        "readyBasis": read.get("basis")}
+            continue
+        out[pid] = {"readyCount": len(by_phase.get(pid) or []),
+                    "readyLive": bool(read.get("live")),
+                    "readyBasis": "counted from %s" % (read.get("basis"),)}
+    return out
+
+
+def live_view(manifest, flight):
+    """`{"plan", "copies", "own", "note"}` - what a surface shows when a phase
+    is in flight elsewhere, out of `_live_copy.in_flight`'s answer.
+
+    THE ONE OVERLAY. `/audit:status`, the panel and the report each take their
+    phases, ready list and counts from `plan` and hand `copies` and `own` to
+    `rollup`, so no two of them can read the same phase from different copies
+    or name it differently. `plan` is `manifest` with every read body laid over
+    it (`with_live_bodies`), and the manifest handed in is left as it was.
+    `copies` is each row's copy note (`row_copies`). `own` is this checkout's
+    own plan when any body was laid over it, else None: only then is `plan` a
+    different plan, and `rollup` counts the bugs from `own`, because a fix that
+    exists only in another worktree has not landed here. `note` is what could
+    not be asked - the reader's error and its note joined - or empty; a surface
+    prints it, because a row that silently shows this checkout's copy reads as
+    the live one.
+    """
+    flight = flight if isinstance(flight, dict) else {}
+    reads = flight.get("reads") or {}
+    laid = any(isinstance(r, dict) and isinstance(r.get("body"), dict)
+               for r in reads.values())
+    return {"plan": with_live_bodies(manifest, reads),
+            "copies": row_copies(reads, flight.get("unread")),
+            "own": manifest if laid else None,
+            "note": "; ".join(w for w in (flight.get("error"), flight.get("note"))
+                              if w)}
 
 
 def ready_by_phase(manifest):

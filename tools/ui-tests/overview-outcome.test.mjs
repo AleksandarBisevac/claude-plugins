@@ -147,3 +147,35 @@ describe('ovExcerpt makes the hit visible, not merely claimed', () => {
     expect(P.ovExcerpt(undefined, 'x', W)).toBe('');
   });
 });
+
+// The row's COPY NOTE. A phase worked on in another worktree reaches the Overview
+// as that worktree holds it, and the rollup entry carries `copy` - the sentence
+// naming where it was read from. The row is the only place a reader sees which
+// copy a count came from, so the note is shown whenever the entry carries one and
+// never otherwise. Reached per case rather than at the top, so a source without
+// the helper fails these cases by name instead of the whole file.
+describe('ovCopyNote names the copy a row was read from', () => {
+  const C = () => reach(loadPanel().ctx, ['ovCopyNote']);
+
+  it('a row read from a linked worktree says so, and is marked live', () => {
+    const got = C().ovCopyNote({ id: 'P1', copy: {
+      live: true, basis: 'read from the worktree file /x/p1-tree/P1.json' } });
+    expect(got).toEqual({ live: true,
+      text: 'copy: read from the worktree file /x/p1-tree/P1.json' });
+  });
+
+  it('a row that fell back to this checkout is marked stale, never live', () => {
+    const got = C().ovCopyNote({ id: 'P1', copy: {
+      live: false, basis: "shows this checkout's copy - may not be current" } });
+    expect(got.live).toBe(false);
+    expect(got.text).toContain("shows this checkout's copy");
+  });
+
+  it('the twin: a row of this checkout\'s own live copy carries no note', () => {
+    // The over-fire direction. A helper that always answered would paint a
+    // note on every row of every plan, and the cases above would still pass.
+    expect(C().ovCopyNote({ id: 'P2' })).toBe(null);
+    expect(C().ovCopyNote({ id: 'P2', copy: {} })).toBe(null);
+    expect(C().ovCopyNote({ id: 'P2', copy: null })).toBe(null);
+  });
+});

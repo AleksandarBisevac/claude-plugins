@@ -594,10 +594,70 @@ def _full_run_cases(check):
         _harness.remove_tree(tmp)
 
 
+# --- a phase worked on elsewhere, as the panel shows it ----------------------
+def _live_copy_cases(check):
+    """The panel's payload reads a phase in flight from its live copy, through
+    the reader `panel-server` hands `build_state`, and says which copy each
+    overlaid row came from; the bug counts stay this checkout's. The fixture is
+    `test__live_copy.worktree_fixture`, the one the report's suite reads too."""
+    import shutil
+    import test__live_copy as LC
+    labels = ("pl1", "pl2", "pl3", "pl4", "pl5")
+    if not shutil.which("git"):
+        for lbl in labels:
+            _harness.skip(check, lbl, "git is not on PATH, and the worktree "
+                          "and the branch live in git", True)
+        return
+    reader, why = LC._reader()
+    live = getattr(reader, "flight_for", None)
+    root = _harness.fixture_root("panel-state-live-copy-")
+    try:
+        fx = LC.worktree_fixture(os.path.join(root, "linked"), True)
+        ok, st = _harness.attempt(M.build_state, fx["repo"], live=live)
+        r = (st or {}).get("rollup") or {} if ok else {}
+        p1 = ([p for p in r.get("phases") or [] if p.get("id") == "P1"]
+              or [{}])[0]
+        check("pl1 a phase whose linked worktree finished P1.1 is not ready in "
+              "the panel's rollup, its successor is, and its row is counted "
+              "from that copy",
+              ok and live is not None and r.get("ready") == ["P1.2", "P2.1"]
+              and p1.get("done") == 1,
+              "why=%r st=%r" % (why, st if not ok else r.get("ready")))
+        check("pl2 ...and that row names the worktree file it was read from",
+              ok and "p1-tree" in str((p1.get("copy") or {}).get("basis"))
+              and (p1.get("copy") or {}).get("live") is True,
+              "copy=%r" % (p1.get("copy"),))
+        check("pl3 the bug fixed only in that worktree is still open in the "
+              "panel's counts - the bug counts read this checkout",
+              ok and (r.get("bugs") or {}).get("open") == 1
+              and (r.get("bugs") or {}).get("openHighSeverity") == 1,
+              "bugs=%r" % (r.get("bugs"),))
+        fx2 = LC.worktree_fixture(os.path.join(root, "alone"), False)
+        ok2, st2 = _harness.attempt(M.build_state, fx2["repo"], live=live)
+        r2 = (st2 or {}).get("rollup") or {} if ok2 else {}
+        check("pl4 ...and their twin: with no worktree the panel lists this "
+              "checkout's ready work, names no copy and says nothing about one",
+              ok2 and live is not None
+              and r2.get("ready") == ["P1.1", "P2.1"]
+              and not [p for p in r2.get("phases") or [] if "copy" in p]
+              and "liveCopyError" not in r2,
+              "st=%r" % (st2 if not ok2 else r2,))
+        ok3, st3 = _harness.attempt(M.build_state, fx["repo"])
+        r3 = (st3 or {}).get("rollup") or {} if ok3 else {}
+        check("pl5 a payload built with no reader handed in says it shows "
+              "this checkout's copy, rather than passing it off as the live one",
+              ok3 and r3.get("ready") == ["P1.1", "P2.1"]
+              and "this checkout's copy" in str(r3.get("liveCopyError")),
+              "rollup=%r" % (r3,))
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _full_run_cases(check)
+        _harness.stage(check, "pl", _live_copy_cases)
     return _harness.run(body)
 
 

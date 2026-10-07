@@ -416,8 +416,48 @@ def render_report(project):
             "href": "/report", "exists": os.path.isfile(html_path)}
 
 # --- the whole of /api/state ----------------------------------------------------
-def build_state(project, run=None, full_run_cache=None):
+# --- a phase worked on elsewhere ----------------------------------------------
+NO_LIVE_READER = ("no reader of the live copies was handed to this payload, so "
+                  "every row shows this checkout's copy, which may not be "
+                  "current")
+
+
+def _live_view(status_facts, manifest, mpath, project, live):
+    """`status_facts.live_view` over what `live` read, or over nothing with
+    the reason said.
+
+    `live` is `_live_copy.flight_for`, handed in by `panel-server`: this
+    module sits below the reader's layer and cannot import it. Without one
+    the payload is this checkout's copy, and the note says so - a row that
+    silently shows a stale copy reads as the live one. A reader that raised
+    is said the same way rather than taking the payload down.
+    """
+    if live is None:
+        flight = {"reads": {}, "unread": {}, "note": "",
+                  "error": NO_LIVE_READER}
+    else:
+        try:
+            flight = live(manifest, mpath, project)
+        except Exception as exc:                   # defensive; see the docstring
+            flight = {"reads": {}, "unread": {}, "note": "",
+                      "error": "which phases are in flight elsewhere could not "
+                               "be asked (%s), so every row shows this "
+                               "checkout's copy, which may not be current"
+                               % (exc,)}
+    return status_facts.live_view(manifest, flight)
+
+
+def build_state(project, run=None, full_run_cache=None, live=None):
     """`GET /api/state` — the whole panel payload, off one manifest read.
+
+    `live` READS A PHASE WORKED ON ELSEWHERE, as `/audit:status` does. It is
+    `_live_copy.flight_for`, which `panel-server` hands in; the rollup - the
+    Overview's phases, counts and ready list - is taken over the plan with
+    each live copy laid over it, and every row read from another copy names
+    it (`copy`). The bug counts, the validator, the composition the editor
+    writes from and the run state stay on this checkout's own files: they are
+    what this panel edits and what a gate certifies. With no `live` the
+    rollup says it shows this checkout's copy (`liveCopyError`).
 
     `run` AND `full_run_cache` EXIST FOR THE THIRD PLACE ALONE, and both
     default to today's behaviour when omitted. `run` is the injected git
@@ -484,8 +524,12 @@ def build_state(project, run=None, full_run_cache=None):
             # the SAME object rather than each asking the ledger, which a
             # parallel `--record` could grow between two reads.
             boundary = _evidence_io.boundary_for(mpath, project)
-            rollup = as_.rollup(manifest, m_findings, m_warn,
-                                boundary=boundary)
+            view = _live_view(as_, manifest, mpath, project, live)
+            rollup = as_.rollup(view["plan"], m_findings, m_warn,
+                                boundary=boundary, copies=view["copies"],
+                                own=view["own"])
+            if view["note"]:
+                rollup["liveCopyError"] = view["note"]
             # THE LEDGER IS READ ONCE, HERE, AND HANDED TO BOTH THE EVIDENCE
             # TAB AND THE THIRD PLACE'S ANCESTRY CHECK - `boundary`'s pattern
             # one call over, and for the same reason: two reads of a ledger a

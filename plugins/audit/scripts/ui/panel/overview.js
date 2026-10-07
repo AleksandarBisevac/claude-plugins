@@ -255,6 +255,23 @@ const ovOutcomeIsBasis=(p,term)=>{const t=String(term||'').toLowerCase();
  return !!t&&String(p.desiredOutcome||'').toLowerCase().includes(t)
    &&!ovShownText(p).includes(t);};
 /**
+ * Which copy a phase row was read from, when it is not this checkout's own live
+ * one.
+ *
+ * A phase worked on in another worktree reaches the rollup as that worktree
+ * holds it, and the server names the copy on the entry (`copy`) - the same
+ * sentence `/audit:status` prints under the row. The row is the only place a
+ * reader can see which copy its counts came from, so the note is drawn whenever
+ * the entry carries one and never otherwise.
+ * @param {{copy: ({live: boolean, basis: string}|null|undefined)}} p - the
+ *   phase, from the rollup
+ * @returns {{live: boolean, text: string}|null} the note to draw, `live` false
+ *   when the row fell back to this checkout's copy; null when there is none
+ */
+const ovCopyNote=p=>{const c=p&&p.copy;
+ if(!c||typeof c!=='object'||!c.basis)return null;
+ return {live:c.live===true,text:'copy: '+c.basis};};
+/**
  * A window of `text` around the first case-insensitive hit for `term`.
  *
  * Windowed rather than truncated, and that is the whole reason it exists: the
@@ -754,6 +771,11 @@ function ovDetail(p){
  const frl=evFullRunLine(cph);
  if(frl)box.append(frl);
  box.append(evLine('tasks',evRollCells(tasks,ev,evbas)));
+ // The table below is the composition - this checkout's own files, the ones
+ // Plan & models edits - so a row read from another copy says the two differ.
+ if(ovCopyNote(p))box.append(el('div',{class:'mut small','data-ovcopytasks':p.id},
+   'The tasks below are this checkout\'s copy, the one Plan & models edits; '
+   +'the row above was read from the copy it names.'));
  if(!tasks.length)box.append(el('div',{class:'mut small'},'This phase has no tasks.'));
  else{
   const tb=el('tbody');
@@ -894,6 +916,10 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
  const vstate=r.valid?el('div',{class:'findings ok'},'✓ manifest valid ('+r.warnings+' warnings)')
    :manifestFindingsBox(r.findings,STATE.manifestFindings||[]);
  card.append(vstate);
+ // What could not be asked about the copies a phase in flight lives in, said
+ // above the phases it may have left showing this checkout's copy.
+ if(r.liveCopyError)card.append(el('div',{class:'findings warn','data-ovcopyerror':'1'},
+   '⚠ '+r.liveCopyError));
  const rs=RUNSTATUS||STATE.runStatus||{index:null,phases:{}};
  if(rs.index){const h=rs.index.hostname||'?';const dead=rs.index.live===false;
   card.append(el('div',{class:'findings warn',title:rs.index.liveBasis||''},
@@ -1055,8 +1081,14 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
    ovOutcomeIsBasis(p,term)?el('span',{class:'ovout','data-ovhit':'outcome',
      title:p.desiredOutcome},'matched in outcome: '
      +ovExcerpt(p.desiredOutcome,term,64)):null);
-  if(!open)return row;
-  return el('div',{class:'ovwrap'},row,ovDetail(p));}
+  // Beside the row rather than inside it: the row is a <button>, and the note
+  // is a sentence a reader may want to select and copy.
+  const cn=ovCopyNote(p);
+  const note=cn?el('div',{class:cn.live?'mut small':'findings warn',
+    'data-ovcopy':cn.live?'live':'stale',
+    style:'margin:0 0 var(--sp-0) 1.6rem'},cn.text):null;
+  if(!open)return note?el('div',{class:'ovwrap'},row,note):row;
+  return el('div',{class:'ovwrap'},row,note,ovDetail(p));}
  if(!ordered.length){
   card.append(el('div',{class:'ovempty'},'No phase matches this filter. ',
     el('button',{class:'btn small',type:'button','data-ovclear':'1',

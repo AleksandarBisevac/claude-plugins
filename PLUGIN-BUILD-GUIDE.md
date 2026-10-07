@@ -183,6 +183,7 @@ claude-plugins/                           # this repo (personal, public)
           _help.py                        # zero-token self-description: schema field help + how-it-works topics
         status/                           # the status domain: the headless rollup and the setup diagnostics over it
           _status_facts.py                # what the manifest SAYS: rollup, readiness, submodules, the gate
+          _live_copy.py                   # which copy holds a phase in flight live - one reader for status, panel and report
           audit-status.py                 # the command over those facts: human render + --json/--gate
           audit-doctor.py                 # /audit:doctor: the ORDER of the checks, the render and the CLI
           _doctor_report.py               # what the six check modules share: the Report collector + _load
@@ -371,6 +372,7 @@ L5:
   _scoped_commit -> _evidence_io, _invariants, _journal_io, _output
 
 L6:
+  _live_copy -> _branch, _invariants, _locks, _manifest_io, _output, _scoped_commit, _status_facts, _worktrees
   _panel_write -> _ado_parent, _ado_tracked, _areas, _branch, _config_rules, _gate_feed, _journal_io, _locks, _manifest_io, _output, _panel_discovery, _panel_settings, _panel_state, _policy, _priority, _proposals, _ui_theme, _warning_groups, _worktrees
   _report_page -> _fmt, _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage, _status_facts
 
@@ -381,7 +383,7 @@ L7:
   audit-lock -> _locks, _output
   audit-logs -> _gate_feed, _output
   audit-lookup -> _evidence_io, _journal_io, _manifest_io, _manifest_vocab, _output
-  audit-status -> _areas, _branch, _cli_fmt, _evidence_io, _fmt, _invariants, _loader, _locks, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _scoped_commit, _status_facts, _ui_theme, _worktrees
+  audit-status -> _areas, _cli_fmt, _evidence_io, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme
   audit-task -> _areas, _branch, _commit_trail, _evidence_io, _gate_derive, _id_refs, _id_shape, _invariants, _journal_io, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proposals, _status_facts, _task_outputs, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
@@ -402,12 +404,12 @@ L7:
   merge-manifest -> _id_refs, _id_shape, _locks, _manifest_io, _manifest_merge, _manifest_rules, _merge_install, _output
   migrate-json-encoding -> _manifest_io, _manifest_rules, _output, _panel_write
   migrate-manifest -> _id_shape, _manifest_io, _manifest_rules, _output
-  panel-server -> _manifest_io, _output, _panel_discovery, _panel_page, _panel_runstate, _panel_settings, _panel_state, _panel_write, _ui_theme
+  panel-server -> _live_copy, _manifest_io, _output, _panel_discovery, _panel_page, _panel_runstate, _panel_settings, _panel_state, _panel_write, _ui_theme
   propose-gates -> _evidence_io, _manifest_vocab, _output
   read-ado-links -> _ado_drift, _ado_tracked, _manifest_io, _output
   record-outside-run -> _evidence_io, _journal_io, _manifest_io, _output
   record-risk-confirmation -> _journal_io, _manifest_io, _output
-  render-report -> _areas, _evidence_io, _evidence_view, _fmt, _invariants, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
+  render-report -> _areas, _evidence_io, _evidence_view, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output
   repair-tests-add -> _journal_io, _locks, _manifest_io, _manifest_rules, _output
   resolve-ado-parent -> _ado_parent, _manifest_io, _output
@@ -2549,7 +2551,21 @@ throughout: nothing here opens a file or runs a process, which is what lets thre
 share it — `_panel_state` (rollup), `audit-doctor` (submodules) and `render-report`
 (the gate verdict) each used to load `audit-status.py` for it, three of the edges
 `KNOWN_LAYER_DEBT` then carried. `usage_summary` and `discovery_block` do read the world, so they
-stayed with the command.
+stayed with the command. `live_view`, `row_copies` and `ready_counts` are the pure half of
+reading a phase in flight elsewhere: `_live_copy` reads the copies, and these lay them over the
+plan and name each row's copy, the same way for every surface that shows one.
+
+### `plugins/audit/scripts/status/_live_copy.py`
+Which copy holds a phase in flight live (layer 6): a phase run under a lock, or worked on in
+a linked worktree whose branch is not merged here, is read from that worktree's file -
+uncommitted edits included - or from its branch's committed copy, and each read names the
+copy it came from. `/audit:status`, the panel and the rendered report all show such a phase,
+so the reader (`in_flight`, `flight_for`, `live_reads`) lives here and nowhere else, and
+`_status_facts.live_view` is its pure half: it lays the reads over the plan and returns the
+copy note for each row. At layer 6 because it asks git through `_scoped_commit` (layer 5);
+`audit-status`, `render-report` and `panel-server` import it, and `_panel_state` (layer 5)
+takes it as `build_state(live=...)` from the server. What certifies stays on this checkout's
+own plan on every surface: the gate, the bug counts and the bug table.
 
 ### `plugins/audit/scripts/status/audit-status.py` (v0.5.0)
 Headless rollup + CI gate, stdlib-only; the facts come from `_status_facts`, the manifest

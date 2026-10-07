@@ -579,7 +579,16 @@ LAYERS = (
      # one, so this is the only place the two halves can meet, and a second copy
      # of a refusal rule is how one commit comes to carry what the other forbids.
      "_scoped_commit"),
-    ("_panel_write", "_report_page"),
+    ("_panel_write", "_report_page",
+     # `_live_copy` is the one reader of a phase in flight elsewhere - which copy
+     # holds it live, read from a linked worktree's file or a branch tip. At L6
+     # because it asks git through `_scoped_commit` (L5), whose stderr is the
+     # reason in every sentence it writes. That is the highest layer the three
+     # surfaces showing such a phase can all import from: `audit-status`,
+     # `render-report` and `panel-server` at L7. `_panel_state` (L5) is below
+     # it, so `build_state` takes the reader as an argument the server hands
+     # it rather than importing it.
+     "_live_copy"),
     ("panel-server", "render-report", "audit-status", "audit-doctor", "audit-usage",
      "validate-manifest", "validate-config", "audit-journal", "audit-lock",
      # `audit-logs` is `/audit:logs`: argument parsing, the render and the exit

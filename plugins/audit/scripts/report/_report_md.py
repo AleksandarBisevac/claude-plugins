@@ -75,7 +75,7 @@ _usage_md = _usage_markdown._usage_md
 
 
 # --- render_md ------------------------------------------------------------------
-def render_md(manifest, summary, usage=None, evidence=None):
+def render_md(manifest, summary, usage=None, evidence=None, own=None):
     """Markdown twin of render_html. Only Markdown metacharacters (pipes,
     newlines) are escaped here — raw HTML inside manifest strings is passed
     through and relies on the Markdown renderer (e.g. GitHub) to sanitise it.
@@ -88,7 +88,14 @@ def render_md(manifest, summary, usage=None, evidence=None):
     the HTML filters by, so the two surfaces speak one vocabulary. The badge
     words, the observation markers, the steps and the history stay where a person
     reads them. The column appears only where the plan points at a recorded run,
-    which is what keeps an older plan's twin byte-identical."""
+    which is what keeps an older plan's twin byte-identical.
+
+    A PHASE READ FROM ANOTHER COPY SAYS SO under its heading, off the rollup
+    entry's `copy`, and what could not be asked about those copies is said
+    under the overall line. The twin is embedded in the HTML and travels with
+    it, so it carries the note wherever the overlaid phase goes. `own` is this
+    checkout's plan when `manifest` has a live copy laid over it; the bug
+    table is read from it, as the bug counts in `summary` are."""
     meta = manifest.get("meta") or {}
     now = _report_html.stamp_time()
     tviews = (evidence or {}).get("tasks")
@@ -109,6 +116,8 @@ def render_md(manifest, summary, usage=None, evidence=None):
     out += ["**Overall:** %d/%d tasks done · %d/%d phases signed off · %d open bug(s) · %d ready now"
             % (tdone, summary["tasks"]["total"], phdone, len(summary["phases"]),
                summary["bugs"]["open"], len(summary["ready"])), ""]
+    if summary.get("liveCopyError"):
+        out += ["**Live copies:** %s" % cell(summary["liveCopyError"]), ""]
     # THE ONE SENTENCE THE COLUMN CANNOT CARRY. The HTML badge holds the read
     # error as its detail; this table has no title to put it in, so it is said
     # once here, above every phase, and only when the read failed - a readable
@@ -125,6 +134,9 @@ def render_md(manifest, summary, usage=None, evidence=None):
                    % (cell(psum["id"]), cell(psum["title"]),
                       cell(psum["status"]), psum["done"], psum["total"],
                       " · sign-off due" if psum.get("signoffDue") else ""))
+        copy = psum.get("copy")
+        if isinstance(copy, dict) and copy.get("basis"):
+            out.append("_copy: %s_" % cell(copy["basis"]))
         if ph.get("desiredOutcome"):
             out.append("_%s_" % cell(ph["desiredOutcome"]))
         # THE SAME WORDS THE HTML CARRIES, off the SAME data - never recomputed:
@@ -156,9 +168,10 @@ def render_md(manifest, summary, usage=None, evidence=None):
                 cell((t.get("commit") or "—")[:9]), cell(done_txt), tev,
                 cell(ado_txt)))
         out.append("")
-    bugs = [b for b in (manifest.get("bugs") or []) if isinstance(b, dict)]
+    certified = own if own is not None else manifest
+    bugs = [b for b in (certified.get("bugs") or []) if isinstance(b, dict)]
     if bugs:
-        task_by_id = _tasks_by_id(manifest)
+        task_by_id = _tasks_by_id(certified)
         out += ["## Bugs", "",
                 "| id | title | status | severity | task | fixedIn |",
                 "|---|---|---|---|---|---|"]

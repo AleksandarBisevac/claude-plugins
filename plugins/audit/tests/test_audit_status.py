@@ -4026,7 +4026,7 @@ def _worked_elsewhere_cases(check):
         return [ln for ln in text.splitlines() if "RESUMABLE" in ln]
 
     lookups = []
-    real_lock_dir = M._locks.lock_dir
+    real_lock_dir = _lockmod.lock_dir
 
     def counted_lock_dir(project):
         lookups.append(project)
@@ -4034,11 +4034,11 @@ def _worked_elsewhere_cases(check):
 
     try:
         with _own_project(repo):
-            M._locks.lock_dir = counted_lock_dir
+            _lockmod.lock_dir = counted_lock_dir
             try:
                 c_full, full, _e = cli(["--color", "never", "--view", "all"])
             finally:
-                M._locks.lock_dir = real_lock_dir
+                _lockmod.lock_dir = real_lock_dir
             c_json, raw, _e = cli(["--json"])
             c_gate, gate_out, _e = cli(["--gate", "--fail-on",
                                         "open-bugs,open-high-bugs"])
@@ -4138,7 +4138,7 @@ def _worked_elsewhere_cases(check):
               % (c_fixed, fixed_out),
               c_fixed == 0 and "GATE PASSED" in fixed_out)
     finally:
-        M._locks.lock_dir = real_lock_dir
+        _lockmod.lock_dir = real_lock_dir
         for p in locked:
             _lockmod.release(repo, "phase-%s" % (p,), session=sid, out=quiet)
         _harness.remove_tree(root)
