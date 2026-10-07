@@ -1521,6 +1521,25 @@ def _cases(check):
                  "xargs -a input python3 tools/x.py",
                  "chrt -R python3 tools/x.py",
                  "time FOO=1 python3 tools/x.py")
+    # (la) leading_assignments: the environment a command sets for its program,
+    # bare or through a wrapper that takes assignments - and nothing that is an
+    # argument of the program, which is where an over-reading would fire.
+    _la = getattr(M, "leading_assignments", None)
+    _la_cases = (
+        (["GIT_EDITOR=vi", "git", "commit"], ["GIT_EDITOR=vi"]),
+        (["A=1", "B=2", "ls"], ["A=1", "B=2"]),
+        (["env", "GIT_PAGER=cat", "git", "log"], ["GIT_PAGER=cat"]),
+        (["sudo", "-u", "root", "A=1", "ls"], ["A=1"]),
+        (["git", "commit", "-m", "A=1"], []),
+        (["echo", "A=1"], []),
+        (["make", "CC=gcc"], []),
+        (["env", "ls", "A=1"], []),
+    )
+    check("la1 the assignments ahead of a program, bare or through env or "
+          "sudo, are its environment; one after the program is an argument",
+          _la is not None and all(_la(w) == want for w, want in _la_cases),
+          repr([(w, _la(w) if _la else None) for w, want in _la_cases
+                if _la is None or _la(w) != want]))
     check("pc5 a wrapper before an ordinary script leaves its heredoc as data",
           all(M._head_runs_body(head) is None for head in _pc_heads),
           repr([(head, M._head_runs_body(head)) for head in _pc_heads]))

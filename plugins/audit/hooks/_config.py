@@ -1755,6 +1755,9 @@ def runs_own_program(words):
     return False
 
 
+# A shell variable assignment, `NAME=value`, as one of a command's words.
+_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
 _WRAPPER_VALUE_OPTIONS = {
     "sudo": ("-u", "-g", "-h", "-p", "-r", "-t", "-C", "--user", "--group",
              "--host", "--prompt", "--role", "--type", "--close-from", "-a"),
@@ -1781,8 +1784,7 @@ def _wrapper_rest(name, words):
         word = words[index]
         if word == "--":
             return words[index + 1:]
-        if name in ("env", "sudo", "time") and re.match(
-                r"^[A-Za-z_][A-Za-z0-9_]*=", word):
+        if name in ("env", "sudo", "time") and _ASSIGNMENT.match(word):
             index += 1
             continue
         if name == "xargs" and word == "-i":
@@ -1817,7 +1819,7 @@ def _wrapper_fallback(words):
     while words:
         while words and (words[0].startswith("-") or words[0].isdigit()):
             words = words[1:]
-        while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
+        while words and _ASSIGNMENT.match(words[0]):
             words = words[1:]
         if words and _program_of(words[0]) in _HEAD_WRAPPERS:
             words = words[1:]
@@ -1835,7 +1837,7 @@ def program_candidates(words):
     word that can remain after wrapper prefixes as a candidate."""
     words = list(words)
     fallback_candidates = []
-    while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
+    while words and _ASSIGNMENT.match(words[0]):
         words = words[1:]
     while words and _program_of(words[0]) in _HEAD_WRAPPERS:
         fallback = _wrapper_fallback(words[1:])
@@ -1846,6 +1848,22 @@ def program_candidates(words):
         words = rest
     candidates = words[:1] if words else []
     return (words, candidates + fallback_candidates)
+
+
+def leading_assignments(words):
+    """The `NAME=value` words one command's `words` set for its program: the
+    ones ahead of it, bare (`A=1 git diff`) or through a wrapper that takes
+    them (`env A=1 git diff`, `sudo A=1 ...`), in the order written.
+
+    An assignment there is environment the program reads, and a program can
+    run what it reads - git runs `GIT_EDITOR`, `GIT_EXTERNAL_DIFF` and a
+    `core.editor` carried in `GIT_CONFIG_PARAMETERS` - so a reader deciding a
+    quoted word is mere text asks this first. The words are those
+    `program_candidates` steps over, so the two never disagree about where the
+    program starts."""
+    rest, _candidates = program_candidates(words)
+    prefix = list(words)[:len(words) - len(rest)]
+    return [w for w in prefix if _ASSIGNMENT.match(w)]
 
 
 # A shell's options that take a separate value, so the value is not read as

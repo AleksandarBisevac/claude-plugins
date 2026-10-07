@@ -812,6 +812,8 @@ def _wrapped_write_cases(check):
                                         in zip(got, want)), got)
         _handed_spelling_cases(check, root, outside, journal, shell,
                                same_as_bare, sid_of, cfg)
+        _live_quoted_cases(check, root, outside, journal, shell,
+                           same_as_bare, sid_of, cfg)
     finally:
         if held is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)
@@ -1015,6 +1017,197 @@ def _handed_spelling_cases(check, root, outside, journal, shell, same_as_bare,
     check("ww11a ...while a handed `cd` into the tree followed by a redirect is "
           "refused naming the file it lands in, not the word typed",
           got[0] == "block" and "gate: src/ww.py\n" in got[1], got)
+
+
+# The git spellings whose quoted word git itself runs: an editor or an external
+# diff named in the environment, bare or through `env`, and `git grep`'s
+# pager option in every spelling git accepts - stuck, long, abbreviated, and
+# inside a cluster of short options. `%s` is the shell command that writes.
+_LIVE_GIT_SPELLINGS = (
+    ("GIT_EDITOR", "GIT_EDITOR=\"sh -c '%s'\" git commit"),
+    ("env GIT_EDITOR", "env GIT_EDITOR=\"sh -c '%s'\" git commit"),
+    ("GIT_EXTERNAL_DIFF", "GIT_EXTERNAL_DIFF=\"sh -c '%s'\" git diff"),
+    ("GIT_CONFIG_PARAMETERS core.editor",
+     "GIT_CONFIG_PARAMETERS=\"'core.editor'='sh -c \\\"%s\\\"'\" git commit"),
+    ("git grep -O stuck", "git grep -O\"sh -c '%s'\" A"),
+    ("git grep -O in a short cluster", "git grep -iO\"sh -c '%s'\" A"),
+    ("git grep --open-files-in-pager=",
+     "git grep --open-files-in-pager=\"sh -c '%s'\" A"),
+    ("git grep --open abbreviated", "git grep --open=\"sh -c '%s'\" A"),
+)
+
+
+def _live_quoted_cases(check, root, outside, journal, shell, same_as_bare,
+                       sid_of, cfg):
+    """A quoted word some program runs is read as a command wherever it sits:
+    in an environment assignment ahead of the program, or in `git grep`'s
+    pager option. Past the nesting bound the journal is refused at every tier
+    and a read is never refused. A directory an earlier clause creates, a
+    recursive copy's files and `git diff --output` are writes too.
+
+    Runs inside `_wrapped_write_cases`' fixture, at the deny tier by evidence."""
+    deny_cfg = _config._deep_merge(cfg, {"planGate": "deny"})
+    tiers = _config.PLAN_GATE_TIERS
+
+    def deny_of(seen):
+        return dict((t, w) for t, _b, w in seen)["deny"]
+
+    def every_tier(label, cmd):
+        return [(tier, shell(sid_of(label, tier), cmd,
+                             use_cfg=_config._deep_merge(cfg, {"planGate": tier})))
+                for tier in tiers]
+
+    def at_deny(label, cmd):
+        sid = sid_of(label)
+        _spend_slot(root, cfg, sid)
+        return shell(sid, cmd, use_cfg=deny_cfg)
+
+    for name, spelling in _LIVE_GIT_SPELLINGS:
+        seen = same_as_bare("live-" + name, "echo x > src/ww.py",
+                            spelling % "echo x > src/ww.py", "src/ww.py")
+        check("lq1 %s running a redirect into a source file is graded like "
+              "the bare redirect at every tier" % name,
+              all(b == w for _t, b, w in seen)
+              and deny_of(seen) == ("block", True), seen)
+        got = every_tier("lq2-" + name, spelling % ("echo x >> %s" % journal))
+        check("lq2 %s running an append to the journal is refused at every "
+              "tier, naming it" % name,
+              all(v[0] == "block" and journal in v[1] for _t, v in got), got)
+    for name, cmd in (
+            ("an external diff that is tee",
+             "GIT_EXTERNAL_DIFF=\"tee src/ww.py\" git diff"),
+            ("a pager option that is tee", "git grep -O\"tee src/ww.py\" A")):
+        got = at_deny("lq1a-" + name, cmd)
+        check("lq1a %s is refused at the deny tier, naming the file" % name,
+              got[0] == "block" and "src/ww.py" in got[1], got)
+    # git takes a separate word after the pager option as the pattern, so the
+    # quoted word is not run there; every spelling of the option is still read
+    # as live, because over-reporting is the safe side on a write guard.
+    got = at_deny("lq1b", "git grep --open-files-in-pager \"tee src/ww.py\" A")
+    check("lq1b a quoted word after a separate --open-files-in-pager is read "
+          "as live too", got[0] == "block" and "src/ww.py" in got[1], got)
+
+    # Every spelling git resolves to the pager option, and none it does not:
+    # `--o` is ambiguous to git, and a lone `-` or a word after `--` is no
+    # option at all.
+    pager = getattr(M, "_git_grep_runs_a_pager", None)
+    spellings = ((["-O"], True), (["-Ocmd"], True), (["-iO"], True),
+                 (["--open-files-in-pager=cmd"], True), (["--op"], True),
+                 (["--open", "x"], True), (["-e", "x"], False),
+                 (["--or", "-e", "x"], False), (["--o"], False), (["-"], False),
+                 (["--only-matching"], False), (["--", "-O"], False))
+    got = [(w, pager(w) if pager else None) for w, _x in spellings]
+    check("lq9 git grep's pager option is found in every spelling git "
+          "resolves to it, and in no other word",
+          pager is not None and all(g is x for (_w, g), (_v, x)
+                                    in zip(got, spellings)), got)
+
+    # THE ALLOW TWINS: a quoted word nothing runs stays text.
+    for name, cmd in (
+            ("a commit message naming a redirect",
+             "git commit -m \"echo x > src/ww.py\""),
+            ("an echoed redirect", "echo 'echo x > src/ww.py'"),
+            ("a printf of a redirect", "printf 'x > src/ww.py\\n'"),
+            ("a grep pattern naming a redirect", "grep 'x > src/ww.py' notes.md"),
+            ("an rg pattern naming tee", "rg 'x | tee src/ww.py' src"),
+            ("a git grep pattern naming a redirect",
+             "git grep -n 'x > src/ww.py'"),
+            ("a git grep pattern beginning with the letter O",
+             "git grep -e 'Open > src/ww.py'"),
+            ("a program printing a redirect",
+             "python3 -c \"print('x > src/ww.py')\""),
+            ("a handed cd out of the tree",
+             "bash -c \"cd %s && echo x > ww.py\"" % outside)):
+        got = at_deny("lq3-" + name, cmd)
+        check("lq3 %s is allowed at the deny tier" % name,
+              got[0] == "allow", got)
+
+    # Past the nesting bound: the journal at every tier, a read never refused.
+    bound = M._MAX_HANDED
+    got = every_tier("lq4", _nested("echo x >> %s" % journal, bound + 1))
+    check("lq4 a journal append handed one level past the bound is refused at "
+          "every tier, naming the journal",
+          all(v[0] == "block" and journal in v[1] for _t, v in got), got)
+    for name, cmd in (("a listing", "ls src"),
+                      ("a read of the journal", "cat %s" % journal)):
+        got = at_deny("lq5-" + name, _nested(cmd, bound + 1))
+        check("lq5 %s handed one level past the bound is allowed at the deny "
+              "tier" % name, got[0] == "allow", got)
+    got = at_deny("lq5a", _nested("ls src", bound + 2))
+    check("lq5a ...while a command handed two levels past the bound, which "
+          "this guard cannot read, is refused at the deny tier",
+          got[0] == "block", got)
+
+    # A directory an earlier clause makes is a directory to the copy after it.
+    for name, cmd, target in (
+            ("mkdir", "mkdir src/new && cp notes.py src/new", "src/new/notes.py"),
+            ("mkdir -p", "mkdir -p src/a/b; cp notes.py src/a/b",
+             "src/a/b/notes.py"),
+            ("ln -s onto a directory", "ln -s src lnk && cp notes.py lnk",
+             "src/notes.py")):
+        got = at_deny("lq6-" + name, cmd)
+        check("lq6 %s, then a copy into it, is refused naming the file the "
+              "copy lands as" % name,
+              got[0] == "block" and ("gate: %s\n" % target) in got[1], got)
+    for name, cmd in (
+            ("mkdir, then a copy of no source file",
+             "mkdir src/new && cp notes.md src/new"),
+            ("ln -s onto a directory outside the tree, then a copy",
+             "ln -s %s lnk && cp notes.py lnk" % outside),
+            ("a directory made AFTER the copy", "cp notes.py src/late; mkdir src/late")):
+        got = at_deny("lq6a-" + name, cmd)
+        check("lq6a %s is allowed at the deny tier" % name,
+              got[0] == "allow", got)
+
+    # A recursive copy writes every file of the directory it copies.
+    pkg = outside / "pkg"
+    pkg.mkdir(exist_ok=True)
+    (pkg / "m.py").write_text("M = 1\n", encoding="utf-8")
+    docs = outside / "docs-only"
+    docs.mkdir(exist_ok=True)
+    (docs / "readme.md").write_text("r\n", encoding="utf-8")
+    for name, cmd, target in (
+            ("cp -r onto an existing directory", "cp -r %s src" % pkg,
+             "src/pkg/m.py"),
+            ("cp -R onto a new name", "cp -R %s src/pkg2" % pkg, "src/pkg2/m.py"),
+            ("cp -a onto an existing directory", "cp -a %s src" % pkg,
+             "src/pkg/m.py"),
+            ("mv of a directory", "mv %s src/moved" % pkg, "src/moved/m.py")):
+        got = at_deny("lq7-" + name, cmd)
+        check("lq7 %s is refused naming a file inside it" % name,
+              got[0] == "block" and ("gate: %s\n" % target) in got[1], got)
+    for name, cmd in (
+            ("cp -r of a directory holding no source file",
+             "cp -r %s src" % docs),
+            ("cp -r of a source directory out of the tree",
+             "cp -r src %s" % (outside / "copy")),
+            ("cp without -r of a directory", "cp %s src" % pkg)):
+        got = at_deny("lq7a-" + name, cmd)
+        check("lq7a %s is allowed at the deny tier" % name,
+              got[0] == "allow", got)
+
+    # `git diff --output` writes the file it names.
+    for name, cmd, target in (
+            ("git diff --output=", "git diff --output=src/ww.py", "src/ww.py"),
+            ("git diff --output, separate", "git diff --output src/ww.py",
+             "src/ww.py"),
+            ("git log --output=", "git log -p --output=src/ww.py", "src/ww.py"),
+            ("git -C then --output=", "git -C src diff --output=ww.py",
+             "src/ww.py")):
+        got = at_deny("lq8-" + name, cmd)
+        check("lq8 %s naming a source file is refused naming it" % name,
+              got[0] == "block" and ("gate: %s\n" % target) in got[1], got)
+    got = every_tier("lq8b", "git diff --output=%s" % journal)
+    check("lq8b git diff --output onto the journal is refused at every tier",
+          all(v[0] == "block" and journal in v[1] for _t, v in got), got)
+    for name, cmd in (
+            ("--output out of the tree",
+             "git diff --output=%s" % (outside / "d.patch")),
+            ("a pathspec and no --output", "git diff -- src/ww.py"),
+            ("--output after --, a pathspec", "git diff -- --output=src/ww.py")):
+        got = at_deny("lq8a-" + name, cmd)
+        check("lq8a git diff %s is allowed at the deny tier" % name,
+              got[0] == "allow", got)
 
 
 def _expand_optional_chars(fragment):

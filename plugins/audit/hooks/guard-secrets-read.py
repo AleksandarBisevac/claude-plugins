@@ -1633,6 +1633,13 @@ def _simple_commands(text):
 # (`watch`, `find -exec`, `su -c`, an interpreter's code) keeps the quoted read,
 # because over-reporting is the safe side of not knowing on a write guard, and
 # dropping the read there would open a write that only this read saw.
+#
+# AN ASSIGNMENT AHEAD OF THE PROGRAM MAKES EVERY QUOTED WORD OF ITS COMMAND
+# LIVE, bare or through `env`: the program reads its environment, and git runs
+# what `GIT_EDITOR`, `GIT_EXTERNAL_DIFF` or a `core.editor` inside
+# `GIT_CONFIG_PARAMETERS` names. Reading a data program's words as text there
+# let an editor variable holding a redirect into a source file through at the
+# deny tier, ahead of a bare `git commit`.
 _QUOTED_DATA_PROGRAMS = ("echo", "printf", "grep", "egrep", "fgrep", "rg")
 # The git subcommands whose quoted words are a message, a pattern or a path.
 # A global `-c` (or `--config-env`) can name a pager, an editor or an alias the
@@ -1640,11 +1647,37 @@ _QUOTED_DATA_PROGRAMS = ("echo", "printf", "grep", "egrep", "fgrep", "rg")
 _GIT_DATA_SUBCOMMANDS = ("commit", "tag", "notes", "log", "show", "grep",
                          "diff", "status", "add")
 _GIT_VALUE_OPTIONS = ("-C", "--git-dir", "--work-tree", "--namespace")
+# `git grep`'s option naming a program it runs on the matching files. git takes
+# a long option by any unambiguous prefix, and `--op` is the shortest one no
+# other `git grep` option shares.
+_GIT_GREP_PAGER = "--open-files-in-pager"
+_GIT_GREP_PAGER_PREFIX = len("--op")
+
+
+def _git_grep_runs_a_pager(words):
+    """True when `git grep`'s own `words` (past the subcommand) carry its
+    pager option in any spelling git accepts: `-O` alone, stuck to its value
+    (`-Ocmd`) or inside a cluster of short options (`-iO`), and the long name
+    or any prefix of it git still resolves, with or without `=value`. A
+    separate word after the option is git's pattern, not the pager, but it is
+    read as live all the same - this reader does not follow git's optional-
+    value rule, and over-reporting is the safe side on a write guard."""
+    for word in words:
+        if word == "--":
+            return False
+        name = word.split("=", 1)[0]
+        if (len(name) >= _GIT_GREP_PAGER_PREFIX
+                and _GIT_GREP_PAGER.startswith(name)):
+            return True
+        if word.startswith("-") and not word.startswith("--") and "O" in word:
+            return True
+    return False
 
 
 def _git_quoted_words_are_data(rest):
     """True when the git call `rest` runs a subcommand whose quoted words are
-    data and no option that could make git run one of them."""
+    data and no option that could make git run one of them - a global `-c`, or
+    `git grep`'s pager option."""
     index = 1
     while index < len(rest):
         word = rest[index]
@@ -1656,6 +1689,8 @@ def _git_quoted_words_are_data(rest):
         if word.startswith("-"):
             index += 1
             continue
+        if word == "grep" and _git_grep_runs_a_pager(rest[index + 1:]):
+            return False
         return word in _GIT_DATA_SUBCOMMANDS
     return False
 
@@ -1664,9 +1699,10 @@ def _quoted_words_are_data(span):
     """True when a quoted word in the simple command `span` is never run as a
     command by it: the handed command of `eval` or a shell's `-c` (graded in
     its own view), or an argument of a program that runs no argument. A span
-    that will not tokenise is not data."""
+    that will not tokenise is not data, and neither is one that sets an
+    environment variable for its program."""
     words = _config.shell_words(_config.join_continuations(span).strip())
-    if not words:
+    if not words or _config.leading_assignments(words):
         return False
     rest, _candidates = _config.program_candidates(words)
     if not rest:
@@ -1711,9 +1747,16 @@ def _quoted_text_skipper(text):
 _COPY_PROGRAMS = ("cp", "mv", "install")
 _COPY_VALUE_OPTIONS = ("-S", "--suffix", "-m", "--mode", "-o", "--owner",
                        "-g", "--group")
+# What makes `cp` copy a directory whole rather than refuse it.
+_COPY_RECURSIVE_LONG = ("--recursive", "--archive")
+_COPY_RECURSIVE_SHORT = "rRa"
+# How many files of a directory copied whole are listed before the rest is said
+# as a destination not established - a bound on the walk a hook makes on every
+# such command, never a silent stop.
+_COPY_WALK_LIMIT = 2000
 
 
-def _copy_destinations(words, is_dir=None):
+def _copy_destinations(words, is_dir=None, files_of=None):
     """The files a `cp`/`mv`/`install` call, given as its words, writes.
 
     The last operand, or - when it is spelled as a directory (a trailing
@@ -1728,14 +1771,26 @@ def _copy_destinations(words, is_dir=None):
     (`is_dir`, at the command's own directory): read as the file it names,
     `cp notes.py src` graded a write to `src`, which is no source file, while
     `cp notes.py src/` and `cp -t src notes.py` - the same write - were
-    refused."""
+    refused.
+
+    A DIRECTORY COPIED WHOLE WRITES EVERY FILE IN IT. `mv` of a directory, and
+    `cp` under `-r`, `-R`, `-a` or their long names, land each file of the
+    source under the destination; `files_of`, asked of a source at the
+    command's own directory, lists them, and each is a file written. Read as
+    the one directory name, a recursive copy of source files into the tree
+    wrote no source file this arm could see."""
     operands, directory, index = [], None, 1
     as_file = False
+    whole = words[0] == "mv"
     while index < len(words):
         word = words[index]
         if word == "--":
             operands.extend(words[index + 1:])
             break
+        if words[0] == "cp" and (word in _COPY_RECURSIVE_LONG or (
+                word.startswith("-") and not word.startswith("--")
+                and any(ch in word[1:] for ch in _COPY_RECURSIVE_SHORT))):
+            whole = True
         if word in ("-t", "--target-directory"):
             directory = words[index + 1] if index + 1 < len(words) else None
             index += 2
@@ -1760,12 +1815,21 @@ def _copy_destinations(words, is_dir=None):
     elif len(operands) == 2 and (as_file or (
             not operands[1].endswith(("/", "\\"))
             and not (is_dir is not None and is_dir(operands[1])))):
-        return [operands[1]]
+        directory, sources = None, operands[:1]
     else:
         directory, sources = operands[-1], operands[:-1]
-    base = directory.rstrip("/\\")
-    return ["%s/%s" % (base, s.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1])
-            for s in sources]
+    if directory is None:
+        landed = [(operands[1], operands[0])]
+    else:
+        base = directory.rstrip("/\\")
+        landed = [("%s/%s" % (base, s.replace("\\", "/").rstrip("/")
+                              .rsplit("/", 1)[-1]), s) for s in sources]
+    out = []
+    for dest, source in landed:
+        inside = files_of(source) if whole and files_of is not None else None
+        out.extend([dest] if inside is None else
+                   ["%s/%s" % (dest.rstrip("/\\"), rel) for rel in inside])
+    return out
 
 
 def _existing_directory(word, cwd):
@@ -1784,22 +1848,120 @@ def _existing_directory(word, cwd):
         return False
 
 
+def _directory_files(word, cwd):
+    """The files under the directory `word` names at `cwd`, relative to it
+    and in a stable order - or None when it names no directory this process
+    can find. Past `_COPY_WALK_LIMIT` the listing ends in `*`, which every
+    reader here says as a destination not established."""
+    if not _existing_directory(word, cwd):
+        return None
+    top = _placed_target(word, cwd)
+    found = []
+    for at, dirs, files in os.walk(top):
+        dirs.sort()
+        for name in sorted(files):
+            if len(found) >= _COPY_WALK_LIMIT:
+                return found + ["*"]
+            found.append(os.path.relpath(os.path.join(at, name), top)
+                         .replace(os.sep, "/"))
+    return found
+
+
+def _operands(words, value_options):
+    """`words`' operands past the program and its options, `value_options`'
+    values stepped over. Nothing after `--` is an option."""
+    out, index = [], 1
+    while index < len(words):
+        word = words[index]
+        if word == "--":
+            return out + list(words[index + 1:])
+        if word in value_options:
+            index += 2
+            continue
+        if not (word.startswith("-") and len(word) > 1):
+            out.append(word)
+        index += 1
+    return out
+
+
+def _made_by(words, made, cwd):
+    """`made` with what one command's `words` create added: each directory
+    `mkdir` makes (and, under `-p`, every parent it makes on the way), as
+    None, and the link `ln -s` makes, as the path it points to - placed
+    beside the link, which is where a relative link resolves."""
+    program = _config.program_name(words[0])
+    flags = [w for w in words[1:] if w.startswith("-") and len(w) > 1]
+    out = dict(made)
+    if program == "mkdir":
+        parents = any(w == "--parents" or (not w.startswith("--") and "p" in w)
+                      for w in flags)
+        for name in _operands(words, ("-m", "--mode", "-Z")):
+            name = name.rstrip("/\\")
+            parts = name.split("/")
+            for upto in range(1 if parents else len(parts), len(parts) + 1):
+                if "/".join(parts[:upto]):
+                    out["/".join(parts[:upto])] = None
+        return out
+    symbolic = any(w == "--symbolic" or (not w.startswith("--") and "s" in w)
+                   for w in flags)
+    if program != "ln" or not symbolic or any(
+            w in ("-t", "--target-directory")
+            or w.startswith("--target-directory=") for w in flags):
+        return out
+    names = _operands(words, ("-S", "--suffix", "-t", "--target-directory"))
+    if len(names) == 1:
+        target, link = names[0], names[0].rstrip("/\\").rsplit("/", 1)[-1]
+    elif len(names) == 2:
+        target, link = names
+        if link.rstrip("/\\") in made or _existing_directory(link, cwd):
+            return out
+    else:
+        return out
+    link = link.rstrip("/\\")
+    beside = link.rsplit("/", 1)[0] if "/" in link else ""
+    out[link] = (target if not beside or _looks_absolute(target)
+                 else "%s/%s" % (beside, target))
+    return out
+
+
+def _through_links(word, made):
+    """`word` with a link an earlier clause made replaced by the path it
+    points to, its trailing slash kept: a copy onto the link writes there."""
+    name = word.rstrip("/\\")
+    if made.get(name) is None:
+        return word
+    return made[name] + word[len(name):]
+
+
 def _copy_targets(text, cwd=None):
     """Every file a `cp`, `mv` or `install` command in `text` writes, found in
     command position past the wrappers `_config.program_candidates` steps over -
     never in a quoted argument of another program. `cwd` is where the command
     stands, for asking the disk whether a slashless last operand is a
-    directory."""
-    out = []
+    directory.
+
+    THE DISK IS NOT THE ONLY THING THAT MAKES A DIRECTORY. A directory an
+    earlier clause of the same command creates with `mkdir`, or a link it
+    makes with `ln -s`, does not exist yet when this hook runs, so asking the
+    disk read `mkdir src/new && cp a.py src/new` as a write to the file
+    `src/new` - no source file - while the copy lands as `src/new/a.py`. What
+    each clause makes is carried to the clauses after it, in command order."""
+    out, made = [], {}
     for span in _simple_commands(text):
         words = _config.shell_words(_config.join_continuations(span).strip())
         if not words:
             continue
         rest, _candidates = _config.program_candidates(words)
-        if rest and _config.program_name(rest[0]) in _COPY_PROGRAMS:
+        if not rest:
+            continue
+        program = _config.program_name(rest[0])
+        if program in _COPY_PROGRAMS:
             out.extend(_copy_destinations(
-                [_config.program_name(rest[0])] + rest[1:],
-                lambda word: _existing_directory(word, cwd)))
+                [program] + [_through_links(w, made) for w in rest[1:]],
+                lambda word: (made.get(word.rstrip("/\\"), 0) is None
+                              or _existing_directory(word, cwd)),
+                lambda word: _directory_files(word, cwd)))
+        made = _made_by(rest, made, cwd)
     return out
 
 
@@ -1818,7 +1980,8 @@ def _shell_write_targets(cmd, cwd=None):
     for m in _SHELL_REDIRECT.finditer(cmd):
         if skip(m.start()):
             continue
-        t = cmd[m.start(1):_word_end(depths, m.start(1), m.end(1))].strip("'\"")
+        t = cmd[m.start(1):_word_end(depths, m.start(1), m.end(1))].strip(
+            _TARGET_QUOTES)
         if t and not t.startswith(("&", "(")) and t != "/dev/null":
             targets.append(t)
     for m in _TEE_CLAUSE.finditer(cmd):
@@ -1826,18 +1989,81 @@ def _shell_write_targets(cmd, cwd=None):
             continue
         operands = cmd[m.start(1):_word_end(depths, m.start(1), m.end(1))]
         for tok in operands.split():
-            tok = tok.strip("'\"")
+            tok = tok.strip(_TARGET_QUOTES)
             if tok and not tok.startswith("-"):
                 targets.append(tok)
     targets.extend(_inplace_targets(cmd, _SED_INPLACE_CLAUSE, _sed_file_operands))
     targets.extend(_copy_targets(cmd, cwd))
+    targets.extend(_git_output_targets(cmd))
     return targets
+
+
+# What the redirect and `tee` readings strip from a target's ends: the quote
+# closing the word it sits in, and the backslash that escapes such a quote
+# inside a double-quoted word - `"... > src/a.py\"'"` named `src/a.py\`, which
+# is no source file, when only the quotes were stripped.
+_TARGET_QUOTES = "'\"\\"
+
+
+def _git_output_files(words):
+    """The files a git call, given as its words past `git`, writes through
+    its diff-family `--output` option (`--output=f` or `--output f`), placed
+    under the directory its global `-C` options name. Nothing after `--` is an
+    option."""
+    directory, index = "", 0
+    while index < len(words):
+        word = words[index]
+        if word == "-C" and index + 1 < len(words):
+            step = words[index + 1]
+            directory = (step if _looks_absolute(step) or not directory
+                         else "%s/%s" % (directory.rstrip("/"), step))
+            index += 2
+            continue
+        if word == "-c" or word in _GIT_VALUE_OPTIONS:
+            index += 2
+            continue
+        if not word.startswith("-"):
+            break
+        index += 1
+    out, index = [], index + 1
+    while index < len(words):
+        word = words[index]
+        if word == "--":
+            break
+        named = None
+        if word.startswith("--output="):
+            named = word.split("=", 1)[1]
+        elif word == "--output" and index + 1 < len(words):
+            named = words[index + 1]
+            index += 1
+        if named:
+            out.append(named if not directory or _looks_absolute(named)
+                       else "%s/%s" % (directory.rstrip("/"), named))
+        index += 1
+    return out
+
+
+def _git_output_targets(text):
+    """Every file a git command in `text` writes through `--output`, found in
+    command position past the wrappers `_config.program_candidates` steps
+    over. `git diff --output=f` writes the patch to `f` - a write that no
+    redirect spells, so the redirect reading never saw it."""
+    out = []
+    for span in _simple_commands(text):
+        words = _config.shell_words(_config.join_continuations(span).strip())
+        if not words:
+            continue
+        rest, _candidates = _config.program_candidates(words)
+        if rest and _config.program_name(rest[0]) == "git":
+            out.extend(_git_output_files(rest[1:]))
+    return out
 
 
 # How deep a command handed inside a handed command is followed: a bound, not
 # a feature - `sh -c "eval '...'"` is two levels. A command handed past it is
-# not read and not dropped either: `_handed_walk` returns it, and the plan
-# gate grades it as a write it cannot place.
+# not walked and not dropped either: `_handed_walk` returns it, its own write
+# shapes are read flat (`_past_bound_writers`), and the plan gate grades one
+# that writes, or hands on a command of its own, as a write it cannot place.
 _MAX_HANDED = 3
 
 
@@ -1862,25 +2088,59 @@ def _write_views(text, cwd, depth=0):
 
 
 def _handed_walk(text, cwd, depth=0):
-    """(`_write_views`' views, the handed commands past `_MAX_HANDED`).
+    """(`_write_views`' views, [(a handed command past `_MAX_HANDED`, the
+    directory it stands in)]).
 
     A COMMAND HANDED PAST THE BOUND IS NOT NOTHING. The walk stops at the
     bound, and what it stopped in front of used to be read as no write at all:
     a `sed -i` nested one `bash -c`/`sh -c`/`eval` past the bound was allowed
     at the deny tier while the same write one level shallower was refused.
-    The command the walk did not read is
-    returned so the caller can grade it as a write it cannot place."""
+    The command the walk did not follow is returned, at its own directory, so
+    the caller can read its write shapes without walking further."""
     views, beyond = [(text, cwd)], []
     for span in _simple_commands(text):
         for handed in _config.handed_commands(span):
-            if depth >= _MAX_HANDED:
-                beyond.append(handed)
-                continue
             inner = _config.effective_cwd(handed, cwd) if cwd else None
+            if depth >= _MAX_HANDED:
+                beyond.append((handed, inner))
+                continue
             more, past = _handed_walk(handed, inner, depth + 1)
             views += more
             beyond += past
     return views, beyond
+
+
+def _carries_a_write(text, cwd):
+    """True when the command `text`, read flat at `cwd`, carries a write shape
+    a reader here knows - a redirect, `tee`, `sed -i`, a copy, `git --output`,
+    an interpreter's write call - or hands a command on to a shell or `eval`,
+    which is past what any reader here follows and so cannot be read at all."""
+    if _config.handed_commands(text) or _shell_write_targets(text, cwd):
+        return True
+    return any(_eval_write_targets(clause) for clause in _clauses(text)
+               if _INLINE_EVAL.search(clause))
+
+
+def _past_bound_writers(text, cwd):
+    """[(command, directory)]: the commands `text` hands past `_MAX_HANDED`
+    that carry a write or hand on a command (`_carries_a_write`).
+
+    A READ PAST THE BOUND IS STILL A READ. Every command past the bound used
+    to be graded as a write nobody could place, so `ls` nested one level too
+    deep was refused at the deny tier. Its own words are read now, flat, and
+    only one that writes - or that this reader cannot see into - is graded as
+    a write."""
+    return [(handed, at) for handed, at in _handed_walk(text, cwd)[1]
+            if _carries_a_write(handed, at)]
+
+
+def _every_write_view(text, cwd):
+    """`_write_views` and, after them, each command handed past the bound,
+    read flat at its own directory: the views an arm that refuses at every
+    tier reads, so an append nested one level too deep is not a tier's
+    question."""
+    walked, beyond = _handed_walk(text, cwd)
+    return walked + beyond
 
 
 # shared with guard-bash-writes.py — ONE definition of "source file"
@@ -2200,14 +2460,16 @@ _VERDICT_RANK = {"allow": 0, "ask": 1, "block": 2}
 _BEYOND_SHOWN = "a command handed deeper than %d levels: %s"
 _BEYOND_DENY = (
     "A command handed to a shell or `eval` is nested deeper than this guard "
-    "reads, so the files it writes cannot be named: %s\n%s A write the plan "
+    "follows, and it writes or hands on a command of its own, so the files it "
+    "writes cannot be graded: %s\n%s A write the plan "
     "gate cannot place is refused at this tier rather than read as nothing. "
     "Run the inner command with less nesting, so the files it writes are "
     "graded, or stop and ask the operator."
 )
 _BEYOND_ASK = (
     "A command handed to a shell or `eval` is nested deeper than this guard "
-    "reads, so the files it writes cannot be named: %s\n"
+    "follows, and it writes or hands on a command of its own, so the files it "
+    "writes cannot be graded: %s\n"
     "planGate is set to \"ask\" in .claude/audit.config.json, so this command "
     "waits for your approval."
 )
@@ -2221,13 +2483,15 @@ def _snippet(text, limit=120):
 
 def _beyond_bound_verdict(root, cfg, beyond):
     """The verdict on a command whose `beyond` - the commands handed past
-    `_MAX_HANDED` - this guard did not read: a refusal at the deny tier, an
+    `_MAX_HANDED` that carry a write (`_past_bound_writers`), as (command,
+    directory) - this guard did not follow: a refusal at the deny tier, an
     ask at ask, None (said by the caller as unestablished) at observe and
     warn, where a write it could name would be allowed too."""
     manifest_rel = (cfg.get("manifestPath")
                     or _config.DEFAULTS["manifestPath"])
     mode = _config.plan_gate_mode(cfg, _config.manifest_state(root, manifest_rel))
-    shown = "; ".join(_BEYOND_SHOWN % (_MAX_HANDED, _snippet(b)) for b in beyond)
+    shown = "; ".join(_BEYOND_SHOWN % (_MAX_HANDED, _snippet(b))
+                      for b, _at in beyond)
     if mode == "deny":
         return ("block", _BEYOND_DENY % (shown, _plan_gate_cause(cfg, root,
                                                                  manifest_rel)))
@@ -2432,7 +2696,7 @@ def _manifest_write_placed(cmd, root, cfg, cwd):
     target outside the project pays for the git call that asks."""
     manifest_rel = str(cfg.get("manifestPath")
                        or _config.DEFAULTS["manifestPath"])
-    for text, at in _write_views(cmd, cwd):
+    for text, at in _every_write_view(cmd, cwd):
         for t in _shell_write_targets(text, at):
             if not _config.resolvable_destination(t):
                 continue
@@ -2498,8 +2762,9 @@ _SHELL_JOURNAL = (
 def _journal_write_hit(cmd, root, cfg, cwd, program_targets=()):
     """The repo-relative path of the first journal file `cmd` writes via a
     `>`(`>>`) redirect, `tee`, `sed -i` or a copy - in a command handed to a
-    shell or `eval` as in the bare one - or that `program_targets` names, or
-    None.
+    shell or `eval` as in the bare one, and in one handed past the walk's
+    bound, read flat (`_every_write_view`) - or that `program_targets` names,
+    or None.
 
     `program_targets` are the files the interpreter clauses' write calls
     name (`_eval_write_targets`), placed at `cwd` as that arm places them. An
@@ -2516,7 +2781,7 @@ def _journal_write_hit(cmd, root, cfg, cwd, program_targets=()):
     A read of the journal is no hit - a `<` redirect is not among the targets -
     and neither is the plugin's own writer, which is a script that opens the
     file itself rather than a redirect the shell performs."""
-    sites = [(t, at) for text, at in _write_views(cmd, cwd)
+    sites = [(t, at) for text, at in _every_write_view(cmd, cwd)
              for t in _shell_write_targets(text, at)]
     sites += [(t, cwd) for t in program_targets]
     for t, at in sites:
@@ -2866,11 +3131,12 @@ def _decide_core(data, root, cfg):
         # written into a file is not a redirect the shell performs. An interpreter
         # body stays in this view: a `sed -i` inside one is still a shell write.
         shell_write = _source_write_hit(runnable, root, cfg, cwd)
-        # A command handed deeper than the walk reads writes files nobody here
-        # can name, so it is graded as such a write: refused at the deny tier
-        # and asked at ask, before the slot - which only a file it can name may
-        # take - and said, below, everywhere else.
-        beyond = _handed_walk(runnable, cwd)[1]
+        # A command handed deeper than the walk follows, which writes or hands
+        # on a command, writes files nobody here can name, so it is graded as
+        # such a write: refused at the deny tier and asked at ask, before the
+        # slot - which only a file it can name may take - and said, below,
+        # everywhere else. One that only reads is no write at all.
+        beyond = _past_bound_writers(runnable, cwd)
         if beyond:
             refusal = _beyond_bound_verdict(root, cfg, beyond)
             if refusal is not None:
@@ -2896,7 +3162,7 @@ def _decide_core(data, root, cfg):
         # command can spell one destination each way.
         unplaced = list(eunplaced)
         for spelling in shell_write["unresolved"] + [
-                _BEYOND_SHOWN % (_MAX_HANDED, _snippet(b)) for b in beyond]:
+                _BEYOND_SHOWN % (_MAX_HANDED, _snippet(b)) for b, _at in beyond]:
             if spelling not in unplaced:
                 unplaced.append(spelling)
         if unplaced:

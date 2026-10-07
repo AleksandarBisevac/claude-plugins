@@ -617,27 +617,37 @@ sees two versions, so the loser's bookkeeping silently overwrites the winner's. 
 uncertain resolves to *allow*, in keeping with the fail-open posture above.
 
 `require-plan` names the tool half of it. The same denial is asked of the shell write forms
-`guard-secrets-read` can see — `sed -i`, `tee`, `>`/`>>` redirects, the destination of
+`guard-secrets-read` can see — `sed -i`, `tee`, `>`/`>>` redirects, `git`'s `--output`
+(`git diff --output=f` writes the patch to `f`, placed under any global `-C`), the destination of
 `cp`/`mv`/`install` (a slashless last operand is read as a directory, the same as one spelled
 with a trailing slash, when it resolves at the command's own directory to one that already
-exists on disk), and any of those handed to a shell's `-c` or to `eval` as a quoted
-argument — against the same resolved paths, on the same fail-open table, so a live holder's
-shard is refused before the write lands rather than reported after it. A command handed past
-the walk's own nesting bound is graded as a write this arm cannot place — refused where the
-gate denies, held for approval where it asks — rather than read as nothing. **A further shape stays open,
-named rather than left to be found: a write call inside an interpreter** (`python -c`,
-`node -e`, or either's heredoc spelling) **that names the manifest, its lock or a phase shard is
-not read by this arm**, unlike the same call aimed at the journal, which this arm does read —
-a subagent reaching its own shard through `python3 -c "open('docs/audit/phases/P1.json','w')"`
-meets neither this arm nor the source-file arm above it. Two shapes of the reading itself stay
-open too: the in-place `sed -i` reading skips every quoted match regardless of the program
-holding it, so a `sed -i` reached through `find -exec sh -c '...'` is not read; and an
-interpreter's `os.system(...)` redirect whose target string touches the call's own closing
-quote is read as naming that quote and parenthesis, so it names no source file — the one case
-`test_hooks.py` marks a known divergence rather than fixing. What stays uncatchable beyond all
-of that is the residual of bypass class 1 below, the writes no static reading of a command can
-find at all; `guard-bash-writes` reports both residuals afterwards, from `git status`, once the
-write has already landed.
+exists on disk, or when an earlier clause of the same command creates it with `mkdir` or makes
+it a link with `ln -s` — a copy onto such a link is read as landing where the link points; and
+a directory copied whole, by `mv` or by `cp -r`/`-R`/`-a`, is read as every file inside it, the
+walk bounded by `_COPY_WALK_LIMIT` and the rest said as a destination not established), and any
+of those handed to a shell's `-c` or to `eval` as a quoted argument — against the same resolved
+paths, on the same fail-open table, so a live holder's shard is refused before the write lands
+rather than reported after it. A command handed past the walk's own nesting bound is not walked
+further, but its own words are read flat: its write targets meet this arm and the journal arm
+as any other target does, and any write shape in it, or a command it hands on in turn, makes
+the plan gate grade it as a write it cannot place — refused where the gate denies, held for approval
+where it asks — while one that only reads is allowed. **A further shape stays open, named
+rather than left to be found: a write call inside an interpreter** (`python -c`, `node -e`, or
+either's heredoc spelling) **that names the manifest, its lock or a phase shard is not read by
+this arm**, unlike the same call aimed at the journal, which this arm does read — a subagent
+reaching its own shard through `python3 -c "open('docs/audit/phases/P1.json','w')"` meets
+neither this arm nor the source-file arm above it. The reading itself leaves these shapes
+open, and it names them so a reader need not find them:
+
+- the in-place `sed -i` reading skips every quoted match regardless of the program holding it,
+  so a `sed -i` reached through `find -exec sh -c '...'` is not read;
+- an interpreter's `os.system(...)` redirect whose target string touches the call's own closing
+  quote is read as naming that quote and parenthesis, so it names no source file.
+
+Every row `test_hooks.py` marks a known divergence rather than fixing is listed by id in its
+`KNOWN_DIVERGENCE`. What stays uncatchable beyond all of that is the residual of bypass class 1
+below, the writes no static reading of a command can find at all; `guard-bash-writes` reports
+both residuals afterwards, from `git status`, once the write has already landed.
 
 Both `_config.manifest_state` and `_config.plan_gate_mode` degrade to the **least** aggressive
 verdict on any internal error, in keeping with the fail-open posture above: a crash in the
@@ -867,18 +877,31 @@ point:
   drift apart: a POSIX home directory, a Windows user path, a home directory
   flattened into one directory-name slug the way a harness names its scratch
   and session directories (anchored at the slug's own start, so prose such as
-  `my-home-page` is left alone while a real slug is caught wherever it sits),
-  a URL-escaped path, a tokenized temp-directory session, and an unexpanded
-  `~/`. A token in any of these may also start right after a URL scheme's
-  `://`, so a `file://` URL into a home directory is refused, redacted and
-  flagged exactly as a bare path is, while an `https://` URL whose path merely
-  contains the word `Users` is left alone. `tools/check-committed-pii.py`
-  takes these same pattern objects for its own rows rather than keeping a copy
-  of its own, so a shape added to one side is read by the other without being
-  told twice. The one deliberate difference: the writer additionally requires
-  a leading separator before `Users`/`home`, because a repository may hold a
-  `home/` directory of its own with nobody left to overrule a refusal of it;
-  the detector, reading committed bytes a human reviews, does not. The
+  `my-home-page` is left alone; and a slug is taken only when it carries more
+  than its dash-led user segment, or has a path separator directly before or
+  after it, so an option whose name begins with a dash and the word `home`,
+  or a lone dash-led user segment written in a sentence, is left alone, while
+  every placement a real slug has, as a whole path segment or followed by
+  further segments, is still caught), a URL-escaped path, a tokenized
+  temp-directory session, and an unexpanded tilde path — the last refused at
+  the writer's door even in prose, by choice, because the commit-time
+  detector reads the same pattern and fails the build on it, and a row the
+  writer let through would be one the build rejects after its hash chain made
+  it permanent. A token in any of these may also start right after a URL
+  scheme's `://`, and, for the file scheme only, right after a file URL's
+  host as well: a file URL's host names the machine whose disk the path is
+  on, so a file URL into a home directory is refused, redacted and flagged
+  exactly as a bare path is whether or not it names a host, while an
+  `https://` URL with the same host and the same path is left alone, because
+  its host names a web server and its path is a page.
+  `tools/check-committed-pii.py` takes these same pattern objects for its own
+  rows rather than keeping a copy of its own, so a shape added to one side is
+  read by the other without being told twice. The one deliberate difference:
+  the writer additionally requires a separator before `Users`/`home` —
+  leading the match, or following a file URL's host — because a repository
+  may hold a `home/` directory of its own with nobody left to overrule a
+  refusal of it; the detector, reading committed bytes a human reviews, does
+  not. The
   writer's own check asks one more shape the regex table does not carry — the
   checkout's own root, resolved per project rather than pattern-matched, so it
   is not a shape the detector (which has no one project to ask about) reads at
@@ -950,27 +973,40 @@ point:
   the change declared in its `BASELINE` with a reason.
 - Hand edits to the journal are refused by `guard-edits.py`, and a shell meets
   the same refusal: `guard-secrets-read`'s PreToolUse Bash arm reads the
-  journal as a write target too, and refuses a redirect, `tee`, `sed -i`, the
-  destination of `cp`/`mv`/`install` (a slashless last operand that already
-  exists as a directory on disk is read as one, the same as a trailing-slash
-  spelling), any of those handed to a shell's `-c` or to `eval` as a quoted
-  argument, a command nested past the walk's own bound (graded as a write
-  this arm cannot place rather than read as nothing), and a write call inside
-  an interpreter (`python -c`, `node -e`, or either's heredoc spelling,
-  reading a keyword `mode=` — `open(p, mode='a')`, with other keyword
-  arguments ahead of it too — the same as the positional mode) that names the
-  journal — at every tier, to every session, exactly as `guard-edits` refuses
-  the edit tools. **This closes what used to be open**: a `sed -i` reached
-  through `bash -c "..."` used to be read only in its bare spelling, and an
-  interpreter write naming the journal was not read by this arm at all. What
-  is left is narrower and named rather than assumed: the quoted-argument
-  reading here is this hook's own, built for this write arm — a redirect or
-  `tee` inside a quoted word is skipped only where the word is provably text
-  (an argument of `echo`, `printf` or a `grep`-family program, or of `git` for
-  a subcommand whose quoted words are a message, a pattern or a path with no
-  global `-c`/`--config-env` in play) or is already graded in its own view
-  (the handed command of `eval` or of a shell's `-c`), and every other
-  program's quoted redirect or `tee` still reads as a write — and is not
+  journal as a write target too, and refuses a redirect, `tee`, `sed -i`,
+  `git`'s `--output`, the destination of `cp`/`mv`/`install` (a slashless last
+  operand that already exists as a directory on disk, or that an earlier
+  clause creates with `mkdir` or links with `ln -s`, is read as one, the same
+  as a trailing-slash spelling; a directory copied whole is read as every file
+  in it), any of those handed to a shell's `-c` or to `eval` as a quoted
+  argument, and a write call inside an interpreter (`python -c`, `node -e`,
+  or either's heredoc spelling, reading a keyword `mode=` — `open(p,
+  mode='a')`, with other keyword arguments ahead of it too — the same as the
+  positional mode) that names the journal — at every tier, to every session,
+  exactly as `guard-edits` refuses the edit tools. **A command nested past the
+  walk's own bound is read for the journal too, at every tier**: it is not
+  walked further, but its own write targets are read flat, so an append
+  nested one level too deep is refused at observe and warn as well as where
+  the gate denies; past that, the plan gate refuses at its deny tier only a
+  nested command that writes or hands on a command it cannot read, and a
+  nested read is allowed at every tier. **This closes what used to be open**:
+  a `sed -i` reached through `bash -c "..."` used to be read only in its bare
+  spelling, and an interpreter write naming the journal was not read by this
+  arm at all. What is left is narrower and named rather than assumed: the
+  quoted-argument reading here is this hook's own, built for this write arm —
+  a redirect or `tee` inside a quoted word is skipped only where the word is
+  provably text (an argument of `echo`, `printf` or a `grep`-family program,
+  or of `git` for a subcommand whose quoted words are a message, a pattern or
+  a path with no global `-c`/`--config-env` in play and, for `git grep`, no
+  pager option in any spelling git accepts — `-O`, stuck or in a short-option
+  cluster, and `--open-files-in-pager` or any prefix of it git resolves) or is
+  already graded in its own view (the handed command of `eval` or of a
+  shell's `-c`), and **never in a command that sets an environment variable
+  ahead of its program**, bare or through `env`: the program reads its
+  environment, and git runs what `GIT_EDITOR`, `GIT_EXTERNAL_DIFF` or a
+  `core.editor` inside `GIT_CONFIG_PARAMETERS` names, so every quoted word of
+  such a command is read as live. Every other program's quoted redirect or
+  `tee` still reads as a write — and that reading is not
   shared with `guard-history-rewrite`'s older reader for a shell's `-c` and
   for `eval` elsewhere in this document — that reader still takes `eval`'s
   argument as only the next word, so a fix to one reading does not reach the
