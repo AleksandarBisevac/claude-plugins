@@ -240,6 +240,25 @@ def _held_by(ph, done_ids):
 
 
 # --- phase rows ----------------------------------------------------------------
+def _copy_note_html(psum):
+    """The copy a phase row was read from, when it is not this checkout's own
+    live one - or ''.
+
+    THIS FILE IS SHARED, so the note travels with the row. A phase finished in
+    another worktree is shown as that worktree holds it, and without the note
+    a forwarded report would present uncommitted work as this checkout's
+    committed state. Apart from `_phase_meta_div`, which renders what the
+    phase itself says; this is a fact about the reading, off the rollup entry.
+    `data-copynote` says whether the copy read is the live one, `stale` when
+    the row fell back to this checkout's copy.
+    """
+    copy = psum.get("copy")
+    if not isinstance(copy, dict) or not copy.get("basis"):
+        return ""
+    return ('<p class="muted" data-copynote="%s">copy: %s</p>'
+            % ("live" if copy.get("live") else "stale", e(copy["basis"])))
+
+
 def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners, workers=None,
                 prank=None, evidence=None, portability=None):
     """One phase's rows — the group row, its task-filter row and its task rows.
@@ -312,7 +331,7 @@ def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners, workers=None,
         'data-seg="%s" data-area="%s"%s tabindex="0" '
         'aria-expanded="false"><td colspan="%d"><span class="tri"></span> '
         '<span class="mono">%s</span> <strong>%s</strong>%s %s%s%s%s%s %s'
-        '<span class="pmatch" hidden></span>%s</td></tr>'
+        '<span class="pmatch" hidden></span>%s%s</td></tr>'
         % (e(pid), e(pid), e(psum["status"]),
            ' data-held="1"' if held else "",
            seg, e(" ".join(areas)),
@@ -323,7 +342,7 @@ def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners, workers=None,
            _bar(psum["done"], psum["total"])
            + _report_html._tev_phase_marks(
                ((evidence or {}).get("phases") or {}).get(str(pid))),
-           _phase_meta_div(ph)))
+           _phase_meta_div(ph), _copy_note_html(psum)))
     # per-phase task-status filter (shown only when the phase is expanded);
     # _SCRIPT fills .tf-chips from this phase's own task statuses.
     _tstat = sorted({t.get("status") for t in (ph.get("tasks") or [])
@@ -519,6 +538,22 @@ def _invalid_block(summary):
             "</strong></p>" % summary["findings"]], []
 
 
+def _copy_headline_html(summary):
+    """The hero's one line saying its counts and Next hold another copy's
+    work, or ''.
+
+    The hero is where a reader acts - Next is a command to copy - and every
+    number in it is taken over the plan with each phase in flight elsewhere
+    laid over it. Each phase row names its copy, but a reader who stops at the
+    hero never reaches one. Off the rollup's `copyHeadline`, the sentence
+    the Markdown twin prints under its Overall line.
+    """
+    line = summary.get("copyHeadline")
+    if not line:
+        return ""
+    return ('<p class="muted" data-copynote="hero">%s</p>' % e(line))
+
+
 def _gate_block(meta, summary, verdict):
     """The verdict hero, the narrative summary, and the grid holding both.
 
@@ -555,7 +590,7 @@ def _gate_block(meta, summary, verdict):
         '<p class="vd-basis">%s</p>'
         '<div class="vd-next">%s</div>'
         '<div class="vd-stats">%s<span class="muted">%s · '
-        "%d of %d phases signed off · %s</span></div></section>"
+        "%d of %d phases signed off · %s</span></div>%s</section>"
         % (_anchor(record),
            (' data-gate="%s"' % gate) if gate else "",
            e({"clear": "Clear", "blocked": "Blocked"}.get(gate, "Unknown")),
@@ -571,7 +606,8 @@ def _gate_block(meta, summary, verdict):
                e(", ".join(_GATE_LABELS.get(c, c) for c in conds)))) if conds else "",
            nxt, _bar(tdone, ttotal), _fmt.plural(tdone, "task") + " done",
            phdone, len(summary["phases"]),
-           _fmt.plural(summary["bugs"]["open"], "open bug")))
+           _fmt.plural(summary["bugs"]["open"], "open bug"),
+           _copy_headline_html(summary)))
 
     # AI-authored narrative summary (written by /audit:report into
     # meta.reportSummary); the quantitative "Overall" line above is the
@@ -941,25 +977,46 @@ def _ready_block(manifest, summary):
     # reader in devtools) identifies it by.
     note_html = ('<p class="muted" data-note="priority">%s</p>'
                  % e(pnote)) if pnote else ""
+    # What could not be asked about the copies a phase in flight lives in -
+    # said beside the list it may have left stale, and with an empty list too,
+    # because "nothing is ready" off a copy that may not be current is not the
+    # same news as nothing being ready.
+    live_note = summary.get("liveCopyError")
+    if live_note:
+        note_html += ('<p class="muted" data-note="live-copy">%s</p>'
+                      % e(live_note))
     if not summary["ready"]:
-        if not pnote:
+        if not note_html:
             return [], []
         record = ("ready", "Ready now", 0, False)
         return ['<h2 id="%s">Ready now</h2>%s' % (_anchor(record), note_html)], [record]
+    # The copy of every phase this list was decided from - the phase of a
+    # ready task and any phase one depends on - in `/audit:status`'s words.
+    # Under the list it describes, because the ids above it are what a reader
+    # runs, and a "Cleared: depends on ... (done)" off another worktree's copy
+    # reads as this checkout's state without it.
+    copy_html = "".join(
+        '<p class="muted" data-note="ready-copy" data-copynote="%s">%s</p>'
+        % ("live" if n["live"] else "stale", e(n["line"]))
+        for n in summary.get("readyCopies") or []
+        if isinstance(n, dict) and n.get("line"))
     record = ("ready", "Ready now", len(summary["ready"]), False)
-    return ['<h2 id="%s">Ready now</h2>%s%s'
+    return ['<h2 id="%s">Ready now</h2>%s%s%s'
             % (_anchor(record), note_html,
-               _ready_now_dl(manifest, summary["ready"]))], [record]
+               _ready_now_dl(manifest, summary["ready"]), copy_html)], [record]
 
 
-def _tail_block(manifest, summary, usage, basename, fragment, evidence=None):
+def _tail_block(manifest, summary, usage, basename, fragment, evidence=None,
+                own=None):
     """Closing the shell, the embedded Markdown twin, and the one inline script."""
     parts = ["</main></div>"]   # close .content and .shell
     # Embed the Markdown twin as base64 so the "Download .md" button works from a
     # standalone file. base64 (not raw text) keeps any manifest HTML/`</script>`
-    # out of the page and preserves UTF-8 exactly.
+    # out of the page and preserves UTF-8 exactly. `own` travels with it, so the
+    # embedded twin's bug table is this checkout's as the page's is.
     md_b64 = base64.b64encode(
-        render_md(manifest, summary, usage, evidence).encode("utf-8")).decode("ascii")
+        render_md(manifest, summary, usage, evidence,
+                  own=own).encode("utf-8")).decode("ascii")
     # basename is sanitized to [A-Za-z0-9-_], so it is safe in a JS string literal.
     parts.append('<script>window.AUDIT_MD_B64="%s";window.AUDIT_MD_NAME="%s.md";</script>'
                  % (md_b64, basename))
@@ -992,8 +1049,13 @@ def _nav_html(sections):
 # --- the page -------------------------------------------------------------------
 def render_html(manifest, summary, basename="audit-report", usage=None,
                 fragment=False, css=None, verdict=None, show_proposals=True,
-                evidence=None, portability=None):
+                evidence=None, portability=None, own=None):
     """The HTML report. `fragment=True` emits it for an embedding host.
+
+    `own` is this checkout's own plan when `manifest` has a live copy of a
+    phase in flight elsewhere laid over it (`_status_facts.live_view`), else
+    None. The bug table is read from it, as the bug counts in `summary` are:
+    a fix that exists only in another worktree has not landed here.
 
     A Claude Code Artifact wraps what it is given in its own
     `<!doctype>…<head>…</head><body>`, so a standalone document published as one
@@ -1034,11 +1096,12 @@ def render_html(manifest, summary, basename="audit-report", usage=None,
                           (usage or {}).get("taskAuthors"), evidence,
                           portability),
             _usage_block(usage),
-            _bugs_block(manifest, summary, evidence),
+            _bugs_block(own if own is not None else manifest, summary,
+                        evidence),
             _proposals_block(manifest, show_proposals),
             _ready_block(manifest, summary),
             _tail_block(manifest, summary, usage, basename, fragment,
-                        evidence)):
+                        evidence, own)):
         out += parts
         sections += records
     body = "\n".join(out) + "\n"

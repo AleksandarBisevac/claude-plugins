@@ -1,7 +1,7 @@
 {
   "id": "P116",
   "title": "a whole feature in an existing codebase shows where each way of working fails and what it costs",
-  "status": "pending",
+  "status": "done",
   "description": "",
   "desiredOutcome": "one feature spanning several existing modules, built three ways - vibe coding, organized skills agents and CLAUDE.md, and the plugin pipeline - is graded on hidden acceptance tests, invented APIs or files, reuse of existing code, scope, unbacked claims, interventions, cost and time, at n of at least three sessions per way, with the results and their limits published",
   "testGate": [
@@ -15,21 +15,122 @@
     "interactive"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
-  "mergedAt": null,
+  "baseRef": "f7eaade49fd136630262f1a456790704d1d52505",
+  "branch": "audit/p116-a-whole-feature-in-an-existing",
+  "mergedAt": "2026-10-07T18:10:21Z",
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P116-R1",
+        "severity": "med",
+        "file": "docs/research/benchmark-feature-results.md:492-503",
+        "issue": "§5.2 says, as a fact about the record: \"The `Skill` tool was not allowed, so arm B's skills could not be invoked.\" whole-B-2's own stream says otherwise. In <x2>/whole-B-2/stream.jsonl, `Skill` → `shop-python` and `Skill` → `shop-tests` each return \"Launching skill: …\" with no error, and the skill body follows in the next event (\"Base directory for this skill: …/.claude/skills/shop-python\"). No result event lists a Skill denial; grade.json → refusals holds only two Bash entries. B-2 ran under the old settings (arm-settings digest caaddd69; its settings-snapshot allow list has no `Skill`), so the missing rule did not stop project skills. Only whole-C-2's denial (`audit:phase`) is in the record. The rule was also applied unevenly: A-1 and A-2 ran under the same settings and stayed valid. B-2 was dropped on a reason its stream contradicts, and the document repeats that reason instead of checking it. This changes which sessions make up arm B and arm B's figures. With B-2 instead of B-2-r, B's sum is 0.764088 + 0.876811 + 1.031121 = 2.672020, so C/B is ≈ 6.1, not 6.4. B-2's slot in the seeded order (seq 3) was not lost after all. The headline holds either way: B-2's grade shows out-of-scope none and stock reused, and the AST comparison finds no changed seed test definition in its tree.",
+        "resolution": "fixed in P116.3-3og (98e48d69): Rewrite §5.2 to say what B-2's stream shows: both skills launched and their bodies were injected under the settings that lacked `Skill`, so the recorded reason holds for whole-C-2 only. Then pick one and say which: (a) reinstate whole-B-2 as valid and report whole-B-2-r beside it as a labelled extra observation, giving arm B's sum and the C/B ratio for both choices; or (b) keep B-2 excluded and say plainly that the exclusion rests on the configuration alone, which B-2's stream contradicts. Either way, add B-2's recorded figures (grade.txt) to §2 as a labelled row.",
+        "fixTask": "P116.3-3og",
+        "commit": "98e48d69"
+      },
+      {
+        "id": "P116-R2",
+        "severity": "low",
+        "file": "docs/research/benchmark-feature-results.md:339-351, 438-439, 639-642",
+        "issue": "The over-specification judgement holds, and more strongly than §3.4 says, but the argument is one-sided. Neither 'rounded the way the shop rounds' nor 'add up to exactly' says which return absorbs the cent. 'Rounded the way the shop rounds' fixes half-up through `money`; the seed has no rule for splitting a remainder (pricing and coupons each make a single `percent_of` call). 'Add up to exactly' fixes the total once everything is back. §3.4 says the two sentences 'cannot both hold for every return' and calls the test's reading 'the literal one'. That is only true if 'their share' means each return's own rounded share. If it means the share of everything returned so far, cumulative proration meets both sentences on every return: 300, then 599 = prorate(899,2,3), then 899. On that reading the reference over-refunds a customer who stops after two returns (600 against 599). Each rule departs from the other's reading on exactly one return. §4.4 ('What the plugin's records did not catch') and §7 ('confirmed a reading of the request rather than questioning it') then call a miss what §3.4 itself finds consistent with the request.",
+        "resolution": "fixed in P116.3-3og (98e48d69): In §3.4, state both readings side by side: each departs from the other's reading on exactly one return, and the reference over-refunds an incomplete set of returns by a cent. In §4.4 and §7, replace 'did not catch' and 'rather than questioning it' with: the plan fixed one of the two readings the request allows, and both reviews checked the work against that plan.",
+        "fixTask": "P116.3-3og",
+        "commit": "98e48d69"
+      },
+      {
+        "id": "P116-R3",
+        "severity": "low",
+        "file": "docs/research/benchmark-feature-results.md:601-604",
+        "issue": "Limits says the orchestrating session wrote '… the reference and the grader … before the first session (digests in pins.json)'. grade.py is not one of the pins.json digest keys (the run-meta digests list 14 inputs, and none is grade.py). It was also patched after the first session: mtime 12:10:15 UTC, and §5.1 says so. pins.json itself was rewritten at 12:24:28 UTC, after four sessions, for the arm-settings digest. The sentence offers a basis that does not cover the grader.",
+        "resolution": "fixed in P116.3-3og (98e48d69): Remove the grader from that sentence or point it to §5.1. Say what pins.json's digests cover (the fixture inputs, not the grader) and that they were rewritten once, for arm-settings.json (§5.2).",
+        "fixTask": "P116.3-3og",
+        "commit": "98e48d69"
+      },
+      {
+        "id": "P116-R4",
+        "severity": "low",
+        "file": "docs/research/benchmark-feature-results.md:476-590",
+        "issue": "Two harness edits after the first session are not in the deviations. Both mtimes fall after whole-C-2 started (12:15:48) and before whole-A-3 (12:28:37): render_arm.py at 12:23:33 UTC, which now holds `NON_BASH_ALLOW = {\"Skill\"}`, and run_session.py at 12:24:17 UTC, which now has the `invalidate` subcommand. §5 names only grade.py's patch and the arm-settings.json change. The harness folder is untracked in the internal repository (`git status` shows `??`), so the earlier versions of both files are gone. Also, no `deviations.jsonl` exists. The design's Deviations row names it, but it is written only when a session starts past the window gate, so §5 is the only record of these deviations, and the document does not say so.",
+        "resolution": "fixed in P116.3-3og (98e48d69): Add a §5 entry naming the runner and renderer edits, with their mtimes, and saying the earlier versions are not kept. Add one sentence saying deviations.jsonl was never written because no session started past the window gate, so this section is the only record of the other deviations.",
+        "fixTask": "P116.3-3og",
+        "commit": "98e48d69"
+      },
+      {
+        "id": "P116-R5",
+        "severity": "low",
+        "file": "docs/research/benchmark-feature-results.md:27-28, 269-270, 388-389",
+        "issue": "§1 places the harness and raw records 'in the internal repository'. In fact the whole reports/2026-10-05-deep-analysis folder is untracked there: `git ls-files` returns nothing and `git status` shows `??`. §5.1 says the folder is not under version control, so §1 implies records that are more durable than they are. The scripts behind the two headline checks (the tree rebuild and the AST comparison) were throwaways and were not kept; only a sentence of procedure remains. I could reproduce both from that procedure, but every figure's basis is an uncommitted directory on one machine.",
+        "resolution": "fixed in P116.3-3og (98e48d69): Say 'untracked, in the internal repository's working tree' in §1, or commit the records and the harness. Keep the rebuild and AST scripts beside the records so the two judgements can be re-run by command.",
+        "fixTask": "P116.3-3og",
+        "commit": "98e48d69"
+      },
+      {
+        "id": "P116-R6",
+        "severity": "low",
+        "file": "docs/research/benchmark-feature-results.md:259-263, 575-579",
+        "issue": "§3.1 step 3 lists the untracked files that diff.patch leaves out, but not whole-C-3's `?? docs/audit/journal/2026-10.a399286b21a05db7.jsonl` (<x2>/whole-C-3/git-status.txt). Step 4 compares only shop/, tests/ and README.md, so no figure depends on it. Still, the list says it is complete, and the file is itself a plugin observation: arm C left a journal shard uncommitted on main after the merge.",
+        "resolution": "fixed in P116.3-3og (98e48d69): Add that path to step 3's list and to §5.7's effect on the records, noting it was left uncommitted after the phase merged.",
+        "fixTask": "P116.3-3og",
+        "commit": "98e48d69"
+      },
+      {
+        "id": "P116-R7",
+        "severity": "low",
+        "file": "docs/research/benchmark-feature-design.md:290-294",
+        "issue": "'open — prices' says prices.json 'records `confirmedAgainstOfficialPage: false`' and has no row for the subagent model. prices.json was last modified at 12:02:35 UTC and now reads `true`, with a `claude-sonnet-5-5` row. The design was committed at 12:07:36 UTC, so it described a state the harness had already left. Results §5.8 presents this as an item the design left open and that was resolved later.",
+        "resolution": "fixed in P116.3-3og (98e48d69): The design is frozen, so correct this in results §5.8: the price rows were confirmed (12:02:35 UTC mtime) before the design commit (12:07:36 UTC), and the design's 'open' text was already out of date when committed.",
+        "fixTask": "P116.3-3og",
+        "commit": "98e48d69"
+      },
+      {
+        "id": "P116-R8",
+        "severity": "low",
+        "file": "docs/README.md:16",
+        "issue": "The index gives the protocol its own row ('written before any session runs') but has no row for benchmark-feature-results.md. A reader who arrives at the design from the index has no pointer to the results that answer it.",
+        "resolution": "fixed in P116.3-3og (98e48d69): Add a row for research/benchmark-feature-results.md, or extend the design row to name its results document.",
+        "fixTask": "P116.3-3og",
+        "commit": "98e48d69"
+      },
+      {
+        "id": "P116-R9",
+        "severity": "low",
+        "file": "docs/research/benchmark-feature-results.md:123-127, 548-549",
+        "issue": "This is the R2 problem again, in one remaining place. §2.1 judges whole-C-3's final message by the first reading only. It says \"The code does not do that for every return\", and §4.6 then counts it as \"one inaccurate description of the refund rule, in arm C\". But whole-C-3's sentence uses the request's own words. whole-C-3 says \"each refund is the returned units' share of what the order cost after the volume discount and coupon, rounded with the shop's existing helper. Once a whole order is returned, the refunds add up to exactly the order total\". The request says \"what the customer actually paid for the returned units: their share of the order total after the volume discount and any coupon, rounded …\". §3.4 (lines 409-410) says that on the second reading, cumulative proration meets both of those sentences on every return. So the document allows the request's words two readings but allows whole-C-3's near-copy of them only one, and it counts that against the plugin arm. Unlike the other final messages, whole-C-3 never says the refund is worked out on everything returned so far, and that difference is real and can be stated.",
+        "resolution": "fixed in P116.4-3og (4fc0b04a): In §2.1, say that whole-C-3's sentence repeats the request's wording, so it carries the same two readings. On the first reading it misdescribes the second return. On the second it describes the code. Unlike the other final messages, it does not say the refund is cumulative. In §4.6, replace \"one inaccurate description of the refund rule, in arm C\" with \"one description that states the rule only in the request's own, two-way wording, in arm C\".",
+        "fixTask": "P116.4-3og",
+        "commit": "4fc0b04a"
+      },
+      {
+        "id": "P116-R10",
+        "severity": "low",
+        "file": "docs/research/benchmark-feature-results.md:61-63",
+        "issue": "\"It was run once more for `whole-B-2` … and that regenerated `grade.json` was identical to the recorded one, `visible.ran` included.\" I re-graded a scratch copy of whole-B-2 with the documented command. Every field matched except /visible/ran: the recorded value is 'Ran 49 tests in 0.026s' and the regenerated one is 'Ran 49 tests in 0.029s'. The sentence just before says this timing differs from run to run. The recorded grade.json was not overwritten (mtime 12:15:30 UTC). So 'visible.ran included' was a timing coincidence seen once, and it reads as a stronger reproduction than the other re-grades.",
+        "resolution": "fixed in P116.4-3og (4fc0b04a): Delete \"`visible.ran` included\", or say that the timing happened to match on that one run and differs from run to run, as it does for the others.",
+        "fixTask": "P116.4-3og",
+        "commit": "4fc0b04a"
+      },
+      {
+        "id": "P116-R11",
+        "severity": "low",
+        "file": "docs/research/benchmark-feature-results.md:617-618",
+        "issue": "\"`whole-B-2-r` ran outside the seeded draw, last, in a later five-hour window\". In order.json, whole-B-2-r is seq 10. whole-C-2-r (seq 11, started 15:33:15 UTC) ran after it (15:30:48 UTC, §2.5). The same section says correctly that whole-C-2-r ran last (line 622).",
+        "resolution": "fixed in P116.4-3og (4fc0b04a): Change 'last' to 'at the end of `order.json`, before `whole-C-2-r`' or 'second to last'.",
+        "fixTask": "P116.4-3og",
+        "commit": "4fc0b04a"
+      }
+    ],
+    "outcome": "[findings: 11 - 0 high, 1 med, 10 low; 11 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "The whole-feature benchmark ran under its protocol and is published. One returns-and-refunds feature spanning several modules of a seeded shop was built three ways: plain Claude Code, organized CLAUDE.md with skills, and the plugin pipeline. There were three valid sessions per arm, graded on hidden acceptance tests, invented APIs, reuse, scope, unbacked claims, interventions, tokens and time. Every session built the feature and missed the same hidden test the same way. The document judges that test to over-specify the request and sets out both readings. Only the plain arm changed an existing test, wrote stock directly or touched an unneeded file. The organized CLAUDE.md shared by the other two arms states each of those rules, so the difference is not credited to the plugin. The plugin arm cost about 9.9 times the plain arm and about 6.1 times the organized arm (list-price equivalent, derived). In return it left a plan, red-first verdicts, reviews and recorded gates that the hidden tests do not score. Deviations and limits are listed with their effect. One invalidation was reversed when the session's own stream contradicted its recorded reason. Two review rounds ran, and their eleven findings are resolved by fix tasks P116.3 and P116.4. Plugin faults the benchmark exposed are recorded in the internal plan: a landed phase's status left uncommitted, and a could-not-prove red-first block left out of task.redFirst.",
   "tasks": [
     {
       "id": "P116.1",
       "title": "the whole-feature benchmark's protocol, fixture and grader are built and proven offline",
-      "status": "pending",
+      "status": "done",
       "description": "Builds the protocol, the fixture and the harness for a whole-feature benchmark, with no paid call. The user asked for these on 2026-10-07: a whole feature among existing features, not a single task; scenarios where an agent can hallucinate or has to search the codebase; and three ways of working.\n\nFixture. A brownfield repository that is larger and more realistic than the earlier feature fixture:\n- several existing features across modules, with domain helpers the new feature should reuse (money rounding, date handling, persistence transactions, error types, an event or audit log);\n- conventions that appear only in the code, not in any document;\n- a deprecated module as a distractor, a stale doc paragraph that contradicts the code, and an unrelated TODO that invites an out-of-scope edit;\n- one existing test that the obvious-but-wrong implementation of the feature breaks.\n\nThe fixture is built fresh per session, with hidden acceptance tests and a reference solution. The builder refuses to run unless the reference passes and the untouched tree fails.\n\nFeature. One feature request that a user would plausibly give, for example returns and refunds that touch orders, inventory, pricing and coupons, persistence, a CLI command and a report. It is several tasks of work. The request names domain concepts, not function names, so the session must find the real APIs. Some requirements are discoverable only by reading existing behaviour.\n\nArms. The same feature request goes to every arm:\n- A, vibe coding: plain Claude Code with the request only. No CLAUDE.md, no skills.\n- B, organized: a CLAUDE.md with the project's conventions, skills for the codebase, and custom agents (for example an explorer and a reviewer) in .claude/agents.\n- C, the plugin: B plus the audit plugin. The session starts from the same request and uses the plugin's own flow to plan the feature into a phase of tasks and run it. If that takes more than one session, the harness scripts the follow-ups and counts them as interventions.\n\nGrading, all offline, in grade.py:\n- hidden acceptance tests passed;\n- hallucination: imports or calls of functions, modules or files that do not exist, and final-message claims about files, functions or tests that the tool calls and the final tree do not back;\n- reuse: the feature uses the existing helpers rather than reimplementing them, checked by AST rules defined per helper;\n- scope: changed paths outside the feature, the protected test modified, the deprecated module touched;\n- codebase search: counts of Grep, Glob and Read before the first edit, reported as an observation, not a score;\n- interventions, wall clock, turns, and tokens by type with list-price cost.\n\nProtocol. The model is fixed across arms (Opus 5.5, the account default). --max-budget-usd is a safety stop only. The CLI version is pinned. n of at least three sessions per arm, run in a seeded order. No session starts while the five-hour window reads at or above the threshold in the earlier design, and every deviation is recorded. The cost estimate per session and in total uses the earlier measurements (the plain feature session, the plugin pipeline session and the pilot) and is stated as an estimate, not a measurement.\n\nDry run, no paid call. Show that the grader:\n- passes the reference;\n- fails the untouched tree;\n- flags a planted hallucinated solution (calls a non-existent helper, claims a test it never ran);\n- flags a planted reimplementation of an existing helper;\n- flags a planted out-of-scope edit.\nPrint the exact claude command per arm.\n\nOutputs:\n- the protocol: docs/research/benchmark-feature-design.md in this repository;\n- the harness and fixture: under the internal analysis directory fixtures/bench-feature-v2/, outside this repository;\n- a docs/README.md row.",
       "files": [
         "docs/research/benchmark-feature-design.md",
@@ -56,21 +157,36 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a289dcbb",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "docs/research/benchmark-feature-design.md fixes the whole-feature protocol, and docs/README.md lists it. The harness lives in the internal analysis directory under fixtures/bench-feature-v2/, copied from the single-task harness and extended; the old harness is unchanged and its digests still match. The fixture is a brownfield shop package of existing features: money, dates, store transactions, error types, events, inventory, pricing, coupons, orders, policy, reports and a CLI. It has conventions that live only in the code. Its traps are a deprecated module, a stale README paragraph that contradicts the code, an unrelated TODO, a protected test that the obvious report change breaks, a price changed since purchase, and a rounding remainder on the last return. The feature request (returns and refunds across those modules) names domain concepts, not functions. Arms: A gets the request only; B adds an organized CLAUDE.md, codebase skills and explorer and reviewer agents; C adds the plugin, which plans the feature into a phase and tasks with its own commands on an empty plan and runs it through sign-off, with tdd asked for. Scripted follow-ups count as interventions. The builder refuses unless the reference passes and the untouched tree fails. grade.py flags invented imports and calls, unbacked claims, claims naming missing tests or functions, reimplemented helpers, out-of-scope paths, the protected test, the deprecated module, and incomplete hidden results. It also reports search counts before the first edit, interventions, time and cost. The offline dry run held every check: the reference quiet, the untouched tree failing, and each planted hallucination, reimplementation and out-of-scope case raising its own flags. The order is seeded and recorded, the five-hour window is gated with recorded deviations, and the CLI, model, effort and turn cap are pinned. estimate.py gives a cost estimate from earlier records, labelled as one. Before the first paid session: confirm the price rows against the official page, add a row for every subagent model, re-pin the plugin commit, and re-run the digests and the dry run.",
+        "descriptive": "A realistic multi-module feature test now exists for three ways of working, with traps for invented code, ignored conventions and out-of-scope edits, and its grader was shown offline to catch each one before any paid session."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-07T11:36:46Z",
+      "completedAt": "2026-10-07T12:07:36Z",
+      "verifiedBy": [
+        "dryrun.py checks; test__refs",
+        "test__output",
+        "test__deps selftests"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T12:06:04Z.9a3ee9",
+        "status": "passed",
+        "at": "2026-10-07T12:06:04Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "a289dcbb",
+        "at": "2026-10-07T12:07:36Z",
+        "basis": "orchestrator check: fixture, traps, arms and grader as the user asked, dry run held every planted case with the reference quiet, cost given as an estimate with its basis"
+      }
     },
     {
       "id": "P116.2",
       "title": "the whole-feature benchmark runs and publishes its results with its limits",
-      "status": "pending",
+      "status": "done",
       "description": "Runs the whole-feature benchmark's sessions under the protocol and publishes docs/research/benchmark-feature-results.md. It reports the metrics per arm and per session, each beside the record that re-derives it. Raw records stay in the internal repository. A limits section and a deviations list are included. Paid sessions run only within a budget the user agrees before the first one, and the orchestrator runs every paid session.",
       "files": [
         "docs/research/benchmark-feature-results.md"
@@ -98,16 +214,143 @@
       "dependsOn": [
         "P116.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "186fcf7d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "docs/research/benchmark-feature-results.md reports the nine valid whole-feature sessions, three per arm, from their records with no paid call. Each metric sits beside the grade.txt or grade.json field, or the command, that re-derives it; tokens lead and list-price equivalent is secondary. Each session's final tree was rebuilt offline: the seed committed as build_fixture.py lays it (tree hash checked against baseSha), diff.patch applied, untracked files replayed from the stream's Write and Edit calls. The trees were compared byte for byte, and that comparison goes red without the replay. The one hidden test no session passed printed 3.00, 2.99, 3.00 in every tree against the reference's 3.00, 3.00, 2.99: every session used cumulative proration. The document judges that the test over-specifies the request, which never says which return absorbs the rounding difference, and reports 13/13 without it. An AST comparison of the seed test definitions shows only arm A changed an existing test, in all three sessions; arm B and whole-C-2-r only appended tests to existing files, so the grader's file-level protected flag over-reports. Arm A also wrote stock directly and changed an unneeded file. No B or C session did either. The organized CLAUDE.md shared by B and C states each of those rules, so the difference is not credited to the plugin. The plugin arm cost about 9.9x arm A and 6.4x arm B (derived) and left a plan, red-first verdicts, reviews and recorded gates that the hidden tests do not score. Deviations are listed with their effect:\n- the grader patch;\n- the B-2 and C-2 invalidation and re-run;\n- the runner's start limit and watchdog;\n- shared-machine noise;\n- the permission refusals, each followed by an allowed form except two;\n- A-1 and A-2 run before Skill was allowed;\n- diff.patch omitting untracked files;\n- the grader keeping only the last result event;\n- run-meta lacking the design commit.\n\nNo follow-up was owed and no session is unrun. Faults found are handed to the orchestrator for the plan.",
+        "descriptive": "The whole-feature benchmark's results are published: every arm built the feature and missed the same over-specified hidden test; only the plain arm edited an existing test, and the difference lines up with the organized CLAUDE.md the other two arms share, not with the plugin, which cost about ten times the plain arm."
       },
-      "startedAt": null,
-      "completedAt": null,
-      "verifiedBy": []
+      "startedAt": "2026-10-07T12:07:49Z",
+      "completedAt": "2026-10-07T16:16:16Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-10-07T12:07:49Z",
+          "text": "The user agreed on 2026-10-07 that the sessions run on the subscription, with no money budget: the cost is tokens and quota. The orchestrator therefore gates every session on the subscription windows. A session does not start while the five-hour window reads at or above the protocol's threshold or the seven-day window reads at or above 0.90. --max-budget-usd is a safety stop against a runaway session only."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T16:16:07Z.54b16a",
+        "status": "passed",
+        "at": "2026-10-07T16:16:07Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "186fcf7d",
+        "at": "2026-10-07T16:16:16Z",
+        "basis": "orchestrator check: nine valid sessions, three per arm, every metric beside its record, the shared hidden-test failure reconstructed offline per session, deviations and limits listed"
+      }
+    },
+    {
+      "id": "P116.3-3og",
+      "title": "the benchmark results report B-2 as the stream shows and close the remaining record gaps",
+      "status": "done",
+      "description": "Fixes review findings from the whole-feature benchmark phase's first review round.\n\n- The B-2 invalidation reason is corrected to what the stream shows: both skills launched under settings that lacked the Skill allow rule, so the recorded reason holds for whole-C-2 only. whole-B-2 is reinstated as a valid session from the seeded order, and whole-B-2-r is reported as an extra observation. Every arm-B figure is restated with both, with the arithmetic shown.\n- The over-specification judgement states both readings side by side, and the wording about arms not catching the requirement is neutral.\n- Limits says what pins.json's digests cover and that they were rewritten once.\n- The runner and renderer edits after the first session are named with their times.\n- §1 says the records and harness are untracked in the internal repository's working tree.\n- The rebuild and AST scripts are kept beside the records.\n- The uncommitted journal shard whole-C-3 left on main is listed.\n- The design's out-of-date price note is corrected in the results document.\n- docs/README.md gains a row for the results document.",
+      "files": [
+        "docs/research/benchmark-feature-results.md",
+        "docs/README.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "98e48d69",
+      "outcome": {
+        "technical": "Fixes P116-R1 to P116-R8. R1: whole-B-2's stream shows both Skill calls returning \"Launching skill\" without error and the skill bodies injected, under settings that lacked the Skill allow rule. The recorded invalidation reason therefore holds for whole-C-2 only. whole-B-2 is reinstated as the seeded-order session for its cell, and whole-B-2-r is reported as an extra observation. Every arm-B figure and the C/B ratio are given both ways with Decimal arithmetic: C/B about 6.1 with B-2, which is the headline, and about 6.4 with B-2-r; C/A is about 9.9 either way. The headline uses B-2 because the seeded order put it in that cell and its own stream contradicts the only reason recorded against it. R2: section 3.4 tabulates both readings of the request. Each departs from the other on the second return, and the plan fixed one reading, which both reviews checked against. R3: Limits says pins.json's digests cover the fixture inputs, not the grader, runner or renderer, and that they were rewritten once. R4: a new section 5.10 names the renderer and runner edits with their times, and the deviations section says deviations.jsonl was never written. R5: the records and harness are untracked in the internal repository's working tree. The rebuild, AST and refund-probe scripts are kept in the records' checks directory, and each was shown able to fail. R6: whole-C-3's untracked journal shard is listed, with a table of what arm C left uncommitted on main: whole-C-2-r and whole-C-3 left the landed phase's status uncommitted. That is recorded as a plugin fault in the internal plan, and section 4.4 splits the phase-status row into three. R7: the design's out-of-date price note is corrected. R8: docs/README.md has a row for the results document. Lints proven live on planted copies; sweep green.",
+        "descriptive": "The benchmark results now count the arm-B session that had been dropped for a reason its own record contradicts, show the cost ratios both ways, set out both readings of the disputed refund rule, and state what the records and harness can and cannot prove."
+      },
+      "startedAt": "2026-10-07T16:35:26Z",
+      "completedAt": "2026-10-07T17:04:51Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T17:04:44Z.f7eade",
+        "status": "passed",
+        "at": "2026-10-07T17:04:44Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "98e48d69",
+        "at": "2026-10-07T17:04:51Z",
+        "basis": "orchestrator check: each of the eight findings maps to a change with its evidence; the B-2 claim was verified against its stream before acting"
+      }
+    },
+    {
+      "id": "P116.4-3og",
+      "title": "the benchmark results' last three sentences say only what the records show",
+      "status": "done",
+      "description": "Fixes review findings P116-R9 to P116-R11. whole-C-3's final sentence is described as carrying both readings of the request. The re-grade sentence drops the claim that visible.ran matched, because test timing differs from run to run. whole-B-2-r is described as second to last, before whole-C-2-r.",
+      "files": [
+        "docs/research/benchmark-feature-results.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "4fc0b04a",
+      "outcome": {
+        "technical": "Fixes P116-R9 to P116-R11 in docs/research/benchmark-feature-results.md. In section 2.1, whole-C-3's final sentence is described as repeating the request's own wording, so it carries both readings. Section 4.6's arm-C line is reworded to match. Section 1.1's re-grade sentence says visible.ran differs from run to run. Section 5.9 says whole-B-2-r ran second to last. Prose, link and PII lints are clean.",
+        "descriptive": "Three last sentences of the benchmark write-up now say only what the records show."
+      },
+      "startedAt": "2026-10-07T17:53:27Z",
+      "completedAt": "2026-10-07T18:02:34Z",
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T18:02:33Z.83ba8c",
+        "status": "passed",
+        "at": "2026-10-07T18:02:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "4fc0b04a",
+        "at": "2026-10-07T18:02:34Z",
+        "basis": "orchestrator check: exactly the three edits the findings named, lints clean"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-10-07T11:36:46Z",
+  "testEvidence": {
+    "runId": "2026-10-07T18:09:43Z.bc62b5",
+    "status": "passed",
+    "at": "2026-10-07T18:09:43Z"
+  },
+  "mergedHead": "f1de273400cad4da4be414bcf0605575d5467728"
 }
