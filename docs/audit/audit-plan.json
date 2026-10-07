@@ -732,7 +732,7 @@
     {
       "id": "P116",
       "title": "a whole feature in an existing codebase shows where each way of working fails and what it costs",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P116.json"
     }
   ],
@@ -5558,7 +5558,8 @@
     ],
     "docs/README.md": [
       "P101.3",
-      "P116.1"
+      "P116.1",
+      "P116.3-3og"
     ],
     "plugins/audit/evals/feature/case.yaml": [
       "P101.3"
@@ -5834,7 +5835,8 @@
       "P116.1"
     ],
     "docs/research/benchmark-feature-results.md": [
-      "P116.2"
+      "P116.2",
+      "P116.3-3og"
     ]
   },
   "bugs": [
