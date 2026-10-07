@@ -720,7 +720,7 @@
     {
       "id": "P114",
       "title": "status names each locked phase's own remaining work and the copy it read",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P114.json"
     },
     {
