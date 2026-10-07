@@ -316,7 +316,8 @@ def _cases(check):
     check("up1a the populated payload carries the resolver's answer and the "
           "phrase rate_basis_phrase builds from it, not a retyped one: %r"
           % (_up_full.get("rateBasis"),),
-          isinstance(_pb, dict) and set(_pb) == {"basis", "asOf", "source"}
+          isinstance(_pb, dict) and set(_pb) == {"basis", "asOf", "source",
+                                              "pricedWhenWritten"}
           and _pb["basis"] in _ul.PRICING_BASES
           and _up_full.get("rateBasis") == _ul.rate_basis_phrase(_pb))
     check("up1b ...and the no-ledger payload carries None for both - a basis "
@@ -411,8 +412,44 @@ def _cases(check):
               "phaseAreas": {"P1": ["a"]}, "areaOwners": {"a": "jo@x"},
               "contextShape": {}})
 
+    _read_time_pricing_cases(check, tmp, _atomic_write_json)
 
     shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _read_time_pricing_cases(check, tmp, write_json):
+    """A ledger stored at another table: the tab ships the resolved table's
+    figure, since the phrase beside it names that table, and a row with no
+    token fields keeps its stored figure and is counted in the phrase."""
+    proj = os.path.join(tmp, "rt-proj")
+    os.makedirs(os.path.join(proj, ".claude", "usage"))
+    write_json(_paths._config_path(proj), {})
+    mpath = _paths._manifest_path(proj, _paths.read_config(proj))
+    os.makedirs(os.path.dirname(mpath), exist_ok=True)
+    write_json(mpath, {"meta": {"version": 2}, "phases": []})
+    base = {"ts": "2026-08-01T10", "sessionId": "s", "phaseId": "P1",
+            "taskId": "P1.1", "attr": "task", "model": "claude-opus-5",
+            "author": "a@x.io", "msgs": 1}
+    priced = dict(base, costUSD=15.0, **{"in": 1000000, "out": 0,
+                                          "cacheW5m": 0, "cacheW1h": 0,
+                                          "cacheR": 0})
+    kept = dict(base, ts="2026-08-02T10", costUSD=2.5)
+    with open(os.path.join(proj, ".claude", "usage", "2026-08.jsonl"), "w",
+              encoding="utf-8") as fh:
+        for row in (priced, kept):
+            fh.write(json.dumps(row) + "\n")
+    u = M.usage_state(proj)
+    at = list(u.get("fields") or []).index("cost") if u.get("fields") else None
+    costs = sorted(f[at] for f in u.get("facts") or []) if at is not None else []
+    check("rt1 the tab's facts carry the resolved table's figure (5.00 for 1M "
+          "opus-5 input) beside the kept row's stored 2.50, never the 15.00 "
+          "stored at another table: %r" % (costs,),
+          costs == [2.5, 5.0])
+    check("rt2 ...and its rate phrase counts the row priced when written, with "
+          "the count as data beside it: %r %r"
+          % (u.get("rateBasis"), u.get("pricingBasis")),
+          "1 row(s) keep the cost stored when written" in (u.get("rateBasis") or "")
+          and (u.get("pricingBasis") or {}).get("pricedWhenWritten") == 1)
 
 
 def _selftest():

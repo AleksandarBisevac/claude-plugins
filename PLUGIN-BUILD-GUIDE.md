@@ -1543,7 +1543,8 @@ something the page no longer names, is reported exactly as a violation is.
 The arithmetic the whole metering stack stands on, and nothing else: the `DEFAULT_PRICING`
 table plus `rates_for`/`price`, one ISO parser and one hour-bucket rule, the roll-ups
 (`totals`, `aggregate`, `aggregate_area`, `rows_for_area`, `heatmap`) the CLI, the report and
-the panel all read, and the three readers every analytics pass starts from (`task_index`,
+the panel all read, `priced_at_read` which prices the rows those roll-ups sum at the resolved
+table and counts the ones it cannot, and the three readers every analytics pass starts from (`task_index`,
 `_tokens`, `_cost`) — here because the four analytics modules sit at one layer and may not
 import a peer. Values in, values out — no file, no process, no transcript — which is why its
 cases need no fixture directory. `pricing_divergences()` lives here too: `hooks/_config.py`
@@ -4781,9 +4782,11 @@ nobody computed one, which is exactly what every caller rendered before the para
 ### `plugins/audit/scripts/report/_usage_overview.py`
 What the Usage section shows on **first paint** (layer 4): the context line, the five-tile metric
 strip, the notices, the one dominant trend chart, the budget block, the author chips and the three
-ranked lists. The context line is where the rate basis lives — with costs shown and no date
-declared it says *that* rather than falling back to the default table's date, because the ledger
-prices at write time and records no vintage. The trend's axis labels live **outside** the SVG:
+ranked lists. The context line is where the rate basis lives: every cost in the section is
+priced at read time by the resolved table (`priced_at_read`), so the phrase names that table and
+its date. A project table declared with no date is said to be undated rather than given the
+shipped table's date, and the rows that kept the figure stored when written, at a rate the
+ledger never recorded, are counted in the same phrase. The trend's axis labels live **outside** the SVG:
 the columns stretch to fill the width, which scales the coordinate system non-uniformly, and the
 labels once came out 49% too wide. The budget block renders nothing when no phase declares one,
 and names unbudgeted phases in a footnote rather than drawing them at 0% — an unbudgeted phase is

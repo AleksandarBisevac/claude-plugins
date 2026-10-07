@@ -135,8 +135,8 @@ from _usage_core import (  # noqa: E402,F401  (re-exported, see above)
     DEFAULT_PRICING, GROUP_KEYS, PRICING_AS_OF, PRICING_BASES,
     PRICING_SOURCE_URL, TOKEN_KEYS, UNTAGGED_AREA, aggregate, aggregate_area,
     bucket_date, bucket_hour, bucket_month, heatmap, hour_bucket, parse_ts, price,
-    pricing_divergences, pricing_provenance_divergences, rates_for,
-    resolve_pricing, rows_for_area, task_index, totals)
+    priced_at_read, pricing_divergences, pricing_provenance_divergences,
+    rates_for, resolve_pricing, rows_for_area, task_index, totals)
 from _usage_coverage import (  # noqa: E402,F401  (re-exported, see above)
     MONTHLY_PLAN_KEYS, POOR_COVERAGE_PCT, coverage, monthly_activity)
 from _usage_economics import (  # noqa: E402,F401  (re-exported, see above)
@@ -655,8 +655,10 @@ def scan_transcripts(transcript_path, session_id, cursor, manifest, opts):
             # on its own, and why an OLD row simply has no such key rather than
             # a zero standing in for "not measured".
             row["maxContext"] = counts["maxContext"]
-            # Price at WRITE time and store the result, so a later rate change never
-            # silently rewrites history.
+            # Price at WRITE time and store the result. The ledger is never
+            # rewritten for a rate change: the surfaces price the token counts
+            # again at read time (`priced_at_read`), and this stored figure is
+            # what a row they cannot price again keeps.
             row["costUSD"] = round(price(counts, model, pricing), 6)
             rows.append(row)
 

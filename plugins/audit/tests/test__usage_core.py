@@ -558,6 +558,101 @@ def _cases(check):
 
 
     _resolver_cases(check)
+    _read_price_cases(check)
+
+
+# --- rt: every summed cost is priced at read time by the resolved table ---------
+# A row priced when it was written at a rate no longer in any table, so the stored
+# figure and the read-time figure disagree on every priced row: 1M input on opus-5
+# stored at $15 (resolved table says $5), 1M output on sonnet-5 stored at $75
+# (resolved: $10). The third row carries no token fields at all, so it cannot be
+# priced again and must keep its stored $2.50.
+def _rt_row(task, model, stored, **tokens):
+    row = {"ts": "2026-09-01T10", "taskId": task, "phaseId": "P1",
+           "model": model, "msgs": 1, "costUSD": stored}
+    row.update(tokens)
+    return row
+
+
+def _rt_full(model, task, stored, key):
+    tokens = dict((k, 0) for k in M.TOKEN_KEYS)
+    tokens[key] = 1000000
+    return _rt_row(task, model, stored, **tokens)
+
+
+def _rt_price(rows, table):
+    """`priced_at_read`'s answer, or None when it cannot answer - so a missing
+    or raising function fails its cases by assertion, not by aborting."""
+    fn = getattr(M, "priced_at_read", None)
+    if fn is None:
+        return None
+    try:
+        return fn(rows, table)
+    except Exception:  # noqa: BLE001 - the case reports the absent answer
+        return None
+
+
+def _read_price_cases(check):
+    shipped = M.resolve_pricing(None, None)["table"]
+    ledger = [_rt_full("claude-opus-5", "T1", 15.0, "in"),
+              _rt_full("claude-sonnet-5", "T2", 75.0, "out"),
+              _rt_row("T1", "claude-opus-5", 2.5)]
+    before = [dict(r) for r in ledger]
+    got = _rt_price(ledger, shipped) or {}
+    rows = got.get("rows") or []
+    tot = M.totals(rows) if rows else {}
+    check("rt1 a ledger whose stored costUSD came from another table sums at "
+          "the resolved table's prices (5 + 10 + the kept 2.5), not the stored "
+          "92.5: %r" % (tot.get("costUSD"),),
+          abs((tot.get("costUSD") or 0) - 17.5) < 1e-9)
+    by_task = M.aggregate(rows, "task") if rows else {}
+    check("rt2 ...and per task too, which is what cost per task, the bands and "
+          "the most-expensive table read: %r"
+          % (dict((k, v["costUSD"]) for k, v in by_task.items()),),
+          set(by_task) == {"T1", "T2"}
+          and abs(by_task["T1"]["costUSD"] - 7.5) < 1e-9
+          and abs(by_task["T2"]["costUSD"] - 10.0) < 1e-9)
+    check("rt3 a row with no token fields keeps its stored figure and is "
+          "counted as priced when written: %r" % (got.get("pricedWhenWritten"),),
+          got.get("pricedWhenWritten") == 1 and len(rows) == 3
+          and rows[2].get("costUSD") == 2.5)
+    # The second direction: a guard that counted every row would pass rt3.
+    clean = _rt_price(ledger[:2], shipped) or {}
+    check("rt4 ...while a ledger whose every row carries its tokens counts "
+          "none: %r" % (clean.get("pricedWhenWritten"),),
+          clean.get("pricedWhenWritten") == 0
+          and len(clean.get("rows") or []) == 2)
+    partial = _rt_row("T3", "claude-opus-5", 4.0, **{"in": 1000000, "out": 0})
+    part = _rt_price([partial], shipped) or {}
+    check("rt5 a row missing some token fields cannot be priced whole, so it "
+          "keeps its stored figure and is counted: %r" % (part,),
+          part.get("pricedWhenWritten") == 1
+          and (part.get("rows") or [{}])[0].get("costUSD") == 4.0)
+    check("rt6 the ledger is never rewritten - the rows handed in keep the "
+          "stored costUSD they were written with",
+          ledger == before and bool(rows) and rows[0] is not ledger[0])
+    check("rt7 an empty ledger prices to an empty list and counts nothing: %r"
+          % (_rt_price([], shipped),),
+          _rt_price([], shipped) == {"rows": [], "pricedWhenWritten": 0})
+
+    # A plan's table naming one model is laid over the shipped table model by
+    # model, like a config table: an unnamed model keeps its shipped row rather
+    # than falling to a `_default` the plan never declared.
+    named = {"in": 1.5, "out": 7.5, "cacheW5m": 1.875, "cacheW1h": 3.0,
+             "cacheR": 0.15}
+    ans = M.resolve_pricing(
+        {"meta": {"usage": {"pricing": {"claude-sonnet-5": named}}}}, None)
+    table = ans.get("table") or {}
+    haiku = M.rates_for("claude-haiku-4-5", table)
+    check("rt8 a manifest table naming one model prices another at its shipped "
+          "row, not at the _default: haiku out = %r" % (haiku.get("out"),),
+          haiku == M.DEFAULT_PRICING["claude-haiku-4-5"]
+          and abs(M.price({"out": 1000000}, "claude-haiku-4-5", table) - 5.0)
+          < 1e-9)
+    check("rt9 ...while the model it names is priced at the plan's row, and the "
+          "basis stays `manifest`: %r" % (ans.get("basis"),),
+          M.rates_for("claude-sonnet-5", table) == named
+          and ans.get("basis") == "manifest")
 
 
 # --- rp: one price table per project, whichever surface asks -------------------
@@ -608,6 +703,8 @@ def _resolver_cases(check):
     shipped = dict((k, dict(v)) for k, v in M.DEFAULT_PRICING.items())
     overlay = dict(shipped)
     overlay["claude-sonnet-5"] = dict(cfg_sonnet)
+    man_overlay = dict(shipped)
+    man_overlay.update(man_table)
 
     projects = (
         # name, meta.usage, raw config (None = no file), expected answer
@@ -618,7 +715,7 @@ def _resolver_cases(check):
         ("manifest", {"pricingAsOf": "2026-09-01", "pricing": man_table},
          {"usage": {"pricingAsOf": "2026-08-06",
                     "pricing": {"claude-sonnet-5": cfg_sonnet}}},
-         (man_table, "manifest", "2026-09-01", None)),
+         (man_overlay, "manifest", "2026-09-01", None)),
         ("neither", {}, None,
          (shipped, "shipped", M.PRICING_AS_OF, M.PRICING_SOURCE_URL)),
     )

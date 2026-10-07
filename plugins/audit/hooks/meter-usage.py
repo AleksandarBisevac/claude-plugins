@@ -26,7 +26,8 @@ Config: `.claude/audit.config.json` -> `usage` (see _config.DEFAULTS):
                              does the unbounded pass instead.
   pricing             obj  — USD per million tokens; cost is computed and stored
                              at write time so a later rate change cannot rewrite
-                             history. The table is the one every surface prices
+                             history, and this hook's two messages price the
+                             rows again at read time. The table is the one every surface prices
                              this project at (`_pricing` below): the manifest's
                              `meta.usage.pricing` when declared, else this key
                              laid over the shipped table model by model.
@@ -142,7 +143,7 @@ def _outlier_action(ul, manifest, all_rows, tid):
     return "splitting it or re-scoping before the next attempt"
 
 
-def advise(ul, ledger, manifest, ucfg, cursor, rows):
+def advise(ul, ledger, manifest, ucfg, cursor, rows, table):
     """The one thing this hook ever says out loud: that the task in flight has
     crossed the project's own outlier threshold, while there is still time to act.
 
@@ -155,6 +156,10 @@ def advise(ul, ledger, manifest, ucfg, cursor, rows):
     Fires ONCE per task per session, recorded in the cursor. A warning that
     repeats on every turn for the rest of a long task is a warning nobody reads.
     A later session warns again, which is intended: that is a fresh chance to act.
+
+    `table` is the resolved rate table: the bands and the figure are summed off
+    `priced_at_read`'s copies, so they are what that table charges for the
+    task's tokens, the same figure every consulted surface prints for it.
 
     Returns a message, or None — and None is the common case, so the ledger read
     is reached only when a warning is actually possible. Measured at 26 ms over a
@@ -171,7 +176,7 @@ def advise(ul, ledger, manifest, ucfg, cursor, rows):
     if tid in warned:
         return None
 
-    all_rows = ul.read_ledger(ledger)
+    all_rows = ul.priced_at_read(ul.read_ledger(ledger), table)["rows"]
     bands = ul.cost_bands(manifest, all_rows, ucfg)
     if ul.band_of(bands, tid) != "outlier":
         return None
@@ -202,7 +207,7 @@ def advise(ul, ledger, manifest, ucfg, cursor, rows):
             "blocked." % (head, action))
 
 
-def session_summary(ul, ledger, ucfg, session_id):
+def session_summary(ul, ledger, ucfg, session_id, table):
     """What this session cost, said once at the end.
 
     Immediate feedback where the work happened, rather than only in a dashboard
@@ -210,8 +215,10 @@ def session_summary(ul, ledger, ucfg, session_id):
     it out loud.
 
     Silent when the session recorded nothing, so a read-only session — asking a
-    question, reading code — says nothing rather than reporting a row of zeros."""
-    rows = [r for r in ul.read_ledger(ledger)
+    question, reading code — says nothing rather than reporting a row of zeros.
+
+    The figure is priced at `table`, the resolved rate table, as `advise`'s is."""
+    rows = [r for r in ul.priced_at_read(ul.read_ledger(ledger), table)["rows"]
             if (r.get("sessionId") or "") == session_id]
     if not rows:
         return None
@@ -294,11 +301,14 @@ def meter(data, ul=None, cfg=None, root=None, notices=None):
         Path(plan_root)
         / (cfg.get("manifestPath") or _config.DEFAULTS["manifestPath"]))
 
+    # Resolved once: it prices the rows written below and every figure the two
+    # messages print.
+    table = _pricing(ul, manifest, root)["table"]
     rows, cursor = ul.scan_transcripts(
         transcript, session_id, cursor, manifest,
         {
             "repo": os.path.basename(str(root)) or "repo",
-            "pricing": _pricing(ul, manifest, root)["table"],
+            "pricing": table,
             "backfillOnFirstRun": bool(ucfg.get("backfillOnFirstRun", True)),
             # `if is None`, NOT `or`, and the difference is a setting the user can
             # write and this hook could not read. `_config_rules` accepts a
@@ -330,7 +340,7 @@ def meter(data, ul=None, cfg=None, root=None, notices=None):
     if notices is not None:
         if written:
             try:
-                note = advise(ul, ledger, manifest, ucfg, cursor, rows)
+                note = advise(ul, ledger, manifest, ucfg, cursor, rows, table)
                 if note:
                     notices.append(note)
             except Exception:
@@ -339,7 +349,7 @@ def meter(data, ul=None, cfg=None, root=None, notices=None):
         # while Stop fires every turn.
         if (data or {}).get("hook_event_name") == "SessionEnd":
             try:
-                summary = session_summary(ul, ledger, ucfg, session_id)
+                summary = session_summary(ul, ledger, ucfg, session_id, table)
                 if summary:
                     notices.append(summary)
             except Exception:

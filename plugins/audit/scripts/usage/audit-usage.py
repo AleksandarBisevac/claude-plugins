@@ -337,7 +337,8 @@ def render(rows, args, manifest, window, show_cost, pt=None, pricing=None):
     """The dashboard. `pricing` is `project_pricing`'s answer, `{table, basis,
     asOf, source}`: its table prices the routing advice and the rest is the
     rate basis printed beside the costs. None resolves it from the manifest
-    alone (no config read)."""
+    alone (no config read). `rows` are summed as handed in: `main` hands
+    `ul.priced_at_read`'s copies, priced at that same table."""
     if pricing is None:
         pricing = ul.resolve_pricing(manifest, None)
     phase_titles, task_titles = titles_of(manifest)
@@ -999,8 +1000,15 @@ def main(argv):
 
     since = resolve_since(args.since)
     tags_by_phase = _areas.phase_tags(manifest)
-    rows = apply_filters(ul.read_ledger(ledger_dir, since, args.until), args,
-                         tags_by_phase)
+    # Every cost below is summed off these copies, priced at the resolved
+    # table the rate phrase names; the count of rows that kept the figure
+    # stored when written rides in the answer the phrase is worded from.
+    # After the filters, so the count is of the rows this run shows.
+    priced = ul.priced_at_read(
+        apply_filters(ul.read_ledger(ledger_dir, since, args.until), args,
+                      tags_by_phase), pricing)
+    rows = priced["rows"]
+    resolved = dict(resolved, pricedWhenWritten=priced["pricedWhenWritten"])
     window = "all time" if not (since or args.until) else "%s -> %s" % (
         since or "start", args.until or today())
 
@@ -1011,7 +1019,8 @@ def main(argv):
             "pricingAsOf": rate_basis(meta_usage),
             # Which place priced these rows, and the phrase every surface
             # prints for it - the resolver's answer as data, beside the words.
-            "pricingBasis": {k: resolved[k] for k in ("basis", "asOf", "source")},
+            "pricingBasis": {k: resolved[k] for k in
+                             ("basis", "asOf", "source", "pricedWhenWritten")},
             "rateBasis": rate_basis_phrase(resolved),
             "totals": ul.totals(rows),
             "byPhase": ul.aggregate(rows, "phase"),

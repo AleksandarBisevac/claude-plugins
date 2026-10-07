@@ -18,7 +18,8 @@ Four things live here, and the reason each is HERE rather than beside its caller
                  shape is that bucket.
   aggregation  - `totals` / `aggregate` / `aggregate_area` / `heatmap`, the
                  roll-ups the CLI, the report and the panel all read. One home, so
-                 three surfaces cannot disagree about a number.
+                 three surfaces cannot disagree about a number. `priced_at_read`
+                 prices the rows they sum at the resolved table first.
   rows + plan  - `task_index`, `_tokens`, `_cost`: one row's tokens, one row's
                  cost, and the plan's tasks by id. They arrived with the U3.2
                  split and the LAYER is why they are here rather than in a base
@@ -259,16 +260,21 @@ def resolve_pricing(manifest, config):
         "source": the page the rates were read from, or None}
 
     Precedence, first match wins:
-      * `manifest` - the plan's `meta.usage.pricing`, used as written;
+      * `manifest` - the plan's `meta.usage.pricing`;
       * `config`   - `usage.pricing` of the RAW `.claude/audit.config.json`
-        (as parsed, not merged with defaults), laid over the shipped table
-        model by model: a named row replaces the shipped row whole, every
-        other row stays shipped. That is `hooks/_config.usage_cfg`'s merge;
+        (as parsed, not merged with defaults);
       * `shipped`  - DEFAULT_PRICING, dated PRICING_AS_OF from
         PRICING_SOURCE_URL.
 
+    A declared table, from either place, is laid over the shipped table
+    model by model: a named row replaces the shipped row whole, every other
+    row stays shipped. That is `hooks/_config.usage_cfg`'s merge for the
+    config, and the plan's table gets the same one so a model it does not
+    name is priced at its shipped row, never at a `_default` the plan may
+    not declare.
+
     `asOf` is the declaring place's own `pricingAsOf`, None when it gives
-    none - a config overlay's unnamed rows are still the shipped ones, but the
+    none - an overlay's unnamed rows are still the shipped ones, but the
     date names what the project declared. Only the shipped table carries a
     source; a project's own table answers to whatever page it was copied from,
     which neither file names.
@@ -279,12 +285,13 @@ def resolve_pricing(manifest, config):
     meta = (manifest or {}).get("meta") if isinstance(manifest, dict) else None
     meta_usage = meta.get("usage") if isinstance(meta, dict) else None
     declared = _declared_table(meta_usage)
+    table = _copy_table(DEFAULT_PRICING)
     if declared is not None:
-        return {"table": _copy_table(declared), "basis": "manifest",
+        table.update(_copy_table(declared))
+        return {"table": table, "basis": "manifest",
                 "asOf": _declared_as_of(meta_usage), "source": None}
     cfg_usage = config.get("usage") if isinstance(config, dict) else None
     overlay = _declared_table(cfg_usage)
-    table = _copy_table(DEFAULT_PRICING)
     if overlay is not None:
         table.update(_copy_table(overlay))
         return {"table": table, "basis": "config",
@@ -416,6 +423,42 @@ GROUP_KEYS = {
     "branch": lambda r: r.get("branch") or "--",
     "attr": lambda r: r.get("attr") or "unattributed",
 }
+
+
+def _priceable(row):
+    """True when every TOKEN_KEYS field is a number, so the row can be priced
+    again whole. A row missing one cannot: pricing the absent field at zero
+    would print a figure lower than anything the row ever cost."""
+    return all(isinstance(row.get(k), (int, float))
+               and not isinstance(row.get(k), bool) for k in TOKEN_KEYS)
+
+
+def priced_at_read(rows, table):
+    """Every row's `costUSD` as `table` prices its token counts now.
+
+    -> {"rows": copies of `rows`, each priceable row's `costUSD` replaced,
+        "pricedWhenWritten": how many rows kept their stored figure}
+
+    The surfaces print a cost beside a phrase naming the resolved table, while
+    a row's stored `costUSD` was priced when it was written, at a rate the
+    ledger never recorded. So each surface sums these copies rather than the
+    rows it read, and every roll-up below inherits the resolved table. The
+    rows handed in are not touched: the ledger stays as written. Each figure
+    is rounded the way the writer rounds one, so a ledger written at the
+    resolved table sums to exactly what it stored.
+
+    A row that cannot be priced again (`_priceable`) keeps its stored figure,
+    and the count of those is returned for the rate phrase to state - never
+    left as a silent mix of two tables."""
+    out, kept = [], 0
+    for row in rows:
+        copy = dict(row)
+        if _priceable(row):
+            copy["costUSD"] = round(price(row, row.get("model"), table), 6)
+        else:
+            kept += 1
+        out.append(copy)
+    return {"rows": out, "pricedWhenWritten": kept}
 
 
 def totals(rows):

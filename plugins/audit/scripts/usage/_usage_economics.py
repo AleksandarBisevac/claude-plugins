@@ -141,11 +141,16 @@ def rate_basis_phrase(pricing_basis):
     "Undated" is said only of a project's own table that carries no date, with
     the key that dates it. An answer that is missing, or names no basis
     `PRICING_BASES` knows, is stated as unrecorded rather than filled in with
-    the shipped table's date - a basis guessed is a basis manufactured."""
+    the shipped table's date - a basis guessed is a basis manufactured.
+
+    `pricedWhenWritten`, when the caller carries `_usage_core.priced_at_read`'s
+    count beside the answer, names the rows whose figure is the one stored
+    when they were written rather than this table's: the phrase would
+    otherwise claim one table for a sum of two."""
     pb = pricing_basis if isinstance(pricing_basis, dict) else {}
     basis = pb.get("basis")
     if basis not in _core.PRICING_BASES:
-        return "rate basis not recorded"
+        return "rate basis not recorded" + _kept_clause(pb.get("pricedWhenWritten"))
     as_of = pb.get("asOf")
     as_of = as_of.strip() if isinstance(as_of, str) else ""
     source = pb.get("source")
@@ -161,7 +166,17 @@ def rate_basis_phrase(pricing_basis):
     else:
         where = "the project's usage.pricing in .claude/audit.config.json"
         hint = " - set usage.pricingAsOf"
-    return "%s, %s%s" % (when, where, "" if as_of else hint)
+    return "%s, %s%s%s" % (when, where, "" if as_of else hint,
+                           _kept_clause(pb.get("pricedWhenWritten")))
+
+
+def _kept_clause(kept):
+    """The rate phrase's tail for rows priced when written; "" for none, or
+    for a count that is not a positive int."""
+    if not isinstance(kept, int) or isinstance(kept, bool) or kept <= 0:
+        return ""
+    return ("; %d row(s) keep the cost stored when written, at no recorded "
+            "rate" % kept)
 
 
 def unit_economics(manifest, rows):

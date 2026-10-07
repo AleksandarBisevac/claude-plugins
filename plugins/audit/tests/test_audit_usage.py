@@ -446,7 +446,8 @@ def _cases(check):
         check("json: the resolver's answer travels as data AND as the one "
               "phrase the terminal prints for it: %r"
               % (payload.get("pricingBasis"), ),
-              set(payload.get("pricingBasis") or {}) == {"basis", "asOf", "source"}
+              set(payload.get("pricingBasis") or {})
+              == {"basis", "asOf", "source", "pricedWhenWritten"}
               and payload.get("rateBasis")
               == _ul.rate_basis_phrase(payload.get("pricingBasis")))
         check("ac8 with no done task, the bands' doneTaskCoverage is None "
@@ -1306,6 +1307,87 @@ def _bw_spanning_cases(check, root):
           and _bw_month_out(ledger, _BW_SID, _BW_MONTH) == _BW_ENTRIES)
 
     _config_only_pricing_cases(check)
+    _read_time_pricing_cases(check)
+
+
+# --- every printed cost is priced at read time (ua) -----------------------------
+def _read_time_pricing_cases(check):
+    """/audit:usage over a ledger whose stored costUSD came from another table:
+    the totals and cost per task are what the resolved table says those tokens
+    cost, since the phrase beside them names that table, and a row that cannot
+    be priced again keeps its stored figure and is counted in the phrase."""
+    import shutil
+    import tempfile
+    zero = dict((k, 0) for k in _ul.TOKEN_KEYS)
+
+    def _row(task, model, stored, key=None):
+        row = {"ts": "2026-09-01T10", "sessionId": "s1", "model": model,
+               "taskId": task, "phaseId": "P1", "attr": "task", "msgs": 1,
+               "costUSD": stored}
+        if key:
+            row.update(zero)
+            row[key] = 1000000
+        return row
+
+    # Stored at $15 and $75 per million; the shipped table says $5 and $10.
+    rows = [_row("T1", "claude-opus-5", 15.0, "in"),
+            _row("T2", "claude-sonnet-5", 75.0, "out"),
+            _row("T1", "claude-opus-5", 2.5)]
+    root = tempfile.mkdtemp(prefix="audit-usage-read-pricing-")
+    try:
+        proj = os.path.join(root, "proj")
+        for d in (".git", os.path.join(".claude", "usage"),
+                  os.path.join("docs", "audit")):
+            os.makedirs(os.path.join(proj, d))
+        manifest = {"meta": {"version": 2, "repo": "x"},
+                    "phases": [{"id": "P1", "title": "P", "status": "pending",
+                                "tasks": [{"id": t, "title": t, "status": "done"}
+                                          for t in ("T1", "T2")]}]}
+        with open(os.path.join(proj, "docs", "audit", "audit-plan.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump(manifest, fh)
+        with open(os.path.join(proj, ".claude", "usage", "2026-09.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            for r in rows:
+                fh.write(json.dumps(r) + "\n")
+
+        code, out, err = _cp_run_main(["--json", "--project-dir", proj])
+        try:
+            payload = json.loads(out)
+        except ValueError:
+            payload = {}
+        total = (payload.get("totals") or {}).get("costUSD")
+        by_task = dict((k, v.get("costUSD"))
+                       for k, v in (payload.get("byTask") or {}).items())
+        check("ua1 /audit:usage --json totals over a ledger priced at write by "
+              "another table are the resolved table's figure (17.5), not the "
+              "stored 92.5: code=%r total=%r err=%r" % (code, total, err[-300:]),
+              code == 0 and isinstance(total, float)
+              and abs(total - 17.5) < 1e-9)
+        check("ua2 ...and so is its cost per task: %r" % (by_task,),
+              set(by_task) == {"T1", "T2"}
+              and abs(by_task["T1"] - 7.5) < 1e-9
+              and abs(by_task["T2"] - 10.0) < 1e-9)
+        phrase = payload.get("rateBasis") or ""
+        check("ua3 ...and its rate phrase counts the row priced when written, "
+              "with the count as data beside it: %r %r"
+              % (phrase, payload.get("pricingBasis")),
+              "1 row(s) keep the cost stored when written" in phrase
+              and (payload.get("pricingBasis") or {}).get("pricedWhenWritten")
+              == 1)
+
+        code_t, text, err_t = _cp_run_main(["--project-dir", proj,
+                                            "--color", "never"])
+        line = [ln for ln in text.splitlines() if "costs priced at" in ln]
+        check("ua4 the text dashboard prints the same total and the same "
+              "count: code=%r head=%r basis=%r err=%r"
+              % (code_t, text.splitlines()[2:3], line, err_t[-300:]),
+              code_t == 0 and ("~%s equiv" % M.fmt_cost(17.5)) in text
+              and ("~%s equiv" % M.fmt_cost(92.5)) not in text
+              and len(line) == 1
+              and "1 row(s) keep the cost stored when written" in line[0])
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 # --- one price table per project, whichever surface asks (cp) ------------------
@@ -1415,8 +1497,8 @@ def _config_only_pricing_cases(check):
               and "high work is running on claude-sonnet-5" in text
               and "high work is running on claude-opus-5" not in text)
 
-        # --backfill writes costUSD at write time, so the table it reads is
-        # the one every later surface inherits from the ledger itself.
+        # --backfill writes costUSD at write time, and that stored figure is
+        # what a row the read-time pricing cannot price again falls back on.
         tdir = os.path.join(root, "transcripts")
         os.makedirs(tdir)
         with open(os.path.join(tdir, "sess-bf.jsonl"), "w",

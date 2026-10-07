@@ -146,6 +146,17 @@ def load_usage(manifest, manifest_path, project_dir=None):
         if not rows:
             return None
 
+        # Resolved ONCE and shared by every pass below: the table, and which
+        # place priced it. Every cost this section sums is the resolved
+        # table's price for the row's tokens (`priced_at_read`), because the
+        # rate phrase beside it names that table; the rows that kept the
+        # figure stored when written are counted into the basis it is worded
+        # from.
+        pricing = _project_pricing(manifest, manifest_path, project_dir, ul)
+        resolved_pricing = pricing["table"]
+        priced = ul.priced_at_read(rows, resolved_pricing)
+        rows = priced["rows"]
+
         # One pass per dimension, hoisted. `aggregate` walks EVERY ledger row and
         # this dict asked for the same four dimensions more than once: `day` three
         # times (the token, cost and message series are three reads of one
@@ -179,11 +190,6 @@ def load_usage(manifest, manifest_path, project_dir=None):
         # the `except` below - silence where a report was expected.
         as_of_raw = meta_usage.get("pricingAsOf")
         as_of = (as_of_raw.strip() or None) if isinstance(as_of_raw, str) else None
-
-        # Resolved ONCE and shared by every re-pricing pass below
-        # (`cache_profile`, `routing`): the table, and which place priced it.
-        pricing = _project_pricing(manifest, manifest_path, project_dir, ul)
-        resolved_pricing = pricing["table"]
 
         def slim(agg):
             """The three fields a breakdown renders, out of a finished aggregate."""
@@ -287,9 +293,12 @@ def load_usage(manifest, manifest_path, project_dir=None):
                 for a in sorted({r.get("author") or "unknown" for r in rows})},
             "showCost": bool(meta_usage.get("showCost", True)),
             "pricingAsOf": as_of,
-            # Which place priced `cache` and `routing` above, as data: one of
-            # `ul.PRICING_BASES`, with that place's date and source.
-            "pricingBasis": {k: pricing[k] for k in ("basis", "asOf", "source")},
+            # Which place priced every cost above, as data: one of
+            # `ul.PRICING_BASES`, with that place's date and source, and how
+            # many rows kept the figure stored when written.
+            "pricingBasis": dict(
+                [(k, pricing[k]) for k in ("basis", "asOf", "source")]
+                + [("pricedWhenWritten", priced["pricedWhenWritten"])]),
             "pricingStale": _pricing_stale(as_of, until),
             # Orientation, not metrics. These answer "how big is the thing I am
             # looking at" — a question the tiles cannot answer, and one that would

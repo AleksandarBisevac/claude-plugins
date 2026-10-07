@@ -1188,6 +1188,8 @@ def _cases(_record):
               M.usage_summary({}, os.path.join(_empty, "docs", "audit", "m.json"),
                             project_dir=_empty)["totals"]["tokens"] == 35)
 
+        _read_time_pricing_cases(check)
+
         # --- (ug) the passes nothing on the human path reads -----------------
         # Each of `byModel`, `byAuthor` and `byPhase` is a full extra sweep of
         # every ledger row, and the terminal render prints none of the first two
@@ -1266,7 +1268,8 @@ def _cases(_record):
         # as of" followed by nothing and never "undated".
         import usage_ledger as _ul
         _pb_shipped = {"basis": "shipped", "asOf": _ul.PRICING_AS_OF,
-                       "source": _ul.PRICING_SOURCE_URL}
+                       "source": _ul.PRICING_SOURCE_URL,
+                       "pricedWhenWritten": 0}
         check("u10b ...and the line names the SHIPPED table's own date and "
               "source, the table that priced the rows - not 'rates as of' "
               "followed by nothing, and not 'undated': %r"
@@ -3022,6 +3025,41 @@ def _cases(_record):
               repr(_sh_short_u))
     finally:
         os.unlink(_sh_path)
+
+
+def _read_time_pricing_cases(check):
+    """/audit:status over a ledger stored at another table prints the resolved
+    table's figure, since the phrase beside it names that table, and counts a
+    row with no token fields in that phrase."""
+    import shutil as _sh
+    import tempfile as _tf
+    root = _tf.mkdtemp(prefix="audit-status-read-pricing-")
+    try:
+        os.makedirs(os.path.join(root, ".claude", "usage"))
+        base = {"ts": "2026-08-06T07", "sessionId": "s1", "phaseId": "P1",
+                "taskId": "P1.1", "attr": "task", "model": "claude-opus-5",
+                "author": "a@b.c", "msgs": 1}
+        with open(os.path.join(root, ".claude", "usage", "2026-08.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(json.dumps(dict(base, costUSD=15.0, **{
+                "in": 1000000, "out": 0, "cacheW5m": 0, "cacheW1h": 0,
+                "cacheR": 0})) + "\n")
+            fh.write(json.dumps(dict(base, costUSD=2.5)) + "\n")
+        u = M.usage_summary({}, os.path.join(root, "docs", "audit", "m.json"),
+                            project_dir=root) or {}
+        total = (u.get("totals") or {}).get("costUSD")
+        check("rt1 usage_summary totals a ledger stored at another table at the "
+              "resolved table's figure (5.00 + the kept 2.50), not the stored "
+              "17.50: %r" % (total,),
+              isinstance(total, float) and abs(total - 7.5) < 1e-9)
+        line = M._usage_line({"phases": []}, u) if u else ""
+        check("rt2 ...and the status line prints that figure with a phrase "
+              "counting the row priced when written: %r" % (line,),
+              "~%s equiv" % M._fmt.fmt_cost(7.5) in line
+              and "1 row(s) keep the cost stored when written" in line
+              and (u.get("pricingBasis") or {}).get("pricedWhenWritten") == 1)
+    finally:
+        _sh.rmtree(root, ignore_errors=True)
 
 
 def _selftest():

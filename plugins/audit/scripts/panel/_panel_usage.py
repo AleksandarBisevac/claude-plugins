@@ -404,8 +404,6 @@ def usage_state(project):
     if not rows:
         return _usage_shape(**declared)
 
-    rolled = len(rows) > _MAX_FACTS
-    facts, seen = _usage_facts(rows, ul.TOKEN_KEYS, rolled)
     # ONE read for the five consumers below. They each used to call
     # `load_manifest_safe(mpath)` for themselves, which on a sharded manifest is
     # 1 index + 1 file per phase EVERY TIME: measured at 100 file opens and 5 JSON
@@ -419,11 +417,22 @@ def usage_state(project):
     manifest = _mio.load_manifest_safe(_manifest_path(project, config))
     titles, task_meta, budgets = _usage_manifest_slice(manifest)
 
-    payload = dict(declared)
+    # Every cost this tab ships - the facts the browser sums and the derived
+    # blocks - is `priced_at_read`'s copy, priced at the resolved table,
+    # because the phrase beside it names that table; the rows that kept the
+    # figure stored when written are counted into the basis it is worded from.
     pricing = _usage_pricing(ul, manifest, config)
+    priced = ul.priced_at_read(rows, pricing["table"])
+    rows = priced["rows"]
+    pricing = dict(pricing, pricedWhenWritten=priced["pricedWhenWritten"])
+    rolled = len(rows) > _MAX_FACTS
+    facts, seen = _usage_facts(rows, ul.TOKEN_KEYS, rolled)
+
+    payload = dict(declared)
     payload.update(_usage_derived(ul, manifest, rows, pricing["table"]))
     payload.update({
-        "pricingBasis": {k: pricing[k] for k in ("basis", "asOf", "source")},
+        "pricingBasis": {k: pricing[k] for k in
+                         ("basis", "asOf", "source", "pricedWhenWritten")},
         "rateBasis": ul.rate_basis_phrase(pricing)})
     payload.update({"fields": list(_FACT_FIELDS), "facts": facts,
                     "phaseTitles": titles, "taskMeta": task_meta,

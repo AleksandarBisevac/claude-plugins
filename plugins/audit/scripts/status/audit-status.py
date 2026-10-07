@@ -617,6 +617,18 @@ def usage_summary(manifest, manifest_path, project_dir=None, full=True):
     if not rows:
         return None
     try:
+        # Which place prices these rows - the resolver every cost surface
+        # asks, over this manifest and the raw config beside the ledger. Every
+        # sum below is of `priced_at_read`'s copies, priced at that table,
+        # because the phrase `_usage_line` prints beside them names it; the
+        # rows that kept the figure stored when written are counted into the
+        # basis the phrase is worded from.
+        pricing = ul.project_pricing(
+            manifest, manifest_path,
+            project_dir or os.environ.get("CLAUDE_PROJECT_DIR"))
+        priced = ul.priced_at_read(rows, pricing["table"])
+        rows = priced["rows"]
+        pricing = dict(pricing, pricedWhenWritten=priced["pricedWhenWritten"])
         total = ul.totals(rows)
         # WHICH OPTIONAL SWEEPS ARE WORTH THEIR PASS, asked of the MANIFEST so the
         # answer is a function of the plan and the flag alone: the same plan
@@ -656,18 +668,14 @@ def usage_summary(manifest, manifest_path, project_dir=None, full=True):
             return {k: {"tokens": v["tokens"], "costUSD": v["costUSD"],
                         "msgs": v["msgs"]} for k, v in grouped.items()}
 
-        # Which place priced these rows - the resolver every cost surface
-        # asks, over this manifest and the raw config beside the ledger - as
-        # data, and as the one phrase `rate_basis_phrase` words it in, which
-        # `_usage_line` prints.
-        pricing = ul.project_pricing(
-            manifest, manifest_path,
-            project_dir or os.environ.get("CLAUDE_PROJECT_DIR"))
+        # The resolver's answer as data, and as the one phrase
+        # `rate_basis_phrase` words it in, which `_usage_line` prints.
         block = {
             "ledgerDir": ledger_dir,
             "pricingAsOf": (as_of_raw.strip() or None)
             if isinstance(as_of_raw, str) else None,
-            "pricingBasis": {k: pricing[k] for k in ("basis", "asOf", "source")},
+            "pricingBasis": {k: pricing[k] for k in
+                             ("basis", "asOf", "source", "pricedWhenWritten")},
             "rateBasis": ul.rate_basis_phrase(pricing),
             "showCost": bool(meta_usage.get("showCost", True))
             if isinstance(meta_usage, dict) else True,

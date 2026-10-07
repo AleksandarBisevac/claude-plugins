@@ -450,10 +450,20 @@ the windows leg proves the `python3` → `python` → `py` interpreter fallback
   Markdown twin, `/audit:usage`, `/audit:status`, the panel's Usage tab —
   print one phrase, `rate_basis_phrase()` in `scripts/usage/_usage_economics.py`,
   built from what `resolve_pricing()` answers: the shipped table's date and
-  source page when the shipped table priced the rows, or the project's own
-  table and its date, with `rates undated` and the key that dates it only when
-  a project's own table carries none. The panel shows the phrase from its
-  payload rather than retyping it.
+  source page when no project declares a table, or the project's own table
+  (laid over the shipped one model by model) and its date, with `rates
+  undated` and the key that dates it only when a project's own table carries
+  none. The panel shows the phrase from its payload rather than retyping it.
+  - **The figure is priced by the table the phrase names, at read time.** A
+    ledger row's stored `costUSD` was priced when the row was written, at a
+    rate the ledger does not record, so a sum of stored figures beside a phrase
+    naming today's table claims a basis it does not have. Each surface sums
+    `priced_at_read()`'s copies (`scripts/usage/_usage_core.py`), which price
+    every row's token counts with the resolved table; the ledger itself is
+    never rewritten. A row whose token fields are not all present cannot be
+    priced again, keeps its stored figure, and the phrase says how many such
+    rows the sum holds (its `pricedWhenWritten`) rather than mixing two tables
+    silently.
   - **Never fall back to a default to fill the gap.** The basis is the
     resolver's answer about the table that actually priced the rows — never a
     merged default's `pricingAsOf`, which would render a plausible date the

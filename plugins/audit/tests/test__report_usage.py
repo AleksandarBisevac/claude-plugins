@@ -965,7 +965,10 @@ def _cases(check):
                     "ts": _day + "T10", "model": "claude-opus-5",
                     "author": "a@x.io", "msgs": 1, "in": 5, "out": 10,
                     "cacheW5m": 0, "cacheW1h": 0, "cacheR": 0,
-                    "costUSD": 0.1}) + "\n")
+                    # What the shipped table charges these tokens (opus-5:
+                    # 5 in at $5 and 10 out at $25 per million), since the
+                    # report sums every row priced again at read time.
+                    "costUSD": 0.000275}) + "\n")
         _lu = M.load_usage({"meta": {}, "phases": [{"id": "P1", "tasks": [
             {"id": "P1.1", "status": "done",
              "completedAt": "2026-08-01T10:00:00Z"}]}], "bugs": []},
@@ -1023,7 +1026,7 @@ def _cases(check):
               and sorted(_lu2["dailyCost"]) == sorted(_lu2["daily"])
               and sorted(_lu2["dailyMsgs"]) == sorted(_lu2["daily"])
               and _lu2["daily"]["2026-07-03"] == 15
-              and _lu2["dailyCost"]["2026-07-03"] == 0.1
+              and _lu2["dailyCost"]["2026-07-03"] == 0.000275
               and _lu2["dailyMsgs"]["2026-07-03"] == 1
               and list(_lu2["byModel"]) == ["claude-opus-5"]
               and list(_lu2["byAuthor"]) == ["a@x.io"]

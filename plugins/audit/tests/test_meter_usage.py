@@ -40,6 +40,14 @@ import _config                                     # noqa: E402
 M = _loader.load(os.path.join(_harness.HOOKS_DIR, "meter-usage.py"),
                  modname="meter_usage")
 
+# The shipped table, which the advisory and the session line price rows at.
+_TBL = dict(M._load_ledger_lib().DEFAULT_PRICING)
+
+
+def _in_for(usd):
+    """Input tokens claude-opus-5 charges `usd` for in the shipped table."""
+    return int(round(usd * 1000000 / _TBL["claude-opus-5"]["in"]))
+
 
 # --- cases --------------------------------------------------------------------
 def _cases(check):
@@ -200,15 +208,21 @@ def _cases(check):
         try:
             adv_led = str(adv_root / "usage")
             # five cheap completed tasks clear the gate; HOT is far past p90
+            # Every row's tokens are what the shipped table charges its stored
+            # figure for (opus-5 input: $5 per million), since the advisory
+            # prices them again at read time.
             cheap = [{"ts": "2026-08-0%dT10" % (i + 1), "taskId": "T%d" % i,
                       "model": "claude-opus-5", "costUSD": 1.0 + i, "msgs": 1,
-                      "in": 1, "out": 1, "cacheW5m": 0, "cacheW1h": 0, "cacheR": 0}
+                      "in": _in_for(1.0 + i), "out": 0, "cacheW5m": 0,
+                      "cacheW1h": 0, "cacheR": 0}
                      for i in range(5)]
-            hot = dict(cheap[0], taskId="HOT", costUSD=90.0, ts="2026-08-07T10")
+            hot = dict(cheap[0], taskId="HOT", costUSD=90.0, ts="2026-08-07T10",
+                       **{"in": _in_for(90.0)})
             ul.append_rows(adv_led, cheap + [hot])
 
             cur = {}
-            msg = M.advise(ul, adv_led, band_man(5), {"showCost": True}, cur, [hot])
+            msg = M.advise(ul, adv_led, band_man(5), {"showCost": True}, cur, [hot],
+                           _TBL)
             check("h1 an outlier task is called out, with the threshold stated",
                   msg and "HOT" in msg and "$90.00" in msg and "p90" in msg, msg)
             check("h2 the advisory says it is advice, not a gate",
@@ -217,37 +231,40 @@ def _cases(check):
                   cur.get("warnedTasks") == ["HOT"])
             # A warning that repeats every turn for the rest of a long task is a
             # warning nobody reads.
-            again = M.advise(ul, adv_led, band_man(5), {"showCost": True}, cur, [hot])
+            again = M.advise(ul, adv_led, band_man(5), {"showCost": True}, cur, [hot],
+                           _TBL)
             check("h4 it fires ONCE per task, not on every Stop", again is None)
 
             # A cheap task must never trip it.
             quiet = M.advise(ul, adv_led, band_man(5), {"showCost": True}, {},
-                             [cheap[0]])
+                             [cheap[0]], _TBL)
             check("h5 a typical task says nothing", quiet is None)
 
             # Below the gate there are no bands, so there is nothing to be past.
             few_led = str(adv_root / "few")
             ul.append_rows(few_led, [cheap[0], hot])
             check("h6 below the sample gate the advisory is silent",
-                  M.advise(ul, few_led, band_man(1), {"showCost": True}, {}, [hot])
+                  M.advise(ul, few_led, band_man(1), {"showCost": True}, {}, [hot],
+                           _TBL)
                   is None)
 
             # showCost=false must not leak a dollar figure.
-            nc = M.advise(ul, adv_led, band_man(5), {"showCost": False}, {}, [hot])
+            nc = M.advise(ul, adv_led, band_man(5), {"showCost": False}, {}, [hot],
+                          _TBL)
             check("h7 showCost=false states a multiple, never a dollar amount",
                   nc and "$" not in nc and "x past" in nc, nc)
 
             # Rows with no task cannot be attributed to one.
             check("h8 spend with no task in flight says nothing",
                   M.advise(ul, adv_led, band_man(5), {"showCost": True}, {},
-                           [dict(hot, taskId=None)]) is None
+                           [dict(hot, taskId=None)], _TBL) is None
                   and M.advise(ul, adv_led, band_man(5), {"showCost": True},
-                               {}, []) is None)
+                               {}, [], _TBL) is None)
 
             # A garbled cursor must degrade, not raise — it is user-writable state.
             check("h9 a corrupt warnedTasks value is ignored, not fatal",
                   M.advise(ul, adv_led, band_man(5), {"showCost": True},
-                           {"warnedTasks": "nonsense"}, [hot]) is not None)
+                           {"warnedTasks": "nonsense"}, [hot], _TBL) is not None)
 
             # An outlier task's cost has two causes with OPPOSITE repairs, and
             # the advisory has to say which: HOT above is dominated by NEW
@@ -260,11 +277,12 @@ def _cases(check):
                          for i in range(n_done)]
                         + [{"id": "HOT2", "status": "in_progress"}]}]}
 
+            # Re-reads at opus-5's $0.50 per million: 180M of them cost $90.
             hot2 = dict(cheap[0], taskId="HOT2", costUSD=90.0,
-                       ts="2026-08-07T10", **{"in": 1, "cacheR": 50})
+                       ts="2026-08-07T10", **{"in": 1, "cacheR": 180000000})
             ul.append_rows(adv_led, [hot2])
             msg2 = M.advise(ul, adv_led, band_man2(5), {"showCost": True}, {},
-                            [hot2])
+                            [hot2], _TBL)
             check("h10 a task whose cost is dominated by RE-READS gets the "
                   "opposite repair - hand it to a fresh executor - never the "
                   "'split or re-scope' wording an equally expensive but "
@@ -282,21 +300,56 @@ def _cases(check):
             # happened, and silent when the session did nothing.
             sess_led = str(adv_root / "sess")
             ul.append_rows(sess_led, [
-                dict(cheap[0], sessionId="S1", taskId="T1", costUSD=2.5),
-                dict(cheap[1], sessionId="S1", taskId="T2", costUSD=1.5),
-                dict(cheap[2], sessionId="OTHER", taskId="T9", costUSD=99.0)])
-            summ = M.session_summary(ul, sess_led, {"showCost": True}, "S1")
+                dict(cheap[0], sessionId="S1", taskId="T1", costUSD=2.5,
+                     **{"in": _in_for(2.5)}),
+                dict(cheap[1], sessionId="S1", taskId="T2", costUSD=1.5,
+                     **{"in": _in_for(1.5)}),
+                dict(cheap[2], sessionId="OTHER", taskId="T9", costUSD=99.0,
+                     **{"in": _in_for(99.0)})])
+            summ = M.session_summary(ul, sess_led, {"showCost": True}, "S1",
+                                     _TBL)
             check("i1 the summary covers only THIS session", summ
                   and "~$4.00" in summ and "T1, T2" in summ and "99" not in summ,
                   summ)
             check("i2 tokens are compact, messages keep their separators",
                   summ and "tokens" in summ and "$" in summ, summ)
             check("i3 a session that recorded nothing says nothing",
-                  M.session_summary(ul, sess_led, {"showCost": True}, "NOPE")
+                  M.session_summary(ul, sess_led, {"showCost": True}, "NOPE",
+                                    _TBL)
                   is None)
             check("i4 showCost=false drops the dollar figure entirely",
                   "$" not in (M.session_summary(
-                      ul, sess_led, {"showCost": False}, "S1") or "$"))
+                      ul, sess_led, {"showCost": False}, "S1", _TBL) or "$"))
+            # (rt) A ledger stored at another table: both messages print what
+            # the resolved table charges for the tokens, never the stored figure.
+            rt_led = str(adv_root / "rt")
+            ul.append_rows(rt_led, [dict(r, costUSD=r["costUSD"] * 7)
+                                    for r in cheap + [hot]] + [
+                dict(cheap[0], sessionId="RT", taskId="T0", costUSD=50.0,
+                     **{"in": _in_for(1.25)})])
+            rt_msg = M.advise(ul, rt_led, band_man(5), {"showCost": True}, {},
+                              [hot], _TBL)
+            check("rt1 the outlier advisory names the resolved table's figure "
+                  "for the task, not the one stored at another table: %r"
+                  % (rt_msg,),
+                  rt_msg and "$90.00" in rt_msg and "$630.00" not in rt_msg)
+            rt_sum = M.session_summary(ul, rt_led, {"showCost": True}, "RT", _TBL)
+            check("rt2 the session line prices its rows at the resolved table "
+                  "too: %r" % (rt_sum,),
+                  rt_sum and "~$1.25" in rt_sum and "$50" not in rt_sum)
+            # The second direction: a row with no token fields cannot be priced
+            # again, so the line keeps its stored figure rather than a zero.
+            ul.append_rows(rt_led, [
+                {"ts": "2026-08-01T10", "sessionId": "RT2", "taskId": "T0",
+                 "msgs": 1, "costUSD": 3.0},
+                dict(cheap[0], sessionId="RT2", taskId="T0", costUSD=40.0,
+                     **{"in": _in_for(1.0)})])
+            rt_kept = M.session_summary(ul, rt_led, {"showCost": True}, "RT2",
+                                        _TBL)
+            check("rt3 ...while a row with no token fields keeps the figure "
+                  "stored when written, beside the priced row's 1.00: %r"
+                  % (rt_kept,),
+                  rt_kept and "~$4.00" in rt_kept)
             check("i5 the compact formatter matches the other surfaces",
                   M._compact(3_230_000) == "3.2M" and M._compact(942) == "942"
                   and M._compact(2_000_000_000) == "2.0B")

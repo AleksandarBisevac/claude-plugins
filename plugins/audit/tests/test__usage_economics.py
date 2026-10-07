@@ -173,6 +173,27 @@ def _cases(check):
           all(M.rate_basis_phrase(v) == "rate basis not recorded"
               for v in (None, {}, {"basis": "x", "asOf": "2026-01-01"}, "shipped")))
 
+    # A row the read-time pricing could not price keeps the figure it was
+    # written with, at a rate the ledger never recorded - the phrase says how
+    # many, beside the table it names for the rest.
+    _rb_kept = M.rate_basis_phrase(
+        {"basis": "shipped", "asOf": "2026-10-06", "source": _url,
+         "pricedWhenWritten": 3})
+    check("rb6 rows priced when written are counted in the same phrase: %r"
+          % (_rb_kept,),
+          _rb_kept.startswith(_rb_shipped)
+          and "3 row(s) keep the cost stored when written" in _rb_kept
+          and "no recorded rate" in _rb_kept)
+    # The second direction: a phrase that always appended would pass rb6.
+    check("rb7 ...and a count of zero, or none given, leaves the phrase as it "
+          "was: %r" % (M.rate_basis_phrase(
+              {"basis": "shipped", "asOf": "2026-10-06", "source": _url,
+               "pricedWhenWritten": 0}),),
+          M.rate_basis_phrase(
+              {"basis": "shipped", "asOf": "2026-10-06", "source": _url,
+               "pricedWhenWritten": 0}) == _rb_shipped
+          and "row(s)" not in _rb_shipped)
+
     # cost_bands: the same sample gate, and a name that does not collide
     cb = M.cost_bands(man, ar)
     check("bands: 5 completed tasks clears the gate on the relative basis",

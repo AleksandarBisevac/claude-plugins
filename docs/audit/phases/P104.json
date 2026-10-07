@@ -894,7 +894,7 @@
     {
       "id": "P104.12-tog",
       "title": "the screenshots are re-captured from the merged panel and report sources",
-      "status": "in_progress",
+      "status": "done",
       "description": "Re-capture the README screenshots after main was merged into this phase branch. The panel and report sources now hold both this phase's usage changes and the landed phases' panel changes, so every committed shot recorded against either side alone is stale, and test__refs sc1 says so by digest. The orchestrator runs node tools/capture-screenshots.mjs; nothing else changes.",
       "files": [
         "docs/screenshots/captured-at.json",
@@ -942,19 +942,204 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "209e5937",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "After main was merged into the phase branch (merge 1b89e98c), the panel and report sources held both this phase's usage changes and the landed phases' panel changes, and test__refs sc1/sc2 reported every committed shot stale by its recorded source digest. `node tools/capture-screenshots.mjs` (report + panel legs) re-captured docs/screenshots/*.png and captured-at.json from the merged tree; test__refs passes afterwards. No source file changed. Gate-only task: no test owed; the recorded gate (selftests, shots, interactive) is the evidence.",
+        "descriptive": "The README screenshots were taken again after the landed phases were merged in, so each picture matches the panel and report the merged code actually draws."
       },
       "startedAt": "2026-10-07T01:12:47Z",
-      "completedAt": null,
+      "completedAt": "2026-10-07T01:24:13Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-07T01:23:46Z.a09e8d",
         "status": "passed",
         "at": "2026-10-07T01:23:46Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "209e5937",
+        "at": "2026-10-07T01:24:13Z",
+        "basis": "orchestrator check: test__refs sc1/sc2 red before the capture and green after; the recorded gate's shots and interactive legs pass"
       }
+    },
+    {
+      "id": "P104.13-tog",
+      "title": "every printed cost is priced at read time by the table its phrase names",
+      "status": "in_progress",
+      "description": "Fixes review findings P104-R7 (high) and P104-R11. Every cost a surface prints must be what the resolved table says those tokens cost, because the rate-basis phrase beside it names that table. Today the totals, cost per task, projection, bands and the most-expensive table sum each row's stored costUSD, which was priced when the row was written, with no recorded rate. Price each row's token counts at read time with resolve_pricing's table, in the one place the aggregates are computed (_usage_core), so every surface (report, Markdown twin, /audit:usage text and JSON, /audit:status, panel) inherits it. The ledger is never rewritten: the stored costUSD stays as written. A row whose token counts cannot be priced (fields absent) keeps its stored figure, and the surfaces say how many rows were priced when written with no recorded rate, in the same rate-basis phrase, never silently. Overlay a manifest table on the shipped table model by model, the way a config table already is, so an unnamed model is priced at its shipped row and not at _default. Correct CONTRIBUTING.md's statement of the rule. Cases: a ledger whose stored costUSD came from a different table than the current one prints the current table's figure beside the current table's phrase (red first); a row with no token fields keeps its stored figure and is counted in the phrase; a manifest table naming one model prices another at its shipped row.",
+      "files": [
+        "plugins/audit/scripts/usage/_usage_core.py",
+        "plugins/audit/tests/test__usage_core.py",
+        "plugins/audit/scripts/usage/_usage_economics.py",
+        "plugins/audit/tests/test__usage_economics.py",
+        "plugins/audit/scripts/report/_usage_load.py",
+        "plugins/audit/tests/test__usage_load.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "plugins/audit/tests/test_audit_usage.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "plugins/audit/tests/test_usage_ledger.py",
+        "CONTRIBUTING.md",
+        "plugins/audit/tests/test__report_usage.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/tests/test_audit_status.py",
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/tests/test__panel_usage.py",
+        "plugins/audit/hooks/meter-usage.py",
+        "plugins/audit/tests/test_meter_usage.py",
+        "plugins/audit/scripts/demo/gen-demo-usage.py",
+        "plugins/audit/tests/test_gen_demo_usage.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__usage_core.py: a ledger whose stored costUSD came from a different table than the resolved one is summed at the resolved table's prices, a row with no token fields keeps its stored figure and is counted as priced when written, and a manifest table naming one model prices another at its shipped row",
+          "plugins/audit/tests/test_audit_usage.py: /audit:usage's totals and cost per task over such a ledger are the resolved table's figures and its phrase counts the rows priced when written"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "validate",
+          "report",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-07T01:24:22Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T02:01:41Z.850757",
+        "status": "passed",
+        "at": "2026-10-07T02:01:41Z"
+      }
+    },
+    {
+      "id": "P104.14-tog",
+      "title": "one date for the price table on a page, and the precedence change recorded for users",
+      "status": "pending",
+      "description": "Fixes review findings P104-R8, P104-R10, P104-R12 and P104-R13. (R8) The report's stale-price notice computes staleness from the resolver's asOf and names the same place rate_basis_phrase names, so a page never carries two dates for the price table; a manifest pricingAsOf with no manifest table no longer triggers a notice about a table that priced nothing. (R10) CHANGELOG.md [Unreleased] gains a Changed entry: one precedence for every surface (the manifest's meta.usage.pricing, else the config's usage.pricing laid over the shipped table, else the shipped table), naming that the meter and the panel previously read only the config, plus the shipped-rate change and the read-time pricing of printed costs; COMPATIBILITY.md records the precedence in its written-down list, and the CHANGELOG entry says whether the change alters a written promise, stating the basis. Whether the release needs a major bump is recorded for the operator, not decided here. (R12) README's usage.currency / pricingAsOf row matches rate_basis_phrase. (R13) the panel payload's pricingAsOfDeclared, which no panel script reads, is dropped with its pinned cases, unless a reader is found and named.",
+      "files": [
+        "plugins/audit/scripts/report/_usage_load.py",
+        "plugins/audit/scripts/report/_usage_overview.py",
+        "plugins/audit/tests/test__usage_overview.py",
+        "plugins/audit/tests/test__usage_load.py",
+        "CHANGELOG.md",
+        "COMPATIBILITY.md",
+        "plugins/audit/README.md",
+        "plugins/audit/scripts/panel/_panel_usage.py",
+        "plugins/audit/tests/test__panel_usage.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__usage_overview.py: a manifest pricingAsOf with no manifest table renders one date for the price table and no stale notice about a table that priced nothing, while an old dated table the resolver chose still raises the notice"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "validate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P104.13-tog"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P104.15-tog",
+      "title": "with showCost off the panel prints no per-task dollar figure",
+      "status": "in_progress",
+      "description": "Fixes review finding P104-R9. With showCost off the panel prints no per-task dollar figure anywhere: the cost-per-task tile, the projection fact and the routing table's cost/task column (header and cells) are gated on USAGE.showCost exactly as the report gates them, and the projection's coverage line follows the same gate as the tile's. A vitest case renders the usage view with showCost false and asserts no dollar figure in those three places, with its twin (showCost true shows them, each with its coverage line). The panel screenshots are re-captured by the orchestrator.",
+      "files": [
+        "plugins/audit/scripts/ui/panel/usage-view.js",
+        "tools/ui-tests/usage-edges.test.mjs",
+        "plugins/audit/tests/test__panel_page.py",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/mobile.png",
+        "docs/screenshots/overview.png",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ui-tests/usage-edges.test.mjs: with showCost false the cost-per-task tile, the projection fact and the routing cost/task column render no dollar figure, and with showCost true each shows its figure with its coverage line"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-07T01:24:22Z",
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-06T14:46:28Z"
