@@ -2329,6 +2329,11 @@ AUDITED_EXEMPTIONS = {
     # reads the table reports a row naming no finding as stale, and a row with
     # no reason excuses nothing.
     "HOOK_TREE_EXEMPT": ("live", "hook_tree_violations"),
+    # The sites allowed to replace a state file themselves. The lint that reads
+    # the table reports a row whose function no longer replaces anything, and a
+    # row whose reason is short enough to be a label; it does not judge whether
+    # the sentence is true, so this is the weaker of the two strengths.
+    "STATE_WRITERS": ("live", "state_write_violations"),
     # ...and the two whose instrument is a CASE rather than a function. This tree's
     # suites lint other files' source, so an auditor living in one is not a lesser
     # auditor - `r2` is the strongest row in this table, refusing a NEW debt and a

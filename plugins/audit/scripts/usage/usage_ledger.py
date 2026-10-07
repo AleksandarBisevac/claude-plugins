@@ -90,6 +90,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -640,16 +641,14 @@ def ensure_ledger_dir(ledger_dir):
 
 
 def save_cursor(ledger_dir, session_id, cursor):
-    """Atomic (temp + os.replace) so a killed hook can never leave a half-written
-    cursor that would re-scan from zero and double-count."""
+    """Atomic, through `_manifest_io.atomic_write_text`, so a killed hook can never
+    leave a half-written cursor that would re-scan from zero and double-count -
+    and its temp file is this call's own, so a second writer of the same cursor
+    cannot truncate it or move it into place."""
     path = cursor_path(ledger_dir, session_id)
     try:
         ensure_ledger_dir(ledger_dir)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(cursor, fh)
-        os.replace(tmp, path)
+        _manifest_io.atomic_write_text(path, json.dumps(cursor))
         return True
     except Exception:
         return False
@@ -813,20 +812,155 @@ def read_ledger(ledger_dir, since=None, until=None):
     return rows
 
 
-def rewrite_month(ledger_dir, month, rows):
-    """Replace one monthly file atomically. Used only by `--backfill`."""
+# How long the old file must stay quiet after a replace before its tail is
+# taken as final, and how many quiet-checks a busy writer may extend it by.
+TAIL_SETTLE_S = 0.02
+TAIL_MAX_POLLS = 50
+
+
+def _row_line(row):
+    """One ledger row as the line every writer of a monthly file spells it."""
+    return json.dumps(row, separators=(",", ":"), sort_keys=True) + "\n"
+
+
+def _write_rows(path, mode, rows):
+    with open(path, mode, encoding="utf-8") as fh:
+        for row in rows:
+            fh.write(_row_line(row))
+
+
+def _parse_rows(data, drop):
+    """Ledger rows in `data` (bytes holding whole lines) whose session is not in
+    `drop`. A line that does not parse is skipped, as `read_ledger` skips one."""
+    rows = []
+    for line in data.decode("utf-8", "replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(row, dict) and row.get("sessionId") not in drop:
+            rows.append(row)
+    return rows
+
+
+def _drain(tail, final=False):
+    """What the held old file gained since the last read -> `(rows, nbytes)`.
+
+    Only complete lines are taken; a partial one waits in `tail["pending"]` for
+    its newline, since a writer may be mid-write. `final` takes the remainder
+    too, because after the last read nothing will complete it. `nbytes` is the
+    raw count read, which is what says whether the file is still being written:
+    the rows are filtered, so a dropped session's row or a half-written line
+    reads as no rows while the file is anything but quiet."""
+    fresh = tail["fh"].read()
+    data = tail["pending"] + fresh
+    cut = len(data) if final else data.rfind(b"\n") + 1
+    tail["pending"] = data[cut:]
+    return _parse_rows(data[:cut], tail["drop"]), len(fresh)
+
+
+def _settle(tail):
+    """Drain the retired file until one settle period passes with no byte added
+    and no partial line waiting.
+
+    A writer that opened the month file before the replace writes into the file
+    the replace retired; the held descriptor is the only way left to read it.
+    Bounded by `TAIL_MAX_POLLS`, so a writer that never stops cannot hold the
+    backfill - its rows past the bound are the window this does not close."""
+    rows, _n = _drain(tail)
+    for _ in range(TAIL_MAX_POLLS):
+        time.sleep(TAIL_SETTLE_S)
+        more, nbytes = _drain(tail)
+        rows += more
+        if not nbytes and not tail["pending"]:
+            break
+    return rows + _drain(tail, final=True)[0]
+
+
+def open_month(ledger_dir, month, drop):
+    """Read one monthly file through a descriptor that stays open -> `(rows,
+    tail)`, where `rows` are the rows whose session is not in `drop` and `tail`
+    is what `rewrite_month` needs to keep rows appended after this read.
+
+    When the file does not exist yet, `tail` holds no descriptor and
+    `rewrite_month` creates the file and holds that one, from its start."""
     path = os.path.join(ledger_dir, "%s.jsonl" % month)
-    tmp = path + ".tmp"
+    try:
+        fh = open(path, "rb")
+    except FileNotFoundError:
+        return [], {"fh": None, "pending": b"", "drop": set(drop), "path": path}
+    data = fh.read()
+    cut = data.rfind(b"\n") + 1
+    return (_parse_rows(data[:cut], drop),
+            {"fh": fh, "pending": data[cut:], "drop": set(drop), "path": path})
+
+
+def _close_tail(tail):
+    if tail and tail.get("fh") is not None:
+        try:
+            tail["fh"].close()
+        except OSError:
+            pass
+        tail["fh"] = None
+
+
+def rewrite_month(ledger_dir, month, rows, tail=None):
+    """Replace one monthly file atomically. Used only by `--backfill`.
+
+    The metering hook appends without a lock, so a row it appends after the
+    backfill read the file would be erased by the replace. With `tail` (from
+    `open_month`) the rows appended to the old file since that read, of sessions
+    the backfill did not re-read, are carried: into the new file before the
+    replace, and - through the descriptor still open on the retired file - from
+    a writer that opened the path before the replace and wrote after it.
+
+    A month with no file yet is created empty and held the same way: a writer
+    that creates the path while the month is being rebuilt would otherwise write
+    into a file nothing holds, and the replace would retire it unread. A replace
+    that then fails leaves that empty file behind - it holds no row, so every
+    reader sees the month as it was.
+
+    Where the platform refuses to replace a file that is open, the descriptor is
+    drained and closed and the replace retried once; there the carry is complete
+    up to that last read, and a row written between it and the replace is lost.
+
+    -> True when the file was replaced and every carried row was appended;
+    False when it was not replaced (the old file stands, no temp file is left)
+    or when rows carried after the replace could not be appended."""
+    path = os.path.join(ledger_dir, "%s.jsonl" % month)
     try:
         ensure_ledger_dir(ledger_dir)
-        with open(tmp, "w", encoding="utf-8") as fh:
-            for row in rows:
-                fh.write(json.dumps(row, separators=(",", ":"),
-                                    sort_keys=True) + "\n")
-        os.replace(tmp, path)
+        if tail is not None and tail.get("fh") is None:
+            tail["fh"] = os.fdopen(os.open(path, os.O_RDONLY | os.O_CREAT
+                                           | getattr(os, "O_BINARY", 0), 0o666),
+                                   "rb")
+        rows = list(rows) + (_drain(tail)[0] if tail is not None else [])
+        try:
+            _replace_rows(path, rows)
+        except PermissionError:
+            if tail is None:
+                raise
+            rows += _drain(tail, final=True)[0]
+            _close_tail(tail)
+            _replace_rows(path, rows)
+        if tail is not None and tail.get("fh") is not None:
+            _write_rows(path, "a", _settle(tail))
         return True
     except Exception:
         return False
+    finally:
+        _close_tail(tail)
+
+
+def _replace_rows(path, rows):
+    """Replace `path` with `rows` - the one write-and-replace a month rewrite
+    makes, through `_manifest_io.atomic_write_text`, whose temp file is this
+    call's own. A failure removes that temp file and re-raises, so a refused
+    replace leaves the old file standing and nothing beside it."""
+    _manifest_io.atomic_write_text(path, "".join(_row_line(row) for row in rows))
 
 
 
