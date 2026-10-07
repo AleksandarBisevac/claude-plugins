@@ -1,7 +1,7 @@
 {
   "id": "P115",
   "title": "status shows every in-flight phase from the copy that holds it live",
-  "status": "pending",
+  "status": "in_progress",
   "description": "",
   "desiredOutcome": "every surface of /audit:status - ready list, phase table, counts, --short and --json - reads an in-flight phase from its live copy through one reader and says which copy it read",
   "testGate": [
@@ -17,8 +17,8 @@
   "blockedBy": [
     "P114"
   ],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "79b03eae6c390c13e0a88b5f79bc8336ec316734",
+  "branch": "audit/p115-status-shows-every-in-flight-p",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -31,7 +31,7 @@
     {
       "id": "P115.1",
       "title": "every status surface reads an in-flight phase from its live copy through one reader",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes BUG-20. Every surface of /audit:status reads an in-flight phase from the copy that holds it live: the READY NOW list, the phase table, the progress counts, the --short entry view and the --json payload. All of them use the one reader the UNFINISHED block uses, reached through audit-status.py, while _status_facts stays pure. Every row read from a copy other than this checkout's own says which copy it was. When the live copy cannot be read, the row says it shows this checkout's copy and that this may not be current.\n\nCases, each with its twin:\n- a phase in a linked worktree with tasks done there is not listed as ready, and is counted as done;\n- a phase with no branch is read from this checkout;\n- an unreadable worktree falls back with the stale wording;\n- --short and --json agree with the full view.",
       "files": [
         "plugins/audit/scripts/status/audit-status.py",
@@ -61,17 +61,23 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T08:30:56Z",
       "completedAt": null,
       "verifiedBy": [],
-      "bugId": "BUG-20"
+      "bugId": "BUG-20",
+      "testEvidence": {
+        "runId": "2026-10-07T09:02:00Z.6d5a2b",
+        "status": "passed",
+        "at": "2026-10-07T09:02:00Z"
+      }
     }
-  ]
+  ],
+  "startedAt": "2026-10-07T08:30:56Z"
 }

@@ -40,6 +40,20 @@ RESUMABLE line when a phase was interrupted, and an UNFINISHED block when a phas
 lock is still held while that phase has ready work of its own left — or when how
 much it has left could not be counted from the copy that holds it live.
 
+**A phase in flight elsewhere is shown as its live copy holds it, on every surface.**
+In flight means a `phase-<id>` lock is on disk for it, whether its holder is there or
+gone. Such a phase is read once, through one reader, from the copy that holds it live
+(the order is under *Each line counts its own phase* below), and that copy is what the
+READY NOW list, the phase table, the progress counts, `--short` and `--json` all show —
+so tasks a linked worktree has finished are counted done and are not listed as ready.
+A row read from a copy other than this checkout's own says which, on a `copy:` line
+under the phase in the table, on a line in READY NOW, and under `copy` on the phase's
+row in `--json`. When the live copy cannot be read, the row says it shows this
+checkout's copy and that this may not be current. A phase whose run gave its lock back
+while its branch is still unmerged is not in flight by this rule, and is shown from this
+checkout's copy. With no phase lock on disk, the only git call this costs is the one
+that finds the lock directory.
+
 **RESUMABLE and UNFINISHED are two lines about two different facts**, and each can
 be true without the other. RESUMABLE reads the phase status the plan wrote down;
 UNFINISHED reads the lock on disk. A phase left `in_progress` by a command that
@@ -333,7 +347,7 @@ commits: a landed edit to a title or a description moves nothing, and neither do
 silent row only when it was counted from the copy that holds the phase live. A branch
 that exists but whose copy could not be read falls back to this checkout's copy, and
 the line says the branch exists, that its copy could not be read, and that the count
-is not current — and it prints, and trips the condition, even when that count is
+may not be current — and it prints, and trips the condition, even when that count is
 zero. So does a count that may be missing a readiness change above, one taken while
 git could not say whether the file changed, one taken while git could not say which
 worktree has the branch out, and one taken from this checkout or the branch because

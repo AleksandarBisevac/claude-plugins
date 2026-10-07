@@ -3270,7 +3270,7 @@ def _locked_copy_cases(check):
               and "could not be read" in str(p7.get("readyBasis"))
               and "`main`" in str(p7.get("readyBasis"))
               and "audit/p7-stale" in str(p7.get("readyBasis"))
-              and "not current" in str(p7.get("readyBasis")))
+              and "may not be current" in str(p7.get("readyBasis")))
         p8 = row("P8")
         lines = M.unfinished_runs(dict(M.rollup(manifest, [], []),
                                        locks=block)) or []
@@ -3521,10 +3521,10 @@ def _live_copy_cases(check):
               p4.get("readyCount") == 0 and p4.get("readyLive") is True)
         check("lw5 a branch that exists but whose copy could not be read falls "
               "back to this checkout's zero, marks it as not the live copy, says "
-              "the count is not current, and no longer asserts the branch holds "
+              "the count may not be current, and no longer asserts the branch holds "
               "the phase live: %r" % (p5,),
               p5.get("readyCount") == 0 and p5.get("readyLive") is False
-              and "not current" in basis("P5")
+              and "may not be current" in basis("P5")
               and "exists" in basis("P5")
               and "could not be read" in basis("P5")
               and "holds the phase live" not in basis("P5"))
@@ -3700,6 +3700,197 @@ def _worktree_post_fork_cases(check):
         _harness.remove_tree(root)
 
 
+def _every_surface_cases(check):
+    """Every surface reads a phase in flight elsewhere from the copy that holds
+    it live - the READY NOW list, the phase table, the counts, --short and
+    --json - and every row read from a copy other than this checkout's own
+    says which copy it was.
+
+    One repository, this checkout on `main`, whose copy of every shard says
+    nothing has started:
+
+        P1  locked, branch out in a linked worktree whose UNCOMMITTED file has
+            both tasks done
+        P2  locked, no branch of its own
+        P3  locked, branch out in a linked worktree, but the branch predates
+            the shard, so neither the worktree's file nor the branch tip holds
+            a copy to read
+        P4  no lock at all - not in flight
+    """
+    labels = ("es1", "es2", "es3", "es4", "es5", "es6", "es7", "es8")
+    if not shutil.which("git"):
+        for lbl in labels:
+            _harness.skip(check, lbl, "git is not on PATH, and the locks, the "
+                          "branches and the worktrees all live in git", True)
+        return
+    root = _harness.fixture_root("audit-status-every-surface-")
+    repo = os.path.join(root, "proj")
+    shard_dir = os.path.join("docs", "audit", "phases")
+    os.makedirs(os.path.join(repo, shard_dir))
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+           "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+
+    def sh(*args):
+        subprocess.run(git + list(args), cwd=repo, check=True,
+                       capture_output=True)
+
+    def write_shard(base, pid, title, status, done, pending):
+        rows = ([{"id": "%s.%d" % (pid, i + 1), "title": "t",
+                  "status": "done"} for i in range(done)]
+                + [{"id": "%s.%d" % (pid, done + i + 1), "title": "t",
+                    "status": "pending"} for i in range(pending)])
+        with open(os.path.join(base, shard_dir, "%s.json" % (pid,)), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"id": pid, "title": title, "status": status,
+                       "tasks": rows}, fh)
+
+    with open(os.path.join(repo, "README"), "w", encoding="utf-8") as fh:
+        fh.write("x\n")
+    sh("init", "-q")
+    sh("add", "-A")
+    sh("commit", "-qm", "before the plan")
+    sh("branch", "audit/p3-unread")
+    phases = [("P1", "worktree", 2), ("P2", "nobranch", 1),
+              ("P3", "unread", 1), ("P4", "unlocked", 1)]
+    manifest_path = os.path.join(repo, "docs", "audit", "audit-plan.json")
+    with open(manifest_path, "w", encoding="utf-8") as fh:
+        json.dump({"meta": {"version": 3, "title": "every surface"},
+                   "phases": [{"id": p, "title": t, "status": "pending",
+                               "shard": "phases/%s.json" % (p,)}
+                              for p, t, _n in phases]}, fh)
+    for p, t, n in phases:
+        write_shard(repo, p, t, "pending", 0, n)
+    sh("add", "-A")
+    sh("commit", "-qm", "the plan")
+    sh("branch", "audit/p1-worktree")
+    tree1 = os.path.join(root, "p1-tree")
+    tree3 = os.path.join(root, "p3-tree")
+    sh("worktree", "add", "-q", tree1, "audit/p1-worktree")
+    sh("worktree", "add", "-q", tree3, "audit/p3-unread")
+    write_shard(tree1, "P1", "worktree", "in_progress", 2, 0)
+
+    quiet = lambda *_a, **_k: None                  # noqa: E731
+    sid = "every-surface-fixture"
+    locked = ["P1", "P2", "P3"]
+    took = [_lockmod.held(_lockmod.acquire(
+        repo, "phase-%s" % (p,), note="/audit:phase %s" % (p,), session=sid,
+        pid=os.getpid(), out=quiet)) for p in locked]
+    import contextlib as _ctx_es
+    import io as _io_es
+
+    def cli(argv):
+        _o, _e = _io_es.StringIO(), _io_es.StringIO()
+        with _ctx_es.redirect_stdout(_o), _ctx_es.redirect_stderr(_e):
+            _c = M.main([manifest_path] + list(argv))
+        return _c, _o.getvalue()
+
+    def ready_block(text):
+        lines = text.splitlines()
+        at = [i for i, ln in enumerate(lines) if "READY NOW" in ln]
+        if not at:
+            return []
+        out = []
+        for ln in lines[at[0]:]:
+            if not ln.strip():
+                break
+            out.append(ln)
+        return out
+
+    def ready_ids(block):
+        return [ln.split()[0] for ln in block if "run: /audit:run" in ln]
+
+    def under(text, pid):
+        """The lines under phase `pid`'s head in the table, up to the next."""
+        lines = text.splitlines()
+        heads = [i for i, ln in enumerate(lines)
+                 if re.match(r"^  P\d+\s", ln)]
+        mine = [i for i in heads if lines[i].split()[0] == pid]
+        if not mine:
+            return []
+        nxt = [i for i in heads if i > mine[0]]
+        return lines[mine[0]:(nxt[0] if nxt else len(lines))]
+
+    def copy_lines(text, pid):
+        return [ln for ln in under(text, pid) if "copy:" in ln]
+
+    try:
+        with _own_project(repo):
+            c_full, full = cli(["--color", "never", "--view", "all"])
+            c_short, short = cli(["--short", "--color", "never"])
+            c_json, raw = cli(["--json"])
+        doc = json.loads(raw) if c_json == 0 else {}
+        rows = {p.get("id"): p for p in doc.get("phases") or []}
+        block = ready_block(full)
+        ids = ready_ids(block)
+        p1_head = (under(full, "P1") or [""])[0]
+        check("es1 a phase whose linked worktree has both tasks done is not in "
+              "READY NOW, and its row and the overall line count them done: "
+              "ready=%r head=%r" % (ids, p1_head),
+              all(took) and c_full == 0
+              and "P1.1" not in ids and "P1.2" not in ids
+              and " 2/2" in p1_head
+              and "2/5 tasks done" in full)
+        check("es2 ...and its twin: a phase with no lock is not in flight, so "
+              "its task is listed from this checkout and its row names no "
+              "copy: ready=%r copy=%r" % (ids, copy_lines(full, "P4")),
+              "P4.1" in ids and copy_lines(full, "P4") == []
+              and "copy" not in rows.get("P4", {"copy": 1}))
+        check("es3 a phase in flight with no branch of its own is read from "
+              "this checkout - its task listed ready, its row naming no other "
+              "copy, in the table and in --json: ready=%r copy=%r json=%r"
+              % (ids, copy_lines(full, "P2"), rows.get("P2")),
+              "P2.1" in ids and copy_lines(full, "P2") == []
+              and "copy" not in rows.get("P2", {"copy": 1}))
+        p1_copy = copy_lines(full, "P1")
+        p1_json = (rows.get("P1") or {}).get("copy") or {}
+        check("es4 ...and its twin: the phase read from its worktree says so on "
+              "its row, in the table and in --json, naming the file it read: "
+              "table=%r json=%r" % (p1_copy, p1_json),
+              len(p1_copy) == 1 and "p1-tree" in p1_copy[0]
+              and "read from" in p1_copy[0]
+              and "p1-tree" in str(p1_json.get("basis"))
+              and p1_json.get("live") is True)
+        p3_copy = copy_lines(full, "P3")
+        p3_json = (rows.get("P3") or {}).get("copy") or {}
+        check("es5 a phase whose live copy cannot be read - its worktree holds "
+              "no such file and its branch no such shard - is listed from this "
+              "checkout, and its row says it shows this checkout's copy and "
+              "that this may not be current: table=%r json=%r"
+              % (p3_copy, p3_json),
+              "P3.1" in ids and len(p3_copy) == 1
+              and "shows this checkout's copy" in p3_copy[0]
+              and "may not be current" in p3_copy[0]
+              and "audit/p3-unread" in p3_copy[0]
+              and p3_json.get("live") is False
+              and "may not be current" in str(p3_json.get("basis")))
+        check("es6 ...and its twin: the copy that WAS read carries no such "
+              "wording, so es5's is the fallback's and not every copy's: %r"
+              % (p1_copy,),
+              len(p1_copy) == 1 and "may not be current" not in p1_copy[0]
+              and "shows this checkout's copy" not in p1_copy[0])
+        short_block = ready_block(short)
+        check("es7 --short prints the same READY NOW block the full view does, "
+              "and --json's ready list and counts are the full view's: "
+              "short=%r json-ready=%r" % (short_block, doc.get("ready")),
+              c_short == 0 and short_block == block and block != []
+              and doc.get("ready") == ids
+              and (rows.get("P1") or {}).get("done") == 2
+              and ((doc.get("tasks") or {}).get("byStatus") or {}).get("done")
+              == 2
+              and any("p1-tree" in ln for ln in short_block))
+        stale = M.rollup(_mio.load_manifest(manifest_path), [], [])
+        check("es8 ...and its twin: this checkout's own copy alone still lists "
+              "the worktree's finished tasks as ready, so es7's agreement is "
+              "the live copy and not three surfaces reading one stale file: %r"
+              % (stale.get("ready"),),
+              "P1.1" in stale.get("ready") and "P1.1" not in doc.get("ready",
+                                                                     ["P1.1"]))
+    finally:
+        for p in locked:
+            _lockmod.release(repo, "phase-%s" % (p,), session=sid, out=quiet)
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(record):
         _cases(record)
@@ -3708,6 +3899,7 @@ def _selftest():
         _unfinished_header_cases(record)
         _harness.stage(record, "lw", _live_copy_cases)
         _harness.stage(record, "wp", _worktree_post_fork_cases)
+        _harness.stage(record, "es", _every_surface_cases)
     return _harness.run(body)
 
 

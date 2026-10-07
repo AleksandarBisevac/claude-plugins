@@ -1901,12 +1901,63 @@ def _own_ready_cases(check):
           and all(project(m) != project(base) for m in moves))
 
 
+def _live_body_cases(check):
+    """A phase in flight elsewhere is read through one pure seam: its live body
+    laid over this checkout's plan, and the copy it came from carried on its
+    row. The reading of the copy is `audit-status.py`'s; what the plan and the
+    rollup do with a body handed over is this module's, and opens nothing.
+    """
+    plan = {"meta": {"version": 2}, "phases": [
+        {"id": "P1", "title": "elsewhere", "status": "pending", "tasks": [
+            {"id": "P1.1", "title": "t", "status": "pending"},
+            {"id": "P1.2", "title": "t", "status": "pending"}]},
+        {"id": "P2", "title": "here", "status": "pending", "tasks": [
+            {"id": "P2.1", "title": "t", "status": "pending"}]}]}
+    live = {"id": "P1", "title": "elsewhere", "status": "in_progress",
+            "tasks": [{"id": "P1.1", "title": "t", "status": "done"},
+                      {"id": "P1.2", "title": "t", "status": "done"}]}
+    lay = getattr(M, "with_live_bodies", None)
+    before = json.dumps(plan, sort_keys=True)
+    laid = lay(plan, {"P1": {"body": live}, "P2": {"body": None}}) \
+        if callable(lay) else None
+    check("lv1 a phase handed a live body is that body in the plan the rollup "
+          "reads - neither of its tasks ready, both counted done - while the "
+          "plan handed in is left as it was: %r" % (laid,),
+          isinstance(laid, dict)
+          and M.ready_tasks(laid) == ["P2.1"]
+          and M.rollup(laid, [], [])["phases"][0]["done"] == 2
+          and json.dumps(plan, sort_keys=True) == before)
+    check("lv2 ...and its twin: a phase whose read carries no body - this "
+          "checkout's own copy is the live one - stays this checkout's, so "
+          "lv1's change is the body and not every phase named: %r" % (laid,),
+          isinstance(laid, dict)
+          and laid["phases"][1] == plan["phases"][1]
+          and M.ready_tasks(lay(plan, {"P2": {"body": None}}))
+          == M.ready_tasks(plan))
+    copies = {"P1": {"live": True, "basis": "read from the worktree file x"}}
+    # Through `attempt`, so a rollup that takes no copies reports as these
+    # cases failing rather than as the block raising.
+    _ok, named = _harness.attempt(M.rollup, plan, [], [], copies=copies)
+    rows = named["phases"] if isinstance(named, dict) else []
+    check("lv3 the rollup carries each named phase's copy on its own row: %r"
+          % (named if not isinstance(named, dict) else rows,),
+          len(rows) == 2 and rows[0].get("copy") == copies["P1"]
+          and "copy" not in rows[1])
+    _ok, empty = _harness.attempt(M.rollup, plan, [], [], copies={})
+    check("lv4 ...and its twin: with no copies handed over no row carries the "
+          "key, so the payload of a plan with nothing in flight is the one it "
+          "always was: %r" % (empty if not isinstance(empty, dict) else "",),
+          all("copy" not in r for r in M.rollup(plan, [], [])["phases"])
+          and M.rollup(plan, [], []) == empty)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _derived_status_cases(check)
         _graded_by_cases(check)
         _own_ready_cases(check)
+        _harness.stage(check, "lv", _live_body_cases)
     return _harness.run(body)
 
 

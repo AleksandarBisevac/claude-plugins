@@ -299,6 +299,35 @@ def readiness_projection(phase):
                       for t in (phase.get("tasks") or [])]}
 
 
+def with_live_bodies(manifest, reads):
+    """A copy of `manifest` in which each phase `reads` hands a body for is
+    that body, laid over this checkout's phase; the manifest handed in is
+    left as it was.
+
+    `reads` is `{phase id: {"body": phase dict or None, ...}}`. Reading a copy
+    of a phase that lives elsewhere - a linked worktree's file, a branch tip -
+    is a git call or another checkout's file, and this module opens nothing,
+    so `audit-status.py` reads it and hands the body here. A read with no
+    body means this checkout's own copy is the one to show, so the phase is
+    left exactly as it is. Every fact downstream - the ready list, each
+    phase's counts, the plan-wide tally - is then taken from the one plan
+    this returns, so no surface can count a phase from a different copy than
+    another surface shows.
+    """
+    if not isinstance(manifest, dict):
+        return manifest
+    bodies = {str(pid): (read or {}).get("body")
+              for pid, read in (reads or {}).items()}
+    phases = manifest.get("phases")
+    if not isinstance(phases, list):
+        return dict(manifest)
+    laid = []
+    for p in phases:
+        body = bodies.get(str(p.get("id"))) if isinstance(p, dict) else None
+        laid.append(dict(p, **body) if isinstance(body, dict) else p)
+    return dict(manifest, phases=laid)
+
+
 def ready_by_phase(manifest):
     """`{phase id: [ready task ids]}` - `ready_tasks` grouped by the owning phase.
 
@@ -907,11 +936,19 @@ def unevidenced(summary):
     return out
 
 
-def rollup(manifest, findings, warnings, usage=None, boundary=None):
+def rollup(manifest, findings, warnings, usage=None, boundary=None,
+           copies=None):
     """The machine-readable summary --json, render-report and the panel consume.
 
     `usage` is the optional block from `usage_summary()`; it is passed in rather
     than read here so this stays a pure dict -> dict transform.
+
+    `copies` is `{phase id: {"live", "basis"}}` for each phase whose row was
+    read from somewhere other than this checkout's own live copy, and each
+    named row carries it verbatim under `copy`. It arrives for `usage`'s
+    reason: which copy holds a phase is a git question. A phase not named
+    gets no key, so a plan with nothing in flight elsewhere rolls up exactly
+    as it always did.
 
     `boundary` is `_evidence_io`'s block and arrives the same way for the same
     reason, with one extra: that module is this one's LAYER-MATE, so reading it
@@ -994,6 +1031,9 @@ def rollup(manifest, findings, warnings, usage=None, boundary=None):
         "total": sum(1 for t in (p.get("tasks") or [])
                      if isinstance(t, dict) and t.get("status") != "cancelled"),
     } for i, p in enumerate(phases)]
+    for entry in phase_entries:
+        if str(entry.get("id")) in (copies or {}):
+            entry["copy"] = dict(copies[str(entry["id"])])
     # group phases by each of their `area` tags (a phase with several tags counts
     # under each; untagged phases are simply not grouped)
     areas = {}
