@@ -4958,7 +4958,7 @@ def _cases(check):
         # either would be asserting about whichever one it happened to get.
         _pc_env_was = os.environ.get("CLAUDE_CODE_SESSION_ID")
 
-        def pc_repo(name, claim=None, sharded=True):
+        def pc_repo(name, claim=None, sharded=True, git=True):
             """A git-backed project whose P3 holds one ready pending task and
             records `audit/p3`, which is checked out - so the start is an
             `on-branch` entry and nothing about the claim rides on a cut."""
@@ -4977,6 +4977,9 @@ def _cases(check):
             m["fileIndex"]["src/claim.ts"] = ["P3.1"]
             if claim is not None:
                 m["phases"][2]["claim"] = claim
+            if not git:
+                m["phases"][2].pop("branch", None)
+                return mk(name, m, sharded=sharded)
             proj, mpath = mk(name, m, sharded=sharded, git=True)
             for argv in (["checkout", "-q", "-b", "audit/p3"],
                          ["config", "user.email", "t@example.com"],
@@ -5007,8 +5010,36 @@ def _cases(check):
                     return ph
             return {}
 
+        import platform
+        import _locks
+
+        def pc_lock(proj, pid, session="s-other-session"):
+            """Plant the `phase-P3` lock a phase run holds, as `audit-lock.py
+            acquire` by hand records it: on this host, so `_locks.judge` probes
+            `pid` rather than falling back to the lock's age."""
+            ld = _locks.lock_dir(proj)
+            os.makedirs(ld, exist_ok=True)
+            _panel_write._atomic_write_json(
+                os.path.join(ld, "phase-P3.lock"),
+                {"sessionId": session, "pid": pid, "hostname": platform.node(),
+                 "startedAt": "2026-01-01T00:00:00Z", "handedOff": True,
+                 "note": "phase run"})
+
+        def pc_gone_pid():
+            """A pid no process holds: a child that has already been reaped."""
+            child = subprocess.Popen([sys.executable, "-c", "pass"])
+            child.wait()
+            return child.pid
+
+        def pc_json(txt):
+            try:
+                return json.loads(txt)
+            except ValueError:
+                return {}
+
         _PC_OTHER = {"sessionId": "s-other-session",
                      "branch": "audit/p3", "at": "2026-01-01T00:00:00Z"}
+        _pc_pid_was = os.environ.pop("CLAUDE_PID", None)
         try:
             os.environ["CLAUDE_CODE_SESSION_ID"] = "s-mine-session"
             pc1_proj, pc1_mp = pc_repo("pc-first")
@@ -5102,9 +5133,12 @@ def _cases(check):
                                        .get("changes") or [])
                            if c.get("id") == "P3"])
 
-            # ANOTHER SESSION'S CLAIM REFUSES, naming it; `--force --reason`
-            # is the one way past, and the row keeps the claim it replaced.
+            # ANOTHER SESSION'S CLAIM REFUSES WHILE ITS HOLDER IS LIVE, naming
+            # it; `--force --reason` is the one way past, and the row keeps the
+            # claim it replaced. The live holder is a `phase-P3` lock on a pid
+            # that is running - this suite's own.
             pc5_proj, pc5_mp = pc_repo("pc-other", claim=_PC_OTHER)
+            pc_lock(pc5_proj, os.getpid())
             with open(pc_shard_path(pc5_mp, "P3"), "rb") as _fh:
                 pc5_before = _fh.read()
             pc5_code, pc5_txt = run(["start", "P3.1", "--project-dir", pc5_proj])
@@ -5165,7 +5199,187 @@ def _cases(check):
                   and "claim" not in pc7_body
                   and "claim: none taken" in pc7_txt
                   and "CLAUDE_CODE_SESSION_ID is unset" in pc7_txt)
+
+            # ---- (tk) a claim yields when its holder holds no live run -------
+            # The claim alone has no liveness, so a refusal on it alone refused
+            # every SEQUENTIAL session - the next /audit:next, any resume - and
+            # made --force the routine path. Liveness is asked of the
+            # `phase-<id>` lock through `_locks`, the reader `audit-lock.py
+            # status` answers from.
+            os.environ["CLAUDE_CODE_SESSION_ID"] = "s-mine-session"
+
+            def tk_start(name, claim, lock_pid=None, lock_session=None,
+                         extra=()):
+                proj, mp = pc_repo(name, claim=claim)
+                if lock_pid is not None:
+                    pc_lock(proj, lock_pid, lock_session or "s-other-session")
+                path = pc_shard_path(mp, "P3")
+                with open(path, "rb") as fh:
+                    before = fh.read()
+                code, txt = run(["start", "P3.1", "--json", "--project-dir", proj]
+                                + list(extra))
+                with open(path, "rb") as fh:
+                    after = fh.read()
+                rows = pr_rows(proj)
+                det = (rows[0].get("details") or {}) if rows else {}
+                crow = dict((c.get("field"), c) for c in (det.get("changes") or [])
+                            if c.get("id") == "P3")
+                return {"code": code, "txt": txt, "json": pc_json(txt),
+                        "claim": (pc_shard(mp, "P3") or {}).get("claim"),
+                        "same": before == after, "rows": rows, "det": det,
+                        "crow": crow, "mp": mp}
+
+            tk1 = tk_start("tk-nolock", dict(_PC_OTHER))
+            check("tk1 a sequential second session starting the next task of a "
+                  "phase whose previous session left NO phase lock takes the "
+                  "claim over without --force, and the task.start row records "
+                  "the takeover: the replaced session as `from`, this one as "
+                  "`to`, and a claim.takeover row carrying the liveness basis: %r"
+                  % ((tk1["code"], tk1["claim"], tk1["crow"],
+                      tk1["json"].get("claimAction"), tk1["txt"][-200:]),),
+                  tk1["code"] == 0
+                  and (tk1["claim"] or {}).get("sessionId") == "s-mine-session"
+                  and tk1["json"].get("claimAction") == "takeover"
+                  and tk1["json"].get("forced") is False
+                  and len(tk1["rows"]) == 1
+                  and tk1["det"].get("mode") is None
+                  and (tk1["crow"].get("claim.sessionId") or {}).get("from")
+                  == "s-other-session"
+                  and (tk1["crow"].get("claim.sessionId") or {}).get("to")
+                  == "s-mine-session"
+                  and (tk1["crow"].get("claim.takeover") or {}).get("from")
+                  == "s-other-session"
+                  and "no phase-P3 lock"
+                  in ((tk1["crow"].get("claim.takeover") or {}).get("to") or "")
+                  and "taken over" in (tk1["rows"][0].get("summary") or ""))
+            tk2 = tk_start("tk-deadlock", dict(_PC_OTHER),
+                           lock_pid=pc_gone_pid())
+            check("tk2 ...and so does one whose phase lock is still on disk but "
+                  "names a pid that is gone, with `_locks.judge`'s own basis on "
+                  "the row: %r" % ((tk2["code"], tk2["claim"],
+                                    tk2["crow"].get("claim.takeover")),),
+                  tk2["code"] == 0
+                  and (tk2["claim"] or {}).get("sessionId") == "s-mine-session"
+                  and tk2["json"].get("claimAction") == "takeover"
+                  and "is gone on this host"
+                  in ((tk2["crow"].get("claim.takeover") or {}).get("to") or ""))
+            tk3 = tk_start("tk-livelock", dict(_PC_OTHER), lock_pid=os.getpid())
+            _tk3_op = tk3["txt"].find("operator")
+            check("tk3 SECOND DIRECTION: the same start with a LIVE phase lock "
+                  "held by another session is refused - exit 2, the shard byte "
+                  "identical, no row - and the refusal names the decision as "
+                  "the operator's before it names --force: %r"
+                  % ((tk3["code"], tk3["txt"][:300]),),
+                  tk3["code"] == 2 and tk3["same"] and tk3["rows"] == []
+                  and "is running on this host" in tk3["txt"]
+                  and _tk3_op != -1
+                  and _tk3_op < tk3["txt"].find("--force"))
+            tk4 = tk_start("tk-ourlock", dict(_PC_OTHER), lock_pid=os.getpid(),
+                           lock_session="s-mine-session")
+            check("tk4 ALLOW: a live phase lock THIS session holds is the run "
+                  "the orchestrator took before starting, not the claim's "
+                  "holder, so the claim is taken over: %r"
+                  % ((tk4["code"], tk4["claim"], tk4["txt"][:200]),),
+                  tk4["code"] == 0
+                  and (tk4["claim"] or {}).get("sessionId") == "s-mine-session"
+                  and tk4["json"].get("claimAction") == "takeover")
+            # LIVENESS THAT CANNOT BE ASKED REFUSES: a sharded plan outside any
+            # git repository has no lock directory to read.
+            tk5_proj, _tk5_mp = pc_repo("tk-nogit", claim=dict(_PC_OTHER),
+                                        git=False)
+            tk5_code, tk5_txt = run(["start", "P3.1", "--project-dir", tk5_proj])
+            check("tk5 a start whose holder's liveness CANNOT be asked (no git "
+                  "repository, so no lock directory) is refused like a live "
+                  "one, and says liveness could not be asked: %r"
+                  % ((tk5_code, tk5_txt[:300]),),
+                  tk5_code == 2 and "could not be asked" in tk5_txt
+                  and tk5_txt.find("operator") < tk5_txt.find("--force"))
+
+            # NO SESSION ID UNDER A HELD CLAIM: a forced start has nothing to
+            # replace the claim with, so it keeps it and reports it as KEPT.
+            os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+            tk6 = tk_start("tk-force-nosession", dict(_PC_OTHER),
+                           lock_pid=os.getpid(),
+                           extra=["--force", "--reason", "operator says go"])
+            check("tk6 a forced start with no session id keeps the held claim "
+                  "and reports claimReplaced None and the claim as kept - never "
+                  "as replaced: %r" % ((tk6["code"], tk6["claim"],
+                                        tk6["json"].get("claimReplaced"),
+                                        tk6["json"].get("claimKept"),
+                                        tk6["det"].get("basis")),),
+                  tk6["code"] == 0 and tk6["claim"] == _PC_OTHER
+                  and tk6["json"].get("claimReplaced") is None
+                  and tk6["json"].get("claimKept") == _PC_OTHER
+                  and "kept" in (tk6["det"].get("basis") or "")
+                  and not tk6["crow"])
+            tk7 = tk_start("tk-dead-nosession", dict(_PC_OTHER))
+            check("tk7 ...and with no live holder an unforced start runs, "
+                  "keeping the claim it cannot replace: %r"
+                  % ((tk7["code"], tk7["claim"], tk7["json"].get("claimKept")),),
+                  tk7["code"] == 0 and tk7["claim"] == _PC_OTHER
+                  and tk7["json"].get("claimReplaced") is None
+                  and tk7["json"].get("claimKept") == _PC_OTHER)
+
+            # AN UNSAFE SESSION ID IS WRITTEN BOUNDED, through the one function
+            # that bounds the value a committed row carries.
+            os.environ["CLAUDE_CODE_SESSION_ID"] = "s mine/../" + "x" * 200
+            import _journal_io as _tk_jio
+            _tk8_want = _tk_jio.env_session_id()
+            tk8 = tk_start("tk-unsafe", None)
+            tk8_sid = (tk8["claim"] or {}).get("sessionId") or ""
+            check("tk8 an over-long, unsafe session id lands in the claim "
+                  "sanitised and bounded - the value `env_session_id` answers, "
+                  "no path separator, no space: %r" % (tk8_sid,),
+                  tk8["code"] == 0 and tk8_sid == _tk8_want
+                  and 0 < len(tk8_sid) <= _tk_jio.MAX_SESSION_ID_CHARS
+                  and "/" not in tk8_sid and " " not in tk8_sid)
+            tk9 = tk_start("tk-unsafe-mine", {"sessionId": _tk8_want,
+                                              "branch": "audit/p3",
+                                              "at": "2026-01-01T00:00:00Z"},
+                           lock_pid=os.getpid())
+            check("tk9 ...and the holder comparison reads the same bounded "
+                  "value, so that session's own claim is kept, not contested: %r"
+                  % ((tk9["code"], tk9["json"].get("claimAction")),),
+                  tk9["code"] == 0 and tk9["json"].get("claimAction") == "keep")
+
+            # A LEGACY CLAIM ON THE INDEX STUB IS DROPPED BY SIGN-OFF AND
+            # CANCEL. `_merge_phase` falls back to a stub claim when the body
+            # has none, so popping the body's alone let it reappear.
+            os.environ["CLAUDE_CODE_SESSION_ID"] = "s-mine-session"
+            for _tk_case, _tk_verb in (("tk10", "signoff"), ("tk11", "cancel")):
+                _tk_m = base_manifest()
+                _tk_m["phases"][1]["tasks"][1]["status"] = "done"
+                _tk_p, _tk_mp = mk("tk-stub-" + _tk_verb, _tk_m, sharded=True,
+                                   git=True)
+                _tk_idx = _mio.read_json(_tk_mp)
+                for _stub in _tk_idx["phases"]:
+                    if _stub.get("id") in ("P2", "P3"):
+                        _stub["claim"] = dict(_PC_OTHER)
+                _panel_write._atomic_write_json(_tk_mp, _tk_idx)
+                if _tk_verb == "signoff":
+                    _tk_code, _tk_txt = run(
+                        ["signoff", "P2", "--verdict", "passed", "--summary",
+                         "s", "--no-evidence-reason", "fixture",
+                         "--project-dir", _tk_p])
+                else:
+                    _tk_code, _tk_txt = run(
+                        ["cancel", "P2", "--reason", "fixture",
+                         "--project-dir", _tk_p])
+                _tk_after = _mio.read_json(_tk_mp)
+                _tk_stub = dict((s.get("id"), s) for s in _tk_after["phases"])
+                check("%s %s drops a legacy claim on the phase's INDEX STUB, "
+                      "so it cannot reappear in the assembled phase, and "
+                      "leaves another phase's stub alone: %r"
+                      % (_tk_case, _tk_verb, (_tk_code, _tk_stub.get("P2"),
+                                    pc_phase(_tk_mp, "P2").get("claim"),
+                                    _tk_txt[-200:]),),
+                      _tk_code == 0
+                      and "claim" not in _tk_stub.get("P2", {})
+                      and "claim" not in pc_phase(_tk_mp, "P2")
+                      and _tk_stub.get("P3", {}).get("claim") == _PC_OTHER)
         finally:
+            if _pc_pid_was is not None:
+                os.environ["CLAUDE_PID"] = _pc_pid_was
             if _pc_env_was is None:
                 os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
             else:

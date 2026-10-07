@@ -364,6 +364,9 @@ import _branch                # noqa: E402  (parent_branch: which branch is the 
 import _journal_io            # noqa: E402  (read_all: the phase.add rows a side-branch
                               # warning is read back from; MAX_VALUE_CHARS, the
                               # per-value bound a long outcome is fitted into)
+import _locks                 # noqa: E402  (lock_dir, judge, held_by_us: whether a phase
+                              # claim's holder still holds a live run, read the way
+                              # `audit-lock.py status` reads it - a downward edge, L7 -> L1)
 import _id_shape              # noqa: E402  (the one answer to which id comes next, and the
                               # branch suffix that keeps two branches from minting it twice)
 import _evidence_io           # noqa: E402  (read_rows: the runs a move leaves keyed
@@ -1769,8 +1772,25 @@ def _settled_lines(rows):
             for r in rows]
 
 
+def _drop_stub_claims(raw_index, phase_ids):
+    """(raw_index, dropped) -- every named phase's legacy INDEX-STUB claim gone.
+
+    A phase that sign-off or cancel finishes loses its claim from the body, and
+    `_merge_phase` would hand the stub's back on the next assembly; these
+    writers already run under the index lock, so the stub is cleared in the same
+    write. `dropped` is True when any stub held one - the index then has to be
+    written - and the single-file layout has no stubs to clear."""
+    if not _mio.is_sharded(raw_index):
+        return raw_index, False
+    dropped = False
+    for pid in phase_ids:
+        raw_index, claim = _mio.index_without_stub_claim(raw_index, pid)
+        dropped = dropped or claim is not None
+    return raw_index, dropped
+
+
 def _write_add(project, mpath, raw_index, assembled, phase_id, files_changed,
-               index_fields=()):
+               index_fields=(), index_changed=False):
     """Persist the patched manifest into whichever layout it is stored in.
     SINGLE FILE: write the assembled dict; it IS the file. SHARDED: the
     touched phase's shard, and the index only when fileIndex changed --
@@ -1780,7 +1800,9 @@ def _write_add(project, mpath, raw_index, assembled, phase_id, files_changed,
     `index_fields` names top-level INDEX keys this write changed beside the
     phase (`bugs`, when a close stores a linked bug's derived status): each is
     copied from `assembled` and the index is written. `phase_id` None writes no
-    shard, for a write that touched the index alone."""
+    shard, for a write that touched the index alone. `index_changed` says the
+    caller handed over a `raw_index` it changed itself (a stub's legacy claim
+    dropped), which is written though no field below moved."""
     if not _mio.is_sharded(raw_index):
         _panel_write._atomic_write_json(mpath, assembled)
         return [_output.posix_rel(mpath, project)]
@@ -1788,7 +1810,7 @@ def _write_add(project, mpath, raw_index, assembled, phase_id, files_changed,
     by_pid = {p.get("id"): p for p in (assembled.get("phases") or [])
               if isinstance(p, dict)}
     written = []
-    index_dirty = bool(files_changed) or bool(index_fields)
+    index_dirty = bool(files_changed) or bool(index_fields) or bool(index_changed)
     if phase_id is None:
         idx = dict(raw_index)
         for key in index_fields:
@@ -2996,6 +3018,7 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
     # overwrites it, because afterwards every one of them says `cancelled` and
     # the fact is gone from the manifest as well as from the row.
     cascade = []
+    stub_claim = False
     if kind == "task":
         _cancel_task(node, reason, now)
     else:
@@ -3005,6 +3028,7 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
         node["summary"] = ("%s %s" % (prev, line)).strip() if prev else line
         # A claim on a finished phase is stale (the validator says so).
         node.pop("claim", None)
+        raw_index, stub_claim = _drop_stub_claims(raw_index, [tid])
         # ...and the work still open inside it goes with it: a pending task
         # under a dropped phase is a task /audit:next would still offer.
         for t in (node.get("tasks") or []):
@@ -3016,7 +3040,8 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
     phase_id = phase.get("id")
     snap = _snapshot(_write_paths(project, mpath, raw_index, phase_id))
     try:
-        written = _write_add(project, mpath, raw_index, assembled, phase_id, False)
+        written = _write_add(project, mpath, raw_index, assembled, phase_id, False,
+                             index_changed=stub_claim)
     except Exception as exc:
         _restore(snap)
         out("[audit-task] write failed -- manifest restored: %s" % exc)
@@ -3223,23 +3248,85 @@ def _start_changes(tid, was, task):
     return rows
 
 
-def _claim_plan(sharded, held, session, branch, now):
+def _phase_holder(git_root, phase_id):
+    """Whether `phase_id` has a live run, asked of its `phase-<id>` lock.
+
+    {"state": "none"|"dead"|"ours"|"live"|"unaskable", "basis": str}.
+
+    THE SAME READING `audit-lock.py status` PRINTS, not a second rule: the lock
+    directory `_locks.lock_dir` names, the listing `_locks.collect` walks, and
+    `_locks.judge`'s verdict and basis for the one file that matters here, so
+    every uncertainty the judge resolves to LIVE stays live. `ours` is a live
+    lock `_locks.held_by_us` says this run holds - the phase lock the
+    orchestrator takes before it starts a task, which is a live run of the
+    phase that is not the claim's holder.
+
+    `unaskable` is every case where no lock could be read: no git common
+    directory to keep locks in (outside a repository, or git not runnable), a
+    phase id no lock can be named after, or a lock directory that exists and
+    cannot be listed. A directory that does not exist is `none` - it is where
+    no lock has ever been taken, and `status` answers "no locks held" there.
+    """
+    name = _status_facts.PHASE_LOCK_PREFIX + str(phase_id)
+    if not _locks.valid_name(name):
+        return {"state": "unaskable",
+                "basis": "phase id %r makes no lock name, so no phase lock can "
+                         "be held under it" % (phase_id,)}
+    ld = _locks.lock_dir(git_root)
+    if not ld:
+        return {"state": "unaskable",
+                "basis": "%s has no git common directory, which is where phase "
+                         "locks are kept" % (git_root,)}
+    try:
+        names = os.listdir(ld) if os.path.isdir(ld) else []
+    except OSError as exc:
+        return {"state": "unaskable",
+                "basis": "the lock directory could not be listed: %s" % (exc,)}
+    if name + ".lock" not in names:
+        return {"state": "none", "basis": "no %s lock is held" % (name,)}
+    path = os.path.join(ld, name + ".lock")
+    info = _locks.read_lock(path)
+    live, basis = _locks.judge(info, path)
+    if not live:
+        return {"state": "dead", "basis": "%s lock: %s" % (name, basis)}
+    ours = _locks.held_by_us(info)
+    if ours["ours"]:
+        return {"state": "ours",
+                "basis": "the live %s lock is this run's own: %s"
+                         % (name, ours["why"])}
+    return {"state": "live", "basis": "%s lock: %s" % (name, basis)}
+
+
+# The holder states under which a claim is still someone else's to give up.
+_HOLDER_BLOCKS = ("live", "unaskable")
+
+
+def _claim_plan(sharded, held, session, branch, now, holder_of):
     """What this start does to `phase.claim`, decided before any write.
 
-    {"action": "none"|"keep"|"take"|"contested"|"no-session", "held", "claim"}.
-    `claim` is the value to write for `take`, and for `contested` the one a
-    forced start writes in its place; None for every other action.
+    {"action", "held", "claim", "holder"}; `action` is one of
+    "none"|"keep"|"take"|"takeover"|"contested"|"no-session". `claim` is the
+    value to write for `take` and `takeover`, and for `contested` the one a
+    forced start writes in its place - None when there is no session to write.
+    `holder` is `_phase_holder`'s answer, asked through `holder_of()` only when
+    another session's claim is held, so a start that needs no liveness never
+    runs git for it.
 
     ONLY THE SHARDED LAYOUT CLAIMS. The claim's job is to make two machines
     entering one phase collide as a merge conflict in that phase's shard; a
     single-file plan has no shard, and every write to it conflicts already.
 
+    A CLAIM HAS NO LIVENESS OF ITS OWN, so another session's claim refuses only
+    while that session may still be running the phase: a live `phase-<id>` lock
+    that is not this run's, or a lock nobody could ask about. Otherwise the
+    claim is a sequential session's leftover - the next `/audit:next`, any
+    resume - and this start takes it over (`takeover`), recorded with the basis.
+
     NO SESSION, NO CLAIM. A claim whose `sessionId` is empty names nobody, so no
     later start could tell its own claim from somebody else's; the caller says
-    no claim was taken rather than writing one that answers nothing. Under a
-    claim somebody else holds that start is still `contested`, because "this
-    session" is not the holder either way - but it has nothing to replace the
-    claim with, so a forced start leaves the claim as it stands.
+    no claim was taken rather than writing one that answers nothing, and a held
+    claim stays as it stands - `contested` while its holder blocks (a forced
+    start keeps it), `no-session` with the claim kept when it does not.
 
     A CLAIM THIS SESSION HOLDS IS KEPT AS IT IS, `at` included: `at` records
     when the phase was taken, and a retry re-stamping it would erase that.
@@ -3250,56 +3337,105 @@ def _claim_plan(sharded, held, session, branch, now):
     a `host` under a claim. Session, branch and moment are what a second
     machine needs to recognise the phase as taken.
     """
+    plan = {"action": "none", "held": None, "claim": None, "holder": None}
     if not sharded:
-        return {"action": "none", "held": None, "claim": None}
+        return plan
     held = held if isinstance(held, dict) else None
     if held is not None and session and held.get("sessionId") == session:
-        return {"action": "keep", "held": held, "claim": None}
+        return dict(plan, action="keep", held=held)
     fresh = ({"sessionId": session, "branch": branch, "at": now}
              if session else None)
-    if held is not None:
-        return {"action": "contested", "held": held, "claim": fresh}
-    if not session:
-        return {"action": "no-session", "held": None, "claim": None}
-    return {"action": "take", "held": None, "claim": fresh}
+    if held is None:
+        return dict(plan, action="take" if session else "no-session",
+                    claim=fresh)
+    holder = holder_of()
+    if holder.get("state") in _HOLDER_BLOCKS:
+        return dict(plan, action="contested", held=held, claim=fresh,
+                    holder=holder)
+    return dict(plan, action="takeover" if session else "no-session",
+                held=held, claim=fresh, holder=holder)
 
 
-def _claim_changes(phase_id, held, claim):
+def _claim_kept(plan):
+    """The other session's claim this start leaves in place, or None."""
+    if plan.get("held") and not plan.get("claim") \
+            and plan.get("action") in ("contested", "no-session"):
+        return plan["held"]
+    return None
+
+
+def _claim_replaced(plan):
+    """The other session's claim this start writes over, or None."""
+    if plan.get("held") and plan.get("claim") \
+            and plan.get("action") in ("contested", "takeover"):
+        return plan["held"]
+    return None
+
+
+def _claim_changes(phase_id, held, claim, holder=None):
     """The phase-keyed `changes` rows a claim write adds to the `task.start` row:
-    one per field the claim carries, each with the value it replaced."""
+    one per field the claim carries, each with the value it replaced - and, for
+    a claim taken over from a holder with no live run, a `claim.takeover` row
+    from the replaced session to the liveness basis the takeover stood on."""
     held = held or {}
-    return [{"id": phase_id, "field": "claim." + key,
+    rows = [{"id": phase_id, "field": "claim." + key,
              "from": held.get(key), "to": claim.get(key)}
             for key in ("sessionId", "branch", "at")]
+    if held and holder and holder.get("state") not in _HOLDER_BLOCKS:
+        rows.append({"id": phase_id, "field": "claim.takeover",
+                     "from": held.get("sessionId"), "to": holder.get("basis")})
+    return rows
 
 
-def _claim_refusal(phase_id, held, session):
-    """The refusal for a start on a phase another session has claimed."""
+def _claim_refusal(phase_id, held, session, holder):
+    """The refusal for a start on a phase another session has claimed while
+    that session may still be live. The decision is named as the operator's
+    before the flag is, because the flag is only how the operator records it."""
+    if holder.get("state") == "unaskable":
+        why = "whether it still runs the phase could not be asked: %s" % (
+            holder.get("basis"),)
+    else:
+        why = "a live run of the phase is held: %s" % (holder.get("basis"),)
+    if session:
+        then = ("start again with --force --reason \"<why>\", which replaces "
+                "the claim and journals the one it replaced")
+    else:
+        then = ("start again with --force --reason \"<why>\"; with $%s unset "
+                "there is no claim to replace it with, so the claim is kept "
+                "and the row records that" % (_journal_io.ENV_SESSION_VAR,))
     return ("[audit-task] phase %s is claimed by session %s "
-            "(branch %s, since %s), and this session is %s -- the claim is the "
-            "record other machines read to see who is running the phase, so "
-            "nothing was started or written. If that session is finished with "
-            "it, start again with --force --reason \"<why>\", which replaces the "
-            "claim and journals the one it replaced."
+            "(branch %s, since %s), and this session is %s -- %s. Nothing was "
+            "started or written. Whether that session is finished with the "
+            "phase is the operator's decision, not this verb's; once it is "
+            "made, %s."
             % (phase_id, held.get("sessionId") or "(none)",
                held.get("branch") or "(none)",
                held.get("at") or "(unrecorded)",
-               session or "unknown ($%s is unset)" % _journal_io.ENV_SESSION_VAR))
+               session or "unknown ($%s is unset)" % _journal_io.ENV_SESSION_VAR,
+               why, then))
 
 
 def _claim_line(plan, phase_id):
     """The line `start` prints about the claim, or None when it had none."""
     action = plan.get("action")
     claim = plan.get("claim") or {}
+    held = plan.get("held") or {}
+    basis = (plan.get("holder") or {}).get("basis")
+    if action == "takeover":
+        return ("  claim: phase %s taken over from session %s for session %s, "
+                "branch %s -- it holds no live run of the phase (%s)"
+                % (phase_id, held.get("sessionId"), claim.get("sessionId"),
+                   claim.get("branch") or "(none)", basis))
     if action == "take" or (action == "contested" and claim):
         return ("  claim: phase %s claimed for session %s, branch %s"
                 % (phase_id, claim.get("sessionId"),
                    claim.get("branch") or "(none)"))
-    if action == "contested":
-        return ("  claim: phase %s stays claimed by session %s -- no session id "
-                "($%s is unset), so there was no claim to replace it with"
-                % (phase_id, plan["held"].get("sessionId"),
-                   _journal_io.ENV_SESSION_VAR))
+    if held and action in ("contested", "no-session"):
+        return ("  claim: phase %s stays claimed by session %s, KEPT -- no "
+                "session id ($%s is unset), so there was no claim to replace "
+                "it with (%s)"
+                % (phase_id, held.get("sessionId"),
+                   _journal_io.ENV_SESSION_VAR, basis))
     if action == "no-session":
         return ("  claim: none taken for phase %s -- $%s is unset, and a claim "
                 "naming no session is one no later start can recognise"
@@ -3348,6 +3484,9 @@ def _forced_past(forced):
     if forced.get("replaced"):
         parts.append("claim of session %s"
                      % (forced["replaced"].get("sessionId") or "(none)"))
+    if forced.get("kept"):
+        parts.append("claim of session %s, kept: no session id to replace it "
+                     "with" % (forced["kept"].get("sessionId") or "(none)"))
     return parts
 
 
@@ -3394,6 +3533,13 @@ def _journal_start(project, config, mpath, task_id, phase_id, was, task,
         summary += "; %s claimed by session %s on branch %s" % (
             phase_id, taken.get("claim.sessionId"),
             taken.get("claim.branch") or "(none)")
+    takeover = [r for r in (claim_rows or []) if r["field"] == "claim.takeover"]
+    if takeover:
+        # In the summary because `audit-journal list` prints nothing else, and
+        # a claim moved without --force is the row a reader of "who ran this
+        # phase" is looking for.
+        summary += "; taken over from session %s (%s)" % (
+            takeover[0]["from"], takeover[0]["to"])
     details = _start_details(task_id, phase_id, was, task, forced, claim_rows)
     if (entry or {}).get("state") in ("cut", "adopt"):
         summary += "; branch %s %s" % (entry["branch"], "cut from %s" % entry["parent"]
@@ -3628,19 +3774,24 @@ def _locked_start(args, project, config, mpath, tid, out):
     # promotion, a run that skipped it left a running phase nobody could see was
     # taken. Another session's claim is refused like an unmet reference, and
     # `--force --reason` is the same one way past, recorded on the same row.
+    # The session id is the BOUNDED one: it lands in a committed shard and on a
+    # journal row, and the comparison with a held claim has to read the value a
+    # start writes, or a session's own sanitised claim would read as another's.
     now = _utc_now()
-    session = os.environ.get(_journal_io.ENV_SESSION_VAR) or None
+    session = _journal_io.env_session_id()
     claim = _claim_plan(_mio.is_sharded(raw_index), phase.get("claim"), session,
                         entry.get("branch") or _id_shape.current_branch(git_root),
-                        now)
+                        now, lambda: _phase_holder(git_root, phase.get("id")))
     contested = claim["action"] == "contested"
     if contested and not args.force:
-        out(_claim_refusal(phase.get("id"), claim["held"], session))
+        out(_claim_refusal(phase.get("id"), claim["held"], session,
+                           claim["holder"]))
         return E_USAGE
     forced = None
     if args.force and (unmet or contested):
         forced = {"reason": args.reason.strip(), "waitingOn": unmet,
-                  "replaced": claim["held"] if contested else None}
+                  "replaced": _claim_replaced(claim) if contested else None,
+                  "kept": _claim_kept(claim) if contested else None}
 
     was = _start_task(node, now)
     if entry["state"] in ("cut", "adopt"):
@@ -3650,7 +3801,8 @@ def _locked_start(args, project, config, mpath, tid, out):
     claim_rows = []
     if claim["claim"]:
         phase["claim"] = claim["claim"]
-        claim_rows = _claim_changes(phase.get("id"), claim["held"], claim["claim"])
+        claim_rows = _claim_changes(phase.get("id"), claim["held"], claim["claim"],
+                                    claim["holder"])
     # THE PHASE IS PROMOTED BY THE SAME WRITE, from the same instant. Until this
     # line the control surface's save was the only site in the tree that moved a
     # phase out of `pending`, so an orchestrator driving a plan from the command
@@ -3737,7 +3889,9 @@ def _locked_start(args, project, config, mpath, tid, out):
                   # start did to it (`_claim_plan`'s action words).
                   "claim": phase.get("claim"),
                   "claimAction": claim["action"],
-                  "claimReplaced": (forced or {}).get("replaced")}
+                  "claimReplaced": _claim_replaced(claim),
+                  "claimKept": _claim_kept(claim),
+                  "claimHolder": claim["holder"]}
         result.update(jres)
         result.update(stdin_notes_key(args))
         result.update(project_basis_key(args))
@@ -6722,13 +6876,15 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
     phase["review"] = review
     phase["summary"] = summary
     phase.pop("claim", None)
+    raw_index, stub_claim = _drop_stub_claims(raw_index, [pid])
     # The verdict is an input of the derived status, so the status it now derives
     # is stored beside it - `done` for a phase with no branch, nothing yet for one
     # awaiting its merge, where `close-phase.py`'s stamp is the write that settles it.
     settled = _settle(assembled, {("phase", pid)})
     snap = _snapshot(_write_paths(project, mpath, raw_index, pid))
     try:
-        written = _write_add(project, mpath, raw_index, assembled, pid, False)
+        written = _write_add(project, mpath, raw_index, assembled, pid, False,
+                             index_changed=stub_claim)
     except Exception as exc:
         _restore(snap)
         out("[audit-task] write failed -- manifest restored: %s" % exc)
@@ -7794,9 +7950,11 @@ def _group_door(args, project, ids, out):
                            args, project, config, mpath, ids, summary, out))
 
 
-def _group_write(project, mpath, raw_index, assembled, ids, vm, out):
+def _group_write(project, mpath, raw_index, assembled, ids, vm, out,
+                 index_changed=False):
     """(written, warnings, manifest, exit) -- every member's file in one write,
-    revalidated and rolled back whole on a finding. `exit` is None on success."""
+    revalidated and rolled back whole on a finding. `exit` is None on success.
+    `index_changed` is `_write_add`'s, for a `raw_index` the caller changed."""
     paths = []
     for pid in ids:
         paths.extend(p for p in _write_paths(project, mpath, raw_index, pid)
@@ -7806,7 +7964,8 @@ def _group_write(project, mpath, raw_index, assembled, ids, vm, out):
     try:
         for pid in ids:
             written.extend(w for w in _write_add(project, mpath, raw_index,
-                                                 assembled, pid, False)
+                                                 assembled, pid, False,
+                                                 index_changed=index_changed)
                            if w not in written)
     except Exception as exc:
         _restore(snap)
@@ -7944,8 +8103,10 @@ def _locked_group(args, project, config, mpath, ids, summary, out):
             # gate - would re-measure the tree the one run already graded.
             phase["testEvidence"] = dict(pointer, gradedBy=carrier.get("id"))
     settled = _settle(assembled, set(("phase", pid) for pid in ids))
+    raw_index, stub_claim = _drop_stub_claims(raw_index, ids)
     written, warnings, written_manifest, stop = _group_write(
-        project, mpath, raw_index, assembled, ids, vm, out)
+        project, mpath, raw_index, assembled, ids, vm, out,
+        index_changed=stub_claim)
     if stop is not None:
         return stop
     rows = [_journal_row(project, config, mpath, "phase.verdict",
@@ -9557,7 +9718,8 @@ def build_parser():
     p.add_argument("--force", action="store_true", default=False,
                    help="start: promote a task that is still waiting on "
                         "unmet references, or whose phase another session "
-                        "has claimed (the claim is replaced); needs --reason, "
+                        "has claimed while that session may still hold a live "
+                        "run of it (the claim is replaced); needs --reason, "
                         "which the task.start row records")
     # `done` only. Why this close stands over a newest gate verdict that refuses
     # it - `commit-task-work.py`'s flag for the same act; the close is journaled

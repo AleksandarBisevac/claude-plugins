@@ -22,7 +22,58 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P106-R1",
+        "severity": "high",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:3226-3261,3632-3643",
+        "issue": "A phase claim has no liveness: _claim_plan returns contested for any claim whose sessionId differs from the current one, and only sign-off or cancel clears it, so ordinary multi-session use of a sharded plan is refused - the next /audit:next session continuing a phase, every /audit:resume after a crash or lost session, a session id change across a resume, and (with no session id) a held claim even --force cannot replace - making --force the normal way to continue a phase and a forced row no longer an exception.",
+        "resolution": "Refuse only when the holder may still be live: when no live run holds the phase-<id> lock (the _locks liveness answer audit-lock status gives), take the claim over without --force and record it on the task.start row as a takeover with that basis; refuse, with --force as the way past, only when a live holder exists or liveness cannot be asked; decide and test the no-session path explicitly; cases for a sequential second session (takeover) and a live holder (refused)."
+      },
+      {
+        "id": "P106-R2",
+        "severity": "med",
+        "file": "plugins/audit/reference/execute-task.md:11-13; reference/orchestrator.md:386-398,669-690; commands/task.md:480; scripts/manifest/audit-task.py:3276-3287,3611-3615",
+        "issue": "The orchestrator flow says nothing about what to do on the new readiness and claim refusals, while both refusal texts offer --force --reason as the next step and task.md calls --force the route for promoting a task by hand, inviting a model mid-run to add --force with a reason in its own words rather than the operator's.",
+        "resolution": "On a readiness or claim refusal the orchestrator stops and relays the refusal verbatim; --force only on the human's instruction with the human's words as --reason (the operator's-words rule); reword both refusal texts to name the operator's decision before the flag; task.md describes --force as the operator's exception."
+      },
+      {
+        "id": "P106-R3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:3641-3643,3740",
+        "issue": "With no session id and another session's claim held, a forced start keeps the claim but still reports claimReplaced and writes 'FORCED past ... claim of session X' as if it had been replaced.",
+        "resolution": "Set replaced only when a claim was written in its place, word the no-session force as kept, and pin claimReplaced None with the claim byte-identical."
+      },
+      {
+        "id": "P106-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:3632",
+        "issue": "The claim's sessionId is the raw CLAUDE_CODE_SESSION_ID, unsanitised and unbounded, written into a committed shard and the task.start row, while _journal_io.env_session_id() exists to bound exactly this value; the journal actor and the claim can spell one session two ways.",
+        "resolution": "Use _journal_io.env_session_id() for the claim write and the holder comparison, with a case for an over-long or unsafe value."
+      },
+      {
+        "id": "P106-R5",
+        "severity": "low",
+        "file": "plugins/audit/commands/run.md:56",
+        "issue": "run.md step 4 'Unmet blockers -> refuse and list them' still asks the model to apply the readiness rule by hand, a second copy of the rule start now enforces.",
+        "resolution": "Point it at the start refusal and say to relay it."
+      },
+      {
+        "id": "P106-R6",
+        "severity": "low",
+        "file": "plugins/audit/reference/execute-task.md:11-18",
+        "issue": "Deleting sub-steps a and d left step 1 as a paragraph followed by a lone 'b.-c.' sub-item.",
+        "resolution": "Fold the b-c text into step 1 or re-letter it, keeping the citations that point at it true."
+      },
+      {
+        "id": "P106-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_manifest_io.py:176-177",
+        "issue": "On the sharded layout a claim on an index stub is a fallback when the shard has none; start writes the shard and sign-off pops the assembled claim, so a legacy stub claim survives sign-off and reappears as another session's claim.",
+        "resolution": "Have sign-off and cancel also drop a stub claim on the index under the index lock, or stop reading stub claims once a shard exists."
+      }
+    ],
+    "outcome": "[findings: 7 - 1 high, 1 med, 5 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -233,6 +284,92 @@
         "at": "2026-10-07T00:23:57Z",
         "basis": "orchestrator check: the brief prints the reading with its basis and refuses an unknown value, the prose step is deleted, and the bytes measurement is recorded; red-first proved"
       }
+    },
+    {
+      "id": "P106.4-b6f",
+      "title": "a phase claim yields to a new session when its holder is gone, and refuses only a live one",
+      "status": "in_progress",
+      "description": "Fixes review findings P106-R1 (high), P106-R3, P106-R4 and P106-R7. A phase claim refuses a start only while its holder may still be live. When the claim's session holds no live run of the phase - asked through the same lock liveness `audit-lock.py status` answers for `phase-<id>` - a start by another session takes the claim over without --force and records it on the task.start row as a takeover, with the liveness basis and the replaced session in its changes rows. A start is refused, with --force --reason as the operator's way past, only when a live holder exists or liveness cannot be asked; the refusal text names that decision as the operator's before it names the flag. The no-session path (no CLAUDE_CODE_SESSION_ID) is decided and tested: a forced start with no session id keeps the held claim and reports it as kept, never as replaced (R3). The claim's sessionId and the holder comparison use _journal_io.env_session_id(), which bounds and sanitises the value that lands in a committed row (R4). Sign-off and cancel also drop a legacy claim on the index stub under the index lock, so a stub claim cannot reappear after sign-off (R7). Cases: a sequential second session starting the next task of a phase whose previous session left no live lock is a recorded takeover; the same with a live phase lock is refused; the no-session force keeps the claim and reports claimReplaced None; an over-long or unsafe session id is written bounded; a stub claim is gone after sign-off.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/tests/test__manifest_io.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_audit_task.py: a second session starting the next task of a phase whose previous holder left no live phase lock takes the claim over and records the takeover, while a live phase lock still refuses; a forced start with no session id keeps the claim and reports nothing replaced; an unsafe session id is written bounded",
+          "plugins/audit/tests/test__manifest_io.py: a legacy claim on an index stub is gone after sign-off"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "validate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-07T01:41:53Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T02:22:33Z.0d7d0d",
+        "status": "passed",
+        "at": "2026-10-07T02:22:33Z"
+      }
+    },
+    {
+      "id": "P106.5-b6f",
+      "title": "the orchestrator relays start's refusals and leaves --force to the operator",
+      "status": "pending",
+      "description": "Fixes review findings P106-R2, P106-R5 and P106-R6. The orchestrator flow says what to do on start's readiness and claim refusals: stop and relay the refusal verbatim; pass --force only on the human's instruction, with the human's words as --reason (the operator's-words rule in manifest-conventions). execute-task.md step 1/2, orchestrator.md's Phase entry and its Resume steps carry that one sentence each, pointing at the verb rather than restating the rule. commands/task.md describes --force as the operator's exception, not a route for promoting a task by hand. commands/run.md step 4 stops restating the readiness rule and points at start's refusal. execute-task.md's step 1 no longer carries an orphaned 'b.-c.' sub-item; every citation of it (README, _invariants) stays true. Record the bytes /audit:next must read before and after.",
+      "files": [
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/commands/run.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P106.4-b6f"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-06T22:17:03Z"
