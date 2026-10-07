@@ -59,6 +59,12 @@ wrong multiplier and figures with no arithmetic shown. Section 1.2 now:
 loop's edit of the plan from the file class to the task class. Every figure below is re-derived on
 that basis.
 
+Every per-task target and confirming reading reads one span, the task cycle: main-loop requests
+bounded by two calls the stream records (section 1.1). Planning, the run's own requests and
+sign-off fall outside it.
+So no reading subtracts them from a whole-session table, which is how earlier revisions let that
+work flatter or refute a target their prediction never counted.
+
 ### 0.1 Where the earlier backlog stands
 
 Read off the tree on 2026-10-07, so this design starts from what shipped rather than from what was
@@ -97,15 +103,16 @@ row says otherwise, the command is `python3 tools/stream-cost.py <x>/feature-C-1
 | run-class tokens a further main-loop request reads | 79461 | `contexts:` → `main`, `run` |
 | main-loop reads before the prose was written | 54899 tokens, derived: 11891 + 21195 + 21813 | `--json` → `requests`, the `cr` of the first three main-loop requests |
 | task-class tokens left in the main loop after the task | 25455 | `contexts:` → `main`, `task` |
-| ...of which the task's own requests wrote | 21857 | `--json` → `items` of the main context, summed by the request that wrote them (section 1.2) |
+| ...of which the task cycle's requests put there | 21857 | `--json` → `items` of the main context, each counted for the request before the one its `request` names, which cached it (section 1.2); or section 10's cycle command |
 | price of one more request, main loop / executor / reviewer | `0.0210` / `0.0063` / `0.0050` | `contexts:` → `$/request` |
-| main-loop requests | orient 2, plan 5, gate 3, close 5 | `per stage, as billed` → `req` |
+| main-loop requests | orient 2, plan 5, gate 3, close 5; the task cycle holds 8 | `per stage, as billed` → `req`; the cycle, section 10's cycle command |
 | agent starts | executor 16952 tokens, five-minute write on opus (`0.0848`); reviewer 15878, on the sonnet row (`0.0397`) | `largest cache writes`, `agent start` rows |
 | briefs typed by the main loop | 2840 and 2817 output tokens (`0.0568`, `0.0563`) | `largest outputs` |
 | main-loop output | 14031 tokens | `output pool, measured: main loop` |
+| ...of which the task cycle's requests emitted | 11374 tokens, an estimate: the pool apportioned by emitted bytes | section 10's cycle command, or the `out` of requests 6 to 13 in `--json` → `requests` |
 
-**Which main-loop requests are per task (inference).** The main loop's tool calls and text were
-listed from the stream:
+**Which main-loop requests are per task.** The main loop's tool calls and text were listed from the
+stream:
 
 ```
 python3 -c "import json,sys
@@ -118,9 +125,11 @@ for l in open(sys.argv[1]):
 " <x>/feature-C-1/stream.jsonl
 ```
 
-After the request that wrote the prose, the run-level requests are the manifest read, the lock, the
-lock release and the report. The rest are per task: six steps, and two requests that happened
-because something went wrong. The six steps:
+The task cycle, defined below, decides which requests are per task: in `feature-C-1`, requests 6 to
+13. After the request that wrote the prose, the run-level requests outside it are the manifest
+read, the lock, the lock release and the report. Which of the cycle's requests are steps and which
+happened because something went wrong is inference, read off their tool calls and text: six steps,
+and two one-offs. The six steps:
 
 1. the task start;
 2. the executor dispatch;
@@ -139,6 +148,84 @@ Whether either recurs is unmeasured. So every prediction below is given twice, a
 per task as `feature-C-1` recorded them and at `k` = 6 without the two. The pilot's main loop made
 17 requests (`python3 tools/stream-cost.py <p>/stream.jsonl`, the `req` column), so the shape
 varies between runs. This list and the analysis's section 4 describe the same requests.
+
+**The task cycle.** Every per-task target and confirming reading in this document reads one span of
+main-loop requests, bounded by calls the stream records:
+
+- it opens at the first request that calls `audit-task.py start`;
+- it closes at the last request that calls `audit-task.py done` for a task, before any request
+  inside the span plans one. A request plans when it makes a `Skill` call to `audit:phase` or
+  `audit:task` whose `args` begin with `add`, or calls the `add` or `add-phase` verb.
+
+The tasks it holds are the ids its `done` calls name, and their count is the `N` a per-task reading
+divides by. Planning falls outside the cycle by construction: it comes before the first start, and
+a task planned later closes the cycle. The run's opening requests (preflight, manifest read, lock)
+and its closing ones (lock release, report) fall outside it in the order the run's prose gives
+them, before the first start and after the last `done`.
+
+Sign-off is what the second half of the closing rule is for. Sign-off runs once every task is done
+(`reference/phase-signoff.md:11` at `7b489337`), and for each actionable finding it has the main
+loop create and start a task (`:71`). A cycle closed at the last `done` of any task would hold
+sign-off's review and its fix tasks. A task planned inside the cycle closes it at the `done` before,
+so the fix tasks fall after the cycle with the rest of sign-off. That order is the prose's. Nothing
+stops a main loop dispatching sign-off's reviewer before its last task closes, and a cycle read from
+such a session would hold the review. What falls outside the cycle is counted apart, never
+subtracted from a reading.
+
+In `feature-C-1` the cycle is requests 6 to 13. The table lists every main-loop request in stream
+order, with its output and the task-class tokens it put into the main loop's cache. The stream
+writes those tokens at the next request. Output is apportioned within the measured pool by emitted
+bytes, so that column is an estimate, and it sums to 14031 before rounding.
+
+| # | Request | What it did | Where | `out` | task tokens |
+|---|---|---|---|---|---|
+| 1 | `7cvhXJ` | sizes the three reference files | orient | 205 | 0 |
+| 2 | `9EwTxN` | reads them | orient | 341 | 0 |
+| 3 | `e5FBL8` | the preflight; the prose enters the cache | the run's own | 164 | 692 |
+| 4 | `r4YX8x` | reads the manifest | the run's own | 142 | 1847 |
+| 5 | `RWqWTm` | validates it and takes the lock | the run's own | 353 | 653 |
+| 6 | `eknkfg` | marks the phase running, then `start P1.1` and the brief lookup | **opens the cycle** | 557 | 2616 |
+| 7 | `JgzmC5` | the executor dispatch | cycle | 2840 | 5159 |
+| 8 | `nt66Ew` | the recorded gate, with the stamp comparison | cycle | 675 | 1458 |
+| 9 | `yyXaVM` | the re-check of the stale stamp, a one-off | cycle | 630 | 1229 |
+| 10 | `5JJjhV` | the reviewer dispatch | cycle | 2817 | 3646 |
+| 11 | `fFRT6p` | the commit, then `done --help`, which names no task | cycle | 362 | 1195 |
+| 12 | `CLGcxV` | `done P1.1`, refused with exit 2 | cycle | 1723 | 2985 |
+| 13 | `avGJjL` | `done P1.1` again, which closes it; a one-off | **closes the cycle** | 1769 | 3569 |
+| 14 | `84rhDm` | releases the lock | the run's own | 212 | 406 |
+| 15 | `FSeULu` | the report | the run's own | 1239 | 0 |
+
+The cycle holds every per-task figure section 1.2 rests on. Section 10's cycle command prints them
+from the pinned tool's own reading, for requests 6 to 13 and the two agents they dispatched:
+
+- 8 requests, which is `k` at 8;
+- 21857 task-class tokens, which is `c` at k = 8;
+- a task class of `0.704895`, which is `t` at k = 8, and a file class of `0.212897`, the file term;
+- 11374 output tokens, an estimate.
+
+So the task class outside the cycle is 0.782339 − 0.704895 = `0.0774`, which is L(12). Section 1.2
+takes that part out of `t` by arithmetic, and the cycle leaves it out by position. Requests 3 to 5,
+14 and 15 are the five that section 1.2 names, and orient's requests put no task-class content
+there (`per stage, by what it put there`, the `orient` row). The cycle's unit is a request.
+Request 6 marks the phase running, which a run does once, and the cycle holds that because the same
+request started the task. Section 1.2's `c` already counted it so.
+
+**Read against arm C.** `whole-C-3` was recorded later on 2026-10-07 (`<x2>/whole-C-3`). Whether it
+is valid for the whole-feature study is that study's question. It is read here only for where the
+rule puts its bounds, with section 10's event command:
+
+- its main loop planned from request 1, a `Skill` call to `audit:phase` with `args` `add`, through
+  the `add-phase` and `add` verbs at 9 to 12;
+- a second `Skill` call, `audit:phase P1`, came at 13, and request 14 ran the preflight and took the
+  lock;
+- the cycle is requests 15 to 36 and holds P1.1, P1.2 and P1.3, the last two run in parallel;
+- at 37 the main loop added a fix task for the findings P1.1's reviewer had raised (recorded at 19),
+  and at 38 it started that task, its text reading "I'm now in phase sign-off"; the task closed at
+  44;
+- sign-off's own review followed at 47, and the sign-off at 55.
+
+Closed at the last `done`, the cycle would have held requests 37 to 44 too. The session's figures
+are T5's, and section 6, T1, says why the pinned tool cannot yet price them.
 
 ### 1.2 The formulas
 
@@ -162,19 +249,21 @@ rounding, so a total can differ in its last digit from the sum of the rounded pa
   the early reads as well.
 - **Task work a run pays once.** Five main-loop requests are not per task: the one that wrote the
   prose (it also ran the preflight), the manifest read, the lock, the lock release and the report.
-  The tool classes their work as task work, by its rule, but a run pays it once:
+  They are the requests outside the task cycle other than orient's (section 1.1). The tool classes
+  their work as task work, by its rule, but a run pays it once:
   `L(m) = U + (H × m − G) × r`, where:
   - `U` = `0.0711`: their output, 2111 tokens × o = 0.0422 (`--json` → `requests`, the `out` of those
     five); their input, 0.00004; and the content they added to the cache, 3598 tokens × w = 0.0288
-    (692 + 1847 + 653 + 406, from `items`, grouped by the request that wrote each);
+    (692 + 1847 + 653 + 406, from `items`, grouped by the request that produced each);
   - `H` = 3192, the part of that content every per-task request reads (692 + 1847 + 653);
   - `G` = 6345, the reads that content misses because it enters the cache one, two and three
     requests into the `m` (692 × 1 + 1847 × 2 + 653 × 3).
 
   At m = 12: 0.0711 + (3192 × 12 − 6345) × 0.2 / 10^6 = `0.0774`.
 - **Task work paid per task.** `t × N + c × r × k × N(N−1)/2`, where:
-  - `t` = `0.7049` at k = 8: the task class less L(12), that is 0.7823 − 0.0774;
-  - `c` = 21857 at k = 8: the content a task's own requests leave in the main loop
+  - `t` = `0.7049` at k = 8: the task class less L(12), that is 0.7823 − 0.0774. The task cycle's
+    own task class reads the same (section 1.1);
+  - `c` = 21857 at k = 8: the content the task cycle's requests leave in the main loop
     (2616 + 5159 + 1458 + 1229 + 3646 + 1195 + 2985 + 3569);
   - the square term holds the reads of `c` by every request of every later task.
 
@@ -236,23 +325,25 @@ Derived from the rates and the request counts above. This is why the main loop's
 
 ### 1.4 What the model cannot see
 
-No recorded session reached these, so each is an assumption or an open question for the benchmark in
-section 7:
+None of the sessions this model is computed from reached these, so each is an assumption or an open
+question for the benchmark in section 7:
 
 - **sign-off.** `/audit:phase` ends with it, and both recorded plugin sessions were `/audit:run`
   (`cat <x>/feature-C-1/prompt.txt <p>/prompt.txt`). Where a figure needs sign-off, `S` = 6 main-loop
   requests is assumed. `phase-signoff.md` numbers five steps, and the first of them spawns a reviewer.
-  That is an assumption, and T5 replaces it with a reading.
+  That is an assumption, and T5 replaces it with a reading. No per-task reading needs `S`, because
+  sign-off falls after the task cycle (section 1.1). `whole-C-3`, recorded later, reached sign-off.
 - **planning verbs.** The calibration session planned nothing. `feature-C-1`'s prompt is
   `/audit:run P1.1` (`cat <x>/feature-C-1/prompt.txt`), and its main loop made no `Skill` call and
   no `add` call of either verb (section 1.1's snippet lists every call). Whole-feature arm C does
   plan. Its prompt is the request with `<h2>/plugin-sentence.txt` appended (`<h2>/run_session.py`,
   `prompt_for`), which asks for `/audit:phase add` and `/audit:task add` before the run. Today's
   stage rule makes every request from the end of orient to the first executor dispatch `plan`
-  (`stream-cost.py`'s docstring, *STAGES*), so those planning requests would be counted as the task
-  cycle's. T1's `planning` split takes them out, and the targets of T3 and T4 read the task cycle
-  without them. How many times a session invokes each verb, and whether every invocation injects the
-  command body again, is unmeasured.
+  (`stream-cost.py`'s docstring, *STAGES*), so a reading of that table would count those planning
+  requests as task work. The task cycle cannot hold them, because they come before its first start
+  (section 1.1). T1's `planning` row prints them apart, for section 7's whole-set reading and for C8.
+  How many times a session invokes each verb, and whether every invocation injects the command body
+  again, is unmeasured.
 - **parallel waves.** The formula treats tasks as serial.
 - **a second dispatch of one agent type.** Whether it reads the first dispatch's cache is unmeasured.
 - **gaps.** How long the main loop waits between requests decides the cache-TTL question (C6).
@@ -264,8 +355,10 @@ section 7:
   difference, and which TTL a given user's main loop gets is **unknown** to the plugin (section 9).
 - **the two one-off requests.** Whether a stale stamp's re-check and a retried close recur is
   unmeasured. That is why each prediction is given at k = 8 and at k = 6.
-- **which requests are per run.** Read off one session's tool calls (section 1.1). A run that, say,
-  re-reads the manifest per task moves work from `L` to `t`.
+- **which requests are per run.** In the model, the five that section 1.2 names, read off one
+  session's tool calls (section 1.1). A run that, say, re-reads the manifest per task moves work from
+  `L` to `t`. A cycle reading of that run places the re-read inside the cycle by its position, so the
+  reading follows the move and the model does not.
 
 ## 2. The yardstick: what the plugin guarantees
 
@@ -383,7 +476,8 @@ modes, the red-first helper, the stamp. That restatement is the prose every othe
 on is a major release.
 
 **Confirming reading.** None is scheduled, because it is not recommended. It would be an arm C session
-with the key on, read for main-loop requests and executor contexts.
+with the key on, read inside the task cycle (section 1.1) for main-loop requests and executor
+contexts per task.
 
 **Effort, blast radius, risk.** It touches a new section of the task prose, a config key with its
 schema, validator and panel control, and the README's enforced row, which would need a qualifier. It
@@ -468,7 +562,11 @@ them with:
 **COMPATIBILITY.md.** None: the prose is outside the contract. It needs a CHANGELOG entry.
 
 **Confirming reading.** In an arm C session, the tokens of the `Read <plugin>/reference/…` rows of
-`largest cache writes`, summed, and the run class `$write`.
+`largest cache writes`, summed by where T1 places the request that read them, and the run class
+`$write`. Planning's reads are set beside `/audit:phase add`'s target and the run's beside the run
+form's (T2). Sign-off's, after the cycle, are shown apart, because no figure here predicts them.
+Summed over the whole session, the reading would set planning's and sign-off's prose against the
+run's prediction: `whole-C-3` read the reference files inside planning (section 1.1).
 
 **Effort, blast radius, risk.** 75893 bytes of prose move between files or out of the model's path
 (derived: 153704 − 77811). It touches every command that names a reference file. The rows at risk are
@@ -538,8 +636,18 @@ The claim-to-task binding the reviewer exists for (`:313-315`) is kept, because 
 reviewer verbatim from the file.
 
 Handing the file over stays a followed rule. Nothing checks that the main loop passed the brief's path;
-a PreToolUse check on the `Agent` call could, and is not proposed here. A missing filing is caught at
-the close, because `done --from-return` refuses when no return is filed.
+a PreToolUse check on the `Agent` call could, and is not proposed here. A reviewer handed anything
+but its computed brief is outside the first order below, and only this followed rule covers it. Two
+verbs hold the order around the filed returns, and T3 pins each with a case:
+
+- `brief` for the reviewer exits non-zero, writing no brief, until the executor's return for the
+  task's current start is filed. The reviewer's brief carries that return as filed, so it cannot be
+  composed before it.
+- `done --from-return` reads the executor's return for the task's current start. It also reads the
+  reviewer's, unless the close passes `--intent not-asked` with its basis, which the verb already
+  refuses without one (`scripts/manifest/audit-task.py:7055`). It refuses, writing nothing, when a
+  return it reads is not filed for the current start, and a return from an earlier start does not
+  count.
 
 **The reviewer's one write, and what holds it.**
 
@@ -550,10 +658,10 @@ the close, because `done --from-return` refuses when no return is filed.
     task's current start it derives the one file it writes: that role's return for that task in the
     evidence directory. It refuses a return whose shape is incomplete without writing anything.
   - *Write-once for each task and role.* A second filing for a task and role that already has a
-    return in the task's current start is refused, and the first return is left byte-identical. The
-    reviewer is dispatched only once the executor's return is filed, because its brief carries that
-    return as filed. So the reviewer's call cannot replace the claim it was dispatched to check, and
-    it cannot replace its own return once that is filed.
+    return in the task's current start is refused, and the first return is left byte-identical. A
+    reviewer dispatched with its computed brief finds the executor's return already filed, because
+    `brief` will not compose that brief before it (above). So the reviewer's call cannot replace the
+    claim it was dispatched to check, and it cannot replace its own return once that is filed.
 
   The start is part of the path because a retry must file again. `start` re-stamps `startedAt` on
   every start (`scripts/manifest/audit-task.py:3288`), so a re-spawned executor files beside the
@@ -562,7 +670,7 @@ the close, because `done --from-return` refuses when no return is filed.
 
   T3 adds the cases that pin both: a path-like argument refused, a malformed return writing nothing,
   the written path equal to the derived one, and a second filing for one task and role in one start
-  refused with the first unchanged.
+  refused with the first unchanged. It adds a case for each of the two orders above as well.
 - *What does not hold it.* `verify-invariants.py`'s `commit-scope` grades the close commit against
   the evidence directory as a whole (`commit-task-work.py` stages that directory), so it cannot tell
   the reviewer's return from any other file there.
@@ -572,7 +680,8 @@ the close, because `done --from-return` refuses when no return is filed.
     followed rule: write-once stops a reviewer replacing a return, not filing one that nobody has
     filed yet, such as another task's or a role whose agent has not run. If a reviewer files its own
     return under the wrong task, its own task is left with none, and `done --from-return` refuses
-    that close (above).
+    that close, by the case T3 pins. The only way past that refusal is a close that records
+    `--intent not-asked` with its basis.
   - **The reviewer runs nothing else that writes.** That stays a followed rule, as it is today: its
     Bash can write and nothing refuses it, which its own prompt says ("Nothing refuses these"). The
     filing verb widens what the reviewer is *told* it may do by one call. It does not widen what the
@@ -593,21 +702,26 @@ today (`scripts/_refs.py:1275`).
 **COMPATIBILITY.md.** The new flags are additive. The filed return is a new record whose shape is
 outside the contract.
 
-**Confirming reading.** Each reading is the task cycle with planning excluded: T1's `planning` row
-comes out first.
+**Confirming reading.** Each reading is taken inside the task cycle (section 1.1) and divided by the
+tasks it holds.
 
-- `largest outputs` holds no `brief for audit:audit-*` row above 200 tokens.
-- `output pool, measured: main loop`, less the `planning` row's `out` in `per stage, as billed`, is
-  at most 5000 tokens per task. With C7's composite verbs, as the after-study will have them, the
-  prediction for one task is 4472. That is derived:
-  14031 − (2840 + 2817 − 120) − (1723 + 1769 − 100) − 630, the last term being the re-check's output.
-  With C3 alone it is 5102, which is above the target.
-- `contexts:` → `main`, `task`, less the part T1 attributes to planning, divided by the task count is
-  at most 11000. For one task with C7, the prediction is 9547: the 3598 tokens of the run's own
-  requests plus the 5949 a task leaves (section 5).
+- No cycle request's row in `largest outputs` is a `brief for audit:audit-*` above 200 tokens.
+  Sign-off's reviewer brief falls after the cycle, and C3 computes no brief for it.
+- The cycle's main-loop output is at most 2350 tokens per task. `feature-C-1`'s was 11374, an
+  estimate (section 1.1). With C7's composite verbs, as the after-study will have them, the
+  prediction for one task is 1815. That is derived:
+  11374 − (2840 + 2817 − 120) − (1723 + 1769 − 100) − 630, the last term being the re-check's output.
+  With C3 alone it is 2445, which is above the target.
+- The task-class tokens the cycle's requests put into the main loop are at most 7400 per task.
+  `feature-C-1`'s were 21857. For one task with C7, the prediction is the 5949 a task leaves
+  (section 5). With C3 alone it is 7178.
 
-`feature-C-1` planned nothing (section 1.4), so its readings and both predictions are the same with
-or without the split.
+The revision at `adece536` read both off the whole main loop less T1's planning row: targets of 5000
+and 11000 against predictions of 4472 and 9547. Those readings held orient's and the run's own
+output, 2657 tokens (546 + 2111, section 1.1's `out` column), and the run's own content, 3598, which
+no task pays. In an arm C session they also held sign-off's, which neither prediction counted. Each
+target moves by what the cycle leaves out of `feature-C-1`: 5000 − 2657 = 2343, rounded to 2350, and
+11000 − 3598 = 7402, rounded to 7400. So each keeps its place against the two predictions.
 
 **Effort, blast radius, risk.** It touches one extended script, a new verb and flag in
 `audit-task.py`, both agent prompts, the task prose, `_refs.py`, and `PLUGIN-BUILD-GUIDE.md`. The
@@ -699,8 +813,10 @@ two alone is narrower than R8, and it is option (b) in section 8.
 **COMPATIBILITY.md.** The key is additive with a default of `always`. A gated default is a major
 release.
 
-**Confirming reading.** The reviewer contexts per session in `contexts:`. For quality, R8's section 7.5
-count: tasks where `always` returned `diverges` or `cannot-tell` that the gate would have skipped.
+**Confirming reading.** The `audit:audit-reviewer` dispatches inside the task cycle (section 1.1),
+set against the tasks it holds. Sign-off's reviewer is dispatched after the cycle, so it is not
+counted. For quality, R8's section 7.5 count: tasks where `always` returned `diverges` or
+`cannot-tell` that the gate would have skipped.
 
 **Effort, blast radius, risk.** It touches a config key, the reviewer step's prose and the panel. It
 narrows one followed check, and it is the user's decision (section 8).
@@ -809,12 +925,12 @@ request's wall includes the gate run it starts.
 
 **COMPATIBILITY.md.** New verbs are additive.
 
-**Confirming reading.** `per stage, as billed` → `req`, with T1's `planning` row apart, so the task
-cycle is read with planning excluded: the plan, gate and close requests before sign-off, less the
-run's own five that section 1.2 names, divided by the task count, at most 5. Those stages hold the
-run's own requests too, so a reading that skipped the subtraction would fail a one-task run that
-meets the target. Without T1's split, they would also hold every request a planning command made.
-`feature-C-1` reads (5 + 3 + 5 − 5) / 1 = 8, with nothing planned.
+**Confirming reading.** The task cycle's main-loop requests (section 1.1), divided by the tasks it
+holds: at most 5. `feature-C-1`'s cycle is requests 6 to 13, so it reads 8 for its one task, two of
+them one-offs. Nothing is subtracted, because the cycle holds no request of orient, planning, the
+run's own or sign-off. The revision at `adece536` read the same figure off `per stage, as billed`,
+as the plan, gate and close requests before sign-off less the run's own five, with T1's planning
+row apart: (5 + 3 + 5 − 5) / 1 = 8.
 
 **Effort, blast radius, risk.** It touches `audit-task.py`, plus the existing governance scripts it
 calls but does not re-implement. No row of either table changes.
@@ -1012,34 +1128,60 @@ commit, with `--bytes-per-token 2.63` where it applies.
     for `/audit:phase add`, `/audit:task add`, and the phase run form before and at sign-off.
   - `stream-cost.py` gains, per context, the longest gap between consecutive requests and every
     dispatch's `start_cR` by agent type. It also counts plugin command-body injections and reference
-    re-reads per session.
-  - `stream-cost.py` reports planning apart from the task cycle. A main-loop request is `planning`
-    when a planning command made it. The span opens at the request that makes a main-loop `Skill`
-    call whose `skill` is `audit:phase` or `audit:task` and whose `args` begin with `add`. It closes
-    before the first request that invokes any other command or calls a task's start
-    (`audit-task.py start`). Without that second condition, a run that invoked no further command
-    would be read as planning to its end, and every task-cycle target would read zero.
-  - The split reaches all three places a target reads. `planning` gets its own row in
-    `per stage, as billed` and in `per stage, by what it put there`. `contexts:` → `main` prints
-    apart the `task` tokens that planning requests wrote. So `plan` keeps the run's own requests and
-    each task's work up to its dispatch.
-  - The rule keys on the `Skill` call because that is how arm C invokes a command. The one arm C
-    record, `whole-C-2`, shows a main-loop `Skill` call with input
-    `{"skill": "audit:phase", "args": "add"}` (`<x2>/whole-C-2/stream.jsonl`). The call was denied
-    (`<x2>/invalid.jsonl`), so how an allowed invocation's body enters the stream is not yet seen.
-  - The split does not tell sign-off apart. C7's and T4's "before sign-off", section 7's whole-set
-    reading and T5's `S` all need that.
-    No recorded session reached sign-off (section 1.4), so the rule that finds its first request is
-    read off the tool calls of the whole-feature arm C sessions, which section 8, decision 4,
-    recommends running first. Until then, a reading that cannot place sign-off says so rather than
-    counting its requests as task work.
+    reads per session, and sums the reference reads by the span their request falls in: planning,
+    before the cycle, the cycle, after it (C2's *Confirming reading*).
+  - `stream-cost.py` prints the task cycle (section 1.1) as a section of its own. It names the
+    cycle's first and last request and the task ids its `done` calls name. Per task held, it prints
+    the cycle's main-loop requests, its main-loop output, the task-class tokens its requests put into
+    the main loop, its largest outputs, and its priced cost by class with the agents its requests
+    dispatched. The requests before and after the cycle are printed apart, with any `done` call
+    after it, so a cycle closed before a task planned inside it shows what it left out. A session
+    with no `start` call prints that it has no task cycle, and one with no `done` after its start
+    prints that its cycle never closed. Neither reads as zero.
+  - The bounds are read off the verb and its operand, never off the text around them. `done --help`
+    names no task, so it closes nothing (`feature-C-1`, request 11). T4's composite verbs run
+    `start` and `done` inside them, so T4 adds them to this rule in the same change. Without that,
+    an after-study session would have no cycle to read.
+  - `stream-cost.py` prints planning as a row of its own. Planning opens at the first request
+    before the cycle that plans, in either of section 1.1's two shapes. It closes at the last
+    request before the cycle that calls the `add` or `add-phase` verb, or at the request that opened
+    it when none does. A run's preflight, manifest read and lock come after its last planning verb,
+    so they fall in neither span. No per-task reading uses this row. Section 7's whole-set reading
+    does, through its `$task` in `per stage, by what it put there`, and so does C8's count.
+  - The planning rule keys on the `Skill` call because that is how arm C invokes a command:
+    `whole-C-2` and `whole-C-3` both open with `{"skill": "audit:phase", "args": "add"}`. The call
+    was denied in `whole-C-2` (`<x2>/invalid.jsonl`) and allowed in `whole-C-3`.
+  - `stream-cost.py` reads every `result` event. The pinned tool keeps the last one
+    (`tools/stream-cost.py:234-235`), and `whole-C-3` holds three. Their `usage` blocks sum to its
+    main loop's own requests: in 122, cacheW 211809, cacheR 10626961. Read from the last block alone,
+    its main loop `DISAGREE`s with the stream and opus prices `DIFFER by -0.507663` (the
+    `reconstruction:` and `pricing:` lines). Neither the target on it below nor T5 can be read until
+    this lands.
+  - What follows the cycle holds sign-off, any fix task it runs and the run's close, together. T1
+    prints that as one part. T5 separates sign-off from the run's close by their tool calls, as
+    section 1.1 does for `whole-C-3`.
 - **Target:**
   - `measure-context.py --ref 7b489337c06d --sections` prints this document's class sums for the three
     `/audit:run` files (keep 77811, conditional 27767, elsewhere 25037, maintainer 23089).
   - `stream-cost.py <x>/feature-C-1/stream.jsonl` prints `start_cR` 0 for both agents and a longest
     main-loop gap.
-  - The same command prints an empty `planning` row. Every figure this document quotes from that
-    session stays unchanged, because the session planned nothing (section 1.4).
+  - On `feature-C-1`, the same command prints a cycle of requests 6 to 13 holding P1.1, with
+    8 requests, 21857 task-class tokens, a task class of `0.7049`, a file class of `0.2129` and an
+    estimated 11374 output tokens (section 1.1). Its `planning` row is empty, and every other figure
+    this document quotes from that session stays unchanged.
+  - On `whole-C-2`, a `planning` row of one request, the denied `Skill` call, and no task cycle. The
+    rule this replaces closed planning only at another command or at a start. That session made
+    neither, so the old rule read every one of its requests as planning.
+  - On `whole-C-3`, planning is requests 1 to 12. Requests 13 and 14 fall in neither span. The cycle
+    is 15 to 36, holding P1.1, P1.2 and P1.3, and P1.4-fcb's `done` is printed after it. Its main
+    loop agrees with its `result` events.
+  - Twin fixtures, each pair built so that only the rule tells them apart:
+    - a run whose preflight and lock sit between the last `add` and the first `start`, against one
+      whose `start` follows the last `add`. The `planning` row holds the same requests in both, and
+      a rule that closed planning at `start` fails the first.
+    - a phase whose sign-off adds and runs a fix task after the last task's `done`, against one whose
+      sign-off adds none. The cycle holds the same requests and tasks in both, and a rule that closed
+      it at the last `done` fails the first.
   - Each new selftest case is shown red before it is trusted.
 - **Confirming session:** none, because this is offline.
 
@@ -1084,7 +1226,7 @@ commit, with `--bytes-per-token 2.63` where it applies.
 - **The reviewer's write.** `audit-reviewer.md` gains one *May* line: one call of the filing verb.
   Its *Must not* keeps "anything that writes", with that call as the only exception. The filing
   verb takes the task id and the role and no path, and derives the one file it writes from them and
-  the task's current start. Its tests pin four things:
+  the task's current start. Its tests pin these:
   - a path-like argument is refused;
   - a malformed return writes nothing;
   - the written path equals the derived one;
@@ -1092,44 +1234,51 @@ commit, with `--bytes-per-token 2.63` where it applies.
     byte-identical afterwards. The same case files the other role, and files again after a
     re-start, and both of those must write. Without that half, a verb that refused every second
     filing for a task would pass.
+  - `brief` for the reviewer exits non-zero and writes no brief while the executor's return for the
+    task's current start is unfiled. Once that return is filed, the brief is written and carries it
+    byte-identical. Without that half, a `brief` that refused every reviewer brief would pass.
+  - `done --from-return` refuses and writes nothing when the executor's return for the current
+    start is missing. It also refuses when the reviewer's is missing and the close does not pass
+    `--intent not-asked` with its basis, and when the only return filed is from an earlier start.
+    It closes when both are filed for the current start, and when the executor's is filed and the
+    close passes `--intent not-asked` with its basis. Without those halves, a close that refused
+    everything would pass.
 
   Those cases hold the write to one derived path that never replaces a return already filed. They
   do not hold the task id and role to the caller's own. Those are the caller's word, so a filing
   under a role or a task not yet filed stays a followed rule. So does the reviewer running nothing
   else that writes, unenforced, as it is today (C3, *Guarantees*).
-- **Target** (`python3 tools/stream-cost.py <session>/stream.jsonl`, with T1's split). Each reading
-  is the task cycle with planning excluded, as C3's *Confirming reading* says:
-  - no `brief for audit:audit-*` row above 200 tokens in `largest outputs`;
-  - the main-loop output pool, less the `planning` row's `out` in `per stage, as billed`, at most
-    5000 tokens per task (`feature-C-1`: 14031; predicted 4472 for one task once T4 has landed too,
-    C3's *Confirming reading*);
-  - `contexts:` → `main`, `task`, less the part T1 prints for planning, at most 11000 per task
-    (`feature-C-1`: 25455; predicted 9547 for one task, with T4).
-
-  Where a session planned, the `planning` row's `out` is apportioned by emitted bytes within the
-  measured pool, so the second reading is then an estimate, as the tool labels `out`.
+- **Target** (`python3 tools/stream-cost.py <session>/stream.jsonl`, with T1's task cycle). Each
+  reading is taken inside the cycle and divided by the tasks it holds, as C3's *Confirming reading*
+  says:
+  - no `brief for audit:audit-*` row above 200 tokens among the cycle's largest outputs;
+  - the cycle's main-loop output at most 2350 tokens per task (`feature-C-1`: 11374; predicted 1815
+    for one task once T4 has landed too). It is an estimate, as the tool labels `out`;
+  - the task-class tokens the cycle's requests put into the main loop, at most 7400 per task
+    (`feature-C-1`: 21857; predicted 5949 for one task, with T4).
 - **Confirming session:** the after-study.
 
 ### T4 — The task cycle in five main-loop requests (C7)
 
 - **Files:** `plugins/audit/scripts/manifest/audit-task.py`; the governance scripts it calls; the task
   prose; tests.
-- **Target**, read from `per stage, as billed` → `req` with T1's `planning` row apart, so the task
-  cycle is read with planning excluded (C7's *Confirming reading*):
-  - the plan, gate and close requests before sign-off, less the run's own five that section 1.2
-    names, divided by `N`: at most 5;
-  - all main-loop requests before sign-off other than `planning`, which adds orient's 2: at most
-    `7 + 5N`.
+- **Target**, read from T1's task cycle (C7's *Confirming reading*): its main-loop requests divided
+  by the tasks it holds, at most 5. `feature-C-1` reads 8 for its one task, two of them one-offs
+  (section 1.1).
 
-  `feature-C-1` planned nothing (section 1.4). It reads (5 + 3 + 5 − 5) / 1 = 8 per task, two of
-  them one-offs (section 1.1), and 2 + 5 + 3 + 5 = 15 = 7 + 8 in all.
+  What falls outside the cycle is counted apart and carries no target: orient, planning, the run's
+  own requests, sign-off and the run's close. The revision at `adece536` also capped every
+  main-loop request before sign-off other than planning at `7 + 5N`, which fixed orient at 2. An arm
+  C session whose first request makes the `add` call has none: `whole-C-3`'s `per stage, as billed`
+  at the pinned tool prints no `orient` row, because a `Skill` call is not a plugin read
+  (`tools/stream-cost.py:337-338`).
 - **Confirming session:** the after-study.
 
 ### T5 — Calibrate the model from the baseline sessions
 
 - **Files:** `docs/research/pipeline-cost-design.md`, an addendum.
 - **What:** read T1's new rows off the whole-feature arm C sessions at the pinned commit:
-  - per-task requests and `S`;
+  - the task cycle's requests per task, and `S`, from what follows the cycle;
   - planning invocations and command-body injections;
   - the main loop's longest gap;
   - each later dispatch's `start_cR`.
@@ -1142,8 +1291,8 @@ commit, with `--bytes-per-token 2.63` where it applies.
 
 - **Files:** the config schema, `_config_rules.py`, the panel's control, the reviewer step's prose and
   the doctor's line, as R8 lists.
-- **Target:** reviewer contexts per session in `contexts:` equal the number of tasks the gate
-  selects.
+- **Target:** the `audit:audit-reviewer` dispatches inside T1's task cycle equal the number of the
+  cycle's tasks the gate selects. Sign-off's reviewer falls after the cycle (section 1.1).
 - **Confirming session:** an arm C session with the key set, plus R8's quality count.
 
 ## 7. The confirming benchmark, in the harness's terms
@@ -1151,9 +1300,11 @@ commit, with `--bytes-per-token 2.63` where it applies.
 **Before.** The whole-feature study's arm C sessions are `whole-C-3`, `whole-C-1` and `whole-C-2-r`, in
 `<h2>/order.json`'s seeded order. They run at `pins.json` → `pluginSha` `f7eaade4`, whose plugin is byte
 for byte the one these figures were taken at: `git diff --stat f7eaade4 7b489337 -- plugins/audit`
-prints nothing. On
-2026-10-07 no arm C session of that study was valid yet: `whole-C-2` is in `<x2>/invalid.jsonl`. So
-the baseline and T5's calibration both wait on them.
+prints nothing. When this section was first written on 2026-10-07, no arm C session of that study
+was valid yet: `whole-C-2` is in `<x2>/invalid.jsonl`. `whole-C-3` was recorded later that day and
+is not in that file. Section 1.1 reads only its tool calls, and T1 must read all of its `result`
+events before T5 can read its figures. So the baseline and T5's calibration both wait on these
+sessions.
 
 **After.** Use a copy of `<h2>` that changes `benchlib.EXPERIMENTS` and `pins.json` → `pluginSha`, and
 nothing else. That follows the harness's own precedent: v2 is "a copy of `../bench-feature/` extended,
@@ -1168,10 +1319,31 @@ not with this one** (section 0). Until that phase merges, the sections cited her
 
 | Target | Row read per session |
 |---|---|
-| T2 | the summed `Read <plugin>/reference/…` tokens; run `$write` |
-| T3 | `largest outputs`; `output pool, measured: main loop` less the `planning` row's `out`, per task; `contexts:` → `main`, `task` less its planning part (T1's split) |
-| T4 | `per stage, as billed` → `req` per task, before sign-off, with the `planning` row apart (T1's split) |
-| the whole set | `all models priced`, less the `planning` row's `$total` (T1's split), set beside section 5's prediction for the session's task count. Section 5 predicts neither planning nor sign-off, so a reading that cannot take sign-off out says so |
+| T2 | the `Read <plugin>/reference/…` tokens, summed by T1's spans as C2's *Confirming reading* says; run `$write` |
+| T3 | inside T1's task cycle, per task it holds: the briefs among its largest outputs; its main-loop output; the task-class tokens its requests put into the main loop |
+| T4 | inside T1's task cycle: its main-loop requests per task it holds |
+| the whole set | `all models priced`, less the `planning` row's `$task` in `per stage, by what it put there` (T1), set beside section 5's prediction for the cycle's task count. See below for what the reading keeps |
+
+**What the whole-set reading keeps.** It is the one reading that is not per task, so it cannot be
+taken inside the cycle, and it keeps work section 5 does not predict:
+
+- **The prose case.** Planning's `$run` stays in. Part of it is reference prose a planning command
+  reads and the run then reuses, which section 5's run class predicts: `whole-C-3` read
+  `orchestrator.md`, `manifest-conventions.md` and `execute-task.md` at requests 3 and 4, inside
+  planning (section 1.1's snippet). Subtracting that part would take predicted prose out of the
+  reading, and the set would then come in under its prediction for a reason the change did not
+  cause. Section 5 does not predict the rest: the `add` command's body, which C8 predicts per
+  invocation, and prose the run does not read, such as the `phase-signoff.md` that `whole-C-3` read
+  in the same requests.
+- **Planning's file class**, the project files planning read, which section 5 does not predict.
+- **Everything after the cycle.** That is sign-off with any fix task it runs, which section 5 does
+  not predict, and the run's close, which it does (section 1.2's `L`).
+
+Each of those makes the reading higher than what section 5 predicts. The subtraction takes out only
+planning's own task work, and the one part of it a run could reuse is the plan it read: `feature-C-1`'s
+run read it in one request, 1847 tokens of content (section 1.1, request 4). So, short of that read,
+a reading under the prediction shows the set came in under it. A reading over it is shown beside
+T1's parts outside the cycle, which say how much of the excess is work section 5 never predicted.
 
 **Quality, so a saving cannot hide a loss.** For every after session, read beside the before sessions:
 
@@ -1258,8 +1430,10 @@ Each is listed as not documented in the host facts gathered from the official do
 
 And from the records:
 
-- **Single-task records only.** The per-task request split is an inference from one session's tool
-  calls. Whether its two one-off requests recur is unmeasured.
+- **Single-task records only.** Which requests are per task is read by the task cycle's bounds
+  (section 1.1). Which of the cycle's requests are steps and which are one-offs is still an inference
+  from one session's tool calls, and whether the one-offs recur is unmeasured. `whole-C-3`, recorded
+  later, ran several tasks. Its figures are T5's.
 - **The divisor of 2.63 was calibrated on this prose.** Every target is in bytes, so the divisor moves
   only the dollar predictions.
 
@@ -1271,6 +1445,8 @@ And from the records:
 | bytes read first per entry, at a ref | `python3 tools/measure-context.py --ref 7b489337 --ref f7eaade4 --bytes-per-token 2.63`, from the same checkout |
 | `/audit:task`'s entry total, until T1 adds the entry, from the same checkout | `python3 -c "import importlib.util as u; s=u.spec_from_file_location('mc','tools/measure-context.py'); m=u.module_from_spec(s); s.loader.exec_module(m); src,_=m.git_source('7b489337'); print(sum(r['bytes'] for r in m.entry_rows(src,'command','commands/task.md',None)))"` |
 | the main loop's tool calls per request | the snippet in section 1.1 |
+| the calls that bound planning and the task cycle, numbered by main-loop request | the event command below; it reads the stream alone, so it needs no checkout |
+| the task cycle's figures, until T1 prints them, from the same checkout | the cycle command below, with the cycle's first and last request: `6 13` for `feature-C-1` |
 | the rates | `git show 7b489337:plugins/audit/scripts/usage/_usage_core.py \| grep -n claude-opus-5-5` |
 | bytes per heading of a reference or command file | below |
 | the earlier backlog's state | section 0.1's commands, which read the working tree; their answers were taken at `7b489337` |
@@ -1289,3 +1465,66 @@ EOF
 
 For `execute-task.md`, at the same commit, sum the same expression over the line ranges section 3
 names for C2's classes, as `L[a - 1:z]`.
+
+The event command prints, for each main-loop request in stream order, every planning `Skill` call
+and every `audit-task.py` verb with its operand. Section 1.1's bounds are read off its output. It is
+a reading aid that matches the verb's text; T1 reads the call itself.
+
+```
+python3 - <record>/stream.jsonl <<'EOF'
+import json, re, sys
+n = {}
+for l in open(sys.argv[1], encoding="utf-8"):
+    e = json.loads(l) if l.strip() else {}
+    if e.get("type") != "assistant" or e.get("parent_tool_use_id"):
+        continue
+    i = n.setdefault(e["message"]["id"], len(n) + 1)
+    for c in e["message"]["content"]:
+        x = c.get("input") or {}
+        if c.get("name") == "Skill":
+            print(i, "Skill", x.get("skill"), x.get("args"))
+        if c.get("name") == "Bash":
+            for v in re.findall(r"audit-task\.py\"?\s+([a-z-]+(?:\s+[^\s;&|'\"-][^\s;&|'\"]*)?)",
+                                x.get("command") or ""):
+                print(i, "audit-task.py", v)
+EOF
+```
+
+The cycle command takes a stream and the cycle's first and last request, and prices the cycle with
+the pinned tool's own reading. It counts the cycle's requests and the agents they dispatched, and
+it counts a main-loop cache entry for the request before the one that cached it. It prints the
+cycle's bounds, its request count and output, its task-class tokens in the main loop, and its cost
+by class.
+
+```
+python3 - <x>/feature-C-1/stream.jsonl 6 13 <<'EOF'
+import importlib.util as u, sys
+s = u.spec_from_file_location("sc", "tools/stream-cost.py"); sc = u.module_from_spec(s); s.loader.exec_module(sc)
+r = sc.analyse(sc.load_events(sys.argv[1])); lo, hi = int(sys.argv[2]), int(sys.argv[3])
+ctx = dict((q["id"], q["context"]) for q in r["requests"])
+main = [q for q in r["requests"] if q["context"] == sc.MAIN and not q["reconstructed"]]
+cyc = set(q["id"] for q in main[lo - 1:hi])
+made = dict((main[i]["id"], main[i - 1]["id"]) for i in range(1, len(main)))
+sent = set(a for a, d in r["session"]["agents"].items() if d["request"] in cyc)
+usd, tok = dict((k, 0.0) for k in sc.CLASSES), dict((k, 0.0) for k in sc.CLASSES)
+for it in r["content"]["items"]:
+    c = ctx[it["request"]]
+    if (c == sc.MAIN and made.get(it["request"]) in cyc) or c in sent:
+        usd[it["class"]] += it["writeUSD"] + it["carryUSD"]
+        tok[it["class"]] += it["tokens"] if c == sc.MAIN else 0
+for q in r["requests"]:
+    if q["id"] in cyc or q["context"] in sent:
+        cost, st = r["costs"][q["id"]], r["stages"][q["id"]]
+        usd["task"] += cost["in"]
+        for k, share in sc._output_class(q, st).items():
+            usd[k] += (cost["out"] or 0.0) * share
+print(main[lo - 1]["id"][-6:], main[hi - 1]["id"][-6:], len(cyc), round(sum(r["output"].get(i, 0) for i in cyc), 1))
+print(dict((k, round(v, 1)) for k, v in tok.items()), dict((k, round(v, 6)) for k, v in usd.items()))
+EOF
+```
+
+On `feature-C-1` it printed `eknkfg avGJjL 8 11374.0`, then task tokens `21857.0` and a cost of
+task `0.704895`, file `0.212897`, run `0.0`. The cycle cannot hold an orient request: a request that
+runs a plugin script is never in orient (`tools/stream-cost.py:337-338`), and the cycle opens at one,
+with every later request after it. So the command charges every input it counts to the task class,
+as the tool does outside orient.

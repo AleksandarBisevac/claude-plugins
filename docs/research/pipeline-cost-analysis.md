@@ -195,7 +195,7 @@ class (`by content class`, the `$total` column):
 | Class | `feature-C-1` (plugin) | `feature-A-1` (plain) | `feature-A-2` (plain) |
 |---|---|---|---|
 | run — fixed per run | `0.7532` | `0.0598` | `0.0593` |
-| task — per task | `0.7823` | `0.0192` | `0.0677` |
+| task — per task, as the tool classes it (section 4 splits it) | `0.7823` | `0.0192` | `0.0677` |
 | file — per file the work touches | `0.2129` | `0.2054` | `0.1847` |
 
 Read off the table:
@@ -264,8 +264,17 @@ From `feature-C-1`, the one plugin session that did a feature
 |---|---|---|
 | fixed per run, written once | the session start, plus the reference prose the command reads first | run `$write` `0.5406` (`by content class`) |
 | fixed per run, carried per main-loop request | the same tokens, re-read by every later main-loop request | run `$carry` `0.2017`; a further main-loop request re-reads 79461 run-class tokens (`contexts:`, `run`) |
-| per task | the agent starts, briefs, hand-backs, plan state read and written, plan and gate output, the model's own text | task `$total` `0.7823` |
-| per file | project files read and code written | file `$total` `0.2129` |
+| paid once per run, though classed as task work | the run's own requests outside the task cycle: the preflight, the manifest read, the lock, the lock release and the report | `0.0774`: task `$total` `0.7823` less the cycle's |
+| per task | inside the task cycle: the agent starts, briefs, hand-backs, plan state read and written, plan and gate output, the model's own text | the cycle's task class, `0.7049` |
+| per file | project files read and code written, all of it inside the task cycle | file `$total` `0.2129` |
+
+**Per task means inside the task cycle.** The task class is a class of content, not a count of
+tasks. Its `$total` also holds the work of the run's own requests, which a run pays once. So the
+per-task row reads only the task cycle, the span
+[pipeline-cost-design.md](pipeline-cost-design.md) defines in its section 1.1. In `feature-C-1`
+that is main-loop requests 6 to 13 and the two agents they dispatched. The design's section 10 has
+the command that prints the cycle's figures from a checkout of `9501aa91`. The version of this table
+at `adece536` gave the whole task class, `0.7823`, as the per-task figure.
 
 **The fixed part is not fixed in a run of several tasks.** That is inference, from how the identity
 works. It is written once, but every main-loop request re-reads it. At C-1's end that was 79461
@@ -276,9 +285,9 @@ re-reads of the session start.
 
 Those requests are listed one by one by the snippet in
 [pipeline-cost-design.md](pipeline-cost-design.md), section 1.1. Four of them are paid once per run:
-the manifest read, the lock, the lock release and the report. The rest are per task, in a shape of
-six steps: start, dispatch, gate (with the stamp comparison in the same call), review dispatch,
-commit, done. C-1 made two more, each of them once:
+the manifest read, the lock, the lock release and the report. They fall outside the task cycle. The
+rest are the cycle's, in a shape of six steps: start, dispatch, gate (with the stamp comparison in
+the same call), review dispatch, commit, done. C-1 made two more, each of them once:
 
 - a re-check after the stamp came back stale (the request ending `yyXaVM`);
 - a retried close after zsh passed an argument list as one word (`avGJjL`).
@@ -418,5 +427,6 @@ prose written differently.
 | per-stage billing, content view, classes, cache economics, largest writes and outputs, contexts | `python3 tools/stream-cost.py <record>/stream.jsonl` (`--json` for every row), from a checkout of `9501aa91` |
 | the prose each pipeline step loads, and its growth between refs | `python3 tools/measure-context.py --ref v3.1.0 --ref a73b836a --bytes-per-token 2.63`, from the same checkout |
 | the sizes at the commits the sessions ran | `python3 tools/measure-context.py --ref 5df231ec76c9 --ref b6d9a4a31d2a`, from the same checkout |
+| the task cycle's bounds and figures in `feature-C-1` | the event and cycle commands in [pipeline-cost-design.md](pipeline-cost-design.md), section 10, from the same checkout |
 | the tools' own proof | `python3 tools/stream-cost.py --selftest`, `python3 tools/measure-context.py --selftest` |
 | the published figures compared in section 1.2 | [pipeline-pilot.md](pipeline-pilot.md) §4, [benchmark-results.md](benchmark-results.md) §2.4 |

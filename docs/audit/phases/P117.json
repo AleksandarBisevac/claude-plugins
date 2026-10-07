@@ -436,7 +436,7 @@
     {
       "id": "P117.5-2sz",
       "title": "the after-study reads the task cycle as one span, so planning, sign-off and run-level work fall outside it by construction",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes review findings P117-R17 to P117-R21 from the cost phase's third review round. Documents only.\n\nThree rounds found the same class. A target read off a whole-session stage table was refuted or flattered by work its prediction never counted: run-level requests, planning, and sign-off. This fix closes the class with one rule rather than a fourth patch.\n\n1. The task cycle is defined as a span. It runs from the main-loop request that calls the first task's `audit-task.py start` through the request that calls the last task's `done`. Planning and sign-off fall outside it by construction, and run-level requests are counted apart.\n2. T1 reports that span. T3's and T4's targets, C3's and C7's confirming readings, and section 7's rows read inside it, and each one names the row it reads.\n3. The planning span's closing rule, and the subtraction of run-level requests and of orient's fixed count, are replaced by the span or made consistent with it.\n4. T1 gets a positive planning target, on the recorded arm C stream whose Skill call was add, plus a twin.\n5. Section 7's whole-set reading subtracts only planning's task-class part, or states the prose case.\n6. The two premises around the write-once filing verb are either pinned by T3 cases or moved under what nothing checks:\n   - the reviewer's brief waits for the executor's filed return;\n   - `done --from-return` needs both roles' returns for the current start.\n\nThe k = 8 headline does not move.",
       "files": [
         "docs/research/pipeline-cost-design.md",
@@ -463,16 +463,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T15:14:16Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T15:50:19Z.702ee5",
+        "status": "passed",
+        "at": "2026-10-07T15:50:19Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T11:45:57Z"
