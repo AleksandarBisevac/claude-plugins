@@ -23,7 +23,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P115-R1",
@@ -154,7 +154,7 @@
     ],
     "outcome": "[findings: 14 - 1 high, 5 med, 8 low; 14 with a recorded fix commit]"
   },
-  "summary": null,
+  "summary": "Every surface now shows a phase being worked on elsewhere from the copy that holds it live, and says which copy that was. The surfaces are /audit:status's ready list, phase table, counts, --short and --json, the panel's overview and ready card, and the shareable report and its Markdown twin. A phase counts as in flight when it holds a lock, or when a linked worktree has its branch out and the branch is not merged into this checkout. The reader lives in one module, status/_live_copy.py. It is injected into the panel, which cannot import it under the layer rules, and the overlay is one pure function in _status_facts. Rows read from another copy carry a copy line. A fallback is marked as possibly not current. The report's hero and the panel's totals say when their counts include work read from another copy.\n\nThe gate, the bug counts and RESUMABLE answer for this checkout, because they certify it. A bug fixed only in another worktree's copy is named beside the bug rather than closed. A failed lock lookup is reported, not read as no repository. The panel refreshes when a read worktree's plan changes. The stated gap: a lock-less worktree branch with no commit past HEAD reads as merged until its first commit.\n\nThe review ran four rounds, and every finding is fixed. The phase gate is green, with screenshots and the interactive check. The invariants check found no breach. BUG-20 is fixed.",
   "tasks": [
     {
       "id": "P115.1",
@@ -617,5 +617,10 @@
       }
     }
   ],
-  "startedAt": "2026-10-07T08:30:56Z"
+  "startedAt": "2026-10-07T08:30:56Z",
+  "testEvidence": {
+    "runId": "2026-10-07T12:15:54Z.ae7968",
+    "status": "passed",
+    "at": "2026-10-07T12:15:54Z"
+  }
 }
