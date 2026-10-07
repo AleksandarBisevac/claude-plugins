@@ -376,7 +376,7 @@
     {
       "id": "P108.6-4gh",
       "title": "a secret path inside a string literal is not a read",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix BUG-19-4gh: guard-secrets-read refuses a program fed to an interpreter's stdin whose only reference to a secret file is a string literal (python3 - <<'PY' DOC = \"the guard refuses open('.env') in a program\"; print(len(DOC)) PY) - the guard matches the program's text, not an operation it performs. Decided 2026-10-06: that program is allowed. A secret path that appears only inside a string literal that is not the argument of a read call is not a read; a program that passes such a literal to open(), read_text(), or a subprocess that reads it is still refused, and so is every shape the guard refuses today outside string literals. test_hooks.py's g06 loses its known-divergence mark. This is guard-reading code: if a model or classifier safeguard stops the attempt, the refusal is recorded verbatim with audit-task note and the task is handed to the human; nobody rewords the work to get past it.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -409,22 +409,27 @@
       "dependsOn": [
         "P108.5-4gh"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T01:44:13Z",
       "completedAt": null,
       "verifiedBy": [],
-      "bugId": "BUG-19-4gh"
+      "bugId": "BUG-19-4gh",
+      "testEvidence": {
+        "runId": "2026-10-07T02:08:39Z.fd7e71",
+        "status": "passed",
+        "at": "2026-10-07T02:08:39Z"
+      }
     },
     {
       "id": "P108.7-4gh",
       "title": "an oversized shell write that took the free slot is reported after it lands",
-      "status": "in_progress",
+      "status": "done",
       "description": "A shell write now takes the session's first-trivial slot at PreToolUse exactly as an Edit within trivialLineThreshold would, because the change cannot be seen before it happens (decided 2026-10-06). The PostToolUse arm that sees the change, guard-bash-writes, must therefore report a shell write that took the slot when the change it made exceeded trivialLineThreshold, measured the way require-plan measures an Edit's magnitude (one shared reader, not a second copy), naming the file, the measured magnitude and the threshold, and the remedy (put the file on an in_progress task, or ask the operator). It reports and never refuses, as guard-bash-writes does today. The docstrings that name this as an open residual (guard-secrets-read's header, _config's plan_gate_mode) are corrected once it holds.",
       "files": [
         "plugins/audit/hooks/guard-bash-writes.py",
@@ -462,18 +467,33 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3dbef505",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "hooks/_config.py: new change_magnitude(new, old) = max(text_magnitude(new), text_lines(old)), the Edit sizing formula written once; the slot section comment, plan_gate_mode's header row and its docstring now say the size is measured after the write and reported, never refused (at deny such a write still lands).\nguard-bash-writes.py: SLOT_SIZE_TEMPLATE names the file, `change magnitude N > trivialLineThreshold T`, what was measured and the remedy (`/audit:task scope ...` or ask the operator). _git_out, diff_sides and slot_write_magnitude size the change with change_magnitude: a file git does not track is measured whole, as a Write's content is; a tracked file by `git diff -U0 HEAD`, counting added and removed lines as an Edit's new and old text (diff header lines skipped). In decide, after the in_progress-coverage check, a file the session's slot holds is silent within the threshold (it is the session's free file, as for an Edit) and reported over it, or when it cannot be measured; a non-blocking warning only, skipped at the observe tier like the rest of the plan-coverage class. Decisions: a slot file within the threshold gets no 'no plan coverage' warning either; the change is measured against HEAD (the file was clean at the session's previous look); a size that cannot be measured is reported as unmeasured with its reason; only the pass where the file first turns dirty measures it (stated in the code).\nWidened: guard-secrets-read.py's _slot_write_verdict docstring and SECURITY.md now describe the report that exists (measured after it lands, reported with magnitude and threshold, never refused), in step with plan_gate_mode; require-plan's _change_magnitude Edit branch calls _config.change_magnitude (one formula; MultiEdit keeps its own different sums, deliberately).\nTests: test_guard_bash_writes sz1-sz9 (real git, threshold 5, the slot taken as the PreToolUse arm takes it); test_require_plan m10 (require-plan's Edit magnitude equals change_magnitude on three pairs each decided by a different term). Red-first proved through the helper at HEAD 51032cbc (sz1, sz3-sz7; 212/219); m10 locks a behaviour-preserving refactor and was shown red by a scratch mutation (202/203). Scratch mutations of the slot branch, header skip and both change_magnitude terms each went red. Suites: 219/219, 441/441, 203/203, test__config 281/281, test_hooks 130/130, doc-reading suites green; bench-hooks --gate within budget (3.11 not measured, no interpreter); ruff and vermin clean.",
+        "descriptive": "A shell write that used the session's one free file is now measured after it lands, with the same formula an Edit is sized by, and reported when it is larger than the trivial limit - so the free file can no longer silently carry a large change."
       },
       "startedAt": "2026-10-07T01:08:51Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T01:44:12Z",
+      "verifiedBy": [
+        "sz1",
+        "sz3",
+        "sz4",
+        "sz5",
+        "sz6",
+        "sz7",
+        "sz9",
+        "m10"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T01:43:55Z.b34c60",
         "status": "passed",
         "at": "2026-10-07T01:43:55Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "3dbef505",
+        "at": "2026-10-07T01:44:12Z",
+        "basis": "orchestrator check: one shared magnitude formula used by require-plan and the post-write report, the report never refuses, the docstrings and SECURITY.md describe the report that exists, red-first proved"
       }
     },
     {

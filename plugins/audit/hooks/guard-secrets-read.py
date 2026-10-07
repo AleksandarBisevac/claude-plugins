@@ -629,16 +629,120 @@ _READ_CALL_EXPR = re.compile(
 # the path is the string without it.
 _PERL_READ_MODE = re.compile(r"^(['\"])\s*<\s*(.*)\1$")
 
+# --- string literals no interpreter runs ---------------------------------------
+# A read call SPELLED INSIDE A STRING LITERAL is text: `DOC = "the guard refuses
+# open(...) of a dotenv file"` performs no read, and the patterns above matched it
+# anyway because they read the program's text. The literal is found by the Python
+# parser rather than by a quote scan, because a hand scan is wrong about where a
+# literal starts - a triple quote, a quote in a comment - and every such mistake
+# hides real code inside a "literal". So the narrowing reaches only a body that
+# parses as Python; any other body is graded exactly as strictly as before.
+#
+# A body that parses as Python may still be run by another interpreter, so a
+# literal counts as inert only where NO language this guard grades would run
+# anything inside it: one line, a plain single- or double-quoted string with no
+# prefix (an f-string is code), its quote character only at its two ends, and
+# none of the marks that make a double-quoted string live elsewhere - `#{` in
+# Ruby, `$` and `@` in Perl and PHP, a backtick, a backslash.
+_LIVE_IN_SOME_LANGUAGE = re.compile(r"[\\$@`\n]|#\{")
+# A literal HANDED TO SOMETHING THAT RUNS TEXT is code, not text: `exec("...")`,
+# a shell-out, a dynamic attribute lookup that could reach either. Any call whose
+# name holds one of these fragments - or whose callee is not a plain name or
+# attribute at all - turns the narrowing off for the whole body. Fragments, not
+# names: the list is of what a name DOES, so `popen3`, `execFileSync` and
+# `instance_eval` are reached without being listed. KNOWN LIMIT: a runner whose
+# name holds none of them is not recognised, and the literal it is handed is then
+# read as text.
+_RUNS_TEXT = ("exec", "eval", "spawn", "popen", "system", "compile", "import",
+              "run", "call", "capture", "pipeline", "send", "attr", "load",
+              "fork", "shell", "script", "function", "method", "globals", "vars",
+              "locals", "context")
 
-def _eval_read_targets(clause):
+
+def _runs_text(func):
+    """True when a call to `func` (an AST node) could run a string as code."""
+    import ast
+    if isinstance(func, ast.Name):
+        name = func.id
+    elif isinstance(func, ast.Attribute):
+        name = func.attr
+    else:
+        return True
+    name = name.lower()
+    return any(part in name for part in _RUNS_TEXT)
+
+
+def _inert_literal(segment):
+    """True when the source `segment` of one literal is text in every language."""
+    quote = segment[:1]
+    return (len(segment) >= 2 and quote in ("'", '"') and segment[-1] == quote
+            and segment.count(quote) == 2
+            and not _LIVE_IN_SOME_LANGUAGE.search(segment))
+
+
+def _inert_literal_spans(body):
+    """[(start, end)] of every string literal in `body` no interpreter runs.
+
+    Empty - which leaves every read-call match standing - when `body` is not a
+    Python program, when it hands any text to something that runs it
+    (`_runs_text`), or when a carriage return could make the parser's line count
+    disagree with this one. Each of those is the strict side of not knowing, so
+    the broad catch below cannot loosen a verdict, only keep the old one."""
+    if "\r" in body:
+        return []
+    import ast
+    import warnings
+    try:
+        # The parser warns on stderr about an escape it dislikes, and a hook's
+        # stderr is shown to the operator as if it were the guard speaking.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            tree = ast.parse(body)
+    except Exception:  # noqa: BLE001 - unparseable is graded as before, strictly
+        return []
+    nodes = list(ast.walk(tree))
+    if any(isinstance(n, ast.Call) and _runs_text(n.func) for n in nodes):
+        return []
+    in_fstring = set(id(sub) for n in nodes if isinstance(n, ast.JoinedStr)
+                     for sub in ast.walk(n))
+    lines = body.split("\n")
+    starts = [0]
+    for line in lines:
+        starts.append(starts[-1] + len(line) + 1)
+    spans = []
+    for n in nodes:
+        if not (isinstance(n, ast.Constant) and isinstance(n.value, str)
+                and id(n) not in in_fstring
+                and getattr(n, "end_lineno", None) == n.lineno):
+            continue
+        line = lines[n.lineno - 1]
+        raw = line.encode("utf-8")
+        # The parser counts columns in UTF-8 bytes; the patterns count characters.
+        lo = len(raw[:n.col_offset].decode("utf-8", "replace"))
+        hi = len(raw[:n.end_col_offset].decode("utf-8", "replace"))
+        if _inert_literal(line[lo:hi]):
+            base = starts[n.lineno - 1]
+            spans.append((base + lo, base + hi))
+    return spans
+
+
+def _in_spans(spans, pos):
+    """True when `pos` falls strictly inside one of `spans`."""
+    return any(lo < pos < hi for lo, hi in spans)
+
+
+def _eval_read_targets(clause, inert=()):
     """Every path this clause actually READS, from the read calls themselves.
 
     `_eval_write_targets`' twin, resolving a bound name the same way, so
-    `p = '.env'` followed by `open(p)` is the one read it plainly is.
+    `p = '.env'` followed by `open(p)` is the one read it plainly is. A call
+    starting inside one of `inert` (`_inert_literal_spans`) is text and skipped.
     """
     out = []
     bindings = None
     for m in _READ_CALL_EXPR.finditer(clause):
+        if _in_spans(inert, m.start()):
+            continue
         expr = next((g for g in m.groups() if g), None)
         if expr is None:
             continue
@@ -669,7 +773,7 @@ _SHELL_OUT_CALL = re.compile(
 )
 
 
-def _shell_out_arguments(clause):
+def _shell_out_arguments(clause, inert=()):
     """The argument text of every call in `clause` that hands something to a shell.
 
     Balanced to the closing parenthesis rather than to the next one, so a nested
@@ -680,6 +784,8 @@ def _shell_out_arguments(clause):
     """
     out = []
     for m in _SHELL_OUT_CALL.finditer(clause):
+        if _in_spans(inert, m.start()):
+            continue
         depth, start = 1, m.end()
         i = start
         while i < len(clause) and depth:
@@ -692,7 +798,7 @@ def _shell_out_arguments(clause):
     return out
 
 
-def _unestablished_read_target(clause):
+def _unestablished_read_target(clause, inert=()):
     """A read call whose target this cannot resolve but which NAMES a secret.
 
     -> the argument expression, or None
@@ -715,6 +821,8 @@ def _unestablished_read_target(clause):
     all and is the residual this cannot reach, stated where the limit is paid."""
     bindings = None
     for m in _READ_CALL_EXPR.finditer(clause):
+        if _in_spans(inert, m.start()):
+            continue
         expr = next((g for g in m.groups() if g), None)
         if expr is None:
             continue
@@ -778,11 +886,12 @@ def _eval_reads_a_secret(clause, extras):
     - a guard that fires on prose, or on data, is one people route around, and this
     register already carries that lesson under its own entry.
     """
-    targets = _eval_read_targets(clause)
+    inert = _inert_literal_spans(clause)
+    targets = _eval_read_targets(clause, inert)
     if any(SECRET_TOKEN_RE.search(t) for t in targets):
         return "a read call names it"
     seqs = None
-    for argument in _shell_out_arguments(clause):
+    for argument in _shell_out_arguments(clause, inert):
         if seqs is None:
             seqs = _eval_sequence_bindings(clause)
         # Every NAME in the argument list, resolved against the sequences bound in
@@ -799,7 +908,7 @@ def _eval_reads_a_secret(clause, extras):
             return "a shell read of it is handed to something that runs commands"
     if targets and _hits_extra(" ".join(targets), extras):
         return "a read target matches this project's own secretPatterns.extra"
-    unplaced = _unestablished_read_target(clause)
+    unplaced = _unestablished_read_target(clause, inert)
     if unplaced:
         return ("a read call names it in an argument this cannot resolve (%s), "
                 "and a guard refuses what it cannot classify" % (unplaced,))

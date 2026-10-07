@@ -297,11 +297,7 @@ ROWS = (
                     "in a program\"\nprint(len(DOC))\nPY"),
      "why": "a string literal MENTIONS opening a secret file; the program "
             "reads nothing",
-     "decided": "allow - " + OPERATOR_DECISION,
-     "today": _all("deny"),
-     "contradicts": "the operator's decided verdict (allow): the secrets guard "
-                    "matches the program's TEXT, so a literal that only names "
-                    "a secret path is refused as a read of it"},
+     "decided": "allow - " + OPERATOR_DECISION},
     # history-safe-git
     {"id": "n10", "class": "history-safe-git", "tool": "Bash",
      "input": _bash("git worktree add --detach {TMP}/redfirst-wt HEAD"),
@@ -616,7 +612,7 @@ def _verdict_word(decided):
 
 
 # --- the cases ----------------------------------------------------------------------
-KNOWN_DIVERGENCE = ("g06",)
+KNOWN_DIVERGENCE = ()
 OPERATOR_DECIDED = ("b06", "b10", "g06")
 
 
@@ -694,8 +690,8 @@ def _contract_cases(check, observed):
               members and not uneven, uneven or "no unmarked row")
 
     marked = sorted(row["id"] for row in ROWS if "today" in row)
-    check("hk2a the rows marked known-divergence are exactly %s"
-          % ", ".join(sorted(KNOWN_DIVERGENCE)),
+    check("hk2a the rows marked known-divergence are exactly: %s"
+          % (", ".join(sorted(KNOWN_DIVERGENCE)) or "none"),
           marked == sorted(KNOWN_DIVERGENCE), marked)
     for row in ROWS:
         if "today" not in row:

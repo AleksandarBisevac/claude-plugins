@@ -759,6 +759,47 @@ def _cases(check):
                "argv = ['cat', '.env']\n"
                "print(' '.join(argv))\nPY"))
 
+    # A READ CALL SPELLED INSIDE A STRING LITERAL IS TEXT. The read-call pattern
+    # matched a program's text, so a docstring or a sentence quoting the call it
+    # describes was refused as performing it - the operator decided that program
+    # is allowed. The twins below are the half that must stay refused: the same
+    # literal beside a real read, a literal handed to something that runs it as
+    # code, and a literal another interpreter would interpolate.
+    _doc = "DOC = \"the guard refuses open('.env') in a program\"\n"
+    _expect("sl1 a heredoc program whose only secret path sits in a string "
+            "literal no read call is handed reads nothing", "allow",
+            bash("python3 - <<'PY'\n" + _doc + "print(len(DOC))\nPY"))
+    _expect("sl2 ...and the same body as a here-string, the other spelling of a "
+            "program fed to an interpreter", "allow",
+            bash("python3 <<< \"DOC = 'the guard refuses open(.env) in a "
+                 "program'; print(len(DOC))\""))
+    _expect("sl3 ...while the same literal beside a real open() of the secret is "
+            "still a read", "block",
+            bash("python3 - <<'PY'\n" + _doc + "print(open('.env').read())\nPY"))
+    _expect("sl4 ...and a secret literal bound to a name open() is handed is "
+            "still a read", "block",
+            bash("python3 - <<'PY'\n" + _doc + "P = '.env'\n"
+                 "print(open(P).read())\nPY"))
+    _expect("sl5 ...and a literal handed to exec() is code, not text - the over-"
+            "reach this narrowing must not make", "block",
+            bash("python3 - <<'PY'\nexec(\"print(open('.env').read())\")\nPY"))
+    # The body parses as Python too, so it is the live-character check and not
+    # the parser that keeps this refused.
+    _expect("sl6 ...and a literal Ruby would interpolate runs the read inside it, "
+            "so it is never read as inert", "block",
+            bash("ruby - <<'RB'\nDOC = \"#{File.read('.env')}\"\nputs(DOC)\nRB"))
+    _expect("sl7 ...and a shell-out call quoted inside a literal is text too",
+            "allow",
+            bash("python3 - <<'PY'\nDOC = \"subprocess.run(['cat', '.env'])\"\n"
+                 "print(DOC)\nPY"))
+    _expect("sl9 ...and an f-string is code, so a read inside its braces runs",
+            "block",
+            bash("python3 - <<'PY'\nDOC = f\"{open('.env').read()}\"\n"
+                 "print(DOC)\nPY"))
+    _expect("sl8 ...while the same call made for real is still refused", "block",
+            bash("python3 - <<'PY'\nimport subprocess\n"
+                 "subprocess.run(['cat', '.env'])\nPY"))
+
     # --- Bash shell-verb reads ---
     _expect("b11 cat .env blocked", "block", bash("cat apps/foo/.env"))
     _expect("b12 printenv blocked", "block", bash("printenv"))
