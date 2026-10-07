@@ -325,38 +325,69 @@
         "severity": "med",
         "file": "docs/research/pipeline-cost-design.md 5.2 'The one exception', T6 'The close'",
         "issue": "The fix-task exemption can be acquired after the fact. resolve-finding --fix-task writes fixTask onto any finding, does not refuse one outside the task's phase, and overwrites an existing link. reopen keeps fixTask. So a task closed deferred can gain the link, be reopened, restarted and closed not-asked, which takes it out of the sign-off refusal. The finding verb also lets the caller mint a finding to link a new task to.",
-        "resolution": "Key the exemption on a field only add writes onto the task (task.fixes), held only while a finding of the task's own phase names it as fixTask. Or make resolve-finding refuse to create a link in a G1 phase. Add the reopen-sequence T6 case, and name the minted-finding leg as followed or key the exemption on findings recorded from a filed phase-review return."
+        "resolution": "fixed in P117.10-2sz (00ec0711): Key the exemption on a field only add writes onto the task (task.fixes), held only while a finding of the task's own phase names it as fixTask. Or make resolve-finding refuse to create a link in a G1 phase. Add the reopen-sequence T6 case, and name the minted-finding leg as followed or key the exemption on findings recorded from a filed phase-review return.",
+        "fixTask": "P117.10-2sz",
+        "commit": "00ec0711"
       },
       {
         "id": "P117-R35",
         "severity": "med",
         "file": "docs/research/pipeline-cost-design.md the tasks entry shape, the phase-return filing, T6 'The refusal'",
         "issue": "A per-task entry in the phase return carries no commit, and the spec does not say which filed phase return the sign-off refusal reads. A task answered at one commit can be reopened, re-committed and re-closed deferred while the old entry still satisfies the refusal.",
-        "resolution": "Add commit to each entry and to the key check. The filing verb refuses an entry whose commit is not the task's recorded commit, and the refusal counts an entry only when its commit equals the task's current commit. Add the reopen-and-recommit T6 case."
+        "resolution": "fixed in P117.10-2sz (00ec0711): Add commit to each entry and to the key check. The filing verb refuses an entry whose commit is not the task's recorded commit, and the refusal counts an entry only when its commit equals the task's current commit. Add the reopen-and-recommit T6 case.",
+        "fixTask": "P117.10-2sz",
+        "commit": "00ec0711"
       },
       {
         "id": "P117-R36",
         "severity": "low",
         "file": "docs/research/pipeline-cost-design.md C3 COMPATIBILITY and T3 Files",
         "issue": "The precedent for done refusing a close lives under COMPATIBILITY.md's 'Outside this document entirely', not a Not promised list.",
-        "resolution": "Point both sentences there, and have T3 add its entry there."
+        "resolution": "fixed in P117.10-2sz (00ec0711): Point both sentences there, and have T3 add its entry there.",
+        "fixTask": "P117.10-2sz",
+        "commit": "00ec0711"
       },
       {
         "id": "P117-R37",
         "severity": "low",
         "file": "docs/research/pipeline-cost-design.md T6 'The key, once per phase'",
         "issue": "move accepts a started blocked or pending task, so a task can leave a G1 phase for one with no key and close not-asked.",
-        "resolution": "Record the key on the task at start and have done read it, or name the cross-phase move as followed."
+        "resolution": "fixed in P117.10-2sz (00ec0711): Record the key on the task at start and have done read it, or name the cross-phase move as followed.",
+        "fixTask": "P117.10-2sz",
+        "commit": "00ec0711"
       },
       {
         "id": "P117-R38",
         "severity": "low",
         "file": "docs/research/pipeline-cost-design.md run_git citation",
         "issue": "run_git is defined at _scoped_commit.py:85; line 105 is its subprocess call.",
-        "resolution": "Cite :85, with the subprocess at :105."
+        "resolution": "fixed in P117.10-2sz (00ec0711): Cite :85, with the subprocess at :105.",
+        "fixTask": "P117.10-2sz",
+        "commit": "00ec0711"
+      },
+      {
+        "id": "P117-R39",
+        "severity": "med",
+        "file": "docs/research/pipeline-cost-design.md 5.2 'The key, read once per phase and kept by the task', T6 'The key, once per phase', T6 table block row",
+        "issue": "Only start records the key, and a missing key reads always. done needs no start: _started is true for a blocked task, and block takes a pending task straight to blocked. So under a configured phase key, a never-started phase's task can be blocked, committed by hand and closed not-asked, and the property leaves it out. A blocked task moved into a never-started phase does the same.",
+        "resolution": "Record the key at every write that makes _started true, or have done record it from the phase or the live config when the task has none, so always only ever means a phase that started under always. Add the block and block-then-move T6 cases, and keep the always half."
+      },
+      {
+        "id": "P117-R40",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md T6 'Outside audit-task.py and close-phase.py'",
+        "issue": "The claim that a commit repair-commits clears cannot land is false after a rebase: the rewritten changes are on the branch under a new SHA, and the task then records no commit.",
+        "resolution": "Restate it and add repair-commits --apply to section 5.2's followed item, next to reopen and the --no-change close."
+      },
+      {
+        "id": "P117-R41",
+        "severity": "low",
+        "file": "docs/research/pipeline-cost-design.md 5.2 and T6 'The refusal', C3 COMPATIBILITY",
+        "issue": "The property applies to signoff --verdict skipped as well, which is a new refusal of an existing verb form that neither the consequences nor the COMPATIBILITY entry names.",
+        "resolution": "State it, add a T6 case, and include it in the T3 COMPATIBILITY entry."
       }
     ],
-    "outcome": "[findings: 38 - 0 high, 12 med, 26 low; 33 with a recorded fix commit]"
+    "outcome": "[findings: 41 - 0 high, 13 med, 28 low; 38 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -855,7 +886,7 @@
     {
       "id": "P117.10-2sz",
       "title": "the G1 hold is specified as a property with every writing verb enumerated",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P117-R34 to P117-R38 from the cost phase's sixth review round. Documents only.\n\nTwo rounds in a row found a new way past the G1 hold by reading verbs one at a time, so this task closes the class.\n- It applies R34's and R35's resolutions: the exemption is keyed on a field only add writes onto the task, and each per-task answer is bound to the commit it judged.\n- It applies the three low resolutions.\n- It specifies the hold as a property. Under the phase key, a task whose files changed cannot reach the phase's landing without the three answers bound to its current commit.\n- T6's acceptance includes an enumeration of every verb that writes a task's status, intentCheck, commit or a finding's fixTask, or that moves or reopens a task. Each verb either has a refused case under the phase key, or is named as followed with its reason, and the enumeration is derived from the code rather than typed.",
       "files": [
         "docs/research/pipeline-cost-design.md"
@@ -883,19 +914,65 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "00ec0711",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes P117-R34 to P117-R38 by stating the G1 hold as one property of the plan's record. Under review.perTask phase, a task whose files changed cannot reach its phase's landing without the intent answer, the red-first grade and the inherited-test answer recorded in intentCheck, with intentCheck.commit equal to its current commit. Sign-off and close-phase.py ask the same function of the record before landing, so a verb the list misses still cannot land a phase. A T6 case pins a commit edited by hand after sign-off.\n\nThe verbs T6 answers for are derived from the code by a command printed in section 10. It walks the dispatch map's verbs, close-phase and the validator, reports the keys each writes, and was shown able to fail on a fixture. Each verb has a refused case or a named followed reason.\n\nPer finding:\n- R34: the exemption is keyed on task.fixes, which only add --fixes writes, held while the named finding sits in the task's own phase and names it. The reopen sequence is refused, and the minted-finding leg is named as followed.\n- R35: each per-task entry carries commit. The filing verb refuses a mismatched or duplicate commit, and sign-off counts only entries matching the current commit.\n- R36: the COMPATIBILITY reference points to \"Outside this document entirely\".\n- R37: the key is recorded on the task at first start.\n- R38: the run_git citation is corrected.\n\nNo figure changed, and the lints are clean.",
+        "descriptive": "The guarantee that every changed task gets its review is now one rule checked at landing, and the commands that could get around it are listed from the code with an answer for each."
       },
       "startedAt": "2026-10-07T20:04:02Z",
-      "completedAt": null,
+      "completedAt": "2026-10-07T20:45:14Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-07T20:45:14Z.44f402",
         "status": "passed",
         "at": "2026-10-07T20:45:14Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "00ec0711",
+        "at": "2026-10-07T20:45:14Z",
+        "basis": "orchestrator check: the property is stated once and asked at both landing points; the verb list is derived by a printed command shown able to fail; every finding maps to a change"
       }
+    },
+    {
+      "id": "P117.11-2sz",
+      "title": "the G1 key is never read from a default",
+      "status": "pending",
+      "description": "Fixes review findings P117-R39 to P117-R41 from the cost phase's seventh review round. Documents only. The G1 key is never read from a default. It is recorded at every write that makes a task count as started, or done records it from the phase or the live config when the task has none, so always means only a phase that really started under always. T6 adds the block and block-then-move cases. The repair-commits claim is restated, and that writer is listed as followed. signoff --verdict skipped is named as refused for a phase with a task owed an answer, with a T6 case and a COMPATIBILITY entry.",
+      "files": [
+        "docs/research/pipeline-cost-design.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-07T11:45:57Z"
