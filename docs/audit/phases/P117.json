@@ -149,9 +149,16 @@
         "file": "docs/research/pipeline-cost-design.md:737-738, 999-1001",
         "issue": "This diff did not change these lines. C7's confirming reading and T4's target read 'at most 5 plan, gate and close requests per task' off `per stage, as billed` → `req`. Those stages also hold the five run-level requests. In feature-C-1: plan 5 + gate 3 + close 5 = 13 = 5 run-level + 8 per task. So a one-task after-session would read 10 and fail a target it actually meets. The second clause, `7 + 5N` main-loop requests, is stated correctly.",
         "resolution": "Either subtract the five run-level requests before dividing by N, or keep only the `7 + 5N` clause."
+      },
+      {
+        "id": "P117-R16",
+        "severity": "med",
+        "file": "docs/research/pipeline-cost-design.md T3, T4, C7; tools/stream-cost.py stage rule",
+        "issue": "Found by the P117.4 executor; an inference, since no arm C session has run. The confirming after-study is arm C, which plans with /audit:phase add and /audit:task add. The stage rule counts everything from the end of orient to the executor dispatch as plan work. So T4's request clauses and T3's per-task output and token readings would count planning requests, and could refute a change that meets them. The targets were calibrated on an /audit:run session, which plans nothing.",
+        "resolution": "T1 adds a stage split that reports requests under a planning command apart from the task cycle's plan work. T3, T4 and C7's confirming reading exclude planning and name the row they read. The assumptions section states that the calibration session planned nothing and that arm C does."
       }
     ],
-    "outcome": "[findings: 15 - 0 high, 3 med, 12 low; 11 with a recorded fix commit]"
+    "outcome": "[findings: 16 - 0 high, 4 med, 12 low; 11 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -332,7 +339,7 @@
     {
       "id": "P117.4-2sz",
       "title": "the reviewer's filed return is held write-once and the six-request figures count every read",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes review findings P117-R12 to P117-R15 from the cost phase's second review round. Documents only.\n\n- The design's filing verb is made write-once for each task and role. It refuses a second filing and leaves the first byte-identical, which becomes a fourth T3 case. The design then lists under what nothing checks that the role and task id are the caller's word, so a filing under a role or a task not yet filed is a followed rule. The four places that repeat the claim are reworded to match: the side-by-side table, the recommendation's \"What it does not do\", decision 3 and T3.\n- The six-request baseline's removal of the two one-off requests counts reads by position, the way section 5 counts the after state, and the six-request figures are restated. C5 and C7 either add the shifted read or say it is left out.\n- The stream-cost pin names the commit 9501aa91 in place of \"the commit that last changed this document\".\n- C7's confirming reading and T4's target subtract the run-level requests before dividing by the task count, or keep only the 7 + 5N clause.",
       "files": [
         "docs/research/pipeline-cost-design.md",
@@ -359,16 +366,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T14:18:25Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T15:03:12Z.4c40d8",
+        "status": "passed",
+        "at": "2026-10-07T15:03:12Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T11:45:57Z"

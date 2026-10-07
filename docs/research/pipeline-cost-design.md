@@ -32,9 +32,10 @@ phase merges, read the protocol at `a289dcbb`. Commands run from this repository
 
 **Every command is pinned to what its figures were taken at.** The plugin's prose is measured at
 `7b489337`, and `git diff --stat f7eaade4 7b489337 -- plugins/audit` prints nothing, so it is also
-the plugin the whole-feature study runs. The `stream-cost.py` figures are the tool's output at the
-commit that last changed this document (`git log -1 --format=%h -- docs/research/pipeline-cost-design.md`).
-Re-derive them from a checkout of that commit. Prices are the plugin's shipped table,
+the plugin the whole-feature study runs. The `stream-cost.py` and `measure-context.py` figures are
+those tools' output at `9501aa91`. Re-derive them from a checkout of that commit. T1 changes both
+tools, so a pin that followed this document's latest commit would point at a tool these figures did
+not come from. Prices are the plugin's shipped table,
 `_usage_core.DEFAULT_PRICING`. For
 `claude-opus-5-5` the rates per million tokens are: input 4.0, output 20.0, five-minute write 5.0,
 one-hour write 8.0, cache read 0.2. The reviewer in `feature-C-1` ran on a model that resolves to the
@@ -51,7 +52,8 @@ wrong multiplier and figures with no arithmetic shown. Section 1.2 now:
 - counts the per-task requests in two shapes, eight and six (section 1.1);
 - keeps out the re-read term the measured task class already held;
 - separates the task work a run pays once from the work it pays per task;
-- writes out the early reads the run line had left implicit.
+- writes out the early reads the run line had left implicit;
+- removes the two one-off requests by position, as section 5 counts the after state.
 
 `stream-cost.py` now classes the bytes an `Edit` emits by the path it writes, which moved the main
 loop's edit of the plan from the file class to the task class. Every figure below is re-derived on
@@ -180,14 +182,31 @@ rounding, so a total can differ in its last digit from the sum of the rounded pa
   has no term of its own. The first draft added `2 × (N−1)` such reads and so counted them twice.
 
   For k = 6, both come from `feature-C-1` less its two one-off requests. `c` = 21857 − 1229 − 3569
-  = 17059. `t` = 0.7049 − 0.0925 = `0.6124`, where 0.0925 is what those two requests cost:
+  = 17059. `t` = 0.7049 − 0.0936 = `0.6113`, where 0.0936 is what those two requests cost:
   - their output, (630 + 1769) × o = 0.0480;
   - their input, 0.00002;
   - the content they added, (1229 + 3569) × w = 0.0384;
-  - that content's reads by the requests that remain, (1229 × 4 + 3569 × 1) × r = 0.0017;
-  - their own reads of earlier per-task content, (7775 + 14074) × r = 0.0044. Each figure is the
-    request's `cr` less the 79461 run tokens and the 3192 above; the second also less the first's
-    1229.
+  - the reads of per-task content they take away, (99642 − 63636) × r = 0.0072. Both counts are by
+    position, as section 5 counts the after state: a row enters the cache at the request after the
+    one that made it, and every later main-loop request reads it. Today's eight-request shape gives
+    2616 × 8 + 5159 × 7 + 1458 × 6 + 1229 × 5 + 3646 × 4 + 1195 × 3 + 2985 × 2 + 3569 × 1 = 99642.
+    The six-request shape gives 2616 × 6 + 5159 × 5 + 1458 × 4 + 3646 × 3 + 1195 × 2 + 2985 × 1 =
+    63636.
+
+  The 36006 tokens between the two are, by request:
+  - the re-check's own reads, 2616 + 5159 = 7775;
+  - the retry's own reads, 7775 + 1458 + 1229 + 3646 + 1195 = 15303;
+  - the reads of their content by the requests that remain, 1229 × 4 + 3569 × 1 = 8485;
+  - two reads that move. With the re-check gone, the reviewer dispatch writes the gate's 1458
+    instead of reading it, and with the retry gone the lock release writes the close's 2985.
+
+  7775 + 15303 + 8485 + 1458 + 2985 = 36006. The count of today's shape is the measured one too:
+  the `cr` of each main-loop request from the executor dispatch to the report (`--json` →
+  `requests`) sums to 843519, and 843519 − 9 × (79461 + 3192) = 99642.
+
+  The revision at `9501aa91` gave `0.0925` and `0.6124`. It subtracted the re-check's 1229 from the
+  retry's reads without counting it anywhere else, and it left out both moved reads: 5672 tokens in
+  all (1229 + 1458 + 2985).
 - **File class.** `0.2129 × N`. This assumes every task is the size of `feature-C-1`'s task.
 
 **Prediction, today's pipeline:**
@@ -195,9 +214,9 @@ rounding, so a total can differ in its last digit from the sum of the rounded pa
 | | k | m | run | task, once per run | task, per task | file | total |
 |---|---|---|---|---|---|---|---|
 | N = 1 | 8 | 12 | `0.7532` | `0.0774` | `0.7049` | `0.2129` | `1.7484` (measured: `1.748411`) |
-| N = 1 | 6 | 10 | `0.7214` | `0.0762` | `0.6124` | `0.2129` | `1.6229` |
+| N = 1 | 6 | 10 | `0.7214` | `0.0762` | `0.6113` | `0.2129` | `1.6217` |
 | N = 5 | 8 | 44 | `1.2617` | `0.0979` | `3.8742` | `1.0645` | `6.2983` |
-| N = 5 | 6 | 34 | `1.1028` | `0.0915` | `3.2669` | `1.0645` | `5.5257` |
+| N = 5 | 6 | 34 | `1.1028` | `0.0915` | `3.2613` | `1.0645` | `5.5200` |
 
 The per-task work grows with the square of `N`. At N = 5 that term is `0.3497` at k = 8 (derived:
 21857 × 0.2e-6 × 8 × 10) and `0.2047` at k = 6 (17059 × 0.2e-6 × 6 × 10). No single-task record can
@@ -224,8 +243,15 @@ section 7:
   (`cat <x>/feature-C-1/prompt.txt <p>/prompt.txt`). Where a figure needs sign-off, `S` = 6 main-loop
   requests is assumed. `phase-signoff.md` numbers five steps, and the first of them spawns a reviewer.
   That is an assumption, and T5 replaces it with a reading.
-- **planning verbs.** The whole-feature benchmark's arm C plans with `/audit:phase add` and
-  `/audit:task add`. How many times a session invokes each, and whether every invocation injects the
+- **planning verbs.** The calibration session planned nothing. `feature-C-1`'s prompt is
+  `/audit:run P1.1` (`cat <x>/feature-C-1/prompt.txt`), and its main loop made no `Skill` call and
+  no `add` call of either verb (section 1.1's snippet lists every call). Whole-feature arm C does
+  plan. Its prompt is the request with `<h2>/plugin-sentence.txt` appended (`<h2>/run_session.py`,
+  `prompt_for`), which asks for `/audit:phase add` and `/audit:task add` before the run. Today's
+  stage rule makes every request from the end of orient to the first executor dispatch `plan`
+  (`stream-cost.py`'s docstring, *STAGES*), so those planning requests would be counted as the task
+  cycle's. T1's `planning` split takes them out, and the targets of T3 and T4 read the task cycle
+  without them. How many times a session invokes each verb, and whether every invocation injects the
   command body again, is unmeasured.
 - **parallel waves.** The formula treats tasks as serial.
 - **a second dispatch of one agent type.** Whether it reads the first dispatch's cache is unmeasured.
@@ -326,10 +352,11 @@ Once C3 lands, the brief and hand-back rows are gone whichever path runs. The in
 the executor start and the dispatch's read, against the same additions:
 0.0848 + 0.0165 − 0.1934 = `−0.0921` per task, a cost.
 
-The per-task reviewer is skipped too, which adds C5's `0.2024`. At N = 1 that gives `0.2781` with an
-opus executor and `0.0963` with a sonnet executor. The sum leaves out one interaction, worth
+The per-task reviewer is skipped too, which adds C5's `0.2027`. At N = 1 that gives `0.2784` with an
+opus executor and `0.0966` with a sonnet executor. The sum leaves out one interaction, worth
 14561 × 0.2 = `0.0029`: the skipped dispatch would have read the inline work, not the brief and
-hand-back.
+hand-back. The revision at `9501aa91` gave `0.2781` and `0.0963`, on C5's figure before C5 counted
+its moved read.
 
 At N = 5 the square term changes too:
 
@@ -339,8 +366,8 @@ At N = 5 the square term changes too:
   executor's brief and hand-back rows, and the reviewer's two together (2180 + 1466).
 - That is 27613 × 0.2e-6 × 15 × 10 = `0.8284` against today's `0.3497`, a cost of `0.4787`.
 
-So N = 5 gives 5 × 0.2781 − 0.4787 = `0.9118` with an opus executor and 5 × 0.0963 − 0.4787 =
-`0.0028` with a sonnet one, both at k = 8.
+So N = 5 gives 5 × 0.27844 − 0.47868 = `0.9135` with an opus executor and 5 × 0.09660 − 0.47868 =
+`0.0043` with a sonnet one, both at k = 8. The revision at `9501aa91` gave `0.9118` and `0.0028`.
 
 **Guarantees.** Rule 3: the enforced executor row does not cover light-path work. The executor's input
 isolation also goes: it sees only its brief, and the main loop sees everything. The followed row "the
@@ -518,18 +545,38 @@ the close, because `done --from-return` refuses when no return is filed.
 
 - *What changes.* The reviewer's prompt gains one line under *May*: one call of the filing verb.
   Its *Must not* keeps "anything that writes", with that call as the only exception.
-- *What holds the write to one path.* The verb itself. It takes the task id and the role, and no path
-  argument. It derives the one file it writes, the role's return for that task in the evidence
-  directory, and refuses a return whose shape is incomplete without writing anything. So the only file
-  this write can produce is the reviewer's own return. T3 adds the cases that pin it: a path-like
-  argument refused, a malformed return writing nothing, and the written path equal to the derived one.
+- *What holds the write.* The verb itself, in two ways.
+  - *One derived path.* It takes the task id and the role, and no path argument. From them and the
+    task's current start it derives the one file it writes: that role's return for that task in the
+    evidence directory. It refuses a return whose shape is incomplete without writing anything.
+  - *Write-once for each task and role.* A second filing for a task and role that already has a
+    return in the task's current start is refused, and the first return is left byte-identical. The
+    reviewer is dispatched only once the executor's return is filed, because its brief carries that
+    return as filed. So the reviewer's call cannot replace the claim it was dispatched to check, and
+    it cannot replace its own return once that is filed.
+
+  The start is part of the path because a retry must file again. `start` re-stamps `startedAt` on
+  every start (`scripts/manifest/audit-task.py:3288`), so a re-spawned executor files beside the
+  earlier attempt's return rather than over it. The attempt count would not keep two starts apart:
+  the infrastructure and classifier arms set it back down (`reference/execute-task.md:699`, `:707`).
+
+  T3 adds the cases that pin both: a path-like argument refused, a malformed return writing nothing,
+  the written path equal to the derived one, and a second filing for one task and role in one start
+  refused with the first unchanged.
 - *What does not hold it.* `verify-invariants.py`'s `commit-scope` grades the close commit against
   the evidence directory as a whole (`commit-task-work.py` stages that directory), so it cannot tell
   the reviewer's return from any other file there.
-- *What nothing checks.* That the reviewer runs nothing else that writes stays a followed rule, as it
-  is today: its Bash can write and nothing refuses it, which its own prompt says ("Nothing refuses
-  these"). The filing verb widens what the reviewer is *told* it may do by one call. It does not widen
-  what the harness lets it do.
+- *What nothing checks.* Two followed rules remain:
+  - **The task id and the role are the caller's word.** Nothing checks that a reviewer files as
+    `reviewer`, or for the task it was handed. So a filing under a role or a task not yet filed is a
+    followed rule: write-once stops a reviewer replacing a return, not filing one that nobody has
+    filed yet, such as another task's or a role whose agent has not run. If a reviewer files its own
+    return under the wrong task, its own task is left with none, and `done --from-return` refuses
+    that close (above).
+  - **The reviewer runs nothing else that writes.** That stays a followed rule, as it is today: its
+    Bash can write and nothing refuses it, which its own prompt says ("Nothing refuses these"). The
+    filing verb widens what the reviewer is *told* it may do by one call. It does not widen what the
+    harness lets it do.
 - *The enforced row is untouched.* "The reviewer cannot edit" is held by the `tools:` line
   (`agents/audit-reviewer.md:4`), and that line gains nothing: the verb runs through the Bash the
   reviewer already has.
@@ -546,15 +593,21 @@ today (`scripts/_refs.py:1275`).
 **COMPATIBILITY.md.** The new flags are additive. The filed return is a new record whose shape is
 outside the contract.
 
-**Confirming reading.**
+**Confirming reading.** Each reading is the task cycle with planning excluded: T1's `planning` row
+comes out first.
 
 - `largest outputs` holds no `brief for audit:audit-*` row above 200 tokens.
-- `output pool, measured: main loop` is at most 5000 tokens per task. With C7's composite verbs, as the
-  after-study will have them, the prediction for one task is 4472. That is derived:
+- `output pool, measured: main loop`, less the `planning` row's `out` in `per stage, as billed`, is
+  at most 5000 tokens per task. With C7's composite verbs, as the after-study will have them, the
+  prediction for one task is 4472. That is derived:
   14031 − (2840 + 2817 − 120) − (1723 + 1769 − 100) − 630, the last term being the re-check's output.
   With C3 alone it is 5102, which is above the target.
-- `contexts:` → `main`, `task` divided by the task count is at most 11000. For one task with C7, the
-  prediction is 9547: the 3598 tokens of the run's own requests plus the 5949 a task leaves (section 5).
+- `contexts:` → `main`, `task`, less the part T1 attributes to planning, divided by the task count is
+  at most 11000. For one task with C7, the prediction is 9547: the 3598 tokens of the run's own
+  requests plus the 5949 a task leaves (section 5).
+
+`feature-C-1` planned nothing (section 1.4), so its readings and both predictions are the same with
+or without the split.
 
 **Effort, blast radius, risk.** It touches one extended script, a new verb and flag in
 `audit-task.py`, both agent prompts, the task prose, `_refs.py`, and `PLUGIN-BUILD-GUIDE.md`. The
@@ -597,19 +650,34 @@ deems safe.
 
 - the reviewer stage as billed, `0.0957`;
 - its brief, 2817 × 20 = `0.0563`;
-- the brief carried by the main loop, `0.0191`;
+- the brief carried by the main loop, `0.0192` (0.01744 written and 0.00174 read);
 - its hand-back carried, `0.0129`;
-- the dispatch request's read of the prefix, 91886 × 0.2 = `0.0184`.
+- the dispatch request's read of the prefix, 91886 × 0.2 = `0.0184`;
+- one read that moves. The dispatch is the request that writes the re-check's 1229 tokens, so
+  without it the commit writes them instead of reading them: 1229 × 0.2 = `0.0002`.
 
-That is `0.2024`. With every task skipped at N = 5 and k = 8, the square term shrinks two ways.
-Each task leaves 3646 fewer tokens (21857 → 18211), and each later task makes one request fewer
-(8 → 7). The prediction is 5 × 0.2024 + (8 × 21857 − 7 × 18211) × 0.2e-6 × 10 = `1.1068`. The
-first draft counted only the first of the two, as `1.0704`.
+That is `0.2027`. The revision at `9501aa91` gave `0.2024`: it left out the moved read, and it
+summed the brief's carry from rounded parts. With every task skipped at N = 5 and k = 8, the square
+term shrinks two ways. Each task leaves 3646 fewer tokens (21857 → 18211), and each later task makes
+one request fewer (8 → 7). The prediction is 5 × 0.202696 + (8 × 21857 − 7 × 18211) × 0.2e-6 × 10 =
+`1.1082`. The first draft counted only the first of the two, as `1.0704`, and the revision at
+`9501aa91` gave `1.1068`.
 
-After C3 and C7 the brief and the hand-back are already gone. The marginal saving then falls to the
-stage plus one request at the smaller prefix: 0.0957 + 47003 × 0.2e-6 = `0.1051` per task. 47003 is
-what that request would read in section 5's model: 41055 run tokens, the 3192 of the run's own
-requests, and 2756 of the task's own written before it (2616 + 140).
+After C3 and C7 the brief and the hand-back shrink to section 5's 140 tokens, and the reviewer
+makes C3's two extra requests. Skipping it then saves `0.1153` per task, derived:
+
+- the reviewer stage as billed, 0.09565;
+- C3's two extra reviewer requests, 13061 × 0.2 / 10^6 + 0.0050 = 0.00761 (C3's table);
+- the 60-token hand-off, typed: 60 × 20 / 10^6 = 0.00120;
+- the dispatch's 140 tokens, written and read by the two requests after it:
+  140 × (8.0 + 0.2 × 2) / 10^6 = 0.00118;
+- the dispatch request's read, 47003 × 0.2 / 10^6 = 0.00940. 47003 is what that request would read
+  in section 5's model: 41055 run tokens, the 3192 of the run's own requests, and 2756 of the task's
+  own written before it (2616 + 140);
+- the read that moves: the commit writes the gate's 1458 tokens instead of reading them,
+  1458 × 0.2 / 10^6 = 0.00029.
+
+The revision at `9501aa91` gave `0.1051`, from the stage and the dispatch's read alone.
 
 **Guarantees.** The per-task claim-to-task binding (`execute-task.md:313-315`) becomes conditional.
 The record stays honest: `not-asked` needs a basis, and sign-off lists unanswered tasks. One
@@ -703,20 +771,27 @@ it.
 **Prediction.** It depends on the per-task shape more than any other candidate's does.
 
 - **At k = 8**, as `feature-C-1` recorded it, three requests go: the re-check (`yyXaVM`) and both
-  close attempts. The saving is `0.0802` per task, from three parts:
+  close attempts. The saving is `0.0807` per task, from four parts:
   - their reads, (90428 + 96761 + 97956) × 0.2 / 10^6 = `0.0570`. Of that, 0.0477 is run tokens
     (3 × 79461), 0.0019 is the run's own requests' content (3 × 3192), and 0.0074 is per-task
     content;
   - the re-check's output, 630 × 20 / 10^6 = `0.0126`;
   - the re-check's content, written by the next request and read by the three that remain:
-    0.00983 + 1229 × 3 × 0.2 / 10^6 = `0.0106`.
+    0.00983 + 1229 × 3 × 0.2 / 10^6 = `0.0106`;
+  - two reads that move, because a row enters the cache at the request after the one that made it.
+    With the re-check gone, the reviewer dispatch writes the gate's 1458 tokens instead of reading
+    them. With both closes gone, the lock release writes the commit's 1195.
+    (1458 + 1195) × 0.2 / 10^6 = `0.0005`.
 
   The outcome the close composes, and the retry's output and content, are counted in C3, not here.
   At N = 5 each task also leaves 1229 fewer tokens and makes 5 requests instead of 8:
-  5 × 0.0802 + (8 × 21857 − 5 × 20628) × 0.2e-6 × 10 = `0.5444`.
+  5 × 0.08075 + (8 × 21857 − 5 × 20628) × 0.2e-6 × 10 = `0.5472`. The revision at `9501aa91` gave
+  `0.0802` and `0.5444`, without the moved reads.
 - **At k = 6** only the close folds into the commit, so one request goes. Its read is
-  (96761 − 1229) × 0.2 / 10^6 = `0.0191` per task. At N = 5:
-  5 × 0.0191 + 17059 × 0.2e-6 × (6 − 5) × 10 = `0.1296`.
+  (96761 − 1229) × 0.2 / 10^6 = `0.0191`. One read moves: the lock release writes the commit's 1195
+  tokens instead of reading them, `0.0002`. Together, (95532 + 1195) × 0.2 / 10^6 = `0.0193` per
+  task. At N = 5: 5 × 96727 × 0.2e-6 + 17059 × 0.2e-6 × (6 − 5) × 10 = `0.1308`. The revision at
+  `9501aa91` gave `0.0191` and `0.1296`.
 
 Whether C7 removes the two one-offs at all is inference:
 
@@ -734,8 +809,12 @@ request's wall includes the gate run it starts.
 
 **COMPATIBILITY.md.** New verbs are additive.
 
-**Confirming reading.** `per stage, as billed` → `req`: plan, gate and close requests per task, at
-most 5.
+**Confirming reading.** `per stage, as billed` → `req`, with T1's `planning` row apart, so the task
+cycle is read with planning excluded: the plan, gate and close requests before sign-off, less the
+run's own five that section 1.2 names, divided by the task count, at most 5. Those stages hold the
+run's own requests too, so a reading that skipped the subtraction would fail a one-task run that
+meets the target. Without T1's split, they would also hold every request a planning command made.
+`feature-C-1` reads (5 + 3 + 5 − 5) / 1 = 8, with nothing planned.
 
 **Effort, blast radius, risk.** It touches `audit-task.py`, plus the existing governance scripts it
 calls but does not re-implement. No row of either table changes.
@@ -803,15 +882,15 @@ own section gives one. "Rows" means rows of the README's enforced and followed t
 
 | | N = 1 | N = 5 | Guarantees | Maintenance | COMPATIBILITY.md | Verdict |
 |---|---|---|---|---|---|---|
-| C1 light path, executor on opus / on sonnet | `0.2781` / `0.0963` | `0.9118` / `0.0028` | an enforced row stops covering the work; isolation lost | a second execution path | key additive; default on is major | not recommended |
+| C1 light path, executor on opus / on sonnet | `0.2784` / `0.0966` | `0.9135` / `0.0043` | an enforced row stops covering the work; isolation lost | a second execution path | key additive; default on is major | not recommended |
 | C2 by verb, state and moment | `0.2914` (`0.2802`) | `0.4708` (`0.4147`) | none, if every followed row stays reachable | more files; lints re-pointed | none | **recommended** |
-| C3 computed brief, filed return | `0.2905` | `1.6874` | no row of either table; a return's shape and stamp become checked; the reviewer gains one write, held to its own return by the filing verb | prose becomes a tested script | additive | **recommended** |
+| C3 computed brief, filed return | `0.2905` | `1.6874` | no row of either table; a return's shape and stamp become checked; the reviewer gains one write, through a write-once filing verb that derives its one path and never replaces a return already filed; the task id and role it files under are the caller's word | prose becomes a tested script | additive | **recommended** |
 | C4 enforced restatements out | `0.0913` (`0.0878`) | `0.1475` (`0.1299`) | none, by construction | lower | none | **recommended**, inside C2 |
-| C5 reviewer by risk | `0.2024` per skipped task | `1.1068` if every task skips | one followed check narrowed | a config key | key additive; gated default is major | the user's (section 8) |
+| C5 reviewer by risk | `0.2027` per skipped task | `1.1082` if every task skips | one followed check narrowed | a config key | key additive; gated default is major | the user's (section 8) |
 | C6a main-loop TTL | `0.2791` (`0.2647`) | `0.5414` (`0.4694`) | none | none | none | the user's setting; measure gaps first |
 | C6b fork reviewer | `−0.0829` per task | | an enforced row lost | | | rejected |
 | C6c shared agent starts | `0` | up to `0.3911` | none | none | none | measure; nothing to build |
-| C7 five requests per task | `0.0802` (`0.0191`) | `0.5444` (`0.1296`) | none | composite verbs | additive | **recommended** |
+| C7 five requests per task | `0.0807` (`0.0193`) | `0.5472` (`0.1308`) | none | composite verbs | additive | **recommended** |
 | C8 verb-scoped command reads | `0` | per invocation, section 3 | none | dispatcher plus verb files | none | **recommended** |
 
 The rows do not add up. C3 shrinks what C7's removed requests would have read, and C2 shrinks the
@@ -866,17 +945,18 @@ from `feature-C-1`'s rows and set against both of section 1.2's baselines:
   - the three removed requests' input, `0.00002`;
   - less C3's two extra requests per agent, `0.0054` and `0.0113`.
 
-  Against k = 6, the same after state is 0.6124 − 0.3872 = `0.2252` lower per task.
+  Against k = 6, the same after state is 0.6113 − 0.3872 = `0.2241` lower per task.
 - **The square term** at N = 5 becomes 5949 × 0.2e-6 × 5 × 10 = `0.0595`.
 
 | | run | task, once per run | task, per task | file | after | today, k = 8 | saving | today, k = 6 | saving |
 |---|---|---|---|---|---|---|---|---|---|
-| N = 1 | `0.3291` | `0.0755` | `0.3872` | `0.2129` | `1.0047` | `1.7484` | `0.7437`, 42.5% | `1.6229` | `0.6181`, 38.1% |
-| N = 5 | `0.4933` | `0.0883` | `1.9955` | `1.0645` | `3.6416` | `6.2983` | `2.6566`, 42.2% | `5.5257` | `1.8841`, 34.1% |
+| N = 1 | `0.3291` | `0.0755` | `0.3872` | `0.2129` | `1.0047` | `1.7484` | `0.7437`, 42.5% | `1.6217` | `0.6170`, 38.0% |
+| N = 5 | `0.4933` | `0.0883` | `1.9955` | `1.0645` | `3.6416` | `6.2983` | `2.6566`, 42.2% | `5.5200` | `1.8784`, 34.0% |
 
-The two one-off requests account for the difference between the two savings: `0.1256` at N = 1 and
-`0.7725` at N = 5 (derived: 0.7437 − 0.6181 and 2.6566 − 1.8841). If neither recurs, that part is
-not there to save.
+The two one-off requests account for the difference between the two savings: `0.1266` at N = 1 and
+`0.7782` at N = 5 (derived before rounding: 0.743651 − 0.617005 and 2.656598 − 1.878364). If neither
+recurs, that part is not there to save. The revision at `9501aa91` gave `0.1256` and `0.7725`, on
+the k = 6 baseline section 1.2 now corrects.
 
 Section 0 gives the first draft's figures for this set and what changed since. The early reads,
 `0.0110`, were in its run line without being named. The model is anchored on `feature-C-1`'s prose,
@@ -913,7 +993,9 @@ The planning verbs come on top of that, per invocation (C8).
 
 **What it does not do.** It takes nothing from the enforced table, and it does not narrow the per-task
 review. C5 stays the user's decision. It does loosen one rule that is in the reviewer's prompt and
-not in either table: the reviewer gains one write, held to its own return by the filing verb (C3,
+not in either table: the reviewer gains one write, through a write-once filing verb that derives its
+one path and never replaces a return already filed. The task id and role it files under are the
+caller's word, so a filing under a role or a task not yet filed stays a followed rule (C3,
 *Guarantees*).
 
 ## 6. Implementation tasks
@@ -931,11 +1013,33 @@ commit, with `--bytes-per-token 2.63` where it applies.
   - `stream-cost.py` gains, per context, the longest gap between consecutive requests and every
     dispatch's `start_cR` by agent type. It also counts plugin command-body injections and reference
     re-reads per session.
+  - `stream-cost.py` reports planning apart from the task cycle. A main-loop request is `planning`
+    when a planning command made it. The span opens at the request that makes a main-loop `Skill`
+    call whose `skill` is `audit:phase` or `audit:task` and whose `args` begin with `add`. It closes
+    before the first request that invokes any other command or calls a task's start
+    (`audit-task.py start`). Without that second condition, a run that invoked no further command
+    would be read as planning to its end, and every task-cycle target would read zero.
+  - The split reaches all three places a target reads. `planning` gets its own row in
+    `per stage, as billed` and in `per stage, by what it put there`. `contexts:` → `main` prints
+    apart the `task` tokens that planning requests wrote. So `plan` keeps the run's own requests and
+    each task's work up to its dispatch.
+  - The rule keys on the `Skill` call because that is how arm C invokes a command. The one arm C
+    record, `whole-C-2`, shows a main-loop `Skill` call with input
+    `{"skill": "audit:phase", "args": "add"}` (`<x2>/whole-C-2/stream.jsonl`). The call was denied
+    (`<x2>/invalid.jsonl`), so how an allowed invocation's body enters the stream is not yet seen.
+  - The split does not tell sign-off apart. C7's and T4's "before sign-off", section 7's whole-set
+    reading and T5's `S` all need that.
+    No recorded session reached sign-off (section 1.4), so the rule that finds its first request is
+    read off the tool calls of the whole-feature arm C sessions, which section 8, decision 4,
+    recommends running first. Until then, a reading that cannot place sign-off says so rather than
+    counting its requests as task work.
 - **Target:**
   - `measure-context.py --ref 7b489337c06d --sections` prints this document's class sums for the three
     `/audit:run` files (keep 77811, conditional 27767, elsewhere 25037, maintainer 23089).
   - `stream-cost.py <x>/feature-C-1/stream.jsonl` prints `start_cR` 0 for both agents and a longest
     main-loop gap.
+  - The same command prints an empty `planning` row. Every figure this document quotes from that
+    session stays unchanged, because the session planned nothing (section 1.4).
   - Each new selftest case is shown red before it is trusted.
 - **Confirming session:** none, because this is offline.
 
@@ -979,26 +1083,46 @@ commit, with `--bytes-per-token 2.63` where it applies.
   - the tests of both scripts.
 - **The reviewer's write.** `audit-reviewer.md` gains one *May* line: one call of the filing verb.
   Its *Must not* keeps "anything that writes", with that call as the only exception. The filing
-  verb takes the task id and the role and no path, and derives the one file it writes. Its tests
-  pin three things: a path-like argument is refused; a malformed return writes nothing; and the
-  written path equals the derived one. Those cases are what holds the write to the reviewer's own
-  return. That the reviewer runs nothing else that writes stays a followed rule, unenforced, as it is
-  today (C3, *Guarantees*).
-- **Target** (`python3 tools/stream-cost.py <session>/stream.jsonl`):
+  verb takes the task id and the role and no path, and derives the one file it writes from them and
+  the task's current start. Its tests pin four things:
+  - a path-like argument is refused;
+  - a malformed return writes nothing;
+  - the written path equals the derived one;
+  - a second filing for one task and role in one start is refused, and the first return is
+    byte-identical afterwards. The same case files the other role, and files again after a
+    re-start, and both of those must write. Without that half, a verb that refused every second
+    filing for a task would pass.
+
+  Those cases hold the write to one derived path that never replaces a return already filed. They
+  do not hold the task id and role to the caller's own. Those are the caller's word, so a filing
+  under a role or a task not yet filed stays a followed rule. So does the reviewer running nothing
+  else that writes, unenforced, as it is today (C3, *Guarantees*).
+- **Target** (`python3 tools/stream-cost.py <session>/stream.jsonl`, with T1's split). Each reading
+  is the task cycle with planning excluded, as C3's *Confirming reading* says:
   - no `brief for audit:audit-*` row above 200 tokens in `largest outputs`;
-  - the main-loop output pool at most 5000 tokens per task (`feature-C-1`: 14031; predicted 4472
-    for one task once T4 has landed too, C3's *Confirming reading*);
-  - the main context's task tokens per task at most 11000 (`feature-C-1`: 25455; predicted 9547 for
-    one task, with T4).
+  - the main-loop output pool, less the `planning` row's `out` in `per stage, as billed`, at most
+    5000 tokens per task (`feature-C-1`: 14031; predicted 4472 for one task once T4 has landed too,
+    C3's *Confirming reading*);
+  - `contexts:` → `main`, `task`, less the part T1 prints for planning, at most 11000 per task
+    (`feature-C-1`: 25455; predicted 9547 for one task, with T4).
+
+  Where a session planned, the `planning` row's `out` is apportioned by emitted bytes within the
+  measured pool, so the second reading is then an estimate, as the tool labels `out`.
 - **Confirming session:** the after-study.
 
 ### T4 — The task cycle in five main-loop requests (C7)
 
 - **Files:** `plugins/audit/scripts/manifest/audit-task.py`; the governance scripts it calls; the task
   prose; tests.
-- **Target:** at most 5 plan, gate and close requests per task, and at most `7 + 5N` main-loop
-  requests before sign-off, read from `per stage, as billed` → `req`. `feature-C-1` made 8 per task,
-  two of them one-offs (section 1.1).
+- **Target**, read from `per stage, as billed` → `req` with T1's `planning` row apart, so the task
+  cycle is read with planning excluded (C7's *Confirming reading*):
+  - the plan, gate and close requests before sign-off, less the run's own five that section 1.2
+    names, divided by `N`: at most 5;
+  - all main-loop requests before sign-off other than `planning`, which adds orient's 2: at most
+    `7 + 5N`.
+
+  `feature-C-1` planned nothing (section 1.4). It reads (5 + 3 + 5 − 5) / 1 = 8 per task, two of
+  them one-offs (section 1.1), and 2 + 5 + 3 + 5 = 15 = 7 + 8 in all.
 - **Confirming session:** the after-study.
 
 ### T5 — Calibrate the model from the baseline sessions
@@ -1045,9 +1169,9 @@ not with this one** (section 0). Until that phase merges, the sections cited her
 | Target | Row read per session |
 |---|---|
 | T2 | the summed `Read <plugin>/reference/…` tokens; run `$write` |
-| T3 | `largest outputs`; `output pool, measured: main loop` per task; `contexts:` → `main`, `task` |
-| T4 | `per stage, as billed` → `req` per task |
-| the whole set | `all models priced`, set beside section 5's prediction for the session's task count |
+| T3 | `largest outputs`; `output pool, measured: main loop` less the `planning` row's `out`, per task; `contexts:` → `main`, `task` less its planning part (T1's split) |
+| T4 | `per stage, as billed` → `req` per task, before sign-off, with the `planning` row apart (T1's split) |
+| the whole set | `all models priced`, less the `planning` row's `$total` (T1's split), set beside section 5's prediction for the session's task count. Section 5 predicts neither planning nor sign-off, so a reading that cannot take sign-off out says so |
 
 **Quality, so a saving cannot hide a loss.** For every after session, read beside the before sessions:
 
@@ -1096,11 +1220,12 @@ this design's saving.
    **Recommendation: (a).** It is what lets a later checker compare a claim with its gate row. The cost
    is larger commits: in `feature-C-1` the hand-backs were 6142 and 3550 bytes (`largest outputs`).
 
-   Either way the reviewer gains one write, through the filing verb, held to its own return (C3,
-   *Guarantees*). Neither option touches the README's enforced row "the reviewer cannot edit", because
-   the `tools:` line that holds it gains nothing. What (b) would add is that a stray reviewer write
-   could not ride into the close commit with the evidence directory. Its trade is that the reviewer's
-   findings then reach the record only through what the close writes.
+   Either way the reviewer gains one write, through a write-once filing verb that derives its one
+   path and never replaces a return already filed; the task id and role it files under are the
+   caller's word (C3, *Guarantees*). Neither option touches the README's enforced row "the reviewer
+   cannot edit", because the `tools:` line that holds it gains nothing. What (b) would add is that a
+   stray reviewer write could not ride into the close commit with the evidence directory. Its trade
+   is that the reviewer's findings then reach the record only through what the close writes.
 4. **The spend on the after-study.** **Recommendation:** run the whole-feature arm C sessions first,
    because they are both the baseline and T5's calibration. Then implement, then run the after-study.
 5. **Main-loop TTL guidance (C6a).** Whether the plugin can set it is **unknown**. The host facts name
@@ -1142,9 +1267,9 @@ And from the records:
 
 | Figure | Command |
 |---|---|
-| stage, class, row and context figures | `python3 tools/stream-cost.py <record>/stream.jsonl` (`--json` for `requests` and `items`), from a checkout of the commit section 0 names |
-| bytes read first per entry, at a ref | `python3 tools/measure-context.py --ref 7b489337 --ref f7eaade4 --bytes-per-token 2.63` |
-| `/audit:task`'s entry total, until T1 adds the entry | `python3 -c "import importlib.util as u; s=u.spec_from_file_location('mc','tools/measure-context.py'); m=u.module_from_spec(s); s.loader.exec_module(m); src,_=m.git_source('7b489337'); print(sum(r['bytes'] for r in m.entry_rows(src,'command','commands/task.md',None)))"` |
+| stage, class, row and context figures | `python3 tools/stream-cost.py <record>/stream.jsonl` (`--json` for `requests` and `items`), from a checkout of `9501aa91` |
+| bytes read first per entry, at a ref | `python3 tools/measure-context.py --ref 7b489337 --ref f7eaade4 --bytes-per-token 2.63`, from the same checkout |
+| `/audit:task`'s entry total, until T1 adds the entry, from the same checkout | `python3 -c "import importlib.util as u; s=u.spec_from_file_location('mc','tools/measure-context.py'); m=u.module_from_spec(s); s.loader.exec_module(m); src,_=m.git_source('7b489337'); print(sum(r['bytes'] for r in m.entry_rows(src,'command','commands/task.md',None)))"` |
 | the main loop's tool calls per request | the snippet in section 1.1 |
 | the rates | `git show 7b489337:plugins/audit/scripts/usage/_usage_core.py \| grep -n claude-opus-5-5` |
 | bytes per heading of a reference or command file | below |

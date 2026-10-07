@@ -33,10 +33,10 @@ folder: `<x>` is `experiments/bench-feature` there, and `<p>` is
 record is `<p>`.
 
 **Every command is pinned to what its figures were taken at.** A git ref is given as the commit it
-named, never as a branch. A session record does not change, but the tool that reads it can: the
-`stream-cost.py` figures are the tool's output at the commit that last changed this document, which
-`git log -1 --format=%h -- docs/research/pipeline-cost-analysis.md` names. Re-derive them from a
-checkout of that commit.
+named, never as a branch. A session record does not change, and neither does the prose at a ref, but
+the tool that reads either can: the `stream-cost.py` and `measure-context.py` figures are those
+tools' output at `9501aa91`. Re-derive them from a checkout of that commit. A later change to either
+tool does not move this pin, so the command and the figures keep naming the same tool.
 
 ## 1. The instruments
 
@@ -415,8 +415,8 @@ prose written differently.
 
 | Figure | Command |
 |---|---|
-| per-stage billing, content view, classes, cache economics, largest writes and outputs, contexts | `python3 tools/stream-cost.py <record>/stream.jsonl` (`--json` for every row), from a checkout of the commit section 0 names |
-| the prose each pipeline step loads, and its growth between refs | `python3 tools/measure-context.py --ref v3.1.0 --ref a73b836a --bytes-per-token 2.63` |
-| the sizes at the commits the sessions ran | `python3 tools/measure-context.py --ref 5df231ec76c9 --ref b6d9a4a31d2a` |
+| per-stage billing, content view, classes, cache economics, largest writes and outputs, contexts | `python3 tools/stream-cost.py <record>/stream.jsonl` (`--json` for every row), from a checkout of `9501aa91` |
+| the prose each pipeline step loads, and its growth between refs | `python3 tools/measure-context.py --ref v3.1.0 --ref a73b836a --bytes-per-token 2.63`, from the same checkout |
+| the sizes at the commits the sessions ran | `python3 tools/measure-context.py --ref 5df231ec76c9 --ref b6d9a4a31d2a`, from the same checkout |
 | the tools' own proof | `python3 tools/stream-cost.py --selftest`, `python3 tools/measure-context.py --selftest` |
 | the published figures compared in section 1.2 | [pipeline-pilot.md](pipeline-pilot.md) §4, [benchmark-results.md](benchmark-results.md) §2.4 |
