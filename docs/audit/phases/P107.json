@@ -350,7 +350,7 @@
     {
       "id": "P107.5-gwk",
       "title": "a backfill keeps a row appended while it creates a missing month file, and its cursor docs say what it guarantees",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix the phase review's usage-ledger findings P107-R1, P107-R2, P107-R6 and P107-R7 (see review.findings in this phase).\n- R1: rewrite_month must hold a descriptor even when the month file does not exist yet. Create it when missing (os.open with O_RDONLY|O_CREAT) and keep it open, so a row the metering hook appends while the file is being created is drained before the replace or settled after it, exactly like every other month. A backfill that rebuilds a lost ledger must never retire a file the hook created during its window.\n- R6: the comment at audit-usage.py's held-back cursors, and usage.md's cursor sentence, must say what the code guarantees. Hold a session's cursor back only when every month that session spans failed to rewrite (the structurally correct option, so a rewritten month is never double-counted). If that cannot be done without a second state file, state the double-count until the next --backfill plainly instead.\n- R2: usage.md's 'What that still leaves open' list renders as one list.\n- R7: PLUGIN-BUILD-GUIDE.md's audit-usage.py section stops saying the backfill lock protects the rewrite. Match the module docstring: the lock excludes only another backfill, and each month's rewrite carries the rows appended during it.",
       "files": [
         "plugins/audit/scripts/usage/usage_ledger.py",
@@ -380,18 +380,29 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "675777a3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "R1 (usage_ledger.rewrite_month): when the tail holds no descriptor because the month file did not exist, the rewrite now creates it with os.open(O_RDONLY|O_CREAT, plus O_BINARY where defined) and holds it through os.fdopen('rb'), so a row the metering hook appends while the file is being created is drained before the replace or settled after it, exactly like every other month. If the replace then fails, the created empty file stays (it holds no row, so readers see the month unchanged); deleting it could race a writer that had just created it. open_month's docstring matches.\nR6 (audit-usage.py backfill): a session's cursor is held back only when every month it spans failed to rewrite (spanned <= set(failed), non-empty); a session with rows in a rewritten month gets its new cursor saved, so the rewritten month is never double-counted by the next metering pass. Trade-off, stated in the comment, the [FAIL] message and usage.md: that session's rows in the failed month are missing until the next --backfill.\nR2 (usage.md): the platform-refuses-open-file bullet is back inside 'What that still leaves open', so the list renders as one; added the created-empty month and the rewritten failed-month/cursor paragraphs.\nR7 (PLUGIN-BUILD-GUIDE.md, audit-usage.py section): the lock excludes only another backfill, and each month's rewrite carries rows appended during it, matching the module docstring.\nTests: test_usage_ledger nm1 (a row appended to a month file created during a backfill survives the rewrite) and nm2 (allow twin: no writer, exactly the rows handed over); test_audit_usage bw12 (a session spanning a failed and a rewritten month is not counted twice in the rewritten month by the next metering pass) and bw13 (the failed month lacks the session's rows until the next --backfill, which restores them); existing bw10 is the twin for never holding a cursor back. Red-first proved through the helper at HEAD 1fdbbee4: test_usage_ledger 82/83 (nm1), test_audit_usage 127/129 (bw12, bw13). Suites 83/83 and 129/129; ruff clean; prose-number and house-style lints empty.",
+        "descriptive": "A backfill no longer erases a row the hook writes into a month file created during the rebuild, a session spanning a failed and a rewritten month is no longer counted twice in the rewritten one, and the usage docs and build guide say what the backfill lock and cursors actually guarantee."
       },
       "startedAt": "2026-10-07T00:14:33Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T00:32:00Z",
+      "verifiedBy": [
+        "nm1",
+        "nm2",
+        "bw12",
+        "bw13"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T00:27:14Z.e1de8f",
         "status": "passed",
         "at": "2026-10-07T00:27:14Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "675777a3",
+        "at": "2026-10-07T00:32:00Z",
+        "basis": "orchestrator check: R1, R2, R6 and R7 each addressed as the description asks, the structurally correct cursor option taken, red-first proved through the helper with allow twins"
       }
     },
     {
