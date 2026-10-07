@@ -1,7 +1,7 @@
 {
   "id": "P106",
   "title": "rules the model only follows become checks a script makes",
-  "status": "in_progress",
+  "status": "done",
   "description": "Tasks, one rule per task, each deleting its prose: (1) audit-task start refuses a task that is not ready unless --force, which journals the exception. (2) Phase status and claim are written by a verb, not a hand edit. (3) executor.runsGate is resolved by a script, not by the model reading config. Measure the mandatory-read bytes of /audit:next before and after each. Waits for the pipeline pilot in the measurement phase.",
   "desiredOutcome": "the first rules the orchestrator prose asks the model to follow are made by scripts instead, each with a test and with its prose section deleted, and the bytes an execution command must read go down with each move",
   "testGate": [
@@ -17,7 +17,7 @@
   "blockedBy": [],
   "baseRef": "b6d9a4a31d2a09b7b126553d6d34e78e2114d631",
   "branch": "audit/p106-rules-the-model-only-follows-b",
-  "mergedAt": null,
+  "mergedAt": "2026-10-07T08:45:11Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -1009,5 +1009,6 @@
     "runId": "2026-10-07T08:39:30Z.8bd403",
     "status": "passed",
     "at": "2026-10-07T08:39:30Z"
-  }
+  },
+  "mergedHead": "0b89bc0b2af0be4ffd5267fdc4ace7abf7a8eb99"
 }
