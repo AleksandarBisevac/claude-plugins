@@ -393,36 +393,230 @@ def _cases(check):
         _cfgp = os.path.join(_mr, ".claude", "audit.config.json")
         _noargs = M.build_parser().parse_args([])
 
+        def _rpath(args, project):
+            return M.resolve_manifest(args, project)["path"]
+
         with open(_cfgp, "w", encoding="utf-8") as fh:
             json.dump({"manifestPath": "audit-plan.json"}, fh)
         check("manifest: a configured manifestPath is honoured, not just the "
               "default location",
-              M.resolve_manifest_path(_noargs, _mr) == os.path.normpath(_elsewhere))
+              _rpath(_noargs, _mr) == os.path.normpath(_elsewhere))
         check("manifest: an explicit argument still outranks the config",
-              M.resolve_manifest_path(
-                  M.build_parser().parse_args(["some/other.json"]), _mr)
+              _rpath(M.build_parser().parse_args(["some/other.json"]), _mr)
               == "some/other.json")
+        check("manifest: the rule is the shared one, not a copy - the resolver "
+              "here IS _manifest_io's answer, field for field",
+              M.resolve_manifest(_noargs, _mr)
+              == M.mio.resolve_manifest(_mr, None))
 
+        # A malformed config, or one naming a file that is gone, resolves to NO
+        # plan rather than to the default: the default is some other plan than
+        # the one the project points at, and its meta.usage is not this one's.
         with open(_cfgp, "w", encoding="utf-8") as fh:
             fh.write("{ not json")
-        check("manifest: a malformed config falls back instead of raising - the "
-              "usage view is read-only and must not die on someone else's typo",
-              M.resolve_manifest_path(_noargs, _mr)
-              == os.path.normpath(os.path.join(_mr, M.DEFAULT_MANIFEST_REL)))
+        check("manifest: a malformed config resolves to no plan, with the config "
+              "named as the problem, rather than raising or reading the default",
+              _rpath(_noargs, _mr) is None
+              and _cfgp in (M.resolve_manifest(_noargs, _mr)["problem"] or ""))
         os.remove(_cfgp)
+        _default = os.path.normpath(
+            os.path.join(_mr, *M.mio.DEFAULT_MANIFEST_REL.split("/")))
         check("manifest: no config at all still finds the default location",
-              M.resolve_manifest_path(_noargs, _mr)
-              == os.path.normpath(os.path.join(_mr, M.DEFAULT_MANIFEST_REL)))
+              _rpath(_noargs, _mr) == _default)
 
         with open(_cfgp, "w", encoding="utf-8") as fh:
             json.dump({"manifestPath": "nowhere/absent.json"}, fh)
-        check("manifest: a configured path that does not exist falls back rather "
-              "than reporting a file that is not there",
-              M.resolve_manifest_path(_noargs, _mr)
-              == os.path.normpath(os.path.join(_mr, M.DEFAULT_MANIFEST_REL)))
+        check("manifest: a configured path that does not exist resolves to no "
+              "plan rather than the default one beside it",
+              _rpath(_noargs, _mr) is None)
         check("manifest: nothing anywhere -> None, and the caller renders without "
               "project values rather than crashing",
-              M.resolve_manifest_path(_noargs, os.path.join(tmp, "empty-proj")) is None)
+              _rpath(_noargs, os.path.join(tmp, "empty-proj")) is None)
+        os.remove(_cfgp)
+
+        def _usage_stderr(project):
+            import contextlib
+            import io
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = M.main(["--ledger-dir", ledger, "--project-dir", project,
+                             "--json"])
+            return rc, err.getvalue()
+
+        _empty = os.path.join(tmp, "empty-proj")
+        os.makedirs(_empty, exist_ok=True)
+        _rc_n, _err_n = _usage_stderr(_empty)
+        check("mn1 with no plan to find, the render still exits 0 and SAYS it is "
+              "rendering without the plan, naming where it looked",
+              _rc_n == 0 and "rendering without the plan" in _err_n
+              and os.path.join(_empty, *M.mio.DEFAULT_MANIFEST_REL.split("/"))
+              in _err_n, repr(_err_n))
+        _rc_f, _err_f = _usage_stderr(_mr)
+        check("mn2 SECOND DIRECTION: a plan that resolves carries no note - the "
+              "case that fails if the note is written unconditionally",
+              _rc_f == 0 and _err_f == "", repr(_err_f))
+
+        # A plan at the default location turns dollars off; a config the user
+        # wrote is malformed. Rendering with no plan would read showCost off {}
+        # and print the dollars that plan exists to keep off the screen, so the
+        # command refuses the way /audit:status and /audit:report do.
+        #
+        # The ledger here is large enough to calibrate the cost bands and to
+        # clear every gate of the routing advice: six completed tasks in one
+        # risk band, three on each of two priced models, the expensive one far
+        # enough above the cheap one to clear the saving floors. A smaller one
+        # never reaches the band thresholds or the re-priced advice, which are
+        # exactly the two places a dollar figure could leak past showCost.
+        _cal_ledger = os.path.join(tmp, "usage-calibrated")
+        _cal_tasks, _cal_rows = [], []
+        for _i, _model, _out_tok in (
+                (1, "claude-opus-5", 400000), (2, "claude-opus-5", 420000),
+                (3, "claude-opus-5", 440000), (4, "claude-haiku-4-5", 60000),
+                (5, "claude-haiku-4-5", 70000), (6, "claude-haiku-4-5", 80000)):
+            _tid = "P9.%d" % _i
+            _cal_tasks.append({"id": _tid, "title": "cal %d" % _i,
+                               "status": "done", "risk": "low", "attempts": 1})
+            _counts = {"in": 10, "out": _out_tok, "cacheW5m": 0, "cacheW1h": 0,
+                       "cacheR": 100}
+            _row = {"ts": "2026-08-03T1%d" % _i, "author": "a@x.io",
+                    "sessionId": "s-" + _tid, "agentId": None,
+                    "agentType": "audit-executor", "phaseId": "P9",
+                    "taskId": _tid, "attr": "task", "model": _model,
+                    "branch": "audit/x", "repo": "demo", "msgs": 1}
+            _row.update(_counts)
+            _row["costUSD"] = round(M.ul.price(_counts, _model), 6)
+            _cal_rows.append(_row)
+        M.ul.append_rows(_cal_ledger, _cal_rows)
+
+        def _cal_plan(project, show_cost):
+            os.makedirs(os.path.join(project, ".claude"), exist_ok=True)
+            os.makedirs(os.path.join(project, "docs", "audit"), exist_ok=True)
+            with open(os.path.join(project, "docs", "audit", "audit-plan.json"),
+                      "w", encoding="utf-8") as fh:
+                json.dump({"meta": {"usage": {"showCost": show_cost}},
+                           "phases": [{"id": "P9", "title": "Calibrated",
+                                       "tasks": _cal_tasks}],
+                           "bugs": []}, fh)
+
+        _off = os.path.join(tmp, "cost-off")
+        _cal_plan(_off, False)
+        _off_cfg = os.path.join(_off, ".claude", "audit.config.json")
+
+        def _usage_text(project, extra=None):
+            import contextlib
+            import io
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = M.main(["--ledger-dir", _cal_ledger, "--project-dir", project,
+                             "--color", "never"] + list(extra or []))
+            return rc, out.getvalue(), err.getvalue()
+
+        def _dollar_lines(text):
+            return [ln for ln in text.splitlines() if "$" in ln]
+
+        _rc_ok, _out_ok, _err_ok = _usage_text(_off)
+        check("mn3 ALLOW: the showCost-false plan, with no config, renders "
+              "(exit 0) on a calibrated ledger - the band note and the routing "
+              "advice both reached - and prints no dollar figure anywhere",
+              _rc_ok == 0 and "band: this project's completed tasks" in _out_ok
+              and "WHAT THE EVIDENCE SUPPORTS" in _out_ok
+              and _dollar_lines(_out_ok) == [],
+              repr((_rc_ok, _err_ok, _dollar_lines(_out_ok))))
+        # The twin that fails if the gate is applied unconditionally: the same
+        # plan with showCost on still prints the band thresholds and the
+        # re-priced advice in dollars.
+        _on = os.path.join(tmp, "cost-on")
+        _cal_plan(_on, True)
+        _rc_on, _out_on, _err_on = _usage_text(_on)
+        _band_on = [ln for ln in _out_on.splitlines() if "band: " in ln]
+        check("mn3b SECOND DIRECTION: the showCost-true twin prints the band "
+              "thresholds and the routing advice's re-priced figures in dollars",
+              _rc_on == 0 and len(_band_on) == 1 and "$" in _band_on[0]
+              and "less (" in _out_on
+              and any("those same tokens cost $" in ln
+                      for ln in _out_on.splitlines()),
+              repr((_rc_on, _err_on, _band_on)))
+        _rc_off_j, _out_off_j, _err_off_j = _usage_text(_off, ["--json"])
+        _payload_off = json.loads(_out_off_j)
+        check("mn3c the --json payload on the showCost-false plan still keeps "
+              "its cost fields, and carries showCost false at top level so a "
+              "consumer can honour the setting itself",
+              _rc_off_j == 0 and _payload_off.get("showCost") is False
+              and "costUSD" in _payload_off["totals"],
+              repr((_rc_off_j, _err_off_j, _payload_off.get("showCost"))))
+        _rc_on_j, _out_on_j, _err_on_j = _usage_text(_on, ["--json"])
+        _payload_on = json.loads(_out_on_j)
+        check("mn3d SECOND DIRECTION: the showCost-true twin's --json payload "
+              "carries showCost true",
+              _rc_on_j == 0 and _payload_on.get("showCost") is True,
+              repr((_rc_on_j, _err_on_j, _payload_on.get("showCost"))))
+        with open(_off_cfg, "w", encoding="utf-8") as fh:
+            fh.write("{ not json")
+        _rc_bad, _out_bad, _err_bad = _usage_text(_off)
+        check("mn4 RED: the same plan plus a malformed config exits 2, prints "
+              "no dollar figure, and names the config as the problem",
+              _rc_bad == 2 and "$" not in _out_bad and "$" not in _err_bad
+              and _off_cfg in _err_bad
+              and "rendering without the plan" not in _err_bad,
+              repr((_rc_bad, _out_bad[:200], _err_bad)))
+        check("mn5 the refusal is the shared wording, not a third one",
+              _err_bad == M.mio.describe_unresolved(
+                  M.mio.resolve_manifest(_off, None)) + "\n", repr(_err_bad))
+        with open(_off_cfg, "w", encoding="utf-8") as fh:
+            json.dump({"manifestPath": "moved/audit-plan.json"}, fh)
+        _gone = os.path.normpath(os.path.join(_off, "moved", "audit-plan.json"))
+        _rc_gone, _out_gone, _err_gone = _usage_text(_off)
+        check("mn6 RED: a config naming a missing manifest is refused (exit 2), "
+              "naming where it looked, and the default plan is not read instead",
+              _rc_gone == 2 and _gone in _err_gone and _out_gone == "",
+              repr((_rc_gone, _err_gone)))
+        os.remove(_off_cfg)
+
+        # A plan that RESOLVES but cannot be used: the configured file does not
+        # parse, or a sharded index names a shard that is gone, or an explicit
+        # argument names nothing. Each used to fall through to an empty plan,
+        # whose showCost defaults to on. The refusal is the wording
+        # /audit:status and /audit:report already print for the same load.
+        _cfg_broken = os.path.join(_off, "broken-plan.json")
+        with open(_cfg_broken, "w", encoding="utf-8") as fh:
+            fh.write('{"meta": {"usage": {"showCost": false}}, "phases": [')
+        with open(_off_cfg, "w", encoding="utf-8") as fh:
+            json.dump({"manifestPath": "broken-plan.json"}, fh)
+        _rc_up, _out_up, _err_up = _usage_text(_off)
+        check("mn7 RED: a configured plan that does not parse exits 2 with "
+              "'cannot read/parse <path>' and no dollar figure",
+              _rc_up == 2 and _out_up == "" and "$" not in _err_up
+              and ("cannot read/parse %s" % os.path.normpath(_cfg_broken))
+              in _err_up,
+              repr((_rc_up, _out_up[:200], _err_up)))
+        _idx = os.path.join(_off, "sharded-plan.json")
+        with open(_idx, "w", encoding="utf-8") as fh:
+            json.dump({"meta": {"version": 2, "usage": {"showCost": False}},
+                       "phases": [{"id": "P9", "shard": "phases/P9.json"}],
+                       "bugs": []}, fh)
+        with open(_off_cfg, "w", encoding="utf-8") as fh:
+            json.dump({"manifestPath": "sharded-plan.json"}, fh)
+        _rc_sh, _out_sh, _err_sh = _usage_text(_off)
+        check("mn8 RED: a sharded plan whose shard is missing exits 2 with "
+              "'cannot read/parse <index>' and no dollar figure",
+              _rc_sh == 2 and _out_sh == "" and "$" not in _err_sh
+              and ("cannot read/parse %s" % os.path.normpath(_idx)) in _err_sh,
+              repr((_rc_sh, _out_sh[:200], _err_sh)))
+        os.remove(_off_cfg)
+        _absent_arg = os.path.join(_off, "no-such-plan.json")
+        _rc_ma, _out_ma, _err_ma = _usage_text(_off, [_absent_arg])
+        check("mn9 RED: an explicit argument naming a missing file exits 2 with "
+              "'cannot read/parse <path>' and no dollar figure",
+              _rc_ma == 2 and _out_ma == "" and "$" not in _err_ma
+              and ("cannot read/parse %s" % _absent_arg) in _err_ma,
+              repr((_rc_ma, _out_ma[:200], _err_ma)))
+        _rc_ea, _out_ea, _err_ea = _usage_text(
+            _on, [os.path.join(_on, "docs", "audit", "audit-plan.json")])
+        check("mn10 ALLOW: an explicit argument naming a plan that loads renders "
+              "(exit 0) with no refusal - the case that fails if the load "
+              "refuses every explicit argument",
+              _rc_ea == 0 and _err_ea == "" and "BY PHASE" in _out_ea,
+              repr((_rc_ea, _err_ea)))
 
         # --json path
         argv = ["--ledger-dir", ledger, "--project-dir", tmp, "--json"]
@@ -437,6 +631,9 @@ def _cases(check):
         check("json: exits 0", code == 0)
         check("json: totals match the ledger",
               payload["totals"]["out"] == 3500)
+        check("json: showCost true by default (no plan, no config) rides beside "
+              "the cost data --json never withholds",
+              payload.get("showCost") is True and "costUSD" in payload["totals"])
         check("json: every grouping present",
               all(k in payload for k in ("byPhase", "byTask", "byModel",
                                          "byAuthor", "byAgent", "byDay",

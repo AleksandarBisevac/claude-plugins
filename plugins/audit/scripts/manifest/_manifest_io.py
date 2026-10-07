@@ -323,6 +323,86 @@ def load_manifest_safe(path):
         return {}
 
 
+# --- where the manifest is -------------------------------------------------------
+# One answer to "which file is the plan", for every script a command runs. A command
+# document that handed its script a `<manifestPath>` placeholder made the model fill
+# it in, and a thin command never reads the reference that states the default - so
+# the model guessed, and said out loud that it had. The script answers instead.
+DEFAULT_MANIFEST_REL = "docs/audit/audit-plan.json"
+CONFIG_REL = ".claude/audit.config.json"
+
+
+def _config_manifest_rel(cfg_path):
+    """(rel, finding, problem) for the config file at `cfg_path`.
+
+    `rel` is the `manifestPath` it names, or None. `finding` says what was seen
+    there. `problem` is True - the resolver stops on it - only when the file
+    exists and cannot be read as an object with a usable `manifestPath`: a config
+    the user wrote is never silently swapped for the default.
+    """
+    if not os.path.isfile(cfg_path):
+        return None, "absent", False
+    try:
+        cfg = read_json(cfg_path)
+    except Exception as exc:
+        return None, "unreadable: %s" % (exc,), True
+    if not isinstance(cfg, dict):
+        return None, "not a JSON object", True
+    if "manifestPath" not in cfg:
+        return None, "names no manifestPath", False
+    rel = cfg["manifestPath"]
+    if not isinstance(rel, str) or not rel.strip():
+        return None, "manifestPath is not a non-empty string: %r" % (rel,), True
+    return rel, "names manifestPath %r" % (rel,), False
+
+
+def resolve_manifest(project, explicit=None):
+    """Where the manifest is: the explicit argument, else the config's
+    `manifestPath`, else `DEFAULT_MANIFEST_REL` - read against `project`, except
+    an absolute `manifestPath`, which is used as given.
+
+    Returns {"path", "source", "looked", "problem"}. `path` is None when no
+    manifest exists where the rule points, and `looked` then lists every
+    (place, what was found there) the answer was read from, so a refusal can name
+    them. `source` is "argument", "config" or "default". An explicit argument is
+    returned as given, unchecked: the caller's load reports a missing file with
+    the path the user typed.
+
+    A config naming a path that does not exist is NOT followed by the default:
+    that would render some other plan than the one the project points at.
+    """
+    if explicit:
+        return {"path": explicit, "source": "argument", "looked": [],
+                "problem": None}
+    cfg_path = os.path.join(project, *CONFIG_REL.split("/"))
+    rel, finding, problem = _config_manifest_rel(cfg_path)
+    looked = [(cfg_path, finding)]
+    if problem:
+        return {"path": None, "source": "config", "looked": looked,
+                "problem": "%s: %s" % (cfg_path, finding)}
+    source = "config" if rel is not None else "default"
+    if rel is None:
+        rel = DEFAULT_MANIFEST_REL
+    # An absolute path is used as given - the hooks join it onto the project,
+    # which keeps an absolute path whole - so both readers find the same file.
+    cand = os.path.normpath(rel if os.path.isabs(rel)
+                            else os.path.join(project, *rel.split("/")))
+    if os.path.isfile(cand):
+        return {"path": cand, "source": source, "looked": looked, "problem": None}
+    looked.append((cand, "does not exist"))
+    return {"path": None, "source": source, "looked": looked, "problem": None}
+
+
+def describe_unresolved(resolved):
+    """The refusal a command prints when `resolve_manifest` found nothing: every
+    place it looked and what it saw there, then the two ways forward."""
+    lines = ["no audit manifest found - looked at:"]
+    lines.extend("  %s - %s" % (place, seen) for place, seen in resolved["looked"])
+    lines.append("pass the manifest path as an argument, set manifestPath in %s, "
+                 "or create a plan with /audit:init" % (CONFIG_REL,))
+    return "\n".join(lines)
+
+
 # --- traversal ------------------------------------------------------------------
 # Malformed entries are SKIPPED here, not reported. That is deliberate and it is the
 # behaviour every hand-rolled loop already had: a non-dict phase or a non-dict task is

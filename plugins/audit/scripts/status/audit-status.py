@@ -8,10 +8,15 @@ any Claude session involved.
 
 Usage:
   audit-status.py --help
-  audit-status.py <manifest> [--json [--discovery]] [--gate] [--phase <id>]
-                             [--short] [--color auto|always|never]
-                             [--fail-on <c1,c2,...>]
+  audit-status.py [<manifest>] [--json [--discovery]] [--gate] [--phase <id>]
+                               [--short] [--color auto|always|never]
+                               [--fail-on <c1,c2,...>]
   audit-status.py --selftest
+
+With no <manifest>, the plan is the one `.claude/audit.config.json`'s manifestPath
+names under the project (CLAUDE_PROJECT_DIR, else the cwd), else
+docs/audit/audit-plan.json there - `_manifest_io.resolve_manifest`, the rule every
+script a command runs shares. When neither exists it exits 2 naming where it looked.
 
 Modes: a bare invocation renders a human report; --json is for machines.
   --json    print the rollup as JSON
@@ -1728,8 +1733,10 @@ def build_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description="Headless status rollup + CI gate for the audit manifest.",
         epilog=_conditions_epilog())
-    p.add_argument("manifest", help="path to the audit manifest (single-file or "
-                                    "sharded index)")
+    p.add_argument("manifest", nargs="?", default=None,
+                   help="path to the audit manifest (single-file or sharded "
+                        "index); omitted, the project's configured "
+                        "manifestPath, else docs/audit/audit-plan.json")
     p.add_argument("--json", action="store_true", dest="as_json",
                    help="print the rollup as JSON instead of the human render")
     p.add_argument("--discovery", action="store_true",
@@ -1828,7 +1835,12 @@ def main(argv):
                              % (", ".join(unknown), ", ".join(CONDITIONS)))
             return 2
 
-    manifest_path = args.manifest
+    resolved = _mio.resolve_manifest(
+        os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd(), args.manifest)
+    manifest_path = resolved["path"]
+    if manifest_path is None:
+        sys.stderr.write(_mio.describe_unresolved(resolved) + "\n")
+        return 2
     try:
         manifest = _mio.load_manifest(manifest_path)
     except Exception as exc:

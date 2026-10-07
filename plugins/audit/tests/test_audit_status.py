@@ -1556,7 +1556,9 @@ def _cases(_record):
         json.dump(m, fh)
     check("c2 CLI gate fails on open high bug (exit 1)",
           M.main([path, "--gate"]) == 1)
-    check("c3 CLI usage error (exit 2)", M.main([]) == 2)
+    # Two positionals: the manifest argument is optional now, so the empty argv
+    # this case used to pass resolves a plan instead of being a usage error.
+    check("c3 CLI usage error (exit 2)", M.main([path, path]) == 2)
     check("c4 CLI unknown condition (exit 2)",
           M.main([path, "--gate", "--fail-on", "frobnicate"]) == 2)
     with open(path, "w", encoding="utf-8") as fh:
@@ -3062,8 +3064,102 @@ def _read_time_pricing_cases(check):
         _sh.rmtree(root, ignore_errors=True)
 
 
+def _in_project(project, argv, via_env=True):
+    """(code, stdout, stderr) of `M.main(argv)` run as a command started in
+    `project` - named by CLAUDE_PROJECT_DIR, or (via_env=False) by the cwd alone
+    with that variable unset. Both are restored whatever happens."""
+    import contextlib
+    import io
+    saved_env = os.environ.get("CLAUDE_PROJECT_DIR")
+    saved_cwd = os.getcwd()
+    out, err = io.StringIO(), io.StringIO()
+    try:
+        if via_env:
+            os.environ["CLAUDE_PROJECT_DIR"] = project
+        else:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            os.chdir(project)
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = M.main(argv)
+    finally:
+        os.chdir(saved_cwd)
+        if saved_env is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = saved_env
+    return code, out.getvalue(), err.getvalue()
+
+
+def _resolve_cases(check):
+    """`/audit:status` hands its script no manifest path; the script finds it."""
+    import tempfile
+    root = tempfile.mkdtemp(prefix="audit-status-resolve-")
+    try:
+        proj = os.path.join(root, "proj")
+        default_abs = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        moved = os.path.join(proj, "plan", "audit-plan.json")
+        cfg = os.path.join(proj, ".claude", "audit.config.json")
+        os.makedirs(proj)
+
+        # Nothing to find: a refusal naming both places, and no render.
+        c0, o0, e0 = _in_project(proj, [])
+        check("mr1 with no manifest anywhere, no argument is a refusal (exit 2) "
+              "naming the config file and the default path it looked at",
+              c0 == 2 and o0 == "" and cfg in e0 and default_abs in e0,
+              "code=%r stderr=%r" % (c0, e0))
+
+        # The default path: renders the same plan the explicit path renders.
+        default_plan = _fixture()
+        default_plan["phases"][0]["title"] = "Default-located phase"
+        os.makedirs(os.path.dirname(default_abs))
+        with open(default_abs, "w", encoding="utf-8") as fh:
+            json.dump(default_plan, fh)
+        # `--view all`: the default view hides a signed-off phase, and the
+        # title this case looks for is on one.
+        c1, o1, _e1 = _in_project(proj, ["--view", "all"])
+        c1x, o1x, _e1x = _in_project(proj, [default_abs, "--view", "all"])
+        check("mr2 no argument renders the plan at the default path - the same "
+              "bytes the explicit path renders",
+              c1 == 0 and o1 == o1x and c1x == 0
+              and "Default-located phase" in o1, "code=%r out=%r" % (c1, o1[:300]))
+        c1c, o1c, _e1c = _in_project(proj, ["--view", "all"], via_env=False)
+        check("mr3 ...and the cwd alone names the project when "
+              "CLAUDE_PROJECT_DIR is unset",
+              c1c == 0 and o1c == o1, "code=%r" % (c1c,))
+
+        # The configured path wins over the default that also exists.
+        moved_plan = _fixture()
+        moved_plan["phases"][0]["title"] = "Config-located phase"
+        os.makedirs(os.path.dirname(moved))
+        with open(moved, "w", encoding="utf-8") as fh:
+            json.dump(moved_plan, fh)
+        os.makedirs(os.path.dirname(cfg))
+        with open(cfg, "w", encoding="utf-8") as fh:
+            json.dump({"manifestPath": "plan/audit-plan.json"}, fh)
+        c2, o2, _e2 = _in_project(proj, ["--json"])
+        doc = json.loads(o2) if c2 == 0 else {}
+        titles = [p.get("title") for p in doc.get("phases") or []]
+        check("mr4 no argument renders the plan the config's manifestPath names, "
+              "not the one at the default path",
+              c2 == 0 and "Config-located phase" in titles
+              and "Default-located phase" not in titles, repr(titles))
+
+        # A configured path that is gone: refused, the default not substituted.
+        os.remove(moved)
+        c3, o3, e3 = _in_project(proj, ["--view", "all"])
+        check("mr5 a config naming a missing manifest is refused with that path "
+              "named, and the plan at the default path is not rendered instead",
+              c3 == 2 and "Default-located phase" not in o3
+              and os.path.normpath(moved) in e3, "code=%r stderr=%r" % (c3, e3))
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(record):
+        _cases(record)
+        _resolve_cases(record)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

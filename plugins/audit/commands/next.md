@@ -19,7 +19,7 @@ Otherwise run the full preflight (steps 1–5, including acquiring the lock) and
 
 0. **Print the entry view first, verbatim — in your own reply, inside a fenced block.** A tool
    result is collapsed behind the tool call, so running it is not showing it:
-   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" <manifestPath>` — it names
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py"` — it names
    every ready task, in order, with what the rest are waiting on. Do not re-tabulate it and
    do not re-derive the readiness rule by hand; the first entry under READY NOW is the task
    this command runs.
