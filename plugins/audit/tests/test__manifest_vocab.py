@@ -303,12 +303,14 @@ def _cases(check):
     _omitted = sorted(_claim_lv - set(M.CLAIM_KEYS))
     _narrow = _help.subset_drift(_slv, {"CLAIM_KEYS": ("sessionId",)},
                                  M.SUBSET_ANCHORS)
-    check("mv25 ...and omitting a property the schema declares is NOT drift: %r is "
-          "written BY a claim rather than asked OF one, and a copy narrowed to a "
-          "single key stays silent too - if this goes red the check has started "
-          "demanding coverage, and a lint that fails the correct state gets routed "
-          "around" % (_omitted,),
-          _omitted == ["at"] and _narrow == [], repr(_narrow))
+    check("mv25 ...and omitting a property the schema declares is NOT drift: of "
+          "%r, `at` is written BY a claim rather than asked OF one and `host` is "
+          "one no claim the plugin writes carries (the shard is committed), and a "
+          "copy narrowed to a single key stays silent too - if this goes red the "
+          "check has started demanding coverage, and a lint that fails the "
+          "correct state gets routed around" % (_omitted,),
+          "at" in _omitted and "host" in _omitted and _narrow == [],
+          repr(_narrow))
     check("mv26 every *_KEYS subset on this module is anchored, so one added later "
           "cannot opt out of mv23 by being forgotten",
           set(_help.vocab_subsets(M)) == {n for n, _ in M.SUBSET_ANCHORS},
@@ -317,8 +319,11 @@ def _cases(check):
     # Red-first against the REAL anchor, both directions, on COPIES - the shipped
     # tuple and the shipped schema are untouched, so the tree is never one exception
     # away from carrying the mutation.
-    _typo = _help.subset_drift(_slv, {"CLAIM_KEYS": ("sessionID", "host", "branch")},
-                               M.SUBSET_ANCHORS)
+    # The copy is the REAL tuple with one key misspelled, so it follows the set.
+    _typo = _help.subset_drift(
+        _slv, {"CLAIM_KEYS": tuple("sessionID" if k == "sessionId" else k
+                                   for k in M.CLAIM_KEYS)},
+        M.SUBSET_ANCHORS)
     _lost = dict(_slv)
     _lost["CLAIM_KEYS"] = _claim_lv - {"branch"}
     _gone = _help.subset_drift(_lost, _help.vocab_subsets(M), M.SUBSET_ANCHORS)
@@ -335,7 +340,7 @@ def _cases(check):
     # The subset check cannot see whether anything still READS the tuple; deleting
     # the loop in `_check_claim` would leave mv23 green over a set nobody consults.
     # So drive the warning for real, one key at a time.
-    _full = {"sessionId": "s-1", "host": "h-1", "branch": "b-1", "at": "2026-01-01"}
+    _full = {"sessionId": "s-1", "branch": "b-1", "at": "2026-01-01"}
     _unnamed = []
     for _k in M.CLAIM_KEYS:
         _claim = dict((k, v) for k, v in _full.items() if k != _k)

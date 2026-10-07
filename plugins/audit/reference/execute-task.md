@@ -8,21 +8,14 @@ not need to.
 
 ## Execute the task
 
-1. **Phase entry** (first started task of the phase, or after an interruption):
-   a. Set `phase.status = "in_progress"` if it isn't already (Edit the phase's manifest file — the
-      shard when sharded) — resume depends on this write.
+1. **Phase entry** (first started task of the phase, or after an interruption) is the verb's in
+   step 2: `audit-task start` sets `phase.status`, and on the sharded layout writes
+   `phase.claim`, in the same write as the task. It refuses a phase another session has claimed.
    b.–c. **The branch and `phase.baseRef` are the verb's in step 2.** `audit-task start` cuts
       the phase branch from its resolved parent on the phase's first task (or records the one
       `/audit:worktree add` checked out), writes `baseRef`, and refuses — naming why — when HEAD
       is anywhere else; see `reference/orchestrator.md`'s **Phase entry**. Do not cut or switch
       the branch by hand first: on a refusal, stop and ask the human.
-   d. **Claim the phase** (sharded layout only): write `phase.claim = {sessionId, host, branch, at}`
-      into the shard — optimistic cross-machine coordination, so a same-phase double-claim on another
-      branch surfaces as a shard merge conflict. The FS phase-lock is the same-machine guard; the
-      claim is the durable, pushed record for other machines. It is released at sign-off.
-      `sessionId` is **`$CLAUDE_CODE_SESSION_ID`** — say which one, because a session has more than
-      one name and the hooks see a different id in their payload. `meter-usage` accepts either, so
-      spend still lands on the claimed phase; write this one so the record is consistent.
 2. **Promote the task — through the script, not by hand:**
    ```
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" start <taskId>

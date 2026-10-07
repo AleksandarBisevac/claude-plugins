@@ -3223,7 +3223,91 @@ def _start_changes(tid, was, task):
     return rows
 
 
-def _start_details(task_id, phase_id, was, task, forced=None):
+def _claim_plan(sharded, held, session, branch, now):
+    """What this start does to `phase.claim`, decided before any write.
+
+    {"action": "none"|"keep"|"take"|"contested"|"no-session", "held", "claim"}.
+    `claim` is the value to write for `take`, and for `contested` the one a
+    forced start writes in its place; None for every other action.
+
+    ONLY THE SHARDED LAYOUT CLAIMS. The claim's job is to make two machines
+    entering one phase collide as a merge conflict in that phase's shard; a
+    single-file plan has no shard, and every write to it conflicts already.
+
+    NO SESSION, NO CLAIM. A claim whose `sessionId` is empty names nobody, so no
+    later start could tell its own claim from somebody else's; the caller says
+    no claim was taken rather than writing one that answers nothing. Under a
+    claim somebody else holds that start is still `contested`, because "this
+    session" is not the holder either way - but it has nothing to replace the
+    claim with, so a forced start leaves the claim as it stands.
+
+    A CLAIM THIS SESSION HOLDS IS KEPT AS IT IS, `at` included: `at` records
+    when the phase was taken, and a retry re-stamping it would erase that.
+
+    NO `host`, though the schema allows one. The shard is a committed file, and
+    a machine name written into it publishes the operator's - the journal drops
+    `actor.host` for the same reason, and `tools/check-committed-pii.py` reports
+    a `host` under a claim. Session, branch and moment are what a second
+    machine needs to recognise the phase as taken.
+    """
+    if not sharded:
+        return {"action": "none", "held": None, "claim": None}
+    held = held if isinstance(held, dict) else None
+    if held is not None and session and held.get("sessionId") == session:
+        return {"action": "keep", "held": held, "claim": None}
+    fresh = ({"sessionId": session, "branch": branch, "at": now}
+             if session else None)
+    if held is not None:
+        return {"action": "contested", "held": held, "claim": fresh}
+    if not session:
+        return {"action": "no-session", "held": None, "claim": None}
+    return {"action": "take", "held": None, "claim": fresh}
+
+
+def _claim_changes(phase_id, held, claim):
+    """The phase-keyed `changes` rows a claim write adds to the `task.start` row:
+    one per field the claim carries, each with the value it replaced."""
+    held = held or {}
+    return [{"id": phase_id, "field": "claim." + key,
+             "from": held.get(key), "to": claim.get(key)}
+            for key in ("sessionId", "branch", "at")]
+
+
+def _claim_refusal(phase_id, held, session):
+    """The refusal for a start on a phase another session has claimed."""
+    return ("[audit-task] phase %s is claimed by session %s "
+            "(branch %s, since %s), and this session is %s -- the claim is the "
+            "record other machines read to see who is running the phase, so "
+            "nothing was started or written. If that session is finished with "
+            "it, start again with --force --reason \"<why>\", which replaces the "
+            "claim and journals the one it replaced."
+            % (phase_id, held.get("sessionId") or "(none)",
+               held.get("branch") or "(none)",
+               held.get("at") or "(unrecorded)",
+               session or "unknown ($%s is unset)" % _journal_io.ENV_SESSION_VAR))
+
+
+def _claim_line(plan, phase_id):
+    """The line `start` prints about the claim, or None when it had none."""
+    action = plan.get("action")
+    claim = plan.get("claim") or {}
+    if action == "take" or (action == "contested" and claim):
+        return ("  claim: phase %s claimed for session %s, branch %s"
+                % (phase_id, claim.get("sessionId"),
+                   claim.get("branch") or "(none)"))
+    if action == "contested":
+        return ("  claim: phase %s stays claimed by session %s -- no session id "
+                "($%s is unset), so there was no claim to replace it with"
+                % (phase_id, plan["held"].get("sessionId"),
+                   _journal_io.ENV_SESSION_VAR))
+    if action == "no-session":
+        return ("  claim: none taken for phase %s -- $%s is unset, and a claim "
+                "naming no session is one no later start can recognise"
+                % (phase_id, _journal_io.ENV_SESSION_VAR))
+    return None
+
+
+def _start_details(task_id, phase_id, was, task, forced=None, claim_rows=None):
     """The `details` block for a `task.start` row, built where a case can read it.
 
     SEPARATE FROM THE APPEND ON PURPOSE. `_journal_io` drops a key that is not on
@@ -3233,25 +3317,42 @@ def _start_details(task_id, phase_id, was, task, forced=None):
     see the mistake `_journal_phase_add` records paying for. Built here, the
     handover itself is the thing a case can compare against the allow-list.
 
-    `forced` is {"reason", "waitingOn"} for a start taken past unmet references,
-    and it lands on three keys already on that list: `mode` says it was forced,
-    `reason` is the caller's own words and `basis` names what was unmet. An
+    `forced` is {"reason", "waitingOn", "replaced"} for a start taken past
+    unmet references, another session's claim, or both, and it lands on three
+    keys already on that list: `mode` says it was forced, `reason` is the
+    caller's own words and `basis` names what the exception was taken past. An
     ordinary start carries none of them, so a forced row is told apart by key.
+
+    `claim_rows` are `_claim_changes`' rows for a claim this start wrote. They
+    ride `changes` because that is the allow-listed key for "a field moved from
+    this to that"; each row's `id` is the PHASE's, so they are told apart from
+    the task's own rows by the key the row shape already carries.
     """
     details = {"taskId": task_id, "phaseId": phase_id,
-               "changes": _start_changes(task_id, was, task)}
+               "changes": _start_changes(task_id, was, task) + list(claim_rows or [])}
     attempt = task.get("attempts")
     if attempt is not None:
         details["attempt"] = attempt
     if forced:
         details["mode"] = "forced"
         details["reason"] = forced["reason"]
-        details["basis"] = "unmet: %s" % ", ".join(forced["waitingOn"])
+        details["basis"] = "; ".join(_forced_past(forced))
     return details
 
 
+def _forced_past(forced):
+    """What a forced start was taken past, one phrase per exception."""
+    parts = []
+    if forced.get("waitingOn"):
+        parts.append("unmet: %s" % ", ".join(forced["waitingOn"]))
+    if forced.get("replaced"):
+        parts.append("claim of session %s"
+                     % (forced["replaced"].get("sessionId") or "(none)"))
+    return parts
+
+
 def _journal_start(project, config, mpath, task_id, phase_id, was, task,
-                   healed=None, entry=None, forced=None):
+                   healed=None, entry=None, forced=None, claim_rows=None):
     """The `task.start` row: what the promotion moved, and which attempt it is.
 
     `changes` AND `attempt`, both already on `_journal_io.DETAILS_KEYS` --
@@ -3270,7 +3371,9 @@ def _journal_start(project, config, mpath, task_id, phase_id, was, task,
     and in `_journal_add`'s spelling: the write moved a phase as well as a task,
     and a row naming only the task would leave the phase's own start recorded in
     the manifest and nowhere in the trail. It rides the summary rather than
-    `changes`, because that block's rows are this TASK's fields.
+    `changes`: `healed` is the panel's change shape, with no `id` to key a row
+    by. A claim this start wrote is the exception, and `_start_details` says why
+    its rows can sit in `changes` keyed by the phase id.
     """
     attempt = task.get("attempts")
     if was["status"] == "in_progress":
@@ -3283,10 +3386,15 @@ def _journal_start(project, config, mpath, task_id, phase_id, was, task,
         # In the summary as well as in `details`, because `audit-journal list`
         # prints the summary alone and a forced start is the row a reader of a
         # readiness question is looking for.
-        summary += "; FORCED past unmet %s" % ", ".join(forced["waitingOn"])
+        summary += "; FORCED past %s" % "; ".join(_forced_past(forced))
     if healed:
         summary += "; " + "; ".join(_panel_write._fmt_change(r) for r in healed)
-    details = _start_details(task_id, phase_id, was, task, forced)
+    taken = dict((r["field"], r["to"]) for r in (claim_rows or []))
+    if taken:
+        summary += "; %s claimed by session %s on branch %s" % (
+            phase_id, taken.get("claim.sessionId"),
+            taken.get("claim.branch") or "(none)")
+    details = _start_details(task_id, phase_id, was, task, forced, claim_rows)
     if (entry or {}).get("state") in ("cut", "adopt"):
         summary += "; branch %s %s" % (entry["branch"], "cut from %s" % entry["parent"]
                                        if entry["state"] == "cut" else "recorded")
@@ -3498,16 +3606,14 @@ def _locked_start(args, project, config, mpath, tid, out):
     # refusing that would leave the retry with no verb. `--force --reason` is the
     # one way past, and the `task.start` row records it.
     waiting = _waiting_on(assembled, node)
-    forced = None
-    if waiting and status != "in_progress":
-        if not args.force:
-            out("[audit-task] %s is not ready -- it waits on %s, so it is not "
-                "started and nothing was written. Finish those first "
-                "(/audit:status lists what is ready now), or start it anyway "
-                "with --force --reason \"<why>\", which the task.start row "
-                "records." % (tid, ", ".join(waiting)))
-            return E_USAGE
-        forced = {"reason": args.reason.strip(), "waitingOn": list(waiting)}
+    unmet = list(waiting) if status != "in_progress" else []
+    if unmet and not args.force:
+        out("[audit-task] %s is not ready -- it waits on %s, so it is not "
+            "started and nothing was written. Finish those first "
+            "(/audit:status lists what is ready now), or start it anyway "
+            "with --force --reason \"<why>\", which the task.start row "
+            "records." % (tid, ", ".join(waiting)))
+        return E_USAGE
 
     git_root = os.path.abspath(os.path.join(project,
                                             (config or {}).get("gitRoot") or "."))
@@ -3516,12 +3622,35 @@ def _locked_start(args, project, config, mpath, tid, out):
         out(entry["refusal"])
         return E_USAGE
 
+    # THE PHASE CLAIM IS THIS WRITE'S TOO, on the sharded layout: it is what lets
+    # a second machine entering the same phase meet a merge conflict in the shard
+    # instead of a silent double run, and while it was a hand edit after the
+    # promotion, a run that skipped it left a running phase nobody could see was
+    # taken. Another session's claim is refused like an unmet reference, and
+    # `--force --reason` is the same one way past, recorded on the same row.
     now = _utc_now()
+    session = os.environ.get(_journal_io.ENV_SESSION_VAR) or None
+    claim = _claim_plan(_mio.is_sharded(raw_index), phase.get("claim"), session,
+                        entry.get("branch") or _id_shape.current_branch(git_root),
+                        now)
+    contested = claim["action"] == "contested"
+    if contested and not args.force:
+        out(_claim_refusal(phase.get("id"), claim["held"], session))
+        return E_USAGE
+    forced = None
+    if args.force and (unmet or contested):
+        forced = {"reason": args.reason.strip(), "waitingOn": unmet,
+                  "replaced": claim["held"] if contested else None}
+
     was = _start_task(node, now)
     if entry["state"] in ("cut", "adopt"):
         phase["branch"] = entry["branch"]
         if not phase.get("baseRef"):
             phase["baseRef"] = entry["baseRef"]
+    claim_rows = []
+    if claim["claim"]:
+        phase["claim"] = claim["claim"]
+        claim_rows = _claim_changes(phase.get("id"), claim["held"], claim["claim"])
     # THE PHASE IS PROMOTED BY THE SAME WRITE, from the same instant. Until this
     # line the control surface's save was the only site in the tree that moved a
     # phase out of `pending`, so an orchestrator driving a plan from the command
@@ -3577,7 +3706,7 @@ def _locked_start(args, project, config, mpath, tid, out):
             return E_INVALID
 
     jres = _journal_start(project, config, mpath, tid, phase_id, was, node,
-                          healed, entry, forced)
+                          healed, entry, forced, claim_rows)
     entry_warnings = (_entry_warnings(phase)
                       if healed or entry["state"] in ("cut", "adopt") else [])
     index_note = _index_dirty_note(written, mpath, project, phase_id)
@@ -3603,7 +3732,12 @@ def _locked_start(args, project, config, mpath, tid, out):
                   "warnings": _wg.collapse_machine(warnings, written_manifest),
                   "ready": not waiting, "waitingOn": waiting,
                   "forced": forced is not None,
-                  "forcedReason": (forced or {}).get("reason")}
+                  "forcedReason": (forced or {}).get("reason"),
+                  # The claim the phase holds after this start, and what this
+                  # start did to it (`_claim_plan`'s action words).
+                  "claim": phase.get("claim"),
+                  "claimAction": claim["action"],
+                  "claimReplaced": (forced or {}).get("replaced")}
         result.update(jres)
         result.update(stdin_notes_key(args))
         result.update(project_basis_key(args))
@@ -3630,9 +3764,12 @@ def _locked_start(args, project, config, mpath, tid, out):
     out("  the plan gate now resolves this task's `files` -- that is what the "
         "promotion buys, and it is per task: no other pending task in %s moved"
         % (phase_id,))
+    claim_line = _claim_line(claim, phase_id)
+    if claim_line:
+        out(claim_line)
     if forced:
-        out("  FORCED past unmet %s -- reason recorded on the task.start row: %s"
-            % (", ".join(waiting), forced["reason"]))
+        out("  FORCED past %s -- reason recorded on the task.start row: %s"
+            % ("; ".join(_forced_past(forced)), forced["reason"]))
     elif waiting:
         out("  NOTE: still waiting on %s -- a re-start of a running task is the "
             "retry, which readiness does not refuse" % ", ".join(waiting))
@@ -6348,7 +6485,8 @@ def _start_flags_refusal(args):
     reason = (args.reason or "").strip()
     if args.force and not reason:
         return ("[audit-task] start --force needs --reason \"<why this task "
-                "starts before what it waits on>\" -- the task.start row records "
+                "starts past what it waits on, or past another session's "
+                "claim>\" -- the task.start row records "
                 "the exception, and one with no reason cannot be judged later")
     if reason and not args.force:
         return ("[audit-task] start --reason explains an exception, and only "
@@ -9418,8 +9556,9 @@ def build_parser():
     # `task.start` row, and an exception with no reason is one nobody can judge.
     p.add_argument("--force", action="store_true", default=False,
                    help="start: promote a task that is still waiting on "
-                        "unmet references; needs --reason, which the "
-                        "task.start row records")
+                        "unmet references, or whose phase another session "
+                        "has claimed (the claim is replaced); needs --reason, "
+                        "which the task.start row records")
     # `done` only. Why this close stands over a newest gate verdict that refuses
     # it - `commit-task-work.py`'s flag for the same act; the close is journaled
     # with it, and refused without it.

@@ -31,12 +31,13 @@ import _harness                                    # sets sys.path for scripts/ 
 from _output import REPO_ROOT, safe_stdio          # noqa: E402
 import _evidence_view                              # noqa: E402
 import _loader                                     # noqa: E402
+import _manifest_vocab                             # noqa: E402
 
 M = _loader.load_script("gen-demo-manifest.py", modname="gen_demo_manifest")
 
 # Identifiers that could reach the machine the generator runs on, the account
-# running it, the clock, or a random id. `claim.host` is the one field of a lease
-# that would publish the first of those, and the generator's own docstring claims
+# running it, the clock, or a random id. A lease carries no host, so none of its
+# values may come from the first of those, and the generator's own docstring claims
 # the third ("no wall-clock"); neither was a checkable property before this.
 _BANNED_MODULES = ("socket", "uuid", "platform", "getpass", "pwd", "time",
                    "subprocess")
@@ -691,27 +692,40 @@ def _cases(check):
     # `phase.claim` and its fields are the one region SCHEMA_EXEMPTIONS holds
     # back on POLICY: the default output is rendered into committed artifacts,
     # so a lease there publishes a demo permanently held by a session that does
-    # not exist and `claim.host` publishes whoever generated it. That reason is
+    # not exist. That reason is
     # about publishing, and nothing showed it was about publishing rather than
     # about the generator being unable to produce a claim at all - while
     # `_manifest_phases._check_claim` had no fixture that reached it: its first
     # statement is `if "claim" not in phase: return`, so the validator's walk
     # over this fixture entered and returned on every phase at every size.
+    #
+    # `claim.host` IS THE ONE CLAIM FIELD NO LEASE CARRIES, because no claim the
+    # plugin writes carries it (the shard is committed). So the lease covers the
+    # exemptions for the fields it HAS, and `_unwritten` is read off the lease
+    # rather than listed, with the host asserted to be the whole of it.
     _claim_exempt = sorted(k for k in M.SCHEMA_EXEMPTIONS
                            if k == "phase.claim" or k.startswith("claim."))
     _claimed = M.generate(n_phases=12, n_tasks=6, seed=11, with_claim=True)
     _claim_cov = M.schema_coverage(_claimed, schema)
     _newly = sorted(set(_claim_cov["covered"]) - set(cov["covered"]))
+    _lease_keys = set(k for p in _claimed["phases"]
+                      for k in (p.get("claim") or {}))
+    _unwritten = sorted(k for k in _claim_exempt
+                        if k.startswith("claim.") and k[6:] not in _lease_keys)
+    _written = sorted(set(_claim_exempt) - set(_unwritten))
     check("with_claim covers EXACTLY the %d schema field(s) SCHEMA_EXEMPTIONS "
-          "holds back for the lease and nothing else, which is what makes the "
-          "exemption a policy about the published artifact rather than a gap in "
-          "the generator: %r" % (len(_claim_exempt), _newly),
-          bool(_claim_exempt) and _newly == _claim_exempt,
+          "holds back for the lease that a lease carries, and nothing else - "
+          "the host, which no claim the plugin writes carries, is the only one "
+          "it leaves out - which is what makes the exemption a policy about the "
+          "published artifact rather than a gap in the generator: %r"
+          % (len(_written), (_newly, _unwritten)),
+          bool(_written) and _newly == _written
+          and _unwritten == ["claim.host"],
           "exempt=%r" % (_claim_exempt,))
     check("...and every one of those exemptions goes STALE against that same "
           "document, which is why coverage is measured on the DEFAULT fixture: "
           "an exemption for a field the fixture carries is a reason nobody pays",
-          sorted(_claim_cov["stale"]) == _claim_exempt, _claim_cov["stale"])
+          sorted(_claim_cov["stale"]) == _written, _claim_cov["stale"])
 
     # Determinism, both halves. The lease must not draw from `rng`, and it must
     # not move a byte of the default run - `docs/demo-large.html` (ci.yml's
@@ -741,12 +755,11 @@ def _cases(check):
     _starts = sorted(t["startedAt"] for t in _leased[0]["tasks"]
                      if t.get("startedAt"))
     check("...and every value has a basis: the branch is the phase's own, `at` "
-          "is its own earliest task start, and the host is the reserved "
-          "RFC 2606 .invalid name that resolves to nobody",
+          "is its own earliest task start, and there is no host - the shape "
+          "`audit-task start` writes into a committed shard",
           _lease["branch"] == _leased[0].get("branch")
           and bool(_starts) and _lease["at"] == _starts[0]
-          and _lease["host"] == M.CLAIM_HOST
-          and M.CLAIM_HOST.endswith(".invalid"), repr(_lease))
+          and "host" not in _lease, repr(_lease))
     check("...and `_claim_for` refuses a phase with no basis rather than "
           "filling one in - no started task, and no branch to name",
           M._claim_for({"id": "P1", "status": "in_progress", "branch": "b",
@@ -765,8 +778,8 @@ def _cases(check):
           "above assert a path nothing entered",
           bool(_stamp_err) and "no basis" in _stamp_err, repr(_stamp_err))
 
-    # `claim.host` is the one field of a lease that would publish whoever ran
-    # the generator, and "we were careful" is not a property. Read the source.
+    # A fixture value read off the machine or the clock would publish whoever
+    # ran the generator, and "we were careful" is not a property. Read the source.
     _gdm_src = open(_loader.script_path("gen-demo-manifest.py"),
                     encoding="utf-8").read()
     check("the source scanner sees a machine read when there is one, and does "
@@ -779,9 +792,10 @@ def _cases(check):
           and _machine_reads("import datetime\nd = datetime.timedelta(days=1)\n")
           == [])
     _reads = _machine_reads(_gdm_src)
-    check("...and gen-demo-manifest.py performs none of them, so `claim.host` "
-          "CANNOT publish the machine that generated the fixture and no "
-          "timestamp anywhere comes from the clock: %r" % (_reads,),
+    check("...and gen-demo-manifest.py performs none of them, so no value in "
+          "the fixture, a lease's included, can publish the machine that "
+          "generated it and no timestamp anywhere comes from the clock: %r"
+          % (_reads,),
           _reads == [])
     _cli_claim = _cli_claim_options(_gdm_src)
     check("no argv reaches the lease: every committed artifact goes through "
@@ -1119,7 +1133,7 @@ def _cases(check):
         check("...and the shard body carries it, which is the round-trip leg "
               "the hand-built stub fixture in test__manifest_io.py does not "
               "take", bool(_shard_rel)
-              and (_shard.get("claim") or {}).get("host") == M.CLAIM_HOST,
+              and _shard.get("claim") == _lease,
               repr(_shard.get("claim")))
 
         cback = mio.load_manifest(os.path.join(cdir, "audit-plan.json"))
@@ -1147,13 +1161,18 @@ def _cases(check):
               "; ".join((_sf + _sw)[:3]))
         _thin_doc = json.loads(json.dumps(cback))
         _thin = [p for p in _thin_doc["phases"] if p.get("claim")][0]
-        del _thin["claim"]["host"]
+        # The key dropped is one the validator RECOMMENDS, read off its own
+        # set, so this control follows the set rather than a spelling of it.
+        _thin_key = [k for k in _manifest_vocab.CLAIM_KEYS
+                     if k in _thin["claim"]][-1]
+        del _thin["claim"][_thin_key]
         _tf, _tw = vm.validate(_thin_doc)
-        check("...control: dropping `host` from the round-tripped lease draws "
-              "exactly one warning naming it, so the clean result above is a "
-              "walk that ENTERED `_check_claim` rather than one that returned "
-              "on its first line",
-              not _tf and len(_tw) == 1 and "claim is missing host" in _tw[0],
+        check("...control: dropping a recommended key (%s) from the "
+              "round-tripped lease draws exactly one warning naming it, so the "
+              "clean result above is a walk that ENTERED `_check_claim` rather "
+              "than one that returned on its first line" % (_thin_key,),
+              not _tf and len(_tw) == 1
+              and ("claim is missing %s" % (_thin_key,)) in _tw[0],
               "; ".join((_tf + _tw)[:3]))
 
         single = M.write_manifest(M.generate(n_phases=4, n_tasks=2, seed=11),

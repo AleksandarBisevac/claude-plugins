@@ -61,7 +61,7 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # carried), eb (the brief a shell had already eaten, and the stdin route out),
 # fg (the `tests.gate` a STARTED task could not change, and the two refusals
 # beside it that must stay), pr (the `start` verb: the promotion the plan gate
-# reads),
+# reads), pc (the phase claim `start` takes on the sharded layout),
 # pd (the `done` verb: the close, and the SHA that makes it a record),
 # tw (the tree the caller stands in against the tree the verb writes),
 # sd (seed: the smallest honest plan, written where none was),
@@ -4948,6 +4948,228 @@ def _cases(check):
               and "already invalid -- nothing written" in txtbd
               and "rolled back" not in txtbd
               and open(mpbd, "rb").read() == _pr_bd_before)
+
+        # ---- (pc) the phase claim `start` takes on the sharded layout ----------
+        # The claim used to be a step the orchestrator hand-wrote into the shard
+        # after promoting the phase, so a run that skipped it left a running
+        # phase no other machine could see was taken. Every case pins the
+        # session id it runs under: the sweep drops every `CLAUDE_` variable, a
+        # session running the suite carries its own, and a case that inherited
+        # either would be asserting about whichever one it happened to get.
+        _pc_env_was = os.environ.get("CLAUDE_CODE_SESSION_ID")
+
+        def pc_repo(name, claim=None, sharded=True):
+            """A git-backed project whose P3 holds one ready pending task and
+            records `audit/p3`, which is checked out - so the start is an
+            `on-branch` entry and nothing about the claim rides on a cut."""
+            m = base_manifest()
+            m["phases"][2]["branch"] = "audit/p3"
+            m["phases"][2]["tasks"] = [
+                {"id": "P3.1", "title": "claimable", "status": "pending",
+                 "description": "", "files": ["src/claim.ts"],
+                 "tests": {"mode": "gate-only", "add": [],
+                           "expectRedFirst": False, "gate": ["test"]},
+                 "model": "sonnet", "skills": [], "risk": "low",
+                 "blockedBy": [], "dependsOn": [], "attempts": 0,
+                 "maxAttempts": 3, "commit": None,
+                 "outcome": {"technical": None, "descriptive": None},
+                 "startedAt": None, "completedAt": None, "verifiedBy": []}]
+            m["fileIndex"]["src/claim.ts"] = ["P3.1"]
+            if claim is not None:
+                m["phases"][2]["claim"] = claim
+            proj, mpath = mk(name, m, sharded=sharded, git=True)
+            for argv in (["checkout", "-q", "-b", "audit/p3"],
+                         ["config", "user.email", "t@example.com"],
+                         ["config", "user.name", "Test User"],
+                         ["add", "-A"], ["commit", "-qm", "seed"]):
+                subprocess.run(["git", "-C", proj] + argv,
+                               stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL)
+            return proj, mpath
+
+        def pc_shard_path(mpath, pid):
+            """The path of `pid`'s shard file, or None on a single-file plan."""
+            idx = _mio.read_json(mpath)
+            for stub in (idx.get("phases") or []):
+                if isinstance(stub, dict) and stub.get("id") == pid \
+                        and "shard" in stub:
+                    return os.path.join(os.path.dirname(mpath), stub["shard"])
+            return None
+
+        def pc_shard(mpath, pid):
+            """The phase body exactly as its SHARD file holds it, or None."""
+            path = pc_shard_path(mpath, pid)
+            return _mio.read_json(path) if path else None
+
+        def pc_phase(mpath, pid):
+            for ph in (_mio.load_manifest(mpath).get("phases") or []):
+                if ph.get("id") == pid:
+                    return ph
+            return {}
+
+        _PC_OTHER = {"sessionId": "s-other-session",
+                     "branch": "audit/p3", "at": "2026-01-01T00:00:00Z"}
+        try:
+            os.environ["CLAUDE_CODE_SESSION_ID"] = "s-mine-session"
+            pc1_proj, pc1_mp = pc_repo("pc-first")
+            pc1_code, pc1_txt = run(["start", "P3.1", "--project-dir", pc1_proj])
+            pc1_body = pc_shard(pc1_mp, "P3") or {}
+            pc1_claim = pc1_body.get("claim") or {}
+            pc1_task = task_in(pc1_mp, "P3.1") or {}
+            pc1_rows = pr_rows(pc1_proj)
+            pc1_det = (pc1_rows[0].get("details") or {}) if pc1_rows else {}
+            pc1_crow = dict((c.get("field"), c) for c in
+                            (pc1_det.get("changes") or [])
+                            if c.get("id") == "P3")
+            check("pc1 the start of a sharded plan's first task in a phase "
+                  "writes phase.claim into the SHARD - sessionId from "
+                  "$CLAUDE_CODE_SESSION_ID, the phase's branch and "
+                  "the start's own instant - in the same write that set the "
+                  "phase in_progress: %r"
+                  % ((pc1_code, pc1_body.get("status"), pc1_claim,
+                      pc1_body.get("startedAt"), pc1_txt[-200:]),),
+                  pc1_code == 0 and pc1_body.get("status") == "in_progress"
+                  and pc1_claim.get("sessionId") == "s-mine-session"
+                  and pc1_claim.get("branch") == "audit/p3"
+                  and pc1_claim.get("at") == pc1_body.get("startedAt")
+                  == pc1_task.get("startedAt")
+                  and "claim" not in (
+                      [s for s in _mio.read_json(pc1_mp)["phases"]
+                       if s.get("id") == "P3"][0]))
+            # THE SHARD IS COMMITTED, so the claim carries no machine name: the
+            # journal drops `actor.host` for the same reason, and
+            # `tools/check-committed-pii.py` reports one under a claim.
+            check("pc7 the claim a start writes carries NO `host` key - only "
+                  "sessionId, branch and at: %r" % (sorted(pc1_claim),),
+                  pc1_code == 0
+                  and sorted(pc1_claim) == ["at", "branch", "sessionId"])
+            # THE CLAIM THE VERB WRITES IS ONE THE VALIDATOR ACCEPTS WHOLE: a
+            # warning on every start would teach a reader to skip the warnings.
+            # The twin keeps the recommendation alive - a claim with no branch
+            # still warns, so an emptied key set cannot pass for this case.
+            _pc_vm = M._validator()
+            _pc_f, _pc_w = _pc_vm.validate(_mio.load_manifest(pc1_mp))
+            _pc_nb = json.loads(json.dumps(_mio.load_manifest(pc1_mp)))
+            for _ph in _pc_nb["phases"]:
+                if _ph.get("id") == "P3":
+                    _ph["claim"].pop("branch", None)
+            _pc_nbf, _pc_nbw = _pc_vm.validate(_pc_nb)
+            check("pc8 the started sharded plan revalidates with NO claim "
+                  "warning, while the same claim with its branch removed still "
+                  "warns that it is missing branch: %r"
+                  % (([w for w in _pc_w if "claim" in w],
+                      [w for w in _pc_nbw if "claim" in w]),),
+                  pc1_code == 0 and _pc_f == [] and _pc_nbf == []
+                  and [w for w in _pc_w if "claim" in w] == []
+                  and len([w for w in _pc_nbw
+                           if "claim is missing branch" in w]) == 1)
+            check("pc2 ...and the one task.start row records the claim it took, "
+                  "as phase-keyed `changes` rows beside the task's own, from "
+                  "nothing to this session and branch: %r"
+                  % ((len(pc1_rows), sorted(pc1_crow),
+                      (pc1_rows[0].get("summary") if pc1_rows else None)),),
+                  len(pc1_rows) == 1
+                  and (pc1_crow.get("claim.sessionId") or {}).get("from") is None
+                  and (pc1_crow.get("claim.sessionId") or {}).get("to")
+                  == "s-mine-session"
+                  and (pc1_crow.get("claim.branch") or {}).get("to") == "audit/p3"
+                  and (pc1_crow.get("claim.at") or {}).get("to")
+                  == pc1_claim.get("at")
+                  and "claim" in (pc1_rows[0].get("summary") or ""))
+
+            # ALLOW CASES. A single-file plan has no shard for the claim to
+            # conflict in, so it gets none; and a re-start by the session that
+            # already holds the claim leaves it byte for byte - `at` included,
+            # which is why the fixture's claim carries a moment no start writes.
+            pc3_proj, pc3_mp = pc_repo("pc-single", sharded=False)
+            pc3_code, _pc3_txt = run(["start", "P3.1", "--project-dir", pc3_proj])
+            pc3_ph = pc_phase(pc3_mp, "P3")
+            _pc_mine = dict(_PC_OTHER, sessionId="s-mine-session")
+            pc4_proj, pc4_mp = pc_repo("pc-mine", claim=_pc_mine)
+            pc4_code, _pc4_txt = run(["start", "P3.1", "--project-dir", pc4_proj])
+            pc4_claim = (pc_shard(pc4_mp, "P3") or {}).get("claim")
+            pc4_rows = pr_rows(pc4_proj)
+            check("pc3 ALLOW CASES: a single-file plan starts and writes no "
+                  "claim, and a start by the session that already holds the "
+                  "claim leaves it exactly as it was and records no claim row: "
+                  "%r" % ((pc3_code, pc3_ph.get("status"), pc3_ph.get("claim"),
+                           pc4_code, pc4_claim),),
+                  pc3_code == 0 and pc3_ph.get("status") == "in_progress"
+                  and "claim" not in pc3_ph
+                  and pc4_code == 0 and pc4_claim == _pc_mine
+                  and len(pc4_rows) == 1
+                  and not [c for c in ((pc4_rows[0].get("details") or {})
+                                       .get("changes") or [])
+                           if c.get("id") == "P3"])
+
+            # ANOTHER SESSION'S CLAIM REFUSES, naming it; `--force --reason`
+            # is the one way past, and the row keeps the claim it replaced.
+            pc5_proj, pc5_mp = pc_repo("pc-other", claim=_PC_OTHER)
+            with open(pc_shard_path(pc5_mp, "P3"), "rb") as _fh:
+                pc5_before = _fh.read()
+            pc5_code, pc5_txt = run(["start", "P3.1", "--project-dir", pc5_proj])
+            with open(pc_shard_path(pc5_mp, "P3"), "rb") as _fh:
+                pc5_after = _fh.read()
+            check("pc4 a start on a phase another session has claimed is "
+                  "REFUSED: exit 2, the shard byte identical, no task.start "
+                  "row, and the message names the claim (session, branch, "
+                  "moment) and --force: %r" % ((pc5_code, pc5_txt[:240]),),
+                  pc5_code == 2 and pc5_after == pc5_before
+                  and pr_rows(pc5_proj) == []
+                  and "s-other-session" in pc5_txt
+                  and "audit/p3" in pc5_txt
+                  and _PC_OTHER["at"] in pc5_txt
+                  and "--force" in pc5_txt
+                  and (task_in(pc5_mp, "P3.1") or {}).get("status") == "pending")
+            pc6_code, pc6_txt = run(["start", "P3.1", "--force", "--reason",
+                                     "the other session died",
+                                     "--project-dir", pc5_proj])
+            pc6_claim = (pc_shard(pc5_mp, "P3") or {}).get("claim") or {}
+            pc6_rows = pr_rows(pc5_proj)
+            pc6_det = (pc6_rows[0].get("details") or {}) if pc6_rows else {}
+            pc6_crow = dict((c.get("field"), c) for c in
+                            (pc6_det.get("changes") or [])
+                            if c.get("id") == "P3")
+            check("pc5 ...and `--force --reason` replaces it with this "
+                  "session's claim, and the task.start row journals the claim "
+                  "it replaced: forced, the reason, the old session as `from`, "
+                  "and the summary naming it: %r"
+                  % ((pc6_code, pc6_claim, pc6_det.get("mode"),
+                      pc6_det.get("reason"), pc6_crow.get("claim.sessionId"),
+                      (pc6_rows[0].get("summary") if pc6_rows else None)),),
+                  pc6_code == 0
+                  and pc6_claim.get("sessionId") == "s-mine-session"
+                  and pc6_claim.get("at") != _PC_OTHER["at"]
+                  and len(pc6_rows) == 1
+                  and pc6_det.get("mode") == "forced"
+                  and pc6_det.get("reason") == "the other session died"
+                  and "s-other-session" in (pc6_det.get("basis") or "")
+                  and (pc6_crow.get("claim.sessionId") or {}).get("from")
+                  == "s-other-session"
+                  and (pc6_crow.get("claim.sessionId") or {}).get("to")
+                  == "s-mine-session"
+                  and "s-other-session" in (pc6_rows[0].get("summary") or ""))
+
+            # NO SESSION ID, NO CLAIM: one naming nobody could never be told
+            # apart from somebody else's, so the start runs, writes none, and
+            # says why - rather than a claim with an empty `sessionId`.
+            os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+            pc7_proj, pc7_mp = pc_repo("pc-nosession")
+            pc7_code, pc7_txt = run(["start", "P3.1", "--project-dir", pc7_proj])
+            pc7_body = pc_shard(pc7_mp, "P3") or {}
+            check("pc6 with $CLAUDE_CODE_SESSION_ID unset the start still runs, "
+                  "writes no claim, and the output says none was taken and why: "
+                  "%r" % ((pc7_code, pc7_body.get("status"),
+                           pc7_body.get("claim"), pc7_txt[-220:]),),
+                  pc7_code == 0 and pc7_body.get("status") == "in_progress"
+                  and "claim" not in pc7_body
+                  and "claim: none taken" in pc7_txt
+                  and "CLAUDE_CODE_SESSION_ID is unset" in pc7_txt)
+        finally:
+            if _pc_env_was is None:
+                os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+            else:
+                os.environ["CLAUDE_CODE_SESSION_ID"] = _pc_env_was
 
         # ---- (pd) `done`: the close, and the SHA that makes it a record -------
         # THE LOSS, from this repository and not from a scenario. With no verb

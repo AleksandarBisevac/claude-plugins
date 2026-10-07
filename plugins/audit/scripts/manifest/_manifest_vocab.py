@@ -579,7 +579,10 @@ KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
 # warning from `_manifest_phases._check_claim`, never a finding. NARROWER than the
 # schema's `claim` properties on purpose (`at` is written BY a claim, not asked OF
 # one), so it answers to `SUBSET_ANCHORS` below — containment, not coverage.
-CLAIM_KEYS = ("sessionId", "host", "branch")
+# `host` is in the schema and deliberately NOT recommended: the claim lives in a
+# committed shard, so a machine name there is published, and `audit-task start`
+# writes none - recommending it would warn on every claim the plugin itself writes.
+CLAIM_KEYS = ("sessionId", "branch")
 KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
               "dependsOn", "files", "docs", "description", "tests", "outcome",
               "commit", "attempts", "maxAttempts", "startedAt", "completedAt",

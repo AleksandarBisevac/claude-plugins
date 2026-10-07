@@ -95,14 +95,24 @@
     {
       "id": "P106.2",
       "title": "audit-task start writes the phase claim, and the hand-edited phase-entry steps are deleted",
-      "status": "pending",
+      "status": "in_progress",
       "description": "execute-task.md's step 1a tells the model to Edit phase.status to in_progress, which start already does through _panel_write's phase promotion. Step 1d tells it to hand-write phase.claim into the shard. Make start write the claim on the sharded layout; sign-off already releases it. Then delete the prose the rule came from: steps 1a and 1d under execute-task.md's '## Execute the task'. Keep the 1b-1c pointer to the verb, and keep README.md's '§ Execute the task 1b–1c' citation pointing at the step that remains. Record the mandatory-read bytes of /audit:next before and after. Like the rest of this phase, it waits for P101's pipeline pilot.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/tests/test_audit_task.py",
         "plugins/audit/reference/execute-task.md",
         "plugins/audit/commands/task.md",
-        "plugins/audit/README.md"
+        "plugins/audit/README.md",
+        "tools/check-committed-pii.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/tests/test__manifest_vocab.py",
+        "plugins/audit/tests/test_gen_demo_manifest.py",
+        "plugins/audit/tests/test__help.py",
+        "plugins/audit/scripts/demo/gen-demo-manifest.py",
+        "plugins/audit/tests/test__manifest_phases.py",
+        "tools/prove-gates.py",
+        "plugins/audit/schema/audit-plan.schema.json"
       ],
       "tests": {
         "mode": "tdd",
@@ -129,21 +139,26 @@
       "dependsOn": [
         "P106.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T00:24:02Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T01:25:48Z.b50fc1",
+        "status": "passed",
+        "at": "2026-10-07T01:25:48Z"
+      }
     },
     {
       "id": "P106.3",
       "title": "the spawn brief resolves executor.runsGate, and the orchestrator no longer reads config for it",
-      "status": "in_progress",
+      "status": "done",
       "description": "execute-task.md step 3 tells the model to read .claude/audit.config.json through hooks/_config.load() and executor_gate_policy(), and to state the reading in the spawn prompt. Instead, audit-lookup.py brief, whose answer is already pasted into that prompt, resolves it and prints the word with its basis. It calls executor_gate_policy loaded through _loader, the way _gate_feed does, because a script may not import hooks/. An unrecognised value is a refusal, not the default. Delete the prose the rule came from: the bullet 'Resolve executor.runsGate the same way — at spawn, by you' in execute-task.md step 3. The brief bullet carries the line instead. Update audit-lookup's PLUGIN-BUILD-GUIDE.md section and regenerate the module map. Record the mandatory-read bytes of /audit:next before and after. It waits for P101's pipeline pilot.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -175,18 +190,32 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "775df9c1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-lookup.py brief now resolves executor.runsGate itself and prints it as the brief's last line with its basis (set by executor.runsGate in .claude/audit.config.json; or the default, with no config file or with the key unset), and adds it to --json as runsGate {reading, default, basis}. It reads hooks/_config.executor_gate_policy through _loader the way _gate_feed does, on the project's config as written, so an absent key is told apart from one set to the default. An unrecognised value, or a config that does not parse, is refused on stderr with exit 3 and no reading, rather than defaulted. execute-task.md step 3's bullet telling the orchestrator to resolve executor.runsGate itself is deleted; the brief bullet says its last line is the reading to paste and to stop and ask the human when brief refuses. PLUGIN-BUILD-GUIDE.md's audit-lookup section and the module-map line are updated. Mandatory reads of /audit:next measured with `git cat-file -s HEAD:<file>` against `wc -c`: execute-task.md 57795 to 56398 bytes, the four files together 153475 to 152078. Cases rg1-rg7 in test_audit_lookup.py; red-first proved through the helper (40/47 at HEAD); mutations (an invalid value folded into the default, the keyed flag forced false, every set value refused) each reddened their cases.",
+        "descriptive": "The brief the orchestrator pastes into an executor's prompt now states how the executor's own gate is to run, read from the project's config by a script, so the orchestrator no longer has to read the config and follow instructions to do it."
       },
       "startedAt": "2026-10-06T22:17:04Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T00:23:57Z",
+      "verifiedBy": [
+        "rg1",
+        "rg2",
+        "rg3",
+        "rg4",
+        "rg5",
+        "rg6",
+        "rg7"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T00:23:43Z.14c8aa",
         "status": "passed",
         "at": "2026-10-07T00:23:43Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "775df9c1",
+        "at": "2026-10-07T00:23:57Z",
+        "basis": "orchestrator check: the brief prints the reading with its basis and refuses an unknown value, the prose step is deleted, and the bytes measurement is recorded; red-first proved"
       }
     }
   ],

@@ -427,12 +427,25 @@ step 2 prescribes as an orchestrator `Edit`:
   work began. The phase's rows come back under `healed`, apart from `changes`, which is
   the task's own fields. A phase already running is left alone, and one that already
   carries a `startedAt` keeps the moment it recorded.
+- **the phase's claim, on the sharded layout** — `phase.claim = {sessionId, branch, at}`
+  in the phase's shard, from the same write: `sessionId` is `$CLAUDE_CODE_SESSION_ID`, `branch`
+  the phase's, `at` the start's own instant. Two machines entering one phase then meet a merge
+  conflict in that shard rather than running it twice. Sign-off releases it. It carries no
+  `host`: the shard is committed, so a machine name there would be published, which is why
+  the journal drops `actor.host` too and `tools/check-committed-pii.py` reports a `host` under
+  a claim. A claim this session already holds is left exactly as it was; a single-file
+  plan gets none (it has no shard to conflict in); and with `$CLAUDE_CODE_SESSION_ID` unset no
+  claim is written and the output says so, because a claim naming no session is one no later
+  start can recognise as its own.
 - **journal** → one `task.start` row whose `details.changes` names each field with the
   value it held, plus `details.attempt` — both keys the `_journal_io.DETAILS_KEYS`
   allow-list already carries, so nothing is written that the trail would drop in silence.
-  A phase the write promoted is named in the row's summary. A **forced** start (below) adds
-  `details.mode: "forced"`, `details.reason` and `details.basis` naming the unmet references,
-  and says `FORCED past unmet ...` in the summary.
+  A phase the write promoted is named in the row's summary. A claim the write took adds
+  `changes` rows keyed by the **phase** id — `claim.sessionId`, `claim.branch` and `claim.at`,
+  each with the value it replaced — and names the session in the summary. A **forced** start (below) adds
+  `details.mode: "forced"`, `details.reason` and `details.basis` naming what it was forced
+  past — the unmet references, another session's claim, or both — and says `FORCED past ...`
+  in the summary.
 - Same index lock, same revalidate-from-disk, same byte-for-byte rollback on findings as
   `add`.
 
@@ -452,7 +465,8 @@ would freeze the count `blocked` is derived from.
 verb takes a task, and the phase around that task is promoted by the same write; a phase
 with no task to start is entered by the run that enters it); a `done` or `cancelled` task, named
 as such — terminal work is not re-opened by flipping a status, and the follow-up is a new
-task; a task that is not ready, without `--force --reason` (below); and a start that would
+task; a task that is not ready, or a phase another session has claimed, without
+`--force --reason` (below); and a start that would
 take `attempts` past the task's `maxAttempts`. That last one
 refuses rather than writing `blocked` itself: that transition also owes an ADO echo and a
 human, both of which belong to the orchestrator, and the refusal names the count and the
@@ -469,6 +483,14 @@ that is the route for promoting a task by hand so the plan gate resolves its fil
 re-start of a task already `in_progress` is the retry above and is never refused for
 readiness — it prints a `NOTE:` naming what is still unmet. Under `--json` the result carries
 `ready`, `waitingOn`, `forced` and `forcedReason`.
+
+**Another session's claim is refused the same way.** On the sharded layout, a phase whose
+`claim.sessionId` is not this session's is refused with exit 2 and nothing written, and the
+refusal names the claim's session, branch and moment. `--force --reason "<why>"` is the
+one way past: it replaces the claim with this session's, and the `task.start` row keeps the
+replaced session as the `from` of its `claim.sessionId` row and in its `basis`. Under `--json`
+the result carries `claim`, `claimAction` (`none`, `keep`, `take`, `contested` or
+`no-session`) and `claimReplaced`.
 
 **The start that enters a phase warns about what sign-off will ask for** — an empty
 `testGate` (sign-off then rests on review alone) and a missing `desiredOutcome` — as

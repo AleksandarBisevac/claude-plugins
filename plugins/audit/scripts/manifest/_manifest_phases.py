@@ -97,7 +97,7 @@ _unknown_keys = _vocab._unknown_keys
 def _check_claim(phase, pwhere, findings, warnings):
     """Validate an optional parallel-run `claim` on a phase (v0.15 sharded layout).
 
-    A claim records which session/host/branch is running a phase so concurrent work
+    A claim records which session/branch is running a phase so concurrent work
     across machines is coordinated (and a same-phase double-claim shows up as a shard
     merge conflict). Shape errors are findings; a claim missing recommended keys, or one
     left on a finished phase (stale — should be released), is a warning."""
@@ -107,13 +107,13 @@ def _check_claim(phase, pwhere, findings, warnings):
     if claim is None:
         return
     if not isinstance(claim, dict):
-        findings.append(_output.finding("phases.claim.claim-object-sessionid", "%s: claim must be an object {sessionId, host, branch, at}, got %s"
+        findings.append(_output.finding("phases.claim.claim-object-sessionid", "%s: claim must be an object {sessionId, branch, at}, got %s"
                         % (pwhere, type(claim).__name__)))
         return
     missing = [k for k in CLAIM_KEYS if not claim.get(k)]
     if missing:
         warnings.append("%s: claim is missing %s — a claim should identify the "
-                        "session/host/branch holding the phase" % (pwhere, ", ".join(missing)))
+                        "session/branch holding the phase" % (pwhere, ", ".join(missing)))
     if phase.get("status") in ("done", "cancelled", "blocked"):
         warnings.append("%s: has a claim but status is %r — a finished/blocked phase should "
                         "release its claim (stale claim)" % (pwhere, phase.get("status")))

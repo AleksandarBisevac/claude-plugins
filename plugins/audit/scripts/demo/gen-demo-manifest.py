@@ -403,13 +403,12 @@ def _demo_areas():
 # on POLICY rather than on capability, and telling those two apart is the whole
 # point of this section.
 #
-# A claim is a LIVE LEASE — which session, on which host, on which branch is running
-# this phase right now — released when the phase finishes. The DEFAULT output of
+# A claim is a LIVE LEASE — which session, on which branch, is running this phase
+# right now — released when the phase finishes. The DEFAULT output of
 # this generator is what `docs/demo-large.html` and the `docs/screenshots/panel-*`
 # set are built from, and both are COMMITTED. A lease in that output publishes a
 # demo permanently held by a session that does not exist, `/audit:doctor` reports it
-# as a stale claim on the page that exists to show a healthy run, and `claim.host`
-# publishes whoever generated it.
+# as a stale claim on the page that exists to show a healthy run.
 #
 # Every word of that is about what this generator PUBLISHES; none of it is about
 # what it can produce. So the lease is available on request and by nothing else:
@@ -432,9 +431,11 @@ def _demo_areas():
 # EVERY VALUE IS A FIXED LITERAL OR DERIVED FROM THE FIXTURE. Nothing here reads the
 # machine, the environment or the clock, and that is a structural property rather
 # than a matter of care: `tests/test_gen_demo_manifest.py` parses this file and
-# fails on an identifier that could reach any of them. The `.invalid` top-level
-# domain is reserved by RFC 2606, so "resolves to nobody" is a fact about the name.
-CLAIM_HOST = "runner.demo.invalid"
+# fails on an identifier that could reach any of them.
+#
+# NO `host`, though the schema allows one: the lease has the shape `audit-task
+# start` writes, and that verb writes none because the shard a claim lives in is
+# committed and a machine name there would be published.
 CLAIM_SESSION_PREFIX = "demo-session"
 
 
@@ -459,7 +460,6 @@ def _claim_for(phase):
         return None
     return {
         "sessionId": "%s-%s" % (CLAIM_SESSION_PREFIX, str(phase.get("id")).lower()),
-        "host": CLAIM_HOST,
         "branch": phase["branch"],
         "at": starts[0],
     }
@@ -1109,7 +1109,7 @@ SCHEMA_EXEMPTIONS = {
         "shard pointer would name a file that form does not have; the write path "
         "is pinned by the sharded round-trip cases.",
     "phase.claim":
-        "a LIVE lease: which session, host and branch is running this phase right "
+        "a LIVE lease: which session and branch is running this phase right "
         "now, released when the phase finishes. The DEFAULT output is what "
         "docs/demo-large.html and the panel screenshots are built from and both "
         "are committed, so a lease there publishes a demo permanently held by a "
@@ -1194,10 +1194,11 @@ SCHEMA_EXEMPTIONS = {
         "branch a lease nobody holds would name is not a fact about the demo. "
         "Under with_claim it is the phase's own branch, not a second invention.",
     "claim.host":
-        "a field of phase.claim, which the default fixture does not take: a host "
-        "name is the one part of a claim that would publish whoever generated it. "
-        "Under with_claim it is CLAIM_HOST, a reserved .invalid name that resolves "
-        "to nobody, and the suite parses this file to keep it that way.",
+        "a field of phase.claim that no claim the plugin writes carries: the "
+        "shard a claim lives in is committed, so a host name there would publish "
+        "the machine that wrote it, and `audit-task start` writes none. Neither "
+        "the default fixture nor with_claim carries one, so the lease the suite "
+        "builds has the shape the plugin writes.",
     "claim.sessionId":
         "a field of phase.claim, which the default fixture does not take: a "
         "session id invented for a published fixture is exactly the stale claim "
