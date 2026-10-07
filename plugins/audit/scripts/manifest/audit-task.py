@@ -3365,11 +3365,13 @@ def _take_phase_lock(git_root, phase_id, force):
 
     `ours` is a phase lock this run already holds - the orchestrator's, or this
     session's own from an earlier start - and it is reused, never doubled
-    (`_locks.E_OURS`). A HELD LOCK NAMES A LIVE PROCESS: where the reused lock
-    records a pid that is gone, or one other than the run asking, it is
-    re-recorded under the run asking (`_locks.acquire` for a gone pid,
-    `_locks.refresh` for a different one), so a resumed session's lock does not
-    read dead to the next session while that session still holds the phase.
+    (`_locks.E_OURS`). A HELD LOCK NAMES A LIVE PROCESS: where this session's
+    lock records a pid that is gone, `_locks.acquire` re-records it under the
+    run asking and answers that the hold is this call's now (`took`), and where
+    it records no pid `_locks.refresh` names the run asking; a lock naming a
+    live process is left naming it, since that process's release is what gives
+    it back. So a resumed session's lock does not read dead to the next session
+    while that session still holds the phase.
 
     The lock is taken `yields`: the orchestrator's own acquire of the same
     session re-takes it under its note, so sign-off - which releases only a lock
@@ -3457,10 +3459,13 @@ def _release_start_lock(git_root, phase_id):
     held through the merge and released by the orchestrator. `_locks.release`
     decides whether this run may give it back, and its refusal is reported.
 
-    A REFUSAL IS TWO DIFFERENT FACTS. A run whose lock was taken over from it
-    (`_locks.taken_from`) gets `release_refusal`'s takeover sentence; a session
-    that never held the lock - another session's start lock, its holder live -
-    was taken over by nobody, and is told whose lock it is and that it stays.
+    A REFUSAL IS TWO DIFFERENT FACTS, and the lock's own record is what tells
+    them apart. A lock that records taking over from this session
+    (`_locks.taken_from`) gets `release_refusal`'s takeover sentence; any other
+    refused lock is one this session never held, taken over by nobody, and is
+    told whose it is, `_locks.judge`'s basis, and that it stays. Whether that
+    holder reads live is not the question: an old lock, or one from another
+    host, is just as much somebody else's.
     """
     name = _status_facts.PHASE_LOCK_PREFIX + str(phase_id)
     if not _locks.valid_name(name):
@@ -3479,13 +3484,13 @@ def _release_start_lock(git_root, phase_id):
     if code == 0:
         return "  phase lock: released %s, the lock the start took" % (name,)
     if code == _locks.E_LIVE and not _locks.taken_from(info):
-        live, basis = _locks.judge(info, path)
-        if live:
-            return ("  phase lock: %s left in place -- it is held by %s, a live "
-                    "run this session never held it from (%s); only the session "
-                    "holding a start's lock gives it back"
-                    % (name, info.get("sessionId")
-                       or "pid %s" % (info.get("pid"),), basis))
+        _live, basis = _locks.judge(info, path)
+        holder = (info.get("sessionId")
+                  or ("pid %s" % (info.get("pid"),) if info.get("pid") else None)
+                  or info.get("hostname") or "a holder it does not name")
+        return ("  phase lock: %s left in place -- it is held by %s, whose lock "
+                "this session never held (%s); only the session holding a "
+                "start's lock gives it back" % (name, holder, basis))
     return ("  phase lock: %s NOT released -- %s"
             % (name, _locks.release_refusal(code, name)))
 
@@ -3994,6 +3999,7 @@ def _locked_start(args, project, config, mpath, tid, out):
         out(_lock_refusal(phase.get("id"), lock))
         return E_USAGE
     undone = []
+    snap = None
 
     def undo_lock():
         # Once only, and only a lock this start took: a reused lock belongs to
@@ -4002,9 +4008,11 @@ def _locked_start(args, project, config, mpath, tid, out):
         if lock and lock["state"] == "took" and not undone:
             undone.append(True)
             _locks.release(git_root, lock["name"], out=lambda _line: None)
-    # EVERY EXIT FROM HERE TO THE VALIDATED WRITE GIVES THE LOCK BACK, an
-    # exception included: an unexpected raise between the take and the write
-    # would otherwise leave a lock naming this run on a phase no write claimed.
+    # EVERY EXIT FROM HERE TO THE SETTLED WRITE - validated, and the phase's
+    # branch cut where it is cut - GIVES THE LOCK BACK, an exception included,
+    # and a raise once the snapshot is taken restores it first: a raise between
+    # the take and the write would leave a lock naming this run on a phase no
+    # write claimed, and one after the write landed a claim no lock stood behind.
     try:
         forced = None
         if args.force and (unmet or contested):
@@ -4079,6 +4087,8 @@ def _locked_start(args, project, config, mpath, tid, out):
                     % (entry["branch"], phase_id, cut_err))
                 return E_INVALID
     except Exception:
+        if snap is not None:
+            _restore(snap)
         undo_lock()
         raise
 

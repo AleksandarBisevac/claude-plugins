@@ -135,10 +135,11 @@ import _locks  # noqa: E402  (where a lock lives, what it may be called, is it l
 
 # The read side, spelled here because this file's own commands ask the same
 # questions its callers do. Public names only - a private `_locks` helper is that
-# module's own business, and `test__locks.py` holds that no module reaches one.
-# NOT copies: `_locks` is layer 1 and owns every one of them, and `tests/test_audit_lock.py` pins each name to be that module's own
-# object. They moved because THREE other modules needed them and reached this
-# entry point through `_loader` to get them — three of the seventeen edges
+# module's own business, and `test__locks.py` holds that no module under
+# scripts/ or hooks/ other than `_locks.py` reaches one. NOT copies: `_locks` is
+# layer 1 and owns every one of them, and `tests/test_audit_lock.py` pins each
+# name to be that module's own object. They moved because other modules needed
+# them and reached this entry point through `_loader` to get them - edges
 # `_deps.KNOWN_LAYER_DEBT` recorded.
 STALE_MINUTES = _locks.STALE_MINUTES
 pid_alive = _locks.pid_alive

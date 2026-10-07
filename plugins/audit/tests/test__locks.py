@@ -710,19 +710,38 @@ def _refresh_cases(check):
               repr(M.held_by_us(plant(dead.pid), session="s-A")))
 
         plant(dead.pid)
+        os.environ.pop(M.TOKEN_ENV, None)
         lines = []
         code = M.acquire(proj, "phase-P1", note="a start", session="s-A",
                          pid=sleeper.pid, handed_off=True, wait=0,
                          out=lines.append)
         got = M.read_lock(path)
-        check("rf2 acquire by the same session over its own claim naming a dead "
-              "pid re-records it under the live pid - the hold kept, its note "
-              "kept - and does not answer 'already yours' over a lock every "
-              "other reader judges dead: %r" % ((code, got, lines),),
-              code == M.E_OURS and got.get("pid") == sleeper.pid
+        check("rf2 a HAND-OFF acquire by the same session over its own claim "
+              "naming a dead pid re-records it under the live pid - the hold "
+              "kept, its note kept - and the hold is THIS call's: exit 0, the "
+              "claim's token carried, and a line saying the pid it replaced is "
+              "gone, so the resumed run releases it at the end: %r"
+              % ((code, got, lines),),
+              code == 0 and M.took(code) and got.get("pid") == sleeper.pid
               and got.get("sessionId") == "s-A"
               and got.get("note") == "a phase run"
-              and not any("already yours" in x for x in lines))
+              and "not-carried" in M.carried_tokens()
+              and any("gone" in x for x in lines)
+              and not any("already yours" in x or "not this call's" in x
+                          for x in lines))
+
+        # The twin: a caller that is not handed off gives the lock back before
+        # it returns, so a re-recorded hold it did not take stays not its own.
+        plant(dead.pid)
+        os.environ.pop(M.TOKEN_ENV, None)
+        code = M.acquire(proj, "phase-P1", note="a write", session="s-A",
+                         pid=sleeper.pid, wait=0, out=lambda *_a, **_k: None)
+        got = M.read_lock(path)
+        check("rf2b ALLOW: the same re-record by a caller that is NOT handed "
+              "off still answers already held (E_OURS), carrying no token: %r"
+              % ((code, got),),
+              code == M.E_OURS and got.get("pid") == sleeper.pid
+              and "not-carried" not in M.carried_tokens())
 
         before = plant(sleeper.pid)
         before_stamp = M._claim_stamp(path)
@@ -771,6 +790,52 @@ def _refresh_cases(check):
               "session only",
               code == M.E_LIVE and M.read_lock(path) == before,
               repr((code, M.read_lock(path))))
+
+        # `refresh` RE-RECORDS ONLY A HOLDER THAT IS GONE OR UNNAMED: a live
+        # recorded pid is the process whose release gives the hold back, and
+        # moving the claim off it refuses that release as a takeover.
+        before = plant(sleeper.pid)
+        before_stamp = M._claim_stamp(path)
+        lines = []
+        code = M.refresh(proj, "phase-P1", session="s-A", pid=os.getpid(),
+                         out=lines.append)
+        check("rf8 `refresh` over a LIVE recorded pid leaves the claim as it "
+              "is and says so: %r" % ((code, M.read_lock(path), lines),),
+              code == M.E_OURS and M.read_lock(path) == before
+              and M._claim_stamp(path) == before_stamp
+              and any("running" in x for x in lines))
+        plant(dead.pid)
+        code = M.refresh(proj, "phase-P1", session="s-A", pid=os.getpid(),
+                         out=lambda *_a, **_k: None)
+        got_dead = M.read_lock(path)
+        nopid = plant(None)
+        nopid.pop("pid", None)
+        M._write_lock(path, nopid)
+        code2 = M.refresh(proj, "phase-P1", session="s-A", pid=os.getpid(),
+                          out=lambda *_a, **_k: None)
+        got_none = M.read_lock(path)
+        check("rf9 ALLOW: `refresh` over a recorded pid that is gone, or a "
+              "claim recording none, re-records it under the run asking: %r"
+              % ((code, got_dead, code2, got_none),),
+              code == M.E_OURS and got_dead.get("pid") == os.getpid()
+              and code2 == M.E_OURS and got_none.get("pid") == os.getpid())
+
+        # THE $CLAUDE_PID RULE excludes another session, as the token rule does.
+        shared = {"sessionId": "s-A", "pid": sleeper.pid, "hostname": here,
+                  "handedOff": True, "token": "not-carried", "startedAt": stamp}
+        check("rf10 another session sharing the holder's pid is NOT the holder",
+              M.held_by_us(shared, session="s-B", pid=sleeper.pid)["ours"]
+              is False, repr(M.held_by_us(shared, session="s-B",
+                                          pid=sleeper.pid)))
+        check("rf11 ALLOW: the holder's own session with that pid is the "
+              "holder, and so is the pid alone where no session is named",
+              M.held_by_us(shared, session="s-A", pid=sleeper.pid)["ours"]
+              is True
+              and M.held_by_us({"pid": sleeper.pid, "hostname": here,
+                                "handedOff": True, "token": "not-carried",
+                                "startedAt": stamp},
+                               session="s-B", pid=sleeper.pid)["ours"] is True,
+              repr(M.held_by_us(shared, session="s-A", pid=sleeper.pid)))
     finally:
         if pid_was is not None:
             os.environ["CLAUDE_PID"] = pid_was

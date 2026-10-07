@@ -5607,10 +5607,14 @@ def _cases(check):
                                    "audit-lock.py")
 
         def lv_env(session, pid):
+            # None leaves the variable unset: a run with no session id, or one
+            # started where nothing exported $CLAUDE_PID.
             env = dict((k, v) for k, v in os.environ.items()
                        if not k.startswith("CLAUDE_") and k != _locks.TOKEN_ENV)
-            env["CLAUDE_CODE_SESSION_ID"] = session
-            env["CLAUDE_PID"] = str(pid)
+            if session is not None:
+                env["CLAUDE_CODE_SESSION_ID"] = session
+            if pid is not None:
+                env["CLAUDE_PID"] = str(pid)
             return env
 
         def lv_call(script, proj, argv, session, pid):
@@ -5784,6 +5788,155 @@ def _cases(check):
                   lv8_a["code"] == 0 and lv8_tk[0] == 0 and lv8_so[0] == 0
                   and "took it over" in lv8_so[1]
                   and "left in place" not in lv8_so[1])
+
+            def lv_lock_lines(text):
+                return [ln for ln in text.splitlines() if "phase lock" in ln]
+
+            def lv_rewrite(proj, changes):
+                info = _locks.read_lock(lv_path(proj))
+                info.update(changes)
+                _panel_write._atomic_write_json(lv_path(proj), info)
+                return info
+
+            # NOT TAKEN OVER IS DECIDED BY THE LOCK'S OWN RECORD, not by whether
+            # its holder reads live: a start lock judged by its age, or one from
+            # another host, is still somebody else's that this session never held.
+            lv13_proj, _lv13_mp = pc_repo("lv-aged")
+            lv13_a = lv_start(lv13_proj, "s-lv-a", None)
+            lv13_lock = lv_rewrite(lv13_proj, {"startedAt": "2020-01-01T00:00:00Z"})
+            lv13_so = lv_signoff(lv13_proj, "s-lv-b", _lv_pb.pid)
+            check("lv13 a sign-off by a non-holder over a start lock with no pid "
+                  "and past the age limit says the lock was LEFT IN PLACE, names "
+                  "the holder and the age basis, never that it was taken over: %r"
+                  % ((lv13_a["code"], lv13_lock.get("pid"), lv13_so[0],
+                      lv_lock_lines(lv13_so[1])),),
+                  lv13_a["code"] == 0 and "pid" not in lv13_lock
+                  and lv13_so[0] == 0 and os.path.exists(lv_path(lv13_proj))
+                  and "left in place" in lv13_so[1]
+                  and "s-lv-a" in "".join(lv_lock_lines(lv13_so[1]))
+                  and "threshold" in "".join(lv_lock_lines(lv13_so[1]))
+                  and "took it over" not in lv13_so[1])
+            lv14_proj, _lv14_mp = pc_repo("lv-foreign")
+            lv14_a = lv_start(lv14_proj, "s-lv-a", _lv_pa.pid)
+            lv_rewrite(lv14_proj, {"hostname": "elsewhere",
+                                   "startedAt": "2020-01-01T00:00:00Z"})
+            lv14_so = lv_signoff(lv14_proj, "s-lv-b", _lv_pb.pid)
+            check("lv14 the same for an old start lock recorded on another host: "
+                  "LEFT IN PLACE, with the foreign-host basis: %r"
+                  % ((lv14_a["code"], lv14_so[0], lv_lock_lines(lv14_so[1])),),
+                  lv14_a["code"] == 0 and lv14_so[0] == 0
+                  and os.path.exists(lv_path(lv14_proj))
+                  and "left in place" in lv14_so[1]
+                  and "not this host" in "".join(lv_lock_lines(lv14_so[1]))
+                  and "took it over" not in lv14_so[1])
+            # The twin: the same foreign lock recording that it took over FROM the
+            # signing session keeps the takeover sentence.
+            lv15_proj, _lv15_mp = pc_repo("lv-foreign-taken")
+            lv15_a = lv_start(lv15_proj, "s-lv-a", _lv_pa.pid)
+            lv_rewrite(lv15_proj, {"hostname": "elsewhere",
+                                   "startedAt": "2020-01-01T00:00:00Z",
+                                   "takenOverFrom": {"sessionId": "s-lv-b"}})
+            lv15_so = lv_signoff(lv15_proj, "s-lv-b", _lv_pb.pid)
+            check("lv15 ALLOW: the same foreign-host lock recording a takeover "
+                  "from the signing session keeps the takeover wording: %r"
+                  % ((lv15_a["code"], lv15_so[0], lv_lock_lines(lv15_so[1])),),
+                  lv15_a["code"] == 0 and lv15_so[0] == 0
+                  and "took it over" in lv15_so[1]
+                  and "left in place" not in lv15_so[1])
+
+            # A RESUMED RUN GIVES BACK THE LOCK IT RE-RECORDED. The orchestrator
+            # releases at the end only what its acquire said was this call's, so
+            # an acquire that re-records its own session's lock from a dead pid
+            # must say it holds it now - or the lock outlives the run.
+            _lv_r1, _lv_r2 = lv_sleeper(), lv_sleeper()
+            _lv_procs.extend([_lv_r1, _lv_r2])
+            lv16_proj, _lv16_mp = pc_repo("lv-resumed")
+            lv16_acq1 = lv_lock(lv16_proj, ["acquire", "phase-P3", "--note",
+                                            "phase run"], "s-lv-a", _lv_r1.pid)
+            lv16_st1 = lv_start(lv16_proj, "s-lv-a", _lv_r1.pid)
+            lv_kill(_lv_r1)
+            lv16_acq2 = lv_lock(lv16_proj, ["acquire", "phase-P3", "--note",
+                                            "phase run"], "s-lv-a", _lv_r2.pid)
+            lv16_acq3 = lv_lock(lv16_proj, ["acquire", "phase-P3", "--note",
+                                            "phase run"], "s-lv-a", _lv_r2.pid)
+            lv16_st2 = lv_start(lv16_proj, "s-lv-a", _lv_r2.pid)
+            lv16_so = lv_signoff(lv16_proj, "s-lv-a", _lv_r2.pid)
+            lv16_held = _locks.read_lock(lv_path(lv16_proj))
+            lv16_rel = lv_lock(lv16_proj, ["release", "phase-P3"], "s-lv-a",
+                               _lv_r2.pid)
+            check("lv16 a resumed run's acquire over its own lock naming a dead "
+                  "pid says the lock was re-recorded and is this call's - not "
+                  "'already yours' - so its release at the end leaves no lock: %r"
+                  % ((lv16_acq1[0], lv16_st1["code"], lv16_acq2,
+                      lv16_st2["code"], lv16_so[0], lv16_held.get("pid"),
+                      lv16_rel),),
+                  lv16_acq1[0] == 0 and lv16_st1["code"] == 0
+                  and lv16_acq2[0] == 0
+                  and "re-recorded" in lv16_acq2[1]
+                  and "already yours" not in lv16_acq2[1]
+                  and "not this call's" not in lv16_acq2[1]
+                  and lv16_st2["code"] == 0 and lv16_so[0] == 0
+                  and lv16_held.get("pid") == _lv_r2.pid
+                  and lv16_rel[0] == 0
+                  and not os.path.exists(lv_path(lv16_proj)))
+            check("lv17 ALLOW: a second acquire in the same resumed run, its "
+                  "holder now live, is still 'already yours' and not this "
+                  "call's to give back: %r" % (lv16_acq3,),
+                  lv16_acq3[0] == 0 and "already yours" in lv16_acq3[1]
+                  and "not yours to give back" in lv16_acq3[1])
+
+            # A LIVE RECORDED HOLDER IS NOT RE-RECORDED. A start of the same
+            # session under another live process leaves the lock naming the
+            # process that took it, so that process's release still works. lv1 is
+            # the twin: a dead recorded holder IS re-recorded.
+            _lv_ra, _lv_rb = lv_sleeper(), lv_sleeper()
+            _lv_procs.extend([_lv_ra, _lv_rb])
+            lv18_proj, _lv18_mp = pc_repo("lv-live-refresh")
+            lv18_acq = lv_lock(lv18_proj, ["acquire", "phase-P3", "--note",
+                                           "phase run"], "s-lv-a", _lv_ra.pid)
+            lv18_st = lv_start(lv18_proj, "s-lv-a", _lv_rb.pid)
+            lv18_lock = _locks.read_lock(lv_path(lv18_proj))
+            lv18_rel = lv_lock(lv18_proj, ["release", "phase-P3"], "s-lv-a",
+                               _lv_ra.pid)
+            check("lv18 a same-session start under a second LIVE process leaves "
+                  "the lock naming the live process that took it, and that "
+                  "process's release gives it back: %r"
+                  % ((lv18_acq[0], lv18_st["code"], lv18_lock.get("pid"),
+                      _lv_ra.pid, lv18_rel),),
+                  lv18_acq[0] == 0 and lv18_st["code"] == 0
+                  and lv18_lock.get("pid") == _lv_ra.pid
+                  and lv18_rel[0] == 0 and "taken over" not in lv18_rel[1]
+                  and not os.path.exists(lv_path(lv18_proj)))
+
+            # A CALLER THAT IS NOT KNOWN TO BE THE HOLDER'S SESSION does not
+            # re-take a yielding start lock or a claim. lv5 is the twin: the same
+            # session's acquire re-takes the yielding lock.
+            lv19_proj, _lv19_mp = pc_repo("lv-sessionless")
+            lv19_a = lv_start(lv19_proj, "s-lv-a", _lv_pa.pid)
+            with open(lv_path(lv19_proj), "rb") as _fh:
+                lv19_before = _fh.read()
+            lv19_acq = lv_lock(lv19_proj, ["acquire", "phase-P3", "--note",
+                                           "phase run"], None, _lv_pa.pid)
+            with open(lv_path(lv19_proj), "rb") as _fh:
+                lv19_after = _fh.read()
+            check("lv19 a hand-off acquire with no session id and the holder's "
+                  "$CLAUDE_PID leaves the start's yielding lock byte for byte: %r"
+                  % ((lv19_a["code"], lv19_acq),),
+                  lv19_a["code"] == 0 and lv19_after == lv19_before
+                  and "from this session's own yielding claim" not in lv19_acq[1])
+            lv20_proj, lv20_mp = pc_repo("lv-shared-pid")
+            lv20_a = lv_start(lv20_proj, "s-lv-a", _lv_pa.pid)
+            lv20_lock = _locks.read_lock(lv_path(lv20_proj))
+            lv20_before = lv_shard_bytes(lv20_proj, lv20_mp)
+            lv20_b = lv_start(lv20_proj, "s-lv-b", _lv_pa.pid)
+            check("lv20 another session sharing the holder's $CLAUDE_PID is not "
+                  "the holder: its start is REFUSED, the shard byte identical and "
+                  "the lock untouched: %r"
+                  % ((lv20_a["code"], lv20_b["code"],
+                      lv20_b["json"].get("claimAction"), lv20_b["txt"][:200]),),
+                  lv20_a["code"] == 0 and lv20_b["code"] == 2
+                  and lv_shard_bytes(lv20_proj, lv20_mp) == lv20_before
+                  and _locks.read_lock(lv_path(lv20_proj)) == lv20_lock)
         finally:
             for _lv_proc in _lv_procs:
                 lv_kill(_lv_proc)
@@ -5840,6 +5993,57 @@ def _cases(check):
             check("lv11 ALLOW: with nothing injected the same start keeps the lock "
                   "it took: %r" % (lv11_code,),
                   lv11_code == 0 and os.path.exists(lv_path(lv11_proj)))
+
+            # A RAISE AFTER THE WRITE LANDED restores the claim WITH the lock:
+            # giving back only the lock left a claim no lock stood behind. The
+            # injection is the branch cut, the one step that runs after the
+            # validated write, made to raise rather than refuse.
+            _lv_entry = M._phase_entry
+            _lv_run = subprocess.run
+
+            def lv_cut_entry(git_root, meta, phase):
+                head = _lv_run(["git", "-C", git_root, "rev-parse", "HEAD"],
+                               stdout=subprocess.PIPE).stdout.decode().strip()
+                return {"state": "cut", "refusal": None, "branch": "audit/p3-cut",
+                        "parent": "audit/p3", "baseRef": head}
+
+            def lv_cut_raises(argv, *a, **k):
+                if isinstance(argv, list) and "switch" in argv:
+                    raise RuntimeError("injected after the write landed")
+                return _lv_run(argv, *a, **k)
+
+            def lv_cut_start(name, boom):
+                proj, mp = pc_repo(name)
+                before = lv_shard_bytes(proj, mp)
+                M._phase_entry = lv_cut_entry
+                if boom:
+                    subprocess.run = lv_cut_raises
+                try:
+                    code, txt = run(["start", "P3.1", "--project-dir", proj])
+                finally:
+                    M._phase_entry = _lv_entry
+                    subprocess.run = _lv_run
+                return {"code": code, "txt": txt,
+                        "same": lv_shard_bytes(proj, mp) == before,
+                        "claim": (pc_shard(mp, "P3") or {}).get("claim"),
+                        "lock": os.path.exists(lv_path(proj))}
+
+            lv21 = lv_cut_start("lv-raise-after", True)
+            check("lv21 a raise after the write landed restores the shard - no "
+                  "claim left - and gives the lock back with it: %r"
+                  % ((lv21["code"], lv21["same"], lv21["claim"], lv21["lock"],
+                      lv21["txt"][-200:]),),
+                  lv21["code"] != 0 and "injected" in lv21["txt"]
+                  and lv21["same"] and lv21["claim"] is None
+                  and not lv21["lock"])
+            lv22 = lv_cut_start("lv-noraise-after", False)
+            check("lv22 ALLOW: the same cut with nothing raised keeps the claim "
+                  "and the lock together: %r"
+                  % ((lv22["code"], lv22["claim"], lv22["lock"],
+                      lv22["txt"][-200:]),),
+                  lv22["code"] == 0 and not lv22["same"]
+                  and (lv22["claim"] or {}).get("sessionId") == "s-lv-x"
+                  and lv22["lock"])
 
             # ONE PREDICATE FOR "THE HOLDER IS GONE": `_phase_holder` reads it
             # from `_locks`, so a change to it changes this reading too.

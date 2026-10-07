@@ -306,10 +306,13 @@ day in, which is when anyone finally looks. What liveness changes is the **repai
 so the sentence says which: a live holder means the run is either working or sitting
 idle mid-procedure, and `/audit:phase <id>` picks the remaining waves up; a holder
 that is gone means nothing is going to finish it, so `/audit:resume` continues it on its
-own — its own preflight acquire (`reference/orchestrator.md` → *Concurrency lock*) meets the
-dead holder as exit 4 and takes the lock over through that same acquire once the human
-confirms it, and the `audit-task.py start` it then runs (`reference/orchestrator.md` →
-*Branch-per-phase*) reuses that already-held lock rather than taking it over a second time.
+own, and what its preflight acquire (`reference/orchestrator.md` → *Concurrency lock*) meets
+depends on whose lock it is. A **different session** meets the dead holder as exit 4 and takes
+the lock over through that same acquire once the human confirms it. The **same session**
+resumed under a new process meets its own lock: the acquire re-records it under the live
+process and answers that the hold is this call's now, so that run releases it at the end. Either
+way the `audit-task.py start` it then runs (`reference/orchestrator.md` → *Branch-per-phase*)
+reuses that already-held lock rather than taking it over a second time.
 `start`'s own takeover of a dead holder's lock is for the hand-typed case, with no preflight
 acquire ahead of it. This is the current reading: a claim write now ties to this same lock, so
 "no lock held" is no longer read as "anyone may take the claim" the way it once was — the

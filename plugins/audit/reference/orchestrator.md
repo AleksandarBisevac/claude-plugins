@@ -345,7 +345,9 @@ liveness is unknowable: no pid recorded, or a lock from another host. **Never se
 exit 3 by looking at `startedAt` yourself** — that is the rule the script exists to replace.
 
 **Release** at the END of the command, including failure paths you control — **unless the acquire
-in that step answered that the lock was already yours**, in which case it is not yours to give back:
+in that step answered that the lock was already yours**, in which case it is not yours to give back.
+A resumed run whose own lock named a gone pid is answered `acquired` (re-recorded under it), so it
+releases that lock too:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/audit-lock.py" release <name> --project <gitRoot>
