@@ -1181,6 +1181,29 @@ def _cases(check):
     check("a save that changes nothing writes nothing and says so",
           res["ok"] and res.get("unchanged") is True and res["applied"] == []
           and res.get("written") == [] and os.path.getmtime(mpath) == _mtime)
+    # A value the panel's user typed is caller free text: a machine path in it
+    # is refused BEFORE the write, so neither the manifest nor the journal
+    # takes it. Neutral, and built so this file never spells one whole.
+    _mp_home = "/" + "/".join(("Users", "someone", "models", "local"))
+    with open(mpath, "rb") as _fh:
+        _mp_before = _fh.read()
+    _mp_res = M.apply_composition(proj, {"tasks": {"P1.1": {"model": _mp_home}}})
+    with open(mpath, "rb") as _fh:
+        _mp_after = _fh.read()
+    _mp_said = " ".join(_mp_res.get("findings") or [])
+    check("a panel save whose value holds a home path is refused before "
+          "writing - the manifest keeps its bytes, and the finding names the "
+          "field and the shape without echoing the path: %r" % (_mp_said,),
+          _mp_res.get("ok") is False and _mp_after == _mp_before
+          and "P1.1 model" in _mp_said and "posix-home" in _mp_said
+          and "someone" not in _mp_said)
+    _mp_ok = M.apply_composition(proj, {"tasks": {"P1.1": {"model": "haiku"}}})
+    check("ALLOW twin: the same field saved with a plain value still writes - "
+          "the mutation this catches is a check refusing every panel save",
+          _mp_ok.get("ok") is True and _mp_ok.get("applied") == [
+              {"target": "P1.1", "field": "model", "from": "sonnet",
+               "to": "haiku"}])
+    M.apply_composition(proj, {"tasks": {"P1.1": {"model": "sonnet"}}})
     _cfg_now = M.read_config(proj)
     res = M.write_config(proj, dict(_cfg_now))
     check("the same rule for the config: nothing changed, nothing written",
@@ -1317,8 +1340,11 @@ def _cases(check):
             _fs = M._journal(proj, M.read_config(proj), "x", "y", [])
         except Exception as exc:                                # pragma: no cover
             _fs = "it raised: %s" % exc
-        check("a journal that throws never breaks the write it is recording",
-              _fs == {"journaled": False, "journaledWhy": "failed"})
+        check("a journal that throws never breaks the write it is recording - "
+              "and the block says why, beside the code word the toast reads: "
+              "%r" % (_fs,),
+              _fs == {"journaled": False, "journaledWhy": "failed",
+                      "journaledReason": "RuntimeError: disk on fire"})
 
         # The panel server is a detached process this plugin launched, so
         # the per-session sidecar guard-bash-writes reads can never name what the

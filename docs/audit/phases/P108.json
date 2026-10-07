@@ -22,7 +22,65 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P108-R1",
+        "severity": "high",
+        "file": "plugins/audit/hooks/journal-writes.py:1234-1250; scripts/governance/_journal_io.py:1741-1755,1558-1578",
+        "issue": "The pre-hash machine-path refusal makes the hook's own manifest rows droppable with no sign: journal-writes renders task-field values into details.changes from/to, a value holding a home path makes _append raise, append() swallows it, and the hook exits 0 with no manifest.edit row - and an edit that corrects such a value can never be journalled either; SECURITY.md still says every manifest write appends a row.",
+        "resolution": "Do not refuse rows the plugin builds itself: rewrite the offending token in place (as redacted_text does for program output) so the write is still recorded; keep the hard refusal only for caller free text at the verb boundary; a journal-writes case where a manifest edit holding a home path still yields a manifest.edit row without the path."
+      },
+      {
+        "id": "P108-R2",
+        "severity": "high",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:4697-4705,2056-2072; set-priority.py; derive-phase-gate.py; panel/_panel_write.py:1413-1423",
+        "issue": "For CLI and panel verbs the refusal lands after the manifest write and is swallowed: `audit-task note ... --text '<a home path>'` exits 0, the path is committed in the phase shard, no journal row is written, and the field/shape/remedy text never reaches the user - the reverse of the intent.",
+        "resolution": "Expose the check (a public _journal_io check on caller free text) and call it in each verb before the plan or panel save, refusing with a non-zero exit and the field/shape/remedy text so neither the manifest nor the journal takes the value; carry any later append failure's text into journaledWhy; verb-level cases (manifest unchanged, exit non-zero, message names the field)."
+      },
+      {
+        "id": "P108-R3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_journal_io.py:1430-1446",
+        "issue": "machine_path_shape checks a boundary after the checkout root but not before it, so with a short root (/src, /app, /repo, /workspace in containers) any text containing that segment ('lib/src/foo.ts', a URL) is refused as checkout-root; and the detector's over-flagging patterns (a relative path whose first segment is the word home reads as a home directory) are now a hard refusal with no baseline.",
+        "resolution": "Require a token start before the root too, with cases for short roots where a relative path containing the segment is written unchanged; decide whether a relative 'home/<x>' at token start refuses at the writer or is only flagged by the detector."
+      },
+      {
+        "id": "P108-R4",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_journal_io.py:1539-1578,1668 (via _scoped_commit.py:715-734, close-phase.py:1200-1216)",
+        "issue": "The check applies to every summary and details value, including program output: a scoped-commit withdrawal whose reason is git's stderr naming an outside .git path in a linked worktree under a home directory is refused and the withdrawal row lost, where the module's rule for program output was redaction.",
+        "resolution": "Route program-produced fields (withdraw reasons, verdict sentences, close-phase basis) through the redaction path, keep refusal for caller-supplied text, with a case for a withdrawal reason quoting an outside .git path."
+      },
+      {
+        "id": "P108-R5",
+        "severity": "med",
+        "file": "SECURITY.md:761-765,826-836,894-895,188",
+        "issue": "The trail section describes neither journal change: every manifest write is still said to append a row (no word on the pre-hash rule or which writers surface it), and hand edits to the journal are still said to be refused by guard-edits alone, with no word on the shell arm now refusing redirect, tee and sed -i into the journal at PreToolUse.",
+        "resolution": "Update the trail section and the fail-mode description to match the settled behaviour, and extend the hand-edits bullet with the shell arm and its residuals."
+      },
+      {
+        "id": "P108-R6",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-secrets-read.py:1573-1580,2509; tests/test_hooks.py:49-53; SECURITY.md:419-440",
+        "issue": "Real bypasses at the deny tier, stated only in code: `bash -c \"sed -i ... src/app.py\"` and `eval \"sed -i ...\"` are allowed where bare sed -i is denied; `sh -c \"sed -i ... <journal>\"` and `python3 -c \"open('<journal>','a')...\"` are allowed while the journal-write class says deny at every tier; test_hooks.py says shapes left out of its table are the ones the security document lists as open, which these are not.",
+        "resolution": "Close them: the shell-write arm reads the command inside a bash -c / sh -c / eval argument through the shared wrapper readers, and the interpreter arm grades a journal target; cases at every tier; anything left open listed in SECURITY.md and as test_hooks rows marked today with a contradicts basis."
+      },
+      {
+        "id": "P108-R7",
+        "severity": "low",
+        "file": "plugins/audit/tests/test__refs.py:2733",
+        "issue": "A section-marker comment cites a register task id.",
+        "resolution": "Drop the id and keep the constraint."
+      },
+      {
+        "id": "P108-R8",
+        "severity": "low",
+        "file": "plugins/audit/hooks/guard-secrets-read.py:1589-1605",
+        "issue": "cp, mv and install into a source file or the journal are allowed at deny: the shell write grammar reads only redirect, tee and sed -i (pre-existing).",
+        "resolution": "Read the destination operand of cp/mv/install, or name the gap in SECURITY.md with the other residuals."
+      }
+    ],
+    "outcome": "[findings: 8 - 2 high, 4 med, 2 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -575,7 +633,7 @@
     {
       "id": "P108.9-4gh",
       "title": "free text never carries a machine path into a chained journal row",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix BUG-21-4gh. Free text that a verb takes from its caller and writes into the hash-chained journal must not carry a machine path into a committed row. Such text includes task notes, technical and descriptive outcomes, reasons, finding text and refusal reasons.\n\nToday _journal_io's redaction section answers structural fields before row_hash() and leaves free prose to the after-the-fact detector, tools/check-committed-pii.py. By the time the detector reports, the row is chained, and only a BASELINE row can account for it.\n\nThe fix sits at the one place every row passes before it is hashed. A free-text value is checked there for the path shapes the detector reads as machine identity: a home directory under /Users/<name> or /home/<name>, a Windows user directory, and this checkout's absolute root.\n- A path inside this repository is rewritten to its repo-relative spelling. That is the structural answer the section already uses.\n- Anything else of those shapes is refused before the row is written. The refusal names the field and the shape, never echoes the value, and says how to say it instead (a repo-relative path, or <scratchpad>/<home> placeholders).\n- The detector's patterns are not copied. Share them with tools/check-committed-pii.py through one definition, if the layer rule allows; otherwise state why the two must agree, and add a case that holds them equal.\n\nCases:\n- A note quoting a home path is refused and the journal is unchanged.\n- An in-repo absolute path is written repo-relative.\n- Ordinary prose that mentions 'home' or 'Users' as words is written unchanged.\n- The refusal text does not contain the value.",
       "files": [
         "plugins/audit/scripts/governance/_journal_io.py",
@@ -601,20 +659,173 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "bd415c44",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_journal_io's redaction section, at the one place every row passes before row_hash: _MACHINE_PATH_SHAPES (posix-home and windows-user-path, moved here from the detector) with MACHINE_PATH_SHAPES as a public alias for it and MACHINE_PATH_TOKEN_START, the token boundary both readers use; _checkout_roots(project) (the root as written and resolved, never the filesystem root); _in_repo_relative rewrites each absolute token inside the repo through repo_relative_or_token (only tokens os.path.isabs calls absolute on this platform); machine_path_shape(text, roots) asks about the checkout root first, then each shape; free_text(project, field, value) rewrites, then raises ValueError if a shape remains, naming the field (summary, details.reason, details.changes[3].to) and the shape, never the value, and saying to write a repo-relative path or <home>/... / <scratchpad>/... . _normalise runs it on summary and normalise_details on every value except cwd (already a token) and the command facts, before _clip and row_hash, so hook rows are covered as well as CLI verbs. tools/check-committed-pii.py imports the shared definition (DETECTORS built from _journal_io.MACHINE_PATH_SHAPES and the token start), so the writer and the detector read one pattern set. Limits stated: append() still swallows the refusal and returns False, so a verb calling append() drops the row and its message (surfacing it needs caller files); a repo-relative path beginning home/<name> or Users/<name> is refused (over-refusal); ft6's checkout-root shape assertion is skipped on Windows. Cost measured twice with a gap: _normalise about 30-32 µs per row, free_text about 10-11 µs; bench-hooks --gate green.\nTests: test__journal_io ft1-ft7 (a home path in a note refused with the journal unchanged; an in-repo absolute path written repo-relative; prose using 'home' and 'Users' as words written unchanged; the refusal does not echo the value; the checkout root refused; the detector's rows are the writer's own objects). Red-first proved through the helper at HEAD e534952d (ft1-ft4, ft6; 191/197); an in-memory over-fire mutation turned the allow cases red. test__journal_io 216/216, test_audit_journal 186/186, check-committed-pii --selftest 35/35 and the real scan green, full sweep 306/306.",
+        "descriptive": "A note, outcome or reason that quotes a home directory or this checkout's full path is now refused before it becomes a permanent journal row, and an absolute path inside the repository is written repository-relative, with the writer and the privacy check sharing one definition of what counts."
       },
       "startedAt": "2026-10-07T02:27:40Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T02:46:18Z",
+      "verifiedBy": [
+        "ft1",
+        "ft2",
+        "ft3",
+        "ft4",
+        "ft5",
+        "ft6",
+        "ft7"
+      ],
       "bugId": "BUG-21-4gh",
       "testEvidence": {
         "runId": "2026-10-07T02:46:07Z.e991d0",
         "status": "passed",
         "at": "2026-10-07T02:46:07Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "bd415c44",
+        "at": "2026-10-07T02:46:18Z",
+        "basis": "orchestrator check: BUG-21-4gh's expected behaviour holds at the one place every row passes, one pattern definition shared with the detector, red-first proved; the append() swallow is a stated limit for the phase review"
       }
+    },
+    {
+      "id": "P108.10-4gh",
+      "title": "a machine path in a journal row is redacted when the plugin wrote it, and refused before any write when a caller typed it",
+      "status": "in_progress",
+      "description": "Fixes review findings P108-R1 and P108-R2 (high), P108-R3 and P108-R4. They concern the machine-path rule on journal rows.\n\nSplit the rule by who wrote the text.\n\n- Text the plugin builds itself. This covers hook rows (journal-writes' rendered changes), program output (scoped-commit withdrawal reasons, verdict sentences, close-phase basis) and anything else not typed by a caller. A machine path there is REDACTED in place, the same way redacted_text already treats program output: the token becomes OUTSIDE_TOKEN or a named marker. The row is still written. A hook or verb never drops its own row because of what a value contains.\n\n- Free text a caller hands a verb. This covers note text, outcomes, reasons, finding text and the panel's free-text saves. The check is public (for example _journal_io.check_free_text(project, field, value)). Each verb calls it BEFORE it writes the plan, the shard or the panel save. When the check fails, the verb refuses with a non-zero exit and the field/shape/remedy text, and neither the manifest nor the journal takes the value. The verbs are audit-task (note, done, cancel, block, reopen, finding, bug-add and every other free-text flag), set-priority, derive-phase-gate and the panel's write path. Any append that still fails carries its reason into journaledWhy, never silently.\n\n- The checkout-root shape requires a token start before the root as well as after it, so a short root (/src, /app, /repo, /workspace) never matches a relative path or URL containing that segment. A relative 'home/<x>' at the start of a token is flagged by the detector only. The writer does not refuse it, because a repository can hold a home/ directory.\n\nCases:\n- A journal-writes manifest edit whose value holds a home path still yields a manifest.edit row, and the row does not contain the path.\n- A withdrawal reason quoting an outside .git path is written tokenised.\n- `audit-task note` with a home path exits non-zero, leaves the shard unchanged and names the field.\n- The panel save of such a value is refused before writing.\n- A short-root fixture writes 'lib/src/foo.ts' and a URL unchanged.",
+      "files": [
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/tests/test_journal_writes.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/set-priority.py",
+        "plugins/audit/tests/test_set_priority.py",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "plugins/audit/tests/test_derive_phase_gate.py",
+        "plugins/audit/scripts/panel/_panel_write.py",
+        "plugins/audit/tests/test__panel_write.py",
+        "tools/check-committed-pii.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_journal_writes.py: a manifest edit whose value holds a home path still yields a manifest.edit row, and the row does not carry the path",
+          "plugins/audit/tests/test_audit_task.py: a note carrying a home path exits non-zero, leaves the shard unchanged and names the field",
+          "plugins/audit/tests/test__journal_io.py: a withdrawal reason quoting an outside path is written tokenised, and a short checkout root never matches a relative path or URL containing that segment"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint",
+          "validate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-07T05:02:18Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T05:41:54Z.405b99",
+        "status": "passed",
+        "at": "2026-10-07T05:41:54Z"
+      }
+    },
+    {
+      "id": "P108.11-4gh",
+      "title": "a write inside bash -c, eval, cp/mv/install or an interpreter journal append gets the bare form's verdict",
+      "status": "in_progress",
+      "description": "Fixes review findings P108-R6 and P108-R8. They are real bypasses at the deny tier.\n\nguard-secrets-read's shell-write arm also reads three things it misses today:\n- the command inside a `bash -c` / `sh -c` / `zsh -c` argument and an `eval` argument;\n- the destination operand of cp, mv and install;\n- for the journal, an interpreter write (python3 -c / a heredoc program that opens a journal file for writing or appending).\n\nIt reads them through the shared shell readers in hooks/_config (the wrapper unwrapping it already uses for env, sudo, xargs and the like), never a second grammar. If unwrapping a `-c` argument needs a change to _config, make it there; hooks/_config.py is in this task's files.\n\nEach form gets the same verdict as the bare form at every tier:\n- `bash -c \"sed -i ... src/app.py\"`\n- `eval \"sed -i ...\"`\n- `sh -c \"sed -i ... <journal>\"`\n- `python3 -c \"open('<journal>','a')...\"`\n- `cp notes.md <journal>`\n- `cp x src/app.py`\n\nThe allow twins stay allowed:\n- `bash -c \"ls src\"`\n- `eval \"echo hi\"`\n- `cp src/app.py /tmp/x`\n- a program that only reads the journal\n\ntest_hooks.py gains rows for these shapes in their classes. Any shape that is still left open is listed in KNOWN_DIVERGENCE with today and contradicts set, so the contract records the gap.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_hooks.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test__config.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test_guard_secrets_read.py: bash -c, sh -c and eval sed -i, cp/mv/install destinations and an interpreter journal append each get the bare form's verdict at every tier, while read-only twins stay allowed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-07T05:02:18Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T05:43:43Z.afdcd9",
+        "status": "passed",
+        "at": "2026-10-07T05:43:43Z"
+      }
+    },
+    {
+      "id": "P108.12-4gh",
+      "title": "SECURITY.md's trail and plan-gate sections describe the journal and guard as they now behave",
+      "status": "pending",
+      "description": "Fixes review findings P108-R5 and P108-R7.\n\nSECURITY.md's trail section describes the journal as it now behaves:\n- Rows the plugin builds itself redact a machine path and are still written.\n- Caller free text carrying one is refused by the verb before anything is written.\n- The fail-mode table's journal rows match that.\n\nThe hand-edits bullet names the PreToolUse shell arm, which refuses redirect, tee, sed -i, cp/mv/install, -c and eval forms, and interpreter writes into the journal at every tier, plus whatever residual the guard task left open. The plan-gate paragraph lists any remaining open shapes, together with the guard-bash-writes after-the-fact report.\n\nEvery sentence must be true of the code as committed by the two tasks this one depends on.\n\ntest__refs.py's section-marker comment that cites a task id loses the id and keeps its constraint.",
+      "files": [
+        "SECURITY.md",
+        "plugins/audit/tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P108.10-4gh",
+        "P108.11-4gh"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "startedAt": "2026-10-06T21:26:46Z"

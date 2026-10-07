@@ -593,6 +593,12 @@ BASELINE = (
      "plan's copy of the note was corrected to a repository-relative spelling; "
      "this row cannot be - its hash covers these bytes and the chain runs "
      "through it - so it is recorded here rather than rewritten."),
+    ("docs/audit/journal/2026-10.6c881c24-c1fd-461f-8c48.wt-d215e320.jsonl", 114,
+     "posix-home",
+     "a row whose text quotes a relative 'home/page.tsx' as the example of a "
+     "repository path the writer must accept - a file a repository may hold, "
+     "not a directory of any machine. posix-home flags `home/` at a token start "
+     "by design, and the row is chained, so it is recorded rather than rewritten."),
     # THE PLAN'S ROWS, recorded when the plan entered the domain. Every one is a
     # shape QUOTED in a task's text - an example, a fixture name, a phrase - and
     # names no machine. KEYED BY WHAT THE LINE SAYS (`line_anchor`), not by its

@@ -997,6 +997,19 @@ def stdin_contest_refusal(claiming, flags):
         % (" and ".join(flags.get(d, d) for d in claiming),))
 
 
+def _free_text_root(args):
+    """The checkout root a prose value is judged against, or None.
+
+    `resolve_basis`, the doors' own answer, asked early: this runs before any
+    door has moved a lone positional into `args.manifest`, so for those verbs
+    the root is the one `$CLAUDE_PROJECT_DIR` or the cwd names. None leaves the
+    home-directory shapes judged and only the checkout-root shape unasked."""
+    try:
+        return resolve_basis(args)["root"]
+    except Exception:
+        return None
+
+
 def resolve_briefs(args, out, stream=None):
     """The exit code the run must stop on, or None to carry on.
 
@@ -1019,6 +1032,12 @@ def resolve_briefs(args, out, stream=None):
     contains one of the shapes no way into the manifest at all. `stdin_gap_note`
     is what stops that being silence.
 
+    A MACHINE PATH IS REFUSED HERE TOO, by `_journal_io.check_free_text`, and on
+    both routes: the text lands verbatim in a committed manifest and its journal
+    row, so the one door every prose flag passes is where it is asked, before
+    the lock, the write or the row. A finding batch read off a file never passes
+    this door, so `_finding_problems` asks the same check of its text.
+
     An EMPTY value stays legal, on the same reasoning read the other way: a task
     with no description shows as having none, in the manifest and on every
     surface that renders it, so it is not the silent loss this is about. What is
@@ -1036,6 +1055,7 @@ def resolve_briefs(args, out, stream=None):
         # the same heredoc again would be piping into a closed door.
         out(stdin_contest_refusal(claiming, flags))
         return E_USAGE
+    root = _free_text_root(args) if carried else None
     for dest in carried:
         flag = flags[dest]
         text, from_stdin, error = read_brief(getattr(args, dest), flag, stream)
@@ -1043,6 +1063,13 @@ def resolve_briefs(args, out, stream=None):
             out(error)
             return E_USAGE
         setattr(args, dest, text)
+        # AFTER THE READ, so the stdin route is judged too: unlike a shell gap,
+        # a machine path is no false positive stdin is the way out of - the text
+        # arrives verbatim either way, and verbatim is what would be committed.
+        machine = _journal_io.check_free_text(root, flag, text)
+        if machine:
+            out("[audit-task] " + machine)
+            return E_USAGE
         gap = shell_eaten_gap(text)
         if not gap:
             continue
@@ -2041,7 +2068,7 @@ def _journal_row(project, config, mpath, action, summary, details):
     the session id, which a script is never handed) and the panel.
     """
     mod = _panel_write._journalmod()
-    if mod is None or not hasattr(mod, "append_from_cli"):
+    if mod is None or not hasattr(mod, "append_from_cli_why"):
         return {"journaled": False, "journaledWhy": "unavailable"}
     # THE PLACEMENT RULE: the journal lands in a sane place INSIDE
     # the named manifest's tree -- never doubled, never outside. A project
@@ -2054,7 +2081,7 @@ def _journal_row(project, config, mpath, action, summary, details):
     # the journal lands beside it (<manifest dir>/journal).
     cfg = _journal_cfg(config, mpath, project)
     try:
-        ok = bool(mod.append_from_cli(project, {
+        written, why = mod.append_from_cli_why(project, {
             "action": action,
             # Persisted row: "/" separators regardless of platform, like every
             # other journal path (n3 pins it; Windows relpath says backslash).
@@ -2064,11 +2091,18 @@ def _journal_row(project, config, mpath, action, summary, details):
             "actor": {"author": _panel_write._viewer(project,
                                                     config).get("author"),
                       "sessionId": os.environ.get("CLAUDE_CODE_SESSION_ID"),
-                      "via": "cli"}}, config=cfg))
-    except Exception:
-        ok = False
-    return {"journaled": True} if ok else {"journaled": False,
-                                           "journaledWhy": "failed"}
+                      "via": "cli"}}, config=cfg)
+    except Exception as exc:
+        written, why = False, exc
+    return _panel_write.journal_block(project, written, why)
+
+
+def _not_journaled_line(jres, what):
+    """The report line for a row the trail did not take, WITH the reason the
+    append gave - one word for every failure is the silence a reader cannot
+    act on."""
+    return ("  journal: the audit trail did NOT take %s (%s)"
+            % (what, jres.get("journaledReason") or "no reason recorded"))
 
 
 def _journal_add(project, config, mpath, task_id, phase_id, title, healed):
@@ -2852,7 +2886,7 @@ def _locked_add(args, project, config, mpath, title, out):
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
-        out("  journal: the audit trail did NOT take the task.add row")
+        out(_not_journaled_line(jres, "the task.add row"))
     out("  written: %s" % ", ".join(written))
     if index_note:
         out(index_note)
@@ -3059,7 +3093,7 @@ def _locked_cancel(args, project, config, mpath, tid, reason, out):
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
-        out("  journal: the audit trail did NOT take the %s.cancel row" % kind)
+        out(_not_journaled_line(jres, "the %s.cancel row" % kind))
     out("  written: %s" % ", ".join(written))
     if index_note:
         out(index_note)
@@ -3608,7 +3642,7 @@ def _locked_start(args, project, config, mpath, tid, out):
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
-        out("  journal: the audit trail did NOT take the task.start row")
+        out(_not_journaled_line(jres, "the task.start row"))
     out("  written: %s" % ", ".join(written))
     if entry_line:
         out(entry_line)
@@ -4222,7 +4256,7 @@ def _locked_done(args, project, config, mpath, tid, out):
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
-        out("  journal: the audit trail did NOT take the task.done row")
+        out(_not_journaled_line(jres, "the task.done row"))
     out("  written: %s" % ", ".join(written))
     if index_note:
         out(index_note)
@@ -4425,7 +4459,7 @@ def _locked_reopen(args, project, config, mpath, tid, reason, out):
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
-        out("  journal: the audit trail did NOT take the task.reopen row")
+        out(_not_journaled_line(jres, "the task.reopen row"))
     out("  written: %s" % ", ".join(written))
     if index_note:
         out(index_note)
@@ -4559,7 +4593,7 @@ def _report_tail(out, jres, action, warnings, written_manifest, written,
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
-        out("  journal: the audit trail did NOT take the %s row" % (action,))
+        out(_not_journaled_line(jres, "the %s row" % (action,)))
     out("  written: %s" % ", ".join(written))
     if index_note:
         out(index_note)
@@ -5195,7 +5229,7 @@ def _locked_phase_add(args, project, config, mpath, title, out):
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
-        out("  journal: the audit trail did NOT take the phase.add row")
+        out(_not_journaled_line(jres, "the phase.add row"))
     out("  written: %s" % ", ".join(written))
     if index_note:
         out(index_note)
@@ -5318,7 +5352,7 @@ def _park_phase(args, project, config, mpath, raw_index, assembled, phase, side,
     for line in _wg.collapse(warnings, _mio.load_manifest(mpath)):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
-        out("  journal: the audit trail did NOT take the proposal.add row")
+        out(_not_journaled_line(jres, "the proposal.add row"))
     out("  written: %s" % ", ".join(written))
     if side["suffix"] is not None:
         out("  next: merge %s into %s, then on %s: /audit:propose materialize %s"
@@ -5996,7 +6030,8 @@ def _locked_scope(args, project, config, mpath, tid, out):
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled"):
-        out("  note: not journaled (%s)" % jres.get("journaledWhy"))
+        out("  note: not journaled (%s)" % (jres.get("journaledReason")
+                                             or jres.get("journaledWhy"),))
     if index_note:
         out(index_note)
     if branch_note:
@@ -6250,7 +6285,8 @@ def _locked_retarget(args, project, config, mpath, pid, out):
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled"):
-        out("  note: not journaled (%s)" % jres.get("journaledWhy"))
+        out("  note: not journaled (%s)" % (jres.get("journaledReason")
+                                             or jres.get("journaledWhy"),))
     if index_note:
         out(index_note)
     if branch_note:
@@ -6596,7 +6632,7 @@ def _locked_signoff(args, project, config, mpath, pid, summary, out):
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
-        out("  journal: the audit trail did NOT take the phase.verdict row")
+        out(_not_journaled_line(jres, "the phase.verdict row"))
     out("  written: %s" % ", ".join(written))
     if index_note:
         out(index_note)
@@ -6705,6 +6741,12 @@ def _finding_problems(entry):
     if bad:
         problems.append("file is the repository-relative path a fix task's "
                         "`files` is built from, and %s" % ("; ".join(bad),))
+    # A batch's text never passes `resolve_briefs`, which judges flags; asked
+    # here it is judged on both routes. No project is at hand, so the home
+    # shapes are asked and the checkout-root shape is not.
+    problems.extend(why for why in (
+        _journal_io.check_free_text(None, field, entry[field])
+        for field in ("issue", "resolution")) if why)
     return problems
 
 
@@ -7795,7 +7837,9 @@ def _locked_group(args, project, config, mpath, ids, summary, out):
         out("WARNING: " + line)
     if not all(r.get("journaled") for r in rows) \
             and any(r.get("journaledWhy") == "failed" for r in rows):
-        out("  journal: the audit trail did NOT take every phase.verdict row")
+        out(_not_journaled_line(
+            next(r for r in rows if r.get("journaledWhy") == "failed"),
+            "every phase.verdict row"))
     if reason:
         out("  gate: none - the reason is recorded on every member's review")
     elif not pointer:
@@ -8032,7 +8076,7 @@ def _locked_settle(args, project, config, mpath, out):
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
-        out("  journal: the audit trail did NOT take the plan.settle row")
+        out(_not_journaled_line(jres, "the plan.settle row"))
     out("  written: %s" % ", ".join(written))
     return 0
 
@@ -9066,7 +9110,7 @@ def _locked_seed(args, project, config, mpath, out):
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if not jres.get("journaled") and jres.get("journaledWhy") == "failed":
-        out("  journal: the audit trail did NOT take the plan.seed row")
+        out(_not_journaled_line(jres, "the plan.seed row"))
     out("  written: %s" % ", ".join(written))
     out("  next: /audit:status, then set meta.buildCommands once you know "
         "what this repository runs, or /audit:task add the first real work")

@@ -7896,6 +7896,40 @@ def _cases(check):
               % ((_nt_empty[0], _nt_phase[0]),),
               _nt_empty[0] == 2 and _nt_phase[0] == 2 and _nt_after == _nt_before)
 
+        # A note is caller free text: a machine path in it is refused at the
+        # verb's door, before the lock, so neither the shard nor the journal
+        # takes it. Neutral, and built so this file never spells one whole.
+        _nt_home = "/" + "/".join(("Users", "someone", "notes", "probe.md"))
+        _nt_rows_before = len([r for r in _journal_io.read_all(projnt)])
+        _nt_mp = run(["note", "P2.4", "--text", "probe kept at %s" % (_nt_home,),
+                      "--project-dir", projnt])
+        _nt_mp_in = run_on_stdin(["note", "P2.4", "--text", "-",
+                                  "--project-dir", projnt],
+                                 "probe kept at %s\n" % (_nt_home,))
+        with open(mpnt, "rb") as _fh:
+            _nt_mp_after = _fh.read()
+        _nt_rows_after = len([r for r in _journal_io.read_all(projnt)])
+        check("nt3 a note carrying a home path - on argv or on stdin - exits "
+              "non-zero, leaves the shard and the journal unchanged, and names "
+              "the field and the shape without echoing the path: %r"
+              % ((_nt_mp[0], _nt_mp_in[0], _nt_mp[1][:160]),),
+              _nt_mp[0] != 0 and _nt_mp_in[0] != 0
+              and _nt_mp_after == _nt_before
+              and _nt_rows_after == _nt_rows_before
+              and "--text" in _nt_mp[1] and "posix-home" in _nt_mp[1]
+              and "--text" in _nt_mp_in[1]
+              and "someone" not in _nt_mp[1] + _nt_mp_in[1])
+        _nt_ok = run(["note", "P2.4", "--text",
+                      "probe kept at docs/probe.md, see https://example.com/x",
+                      "--project-dir", projnt])
+        check("nt4 ALLOW twin: a note naming a repo-relative path and a URL is "
+              "written - the mutation this catches is a door that refuses "
+              "every path-shaped note: %r" % (_nt_ok,),
+              _nt_ok[0] == 0
+              and [n.get("text") for n in
+                   ((task_in(mpnt, "P2.4") or {}).get("notes") or [])][-1:]
+              == ["probe kept at docs/probe.md, see https://example.com/x"])
+
         # ---- (rv) review findings: recorded by a verb, the tally derived ----------
         # Sign-off step 1 records the reviewer's findings, and until these verbs
         # that record was a hand edit of the phase shard - no lock, no journal row,

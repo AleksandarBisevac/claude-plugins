@@ -92,9 +92,18 @@ def _journal_append_sites(path):
             name = func.id
         else:
             continue
-        if name in ("append", "_append", "append_from_cli"):
+        if name in _JOURNAL_APPENDS:
             sites.append((node.lineno, name))
     return sites
+
+
+# Every journal append's name, the `_why` siblings included: a writer that
+# appended only through a sibling this walk did not know would drop out of
+# pw6 - and its anchors - without anyone removing it.
+_JOURNAL_APPENDS = ("append", "_append", "append_from_cli", "append_why",
+                    "append_from_cli_why")
+# The appends that file the write guard's claim themselves.
+_CLAIMING_APPENDS = ("append_from_cli", "append_from_cli_why")
 
 
 def _names_used(path):
@@ -143,7 +152,7 @@ def _unclaimed_journal_writers(owner):
             continue
         claims = "record_plugin_write" in _names_used(path)
         for line, name in found:
-            if name != "append_from_cli" and not claims:
+            if name not in _CLAIMING_APPENDS and not claims:
                 findings.append("%s:%d" % (os.path.basename(path), line))
     return findings, sites
 
@@ -3613,18 +3622,9 @@ def _journal_bytes(directory):
     return out
 
 
-def _refusal(project, entry, config):
-    """The text `_append` raised with, or None when it wrote the row."""
-    try:
-        M._append(project, entry, config=config)
-    except ValueError as exc:
-        return str(exc)
-    return None
-
-
 def _written(project, entry, config):
-    """The row `_append` wrote, or an empty dict when it refused - so an allow
-    case that over-fires fails its own assertion rather than raising out of the
+    """The row `_append` wrote, or an empty dict when it refused - so a case
+    whose row is lost fails its own assertion rather than raising out of the
     whole block and taking every later case with it."""
     try:
         return M._append(project, entry, config=config)[0]
@@ -3664,27 +3664,36 @@ def _free_text_cases(check):
         # Neutral, and built so this file never spells one whole.
         home = "/" + "/".join(("Users", "someone", "notes", "scratch.md"))
         said = "kept the probe at %s for later" % (home,)
-        landed = M.append(proj, entry("P1.1 note", reason=said), config=cfg)
-        check("ft1 a reason quoting a home-directory path is REFUSED before the "
-              "row is hashed - append reports failure and every journal file "
-              "holds the bytes it held before: %r" % (landed,),
-              landed is False and _journal_bytes(jdir) == before
-              and len(before) == 1)
-        msg = _refusal(proj, entry("P1.1 note", reason=said), cfg) or ""
-        check("ft2 the refusal names the field and the shape, says how to say it "
-              "instead, and never echoes the value - a refusal that printed the "
-              "path would publish it in whatever log caught the error: %r"
+        row1 = _written(proj, entry("P1.1 note", reason=said), cfg)
+        check("ft1 a reason quoting a home-directory path is WRITTEN, with the "
+              "path's token redacted in place - a writer never loses its own row "
+              "over what a value holds, and the row never carries the path: %r"
+              % (row1.get("details"),),
+              (row1.get("details") or {}).get("reason")
+              == "kept the probe at %s for later" % (M.OUTSIDE_TOKEN,)
+              and "someone" not in M.canonical(row1)
+              and _journal_bytes(jdir) != before)
+        check_ft = getattr(M, "check_free_text", None)
+        msg = (check_ft(proj, "--reason", said) if check_ft else None) or ""
+        check("ft2 the CALLER's check names the field and the shape, says how to "
+              "say it instead, and never echoes the value - a refusal that "
+              "printed the path would publish it in whatever log caught it: %r"
               % (msg,),
-              "details.reason" in msg and "posix-home" in msg
+              "--reason" in msg and "posix-home" in msg
               and "repo-relative" in msg and "<home>" in msg
-              and "someone" not in msg and home not in msg
-              and _journal_bytes(jdir) == before)
+              and "someone" not in msg and home not in msg)
+        check("ft2b ALLOW twin: the same check answers None for prose that "
+              "names no machine - the mutation this catches is a check that "
+              "refuses every value",
+              check_ft is not None
+              and check_ft(proj, "--reason", "kept the probe in docs/x.md")
+              is None)
         win = "C:\\" + "\\".join(("Users", "someone", "proj", "a.ts"))
-        msg_w = _refusal(proj, entry("saw %s fail" % (win,)), cfg) or ""
-        check("ft3 a Windows user directory in the SUMMARY is refused the same "
-              "way, naming its own shape and its own field: %r" % (msg_w,),
-              "summary" in msg_w and "windows-user-path" in msg_w
-              and "someone" not in msg_w and _journal_bytes(jdir) == before)
+        row3 = _written(proj, entry("saw %s fail" % (win,)), cfg)
+        check("ft3 a Windows user directory in the SUMMARY is redacted the "
+              "same way and the row still lands: %r" % (row3.get("summary"),),
+              row3.get("summary") == "saw %s fail" % (M.OUTSIDE_TOKEN,)
+              and "someone" not in M.canonical(row3))
 
         inside = os.path.join(proj, "docs", "audit", "notes.md")
         row = _written(proj, entry("P1.1 wrote %s" % (inside,),
@@ -3713,13 +3722,90 @@ def _free_text_cases(check):
         # search path joins it to a directory outside the repo, so no token
         # resolves inside and the root is still spelled out.
         joined = "PATH=/opt/bin:%s/bin" % (proj,)
-        after = _journal_bytes(jdir)
-        msg_r = _refusal(proj, entry("ran with %s" % (joined,)), cfg) or ""
+        row6 = _written(proj, entry("ran with %s" % (joined,)), cfg)
+        msg_r = (check_ft(proj, "--reason", joined) if check_ft else None) or ""
         check("ft6 the checkout's absolute root, where no token can be rewritten "
-              "to repo-relative, is refused and not echoed: %r" % (msg_r,),
-              "summary" in msg_r and proj not in msg_r
-              and (os.name == "nt" or "checkout-root" in msg_r)
-              and _journal_bytes(jdir) == after)
+              "to repo-relative, is redacted out of the row that lands, and the "
+              "caller's check refuses it without echoing it: %r / %r"
+              % (row6.get("summary"), msg_r),
+              bool(row6) and proj not in M.canonical(row6)
+              and os.path.realpath(proj) not in M.canonical(row6)
+              and M.OUTSIDE_TOKEN in row6.get("summary", "")
+              and proj not in msg_r
+              and (os.name == "nt" or "checkout-root" in msg_r))
+
+        # A scoped commit's withdrawal quotes git's own refusal, and from a
+        # linked worktree that names the MAIN checkout's `.git` - outside this
+        # tree, and here under a home directory. Program output: redacted.
+        git_dir = "/" + "/".join(("Users", "someone", "main", ".git",
+                                  "worktrees", "x", "index.lock"))
+        refusal = "fatal: Unable to create '%s': File exists." % (git_dir,)
+        row8 = _written(proj, {
+            "action": "commit.withdrawn", "target": "P1.1",
+            "summary": "the commit was not made: %s" % (refusal,),
+            "details": {"taskId": "P1.1", "reason": refusal},
+            "actor": {"sessionId": "s-free", "via": "cli"}}, cfg)
+        check("ft8 a withdrawal reason quoting an outside .git path is WRITTEN "
+              "tokenised, in the summary and in details.reason: %r"
+              % ((row8.get("details") or {}).get("reason"),),
+              (row8.get("details") or {}).get("reason")
+              == "fatal: Unable to create '%s': File exists." % (M.OUTSIDE_TOKEN,)
+              and "someone" not in M.canonical(row8)
+              and ".git/worktrees" not in M.canonical(row8))
+
+        # A checkout rooted at a SHORT path - a container's /src - must not
+        # turn every relative path or URL holding that segment into its root.
+        short = ("/src",)
+        rel_url = "touched lib/src/foo.ts, see https://example.com/src/x"
+        redact = getattr(M, "redacted_free_text", None)
+        check("ft9 ALLOW: under a short checkout root, a relative path and a URL "
+              "carrying the same segment are neither refused nor rewritten: %r"
+              % ((M.machine_path_shape(rel_url, short),
+                  redact(None, rel_url, short) if redact else None),),
+              M.machine_path_shape(rel_url, short) is None
+              and check_ft is not None
+              and check_ft(None, "--text", rel_url, short) is None
+              and redact is not None and redact(None, rel_url, short) == rel_url)
+        check("ft9b ...and the root itself, at a token start, is still the "
+              "checkout's root - the twin a check that never fires would pass",
+              M.machine_path_shape("ran /src/foo.ts", short) == "checkout-root"
+              and M.machine_path_shape("X=/src", short) == "checkout-root")
+
+        # A relative `home/<x>` at a token start: a repository may hold a
+        # `home/` directory, so the WRITER takes it; the committed-bytes
+        # detector still reads it, because a human reviews what that flags.
+        rel_home = "/".join(("home", "someone", "notes.md"))
+        detector = dict(M.MACHINE_PATH_SHAPES)["posix-home"]
+        check("ft10 a relative home/<x> is flagged by the detector's pattern and "
+              "NOT refused by the writer's check; the absolute spelling is "
+              "refused: %r" % (M.machine_path_shape(rel_home),),
+              detector.search(rel_home) is not None
+              and M.machine_path_shape(rel_home) is None
+              and check_ft is not None
+              and check_ft(None, "--text", rel_home) is None
+              and M.machine_path_shape("/" + rel_home) == "posix-home")
+
+        # A root holding a space is split in two by the token grammar, so no
+        # single token carries it: the whole value falls to the constant.
+        spaced = ("/srv/my repo",)
+        check("ft12 a machine path no single token carries is still never "
+              "written: the whole value becomes the outside token: %r"
+              % ((redact(None, "ran /srv/my repo/x", spaced)
+                  if redact else None),),
+              redact is not None
+              and redact(None, "ran /srv/my repo/x", spaced) == M.OUTSIDE_TOKEN
+              and redact(None, "ran /srv/other/x", spaced)
+              == "ran /srv/other/x")
+
+        why = getattr(M, "append_why", None)
+        off = {"journal": {"enabled": False, "dir": jdir}}
+        got_off = why(proj, entry("P1.1 x"), config=off) if why else None
+        got_on = why(proj, entry("P1.1 y"), config=cfg) if why else None
+        check("ft11 an append that still fails says WHY, and one that lands "
+              "says nothing: %r / %r" % (got_off, got_on),
+              got_off is not None and got_off[0] is False
+              and "disabled" in (got_off[1] or "")
+              and got_on is not None and bool(got_on[0]) and got_on[1] is None)
 
         # The ROW tuples are compared by identity, not the patterns: `re`
         # caches compiled patterns by their text, so a detector that re-spelled
