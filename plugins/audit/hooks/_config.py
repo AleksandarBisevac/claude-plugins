@@ -753,6 +753,67 @@ def _memo_rev_parse(cache, cwd, fields):
     return cache[key]
 
 
+def _inside_known_tree(real, top):
+    """True when the resolved directory `real` lies in the working tree whose
+    resolved toplevel is `top`, with no repository of its own in between: no
+    directory from `real` up to, but not including, `top` holds a `.git`
+    entry - a nested clone, a submodule or a linked worktree placed inside
+    the tree, each of which git would name as a toplevel of its own."""
+    if real != top and not real.startswith(top.rstrip(os.sep) + os.sep):
+        return False
+    at = real
+    while at != top:
+        if os.path.lexists(os.path.join(at, ".git")):
+            return False
+        parent = os.path.dirname(at)
+        if parent == at:
+            return False
+        at = parent
+    return True
+
+
+def _tree_of_dir(cache, start):
+    """`git rev-parse --show-toplevel --git-common-dir` for the existing
+    directory `start`, the common dir made absolute - or None.
+
+    ONE QUESTION PER TOPLEVEL, WHEN THE CALLER KEEPS A `cache`. A directory
+    under a toplevel git already named for this cache is answered by
+    containment, with no process: a whole copy onto directories that already
+    exist lists each file in a directory of its own, and a memo keyed by
+    directory still started one git per directory - a wide tree inside a
+    linked worktree outran the hook's timeout that way, and a killed hook
+    lets the write through. Containment is decided on the RESOLVED path,
+    which is also what git answers for, so a symlinked subdirectory pointing
+    out of the tree is asked about where it really is; and a `.git` entry on
+    the way up hands the question back to git (`_inside_known_tree`).
+
+    The common dir comes back relative to the directory asked from for an
+    ordinary checkout (`_shares_repository`'s note), so it is joined there
+    before it is reused for any other directory."""
+    fields = ["--show-toplevel", "--git-common-dir"]
+    if cache is None:
+        got = _git_rev_parse(start, fields)
+        return got if not got or not got[0] else [
+            got[0], os.path.join(str(start), got[1])]
+    try:
+        real = os.path.realpath(str(start))
+    except Exception:
+        real = None
+    known = cache.setdefault(("toplevels",), [])
+    for top, answer in known:
+        if real is not None and _inside_known_tree(real, top):
+            return answer
+    got = _memo_rev_parse(cache, start, fields)
+    if not got or not got[0]:
+        return got
+    answer = [got[0], os.path.join(str(start), got[1])]
+    try:
+        known.append((os.path.realpath(got[0]), answer))
+    except Exception:
+        pass
+    return answer
+
+
 def path_tree(file_path, root, cfg, cache=None):
     """Where a FILE lands, for a caller that already knows `file_path` is not
     under `root` (`within_root` answered False) - the plan gate's own "is this
@@ -798,13 +859,15 @@ def path_tree(file_path, root, cfg, cache=None):
     and never pays for the git calls inside it - `within_root` answers it with
     no process started at all.
 
-    ONE QUESTION PER DIRECTORY, WHEN THE CALLER KEEPS A `cache`. Both git
+    ONE QUESTION PER TOPLEVEL, WHEN THE CALLER KEEPS A `cache`. Both git
     answers depend on a directory and never on the file in it - the watched
     tree's, and the nearest existing directory's - so a caller placing many
-    files hands one dict to every call and each directory is asked once. A
-    recursive copy out of the tree placed every file it lands with two
-    processes of its own, which outran the hook's timeout on an ordinary
-    directory. With no cache every call asks afresh, as it always did."""
+    files hands one dict to every call; a directory is asked once, and one
+    under a toplevel already named is answered by containment
+    (`_tree_of_dir`). A recursive copy out of the tree placed every file it
+    lands with two processes of its own, which outran the hook's timeout on
+    an ordinary directory. With no cache every call asks afresh, as it always
+    did."""
     watching = git_root_dir(root, cfg)
     ours = _memo_rev_parse(cache, watching, ["--git-common-dir"])
     if not ours or not ours[0]:
@@ -815,7 +878,7 @@ def path_tree(file_path, root, cfg, cache=None):
     if start is None:
         return {"root": str(root), "placed": False,
                 "basis": "no existing directory contains %s" % file_path}
-    got = _memo_rev_parse(cache, start, ["--show-toplevel", "--git-common-dir"])
+    got = _tree_of_dir(cache, start)
     if not got or not got[0]:
         return {"root": str(root), "placed": True,
                 "basis": "git names no working tree for %s" % start}

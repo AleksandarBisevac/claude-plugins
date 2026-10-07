@@ -235,52 +235,94 @@
         "severity": "med",
         "file": "plugins/audit/hooks/guard-secrets-read.py copy expansion and the manifest and journal arms",
         "issue": "A recursive copy or directory move outside the project now expands into every file and each arm resolves every destination's tree with its own git call, so an ordinary cp -r of a few hundred files takes far longer than the hook's timeout, where it took a fraction of a second before this phase.",
-        "resolution": "Resolve the tree once per destination root (memoized by directory) and skip the expansion when the destination root lies outside the project; a case asserting the number of git calls is bounded by destination roots, not by files."
+        "resolution": "fixed in P108.18-4gh (302a6006): Resolve the tree once per destination root (memoized by directory) and skip the expansion when the destination root lies outside the project; a case asserting the number of git calls is bounded by destination roots, not by files.",
+        "fixTask": "P108.18-4gh",
+        "commit": "302a6006"
       },
       {
         "id": "P108-R25",
         "severity": "med",
         "file": "plugins/audit/hooks/guard-secrets-read.py journal arm; SECURITY.md journal bullet",
         "issue": "An interpreter journal append handed to a shell (bash -c, sh -c, eval around python -c or node -e) is allowed at observe and deny, already open before this phase, while the new SECURITY.md sentence and the task claim say the journal is refused at every tier wherever an append sits.",
-        "resolution": "Narrow the SECURITY.md sentence to what the code reads and name this shape among the residuals, with contract rows recording its per-tier verdict as a reasoned known divergence; the hash-chained journal detects such a write after the fact."
+        "resolution": "fixed in P108.18-4gh (302a6006): Narrow the SECURITY.md sentence to what the code reads and name this shape among the residuals, with contract rows recording its per-tier verdict as a reasoned known divergence; the hash-chained journal detects such a write after the fact.",
+        "fixTask": "P108.18-4gh",
+        "commit": "302a6006"
       },
       {
         "id": "P108-R26",
         "severity": "med",
         "file": "plugins/audit/hooks/guard-secrets-read.py past-bound flat read; SECURITY.md",
         "issue": "A journal redirect handed two or more levels past the bound is allowed at observe and warn, because the flat read skips the quoted words of the command it hands on and no view grades them, and SECURITY.md's every-tier opening reads as covering it.",
-        "resolution": "Narrow the sentence and name the shape as a residual with contract rows recording its per-tier verdict as a reasoned known divergence."
+        "resolution": "fixed in P108.18-4gh (302a6006): Narrow the sentence and name the shape as a residual with contract rows recording its per-tier verdict as a reasoned known divergence.",
+        "fixTask": "P108.18-4gh",
+        "commit": "302a6006"
       },
       {
         "id": "P108-R27",
         "severity": "med",
         "file": "plugins/audit/hooks/guard-secrets-read.py _quoted_words_are_data",
         "issue": "An assignment prefix makes every quoted word of the command live, so an env-prefixed commit message or grep pattern that mentions a redirect is refused as a write, at every tier for the journal, where the same text without the prefix is allowed.",
-        "resolution": "Treat only the assignment words themselves as live and keep the program's arguments under the data-program rule; allow twins for an env-prefixed commit message and grep pattern."
+        "resolution": "fixed in P108.18-4gh (302a6006): Treat only the assignment words themselves as live and keep the program's arguments under the data-program rule; allow twins for an env-prefixed commit message and grep pattern.",
+        "fixTask": "P108.18-4gh",
+        "commit": "302a6006"
       },
       {
         "id": "P108-R28",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_journal_io.py session-slug",
         "issue": "The narrowed session-slug no longer catches a lone home slug bounded by a quote, an equals sign, a colon, a parenthesis or a line start, nor the Windows home slug, which the detector caught before, so a JSON value or key=value holding a home slug passes the writer and the build.",
-        "resolution": "Accept the lone user segment when a non-whitespace delimiter or a text or line boundary bounds it, leaving only whitespace-led prose alone; rows in sp10 and q2f for a quoted JSON value and the Windows spelling."
+        "resolution": "fixed in P108.19-4gh (0cd45d3b): Accept the lone user segment when a non-whitespace delimiter or a text or line boundary bounds it, leaving only whitespace-led prose alone; rows in sp10 and q2f for a quoted JSON value and the Windows spelling.",
+        "fixTask": "P108.19-4gh",
+        "commit": "0cd45d3b"
       },
       {
         "id": "P108-R29",
         "severity": "med",
         "file": "docs/audit/phases/P108.json (a closed task's outcome text)",
         "issue": "An outcome text quoted a home word after a slash that the writer accepts and the detector flags, so committing the manifest would turn the build red; the writer and detector still differ on posix-home's leading separator.",
-        "resolution": "Reworded by the orchestrator; record the writer/detector posix-home difference in SECURITY.md as the open class it is."
+        "resolution": "fixed in P108.18-4gh (302a6006): Reworded by the orchestrator; record the writer/detector posix-home difference in SECURITY.md as the open class it is.",
+        "fixTask": "P108.18-4gh",
+        "commit": "302a6006"
       },
       {
         "id": "P108-R30",
         "severity": "low",
         "file": "plugins/audit/hooks/guard-secrets-read.py _git_grep_runs_a_pager",
         "issue": "Any single-dash word containing an uppercase O, including a pattern stuck to -e, is read as the pager option, over-reporting.",
-        "resolution": "Stop scanning a short-option cluster at the first option that takes a value."
+        "resolution": "fixed in P108.18-4gh (302a6006): Stop scanning a short-option cluster at the first option that takes a value.",
+        "fixTask": "P108.18-4gh",
+        "commit": "302a6006"
+      },
+      {
+        "id": "P108-R31",
+        "severity": "med",
+        "file": "plugins/audit/hooks/guard-secrets-read.py _copy_destinations",
+        "issue": "A whole copy or move onto a new directory spelled with a trailing slash is read as landing inside a subdirectory named after the source, while it lands as the destination itself, so cp -r src/ lib/ and mv src/ lib/ are refused against a plan that declares the files they write, where the slashless twins are allowed and both were allowed before this phase.",
+        "resolution": "When the copy is whole and the slash-ended destination does not exist and no earlier clause made it, read it the way the slashless operand is read; allow twins per spelling and a block twin with the directory present; record the platform split for a slash-ended source onto an existing directory as a residual."
+      },
+      {
+        "id": "P108-R32",
+        "severity": "low",
+        "file": "plugins/audit/hooks/_config.py tree memo; guard-secrets-read.py copy expansion",
+        "issue": "A whole copy onto existing directories inside a linked worktree still asks git once per directory, so a wide tree can exceed the hook's timeout, and a killed hook lets the write through.",
+        "resolution": "Answer a directory's descendants by containment under the toplevel already known, or bound the expansion by directory count and report the rest as not established."
+      },
+      {
+        "id": "P108-R33",
+        "severity": "low",
+        "file": "SECURITY.md copy and residual sentences",
+        "issue": "Two sentences still say a whole-directory copy is read as every file inside it, though an out-of-project destination is one destination now; a residual paragraph counts its residuals while a third follows; the lone-slug over- and under-match shapes are not named.",
+        "resolution": "Add the out-of-project clause and the symlinked-subdirectory edge, drop the count, and name the lone-slug residual shapes."
+      },
+      {
+        "id": "P108-R34",
+        "severity": "low",
+        "file": "plugins/audit/tests/test_guard_secrets_read.py t11",
+        "issue": "The case fails when its fixture root sits under a path holding a harness slug, because redaction cuts the recorded file.",
+        "resolution": "Build the fixture under a root with no slug shape, or assert relative to the fixture root."
       }
     ],
-    "outcome": "[findings: 30 - 2 high, 15 med, 13 low; 23 with a recorded fix commit]"
+    "outcome": "[findings: 34 - 2 high, 16 med, 16 low; 30 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1513,7 +1555,7 @@
     {
       "id": "P108.19-4gh",
       "title": "every real home slug placement is caught and prose is left alone",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review finding P108-R28. Every real home slug placement is caught again, and prose is still left alone.\n\nsession-slug accepts the lone user segment wherever a non-whitespace delimiter, or a text or line boundary, bounds it: a quote, =, :, (, or the start or end of a line. This covers a JSON value, a key=value, and the Windows home slug C--Users-<name>. Only whitespace-led prose, such as an option named -home-dir or a lone dash-led user word in a sentence, is left alone.\n\nsp10 and q2f gain rows for:\n- a quoted JSON value;\n- a key=value;\n- a line start;\n- the Windows spelling.\nEach comes with a prose allow twin.\n\ncheck-committed-pii must still exit 0 on the tree.",
       "files": [
         "plugins/audit/scripts/governance/_journal_io.py",
@@ -1543,18 +1585,79 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
+      "commit": "0cd45d3b",
+      "outcome": {
+        "technical": "_journal_io.py: two session-slug alternatives replace the separator-only lone-segment alternative. The first takes the Windows drive spelling (a letter, then a double dash before the user segment) wherever a token starts, whitespace-led included, because that spelling is not a prose word. The second is _SLUG_LONE_LEAD: a lone user segment counts as a slug when it follows the start of the text or of a line, a separator, a quote, =, : or (. A backtick does not lead a slug, so a code span naming an option stays prose. The existing alternatives (more segments, or a separator after) are unchanged. The writer and the detector share the pattern object. sp10 and q2f gain rows for a quoted JSON value, key=value, parentheses, a line start, a colon and the whitespace-led Windows spelling. sp9 and q2e become tables of whitespace-led allow twins, one per placement, including a code span. Every test string is composed from parts. check-committed-pii exits 0 on the tree. Red-first: sp10 was proved red at HEAD through the helper. q2f lives in the implementation file, so it was seen red as the ordinary tdd red and under mutation. Mutations on a git-initialised scratch copy: adding whitespace or a backtick to the lead set turned sp9 and q2e red; reverting to separator-only, or dropping the drive alternative, turned sp10 and q2f red.",
+        "descriptive": "The machine-path check again catches a home-directory slug written as a value, in quotes, after an equals sign, in parentheses, at a line start or in the Windows spelling, while ordinary prose and code spans are left alone."
+      },
+      "startedAt": "2026-10-07T08:18:39Z",
+      "completedAt": "2026-10-07T08:54:00Z",
+      "verifiedBy": [
+        "sp9",
+        "sp10",
+        "q2e",
+        "q2f"
+      ],
+      "testEvidence": {
+        "runId": "2026-10-07T08:53:45Z.bf8364",
+        "status": "passed",
+        "at": "2026-10-07T08:53:45Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "0cd45d3b",
+        "at": "2026-10-07T08:54:00Z",
+        "basis": "orchestrator check: P108-R28 fixed in the shared shape, regression rows restored with whitespace-led allow twins, mutations proved in both directions, tree scan green"
+      }
+    },
+    {
+      "id": "P108.20-4gh",
+      "title": "a trailing slash never changes a copy's verdict, and a wide copy stays within the hook budget",
+      "status": "in_progress",
+      "description": "Fixes review findings P108-R31 to P108-R34. A trailing slash never changes a copy's verdict, and a wide copy stays within the hook's time budget.\n\n- A whole copy or move (mv, or cp -r/-R/-a) onto a slash-ended destination that does not exist, and that no earlier clause made, lands as the destination itself, so it is read the way the slashless operand is read. Record as a residual the platform split for a slash-ended source onto an existing directory (BSD copies the contents, GNU copies the directory).\n- Directories under a toplevel git has already answered are resolved by containment, with no further git call. If that is not enough, bound the expansion by directory count, and report what is past the bound as not established.\n- SECURITY.md:\n  - an out-of-project destination root is one destination;\n  - the symlinked-subdirectory edge;\n  - no count before the residual list;\n  - the lone-slug residual shapes are named: option or value text read as a slug, and a whitespace-led slug in a value position.\n- t11's fixture root carries no slug shape.\n\nCases:\n- cp -r src/ lib/ and mv src/ lib/ allowed against a plan declaring lib/app.ts, each with a block twin where lib exists;\n- a wide copy into a linked worktree whose git call count is bounded by toplevels;\n- t11 run under a slug-shaped temp root.",
+      "files": [
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/tests/test_guard_secrets_read.py",
+        "plugins/audit/tests/test_hooks.py",
+        "plugins/audit/tests/test__config.py",
+        "SECURITY.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive"
+        ],
+        "gateBasis": "phase-no-spelling"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-10-07T08:18:39Z",
+      "startedAt": "2026-10-07T09:04:45Z",
       "completedAt": null,
       "verifiedBy": [],
       "testEvidence": {
-        "runId": "2026-10-07T08:53:45Z.bf8364",
+        "runId": "2026-10-07T09:27:43Z.94cac1",
         "status": "passed",
-        "at": "2026-10-07T08:53:45Z"
+        "at": "2026-10-07T09:27:43Z"
       }
     }
   ],

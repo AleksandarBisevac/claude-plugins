@@ -1831,7 +1831,16 @@ def _copy_destinations(words, is_dir=None, files_of=None):
     destination it lands as, lists them - or answers None, and the
     destination is the one word written - and each is a file written. Read as
     the one directory name, a recursive copy of source files into the tree
-    wrote no source file this arm could see."""
+    wrote no source file this arm could see.
+
+    A TRAILING SLASH DOES NOT MAKE A DIRECTORY EXIST. A whole copy or move
+    of one source onto a slash-ended name that is no directory - not on the
+    disk, not made by an earlier clause (`is_dir` answers both) - creates
+    that name and lands as it, exactly as the slashless spelling does: read
+    as landing inside it, `cp -r src/ lib/` was refused naming
+    `lib/src/app.ts` against a plan declaring the `lib/app.ts` it writes.
+    With no `is_dir` nothing is known about the disk, and the slash is read
+    as a directory, as it always was."""
     operands, directory, index = [], None, 1
     as_file = False
     whole = words[0] == "mv"
@@ -1865,14 +1874,13 @@ def _copy_destinations(words, is_dir=None, files_of=None):
         sources = operands
     elif len(operands) < 2:
         return []
-    elif len(operands) == 2 and (as_file or (
-            not operands[1].endswith(("/", "\\"))
-            and not (is_dir is not None and is_dir(operands[1])))):
+    elif len(operands) == 2 and (as_file or _lands_as_named(
+            operands[1], whole, is_dir)):
         directory, sources = None, operands[:1]
     else:
         directory, sources = operands[-1], operands[:-1]
     if directory is None:
-        landed = [(operands[1], operands[0])]
+        landed = [(operands[1].rstrip("/\\") or operands[1], operands[0])]
     else:
         base = directory.rstrip("/\\")
         landed = [("%s/%s" % (base, s.replace("\\", "/").rstrip("/")
@@ -1884,6 +1892,17 @@ def _copy_destinations(words, is_dir=None, files_of=None):
         out.extend([dest] if inside is None else
                    ["%s/%s" % (dest.rstrip("/\\"), rel) for rel in inside])
     return out
+
+
+def _lands_as_named(last, whole, is_dir):
+    """True when a two-operand copy writes its last operand `last` itself
+    rather than a file inside it: a slashless name that is no directory, or
+    - for a whole copy - a slash-ended one `is_dir` says is no directory."""
+    if is_dir is not None and is_dir(last):
+        return False
+    if not last.endswith(("/", "\\")):
+        return True
+    return whole and is_dir is not None
 
 
 def _existing_directory(word, cwd):
@@ -2265,7 +2284,8 @@ def _placed_target(t, cwd):
 def _tree_placer(root, cfg):
     """(place, expands) for one arm's pass over one command: `place(path)` is
     `_config.tree_for` for `path` under `root`, asking git about each
-    directory outside the project once (`tree_for`'s `cache`), and
+    directory outside the project once at most - and not at all for one
+    under a toplevel already named (`tree_for`'s `cache`) - and
     `expands(path)` says whether a directory copied whole onto `path` lands in
     a tree some plan governs - or in one nobody can place - so its files are
     worth listing (`_copy_targets`)."""

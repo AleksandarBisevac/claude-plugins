@@ -1421,6 +1421,65 @@ def _cases(check):
               _tm_ok and _tm_ok1 and len(_tm_dirs) > 1
               and len(_tm_seen) == 2 and _tm_one == 1 + len(_tm_dirs),
               (_tm_one, len(_tm_seen), len(_tm_dirs)))
+        # (tm3) MANY DIRECTORIES, ONE TOPLEVEL. Files each in a directory of
+        # their own inside the linked worktree are answered by containment
+        # under the toplevel git named for the first, so the count is one for
+        # the watched tree and one for the worktree however many directories.
+        # Beside them, the two shapes containment must hand back to git: a
+        # symlinked subdirectory pointing at another repository, and a nested
+        # repository inside the worktree - each its own question, and each
+        # answered as git answers it with no cache at all.
+        for n in range(8):
+            (wlink / ("deep%d" % n)).mkdir(parents=True, exist_ok=True)
+        (wlink / "nested").mkdir(parents=True, exist_ok=True)
+        subprocess.run(_ini, cwd=str(wlink / "nested"), check=True,
+                       capture_output=True, timeout=20)
+        _tm_link = wlink / "via-link"
+        _tm_linked = True
+        try:
+            os.symlink(str(wother), str(_tm_link), target_is_directory=True)
+        except (OSError, NotImplementedError):
+            _tm_linked = False
+        _tm_wide = [str(wlink / ("deep%d" % n) / "f.py") for n in range(8)]
+        _tm_edges = [str(wlink / "nested" / "n.py")]
+        if _tm_linked:
+            _tm_edges.append(str(_tm_link / "l.py"))
+        _tm_plain3 = [M.tree_for(None, p, wcfg, project=wprim)
+                      for p in _tm_wide + _tm_edges]
+        del _tm_seen[:]
+        M._git_rev_parse = _tm_count
+        try:
+            _tm_ok3, _tm_got3 = _harness.attempt(
+                lambda: (lambda memo: [M.tree_for(None, p, wcfg, project=wprim,
+                                                  cache=memo)
+                                       for p in _tm_wide])({}))
+            _tm_wide_calls = len(_tm_seen)
+            del _tm_seen[:]
+            _tm_ok4, _tm_got4 = _harness.attempt(
+                lambda: (lambda memo: [M.tree_for(None, p, wcfg, project=wprim,
+                                                  cache=memo)
+                                       for p in _tm_wide + _tm_edges])({}))
+            _tm_edge_calls = len(_tm_seen)
+        finally:
+            M._git_rev_parse = _tm_real
+        check("tm3 a cache asks git once for the watched tree and once for a "
+              "linked worktree however many of its directories files sit in, "
+              "and answers each as git answers it uncached",
+              _tm_ok3 and _tm_wide_calls == 2
+              and [_tm_key(t) for t in _tm_got3]
+              == [_tm_key(t) for t in _tm_plain3[:len(_tm_wide)]]
+              and all(t["moved"] for t in _tm_got3),
+              (_tm_wide_calls, _tm_got3 if not _tm_ok3 else
+               [(t["rel"], t["basis"]) for t in _tm_got3]))
+        check("tm4 ...while a nested repository and a symlinked subdirectory "
+              "inside that worktree are each asked about on their own, and "
+              "neither is placed in the worktree",
+              _tm_ok4 and _tm_edge_calls == 2 + len(_tm_edges)
+              and [_tm_key(t) for t in _tm_got4] == [_tm_key(t) for t in _tm_plain3]
+              and not any(t["moved"] for t in _tm_got4[len(_tm_wide):]),
+              (_tm_edge_calls, len(_tm_edges), _tm_linked,
+               _tm_got4 if not _tm_ok4 else
+               [(t["rel"], t["basis"]) for t in _tm_got4[len(_tm_wide):]]))
         _cd = M.effective_cwd("cd %s && sed -i x f.ts" % wlink, str(wprim))
         _spaced = os.path.join(str(wprim), "linked worktree")
         check("tr7 effective_cwd reads a literal `cd` - the reading every hook "

@@ -624,7 +624,15 @@ with a trailing slash, when it resolves at the command's own directory to one th
 exists on disk, or when an earlier clause of the same command creates it with `mkdir` or makes
 it a link with `ln -s` — a copy onto such a link is read as landing where the link points; and
 a directory copied whole, by `mv` or by `cp -r`/`-R`/`-a`, is read as every file inside it, the
-walk bounded by `_COPY_WALK_LIMIT` and the rest said as a destination not established), and any
+walk bounded by `_COPY_WALK_LIMIT` and the rest said as a destination not established — unless
+its destination root lies outside the project and every linked worktree of it, where it is one
+destination and nothing inside it is listed, because no plan could cover any of it; a whole copy
+of one source onto a name that does not exist and that no earlier clause makes lands as that
+name, so a trailing slash on it changes nothing; and the files of a whole copy are placed once
+per git toplevel rather than once per directory, every directory under a toplevel git has
+already named being answered by containment of its resolved path, so a symlinked subdirectory
+pointing out of the tree, or a directory holding a repository of its own, is asked about where
+it really is), and any
 of those handed to a shell's `-c` or to `eval` as a quoted argument — against the same resolved
 paths, on the same fail-open table, so a live holder's shard is refused before the write lands
 rather than reported after it. A command handed past the walk's own nesting bound is not walked
@@ -642,7 +650,11 @@ open, and it names them so a reader need not find them:
 - the in-place `sed -i` reading skips every quoted match regardless of the program holding it,
   so a `sed -i` reached through `find -exec sh -c '...'` is not read;
 - an interpreter's `os.system(...)` redirect whose target string touches the call's own closing
-  quote is read as naming that quote and parenthesis, so it names no source file.
+  quote is read as naming that quote and parenthesis, so it names no source file;
+- a recursive `cp` of a slash-ended source onto a directory that already exists is read the GNU
+  way, as landing in a subdirectory named after the source, while the BSD `cp` macOS ships copies
+  the source's contents straight into the destination — so on macOS the file named in a refusal
+  is not the one the copy writes, and a copy the plan covers there can be refused.
 
 Every row `test_hooks.py` marks a known divergence rather than fixing is listed by id in its
 `KNOWN_DIVERGENCE`. What stays uncatchable beyond all of that is the residual of bypass class 1
@@ -883,7 +895,12 @@ point:
   letter's own dash, before a path separator, or after the start of a line, a
   path separator, a quote, `=`, `:` or `(` — and left alone where a sentence
   or a code span holds it, led by whitespace or a backtick, so an option whose
-  name begins with a dash and the home word is not read as one), a
+  name begins with a dash and the home word is not read as one; that line is
+  drawn by the character before the segment, so it misses both ways, and
+  both are open: option or value text that merely begins with the dash and
+  the home word, standing after `=`, a quote or `:`, is read as a slug, and a
+  real slug standing in a value position behind whitespace alone, as after a
+  key's colon and a space, is not), a
   URL-escaped path, a tokenized
   temp-directory session, and an unexpanded tilde path — the last refused at
   the writer's door even in prose, by choice, because the commit-time
@@ -988,7 +1005,8 @@ point:
   operand that already exists as a directory on disk, or that an earlier
   clause creates with `mkdir` or links with `ln -s`, is read as one, the same
   as a trailing-slash spelling; a directory copied whole is read as every file
-  in it), any of those handed to a shell's `-c` or to `eval` as a quoted
+  in it, unless its destination root lies outside the project and every
+  linked worktree of it, where it is one destination), any of those handed to a shell's `-c` or to `eval` as a quoted
   argument, and a write call inside an interpreter typed as the command itself
   (`python -c`, `node -e`, or either's heredoc spelling, reading a keyword
   `mode=` — `open(p, mode='a')`, with other keyword arguments ahead of it too —
@@ -1002,7 +1020,7 @@ point:
   `bash -c "..."` used to be read only in its bare spelling, and an
   interpreter write naming the journal was not read by this arm at all.
 
-  **Two residuals are named rather than assumed**, and neither is chased with
+  **These residuals are named rather than assumed**, and none is chased with
   more grammar, because every spelling a reader closes leaves the next one:
   - an interpreter's journal append **handed to a shell or to `eval`** is not
     read as a journal write. The interpreter reader reads a program typed at

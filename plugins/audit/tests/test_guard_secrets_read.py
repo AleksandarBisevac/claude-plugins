@@ -821,6 +821,77 @@ def _wrapped_write_cases(check):
             os.environ["CLAUDE_PROJECT_DIR"] = held
 
 
+def _slash_copy_cases(check):
+    """A trailing slash on a whole copy's destination never changes its
+    verdict. A directory copied or moved whole onto a name that does not
+    exist lands AS that name, slash or no slash - so `cp -r src/ lib/` writes
+    `lib/app.ts`, which the running task declares, and not `lib/src/app.ts`.
+    Onto a directory that exists, or one an earlier clause makes, it lands
+    inside it, and that is the block twin of each spelling."""
+    root = Path(_harness.fixture_root("guard-secrets-slash-copy-"))
+    (root / "src").mkdir(parents=True)
+    for name in ("app.ts", "other.ts"):
+        (root / "src" / name).write_text("export const a = 1;\n",
+                                         encoding="utf-8")
+    (root / "docs" / "audit").mkdir(parents=True)
+    (root / "docs" / "audit" / "audit-plan.json").write_text(json.dumps(
+        {"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "p", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "in_progress",
+                 "files": ["lib/app.ts", "lib/other.ts"]}]}]}),
+        encoding="utf-8")
+    cfg = _config._deep_merge(_config.DEFAULTS, {"planGate": "deny"})
+    held = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = str(root)
+
+    def at_deny(label, cmd):
+        sid = "sc-" + re.sub(r"\W+", "_", label)
+        _spend_slot(root, cfg, sid)
+        ok, got = _harness.attempt(M.decide, {
+            "tool_name": "Bash", "session_id": sid, "cwd": str(root),
+            "tool_input": {"command": cmd}}, cfg=cfg)
+        return got if ok else ("raised", str(got))
+
+    spellings = (("cp -r", "cp -r src/ lib/"), ("cp -R", "cp -R src/ lib/"),
+                 ("cp -a", "cp -a src/ lib/"), ("mv", "mv src/ lib/"),
+                 ("cp -r, slashless", "cp -r src lib"),
+                 ("mv, slashless", "mv src lib"))
+    try:
+        dests = M._copy_destinations(["cp", "-r", "src/", "lib/"],
+                                     lambda word: False)
+        check("sc1 a whole copy onto a slash-ended name that is no directory "
+              "lands as that name", dests == ["lib"], dests)
+        # The second direction: only a WHOLE copy, and only with the disk
+        # asked, reads the slash away - a plain copy of a file still lands
+        # inside the slash-ended name, and with no `is_dir` the slash is
+        # still a directory.
+        kept = (M._copy_destinations(["cp", "a.py", "lib/"], lambda w: False),
+                M._copy_destinations(["cp", "-r", "src/", "lib/"]))
+        check("sc1a ...while a plain copy onto it, or a whole copy with "
+              "nothing asked of the disk, still lands inside it",
+              kept == (["lib/a.py"], ["lib/src"]), kept)
+        for name, cmd in spellings:
+            got = at_deny("absent " + name, cmd)
+            check("sc2 `%s` with the destination absent is allowed against a "
+                  "plan declaring the files it lands as" % cmd,
+                  got[0] == "allow", got)
+        got = at_deny("made", "mkdir lib && cp -r src/ lib/")
+        check("sc3 ...while a directory an earlier clause makes takes the "
+              "copy inside it, refused naming the file it lands as",
+              got[0] == "block" and "lib/src/app.ts" in got[1], got)
+        (root / "lib").mkdir()
+        for name, cmd in spellings:
+            got = at_deny("present " + name, cmd)
+            check("sc4 `%s` with the destination present lands inside it, "
+                  "refused naming the file it lands as" % cmd,
+                  got[0] == "block" and "lib/src/app.ts" in got[1], got)
+    finally:
+        if held is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = held
+
+
 def _single_quoted(text):
     """`text` as one single-quoted shell word."""
     return "'" + text.replace("'", "'\"'\"'") + "'"
@@ -1268,6 +1339,16 @@ def _live_quoted_cases(check, root, outside, journal, shell, same_as_bare,
               got[0] == "allow", got)
 
 
+def _away_root():
+    """A directory this project does not contain, for the redaction cases:
+    absolute, short and spelled with no home or slug shape, at the top of the
+    filesystem rather than under the temp root - which a harness may set to
+    a long session directory, so a fixture inheriting it inherited both its
+    slug and its length, and the feed's bounded `file` cell lost its tail.
+    Never created: those cases grade a path, and no read reaches the disk."""
+    return Path(os.path.abspath(os.sep + "guard-secrets-away-%d" % os.getpid()))
+
+
 def _out_tree(top, dirs, files, ext):
     """A directory `top` holding `dirs` subdirectories of `files` files each,
     every name ending in `ext`; `top` itself."""
@@ -1343,6 +1424,58 @@ def _lw_copy_cost_cases(check, lw, bash):
           "file, refused under the WORKTREE's running phase naming the file "
           "it lands as", verdict == "block" and "P48" in why
           and "src/pkg/d00/f00.ts" in why, repr((verdict, why[:240])))
+    _lw_wide_copy_cases(check, lw, bash, out)
+
+
+def _lw_wide_copy_cases(check, lw, bash, out):
+    """A whole copy onto directories that already exist inside a linked
+    worktree is listed file by file, and each file sits in a directory of its
+    own - so a memo keyed by directory still asked git once per directory.
+    Directories under a toplevel git already named are answered by
+    containment, so the count is the narrow tree's however wide the copy."""
+    counts, hits = {}, {}
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    for label, dirs in (("narrow", 1), ("wide", 12)):
+        source = _out_tree(out / ("wide-src-" + label), dirs, 2, ".ts")
+        dest = Path(lw["wt"]) / ("wide-dest-" + label)
+        _out_tree(dest, dirs, 0, ".ts")
+        cmd = "cp -rT %s %s" % (source, dest)
+        counts[label] = _git_calls(lambda: bash(lw["main"], cmd))
+        hits[label] = [(h["rel"], str(h["root"])) for h in M._source_write_hit(
+            cmd, Path(lw["main"]), cfg, lw["main"])["hits"]]
+    check("lw12 a whole copy onto existing directories inside a linked "
+          "worktree costs as many git calls across many directories as "
+          "across one, and every file is still graded under the worktree's "
+          "own plan",
+          counts["wide"][0] == counts["narrow"][0] >= 1
+          and all(v[1][0] == "block" and "P48" in v[1][1]
+                  for v in counts.values())
+          and len(hits["wide"]) == 12 * 2
+          and ("wide-dest-wide/d11/f01.ts", lw["wt"]) in hits["wide"]
+          and all(r == lw["wt"] for _rel, r in hits["wide"]),
+          (dict((k, (v[0], v[1][0])) for k, v in counts.items()),
+           hits["wide"][-2:], len(hits["wide"])))
+    # THE OTHER DIRECTION: containment must not swallow a directory that
+    # git would place somewhere else. A nested repository inside the worktree
+    # is its own toplevel, so a copy into it is that repository's business
+    # and no plan's here - asked of git, never answered by containment.
+    import subprocess
+    nested = Path(lw["wt"]) / "vendored"
+    (nested / "lib").mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-q", str(nested)], check=True,
+                   capture_output=True, timeout=30)
+    probe = _out_tree(out / "nested-src", 1, 1, ".ts")
+    cmd = "cp %s %s; cp %s %s" % (
+        probe / "d00" / "f00.ts", Path(lw["wt"]) / "src" / "x1.ts",
+        probe / "d00" / "f00.ts", nested / "lib" / "x2.ts")
+    got = bash(lw["main"], cmd)
+    graded = [h["rel"] for h in M._source_write_hit(
+        cmd, Path(lw["main"]), cfg, lw["main"])["hits"]]
+    check("lw13 ...while a nested repository inside the worktree is still "
+          "asked about on its own: a copy into it is not graded under the "
+          "worktree's plan, though the copy beside it is",
+          got[0] == "block" and graded == ["src/x1.ts"],
+          (got[0], graded))
 
 
 def _expand_optional_chars(fragment):
@@ -1779,6 +1912,7 @@ def _cases(check):
     _harness.stage(check, "tt", _two_tree_cases)
     _harness.stage(check, "sb", _subshell_cases)
     _harness.stage(check, "ww", _wrapped_write_cases)
+    _harness.stage(check, "sc", _slash_copy_cases)
     _harness.stage(check, "gs-template", _template_cases)
     cfg = _config._deep_merge(_config.DEFAULTS, {})
     tmp = Path(_harness.fixture_root("guard-secrets-selftest-"))
@@ -4265,7 +4399,7 @@ def _cases(check):
         # shape a home directory has. A path merely outside `src/` would resolve
         # inside the repo and be respelled to itself, and the case would pass
         # against the leaking version too.
-        _away = Path(_harness.fixture_root("guard-secrets-away-"))
+        _away = _away_root()
         _away_secret = str(_away / "deploy" / ".env")
         _v, _m = M.decide({"tool_name": "Read",
                            "tool_input": {"file_path": _away_secret},
@@ -4426,6 +4560,33 @@ def _cases(check):
                       and str(r.get("reason", "")).startswith(
                           "guard-secrets-read:")
                       for r in _rw[_before:]), repr(_rw[_before:]))
+        # t14: t11's fixture root does not inherit the temp root. A temp root
+        # under a harness's session directory is long and slug-shaped, and the
+        # feed bounds each cell, so a fixture built under it lost the tail of
+        # the very `file` cell t11 compares. Built while the temp root is
+        # exactly that shape, the fixture root is the same short one.
+        _deep = (Path(tmp_t) / ("-%s-someone-%s" % ("Users", "x" * 160))
+                 / "nest")
+        _deep.mkdir(parents=True)
+        _held_tempdir = tempfile.tempdir
+        tempfile.tempdir = str(_deep)
+        try:
+            _away_deep = _away_root()
+        finally:
+            tempfile.tempdir = _held_tempdir
+        _away_in_list = str(_away_deep / "deploy" / ".env")
+        _v, _m = M.decide(
+            {"tool_name": "mcp__filesystem__read_multiple_files",
+             "tool_input": {"paths": ["docs/README.md", _away_in_list]},
+             "session_id": "sess-t", "cwd": str(tmp_t)}, cfg=cfg)
+        _rw = _rows()
+        check("t14 t11's deny, with its fixture built under a long slug-shaped "
+              "temp root, still records `file` whole: the fixture root does "
+              "not sit under the temp root",
+              _v == "block" and str(_deep) not in _away_in_list
+              and _rw[-1].get("file") == _config.slashed(_away_in_list)
+              and str(_rw[-1].get("reason", "")).count("<outside-repo>") == 1,
+              repr((_away_in_list, _rw[-1])))
     finally:
         if _prev_t is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)
