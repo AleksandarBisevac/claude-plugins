@@ -29,7 +29,7 @@
     {
       "id": "P112.1-uce",
       "title": "the demo GIF is a recorded Claude Code session with /audit commands and a real refusal",
-      "status": "in_progress",
+      "status": "done",
       "description": "Replace the drawn demo with a recording of a real Claude Code session, made with VHS (installed: vhs 0.12.1, ttyd, ffmpeg) from a committed tape file. The session runs the real `claude` CLI in a demo project built fresh from the existing fixture (the same plan the current GIF shows: a running phase whose task owns src/checkout.ts), with this checkout's plugin loaded through --plugin-dir and an isolated --settings file whose allow list covers exactly the plugin's own commands' script calls, so no permission prompt interrupts and no permission bypass mode is shown. On screen the user types /audit:status and sees the plan; then asks Claude to change src/checkout.ts, which the plan covers, and it goes through; then asks for a change to src/billing.ts, which no task covers, and Claude Code shows the plan gate's refusal as it renders a PreToolUse deny. No frame may show personal data: no user name, email, organisation, machine name, home path or account banner; the project path on screen is a neutral demo path, never one under a home directory or this repo's scratch area. The recording also writes VHS's text output, and the sidecar record in docs/screenshots/captured-at.json (under the existing gifs key) keeps the GIF's sha256, the CLI version and model recorded, and the refusal text as recorded. tools/capture-demo-gif.py --check, which CI runs, keeps its guarantee without a paid session: it rebuilds the fixture, feeds require-plan the same out-of-plan payload, and fails when the gate's refusal text differs from the text the recording captured, or when the committed GIF's sha256 differs from the record. The drawn renderer and its Pillow dependency go, unless something still needs them. README's caption, CONTRIBUTING's re-record instructions (vhs, a logged-in claude, the tape, and what a re-record costs) and PLUGIN-BUILD-GUIDE's entry say what the GIF now is. The executor prepares the tape, the fixture builder, the check and the documents, and dry-runs everything that does not start a Claude session; the orchestrator makes the recording.",
       "files": [
         "tools/capture-demo-gif.py",
@@ -69,14 +69,33 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "99e2c0d9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The README demo is now a VHS recording of a real Claude Code session (CLI 2.1.292, model sonnet), recorded from the committed tape tools/demo-gate.tape by `python3 tools/capture-demo-gif.py --record`. The demo project is built fresh from the fixture in the standard layout (docs/audit/audit-plan.json, no config, fileIndex derived from the tasks' files with the plugin's own key function, and validated with the rules audit-task add runs), with this checkout's plugin loaded by --plugin-dir and an isolated --settings whose allow list is exactly the plugin commands' script calls, promptSuggestionEnabled and spinnerTipsEnabled false. Off camera the tape accepts workspace trust through Claude Code's own dialog without IS_DEMO (IS_DEMO skips the dialog without granting trust, and hooks do not load in an untrusted folder), exits, relaunches with IS_DEMO and types /audit:status. On camera: the plan, an allowed edit of src/checkout.ts, then a src/billing.ts write refused by require-plan, Claude's reading of the refusal, and the end state. The window (font 14, 1200x2050, rows re-derived with tput) holds the whole take, because VHS reads only the top rows of the buffer.\nGuards in the recorder, each refusing a take by name: personal data (email and organisation from `claude auth status --json`, host user, machine name, git identity, any home path, this checkout's path; the plan line is allowed - see task note 1); the usage-limit screen (read from screens only, never the echoed tape); a screen that outgrew the window; placeholder narration; an edit shown with no hook payload tapped (hooks not loaded); a submitted prompt the tape never typed; digits in an on-camera prompt (a dialog would read them as a choice); the tape lint (TAPE_NEEDS). The Waits prove each state: the live, empty input box between its borders before every prompt, the turn start, the refusal, and an interrupted-or-done end. `--check`, which CI runs without a paid session, rebuilds the fixture, refuses a plan with validator findings, replays the recorded PreToolUse payload against require-plan and fails when the refusal text, the GIF's sha256 or the record in docs/screenshots/captured-at.json (gifs) disagree. README, CONTRIBUTING, PLUGIN-BUILD-GUIDE and CI describe the recording and its check.\nRecording history: ten takes; takes 1-9 were refused by the guards above or failed safely (wait shape, header, trust, VHS top-rows read, an LSP-recommendation dialog that consumed a prompt - which installed typescript-lsp at user scope on the operator's machine, left for the operator - empty-box shape, fixture fileIndex, window height). Take 10 recorded: 1151 KB, 73 s, --check OK. Selftest 77/77 (rr, m, f, s, p, i, e, v, ts, ul, fx, sr, pr groups); redFirst proved for the TDD cases before implementation (36/41), later groups by mutation rows, each red.",
+        "descriptive": "The demo animation in the README is now a recording of an actual Claude Code session using the /audit commands - the plan, an allowed edit, and the plan gate refusing an unplanned one - instead of a picture drawn from the plugin's internal scripts, and CI checks that the refusal it shows is still what the plugin says today."
       },
       "startedAt": "2026-10-06T21:42:56Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T01:51:06Z",
+      "verifiedBy": [
+        "rr0",
+        "rr1",
+        "rr2",
+        "rr3",
+        "rr5",
+        "fx0",
+        "fx1",
+        "fx2",
+        "sr0",
+        "sr6",
+        "sr7",
+        "pr3",
+        "pr4",
+        "pr8",
+        "pr9",
+        "i4",
+        "i5",
+        "i6"
+      ],
       "notes": [
         {
           "at": "2026-10-07T01:39:59Z",
@@ -87,6 +106,12 @@
         "runId": "2026-10-07T01:50:31Z.c35e6b",
         "status": "passed",
         "at": "2026-10-07T01:50:31Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "99e2c0d9",
+        "at": "2026-10-07T01:51:06Z",
+        "basis": "orchestrator check: recorded through the real CLI with the plugin loaded, no personal data in reviewed frames (plan line allowed, note 1), --check green against the committed GIF; operator visual approval pending before publication"
       }
     },
     {
@@ -166,6 +191,45 @@
         "commit": "1a3151c7",
         "at": "2026-10-07T00:59:18Z",
         "basis": "orchestrator check: one shared resolver, three scripts resolve through it, four commands drop the placeholder, a drift lint with prove-gates rows in both directions keeps it from coming back; the remaining class is listed for a follow-up"
+      }
+    },
+    {
+      "id": "P112.3-uce",
+      "title": "the build guide describes how the first-contact commands find the manifest",
+      "status": "in_progress",
+      "description": "PLUGIN-BUILD-GUIDE.md describes what the first-contact commands' manifest resolution now does, three sentences drafted when the resolver landed and held back because the guide was another task's file then: (1) the _manifest_io.py section: it also owns where the manifest is - resolve_manifest(project, explicit) answers the argument, else .claude/audit.config.json's manifestPath, else docs/audit/audit-plan.json, and returns every place it looked so describe_unresolved() can name them; a config naming a missing file is a refusal, never the default; (2) the audit-usage.py section: it finds the manifest through _manifest_io.resolve_manifest and notes on stderr when it renders without one; (3) the _refs.py section: manifest_placeholder_drift() fails a command line that hands <manifestPath> to a script that resolves the manifest itself (self_resolving_scripts(), read off the AST), with MANIFEST_PLACEHOLDER_PENDING as the table of commands not yet repaired. Also say, in the audit-status.py and render-report.py sections, that their manifest argument is optional and resolved the same way. Check each sentence against the code it names.",
+      "files": [
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-07T01:51:07Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T02:10:25Z.80a4cd",
+        "status": "passed",
+        "at": "2026-10-07T02:10:25Z"
       }
     }
   ],
