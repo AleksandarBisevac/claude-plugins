@@ -34,59 +34,75 @@
         "severity": "low",
         "file": "plugins/audit/scripts/usage/usage_ledger.py:930-944",
         "issue": "When the month file does not exist, rewrite_month retries open(path,'rb'), and on FileNotFoundError writes and replaces with no tail descriptor; a metering hook that creates the month file and appends a row between that failed open and os.replace has its file retired by the replace, so the row is lost while the backfill exits 0 - on a rebuild after a lost ledger, the case --backfill exists for, and usually in the current month the hook writes.",
-        "resolution": "Always hold a descriptor: create the month file when missing and keep it open (os.open with O_RDONLY|O_CREAT), so rows appended before the replace are drained and rows after it settled like every other month; add a case where a row lands in the no-file window."
+        "resolution": "fixed in P107.5-gwk (675777a3): Always hold a descriptor: create the month file when missing and keep it open (os.open with O_RDONLY|O_CREAT), so rows appended before the replace are drained and rows after it settled like every other month; add a case where a row lands in the no-file window.",
+        "fixTask": "P107.5-gwk",
+        "commit": "675777a3"
       },
       {
         "id": "P107-R2",
         "severity": "low",
         "file": "plugins/audit/commands/usage.md:56-60",
         "issue": "The 'A platform that refuses to replace an open file' bullet follows the plain 'A month file the backfill could not rewrite cleanly' paragraph, so it renders as a separate one-item list instead of the third item of 'What that still leaves open'.",
-        "resolution": "Move the bullet up under 'A writer that opened the month file...' and keep the paragraph after the list."
+        "resolution": "fixed in P107.5-gwk (675777a3): Move the bullet up under 'A writer that opened the month file...' and keep the paragraph after the list.",
+        "fixTask": "P107.5-gwk",
+        "commit": "675777a3"
       },
       {
         "id": "P107-R3",
         "severity": "low",
         "file": "plugins/audit/scripts/git/close-phase.py:704-706",
         "issue": "under_index_lock releases with release_index_lock(lock, out=lines.append) and never reads lines or the return value, so a declined release - the only sign another session took the index lock during this write - is discarded, and a stamp written under a taken-over lock reports success with no note.",
-        "resolution": "Return the release sentence from under_index_lock and surface it in the close answer (stampWhy/stubWhy or a warning line), as write_composition adds `said` to its warnings; add a case where the release is declined."
+        "resolution": "fixed in P107.6-gwk (1645c074): Return the release sentence from under_index_lock and surface it in the close answer (stampWhy/stubWhy or a warning line), as write_composition adds `said` to its warnings; add a case where the release is declined.",
+        "fixTask": "P107.6-gwk",
+        "commit": "1645c074"
       },
       {
         "id": "P107-R4",
         "severity": "low",
         "file": "plugins/audit/scripts/git/close-phase.py:772-792",
         "issue": "_revalidated_write calls _panel_write.restore(snap) after a refused write; if restore raises (Windows replace onto an open file, full disk) the caller reports '<path> could not be written', while the refused write actually landed and was not rolled back - the message says the opposite of the plan's state.",
-        "resolution": "Guard the restore separately and say '<path> was written and introduced <findings>; restoring its prior bytes failed: <exc> - the plan holds the refused write'; add a case where restore raises."
+        "resolution": "fixed in P107.6-gwk (1645c074): Guard the restore separately and say '<path> was written and introduced <findings>; restoring its prior bytes failed: <exc> - the plan holds the refused write'; add a case where restore raises.",
+        "fixTask": "P107.6-gwk",
+        "commit": "1645c074"
       },
       {
         "id": "P107-R5",
         "severity": "low",
         "file": "plugins/audit/scripts/_deps.py:2028-2045",
         "issue": "_os_bindings binds the os module only for alias.name == 'os', but `import os.path` (no asname) also binds `os`, so os.replace/os.rename in such a file is invisible to state_write_violations, and the lint's WHAT IT CANNOT SEE list does not name the spelling.",
-        "resolution": "Bind 'os' for any Import alias with no asname whose first dotted part is 'os'; add a fixture case using `import os.path` then os.replace."
+        "resolution": "fixed in P107.7-gwk (359a0870): Bind 'os' for any Import alias with no asname whose first dotted part is 'os'; add a fixture case using `import os.path` then os.replace.",
+        "fixTask": "P107.7-gwk",
+        "commit": "359a0870"
       },
       {
         "id": "P107-R6",
         "severity": "low",
         "file": "plugins/audit/scripts/usage/audit-usage.py:855-869",
         "issue": "The comment says held-back cursors 'match the ledger when the replace was refused', which holds only for the failed month: a session spanning a failed and a rewritten month keeps its old cursor while the rewritten month already holds its rows past it, so the next metering turn appends them again and they are double-counted there until --backfill re-runs.",
-        "resolution": "Correct the comment and usage.md's cursor sentence to state the double-count until the next --backfill, or hold the cursor back only when every month the session spans failed."
+        "resolution": "fixed in P107.5-gwk (675777a3): Correct the comment and usage.md's cursor sentence to state the double-count until the next --backfill, or hold the cursor back only when every month the session spans failed.",
+        "fixTask": "P107.5-gwk",
+        "commit": "675777a3"
       },
       {
         "id": "P107-R7",
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md:4525-4527",
         "issue": "audit-usage.py's guide section still says --backfill is 'the only path that rewrites (and therefore locks) rather than only appending', the sentence this phase corrected in the module docstring and usage.md: the lock excludes only another backfill and the metering hook appends with no lock.",
-        "resolution": "Match the docstring: the backfill's lock excludes only another backfill, and each month's rewrite carries rows appended during it (usage_ledger.open_month / rewrite_month)."
+        "resolution": "fixed in P107.5-gwk (675777a3): Match the docstring: the backfill's lock excludes only another backfill, and each month's rewrite carries rows appended during it (usage_ledger.open_month / rewrite_month).",
+        "fixTask": "P107.5-gwk",
+        "commit": "675777a3"
       },
       {
         "id": "P107-R8",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_journal_io.py:2226-2228",
         "issue": "write_merged locks `path` but writes its fixed temp at realpath(path)+'.merged', so a link and its target take different locks and share one temp; the STATE_WRITERS row added this phase says the hold is 'what makes its fixed temp name unshared', which holds only when every caller uses the same name.",
-        "resolution": "Route the temp through mkstemp in the destination directory (or atomic_write_text on the resolved destination) so the reason is true for every caller, and keep the STATE_WRITERS reason in step."
+        "resolution": "fixed in P107.7-gwk (359a0870): Route the temp through mkstemp in the destination directory (or atomic_write_text on the resolved destination) so the reason is true for every caller, and keep the STATE_WRITERS reason in step.",
+        "fixTask": "P107.7-gwk",
+        "commit": "359a0870"
       }
     ],
-    "outcome": "[findings: 8 - 0 high, 0 med, 8 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 8 - 0 high, 0 med, 8 low; 8 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -466,7 +482,7 @@
     {
       "id": "P107.7-gwk",
       "title": "the state-write lint sees os bound by a dotted import, and the journal merge temp is never shared",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix the phase review's findings P107-R5 and P107-R8 (see review.findings in this phase).\n- R5: _deps._os_bindings must bind the name `os` for `import os.path` (or any `import os.<sub>` with no asname), because that statement binds `os`. An os.replace or os.rename after that spelling is then seen by state_write_violations. If any spelling stays invisible, name it in the lint's WHAT IT CANNOT SEE list.\n- R8: _journal_io.write_merged writes a fixed temp at realpath(path)+'.merged' while its lock is taken on `path`. So a link and its target take different locks and share one temp. Route the temp through a unique name in the destination directory (mkstemp, or the house atomic writer on the resolved destination), so no two callers can share it whatever name they use. Keep the STATE_WRITERS row's reason true for every caller, and remove the row if the site no longer needs one.",
       "files": [
         "plugins/audit/scripts/_deps.py",
@@ -494,18 +510,30 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "359a0870",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "R5 (_deps._os_bindings): binds `os` for `import os.<sub>` with no alias, and binds bare replace/rename for `from os import *`; `import os.path as p` still binds nothing (p is the submodule). state_write_violations' WHAT IT CANNOT SEE list now names os reached without an import naming it (__import__, importlib, sys.modules, or a second name assigned from the module).\nR8 (_journal_io.write_merged): the temp is now tempfile.mkstemp(dir=dirname(realpath(path)), prefix=basename+'.', suffix='.merged'), so a link and its target can never share one; the suffix is not .jsonl, so journal_files never reads a temp; the temp is removed on failure; the lock stays on the name the caller passed; the destination's mode is copied onto the temp so a merge never narrows a journal file's mode. mkstemp is used inline because _journal_io and _manifest_io are both layer 1 and hooks load _journal_io on every tool call. The STATE_WRITERS row for write_merged stays (it still calls os.replace) with its reason rewritten to the mkstemp name.\nTests: test__deps sw7 (import os.path + os.replace and from os import * + rename, each reported by file and line) and sw8 (allow twin: plain import os in the sanctioned function); test__journal_io mw1-mw3 (a real symlink plus a stranger file at the target's name + '.merged', the overlap made deterministic by wrapping os.replace: the temps differ and the stranger is untouched; both writes land whole in order and the link stays a link; no temp is left). Red-first proved through the helper at HEAD 1fdbbee4: test__deps 306/307 (sw7), test__journal_io 206/209 (mw1-mw3; HEAD's outer write raised FileNotFoundError). Suites 307/307 and 209/209; ruff, vermin and the house lints clean.",
+        "descriptive": "The state-write lint now catches os.replace and os.rename after `import os.path` and `from os import *`, and two journal merges reaching one file through a link and its target can no longer share a temp file and lose a write."
       },
       "startedAt": "2026-10-07T00:14:33Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T00:32:01Z",
+      "verifiedBy": [
+        "sw7",
+        "sw8",
+        "mw1",
+        "mw2",
+        "mw3"
+      ],
       "testEvidence": {
         "runId": "2026-10-07T00:31:31Z.6a19a1",
         "status": "passed",
         "at": "2026-10-07T00:31:31Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "359a0870",
+        "at": "2026-10-07T00:32:01Z",
+        "basis": "orchestrator check: R5 and R8 addressed, the STATE_WRITERS reason now true for every caller, red-first proved through the helper with an allow twin"
       }
     }
   ],
