@@ -566,7 +566,7 @@
     {
       "id": "P117.7-2sz",
       "title": "the design meets the user's cost target: a task at most 2x plain, ideally 1.25x, with the phase overhead budgeted and value-tested",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The user set the cost target on 2026-10-07, in two parts.\n\nTargets:\n1. Per task: the plugin's task cycle may cost at most 2x what plain Claude Code spends on the same task, ideally 1.25x.\n2. Per phase: planning, the phase review and the phase gate are budgeted separately as a phase overhead. That overhead has to pay for itself: each part of it is justified by what it catches, measured, or it is a candidate for removal.\n\nThe current design does not meet the per-task target. It predicts a one-task run falling from 1.7484 to 1.0047 USD against about 0.30 plain, which is about 3.3x. On the whole-feature benchmark the plugin arm averaged about ten times the plain arm (grade.txt of the nine valid sessions).\n\nWhere the cost sits (whole-C-3, Opus, grade.txt token lines, priced with the confirmed table):\n- cache reads, 10.66M tokens: 2.13 USD;\n- cache writes, mostly at the one-hour rate: 1.78 USD;\n- output: 0.93 USD.\n\nCache reads are 5 percent of the input price, and they still dominate through volume: 61 main-loop requests, about 174k tokens each. Every new tool output in the main loop is written once at the one-hour rate and then re-read on every later request.\n\nThis task revises docs/research/pipeline-cost-design.md so that the recommended set is predicted to meet the per-task target. The phase overhead is stated separately, with its own budget and a value test.\n\nEvidence:\n- The whole-feature sessions, now priceable.\n- Arm C's cost decomposed into:\n  - planning;\n  - the task cycle per task;\n  - sign-off;\n  - main-loop context carried per request, split by origin: reference prose, plugin script output, file reads, hand-backs;\n  - the main-loop request count.\n- What each phase-level step caught in the recorded sessions, against what the hidden tests and the grader show. This includes the hidden requirement that every arm missed.\n\nOptions to evaluate beside the earlier candidates:\n- a script that drives the whole pipeline deterministically, so the model only writes code and answers named decisions;\n- terse plugin script output by default;\n- one executor per phase instead of one per task;\n- fewer and cheaper main-loop requests;\n- a smaller subagent start: omitClaudeMd, preloaded skills, and the cache TTL that an agent definition can set;\n- a per-task review that is cheap enough to fit, or that moves to the phase;\n- an enforced rule moved from an agent's tool list to a hook, where that keeps it enforced.\n\nThe document gives a ladder:\n- what is reached with no change to any guarantee;\n- then, for each guarantee change, the saving it adds, the guarantee affected, and how that guarantee would be held instead.\n\nThe recommendation is the structurally correct set that meets the per-task target. Guarantee changes it needs go to the user as decisions with figures. The implementation tasks are restated so that together they reach the target, each with its own measurable target and confirming session.",
       "files": [
         "docs/research/pipeline-cost-design.md",
@@ -593,16 +593,21 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-10-07T16:27:45Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "testEvidence": {
+        "runId": "2026-10-07T17:16:15Z.5e1b54",
+        "status": "passed",
+        "at": "2026-10-07T17:16:15Z"
+      }
     }
   ],
   "startedAt": "2026-10-07T11:45:57Z"

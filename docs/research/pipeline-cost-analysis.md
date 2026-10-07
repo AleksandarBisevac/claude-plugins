@@ -75,6 +75,12 @@ so it reads them once. That rule was read off the whole-feature arm C sessions
 ([pipeline-cost-design.md](pipeline-cost-design.md), section 6, T1). Every session in this
 document ran as one stretch.
 
+A command body that a `Skill` call injects arrives as a user text block, and the tool does not size
+those. Its tokens are still counted: the request that writes them splits the write among the sources
+it does size, so the body is booked as the main loop's own output, at about 0.01 bytes per token.
+No session in this document made a `Skill` call. The whole-feature arm C sessions did, and the design
+names the effect and the fix ([pipeline-cost-design.md](pipeline-cost-design.md), section 1.5.7).
+
 **`python3 tools/measure-context.py --ref <ref> [--ref <ref>]`** lists what each step on the
 pipeline's path loads before it does any work:
 
@@ -423,9 +429,12 @@ prose written differently.
   measured once.
 - **Single-task runs only.** What a second task adds is inference (section 4), not measurement. The
   stage rule for a run of several tasks counts the next task's plan work in the previous task's
-  close; no session here exercised that.
+  close; no session here exercised that. The whole-feature benchmark later ran three tasks per arm C
+  session. The design decomposes those sessions by span and by origin
+  ([pipeline-cost-design.md](pipeline-cost-design.md), section 1.5).
 - **Arm B was not run.** The run class's session start mixes the plugin's listing with arm B's
-  skills and rules. The reference prose is the plugin's alone: its own command reads it.
+  skills and rules. The reference prose is the plugin's alone: its own command reads it. The
+  whole-feature benchmark ran arm B. The design sets arm C against both A and B there (section 1.5.1).
 - **Estimates are labelled where they are printed:** output apportioned by emitted bytes inside a
   measured pool (thinking mostly unseen), the size split inside a write that held several sources,
   and the pilot's two final requests on one model.
