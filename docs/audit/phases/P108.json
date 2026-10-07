@@ -515,7 +515,7 @@
     {
       "id": "P108.8-4gh",
       "title": "a write inside a subshell or command substitution is graded like the same write outside it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix BUG-20-4gh. guard-secrets-read's shell-write reader must descend into subshell `( ... )` and command-substitution `$( ... )` (and backtick) bodies, so a redirect, `tee`, `sed -i` or interpreter write inside one is graded exactly like the same write outside it. Reuse the shared shell readers in hooks/_config (command_clauses / split_heredocs) rather than adding a second grammar. If a form stays unreadable, it is named in the guard's own list of what it cannot see. Cases: each form alone at every tier; each after an interpreter write in the same command (the second file is graded and the slot is spent at most once); and allow twins: a read-only subshell such as `(cd src && ls)`, and a substitution that only reads, such as `x=$(cat README.md)`.",
       "files": [
         "plugins/audit/hooks/guard-secrets-read.py",
@@ -543,19 +543,33 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f62b51e3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The defect: the guard's shell-write walker read a group's closing ) or backtick as the last character of the target name, so `(echo x > src/a.py)` became the target `src/a.py)` - no source extension, no verdict, allowed - while the same write outside the group was blocked; the same held for tee and sed -i, and a sed -i inside a double-quoted \"$( )\" was skipped as quoted text. guard-secrets-read.py: _quote_walk is replaced by _shell_states(text), which returns the open quote and the nesting depth before each character - an unquoted (, a $( inside double quotes and a backtick each open a group whose body is unquoted, and only a closer that pairs with an opener ends it (escaped characters marked, so \\; is still not a separator); _closes_group and _word_end cut a target at a paired closer; _in_quote and _clause_end read the states (_clause_end stops at a separator at the clause's own depth or at its group's closer); _inplace_targets computes the states once; _shell_write_targets cuts redirect and tee targets at the paired closer. The manifest and journal arms use the same extractor, so a journal append inside backticks is refused too. The existing walker was extended rather than a second grammar added; hooks/_config was not needed (the shell-write path never calls command_clauses or split_heredocs for its targets). Named remaining gap, pre-existing: a command handed to another program as a quoted argument (bash -c \"sed -i ...\") is not read by the sed -i arm (the redirect and tee arms do read quoted text, so bash -c \"echo x > src/a.py\" is blocked).\nTests: stage sb in test_guard_secrets_read.py - sb1 (redirect, tee, sed -i and interpreter inside ( ), $( ), backticks and x=\"$( )\" get the bare form's verdict at every tier, deny naming the file), sb2/sb3 (after an interpreter write, the second file is refused at deny with no slot spent; at warn the slot holds only the first), sb4 (a journal append inside each wrapper is refused), sb5 (read-only groups allowed, no slot), sb6 (the closer is not part of the target), sb7 (a ( inside a quoted name stays in it - over-block guard); test_hooks rows b10p, b10b (journal-write class) and n18, n19 (read-only). Red-first proved through the helper at HEAD ed891f8b: test_guard_secrets_read 479/511 (32 failing incl. sb1), test_hooks 134/137 (hk1, hk2, hk4). Scratch mutations each red: target cut removed, every closer treated as a group closer (sb7, ud1), $( in double quotes left quoted, clause end ignoring the group closer. Suites 511/511 and 137/137 plus every suite that loads the guard; ruff, vermin, bench-hooks --gate (3.11 not measured) clean.",
+        "descriptive": "Wrapping a file write in parentheses, a command substitution or backticks no longer hides it from the plan gate: it gets the same answer as the same write written plainly, while groups that only read stay allowed."
       },
       "startedAt": "2026-10-07T02:08:50Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-10-07T02:25:10Z",
+      "verifiedBy": [
+        "sb1",
+        "sb2",
+        "sb3",
+        "sb4",
+        "sb5",
+        "sb6",
+        "sb7"
+      ],
       "bugId": "BUG-20-4gh",
       "testEvidence": {
         "runId": "2026-10-07T02:24:35Z.8727fe",
         "status": "passed",
         "at": "2026-10-07T02:24:35Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "f62b51e3",
+        "at": "2026-10-07T02:25:10Z",
+        "basis": "orchestrator check: BUG-20-4gh's expected behaviour holds for every form and wrapper, the existing walker extended instead of a second grammar, read-only twins allowed, red-first proved; the bash -c quoted-argument gap is pre-existing and named"
       }
     }
   ],
