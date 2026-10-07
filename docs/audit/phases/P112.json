@@ -196,7 +196,7 @@
     {
       "id": "P112.3-uce",
       "title": "the build guide describes how the first-contact commands find the manifest",
-      "status": "in_progress",
+      "status": "done",
       "description": "PLUGIN-BUILD-GUIDE.md describes what the first-contact commands' manifest resolution now does, three sentences drafted when the resolver landed and held back because the guide was another task's file then: (1) the _manifest_io.py section: it also owns where the manifest is - resolve_manifest(project, explicit) answers the argument, else .claude/audit.config.json's manifestPath, else docs/audit/audit-plan.json, and returns every place it looked so describe_unresolved() can name them; a config naming a missing file is a refusal, never the default; (2) the audit-usage.py section: it finds the manifest through _manifest_io.resolve_manifest and notes on stderr when it renders without one; (3) the _refs.py section: manifest_placeholder_drift() fails a command line that hands <manifestPath> to a script that resolves the manifest itself (self_resolving_scripts(), read off the AST), with MANIFEST_PLACEHOLDER_PENDING as the table of commands not yet repaired. Also say, in the audit-status.py and render-report.py sections, that their manifest argument is optional and resolved the same way. Check each sentence against the code it names.",
       "files": [
         "PLUGIN-BUILD-GUIDE.md"
@@ -218,18 +218,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a4f8aef4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "PLUGIN-BUILD-GUIDE.md only, each sentence checked against the code it names: the _manifest_io.py section says the module also owns where the manifest is (resolve_manifest(project, explicit): the explicit argument, else .claude/audit.config.json's manifestPath, else docs/audit/audit-plan.json; every place looked is returned for describe_unresolved; a config naming a path that does not exist is never followed by the default); the audit-usage.py section says it finds the manifest through resolve_manifest and that a missing manifest is a stderr note naming the places looked, never a refusal; the _refs.py section describes manifest_placeholder_drift(), self_resolving_scripts() (read off the AST, a call to <module>.resolve_manifest) and MANIFEST_PLACEHOLDER_PENDING with its stale-row finding; the audit-status.py and render-report.py sections say their manifest positional is optional and resolved the same way (render-report prints describe_unresolved before exit 2). No count written. Gate-only task: test__refs 310/310, test__output 182/182, test__deps 299/299, gate-parity exit 0.",
+        "descriptive": "The developer guide now explains where the commands look for the plan and how a missing one is reported, and the check that keeps commands from asking Claude to guess the path."
       },
       "startedAt": "2026-10-07T01:51:07Z",
-      "completedAt": null,
+      "completedAt": "2026-10-07T02:10:30Z",
       "verifiedBy": [],
       "testEvidence": {
         "runId": "2026-10-07T02:10:25Z.80a4cd",
         "status": "passed",
         "at": "2026-10-07T02:10:25Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "a4f8aef4",
+        "at": "2026-10-07T02:10:30Z",
+        "basis": "orchestrator check: the five sections named in the description carry sentences true of the code they cite; the doc lints and gate-parity are green"
       }
     }
   ],
