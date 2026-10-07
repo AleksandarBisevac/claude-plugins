@@ -2828,6 +2828,7 @@ def _gone_cases(check):
 
     _worktree_writer_cases(check)
     _details_key_cases(check)
+    _free_text_cases(check)
     _stale_lock_cases(check)
 
 
@@ -3597,6 +3598,144 @@ def _details_key_cases(check):
     check("dk5 ...and the allow-list is still an allow-list: a key it does not "
           "hold is dropped, so listing one key did not turn the filter off: %r"
           % (_invented,), _invented == {"phaseId": "P1"})
+
+
+# --- ft: free text a caller hands over never carries a machine path ------------
+def _journal_bytes(directory):
+    """Every journal file under `directory` and its bytes, so "unchanged" is a
+    comparison of the whole trail rather than of the one file a row was aimed at."""
+    out = {}
+    if not os.path.isdir(directory):
+        return out
+    for name in sorted(os.listdir(directory)):
+        with open(os.path.join(directory, name), "rb") as fh:
+            out[name] = fh.read()
+    return out
+
+
+def _refusal(project, entry, config):
+    """The text `_append` raised with, or None when it wrote the row."""
+    try:
+        M._append(project, entry, config=config)
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
+def _written(project, entry, config):
+    """The row `_append` wrote, or an empty dict when it refused - so an allow
+    case that over-fires fails its own assertion rather than raising out of the
+    whole block and taking every later case with it."""
+    try:
+        return M._append(project, entry, config=config)[0]
+    except ValueError:
+        return {}
+
+
+def _pii_tool():
+    """`tools/check-committed-pii.py`, loaded by path: it is not on any import path."""
+    import importlib.util
+    path = os.path.join(_output.REPO_ROOT, "tools", "check-committed-pii.py")
+    spec = importlib.util.spec_from_file_location("check_committed_pii_ft", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _free_text_cases(check):
+    """A note, an outcome, a reason: text a verb takes from its caller and chains."""
+    tmp = tempfile.mkdtemp(prefix="journal-free-text-")
+    try:
+        proj = os.path.join(tmp, "repo")
+        os.makedirs(os.path.join(proj, "docs", "audit"))
+        jdir = os.path.join(proj, "journal")
+        cfg = {"journal": {"enabled": True, "dir": jdir}}
+
+        def entry(summary, reason=None):
+            row = {"action": "task.note", "target": "", "summary": summary,
+                   "actor": {"sessionId": "s-free", "via": "cli"}}
+            if reason is not None:
+                row["details"] = {"taskId": "P1.1", "reason": reason}
+            return row
+
+        # A row first, so "unchanged" compares a trail holding something.
+        M.append(proj, entry("P1.1 started"), config=cfg)
+        before = _journal_bytes(jdir)
+        # Neutral, and built so this file never spells one whole.
+        home = "/" + "/".join(("Users", "someone", "notes", "scratch.md"))
+        said = "kept the probe at %s for later" % (home,)
+        landed = M.append(proj, entry("P1.1 note", reason=said), config=cfg)
+        check("ft1 a reason quoting a home-directory path is REFUSED before the "
+              "row is hashed - append reports failure and every journal file "
+              "holds the bytes it held before: %r" % (landed,),
+              landed is False and _journal_bytes(jdir) == before
+              and len(before) == 1)
+        msg = _refusal(proj, entry("P1.1 note", reason=said), cfg) or ""
+        check("ft2 the refusal names the field and the shape, says how to say it "
+              "instead, and never echoes the value - a refusal that printed the "
+              "path would publish it in whatever log caught the error: %r"
+              % (msg,),
+              "details.reason" in msg and "posix-home" in msg
+              and "repo-relative" in msg and "<home>" in msg
+              and "someone" not in msg and home not in msg
+              and _journal_bytes(jdir) == before)
+        win = "C:\\" + "\\".join(("Users", "someone", "proj", "a.ts"))
+        msg_w = _refusal(proj, entry("saw %s fail" % (win,)), cfg) or ""
+        check("ft3 a Windows user directory in the SUMMARY is refused the same "
+              "way, naming its own shape and its own field: %r" % (msg_w,),
+              "summary" in msg_w and "windows-user-path" in msg_w
+              and "someone" not in msg_w and _journal_bytes(jdir) == before)
+
+        inside = os.path.join(proj, "docs", "audit", "notes.md")
+        row = _written(proj, entry("P1.1 wrote %s" % (inside,),
+                                   reason="see %s twice" % (inside,)), cfg)
+        check("ft4 ALLOW: an absolute path INSIDE the repo is written as its "
+              "repo-relative spelling, in the summary and in a details value, "
+              "and the checkout's root appears nowhere in the row: %r / %r"
+              % (row.get("summary"), row.get("details", {}).get("reason")),
+              row.get("summary") == "P1.1 wrote docs/audit/notes.md"
+              and row["details"]["reason"] == "see docs/audit/notes.md twice"
+              and proj not in M.canonical(row)
+              and os.path.realpath(proj) not in M.canonical(row))
+
+        prose = ("the Users list and the home page both moved; see "
+                 "src/users/home.ts and docs/home/readme.md")
+        row2 = _written(proj, entry(prose, reason=prose), cfg)
+        check("ft5 ALLOW: prose using 'home' and 'Users' as words, and "
+              "repo-relative paths that merely resemble a home directory, is "
+              "written byte for byte - the mutation this catches is a check that "
+              "refuses every row mentioning either word: %r"
+              % (row2.get("summary"),),
+              row2.get("summary") == prose
+              and row2["details"]["reason"] == prose)
+
+        # The root reached through something that is not a path of its own: a
+        # search path joins it to a directory outside the repo, so no token
+        # resolves inside and the root is still spelled out.
+        joined = "PATH=/opt/bin:%s/bin" % (proj,)
+        after = _journal_bytes(jdir)
+        msg_r = _refusal(proj, entry("ran with %s" % (joined,)), cfg) or ""
+        check("ft6 the checkout's absolute root, where no token can be rewritten "
+              "to repo-relative, is refused and not echoed: %r" % (msg_r,),
+              "summary" in msg_r and proj not in msg_r
+              and (os.name == "nt" or "checkout-root" in msg_r)
+              and _journal_bytes(jdir) == after)
+
+        # The ROW tuples are compared by identity, not the patterns: `re`
+        # caches compiled patterns by their text, so a detector that re-spelled
+        # the same regex would hand back the very same pattern object and an
+        # identity check on the pattern would pass over a copy.
+        tool = _pii_tool()
+        rows = dict((r[0], r) for r in tool.DETECTORS)
+        shared = M.MACHINE_PATH_SHAPES
+        check("ft7 the detector's rows for the writer's shapes ARE the writer's "
+              "rows - one definition, two readers - and the patterns agree too: "
+              "%r" % ([r[0] for r in shared],),
+              [r[0] for r in shared] == ["posix-home", "windows-user-path"]
+              and all(rows.get(r[0]) is r for r in shared)
+              and all(rows[r[0]][1].pattern == r[1].pattern for r in shared))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _selftest():

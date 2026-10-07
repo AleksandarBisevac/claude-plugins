@@ -128,6 +128,11 @@ import sys
 import tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(REPO, "plugins", "audit", "scripts"))
+import _output  # noqa: E402  (install_path: the plugin's folders are labels)
+
+_output.install_path()
+import _journal_io  # noqa: E402  (the machine-path shapes the writer refuses on)
 
 # --- the domain ---------------------------------------------------------------
 # What the plugin GENERATES and tells a user to commit. Everything else this
@@ -221,10 +226,15 @@ def tracked_paths(repo=None):
 # detector that could only see the tidy spelling is the half of that pair which
 # has to stand on its own, because it is the one reading bytes somebody already
 # committed.
-_TOKEN_START = r"(?<![A-Za-z0-9._~$+/\\-])"
-DETECTORS = (
-    ("posix-home", re.compile(_TOKEN_START + r"[/\\]?(?:Users|home)/[A-Za-z0-9._-]+")),
-    ("windows-user-path", re.compile(r"[A-Za-z]:\\{1,2}Users\\|\\{2,4}[A-Za-z0-9._-]+\\{1,2}[A-Za-z0-9._$-]+\\")),
+#
+# THE FIRST TWO ROWS ARE NOT SPELLED HERE. `_journal_io` refuses a free-text
+# value carrying either shape before the row is hashed, so the writer and this
+# backstop read one definition - `_journal_io.MACHINE_PATH_SHAPES`, the same
+# pattern objects - and the token boundary with them. A copy here would agree
+# with the writer until the day one side was widened, and the row the other side
+# missed would be the one already committed.
+_TOKEN_START = _journal_io.MACHINE_PATH_TOKEN_START
+DETECTORS = _journal_io.MACHINE_PATH_SHAPES + (
     ("session-slug", re.compile(r"-(?:Users|home)-[A-Za-z0-9._]+|-private-tmp-")),
     ("escaped-path", re.compile(r"%2F(?:Users|home)%2F|%5CUsers%5C", re.I)),
     ("tempdir-session", re.compile(_TOKEN_START + r"/?(?:private/)?tmp/claude-\d+"

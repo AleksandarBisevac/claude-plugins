@@ -571,6 +571,50 @@
         "at": "2026-10-07T02:25:10Z",
         "basis": "orchestrator check: BUG-20-4gh's expected behaviour holds for every form and wrapper, the existing walker extended instead of a second grammar, read-only twins allowed, red-first proved; the bash -c quoted-argument gap is pre-existing and named"
       }
+    },
+    {
+      "id": "P108.9-4gh",
+      "title": "free text never carries a machine path into a chained journal row",
+      "status": "in_progress",
+      "description": "Fix BUG-21-4gh. Free text that a verb takes from its caller and writes into the hash-chained journal must not carry a machine path into a committed row. Such text includes task notes, technical and descriptive outcomes, reasons, finding text and refusal reasons.\n\nToday _journal_io's redaction section answers structural fields before row_hash() and leaves free prose to the after-the-fact detector, tools/check-committed-pii.py. By the time the detector reports, the row is chained, and only a BASELINE row can account for it.\n\nThe fix sits at the one place every row passes before it is hashed. A free-text value is checked there for the path shapes the detector reads as machine identity: a home directory under /Users/<name> or /home/<name>, a Windows user directory, and this checkout's absolute root.\n- A path inside this repository is rewritten to its repo-relative spelling. That is the structural answer the section already uses.\n- Anything else of those shapes is refused before the row is written. The refusal names the field and the shape, never echoes the value, and says how to say it instead (a repo-relative path, or <scratchpad>/<home> placeholders).\n- The detector's patterns are not copied. Share them with tools/check-committed-pii.py through one definition, if the layer rule allows; otherwise state why the two must agree, and add a case that holds them equal.\n\nCases:\n- A note quoting a home path is refused and the journal is unchanged.\n- An in-repo absolute path is written repo-relative.\n- Ordinary prose that mentions 'home' or 'Users' as words is written unchanged.\n- The refusal text does not contain the value.",
+      "files": [
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/tests/test__journal_io.py",
+        "tools/check-committed-pii.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "plugins/audit/tests/test__journal_io.py: a free-text field quoting a home-directory path is refused before the row is hashed and the journal is unchanged, an in-repo absolute path is written repo-relative, and prose using 'home' or 'Users' as words is written unchanged"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "lint"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-10-07T02:27:40Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "bugId": "BUG-21-4gh",
+      "testEvidence": {
+        "runId": "2026-10-07T02:46:07Z.e991d0",
+        "status": "passed",
+        "at": "2026-10-07T02:46:07Z"
+      }
     }
   ],
   "startedAt": "2026-10-06T21:26:46Z"

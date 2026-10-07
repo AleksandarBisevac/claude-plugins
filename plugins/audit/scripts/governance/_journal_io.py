@@ -1346,6 +1346,145 @@ def redacted_text(project, text):
                         MAX_VALUE_CHARS, VALUE_TRUNCATED)
 
 
+# THE SHAPES THAT ARE MACHINE IDENTITY, defined once and read twice: here, to
+# refuse a free-text value before it is hashed, and by
+# `tools/check-committed-pii.py`, whose `DETECTORS` takes these very pattern
+# objects for its two rows of the same names. A writer that refused one spelling
+# while the detector flagged another would let through exactly the row the
+# detector then reports, too late, so the agreement is held by identity rather
+# than by a comment - and `ft7` in `test__journal_io.py` is the case that fails
+# when either side grows a copy.
+#
+# The token boundary is what keeps `docs/home/alice.md` and `src/users/x.ts`,
+# repo-relative paths that merely resemble a home directory, out of the set; the
+# leading separator is optional because a producer that trims it still leaves a
+# home directory behind. The detector's own notes carry the longer argument.
+MACHINE_PATH_TOKEN_START = r"(?<![A-Za-z0-9._~$+/\\-])"
+_MACHINE_PATH_SHAPES = (
+    ("posix-home", re.compile(MACHINE_PATH_TOKEN_START
+                              + r"[/\\]?(?:Users|home)/[A-Za-z0-9._-]+")),
+    ("windows-user-path", re.compile(
+        r"[A-Za-z]:\\{1,2}Users\\|\\{2,4}[A-Za-z0-9._-]+\\{1,2}[A-Za-z0-9._$-]+\\")),
+)
+# THE PUBLIC NAME IS THE DETECTOR'S, and nothing in this module reads it. A row
+# never carries these patterns - a refusal is what they produce - so they are not
+# row shape for `audit-journal.py` to re-export, and the functions here read the
+# private name `test__journal_io.py`'s re-export walk leaves out for that reason.
+MACHINE_PATH_SHAPES = _MACHINE_PATH_SHAPES
+# The shape name a refusal gives for the checkout's own root, which is machine
+# layout whatever directory it sits under and so has no pattern of its own.
+_CHECKOUT_ROOT_SHAPE = "checkout-root"
+# An ABSOLUTE path token in a sentence, and only those: a relative spelling is
+# already what a row may say and is left byte for byte. The lookbehind lets `=`
+# and `:` stand before the separator, so `X=/abs/...` and a `scheme://` are
+# reached, and keeps a separator in the middle of a word from starting a token.
+_ABS_TOKEN = re.compile(r"(?<![A-Za-z0-9_.@$+~/\\-])"
+                        r"(?:[A-Za-z]:)?[/\\][~A-Za-z0-9_.@$:+\\/-]+")
+
+
+def _checkout_roots(project):
+    """Every spelling of `project`'s root a value could carry, posix-separated.
+
+    Both the given and the resolved one: a temp root reached through a symlink
+    is spelled one way by the caller and the other way by `realpath`. A root that
+    is the filesystem root itself is no spelling at all - every absolute path
+    starts with it - so it is left out rather than refusing everything."""
+    if not project:
+        return ()
+    spellings = set()
+    for way in (os.path.abspath, os.path.realpath):
+        try:
+            root = way(str(project)).replace("\\", "/").rstrip("/")
+        except Exception:
+            continue
+        if root and "/" in root:
+            spellings.add(root)
+    return tuple(sorted(spellings, key=len, reverse=True))
+
+
+def _in_repo_relative(project, text):
+    """`text` with every absolute token INSIDE the repo spelled repo-relative.
+
+    `repo_relative_or_token` under each absolute token, the same map
+    `redacted_paths` uses - but an outside token is left as it stands rather than
+    collapsed to `OUTSIDE_TOKEN`: whether it may be stored is the shape check's
+    question, and a token that names no machine (a URL, `/usr/bin`) says what
+    its writer meant."""
+    if not project:
+        return text
+
+    def _token(match):
+        raw = match.group(0)
+        # Absolute on THIS platform, or `repo_relative_or_token` joins it onto
+        # the root: a drive-letter path on posix would come back looking local
+        # with the user directory still inside it, which `_NOT_RELATIVE`'s note
+        # measured. Left alone, it reaches the shape check as it was written.
+        if not os.path.isabs(raw):
+            return raw
+        rel = repo_relative_or_token(project, raw)
+        return raw if rel == OUTSIDE_TOKEN else rel
+
+    return _ABS_TOKEN.sub(_token, text)
+
+
+def machine_path_shape(text, roots=()):
+    """The name of the first machine-identity shape `text` carries, else None.
+
+    The checkout's root is asked first, so a root that also sits under a home
+    directory is named for what it is rather than for where it happens to be."""
+    flat = text.replace("\\", "/")
+    for root in roots:
+        at = flat.find(root)
+        while at != -1:
+            end = at + len(root)
+            if end == len(flat) or not re.match(r"[A-Za-z0-9._-]", flat[end]):
+                return _CHECKOUT_ROOT_SHAPE
+            at = flat.find(root, at + 1)
+    for name, pattern in _MACHINE_PATH_SHAPES:
+        if pattern.search(text):
+            return name
+    return None
+
+
+def free_text(project, field, value, roots=None):
+    """`value`, with in-repo absolute paths spelled repo-relative; RAISES
+    `ValueError` when what is left still carries machine identity.
+
+    THE SECTION'S RULE APPLIED TO PROSE, not a second one: a path inside this
+    repo has a structural answer and gets it; a home directory, a Windows user
+    directory or the checkout's root that no rewrite reached has none, so it is
+    refused rather than stored. Substituting a placeholder for it here is the
+    design the section's opening note measured and threw out.
+
+    The refusal names `field` and the shape and NEVER the value - an error that
+    echoed the path would publish it in whatever log caught the error.
+
+    Structured values are judged in the canonical spelling `_clip` would store;
+    a non-string scalar carries no path and passes as it came."""
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        text = value
+    else:
+        try:
+            text = canonical(value)
+        except Exception:
+            # Unspellable: `_clip` stores nothing for it, so there is
+            # nothing here to judge either.
+            return value
+    if roots is None:
+        roots = _checkout_roots(project)
+    text = _in_repo_relative(project, text)
+    shape = machine_path_shape(text, roots)
+    if shape is None:
+        return text
+    raise ValueError(
+        "journal row refused: `%s` carries a machine path (%s), and a committed, "
+        "hash-chained row can never be corrected afterwards. Say it as a "
+        "repo-relative path, or write <home>/... or <scratchpad>/... in its "
+        "place." % (field, shape))
+
+
 # --- details (row v2) ---------------------------------------------------------
 def _clip_marked(text, limit, marker):
     """`text` bounded to `limit`, SAYING SO when it had to be cut.
@@ -1400,9 +1539,13 @@ def normalise_details(details, project=None):
     `project` is what turns `cwd` from a machine path into a repo-relative one.
     Without it there is no map, and no map means the token: a caller that cannot
     say where the repo is does not thereby earn the right to have the raw path
-    written down."""
+    written down.
+
+    Every other value is `free_text` first, so an in-repo absolute path is spelled
+    repo-relative and a machine path RAISES here, before anything is hashed."""
     if not isinstance(details, dict):
         return None
+    roots = _checkout_roots(project)
     out = {}
     for key in DETAILS_KEYS:
         if key not in details:
@@ -1412,11 +1555,12 @@ def normalise_details(details, project=None):
             if not isinstance(val, list):
                 continue
             kept = []
-            for change in val[:MAX_CHANGES]:
+            for n, change in enumerate(val[:MAX_CHANGES]):
                 if not isinstance(change, dict):
                     continue
-                kept.append({k: _clip(change.get(k)) for k in CHANGE_KEYS
-                             if k in change})
+                kept.append({k: _clip(free_text(
+                    project, "details.changes[%d].%s" % (n, k), change.get(k),
+                    roots)) for k in CHANGE_KEYS if k in change})
             out["changes"] = kept
             if len(val) > MAX_CHANGES:
                 out["truncated"] = True
@@ -1431,7 +1575,7 @@ def normalise_details(details, project=None):
             # review, which is why the ordering has a case of its own.
             out["cwd"] = _clip(repo_relative_or_token(project, val))
         else:
-            out[key] = _clip(val)
+            out[key] = _clip(free_text(project, "details." + key, val, roots))
     if _COMMAND_DETAILS_KEY in details:
         # `command` is no longer in DETAILS_KEYS, so the loop above dropped it;
         # these are what a row carries in its place. Derived from the value AS
@@ -1521,7 +1665,8 @@ def _normalise(entry, project=None):
         },
         "action": str(entry.get("action") or "").strip(),
         "target": _normalised_target(entry.get("target"), project),
-        "summary": _clip_summary(str(entry.get("summary") or "")),
+        "summary": _clip_summary(free_text(project, "summary",
+                                           str(entry.get("summary") or ""))),
     }
     # THE OTHER NAME this session answers to, recorded ONLY when it is not
     # the one already above. A hook's payload `session_id` is what names the
